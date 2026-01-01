@@ -172,4 +172,32 @@ class TestProfile:               # Feature tests
 
 ---
 
-**Last Updated**: 2026-01-01
+## 8. Coverage Standards
+
+### Tools
+- `cargo-llvm-cov`: Coverage measurement (all platforms)
+- `cargo-nextest`: Fast parallel test execution
+
+### Coverage Targets
+
+| Phase | Target |
+|-------|--------|
+| Phase 1.5 | 60% |
+| Phase 3 | 70% |
+| Phase 4+ | 80% |
+
+### Commands
+```bash
+# Run with coverage
+cargo llvm-cov nextest
+
+# HTML report
+cargo llvm-cov --html --open
+
+# Check threshold
+cargo llvm-cov report --fail-under-lines 70
+```
+
+---
+
+**Last Updated**: 2026-01-02
