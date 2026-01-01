@@ -40,16 +40,57 @@ fn setup_python_env(project_dir: &Path) -> Option<EnvCache> {
         }
     }
 
+    // Auto-detect uv's .venv and add site-packages to PYTHONPATH
+    let venv_site_packages = detect_venv_site_packages(project_dir);
+
     // Try to load cache if fingerprint matches
     if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
         if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
             // KEY OPTIMIZATION: Set PYTHONPATH BEFORE Python initializes
             // This allows Python to skip its expensive path scanning during init
-            let pythonpath = cache.sys_path.join(":");
+            let mut paths = cache.sys_path.clone();
+            
+            // Prepend venv site-packages if detected
+            if let Some(ref venv_path) = venv_site_packages {
+                paths.insert(0, venv_path.clone());
+            }
+            
+            let pythonpath = paths.join(":");
             unsafe {
                 std::env::set_var("PYTHONPATH", &pythonpath);
             }
             return Some(cache);
+        }
+    }
+
+    // No cache, but still set venv site-packages if available
+    if let Some(venv_path) = venv_site_packages {
+        unsafe {
+            std::env::set_var("PYTHONPATH", &venv_path);
+        }
+    }
+
+    None
+}
+
+/// Detect .venv/lib/python*/site-packages in the project directory
+fn detect_venv_site_packages(project_dir: &Path) -> Option<String> {
+    let venv_lib = project_dir.join(".venv/lib");
+    if !venv_lib.exists() {
+        return None;
+    }
+
+    // Find python3.X directory
+    if let Ok(entries) = std::fs::read_dir(&venv_lib) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("python3") {
+                let site_packages = entry.path().join("site-packages");
+                if site_packages.exists() {
+                    return Some(site_packages.to_string_lossy().to_string());
+                }
+            }
         }
     }
 
