@@ -2,11 +2,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-mod cache;
-mod hardware;
-mod profile;
-mod python_info;
-use cache::EnvCache;
+use velo::cache::{self, EnvCache};
+use velo::{hardware, profile, python_info};
 
 const USAGE: &str = "\
 velo - The high-performance Python runtime for the AI era
