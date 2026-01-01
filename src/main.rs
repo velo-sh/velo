@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
 use pyo3::prelude::*;
 use std::path::Path;
 
@@ -9,23 +8,19 @@ use cache::EnvCache;
 /// Python home path discovered at compile time
 const PYTHON_HOME: &str = env!("VELO_PYTHON_HOME");
 
-#[derive(Parser)]
-#[command(name = "velo")]
-#[command(about = "The high-performance Python runtime for the AI era")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+const USAGE: &str = "\
+velo - The high-performance Python runtime for the AI era
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Run a Python script
-    Run {
-        /// Path to the Python script
-        script: String,
-    },
-}
+USAGE:
+    velo run <script.py>
+
+COMMANDS:
+    run     Run a Python script
+
+OPTIONS:
+    -h, --help     Print help
+    -V, --version  Print version
+";
 
 /// Setup Python environment before initializing the interpreter.
 /// Uses cached configuration if available to speed up startup.
@@ -132,17 +127,42 @@ fn run_script(script_path: &str, cached_env: Option<EnvCache>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // Determine project directory
-    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let args: Vec<String> = std::env::args().collect();
 
-    // Setup Python environment, potentially loading cache
-    let cached_env = setup_python_env(&project_dir);
+    // Minimal argument parsing (no clap overhead)
+    if args.len() < 2 {
+        print!("{}", USAGE);
+        std::process::exit(0);
+    }
 
-    let cli = Cli::parse();
+    match args[1].as_str() {
+        "-h" | "--help" => {
+            print!("{}", USAGE);
+            std::process::exit(0);
+        }
+        "-V" | "--version" => {
+            println!("velo {}", env!("CARGO_PKG_VERSION"));
+            std::process::exit(0);
+        }
+        "run" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing script path");
+                eprintln!("Usage: velo run <script.py>");
+                std::process::exit(1);
+            }
 
-    match cli.command {
-        Commands::Run { script } => {
-            run_script(&script, cached_env)?;
+            // Determine project directory
+            let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+
+            // Setup Python environment, potentially loading cache
+            let cached_env = setup_python_env(&project_dir);
+
+            run_script(&args[2], cached_env)?;
+        }
+        cmd => {
+            eprintln!("Error: unknown command '{}'", cmd);
+            eprintln!("{}", USAGE);
+            std::process::exit(1);
         }
     }
 
