@@ -10,7 +10,7 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow | **49x faster** with Zygote pre-warming 🧬 |
+| Python cold start is slow | **Up to 24% faster** with Zygote pre-warming 🧬 |
 | Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
 | ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
 | Dependency chaos | Auto-detects `uv` virtual environments |
@@ -44,29 +44,32 @@ cargo build --release
 ./target/release/velo run your_script.py
 
 # First run: captures paths, slight overhead
-# Second run: uses cache, 11% faster than CPython
+# Second run: uses cache, faster than CPython
 ```
 
 ## Benchmark Results
 
-### 🧬 Zygote Mode (New in v0.3.0)
+### 🧬 Zygote Mode (v0.3.0)
 
 ```
-=== Cold Start vs Warm Start ===
-CPython cold start:    ~500ms
-Velo Zygote warm:      ~15ms   (49x faster!) 🚀
-```
-
-### Standard Mode
-
-```
-=== FastAPI Microservice ===
-CPython:           549ms
-Velo (cached):     539ms  (2% faster) ✅
-
 === Django Application ===
-CPython:           416ms
-Velo (cached):     397ms  (5% faster) ✅
+CPython:             406ms
+Zygote (warm):       307ms  (24% faster!) ✅ ⚡
+
+=== FastAPI Microservice ===
+CPython:             514ms
+Zygote (warm):       477ms  (7% faster) ✅
+
+=== Data Science Pipeline ===
+CPython:             210ms
+Zygote (warm):       170ms  (19% faster) ✅
+```
+
+### Standard Cache Mode
+
+```
+CPython:             406ms
+Velo (cache hit):    400ms  (1% faster) ✅
 ```
 
 ## How It Works
