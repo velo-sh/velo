@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 use velo::cache::{self, EnvCache};
+use velo::zygote::{self, ZygoteLauncher};
 use velo::{hardware, profile, python_info};
 
 const USAGE: &str = "\
@@ -10,13 +11,16 @@ velo - The high-performance Python runtime for the AI era
 
 USAGE:
     velo run [OPTIONS] <script.py>
+    velo zygote <start|stop|status>
     velo info
 
 COMMANDS:
-    run     Run a Python script
-    info    Show environment information
+    run      Run a Python script
+    zygote   Manage Zygote pre-warming daemon
+    info     Show environment information
 
 RUN OPTIONS:
+    --zygote   Use Zygote for fast startup (auto-starts if needed)
     --profile  Show detailed startup timing breakdown
 
 OPTIONS:
@@ -298,21 +302,41 @@ fn main() -> Result<()> {
         "run" => {
             if args.len() < 3 {
                 eprintln!("Error: missing script path");
-                eprintln!("Usage: velo run [--profile] <script.py>");
+                eprintln!("Usage: velo run [--zygote] [--profile] <script.py>");
                 std::process::exit(1);
             }
 
-            // Parse --profile flag
-            let (profile_enabled, script_arg_idx) = if args[2] == "--profile" {
-                if args.len() < 4 {
-                    eprintln!("Error: missing script path after --profile");
-                    eprintln!("Usage: velo run --profile <script.py>");
-                    std::process::exit(1);
+            // Parse flags
+            let mut zygote_enabled = false;
+            let mut profile_enabled = false;
+            let mut script_arg_idx = 2;
+
+            for (i, arg) in args.iter().enumerate().skip(2) {
+                match arg.as_str() {
+                    "--zygote" => {
+                        zygote_enabled = true;
+                        script_arg_idx = i + 1;
+                    }
+                    "--profile" => {
+                        profile_enabled = true;
+                        script_arg_idx = i + 1;
+                    }
+                    a if a.starts_with('-') => {
+                        eprintln!("Error: unknown option '{}'", a);
+                        std::process::exit(1);
+                    }
+                    _ => {
+                        script_arg_idx = i;
+                        break;
+                    }
                 }
-                (true, 3)
-            } else {
-                (false, 2)
-            };
+            }
+
+            if script_arg_idx >= args.len() {
+                eprintln!("Error: missing script path");
+                eprintln!("Usage: velo run [--zygote] [--profile] <script.py>");
+                std::process::exit(1);
+            }
 
             // Determine project directory
             let project_dir =
@@ -321,10 +345,56 @@ fn main() -> Result<()> {
             // Detect user's Python
             let python = detect_python(&project_dir)?;
 
-            // Setup environment with caching
+            // Zygote mode: use pre-warmed process
+            if zygote_enabled {
+                #[cfg(unix)]
+                {
+                    if !zygote::is_supported() {
+                        eprintln!("⚠️ Zygote not supported on this platform, using normal mode");
+                    } else {
+                        let socket_path = zygote::ipc::default_socket_path();
+                        let script_path = Path::new(&args[script_arg_idx]);
+
+                        // Check if Zygote is running, start if not (hybrid mode)
+                        let mut launcher =
+                            ZygoteLauncher::new(socket_path.clone()).with_python(python.clone());
+
+                        if !socket_path.exists() {
+                            eprintln!("🚀 Starting Zygote...");
+                            if let Err(e) = launcher.start(&[]) {
+                                eprintln!("⚠️ Failed to start Zygote: {}", e);
+                                eprintln!("   Falling back to normal mode");
+                            } else {
+                                eprintln!("✅ Zygote ready");
+                            }
+                        }
+
+                        // Try to spawn via Zygote
+                        if socket_path.exists() {
+                            match launcher.spawn_worker(script_path, &[]) {
+                                Ok(worker) => {
+                                    // Wait for worker (polling for now)
+                                    eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                                    // Worker runs independently, we exit
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    eprintln!("⚠️ Zygote spawn failed: {}", e);
+                                    eprintln!("   Falling back to normal mode");
+                                }
+                            }
+                        }
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    eprintln!("⚠️ Zygote not supported on Windows, using normal mode");
+                }
+            }
+
+            // Normal mode (or fallback)
             let (pythonpath, needs_capture) = setup_python_env(&project_dir, &python);
 
-            // Run the script (with or without profiling)
             if profile_enabled {
                 run_script_with_profile(&python, &args[script_arg_idx], pythonpath)?;
             } else {
@@ -335,7 +405,6 @@ fn main() -> Result<()> {
             if needs_capture {
                 if let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir) {
                     if let Ok(paths) = capture_sys_path(&python) {
-                        // Detect Python info for ABI tracking
                         let (python_version, abi_tag, platform_tag) =
                             match python_info::PythonInfo::detect(&python) {
                                 Ok(info) => (info.version, info.abi_tag, info.platform_tag),
@@ -409,6 +478,113 @@ fn main() -> Result<()> {
                 }
             } else {
                 println!("└─ No cache (run a script first)");
+            }
+        }
+        "zygote" => {
+            if args.len() < 3 {
+                eprintln!("Usage: velo zygote <start|stop|status>");
+                std::process::exit(1);
+            }
+
+            let project_dir =
+                std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+
+            match args[2].as_str() {
+                "start" => {
+                    #[cfg(unix)]
+                    {
+                        let python = detect_python(&project_dir)?;
+                        let socket_path = zygote::ipc::default_socket_path();
+
+                        if socket_path.exists() {
+                            println!("⚡ Zygote already running");
+                            println!("   Socket: {}", socket_path.display());
+                        } else {
+                            let mut launcher =
+                                ZygoteLauncher::new(socket_path.clone()).with_python(python);
+
+                            // Parse --preload if provided
+                            let preload: Vec<&str> = if args.len() > 4 && args[3] == "--preload" {
+                                args[4].split(',').collect()
+                            } else {
+                                vec![]
+                            };
+
+                            println!("🚀 Starting Zygote daemon...");
+                            match launcher.start(&preload) {
+                                Ok(()) => {
+                                    println!("✅ Zygote started");
+                                    println!("   Socket: {}", socket_path.display());
+                                    // Keep launcher alive by forgetting it (daemon mode)
+                                    std::mem::forget(launcher);
+                                }
+                                Err(e) => {
+                                    eprintln!("❌ Failed to start Zygote: {}", e);
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        eprintln!("❌ Zygote not supported on this platform");
+                        std::process::exit(1);
+                    }
+                }
+                "stop" => {
+                    #[cfg(unix)]
+                    {
+                        let socket_path = zygote::ipc::default_socket_path();
+
+                        if !socket_path.exists() {
+                            println!("ℹ️  Zygote not running");
+                        } else {
+                            println!("🛑 Stopping Zygote...");
+                            match zygote::ipc::send_command(
+                                &socket_path,
+                                zygote::ipc::ZygoteCommand::Shutdown,
+                            ) {
+                                Ok(_) => {
+                                    println!("✅ Zygote stopped");
+                                }
+                                Err(e) => {
+                                    eprintln!("⚠️  Error stopping Zygote: {}", e);
+                                    // Force cleanup
+                                    zygote::ipc::cleanup_socket(&socket_path);
+                                    println!("   Socket cleaned up");
+                                }
+                            }
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        eprintln!("ℹ️  Zygote not supported on this platform");
+                    }
+                }
+                "status" => {
+                    #[cfg(unix)]
+                    {
+                        let socket_path = zygote::ipc::default_socket_path();
+
+                        println!("▸ Zygote Status");
+                        if socket_path.exists() {
+                            println!("├─ Status: Running ✅");
+                            println!("└─ Socket: {}", socket_path.display());
+                        } else {
+                            println!("└─ Status: Not running");
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        println!("▸ Zygote Status");
+                        println!("└─ Not supported on this platform");
+                    }
+                }
+                subcmd => {
+                    eprintln!("Error: unknown zygote subcommand '{}'", subcmd);
+                    eprintln!("Usage: velo zygote <start|stop|status>");
+                    std::process::exit(1);
+                }
             }
         }
         cmd => {
