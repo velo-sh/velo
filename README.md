@@ -67,21 +67,22 @@ NumPy import: 57ms  (-11%) ✅
 4. **Deferred Capture**: First run executes immediately, caches for next time
 
 
+
 ## Development
 
-### Setup
+### Setup (One-Click)
 
 ```bash
-# Clone the repo
+# Clone and setup (installs pre-commit hooks, creates venv, verifies build)
 git clone https://github.com/velo-sh/velo.git
 cd velo
-
-# Install pre-commit hooks (required for all developers)
-git config core.hooksPath .githooks
-
-# Create venv for testing
-uv venv && uv pip install pytest
+./scripts/setup-dev.sh
 ```
+
+**Locked Versions** (same for local and CI):
+- Rust: 1.87.0 (see `rust-toolchain.toml`)
+- Python: 3.11+
+
 
 ### Testing
 
