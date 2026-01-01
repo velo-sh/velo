@@ -176,6 +176,10 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
         match launcher.spawn_worker(script, &[]) {
             Ok(worker) => {
                 eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+
+                // Wait for worker to complete
+                let _exit_code = worker.wait();
+
                 // Keep Zygote alive if we started it (daemon mode)
                 if started_new {
                     std::mem::forget(launcher);

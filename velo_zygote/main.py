@@ -149,6 +149,15 @@ def handle_fork(script_path: str, args: List[str]) -> int:
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
             
+            # Reopen stdout/stderr to terminal (Zygote's are null)
+            try:
+                tty = open("/dev/tty", "w")
+                sys.stdout = tty
+                sys.stderr = tty
+            except OSError:
+                # No controlling terminal, keep inherited (null)
+                pass
+            
             # Set up sys.argv
             sys.argv = [script_path] + args
             
