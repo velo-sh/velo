@@ -1,12 +1,9 @@
 use anyhow::{Context, Result};
-use pyo3::prelude::*;
 use std::path::Path;
+use std::process::Command;
 
 mod cache;
 use cache::EnvCache;
-
-/// Python home path discovered at compile time
-const PYTHON_HOME: &str = env!("VELO_PYTHON_HOME");
 
 const USAGE: &str = "\
 velo - The high-performance Python runtime for the AI era
@@ -22,65 +19,45 @@ OPTIONS:
     -V, --version  Print version
 ";
 
-/// Setup Python environment before initializing the interpreter.
-/// Uses cached configuration if available to speed up startup.
-fn setup_python_env(project_dir: &Path) -> Option<EnvCache> {
-    // Set PYTHONHOME
-    if std::env::var("PYTHONHOME").is_err() {
-        // SAFETY: set_var is called before any threads are spawned and before Python is initialized
-        unsafe {
-            std::env::set_var("PYTHONHOME", PYTHON_HOME);
+/// Detect the project's Python interpreter.
+/// Priority:
+/// 1. .venv/bin/python (uv/virtualenv)
+/// 2. VELO_PYTHON environment variable
+/// 3. System python3
+fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
+    // 1. Check for .venv/bin/python
+    let venv_python = project_dir.join(".venv/bin/python");
+    if venv_python.exists() {
+        return Ok(venv_python);
+    }
+
+    // 2. Check VELO_PYTHON env var
+    if let Ok(python) = std::env::var("VELO_PYTHON") {
+        let path = std::path::PathBuf::from(&python);
+        if path.exists() {
+            return Ok(path);
         }
     }
 
-    // Force unbuffered stdout so output is visible when captured by subprocess
-    if std::env::var("PYTHONUNBUFFERED").is_err() {
-        unsafe {
-            std::env::set_var("PYTHONUNBUFFERED", "1");
+    // 3. Fall back to system python3
+    // First check if python3 exists in PATH
+    if let Ok(output) = Command::new("which").arg("python3").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return Ok(std::path::PathBuf::from(path));
         }
     }
 
-    // Auto-detect uv's .venv and add site-packages to PYTHONPATH
-    let venv_site_packages = detect_venv_site_packages(project_dir);
-
-    // Try to load cache if fingerprint matches
-    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
-        if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
-            // KEY OPTIMIZATION: Set PYTHONPATH BEFORE Python initializes
-            // This allows Python to skip its expensive path scanning during init
-            let mut paths = cache.sys_path.clone();
-            
-            // Prepend venv site-packages if detected
-            if let Some(ref venv_path) = venv_site_packages {
-                paths.insert(0, venv_path.clone());
-            }
-            
-            let pythonpath = paths.join(":");
-            unsafe {
-                std::env::set_var("PYTHONPATH", &pythonpath);
-            }
-            return Some(cache);
-        }
-    }
-
-    // No cache, but still set venv site-packages if available
-    if let Some(venv_path) = venv_site_packages {
-        unsafe {
-            std::env::set_var("PYTHONPATH", &venv_path);
-        }
-    }
-
-    None
+    anyhow::bail!("No Python interpreter found. Please create a .venv or set VELO_PYTHON")
 }
 
-/// Detect .venv/lib/python*/site-packages in the project directory
+/// Detect .venv/lib/python*/site-packages
 fn detect_venv_site_packages(project_dir: &Path) -> Option<String> {
     let venv_lib = project_dir.join(".venv/lib");
     if !venv_lib.exists() {
         return None;
     }
 
-    // Find python3.X directory
     if let Ok(entries) = std::fs::read_dir(&venv_lib) {
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -97,80 +74,108 @@ fn detect_venv_site_packages(project_dir: &Path) -> Option<String> {
     None
 }
 
-/// Capture current Python environment and save to cache.
-fn capture_and_cache_env(py: Python<'_>, project_dir: &Path) -> Result<()> {
-    let fingerprint = match EnvCache::compute_fingerprint(project_dir) {
-        Some(fp) => fp,
-        None => return Ok(()), // No uv.lock, nothing to cache
-    };
+/// Capture sys.path from Python and cache it.
+fn capture_sys_path(python: &Path) -> Result<Vec<String>> {
+    let output = Command::new(python)
+        .args(["-c", "import sys; print('\\n'.join(sys.path))"])
+        .output()
+        .context("Failed to run Python to capture sys.path")?;
 
-    // Get sys.path
-    let sys = py.import("sys")?;
-    let sys_path = sys.getattr("path")?;
-    let path_list: Vec<String> = sys_path.extract()?;
+    if !output.status.success() {
+        anyhow::bail!("Python failed to report sys.path");
+    }
 
-    let cache = EnvCache {
-        fingerprint,
-        sys_path: path_list,
-        python_home: PYTHON_HOME.to_string(),
-    };
+    let paths: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
 
-    cache.save(project_dir)?;
-    Ok(())
+    Ok(paths)
 }
 
-fn run_script(script_path: &str, cached_env: Option<EnvCache>) -> Result<()> {
-    let path = Path::new(script_path);
-    let code = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read script: {}", script_path))?;
+/// Setup Python environment, potentially using cache.
+fn setup_python_env(project_dir: &Path, python: &Path) -> Option<String> {
+    // Auto-detect venv site-packages
+    let venv_site_packages = detect_venv_site_packages(project_dir);
 
-    // Get the script's directory for proper imports
+    // Try to load cache if fingerprint matches
+    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
+        if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
+            let mut paths = cache.sys_path.clone();
+
+            // Prepend venv site-packages if detected
+            if let Some(ref venv_path) = venv_site_packages {
+                if !paths.contains(venv_path) {
+                    paths.insert(0, venv_path.clone());
+                }
+            }
+
+            return Some(paths.join(":"));
+        }
+    }
+
+    // No cache - capture fresh and save
+    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
+        if let Ok(paths) = capture_sys_path(python) {
+            let cache = EnvCache {
+                fingerprint: fingerprint.clone(),
+                sys_path: paths.clone(),
+                python_home: String::new(), // Not used in subprocess mode
+            };
+            let _ = cache.save(project_dir);
+
+            let mut result_paths = paths;
+            if let Some(ref venv_path) = venv_site_packages {
+                if !result_paths.contains(venv_path) {
+                    result_paths.insert(0, venv_path.clone());
+                }
+            }
+
+            return Some(result_paths.join(":"));
+        }
+    }
+
+    // Fall back to just venv site-packages
+    venv_site_packages
+}
+
+fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) -> Result<()> {
+    let path = Path::new(script_path);
+    if !path.exists() {
+        anyhow::bail!("Script not found: {}", script_path);
+    }
+
+    // Get script directory for relative imports
     let script_dir = path
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
 
-    // Determine project directory (where uv.lock might be)
-    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    // Build PYTHONPATH
+    let final_pythonpath = match pythonpath {
+        Some(pp) => format!("{}:{}", script_dir, pp),
+        None => script_dir,
+    };
 
-    Python::with_gil(|py| {
-        let sys = py.import("sys")?;
-        let sys_path_obj = sys.getattr("path")?;
+    // Run the script using user's Python
+    let status = Command::new(python)
+        .env("PYTHONPATH", &final_pythonpath)
+        .env("PYTHONUNBUFFERED", "1")
+        .arg(script_path)
+        .status()
+        .context("Failed to run Python")?;
 
-        // If we have cached env, inject the cached sys.path
-        if let Some(ref cache) = cached_env {
-            // Clear existing path and inject cached one
-            sys_path_obj.call_method0("clear")?;
-            for p in &cache.sys_path {
-                sys_path_obj.call_method1("append", (p,))?;
-            }
-        }
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
 
-        // Add script directory to sys.path for relative imports
-        sys_path_obj.call_method1("insert", (0, &script_dir))?;
-
-        // Set __file__ and __name__ for the script
-        let globals = pyo3::types::PyDict::new(py);
-        globals.set_item("__file__", script_path)?;
-        globals.set_item("__name__", "__main__")?;
-
-        // If no cache was used, capture and save for next time
-        if cached_env.is_none() {
-            let _ = capture_and_cache_env(py, &project_dir);
-        }
-
-        // Execute the script
-        py.run(&code, Some(globals), None)
-            .with_context(|| format!("Error executing script: {}", script_path))?;
-
-        Ok(())
-    })
+    Ok(())
 }
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
-    // Minimal argument parsing (no clap overhead)
     if args.len() < 2 {
         print!("{}", USAGE);
         std::process::exit(0);
@@ -195,10 +200,14 @@ fn main() -> Result<()> {
             // Determine project directory
             let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
-            // Setup Python environment, potentially loading cache
-            let cached_env = setup_python_env(&project_dir);
+            // Detect user's Python
+            let python = detect_python(&project_dir)?;
 
-            run_script(&args[2], cached_env)?;
+            // Setup environment with caching
+            let pythonpath = setup_python_env(&project_dir, &python);
+
+            // Run the script
+            run_script(&python, &args[2], pythonpath)?;
         }
         cmd => {
             eprintln!("Error: unknown command '{}'", cmd);
