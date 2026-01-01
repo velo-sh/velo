@@ -19,17 +19,15 @@ from pathlib import Path
 VELO_BIN = "./target/release/velo"
 TEST_SCRIPT = "tests/corpus/hello.py"
 INIT_SCRIPT = "tests/corpus/init_only.py"  # Minimal script for init-only mode
+VELO_CACHE = ".velo_cache"
 
 
-def purge_os_cache():
-    """Purge OS file cache (macOS only, requires sudo)."""
-    try:
-        subprocess.run(["sudo", "purge"], capture_output=True, timeout=10)
-        time.sleep(0.5)  # Let system settle
-        return True
-    except Exception as e:
-        print(f"⚠️  Could not purge cache: {e}")
-        return False
+def clear_velo_cache():
+    """Remove Velo cache to simulate first run."""
+    import shutil
+    cache_path = Path(VELO_CACHE)
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
 
 
 def measure_startup(cmd: list[str], iterations: int = 10) -> list[float]:
@@ -44,10 +42,10 @@ def measure_startup(cmd: list[str], iterations: int = 10) -> list[float]:
     return times
 
 
-def measure_cold_start(cmd: list[str]) -> float | None:
-    """Measure single cold start after purging OS cache."""
-    if not purge_os_cache():
-        return None
+def measure_cold_start(cmd: list[str], clear_cache: bool = True) -> float | None:
+    """Measure single cold start (cache cleared)."""
+    if clear_cache:
+        clear_velo_cache()
     
     start = time.perf_counter()
     result = subprocess.run(cmd, capture_output=True)
@@ -56,15 +54,24 @@ def measure_cold_start(cmd: list[str]) -> float | None:
     return elapsed if result.returncode == 0 else None
 
 
-def measure_serverless(cmd: list[str], iterations: int = 5) -> list[float]:
-    """Simulate serverless cold starts (purge between each run)."""
+def measure_serverless(cmd: list[str], iterations: int = 5, is_velo: bool = False) -> list[float]:
+    """Simulate serverless cold starts (clear cache between runs for Velo)."""
+    # Warmup run to let OS cache the binary
+    subprocess.run(cmd, capture_output=True)
+    if is_velo:
+        clear_velo_cache()
+    
     times = []
     for i in range(iterations):
         print(f"    Run {i+1}/{iterations}...", end="", flush=True)
-        t = measure_cold_start(cmd)
-        if t:
-            times.append(t)
-            print(f" {t:.2f}ms")
+        if is_velo:
+            clear_velo_cache()
+        start = time.perf_counter()
+        result = subprocess.run(cmd, capture_output=True)
+        elapsed = (time.perf_counter() - start) * 1000
+        if result.returncode == 0:
+            times.append(elapsed)
+            print(f" {elapsed:.2f}ms")
         else:
             print(" failed")
     return times
@@ -126,17 +133,16 @@ def mode_warm(iterations: int):
 
 
 def mode_cold():
-    """Single cold start benchmark."""
-    print("\n❄️  Cold Start Benchmark (single run, OS cache purged)")
-    print("   Note: Requires sudo for 'purge' command")
+    """Single cold start benchmark (Velo cache cleared)."""
+    print("\n❄️  Cold Start Benchmark (Velo cache cleared)")
     
-    print("\n📊 CPython cold start...")
-    cpython_time = measure_cold_start([sys.executable, TEST_SCRIPT])
+    print("\n📊 CPython (baseline)...")
+    cpython_time = measure_cold_start([sys.executable, TEST_SCRIPT], clear_cache=False)
     if cpython_time:
         print(f"  CPython: {cpython_time:.2f}ms")
     
-    print("\n📊 Velo cold start...")
-    velo_time = measure_cold_start([VELO_BIN, "run", TEST_SCRIPT])
+    print("\n📊 Velo (cache miss)...")
+    velo_time = measure_cold_start([VELO_BIN, "run", TEST_SCRIPT], clear_cache=True)
     if velo_time:
         print(f"  Velo: {velo_time:.2f}ms")
     
@@ -166,16 +172,15 @@ def mode_init_only(iterations: int):
 
 
 def mode_serverless(iterations: int):
-    """Serverless simulation (purge between runs)."""
-    print(f"\n☁️  Serverless Simulation ({iterations} cold starts each)")
-    print("   Note: Requires sudo for 'purge' command")
+    """Serverless simulation (Velo cache cleared between runs)."""
+    print(f"\n☁️  Serverless Simulation ({iterations} runs each)")
     
     print("\n📊 CPython serverless...")
-    cpython_times = measure_serverless([sys.executable, TEST_SCRIPT], iterations)
+    cpython_times = measure_serverless([sys.executable, TEST_SCRIPT], iterations, is_velo=False)
     print_stats("CPython", cpython_times)
 
-    print("\n📊 Velo serverless...")
-    velo_times = measure_serverless([VELO_BIN, "run", TEST_SCRIPT], iterations)
+    print("\n📊 Velo serverless (cache miss each run)...")
+    velo_times = measure_serverless([VELO_BIN, "run", TEST_SCRIPT], iterations, is_velo=True)
     print_stats("Velo", velo_times)
 
     return cpython_times, velo_times
