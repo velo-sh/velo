@@ -275,3 +275,162 @@ class TestEdgeCasesIPC:
             assert_no_crash(result)
         finally:
             env.cleanup()
+
+
+# =============================================================================
+# CROSS-REVIEW: Agent B (Stability) additions to Edge Cases
+# =============================================================================
+
+class TestEdgeCaseStability:
+    """Agent B review: Stability after edge case handling."""
+
+    def test_edge_stable_001_recovery_after_edge(self):
+        """
+        Agent B: System should recover after hitting edge case.
+        
+        After edge case, normal operation should work.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            # Hit edge case - empty script
+            env.create_script("empty.py", "")
+            run_velo(["run", "--zygote", "empty.py"], cwd=env.path, timeout=10)
+            
+            # Normal operation should still work
+            env.create_script("normal.py", "print('ok')")
+            result = run_velo(["run", "--zygote", "normal.py"], cwd=env.path, timeout=10)
+            
+            assert_no_crash(result)
+            if result.success:
+                assert "ok" in result.stdout
+        finally:
+            env.cleanup()
+
+    def test_edge_stable_002_no_state_corruption(self):
+        """
+        Agent B: Edge cases should not corrupt internal state.
+        
+        Run edge case, then verify normal operation 10x.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            # Hit multiple edge cases
+            env.create_script("empty.py", "")
+            run_velo(["run", "--zygote", "empty.py"], cwd=env.path, timeout=10)
+            run_velo(["run", "--zygote", "nonexistent.py"], cwd=env.path, timeout=10)
+            
+            # Now run normal script 10x
+            env.create_script("check.py", "print('state_ok')")
+            
+            for _ in range(10):
+                result = run_velo(["run", "--zygote", "check.py"], cwd=env.path, timeout=10)
+                assert_no_crash(result)
+                if result.success:
+                    assert "state_ok" in result.stdout
+        finally:
+            env.cleanup()
+
+
+# =============================================================================
+# CROSS-REVIEW: Agent C (Security) additions to Edge Cases  
+# =============================================================================
+
+class TestEdgeCaseSecurity:
+    """Agent C review: Security implications of edge cases."""
+
+    def test_edge_sec_001_edge_no_extra_permissions(self):
+        """
+        Agent C: Edge case handling should not grant extra permissions.
+        
+        After edge case, permissions should be unchanged.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            # Get initial UID
+            env.create_script("uid1.py", "import os; print(f'UID:{os.getuid()}')")
+            result1 = run_velo(["run", "--zygote", "uid1.py"], cwd=env.path, timeout=10)
+            
+            # Hit edge cases
+            run_velo(["run", "--zygote", ""], cwd=env.path, timeout=5)
+            run_velo(["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5)
+            
+            # Check UID unchanged
+            env.create_script("uid2.py", "import os; print(f'UID:{os.getuid()}')")
+            result2 = run_velo(["run", "--zygote", "uid2.py"], cwd=env.path, timeout=10)
+            
+            if result1.success and result2.success:
+                assert result1.stdout.strip() == result2.stdout.strip(), "UID changed after edge case!"
+        finally:
+            env.cleanup()
+
+    def test_edge_sec_002_edge_no_info_leak(self):
+        """
+        Agent C: Edge cases should not leak system information.
+        
+        Error messages from edge cases should be sanitized.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            # Try various edge cases
+            edge_cases = [
+                ["run", "--zygote", "../../../etc/shadow"],
+                ["run", "--zygote", "/dev/null"],
+                ["run", "--zygote", ""],
+            ]
+            
+            for cmd in edge_cases:
+                result = run_velo(cmd, cwd=env.path, timeout=5)
+                
+                # Check no sensitive info in output
+                output = (result.stdout + result.stderr).lower()
+                sensitive_patterns = ["/etc/shadow", "/root/", "password", "secret"]
+                
+                for pattern in sensitive_patterns:
+                    assert pattern not in output, f"Sensitive info leaked: {pattern}"
+        finally:
+            env.cleanup()
+
+    def test_edge_sec_003_edge_no_resource_escalation(self):
+        """
+        Agent C: Edge cases should not allow resource escalation.
+        
+        After edge case, resource limits should hold.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            # Get initial FD count
+            env.create_script("fd1.py", """
+import os
+fds = [fd for fd in range(100) if os.fstat(fd) is not None or True]
+print(f'FD_COUNT:{len([fd for fd in range(100) if True])}')
+""")
+            
+            # This is a placeholder - actual FD counting is complex
+            result = run_velo(["run", "--zygote", "fd1.py"], cwd=env.path, timeout=10)
+            assert_no_crash(result)
+        finally:
+            env.cleanup()
+

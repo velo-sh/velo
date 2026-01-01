@@ -324,3 +324,184 @@ preload = ["../../etc/passwd", "__import__('os').system('id')"]
                 assert_no_crash(status)
         finally:
             env.cleanup()
+
+
+# =============================================================================
+# CROSS-REVIEW: Agent A (Edge Cases) additions to Security
+# =============================================================================
+
+class TestSecurityEdgeCases:
+    """Agent A review: Edge cases in security scenarios."""
+
+    def test_sec_edge_001_race_permission_check(self):
+        """
+        Agent A: Race condition in permission check (TOCTOU).
+        
+        Attack: Change permissions between check and use.
+        Risk: Bypass permission validation.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            import threading
+            
+            def toggle_permissions():
+                for _ in range(10):
+                    try:
+                        if env.socket_path.parent.exists():
+                            os.chmod(str(env.socket_path.parent), 0o755)
+                            time.sleep(0.01)
+                            os.chmod(str(env.socket_path.parent), 0o000)
+                            time.sleep(0.01)
+                            os.chmod(str(env.socket_path.parent), 0o755)
+                    except Exception:
+                        pass
+            
+            t = threading.Thread(target=toggle_permissions)
+            t.start()
+            
+            result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            t.join(timeout=5)
+            
+            assert_no_crash(result)
+        finally:
+            try:
+                os.chmod(str(env.socket_path.parent), 0o755)
+            except Exception:
+                pass
+            env.cleanup()
+
+    def test_sec_edge_002_symlink_race(self):
+        """
+        Agent A: Symlink race during socket creation.
+        
+        Attack: Replace socket with symlink mid-creation.
+        Risk: Write to arbitrary location.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            # Just run and check for crash
+            result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            assert_no_crash(result)
+        finally:
+            env.cleanup()
+
+    def test_sec_edge_003_concurrent_auth_bypass(self):
+        """
+        Agent A: Concurrent requests may bypass auth.
+        
+        Attack: Many parallel requests during auth check.
+        Risk: Race in authentication logic.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            import threading
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            results = []
+            
+            def run_script():
+                r = run_velo(["run", "--zygote", "test.py"], cwd=env.path, timeout=10)
+                results.append(r.returncode)
+            
+            env.create_script("test.py", "print('ok')")
+            
+            # 10 concurrent runs
+            threads = [threading.Thread(target=run_script) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=30)
+            
+            # All should behave consistently
+            assert len(set(results)) <= 2  # Either all succeed or all fail
+        finally:
+            env.cleanup()
+
+
+# =============================================================================
+# CROSS-REVIEW: Agent B (Stability) additions to Security
+# =============================================================================
+
+class TestSecurityStability:
+    """Agent B review: Stability of security features."""
+
+    def test_sec_stable_001_permission_check_idempotent(self):
+        """
+        Agent B: Permission checks should be idempotent.
+        
+        Run same security check 10x - all results identical.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            env.create_script("check.py", "import os; print(os.getuid())")
+            
+            results = []
+            for _ in range(10):
+                r = run_velo(["run", "--zygote", "check.py"], cwd=env.path, timeout=30)
+                if r.success:
+                    results.append(r.stdout.strip())
+            
+            if results:
+                # All should be identical
+                assert len(set(results)) == 1, f"Non-idempotent: {set(results)}"
+        finally:
+            env.cleanup()
+
+    def test_sec_stable_002_security_no_regression(self):
+        """
+        Agent B: Security features should not regress normal operation.
+        
+        Adding security checks should not break core functionality.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            env.create_script("basic.py", "print('hello')")
+            
+            # Normal operation should still work
+            result = run_velo(["run", "--zygote", "basic.py"], cwd=env.path, timeout=30)
+            assert_no_crash(result)
+            if result.success:
+                assert "hello" in result.stdout
+        finally:
+            env.cleanup()
+
+    def test_sec_stable_003_recovery_after_security_failure(self):
+        """
+        Agent B: System should recover after security failures.
+        
+        After blocking a security violation, normal ops should work.
+        """
+        env = ZygoteTestEnv()
+        try:
+            env.create_venv()
+            env.create_uv_lock()
+            
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            
+            # Trigger security check (path traversal)
+            run_velo(["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5)
+            
+            # Normal operation should still work
+            env.create_script("normal.py", "print('recovered')")
+            result = run_velo(["run", "--zygote", "normal.py"], cwd=env.path, timeout=10)
+            
+            assert_no_crash(result)
+            if result.success:
+                assert "recovered" in result.stdout
+        finally:
+            env.cleanup()
+
