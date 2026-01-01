@@ -154,10 +154,17 @@ def cleanup_workers() -> None:
     _active_workers.clear()
 
 
-def zygote_main(socket_path: str, preload: Optional[List[str]] = None) -> None:
-    """Main entry point for Zygote process."""
+def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_timeout: int = 300) -> None:
+    """Main entry point for Zygote process.
+    
+    Args:
+        socket_path: Path to Unix socket
+        preload: List of modules to pre-import
+        idle_timeout: Seconds to wait before exiting (default 5 min)
+    """
     log(f"Starting Zygote (PID: {os.getpid()})")
     log(f"Socket: {socket_path}")
+    log(f"Idle timeout: {idle_timeout}s")
     
     # Setup signal handlers for orphan cleanup
     setup_signal_handlers()
@@ -174,7 +181,9 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None) -> None:
     try:
         while True:
             try:
+                sock.settimeout(idle_timeout)  # Timeout only on accept() for idle exit
                 conn, _ = sock.accept()
+                conn.settimeout(30)  # Per-connection timeout for commands
                 
                 # Signal ready on new connection
                 send_response(conn, {"type": "Ready"})
@@ -222,6 +231,9 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None) -> None:
                 
                 conn.close()
             
+            except socket.timeout:
+                log(f"Idle timeout ({idle_timeout}s), shutting down...")
+                break
             except KeyboardInterrupt:
                 log("Interrupted, shutting down...")
                 break
@@ -232,6 +244,7 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None) -> None:
         cleanup_workers()
         sock.close()
         Path(socket_path).unlink(missing_ok=True)
+        log("Zygote shutdown complete")
 
 
 if __name__ == "__main__":
@@ -240,6 +253,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Velo Zygote Process")
     parser.add_argument("--socket", required=True, help="Unix socket path")
     parser.add_argument("--preload", nargs="*", default=[], help="Modules to pre-import")
+    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout in seconds (default: 300)")
     
     args = parser.parse_args()
-    zygote_main(args.socket, args.preload)
+    zygote_main(args.socket, args.preload, args.timeout)
+

@@ -167,6 +167,22 @@ impl ZygoteLauncher {
             }
         }
 
+        // Detach from parent process group so Zygote survives CLI exit
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                // Create new session (setsid) to detach from parent
+                libc::setsid();
+                Ok(())
+            });
+        }
+
+        // Redirect stdout/stderr to null for daemon mode (prevents BrokenPipe)
+        use std::process::Stdio;
+        cmd.stdout(Stdio::null());
+        cmd.stderr(Stdio::null()); // Full daemon mode - no stdio
+
         // Spawn the Zygote process
         let child = cmd
             .spawn()
@@ -198,8 +214,10 @@ impl ZygoteLauncher {
     }
 
     /// Stop the Zygote process gracefully
+    /// Only sends Shutdown if this launcher owns the Zygote process
     pub fn stop(&mut self) -> Result<()> {
-        if !self.is_running() {
+        // Only stop if we OWN the Zygote process (not just connecting to existing one)
+        if self.zygote_process.is_none() {
             return Ok(());
         }
 
