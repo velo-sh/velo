@@ -1,6 +1,6 @@
-# QA 交付清单模板 (Delivery Checklist Template)
+# QA Delivery Checklist Template
 
-每个测试任务完成后，使用此清单确保质量：
+Use this checklist after completing each testing task to ensure quality.
 
 ---
 
@@ -10,52 +10,52 @@
 
 ---
 
-### Gate 1: 测试覆盖 (Test Coverage)
+### Gate 1: Test Coverage
 
-- [ ] **Happy Path 测试** - 正常用例全部通过
-- [ ] **边界条件测试** - 边界值、空值、极限值
-- [ ] **对抗性测试** - 尽力 BREAK！
-  - [ ] 损坏的输入
-  - [ ] 恶意输入
-  - [ ] 并发/竞态条件
-  - [ ] 资源耗尽
+- [ ] **Happy Path Tests** - All normal use cases pass
+- [ ] **Boundary Condition Tests** - Edge values, null values, limits
+- [ ] **Adversarial Tests** - Try to BREAK it!
+  - [ ] Corrupted input
+  - [ ] Malicious input
+  - [ ] Concurrency/race conditions
+  - [ ] Resource exhaustion
 
-### Gate 2: CI 集成 (CI Integration)
+### Gate 2: CI Integration
 
-- [ ] **本地测试通过** - `uv run python -m pytest tests/qa/ -v`
-- [ ] **CI 测试通过** - GitHub Actions 绿灯
-- [ ] **无 Flaky 测试** - 连续3次运行稳定
+- [ ] **Local Tests Pass** - `uv run python -m pytest tests/qa/ -v`
+- [ ] **CI Tests Pass** - GitHub Actions green
+- [ ] **No Flaky Tests** - Stable across 3 consecutive runs
 
-### Gate 3: 文档 (Documentation)
+### Gate 3: Documentation
 
-- [ ] **测试用例文档化** - docstring 清晰
-- [ ] **已知限制记录** - 注释中说明
-- [ ] **缺陷报告** - 发现的 bug 已记录
+- [ ] **Test Cases Documented** - Clear docstrings
+- [ ] **Known Limitations Recorded** - Comments explain limitations
+- [ ] **Defect Report Created** - Bugs found are documented
 
-### Gate 4: 签收 (Sign-off)
+### Gate 4: Sign-off
 
-- [ ] **Dev 验收测试通过** - `./scripts/test-phase1.5.sh`
-- [ ] **QA 对抗测试通过** - 全部绿灯
-- [ ] **性能指标达标** - 符合 DoD 要求
-- [ ] **准备发布** - 无阻塞问题
+- [ ] **Dev Acceptance Tests Pass** - `./scripts/test-phase1.5.sh`
+- [ ] **QA Adversarial Tests Pass** - All green
+- [ ] **Performance Metrics Met** - DoD requirements satisfied
+- [ ] **Ready for Release** - No blocking issues
 
 ---
 
-## 签收人
+## Sign-off
 
-| 角色 | 姓名 | 日期 | 签名 |
-|------|------|------|------|
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
 | QA | | | |
 | Dev | | | |
 
 ---
 
-## 缺陷摘要 (Defect Summary)
+## Defect Summary
 
-| ID | 严重程度 | 描述 | 状态 |
-|----|----------|------|------|
-| - | - | 无缺陷发现 | - |
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| - | - | No defects found | - |
 
 ---
 
-**清单完成 = 准备交付 ✅**
+**Checklist Complete = Ready to Ship ✅**
