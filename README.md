@@ -4,6 +4,8 @@
 
 The high-performance Python runtime for the AI era, built with Rust.
 
+> 🚧 **Heavy Work In Progress.** Not ready for production. Expect breaking changes.
+
 ## Why Velo?
 
 | Problem | Solution |
