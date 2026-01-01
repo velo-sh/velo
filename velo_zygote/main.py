@@ -32,8 +32,22 @@ _active_workers: Set[int] = set()
 
 
 def log(msg: str) -> None:
-    """Log message with Zygote prefix."""
-    print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
+    """Log message with Zygote prefix. Safe when stderr is closed."""
+    try:
+        print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
+    except (BrokenPipeError, OSError):
+        pass  # Ignore - stderr may be closed in daemon mode
+
+
+def debug_log(msg: str) -> None:
+    """Write debug log to file for daemon mode debugging."""
+    try:
+        with open("/tmp/velo-zygote-debug.log", "a") as f:
+            import datetime
+            f.write(f"{datetime.datetime.now()} - {msg}\n")
+            f.flush()
+    except Exception:
+        pass
 
 
 def reap_zombies(signum=None, frame=None) -> None:
@@ -54,8 +68,12 @@ def setup_signal_handlers() -> None:
     # Reap zombie children automatically
     signal.signal(signal.SIGCHLD, reap_zombies)
     
-    # Handle SIGTERM for graceful shutdown
-    signal.signal(signal.SIGTERM, lambda s, f: sys.exit(0))
+    # Ignore SIGTERM - parent exit sends SIGTERM to process group
+    # We want Zygote to stay alive after parent exits
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    
+    # Ignore SIGPIPE - prevents crash when parent closes stderr
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
 
 def preload_modules(modules: List[str]) -> None:
@@ -68,11 +86,29 @@ def preload_modules(modules: List[str]) -> None:
             log(f"Warning: Failed to pre-load {module}: {e}")
 
 
+def is_socket_in_use(socket_path: str) -> bool:
+    """Check if a socket is actively being used by another Zygote."""
+    try:
+        test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        test_sock.settimeout(0.5)
+        test_sock.connect(socket_path)
+        # If connect succeeds, socket is in use
+        test_sock.close()
+        return True
+    except (ConnectionRefusedError, FileNotFoundError, socket.timeout):
+        return False
+    except Exception:
+        return False
+
+
 def create_socket(socket_path: str) -> socket.socket:
     """Create and bind Unix socket."""
-    # Remove existing socket if present
     path = Path(socket_path)
+    
+    # Only remove stale socket - don't delete if actively in use
     if path.exists():
+        if is_socket_in_use(socket_path):
+            raise RuntimeError(f"Socket {socket_path} is already in use by another Zygote")
         path.unlink()
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -181,17 +217,25 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
     try:
         while True:
             try:
+                debug_log("Before accept()")
+                log("DEBUG: Waiting for connection (accept)...")
                 sock.settimeout(idle_timeout)  # Timeout only on accept() for idle exit
                 conn, _ = sock.accept()
+                debug_log("After accept() - got connection")
+                log("DEBUG: Connection accepted, setting timeout...")
                 conn.settimeout(30)  # Per-connection timeout for commands
                 
                 # Signal ready on new connection
                 send_response(conn, {"type": "Ready"})
+                log("DEBUG: Sent Ready, entering command loop...")
                 
                 # Handle commands
                 while True:
+                    log("DEBUG: Waiting for command (recv)...")
                     cmd = recv_command(conn)
+                    log(f"DEBUG: Received: {cmd}")
                     if cmd is None:
+                        log("DEBUG: recv_command returned None, breaking inner loop")
                         break
                     
                     cmd_type = cmd.get("type")
@@ -229,18 +273,28 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                             "message": f"Unknown command: {cmd_type}"
                         })
                 
+                log("DEBUG: Inner loop exited, closing conn, continuing outer loop...")
                 conn.close()
             
             except socket.timeout:
+                debug_log("Exit: socket.timeout")
                 log(f"Idle timeout ({idle_timeout}s), shutting down...")
                 break
             except KeyboardInterrupt:
+                debug_log("Exit: KeyboardInterrupt")
                 log("Interrupted, shutting down...")
                 break
-            except Exception as e:
-                log(f"Error: {e}")
+            except BaseException as e:
+                debug_log(f"Exit: BaseException {type(e).__name__}: {e}")
+                log(f"Error in main loop: {type(e).__name__}: {e}")
+                if isinstance(e, SystemExit):
+                    debug_log(f"SystemExit code: {e.code}")
+                import traceback
+                log(f"Traceback: {traceback.format_exc()}")
     
     finally:
+        debug_log("Entering finally block")
+        log("DEBUG: Exiting main loop, entering finally...")
         cleanup_workers()
         sock.close()
         Path(socket_path).unlink(missing_ok=True)
