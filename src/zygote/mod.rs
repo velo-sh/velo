@@ -178,10 +178,10 @@ impl ZygoteLauncher {
             });
         }
 
-        // Redirect stdout/stderr to null for daemon mode (prevents BrokenPipe)
+        // Redirect stdout/stderr to null for daemon mode (prevents exit on parent close)
         use std::process::Stdio;
         cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null()); // Full daemon mode - no stdio
+        cmd.stderr(Stdio::null());
 
         // Spawn the Zygote process
         let child = cmd
@@ -256,8 +256,9 @@ impl ZygoteLauncher {
     }
 
     /// Check if the Zygote process is running
+    /// Either we own the process (zygote_pid set) or socket exists (external Zygote)
     pub fn is_running(&self) -> bool {
-        self.zygote_pid.is_some()
+        self.zygote_pid.is_some() || self.socket_path.exists()
     }
 
     /// Get status information about the Zygote
