@@ -48,6 +48,12 @@ fn setup_python_env(project_dir: &Path) -> Option<EnvCache> {
     // Try to load cache if fingerprint matches
     if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
         if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
+            // KEY OPTIMIZATION: Set PYTHONPATH BEFORE Python initializes
+            // This allows Python to skip its expensive path scanning during init
+            let pythonpath = cache.sys_path.join(":");
+            unsafe {
+                std::env::set_var("PYTHONPATH", &pythonpath);
+            }
             return Some(cache);
         }
     }
