@@ -72,6 +72,18 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // Validate app format
     let (module, _attr) = args.parse_app()?;
 
+    // Check if uvicorn is installed FIRST
+    if !check_uvicorn_installed(python_path) {
+        eprintln!("❌ Error: uvicorn is not installed");
+        eprintln!();
+        eprintln!("uvicorn is required to run ASGI applications.");
+        eprintln!("Install it with:");
+        eprintln!("    uv add uvicorn");
+        eprintln!("    # or");
+        eprintln!("    pip install uvicorn");
+        std::process::exit(1);
+    }
+
     // Detect framework for optimized preloading
     let framework = detect_framework(module, project_dir);
     let preload_modules = get_preload_modules(framework);
@@ -138,15 +150,30 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     eprintln!();
 
     // Execute uvicorn
-    let status = cmd
-        .status()
-        .context("Failed to start uvicorn. Is it installed? Run: uv add uvicorn")?;
+    let status = cmd.status().context("Failed to start uvicorn")?;
 
     if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+        let code = status.code().unwrap_or(1);
+        if code == 1 {
+            eprintln!();
+            eprintln!(
+                "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+            );
+        }
+        std::process::exit(code);
     }
 
     Ok(())
+}
+
+fn check_uvicorn_installed(python_path: &Path) -> bool {
+    Command::new(python_path)
+        .args(["-c", "import uvicorn"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 #[cfg(not(unix))]

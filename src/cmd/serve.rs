@@ -8,10 +8,17 @@ use crate::serve::{self, ServeArgs};
 
 /// Handle 'velo serve' command
 pub fn cmd_serve(args: &[String]) -> Result<()> {
+    // Handle --help early
+    if args.len() >= 3 && (args[2] == "--help" || args[2] == "-h") {
+        print_serve_help();
+        std::process::exit(0);
+    }
+
     if args.len() < 3 {
         eprintln!("Error: missing app argument");
         eprintln!("Usage: velo serve <app> [OPTIONS]");
         eprintln!("Example: velo serve main:app --workers 4");
+        eprintln!("\nRun 'velo serve --help' for more information");
         std::process::exit(1);
     }
 
@@ -87,4 +94,33 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     serve::run_server(&serve_args, &python_path, &project_dir)?;
 
     Ok(())
+}
+
+/// Print help for serve command
+fn print_serve_help() {
+    eprintln!(
+        "velo serve - Serve a Python ASGI/WSGI application
+
+USAGE:
+    velo serve <app> [OPTIONS]
+
+ARGUMENTS:
+    <app>    Application path (e.g., 'main:app', 'myapp.main:create_app()')
+
+OPTIONS:
+    --host <HOST>    Bind host (default: 127.0.0.1)
+    --port <PORT>    Bind port (default: 8000)
+    --workers <N>    Number of workers (default: 1)
+    --reload         Enable hot reload
+    --no-zygote      Disable Zygote pre-warming
+    -h, --help       Print this help
+
+EXAMPLES:
+    velo serve main:app
+    velo serve main:app --port 9000 --reload
+    velo serve main:app --workers 4 --no-zygote
+
+NOTE:
+    Requires uvicorn to be installed. Run: uv add uvicorn"
+    );
 }
