@@ -158,7 +158,7 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
     let mut launcher =
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
-    if !socket_path.exists() {
+    let started_new = if !socket_path.exists() {
         eprintln!("🚀 Starting Zygote...");
         if let Err(e) = launcher.start(&[]) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
@@ -166,13 +166,20 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
             return Ok(None);
         }
         eprintln!("✅ Zygote ready");
-    }
+        true
+    } else {
+        false
+    };
 
     // Try to spawn via Zygote
     if socket_path.exists() {
         match launcher.spawn_worker(script, &[]) {
             Ok(worker) => {
                 eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                // Keep Zygote alive if we started it (daemon mode)
+                if started_new {
+                    std::mem::forget(launcher);
+                }
                 return Ok(Some(()));
             }
             Err(e) => {
