@@ -66,7 +66,24 @@ NumPy import: 57ms  (-11%) ✅
 3. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
 4. **Deferred Capture**: First run executes immediately, caches for next time
 
+
 ## Development
+
+### Setup
+
+```bash
+# Clone the repo
+git clone https://github.com/velo-sh/velo.git
+cd velo
+
+# Install pre-commit hooks (required for all developers)
+git config core.hooksPath .githooks
+
+# Create venv for testing
+uv venv && uv pip install pytest
+```
+
+### Testing
 
 ```bash
 # Run tests
@@ -75,6 +92,18 @@ uv run run_tests.py
 # Benchmark against real projects
 python3 benchmark_projects.py --all -n 5
 ```
+
+### Code Quality
+
+Pre-commit hooks automatically run on every commit:
+- `cargo fmt --check` - Format check
+- `cargo clippy -- -D warnings` - Lint check
+
+To run manually:
+```bash
+cargo fmt && cargo clippy -- -D warnings
+```
+
 
 ## Compatibility
 
