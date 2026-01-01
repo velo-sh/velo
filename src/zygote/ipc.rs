@@ -26,6 +26,12 @@ pub enum ZygoteCommand {
         /// Optional path for stdout capture (worker writes here)
         #[serde(default)]
         stdout_path: Option<PathBuf>,
+        /// Optional path for stderr capture (worker writes here)
+        #[serde(default)]
+        stderr_path: Option<PathBuf>,
+        /// Optional path for exit code capture (worker writes here)
+        #[serde(default)]
+        exit_code_path: Option<PathBuf>,
     },
     /// Shutdown the Zygote process
     Shutdown,
