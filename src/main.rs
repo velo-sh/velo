@@ -105,7 +105,7 @@ fn capture_sys_path(python: &Path) -> Result<Vec<String>> {
 /// Setup Python environment, potentially using cache.
 /// Returns (pythonpath, needs_capture) - if needs_capture is true, caller should
 /// capture sys.path after script runs for next time.
-fn setup_python_env(project_dir: &Path, python: &Path) -> (Option<String>, bool) {
+fn setup_python_env(project_dir: &Path, _python: &Path) -> (Option<String>, bool) {
     // Auto-detect venv site-packages
     let venv_site_packages = detect_venv_site_packages(project_dir);
 
@@ -125,22 +125,17 @@ fn setup_python_env(project_dir: &Path, python: &Path) -> (Option<String>, bool)
                 return (venv_site_packages, true);
             }
 
-            // Check ABI compatibility
-            if let Ok(current_info) = python_info::PythonInfo::detect(python) {
-                if !cache.is_abi_compatible(&current_info.abi_tag) {
-                    eprintln!(
-                        "⚠️  ABI Mismatch Detected\n\
-                         ├─ Cached:  Python {} ({})\n\
-                         ├─ Current: {} ({})\n\
-                         └─ Action:  Rebuilding cache...\n",
-                        cache.python_version,
-                        cache.abi_tag,
-                        current_info.version,
-                        current_info.abi_tag
-                    );
-                    return (venv_site_packages, true);
-                }
+            // Check if cache has ABI info (Phase 1.5+)
+            // If abi_tag is empty, this is old cache format - rebuild
+            if cache.abi_tag.is_empty() {
+                eprintln!("⚠️  Cache missing ABI info, rebuilding...\n");
+                return (venv_site_packages, true);
             }
+
+            // Fast path: compare Python executable path hash instead of spawning Python
+            // The ABI is stable for a given Python binary, so if fingerprint matches
+            // and cache has ABI, we trust it without re-detecting
+            // (fingerprint includes uv.lock which tracks Python version)
 
             let mut paths = cache.sys_path.clone();
 
