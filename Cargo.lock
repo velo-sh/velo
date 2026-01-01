@@ -463,6 +463,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "libc",
  "rkyv",
  "serde",
  "serde_json",

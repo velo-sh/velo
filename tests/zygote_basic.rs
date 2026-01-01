@@ -108,9 +108,7 @@ mod basic_tests {
 #[cfg(unix)]
 mod spawn_tests {
     /// Test spawning a worker that executes a script
-    /// NOTE: This test is ignored until Week 2 fork execution is implemented
     #[test]
-    #[ignore = "Week 2 scope - spawn_worker not yet implemented"]
     fn test_spawn_worker_executes_script() {
         use std::fs;
         use velo::zygote::ZygoteLauncher;
@@ -135,12 +133,21 @@ mod spawn_tests {
 
         // Spawn worker
         let worker = launcher.spawn_worker(&script_path, &[]).unwrap();
+        assert!(worker.pid() > 0);
 
-        // Wait for worker to complete
-        worker.wait().unwrap();
+        // Wait for output file to be created (worker runs in Python Zygote, not our process)
+        for _ in 0..50 {
+            if output_file.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
 
         // Verify script executed
-        assert!(output_file.exists());
+        assert!(
+            output_file.exists(),
+            "Output file should be created by worker"
+        );
         let content = fs::read_to_string(&output_file).unwrap();
         assert_eq!(content, "hello from worker");
 
