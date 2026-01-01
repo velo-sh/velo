@@ -2,17 +2,20 @@
 //!
 //! Caches Python's sys.path and other configuration to avoid
 //! expensive filesystem scanning on subsequent runs.
+//!
+//! Uses rkyv for zero-copy deserialization - fastest possible cache loading.
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, rancor::Error as RkyvError};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const CACHE_FILE: &str = ".velo_cache/env.json";
+const CACHE_FILE: &str = ".velo_cache/env.rkyv";
 
 /// Cached environment configuration.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(compare(PartialEq), derive(Debug))]
 pub struct EnvCache {
     /// SHA256 hash of uv.lock (environment fingerprint)
     pub fingerprint: String,
@@ -36,20 +39,24 @@ impl EnvCache {
     }
 
     /// Load cache from disk if fingerprint matches.
+    /// Uses rkyv zero-copy deserialization for maximum speed.
     pub fn load(project_dir: &Path, current_fingerprint: &str) -> Option<Self> {
         let cache_path = project_dir.join(CACHE_FILE);
-        let content = fs::read_to_string(&cache_path).ok()?;
-        let cache: EnvCache = serde_json::from_str(&content).ok()?;
+        let bytes = fs::read(&cache_path).ok()?;
+
+        // Zero-copy access to archived data
+        let archived = rkyv::access::<ArchivedEnvCache, RkyvError>(&bytes).ok()?;
 
         // Only return if fingerprint matches
-        if cache.fingerprint == current_fingerprint {
-            Some(cache)
+        if archived.fingerprint == current_fingerprint {
+            // Deserialize to owned struct
+            rkyv::deserialize::<EnvCache, RkyvError>(archived).ok()
         } else {
             None
         }
     }
 
-    /// Save cache to disk.
+    /// Save cache to disk using rkyv binary format.
     pub fn save(&self, project_dir: &Path) -> Result<()> {
         let cache_path = project_dir.join(CACHE_FILE);
         let cache_dir = cache_path.parent().unwrap();
@@ -57,14 +64,17 @@ impl EnvCache {
         fs::create_dir_all(cache_dir)
             .with_context(|| format!("Failed to create cache directory: {:?}", cache_dir))?;
 
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(&cache_path, content)
+        let bytes = rkyv::to_bytes::<RkyvError>(self)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize cache: {}", e))?;
+        
+        fs::write(&cache_path, &bytes)
             .with_context(|| format!("Failed to write cache: {:?}", cache_path))?;
 
         Ok(())
     }
 
     /// Get the cache directory path.
+    #[allow(dead_code)]
     pub fn cache_dir(project_dir: &Path) -> PathBuf {
         project_dir.join(".velo_cache")
     }
@@ -73,7 +83,6 @@ impl EnvCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::tempdir;
 
     #[test]
