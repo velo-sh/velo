@@ -18,6 +18,9 @@ hex = "0.4"
 anyhow = "1.0"
 rkyv = { version = "0.8.12", features = ["bytecheck"] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 lto = "fat"           # Most aggressive LTO
 strip = "symbols"     # Strip all symbols
