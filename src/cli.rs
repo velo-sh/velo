@@ -183,6 +183,27 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
                 return Ok(Some(()));
             }
             Err(e) => {
+                // Check if this is a stale socket (connection refused)
+                let is_stale = e.to_string().contains("Connection refused")
+                    || e.to_string().contains("Connection failed");
+
+                if is_stale && !started_new {
+                    // Stale socket - remove and restart Zygote
+                    eprintln!("🔄 Stale socket detected, restarting Zygote...");
+                    zygote::ipc::cleanup_socket(&socket_path);
+
+                    if let Ok(()) = launcher.start(&[]) {
+                        eprintln!("✅ Zygote ready");
+
+                        // Retry spawn
+                        if let Ok(worker) = launcher.spawn_worker(script, &[]) {
+                            eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                            std::mem::forget(launcher);
+                            return Ok(Some(()));
+                        }
+                    }
+                }
+
                 eprintln!("⚠️ Zygote spawn failed: {}", e);
                 eprintln!("   Falling back to normal mode");
             }

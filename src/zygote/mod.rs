@@ -42,17 +42,15 @@ pub fn is_supported() -> bool {
 fn find_zygote_module() -> Result<PathBuf> {
     // Try relative to executable first
     if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            // Development: ../velo_zygote/main.py
-            let dev_path = exe_dir.join("../velo_zygote/main.py");
-            if dev_path.exists() {
-                return Ok(dev_path.canonicalize().unwrap_or(dev_path));
-            }
-
-            // Installed: velo_zygote/main.py in same dir
-            let installed_path = exe_dir.join("velo_zygote/main.py");
-            if installed_path.exists() {
-                return Ok(installed_path);
+        // Search up to 3 levels from executable
+        let mut search_dir = exe_path.parent().map(|p| p.to_path_buf());
+        for _ in 0..4 {
+            if let Some(ref dir) = search_dir {
+                let module_path = dir.join("velo_zygote/main.py");
+                if module_path.exists() {
+                    return Ok(module_path.canonicalize().unwrap_or(module_path));
+                }
+                search_dir = dir.parent().map(|p| p.to_path_buf());
             }
         }
     }
@@ -276,11 +274,20 @@ impl ZygoteLauncher {
             return Err(ZygoteError::NotRunning);
         }
 
+        // Canonicalize script path - Zygote may have different CWD
+        let script_path = if script.is_absolute() {
+            script.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(script))
+                .unwrap_or_else(|_| script.to_path_buf())
+        };
+
         // Send FORK command over socket
         let response = ipc::send_command(
             &self.socket_path,
             ipc::ZygoteCommand::Fork {
-                script_path: script.to_path_buf(),
+                script_path,
                 args: args.iter().map(|s| s.to_string()).collect(),
             },
         )?;
