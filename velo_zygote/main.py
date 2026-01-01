@@ -136,7 +136,7 @@ def recv_command(conn: socket.socket) -> Optional[dict]:
     return json.loads(line)
 
 
-def handle_fork(script_path: str, args: List[str]) -> int:
+def handle_fork(script_path: str, args: List[str], stdout_path: Optional[str] = None) -> int:
     """Fork and execute script in child process."""
     global _active_workers
     
@@ -149,14 +149,22 @@ def handle_fork(script_path: str, args: List[str]) -> int:
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
             
-            # Reopen stdout/stderr to terminal (Zygote's are null)
-            try:
-                tty = open("/dev/tty", "w")
-                sys.stdout = tty
-                sys.stderr = tty
-            except OSError:
-                # No controlling terminal, keep inherited (null)
-                pass
+            # Redirect stdout to file if provided (for IPC capture)
+            if stdout_path:
+                try:
+                    stdout_file = open(stdout_path, "w")
+                    sys.stdout = stdout_file
+                    # stderr stays null (inherited from Zygote)
+                except OSError:
+                    pass
+            else:
+                # Try terminal fallback
+                try:
+                    tty = open("/dev/tty", "w")
+                    sys.stdout = tty
+                    sys.stderr = tty
+                except OSError:
+                    pass
             
             # Set up sys.argv
             sys.argv = [script_path] + args
@@ -166,6 +174,8 @@ def handle_fork(script_path: str, args: List[str]) -> int:
                 code = compile(f.read(), script_path, "exec")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
+            # Flush output before exit
+            sys.stdout.flush()
             sys.exit(0)
         except Exception as e:
             print(f"Error executing {script_path}: {e}", file=sys.stderr)
@@ -252,6 +262,7 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                     if cmd_type == "Fork":
                         script_path = cmd.get("script_path", "")
                         args = cmd.get("args", [])
+                        stdout_path = cmd.get("stdout_path")  # IPC stdout capture
                         
                         if not script_path or not Path(script_path).exists():
                             send_response(conn, {
@@ -260,7 +271,7 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                             })
                             continue
                         
-                        worker_pid = handle_fork(script_path, args)
+                        worker_pid = handle_fork(script_path, args, stdout_path)
                         send_response(conn, {
                             "type": "Forked",
                             "worker_pid": worker_pid
