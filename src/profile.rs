@@ -10,15 +10,16 @@ use std::fs;
 use std::path::Path;
 
 /// Python code to inject as sitecustomize.py for profiling.
-/// This hooks into __builtins__.__import__ to track import times.
+/// This hooks into builtins.__import__ to track import times.
 pub const SITECUSTOMIZE_PY: &str = r#"
 import sys
 import time
 import json
 import os
+import builtins
 
 _velo_import_times = {}
-_velo_original_import = __builtins__.__import__
+_velo_original_import = builtins.__import__
 
 def _velo_timed_import(name, *args, **kwargs):
     start = time.perf_counter()
@@ -29,7 +30,7 @@ def _velo_timed_import(name, *args, **kwargs):
             _velo_import_times[name] = elapsed
     return result
 
-__builtins__.__import__ = _velo_timed_import
+builtins.__import__ = _velo_timed_import
 
 import atexit
 @atexit.register
@@ -161,7 +162,7 @@ mod tests {
     #[test]
     fn test_sitecustomize_contains_import_hook() {
         assert!(SITECUSTOMIZE_PY.contains("_velo_timed_import"));
-        assert!(SITECUSTOMIZE_PY.contains("__builtins__.__import__"));
+        assert!(SITECUSTOMIZE_PY.contains("builtins.__import__"));
         assert!(SITECUSTOMIZE_PY.contains("VELO_PROFILE_OUTPUT"));
     }
 
