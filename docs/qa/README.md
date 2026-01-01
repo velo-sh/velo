@@ -7,6 +7,7 @@ This directory contains QA testing documentation for Velo.
 | Phase | Document | Description |
 |-------|----------|-------------|
 | 1.5 | [phase-1.5-test-matrix.md](./phase-1.5-test-matrix.md) | Environment Detection feature tests |
+| 3 | [phase-3-test-matrix.md](./phase-3-test-matrix.md) | Zygote Mode feature tests |
 
 ## Quick Start
 
