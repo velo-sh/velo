@@ -223,7 +223,7 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
         subprocess.run([venv_python, script], cwd=project_dir, capture_output=True)
         cpython_times.append((time.perf_counter() - start) * 1000)
     
-    # Benchmark Velo (cache miss first, then cache hit)
+    # Benchmark Velo Standard Mode (cache miss first, then cache hit)
     velo_miss_times = []
     velo_hit_times = []
     
@@ -240,24 +240,57 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
         subprocess.run([VELO_BIN, "run", script], cwd=project_dir, capture_output=True)
         velo_hit_times.append((time.perf_counter() - start) * 1000)
     
+    # Benchmark Velo Zygote Mode
+    # Stop any existing zygote
+    subprocess.run([VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True)
+    
+    # Zygote cold start (includes daemon startup)
+    zygote_cold_times = []
+    for i in range(iterations):
+        subprocess.run([VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True)
+        start = time.perf_counter()
+        subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
+        zygote_cold_times.append((time.perf_counter() - start) * 1000)
+    
+    # Zygote warm start (daemon already running)
+    zygote_warm_times = []
+    # Start zygote first
+    subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
+    for i in range(iterations):
+        start = time.perf_counter()
+        subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
+        zygote_warm_times.append((time.perf_counter() - start) * 1000)
+    
+    # Stop zygote after benchmark
+    subprocess.run([VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True)
+    
     # Results
     import statistics
     cpython_avg = statistics.mean(cpython_times)
     velo_miss_avg = statistics.mean(velo_miss_times)
     velo_hit_avg = statistics.mean(velo_hit_times)
+    zygote_cold_avg = statistics.mean(zygote_cold_times)
+    zygote_warm_avg = statistics.mean(zygote_warm_times)
     
     print(f"\nResults ({iterations} runs):")
-    print(f"  CPython:          {cpython_avg:>8.1f}ms")
+    print(f"  CPython:              {cpython_avg:>8.1f}ms")
     
-    # Calculate speedup (positive = faster, negative = slower)
-    miss_speedup = (cpython_avg - velo_miss_avg) / cpython_avg * 100
-    hit_speedup = (cpython_avg - velo_hit_avg) / cpython_avg * 100
+    # Calculate speedups
+    def speedup_label(baseline, measured):
+        speedup = (baseline - measured) / baseline * 100
+        if speedup > 0:
+            return f"{abs(speedup):.0f}% faster ✅"
+        else:
+            return f"{abs(speedup):.0f}% slower"
     
-    miss_label = f"{abs(miss_speedup):.0f}% faster ✅" if miss_speedup > 0 else f"{abs(miss_speedup):.0f}% slower"
-    hit_label = f"{abs(hit_speedup):.0f}% faster ✅" if hit_speedup > 0 else f"{abs(hit_speedup):.0f}% slower"
+    print(f"  Velo (cache miss):    {velo_miss_avg:>8.1f}ms  {speedup_label(cpython_avg, velo_miss_avg)}")
+    print(f"  Velo (cache hit):     {velo_hit_avg:>8.1f}ms  {speedup_label(cpython_avg, velo_hit_avg)}")
+    print(f"  Zygote (cold start):  {zygote_cold_avg:>8.1f}ms  {speedup_label(cpython_avg, zygote_cold_avg)}")
+    print(f"  Zygote (warm start):  {zygote_warm_avg:>8.1f}ms  {speedup_label(cpython_avg, zygote_warm_avg)} ⚡")
     
-    print(f"  Velo (cache miss):{velo_miss_avg:>8.1f}ms  {miss_label}")
-    print(f"  Velo (cache hit): {velo_hit_avg:>8.1f}ms  {hit_label}")
+    if cpython_avg > 0:
+        speedup_ratio = cpython_avg / zygote_warm_avg
+        print(f"\n  🚀 Zygote warm speedup: {speedup_ratio:.1f}x vs CPython")
 
 
 def main():
