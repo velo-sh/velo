@@ -14,7 +14,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 
 | RFC | Title | Status | Target |
 |-----|-------|--------|--------|
-| [0001](./0001-phase-1.5-env-detection.md) | Phase 1.5 Environment Detection | RFC | v0.2.0 |
+| [0001](./0001-phase-1.5-env-detection.md) | Phase 1.5 Environment Detection | ✅ Implemented | v0.2.0 |
 
 ## RFC Lifecycle
 
