@@ -176,7 +176,8 @@ impl ZygoteLauncher {
             });
         }
 
-        // Redirect stdout/stderr to null for daemon mode (prevents exit on parent close)
+        // Redirect stdout/stderr to null for daemon mode
+        // Worker output goes through a different channel (not Zygote's stdout)
         use std::process::Stdio;
         cmd.stdout(Stdio::null());
         cmd.stderr(Stdio::null());
