@@ -10,8 +10,9 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow | **11% faster** startup via path caching |
+| Python cold start is slow | **2-5% faster** startup via path caching |
 | Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
+| ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
 | Dependency chaos | Auto-detects `uv` virtual environments |
 
 ## Architecture
@@ -49,22 +50,39 @@ cargo build --release
 ## Benchmark Results
 
 ```
-=== CPython ===
-NumPy import: 64ms
+=== FastAPI Microservice ===
+CPython:           549ms
+Velo (cached):     539ms  (2% faster) ✅
 
-=== Velo (first run, no cache) ===
-NumPy import: 69ms  (+8%)
+=== Django Application ===
+CPython:           416ms
+Velo (cached):     397ms  (5% faster) ✅
 
-=== Velo (cached) ===
-NumPy import: 57ms  (-11%) ✅
+=== Data Science Pipeline ===
+CPython:           185ms
+Velo (cached):     186ms  (1% slower, within margin)
 ```
 
 ## How It Works
 
 1. **Python Detection**: Finds `.venv/bin/python` or `VELO_PYTHON` env var
-2. **Environment Fingerprinting**: Hash `uv.lock` to detect changes
-3. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
-4. **Deferred Capture**: First run executes immediately, caches for next time
+2. **ABI Fingerprinting**: Detects Python version and ABI tag for C-extension compatibility
+3. **Environment Fingerprinting**: Hash `uv.lock` to detect dependency changes
+4. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
+5. **Deferred Capture**: First run executes immediately, caches for next time
+
+## Commands
+
+```bash
+# Run a Python script with optimized startup
+velo run script.py
+
+# Run with startup profiling
+velo run --profile script.py
+
+# Show environment information
+velo info
+```
 
 
 
@@ -115,7 +133,7 @@ cargo fmt && cargo clippy -- -D warnings
 ## Roadmap
 
 - [x] Phase 1: Environment fingerprinting & path caching
-- [x] Phase 1.5: Binary size optimization (363KB)
+- [x] Phase 1.5: Environment detection (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
 - [ ] Phase 3: Zygote mode (< 5ms cold start)
 - [ ] Phase 4: Static analysis & bytecode optimization
