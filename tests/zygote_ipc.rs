@@ -40,6 +40,9 @@ mod ipc_tests {
         let fork_cmd = ZygoteCommand::Fork {
             script_path: PathBuf::from("/tmp/test.py"),
             args: vec!["--arg1".to_string()],
+            stdout_path: None,
+            stderr_path: None,
+            exit_code_path: None,
         };
         let serialized = serde_json::to_string(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = serde_json::from_str(&serialized).unwrap();
@@ -107,6 +110,9 @@ mod ipc_tests {
             ZygoteCommand::Fork {
                 script_path: PathBuf::from("/tmp/test.py"),
                 args: vec![],
+                stdout_path: None,
+                stderr_path: None,
+                exit_code_path: None,
             },
         )
         .unwrap();
