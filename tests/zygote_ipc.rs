@@ -65,7 +65,6 @@ mod ipc_tests {
     #[test]
     fn test_socket_roundtrip() {
         use std::io::{BufRead, BufReader, Write};
-        use std::os::unix::net::UnixStream;
         use std::thread;
         use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
 
