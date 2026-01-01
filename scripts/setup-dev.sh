@@ -42,11 +42,11 @@ uv venv --python 3.11
 uv pip install pytest
 echo "✅ Python venv created"
 
-# Verify setup
+# Verify setup (run same checks as pre-commit)
 echo
-echo "🧪 Verifying setup..."
-cargo build --release
-echo "✅ Build successful"
+echo "🧪 Verifying setup (running pre-commit checks)..."
+./.githooks/pre-commit
+echo "✅ All checks passed"
 
 echo
 echo "=========================================="
