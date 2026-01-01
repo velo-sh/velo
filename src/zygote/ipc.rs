@@ -98,6 +98,26 @@ pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<Zygote
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| ZygoteError::ConnectionFailed(e.to_string()))?;
 
+    let stream_clone = stream
+        .try_clone()
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    let mut reader = BufReader::new(stream_clone);
+
+    // First, receive READY response from Zygote
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    let ready_response: ZygoteResponse =
+        serde_json::from_str(&line).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    if !matches!(ready_response, ZygoteResponse::Ready) {
+        return Err(ZygoteError::ProtocolError(
+            "Expected READY response from Zygote".to_string(),
+        ));
+    }
+
     // Send command
     let json =
         serde_json::to_string(&command).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
@@ -106,9 +126,8 @@ pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<Zygote
         .flush()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-    // Read response
-    let mut reader = BufReader::new(stream);
-    let mut line = String::new();
+    // Read response to command
+    line.clear();
     reader
         .read_line(&mut line)
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
