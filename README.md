@@ -49,20 +49,22 @@ cargo build --release
 
 ## Benchmark Results
 
+![Velo Zygote Benchmark](./assets/benchmark.png)
+
 ### 🧬 Zygote Mode (v0.3.0)
 
 ```
-=== Django Application ===
-CPython:             406ms
-Zygote (warm):       307ms  (24% faster!) ✅ ⚡
-
 === FastAPI Microservice ===
-CPython:             514ms
-Zygote (warm):       477ms  (7% faster) ✅
+CPython:             572ms
+Zygote (warm):       442ms  (23% faster!) ✅ ⚡
+
+=== Django Application ===
+CPython:             401ms
+Zygote (warm):       328ms  (18% faster) ✅
 
 === Data Science Pipeline ===
-CPython:             210ms
-Zygote (warm):       170ms  (19% faster) ✅
+CPython:             233ms
+Zygote (warm):       187ms  (20% faster) ✅
 ```
 
 ### Standard Cache Mode
