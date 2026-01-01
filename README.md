@@ -16,11 +16,18 @@ The high-performance Python runtime for the AI era, built with Rust.
 ## Quick Start
 
 ```bash
-# Run a Python script with Velo
-velo run script.py
+# Install
+cargo install --path .
 
-# Build a self-contained binary (Phase 2)
-velo build -o app script.py
+# Run the demo script
+velo run tests/corpus/hello.py
+```
+
+## Development
+
+```bash
+# Run tests (requires uv)
+uv run run_tests.py
 ```
 
 ## Compatibility
@@ -28,16 +35,6 @@ velo build -o app script.py
 Velo is **not** a new language. It runs standard Python code and maintains full compatibility with:
 - CPython 3.11+
 - PyPI packages (NumPy, Torch, etc.)
-
-## Development
-
-```bash
-# Build
-cargo build --release
-
-# Run tests (requires uv)
-uv run run_tests.py
-```
 
 ## License
 

@@ -9,7 +9,15 @@ CORPUS_DIR = Path("./tests/corpus")
 
 def compile_velo():
     print("🔨 Building Velo...", end="", flush=True)
-    res = subprocess.run(["cargo", "build", "--release"], capture_output=True)
+    # Build with a clean PATH that excludes the venv, so build.rs finds the system Python
+    # The uv-managed Python has broken prefix paths (/install) that don't work with PYTHONHOME
+    import os
+    env = os.environ.copy()
+    venv_bin = str(Path(".venv/bin").resolve())
+    path_parts = env.get("PATH", "").split(os.pathsep)
+    clean_path = os.pathsep.join(p for p in path_parts if not p.startswith(venv_bin))
+    env["PATH"] = clean_path
+    res = subprocess.run(["cargo", "build", "--release"], capture_output=True, env=env)
     if res.returncode != 0:
         print("\n❌ Build Failed!")
         print(res.stderr.decode())
