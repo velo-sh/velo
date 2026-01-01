@@ -18,6 +18,8 @@ anyhow = "1.0"
 rkyv = { version = "0.8.12", features = ["bytecheck"] }
 
 [profile.release]
-lto = true
-strip = true
-codegen-units = 1
+lto = "fat"           # Most aggressive LTO
+strip = "symbols"     # Strip all symbols
+codegen-units = 1     # Better optimization
+opt-level = "z"       # Optimize for size
+panic = "abort"       # Smaller panic handling
