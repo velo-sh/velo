@@ -100,16 +100,14 @@ class TestDeploymentScenarios:
             
             code, stdout, stderr = env.run(installed_velo, ["run", "--zygote", "test.py"])
             
-            # This SHOULD fail gracefully or actually work
-            # Currently: "Could not find velo_zygote/main.py"
-            if "Could not find velo_zygote" in stderr:
-                print("  ⚠️ DEPLOY BUG: Zygote module not found when binary is isolated!")
-                print(f"  Installed at: {installed_velo}")
-                print(f"  Search failed because velo_zygote/ not in:")
-                print(f"    - {env.bin_dir.parent}")  # 4 levels up from binary
-            
-            # For now, just document behavior
-            print(f"  Result: code={code}, stderr={stderr[:100] if stderr else 'none'}")
+            # MUST work when binary is isolated - this is how real users install!
+            # If it says "Could not find velo_zygote", that's a DEPLOYMENT BUG
+            assert "Could not find velo_zygote" not in stderr, (
+                f"DEPLOY-001 BUG: Installed binary can't find module!\n"
+                f"Binary: {installed_velo}\n"
+                f"This breaks: cargo install, pip install, brew install\n"
+                f"stderr: {stderr}"
+            )
 
     def test_deploy_002_deep_nested_project(self):
         """
@@ -252,11 +250,15 @@ class TestEnvironmentVariableFallbacks:
                 env={**os.environ, "VELO_HOME": str(custom_home)}
             )
             
-            print(f"  VELO_HOME={custom_home}")
-            print(f"  Result: code={result.returncode}")
-            
-            if "Could not find velo_zygote" in result.stderr:
-                print("  ⚠️ DESIGN GAP: VELO_HOME not respected!")
+            # VELO_HOME should be respected!
+            # If it's not, Zygote can't find the module even when we tell it where
+            assert "Could not find velo_zygote" not in result.stderr, (
+                f"ENV-001 BUG: VELO_HOME not respected!\n"
+                f"VELO_HOME={custom_home}\n"
+                f"Module exists at: {custom_zygote / 'main.py'}\n"
+                f"But Zygote still can't find it!\n"
+                f"stderr: {result.stderr}"
+            )
 
     def test_env_002_pythonpath_ignored(self):
         """
@@ -330,10 +332,14 @@ class TestInstallDirectoryStructures:
             print(f"  Binary: {pip_velo}")
             print(f"  Module: {zygote_pkg}")
             print(f"  Distance: many levels apart!")
-            print(f"  Result: code={code}")
-            
-            if "Could not find velo_zygote" in stderr:
-                print("  ⚠️ DEPLOY BUG: pip-style install structure not supported!")
+            # pip install structure MUST be supported
+            assert "Could not find velo_zygote" not in stderr, (
+                f"STRUCT-001 BUG: pip install structure not supported!\n"
+                f"Binary: {pip_velo}\n"
+                f"Module: {zygote_pkg}\n"
+                f"This is a critical deployment bug.\n"
+                f"stderr: {stderr}"
+            )
 
     def test_struct_002_homebrew_structure(self):
         """
@@ -372,7 +378,11 @@ class TestInstallDirectoryStructures:
             print(f"  Symlink: {brew_link}")
             print(f"  Real binary: {real_velo}")
             print(f"  Module: {lib_zygote}")
-            print(f"  Result: code={code}")
-            
-            if "Could not find velo_zygote" in stderr:
-                print("  ⚠️ DEPLOY BUG: Homebrew-style structure not supported!")
+            # Homebrew structure MUST be supported
+            assert "Could not find velo_zygote" not in stderr, (
+                f"STRUCT-002 BUG: Homebrew structure not supported!\n"
+                f"Symlink: {brew_link}\n"
+                f"Real binary: {real_velo}\n"
+                f"Module: {lib_zygote}\n"
+                f"stderr: {stderr}"
+            )
