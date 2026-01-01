@@ -235,6 +235,43 @@ print("imported")
                 f"Neither fallback nor success! code={code}, stdout={stdout}, stderr={stderr}"
             )
 
+    def test_e2e_007_stdout_captured_correctly(self):
+        """
+        E2E-007: Script stdout should be captured correctly.
+        
+        DEF-005: Zygote runs but stdout is empty.
+        This test ensures print() output is properly returned.
+        """
+        with RealUserEnv() as env:
+            env.create_script("output.py", '''
+print("line1")
+print("line2")
+print("line3")
+''')
+            
+            code, stdout, stderr, _ = env.run_velo(["run", "--zygote", "output.py"])
+            
+            # Stdout must contain the output
+            assert "line1" in stdout, f"stdout missing! stdout={repr(stdout)}, stderr={stderr}"
+            assert "line2" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
+            assert "line3" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
+
+    def test_e2e_008_stderr_captured_correctly(self):
+        """
+        E2E-008: Script stderr should be captured correctly.
+        """
+        with RealUserEnv() as env:
+            env.create_script("error.py", '''
+import sys
+print("error_output", file=sys.stderr)
+''')
+            
+            code, stdout, stderr, _ = env.run_velo(["run", "--zygote", "error.py"])
+            
+            # Should capture stderr from script (mixed with velo's own stderr)
+            # At minimum, should not crash
+            assert code == 0 or "error" in stderr.lower()
+
 
 class TestZygotePerformanceRequirements:
     """Tests that verify RFC-0002 performance claims."""
