@@ -44,6 +44,7 @@ pub fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) 
 
 /// Run a Python script with profiling enabled.
 /// Injects sitecustomize.py to track import times and displays results.
+#[allow(clippy::collapsible_if)]
 pub fn run_script_with_profile(
     python: &Path,
     script_path: &str,

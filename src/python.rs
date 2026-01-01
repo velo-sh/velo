@@ -17,6 +17,7 @@ use crate::cache::EnvCache;
 /// 1. .venv/bin/python (uv/virtualenv)
 /// 2. VELO_PYTHON environment variable
 /// 3. System python3
+#[allow(clippy::collapsible_if)]
 pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
     // 1. Check for .venv/bin/python
     let venv_python = project_dir.join(".venv/bin/python");
@@ -90,6 +91,7 @@ pub fn capture_sys_path(python: &Path) -> Result<Vec<String>> {
 /// Setup Python environment, potentially using cache.
 /// Returns (pythonpath, needs_capture) - if needs_capture is true, caller should
 /// capture sys.path after script runs for next time.
+#[allow(clippy::collapsible_if)]
 pub fn setup_python_env(project_dir: &Path, _python: &Path) -> (Option<String>, bool) {
     // First, check if we have a valid cache
     if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {

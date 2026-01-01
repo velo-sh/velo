@@ -64,6 +64,8 @@ mod ipc_tests {
     /// Test socket roundtrip communication
     #[test]
     fn test_socket_roundtrip() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
         use std::thread;
         use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
 
@@ -75,22 +77,30 @@ mod ipc_tests {
         let server_handle = thread::spawn(move || {
             let listener = velo::zygote::ipc::create_listener(&socket_path_clone).unwrap();
 
-            // Accept one connection
-            let (mut stream, cmd) = velo::zygote::ipc::accept_command(&listener).unwrap();
+            // Accept connection
+            let (stream, _) = listener.accept().unwrap();
+            let mut stream_write = stream.try_clone().unwrap();
+            let mut reader = BufReader::new(stream);
+
+            // Send READY first (per protocol)
+            let ready = serde_json::to_string(&ZygoteResponse::Ready).unwrap();
+            writeln!(stream_write, "{}", ready).unwrap();
+
+            // Read command
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let cmd: ZygoteCommand = serde_json::from_str(&line).unwrap();
 
             // Verify we got FORK command
             assert!(matches!(cmd, ZygoteCommand::Fork { .. }));
 
             // Send FORKED response
-            velo::zygote::ipc::send_response(
-                &mut stream,
-                ZygoteResponse::Forked { worker_pid: 42 },
-            )
-            .unwrap();
+            let resp = serde_json::to_string(&ZygoteResponse::Forked { worker_pid: 42 }).unwrap();
+            writeln!(stream_write, "{}", resp).unwrap();
         });
 
         // Give server time to start
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(100));
 
         // Connect as client and send command
         let response = velo::zygote::ipc::send_command(

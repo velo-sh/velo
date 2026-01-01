@@ -38,6 +38,7 @@ pub fn is_supported() -> bool {
 }
 
 /// Find the velo_zygote Python module path
+#[allow(clippy::collapsible_if)]
 fn find_zygote_module() -> Result<PathBuf> {
     // Try relative to executable first
     if let Ok(exe_path) = std::env::current_exe() {

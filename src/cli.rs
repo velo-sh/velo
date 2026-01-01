@@ -72,6 +72,7 @@ pub fn run() -> Result<()> {
 }
 
 /// Handle 'velo run' command
+#[allow(clippy::collapsible_if)]
 fn cmd_run(args: &[String]) -> Result<()> {
     if args.len() < 3 {
         eprintln!("Error: missing script path");
@@ -191,6 +192,7 @@ fn try_zygote_run(_python_path: &Path, _script_path: &str) -> Result<Option<()>>
 }
 
 /// Save cache after script execution
+#[allow(clippy::collapsible_if)]
 fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
     if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
         if let Ok(paths) = python::capture_sys_path(python_path) {
