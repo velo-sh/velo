@@ -241,25 +241,46 @@ def main():
         print_summary(cpython, velo)
     
     elif args.mode == "all":
+        results = {}
+        
         print("\n" + "=" * 60)
         print("MODE 1: Warm Benchmark")
         print("=" * 60)
-        mode_warm(args.iterations)
+        cpython, velo = mode_warm(args.iterations)
+        if cpython and velo:
+            results["Warm"] = (statistics.mean(cpython), statistics.mean(velo))
         
         print("\n" + "=" * 60)
         print("MODE 2: Init-Only Benchmark")
         print("=" * 60)
-        mode_init_only(args.iterations)
+        cpython, velo = mode_init_only(args.iterations)
+        if cpython and velo:
+            results["Init-only"] = (statistics.mean(cpython), statistics.mean(velo))
         
         print("\n" + "=" * 60)
         print("MODE 3: Cold Start")
         print("=" * 60)
-        mode_cold()
+        cpython, velo = mode_cold()
+        if cpython and velo:
+            results["Cold"] = (cpython[0], velo[0])
         
         print("\n" + "=" * 60)
         print("MODE 4: Serverless Simulation")
         print("=" * 60)
-        mode_serverless(3)
+        cpython, velo = mode_serverless(3)
+        if cpython and velo:
+            results["Serverless"] = (statistics.mean(cpython), statistics.mean(velo))
+        
+        # Final comparison table
+        print("\n" + "=" * 60)
+        print("FINAL COMPARISON")
+        print("=" * 60)
+        print(f"  {'Mode':<12} {'CPython':>10} {'Velo':>10} {'Ratio':>10}")
+        print("  " + "-" * 44)
+        for mode, (cp, ve) in results.items():
+            ratio = ve / cp if cp > 0 else 0
+            faster = "✅" if ratio < 1 else ""
+            print(f"  {mode:<12} {cp:>9.2f}ms {ve:>9.2f}ms {ratio:>9.2f}x {faster}")
 
 
 if __name__ == "__main__":
