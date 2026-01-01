@@ -3,16 +3,24 @@ use std::path::Path;
 use std::process::Command;
 
 mod cache;
+mod hardware;
+mod profile;
+mod python_info;
 use cache::EnvCache;
 
 const USAGE: &str = "\
 velo - The high-performance Python runtime for the AI era
 
 USAGE:
-    velo run <script.py>
+    velo run [OPTIONS] <script.py>
+    velo info
 
 COMMANDS:
     run     Run a Python script
+    info    Show environment information
+
+RUN OPTIONS:
+    --profile  Show detailed startup timing breakdown
 
 OPTIONS:
     -h, --help     Print help
@@ -97,13 +105,43 @@ fn capture_sys_path(python: &Path) -> Result<Vec<String>> {
 /// Setup Python environment, potentially using cache.
 /// Returns (pythonpath, needs_capture) - if needs_capture is true, caller should
 /// capture sys.path after script runs for next time.
-fn setup_python_env(project_dir: &Path) -> (Option<String>, bool) {
+fn setup_python_env(project_dir: &Path, python: &Path) -> (Option<String>, bool) {
     // Auto-detect venv site-packages
     let venv_site_packages = detect_venv_site_packages(project_dir);
 
     // Try to load cache if fingerprint matches
     if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
         if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
+            // Check cache version compatibility
+            if !cache.is_version_compatible() {
+                eprintln!(
+                    "⚠️  Cache version mismatch\n\
+                     ├─ Cached:  v{}\n\
+                     └─ Current: v{}\n\
+                     Rebuilding cache...\n",
+                    cache.cache_version,
+                    cache::CACHE_VERSION
+                );
+                return (venv_site_packages, true);
+            }
+
+            // Check ABI compatibility
+            if let Ok(current_info) = python_info::PythonInfo::detect(python) {
+                if !cache.is_abi_compatible(&current_info.abi_tag) {
+                    eprintln!(
+                        "⚠️  ABI Mismatch Detected\n\
+                         ├─ Cached:  Python {} ({})\n\
+                         ├─ Current: {} ({})\n\
+                         └─ Action:  Rebuilding cache...\n",
+                        cache.python_version,
+                        cache.abi_tag,
+                        current_info.version,
+                        current_info.abi_tag
+                    );
+                    return (venv_site_packages, true);
+                }
+            }
+
             let mut paths = cache.sys_path.clone();
 
             // Prepend venv site-packages if detected
@@ -154,6 +192,100 @@ fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) -> R
     Ok(())
 }
 
+/// Run a Python script with profiling enabled.
+/// Injects sitecustomize.py to track import times and displays results.
+fn run_script_with_profile(
+    python: &Path,
+    script_path: &str,
+    pythonpath: Option<String>,
+) -> Result<()> {
+    use std::fs;
+    use std::io::Write;
+
+    let path = Path::new(script_path);
+    if !path.exists() {
+        anyhow::bail!("Script not found: {}", script_path);
+    }
+
+    // Create temp directory for sitecustomize.py and profile output
+    let temp_dir = std::env::temp_dir().join("velo_profile");
+    fs::create_dir_all(&temp_dir)?;
+
+    // Write sitecustomize.py
+    let sitecustomize_path = temp_dir.join("sitecustomize.py");
+    let mut file = fs::File::create(&sitecustomize_path)?;
+    file.write_all(profile::SITECUSTOMIZE_PY.as_bytes())?;
+
+    // Profile output path
+    let profile_output = temp_dir.join("profile.json");
+
+    // Get script directory for relative imports
+    let script_dir = path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
+
+    // Build PYTHONPATH with temp dir first (for sitecustomize.py)
+    let temp_dir_str = temp_dir.to_string_lossy().to_string();
+    let final_pythonpath = match pythonpath {
+        Some(pp) => format!("{}:{}:{}", temp_dir_str, script_dir, pp),
+        None => format!("{}:{}", temp_dir_str, script_dir),
+    };
+
+    println!("⏱️  Running with profiling enabled...\n");
+
+    // Measure total time
+    let start = std::time::Instant::now();
+
+    // Run the script using user's Python with profile output env var
+    let status = Command::new(python)
+        .env("PYTHONPATH", &final_pythonpath)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("VELO_PROFILE_OUTPUT", &profile_output)
+        .arg(script_path)
+        .status()
+        .context("Failed to run Python")?;
+
+    let total_time = start.elapsed();
+
+    // Display profile results if available
+    if profile_output.exists() {
+        if let Ok(profile_data) = profile::ProfileData::from_file(&profile_output) {
+            println!("\n{}", profile_data.format_table(10));
+
+            // Show optimization suggestions for top imports
+            let top = profile_data.top_imports(5);
+            let suggestions: Vec<_> = top
+                .iter()
+                .filter_map(|(name, _)| {
+                    profile::get_optimization_suggestions(name)
+                        .map(|s| format!("   • {}: {}", name, s))
+                })
+                .collect();
+
+            if !suggestions.is_empty() {
+                println!("💡 Optimization Suggestions:");
+                for s in suggestions {
+                    println!("{}", s);
+                }
+                println!();
+            }
+        }
+    }
+
+    println!("Total execution time: {:.2}s", total_time.as_secs_f64());
+
+    // Cleanup temp files
+    let _ = fs::remove_file(&sitecustomize_path);
+    let _ = fs::remove_file(&profile_output);
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
@@ -174,9 +306,21 @@ fn main() -> Result<()> {
         "run" => {
             if args.len() < 3 {
                 eprintln!("Error: missing script path");
-                eprintln!("Usage: velo run <script.py>");
+                eprintln!("Usage: velo run [--profile] <script.py>");
                 std::process::exit(1);
             }
+
+            // Parse --profile flag
+            let (profile_enabled, script_arg_idx) = if args[2] == "--profile" {
+                if args.len() < 4 {
+                    eprintln!("Error: missing script path after --profile");
+                    eprintln!("Usage: velo run --profile <script.py>");
+                    std::process::exit(1);
+                }
+                (true, 3)
+            } else {
+                (false, 2)
+            };
 
             // Determine project directory
             let project_dir =
@@ -186,23 +330,93 @@ fn main() -> Result<()> {
             let python = detect_python(&project_dir)?;
 
             // Setup environment with caching
-            let (pythonpath, needs_capture) = setup_python_env(&project_dir);
+            let (pythonpath, needs_capture) = setup_python_env(&project_dir, &python);
 
-            // Run the script
-            run_script(&python, &args[2], pythonpath)?;
+            // Run the script (with or without profiling)
+            if profile_enabled {
+                run_script_with_profile(&python, &args[script_arg_idx], pythonpath)?;
+            } else {
+                run_script(&python, &args[script_arg_idx], pythonpath)?;
+            }
 
             // If we didn't have cache, capture sys.path for next time
             if needs_capture {
                 if let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir) {
                     if let Ok(paths) = capture_sys_path(&python) {
-                        let cache = EnvCache {
+                        // Detect Python info for ABI tracking
+                        let (python_version, abi_tag, platform_tag) =
+                            match python_info::PythonInfo::detect(&python) {
+                                Ok(info) => (info.version, info.abi_tag, info.platform_tag),
+                                Err(_) => (
+                                    python_info::PythonVersion::default(),
+                                    String::new(),
+                                    String::new(),
+                                ),
+                            };
+
+                        let cache = EnvCache::new(
                             fingerprint,
-                            sys_path: paths,
-                            python_home: String::new(),
-                        };
+                            paths,
+                            String::new(),
+                            python_version,
+                            abi_tag,
+                            platform_tag,
+                        );
                         let _ = cache.save(&project_dir);
                     }
                 }
+            }
+        }
+        "info" => {
+            // Determine project directory
+            let project_dir =
+                std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+
+            println!("Velo {}", env!("CARGO_PKG_VERSION"));
+            println!("══════════════════════════════════════════════════════════════\n");
+
+            // Hardware info
+            let hw_info = hardware::HardwareInfo::detect();
+            println!("{}\n", hw_info.format());
+
+            // Python environment
+            if let Ok(python) = detect_python(&project_dir) {
+                println!("▸ Python Environment");
+                println!("├─ Path:    {}", python.display());
+                if let Ok(info) = python_info::PythonInfo::detect(&python) {
+                    println!("├─ Version: {}", info.version);
+                    println!("├─ ABI:     {}-{}", info.abi_tag, info.platform_tag);
+                }
+                println!();
+            } else {
+                println!("▸ Python Environment");
+                println!("└─ Not detected (no .venv or VELO_PYTHON set)\n");
+            }
+
+            // Cache status
+            println!("▸ Cache Status");
+            let cache_dir = cache::EnvCache::cache_dir(&project_dir);
+            if cache_dir.exists() {
+                if let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir) {
+                    if let Some(cache) = EnvCache::load(&project_dir, &fingerprint) {
+                        println!("├─ Location:    {}", cache_dir.display());
+                        println!("├─ Fingerprint: {}...", &fingerprint[..16]);
+                        println!(
+                            "├─ Python:      {} ({})",
+                            cache.python_version, cache.abi_tag
+                        );
+                        println!("├─ Version:     v{}", cache.cache_version);
+                        println!("└─ Status:      Valid ✅");
+                    } else {
+                        println!("├─ Location:    {}", cache_dir.display());
+                        println!("└─ Status:      Stale (fingerprint mismatch) ⚠️");
+                    }
+                } else {
+                    println!("├─ Location:    {}", cache_dir.display());
+                    println!("└─ Status:      No uv.lock found");
+                }
+            } else {
+                println!("└─ No cache (run a script first)");
             }
         }
         cmd => {
