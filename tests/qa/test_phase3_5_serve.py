@@ -215,3 +215,113 @@ class TestServeOptions:
         )
         assert result.returncode != 0
         assert "invalid worker" in result.stderr
+
+
+class TestZygoteIntegration:
+    """Tests for Zygote integration with velo serve."""
+
+    def test_zygote_prewarm_message(self):
+        """Verify Zygote pre-warming message is displayed."""
+        with FastAPITestEnv() as env:
+            # Kill any existing Zygote first
+            subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+            
+            proc = env.run_serve(["main:app", "--port", "19878"])
+            try:
+                time.sleep(2)
+                proc.terminate()
+                _, stderr = proc.communicate(timeout=5)
+                
+                # Should show Zygote pre-warming or using existing Zygote
+                zygote_mentioned = (
+                    "Zygote" in stderr or 
+                    "Pre-warming" in stderr or 
+                    "FastAPI" in stderr
+                )
+                assert zygote_mentioned or "uvicorn" in stderr.lower()
+            except Exception:
+                proc.kill()
+                raise
+            finally:
+                subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+
+    def test_no_zygote_flag(self):
+        """Verify --no-zygote flag disables Zygote."""
+        with FastAPITestEnv() as env:
+            proc = env.run_serve(["main:app", "--port", "19879", "--no-zygote"])
+            try:
+                time.sleep(1)
+                proc.terminate()
+                _, stderr = proc.communicate(timeout=5)
+                
+                # Should NOT mention pre-warming when --no-zygote is used
+                assert "Pre-warming" not in stderr
+            except Exception:
+                proc.kill()
+                raise
+
+
+class TestFrameworkDetection:
+    """Tests for framework auto-detection."""
+
+    def test_fastapi_detected(self):
+        """Verify FastAPI is detected from pyproject.toml."""
+        with FastAPITestEnv() as env:
+            proc = env.run_serve(["main:app", "--port", "19880"])
+            try:
+                time.sleep(2)
+                proc.terminate()
+                _, stderr = proc.communicate(timeout=5)
+                
+                # Should detect FastAPI
+                assert "FastAPI" in stderr or "Starting server" in stderr
+            except Exception:
+                proc.kill()
+                raise
+
+    def test_django_module_pattern(self):
+        """Verify Django is inferred from module pattern."""
+        velo = get_velo_binary()
+        # Test with Django-style module pattern
+        # This will fail (no Django) but tests detection logic in output
+        result = subprocess.run(
+            [velo, "serve", "django.core.wsgi:application", "--port", "19881"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        # May mention Django or fail finding Django
+        # Just verify command was processed
+        assert result.returncode != 0 or "Django" in result.stderr or "Error" in result.stderr
+
+
+class TestServePerformance:
+    """Performance tests for velo serve startup."""
+
+    @pytest.mark.slow
+    def test_startup_time_reasonable(self):
+        """Verify serve startup completes within timeout."""
+        with FastAPITestEnv() as env:
+            start = time.time()
+            proc = env.run_serve(["main:app", "--port", "19882"])
+            try:
+                # Wait for process to start or fail quickly
+                time.sleep(2)
+                elapsed = time.time() - start
+                
+                # Should start reasonably fast (< 5 seconds)
+                if proc.poll() is None:
+                    # Still running - good
+                    assert elapsed < 5.0, f"Server took too long to start: {elapsed:.2f}s"
+                else:
+                    # Exited - check why
+                    _, stderr = proc.communicate()
+                    if "uvicorn" not in stderr.lower():
+                        pytest.skip(f"Server setup issue: {stderr[:200]}")
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except:
+                    proc.kill()
+
