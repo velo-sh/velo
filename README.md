@@ -1,1 +1,1 @@
-# velo
+# Python is perfect for coding. Velo is perfect for running. The high-performance runtime for the AI era.
