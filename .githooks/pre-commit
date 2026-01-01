@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-commit hook for Velo
+# Run format and lint checks before commit
+
+set -e
+
+echo "🔍 Running cargo fmt..."
+cargo fmt --check || {
+    echo "❌ Format check failed. Run 'cargo fmt' to fix."
+    exit 1
+}
+
+echo "🔍 Running cargo clippy..."
+cargo clippy -- -D warnings || {
+    echo "❌ Clippy check failed. Fix the warnings above."
+    exit 1
+}
+
+echo "✅ All pre-commit checks passed!"

@@ -66,7 +66,7 @@ impl EnvCache {
 
         let bytes = rkyv::to_bytes::<RkyvError>(self)
             .map_err(|e| anyhow::anyhow!("Failed to serialize cache: {}", e))?;
-        
+
         fs::write(&cache_path, &bytes)
             .with_context(|| format!("Failed to write cache: {:?}", cache_path))?;
 
