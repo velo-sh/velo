@@ -264,7 +264,7 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
     # Stop zygote after benchmark
     subprocess.run([VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True)
     
-    # Results
+    # Results with Bun-style output
     import statistics
     cpython_avg = statistics.mean(cpython_times)
     velo_miss_avg = statistics.mean(velo_miss_times)
@@ -272,25 +272,39 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
     zygote_cold_avg = statistics.mean(zygote_cold_times)
     zygote_warm_avg = statistics.mean(zygote_warm_times)
     
-    print(f"\nResults ({iterations} runs):")
-    print(f"  CPython:              {cpython_avg:>8.1f}ms")
+    # ANSI color codes
+    GRAY = "\033[90m"
+    GREEN = "\033[32m"
+    CYAN = "\033[36m"
+    YELLOW = "\033[33m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
     
-    # Calculate speedups
-    def speedup_label(baseline, measured):
+    def bar(ms, max_ms, width=30):
+        """Generate a visual bar like Bun benchmarks"""
+        filled = int((ms / max_ms) * width)
+        return "█" * filled + "░" * (width - filled)
+    
+    def speedup_str(baseline, measured):
         speedup = (baseline - measured) / baseline * 100
         if speedup > 0:
-            return f"{abs(speedup):.0f}% faster ✅"
+            return f"{GREEN}{speedup:.0f}% faster{RESET}"
         else:
-            return f"{abs(speedup):.0f}% slower"
+            return f"{GRAY}{abs(speedup):.0f}% slower{RESET}"
     
-    print(f"  Velo (cache miss):    {velo_miss_avg:>8.1f}ms  {speedup_label(cpython_avg, velo_miss_avg)}")
-    print(f"  Velo (cache hit):     {velo_hit_avg:>8.1f}ms  {speedup_label(cpython_avg, velo_hit_avg)}")
-    print(f"  Zygote (cold start):  {zygote_cold_avg:>8.1f}ms  {speedup_label(cpython_avg, zygote_cold_avg)}")
-    print(f"  Zygote (warm start):  {zygote_warm_avg:>8.1f}ms  {speedup_label(cpython_avg, zygote_warm_avg)} ⚡")
+    max_time = max(cpython_avg, velo_miss_avg, zygote_cold_avg)
+    
+    print(f"\n{BOLD}Results ({iterations} runs):{RESET}")
+    print()
+    print(f"  {GRAY}CPython{RESET}           {bar(cpython_avg, max_time)} {cpython_avg:>6.0f}ms")
+    print(f"  {GRAY}Velo cache miss{RESET}   {bar(velo_miss_avg, max_time)} {velo_miss_avg:>6.0f}ms  {speedup_str(cpython_avg, velo_miss_avg)}")
+    print(f"  {CYAN}Velo cache hit{RESET}    {bar(velo_hit_avg, max_time)} {velo_hit_avg:>6.0f}ms  {speedup_str(cpython_avg, velo_hit_avg)}")
+    print(f"  {YELLOW}Zygote cold{RESET}       {bar(zygote_cold_avg, max_time)} {zygote_cold_avg:>6.0f}ms  {speedup_str(cpython_avg, zygote_cold_avg)}")
+    print(f"  {GREEN}Zygote warm{RESET}       {bar(zygote_warm_avg, max_time)} {zygote_warm_avg:>6.0f}ms  {speedup_str(cpython_avg, zygote_warm_avg)} ⚡")
     
     if cpython_avg > 0:
         speedup_ratio = cpython_avg / zygote_warm_avg
-        print(f"\n  🚀 Zygote warm speedup: {speedup_ratio:.1f}x vs CPython")
+        print(f"\n  {BOLD}🚀 Zygote is {GREEN}{speedup_ratio:.1f}x faster{RESET}{BOLD} than CPython{RESET}")
 
 
 def main():
