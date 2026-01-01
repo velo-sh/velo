@@ -75,25 +75,44 @@ pub struct WorkerHandle {
 }
 
 impl WorkerHandle {
-    /// Wait for the worker to complete
-    /// We detect completion by waiting for the stdout file to appear.
+    /// Wait for the worker to complete with 30s timeout (DEF-P3-012)
+    /// We detect completion by waiting for the exit_code file to appear.
+    /// If timeout expires, we kill the worker process.
     #[cfg(unix)]
     pub fn wait(&self) -> Result<i32> {
-        // Wait for stdout file to exist (worker writes to it on start)
-        if let Some(ref path) = self.stdout_path {
+        const TIMEOUT_SECS: u64 = 30;
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(TIMEOUT_SECS);
+
+        // Wait for exit_code file to exist (worker writes it when done)
+        let mut timed_out = false;
+        if let Some(ref path) = self.exit_code_path {
             // Poll for file existence with fast checks
-            for i in 0..1000 {
-                // 5 seconds max
+            loop {
                 if path.exists() {
-                    // File exists - wait a tiny bit for flush then read
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    // File exists - script completed
                     break;
                 }
+
+                // Check timeout
+                if start.elapsed() > timeout {
+                    timed_out = true;
+                    eprintln!(
+                        "⏱️ Worker {} timed out after {}s, killing...",
+                        self.pid, TIMEOUT_SECS
+                    );
+                    // Kill the worker process
+                    unsafe {
+                        libc::kill(self.pid as i32, libc::SIGKILL);
+                    }
+                    break;
+                }
+
                 // Fast polling for first 100ms, then slower
-                if i < 100 {
+                if start.elapsed().as_millis() < 100 {
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 } else {
-                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
         }
@@ -105,7 +124,12 @@ impl WorkerHandle {
         // Read exit code from file (DEF-P3-013/014)
         let exit_code = self.read_exit_code();
 
-        Ok(exit_code)
+        // Return timeout exit code if timed out
+        if timed_out {
+            Ok(124) // Standard timeout exit code
+        } else {
+            Ok(exit_code)
+        }
     }
 
     #[cfg(not(unix))]
