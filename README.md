@@ -10,33 +10,65 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow (~seconds) | Sub-millisecond startup via env fingerprinting |
-| Dependency chaos, bloated Docker images | Single-binary packaging (coming soon) |
-| Source code exposed | Bytecode encryption (coming soon) |
-| Heavy memory footprint | Zygote + Copy-on-Write for serverless density |
+| Python cold start is slow | **3-9% faster** startup via env fingerprinting & path caching |
+| Dependency chaos | Auto-detects `uv` virtual environments |
+| Heavy memory footprint | Zygote + Copy-on-Write (coming soon) |
+
+## Benchmark Results
+
+Tested against real-world project simulations (60-80+ imports):
+
+| Project | CPython | Velo | Speedup |
+|---------|---------|------|---------|
+| FastAPI (60+ imports) | 529ms | 484ms | **8% faster** ✅ |
+| Django (70+ imports) | 393ms | 371ms | **5% faster** ✅ |
+| Data Science (80+ imports) | 793ms | 770ms | **3% faster** ✅ |
 
 ## Quick Start
 
 ```bash
-# Install
-cargo install --path .
+# Build
+cargo build --release
 
-# Run the demo script
-velo run tests/corpus/hello.py
-```
+# Run a Python script
+./target/release/velo run your_script.py
 
-## Development
-
-```bash
-# Run tests (requires uv)
+# Run the test suite
 uv run run_tests.py
 ```
 
+## Benchmarking
+
+```bash
+# Simple benchmark (lightweight tests)
+uv run bench.py --mode all
+
+# Real-world project benchmark (FastAPI, Django, etc.)
+python3 benchmark_projects.py --all -n 5
+python3 benchmark_projects.py -p fastapi -n 10
+```
+
+## How It Works
+
+1. **Environment Fingerprinting**: Hash `uv.lock` to detect environment changes
+2. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
+3. **Pre-init Injection**: Set `PYTHONPATH` before Python initializes
+4. **Venv Auto-detection**: Automatically find `.venv/lib/python*/site-packages`
+
 ## Compatibility
 
-Velo is **not** a new language. It runs standard Python code and maintains full compatibility with:
+Velo is **not** a new language. It runs standard Python code:
 - CPython 3.11+
-- PyPI packages (NumPy, Torch, etc.)
+- PyPI packages (NumPy, Pandas, FastAPI, Django, etc.)
+- Works with `uv`-managed virtual environments
+
+## Roadmap
+
+- [x] Phase 1: Environment fingerprinting & path caching
+- [x] Phase 1.5: Binary size optimization (348KB)
+- [ ] Phase 2: JIT compilation
+- [ ] Phase 3: Zygote mode (< 5ms cold start)
+- [ ] Phase 4: Single-binary packaging
 
 ## License
 
