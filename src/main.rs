@@ -95,7 +95,9 @@ fn capture_sys_path(python: &Path) -> Result<Vec<String>> {
 }
 
 /// Setup Python environment, potentially using cache.
-fn setup_python_env(project_dir: &Path, python: &Path) -> Option<String> {
+/// Returns (pythonpath, needs_capture) - if needs_capture is true, caller should
+/// capture sys.path after script runs for next time.
+fn setup_python_env(project_dir: &Path) -> (Option<String>, bool) {
     // Auto-detect venv site-packages
     let venv_site_packages = detect_venv_site_packages(project_dir);
 
@@ -111,33 +113,12 @@ fn setup_python_env(project_dir: &Path, python: &Path) -> Option<String> {
                 }
             }
 
-            return Some(paths.join(":"));
+            return (Some(paths.join(":")), false);
         }
     }
 
-    // No cache - capture fresh and save
-    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
-        if let Ok(paths) = capture_sys_path(python) {
-            let cache = EnvCache {
-                fingerprint: fingerprint.clone(),
-                sys_path: paths.clone(),
-                python_home: String::new(), // Not used in subprocess mode
-            };
-            let _ = cache.save(project_dir);
-
-            let mut result_paths = paths;
-            if let Some(ref venv_path) = venv_site_packages {
-                if !result_paths.contains(venv_path) {
-                    result_paths.insert(0, venv_path.clone());
-                }
-            }
-
-            return Some(result_paths.join(":"));
-        }
-    }
-
-    // Fall back to just venv site-packages
-    venv_site_packages
+    // No cache - just use venv site-packages for now, capture later
+    (venv_site_packages, true)
 }
 
 fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) -> Result<()> {
@@ -204,10 +185,24 @@ fn main() -> Result<()> {
             let python = detect_python(&project_dir)?;
 
             // Setup environment with caching
-            let pythonpath = setup_python_env(&project_dir, &python);
+            let (pythonpath, needs_capture) = setup_python_env(&project_dir);
 
             // Run the script
             run_script(&python, &args[2], pythonpath)?;
+
+            // If we didn't have cache, capture sys.path for next time
+            if needs_capture {
+                if let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir) {
+                    if let Ok(paths) = capture_sys_path(&python) {
+                        let cache = EnvCache {
+                            fingerprint,
+                            sys_path: paths,
+                            python_home: String::new(),
+                        };
+                        let _ = cache.save(&project_dir);
+                    }
+                }
+            }
         }
         cmd => {
             eprintln!("Error: unknown command '{}'", cmd);
