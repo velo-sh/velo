@@ -248,8 +248,16 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
     
     print(f"\nResults ({iterations} runs):")
     print(f"  CPython:          {cpython_avg:>8.1f}ms")
-    print(f"  Velo (cache miss):{velo_miss_avg:>8.1f}ms ({(cpython_avg-velo_miss_avg)/cpython_avg*100:+.0f}%)")
-    print(f"  Velo (cache hit): {velo_hit_avg:>8.1f}ms ({(cpython_avg-velo_hit_avg)/cpython_avg*100:+.0f}%)")
+    
+    # Calculate speedup (positive = faster, negative = slower)
+    miss_speedup = (cpython_avg - velo_miss_avg) / cpython_avg * 100
+    hit_speedup = (cpython_avg - velo_hit_avg) / cpython_avg * 100
+    
+    miss_label = f"{abs(miss_speedup):.0f}% faster ✅" if miss_speedup > 0 else f"{abs(miss_speedup):.0f}% slower"
+    hit_label = f"{abs(hit_speedup):.0f}% faster ✅" if hit_speedup > 0 else f"{abs(hit_speedup):.0f}% slower"
+    
+    print(f"  Velo (cache miss):{velo_miss_avg:>8.1f}ms  {miss_label}")
+    print(f"  Velo (cache hit): {velo_hit_avg:>8.1f}ms  {hit_label}")
 
 
 def main():
