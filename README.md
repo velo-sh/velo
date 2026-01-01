@@ -98,7 +98,7 @@ cd velo
 ```
 
 **Locked Versions** (same for local and CI):
-- Rust: 1.87.0 (see `rust-toolchain.toml`)
+- Rust: 1.92.0 (see `rust-toolchain.toml`)
 - Python: 3.11+
 
 
