@@ -1,0 +1,10 @@
+[project]
+name = "velo"
+version = "0.1.0"
+description = "Velo project Python tooling"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+readme = "README.md"
+
+[tool.uv]
+python-preference = "only-managed"
