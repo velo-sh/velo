@@ -69,37 +69,60 @@ fn find_zygote_module() -> Result<PathBuf> {
 /// Handle to a spawned worker process
 pub struct WorkerHandle {
     pid: u32,
+    stdout_path: Option<PathBuf>,
 }
 
 impl WorkerHandle {
     /// Wait for the worker to complete
+    /// We detect completion by waiting for the stdout file to appear.
     #[cfg(unix)]
     pub fn wait(&self) -> Result<i32> {
-        let pid = self.pid as i32;
-        loop {
-            let mut status: i32 = 0;
-            let result = unsafe { libc::waitpid(pid, &mut status, 0) };
-            if result == -1 {
-                let err = std::io::Error::last_os_error();
-                if err.kind() == std::io::ErrorKind::Interrupted {
-                    continue;
+        // Wait for stdout file to exist (worker writes to it on start)
+        if let Some(ref path) = self.stdout_path {
+            // Poll for file existence with fast checks
+            for i in 0..1000 {
+                // 5 seconds max
+                if path.exists() {
+                    // File exists - wait a tiny bit for flush then read
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    break;
                 }
-                return Err(ZygoteError::ForkFailed(err.to_string()));
-            }
-            // Check if exited
-            if libc::WIFEXITED(status) {
-                return Ok(libc::WEXITSTATUS(status));
-            }
-            if libc::WIFSIGNALED(status) {
-                return Ok(128 + libc::WTERMSIG(status));
+                // Fast polling for first 100ms, then slower
+                if i < 100 {
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
             }
         }
+
+        // Flush stdout file to real stdout
+        self.flush_stdout();
+
+        Ok(0)
     }
 
     #[cfg(not(unix))]
     pub fn wait(&self) -> Result<i32> {
         // Windows: not supported
         Ok(0)
+    }
+
+    /// Flush captured stdout from tempfile to real stdout
+    #[allow(clippy::collapsible_if)]
+    fn flush_stdout(&self) {
+        if let Some(ref path) = self.stdout_path {
+            if path.exists() {
+                if let Ok(contents) = std::fs::read_to_string(path) {
+                    if !contents.is_empty() {
+                        print!("{}", contents);
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
+                    }
+                }
+                let _ = std::fs::remove_file(path);
+            }
+        }
     }
 
     /// Get the worker's PID
@@ -284,17 +307,31 @@ impl ZygoteLauncher {
                 .unwrap_or_else(|_| script.to_path_buf())
         };
 
+        // Create tempfile for stdout capture (use CLI PID + timestamp for uniqueness)
+        let stdout_path = std::env::temp_dir().join(format!(
+            "velo-out-{}-{}.tmp",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
         // Send FORK command over socket
         let response = ipc::send_command(
             &self.socket_path,
             ipc::ZygoteCommand::Fork {
                 script_path,
                 args: args.iter().map(|s| s.to_string()).collect(),
+                stdout_path: Some(stdout_path.clone()),
             },
         )?;
 
         match response {
-            ipc::ZygoteResponse::Forked { worker_pid } => Ok(WorkerHandle { pid: worker_pid }),
+            ipc::ZygoteResponse::Forked { worker_pid } => Ok(WorkerHandle {
+                pid: worker_pid,
+                stdout_path: Some(stdout_path),
+            }),
             ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
             _ => Err(ZygoteError::ProtocolError(
                 "Unexpected response to Fork command".to_string(),

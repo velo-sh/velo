@@ -23,6 +23,9 @@ pub enum ZygoteCommand {
     Fork {
         script_path: PathBuf,
         args: Vec<String>,
+        /// Optional path for stdout capture (worker writes here)
+        #[serde(default)]
+        stdout_path: Option<PathBuf>,
     },
     /// Shutdown the Zygote process
     Shutdown,
