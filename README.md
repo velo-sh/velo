@@ -119,10 +119,13 @@ cd velo
 ### Testing
 
 ```bash
-# Run tests
-uv run run_tests.py
+# Run unit tests
+cargo test
 
-# Benchmark against real projects
+# Run QA tests
+uv run python -m pytest tests/qa/ -v
+
+# Benchmark against real projects (includes Zygote mode)
 python3 benchmark_projects.py --all -n 5
 ```
 
@@ -131,6 +134,7 @@ python3 benchmark_projects.py --all -n 5
 Pre-commit hooks automatically run on every commit:
 - `cargo fmt --check` - Format check
 - `cargo clippy -- -D warnings` - Lint check
+- `cargo test --lib` - Unit tests
 
 To run manually:
 ```bash
