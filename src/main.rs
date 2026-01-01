@@ -41,11 +41,11 @@ fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
 
     // 3. Fall back to system python3
     // First check if python3 exists in PATH
-    if let Ok(output) = Command::new("which").arg("python3").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(std::path::PathBuf::from(path));
-        }
+    if let Ok(output) = Command::new("which").arg("python3").output()
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok(std::path::PathBuf::from(path));
     }
 
     anyhow::bail!("No Python interpreter found. Please create a .venv or set VELO_PYTHON")
@@ -102,19 +102,19 @@ fn setup_python_env(project_dir: &Path) -> (Option<String>, bool) {
     let venv_site_packages = detect_venv_site_packages(project_dir);
 
     // Try to load cache if fingerprint matches
-    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir) {
-        if let Some(cache) = EnvCache::load(project_dir, &fingerprint) {
-            let mut paths = cache.sys_path.clone();
+    if let Some(fingerprint) = EnvCache::compute_fingerprint(project_dir)
+        && let Some(cache) = EnvCache::load(project_dir, &fingerprint)
+    {
+        let mut paths = cache.sys_path.clone();
 
-            // Prepend venv site-packages if detected
-            if let Some(ref venv_path) = venv_site_packages {
-                if !paths.contains(venv_path) {
-                    paths.insert(0, venv_path.clone());
-                }
-            }
-
-            return (Some(paths.join(":")), false);
+        // Prepend venv site-packages if detected
+        if let Some(ref venv_path) = venv_site_packages
+            && !paths.contains(venv_path)
+        {
+            paths.insert(0, venv_path.clone());
         }
+
+        return (Some(paths.join(":")), false);
     }
 
     // No cache - just use venv site-packages for now, capture later
@@ -179,7 +179,8 @@ fn main() -> Result<()> {
             }
 
             // Determine project directory
-            let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+            let project_dir =
+                std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
             // Detect user's Python
             let python = detect_python(&project_dir)?;
@@ -191,17 +192,16 @@ fn main() -> Result<()> {
             run_script(&python, &args[2], pythonpath)?;
 
             // If we didn't have cache, capture sys.path for next time
-            if needs_capture {
-                if let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir) {
-                    if let Ok(paths) = capture_sys_path(&python) {
-                        let cache = EnvCache {
-                            fingerprint,
-                            sys_path: paths,
-                            python_home: String::new(),
-                        };
-                        let _ = cache.save(&project_dir);
-                    }
-                }
+            if needs_capture
+                && let Some(fingerprint) = EnvCache::compute_fingerprint(&project_dir)
+                && let Ok(paths) = capture_sys_path(&python)
+            {
+                let cache = EnvCache {
+                    fingerprint,
+                    sys_path: paths,
+                    python_home: String::new(),
+                };
+                let _ = cache.save(&project_dir);
             }
         }
         cmd => {
