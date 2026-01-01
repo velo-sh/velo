@@ -84,6 +84,7 @@ velo/
 
 | Prefix | Category | Description |
 |--------|----------|-------------|
+| `PERF-` | Performance | **BLOCKING** - Cache hit timing, no regressions |
 | `CHAOS-` | Chaos Tests | Corruption, race conditions, resource exhaustion |
 | `PYDET-` | Python Detection | Fake Python, symlink loops |
 | `FUZZ-` | Input Fuzzing | Malicious input, special characters |
