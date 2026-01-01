@@ -1,0 +1,36 @@
+# Velo RFCs (Request for Comments)
+
+This directory contains design documents for significant Velo features and architectural decisions.
+
+## What is an RFC?
+
+RFCs are design documents that describe proposed changes to Velo. They provide a structured way to:
+
+- Communicate technical decisions transparently
+- Gather community feedback before implementation
+- Document the reasoning behind architectural choices
+
+## Active RFCs
+
+| RFC | Title | Status | Target |
+|-----|-------|--------|--------|
+| [0001](./0001-phase-1.5-env-detection.md) | Phase 1.5 Environment Detection | RFC | v0.2.0 |
+
+## RFC Lifecycle
+
+```
+Draft → RFC → Accepted → Implemented → Closed
+                ↓
+            Rejected/Deferred
+```
+
+## Contributing
+
+We welcome feedback on any RFC! Please:
+
+1. Open a [GitHub Issue](https://github.com/velo-sh/velo/issues) referencing the RFC number
+2. Or submit a PR with suggested changes
+
+## Past RFCs
+
+*None yet - we're just getting started!*
