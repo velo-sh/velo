@@ -70,6 +70,8 @@ fn find_zygote_module() -> Result<PathBuf> {
 pub struct WorkerHandle {
     pid: u32,
     stdout_path: Option<PathBuf>,
+    stderr_path: Option<PathBuf>,
+    exit_code_path: Option<PathBuf>,
 }
 
 impl WorkerHandle {
@@ -96,10 +98,14 @@ impl WorkerHandle {
             }
         }
 
-        // Flush stdout file to real stdout
+        // Flush stdout and stderr files to real stdout/stderr
         self.flush_stdout();
+        self.flush_stderr();
 
-        Ok(0)
+        // Read exit code from file (DEF-P3-013/014)
+        let exit_code = self.read_exit_code();
+
+        Ok(exit_code)
     }
 
     #[cfg(not(unix))]
@@ -123,6 +129,39 @@ impl WorkerHandle {
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+
+    /// Flush captured stderr from tempfile to real stderr
+    #[allow(clippy::collapsible_if)]
+    fn flush_stderr(&self) {
+        if let Some(ref path) = self.stderr_path {
+            if path.exists() {
+                if let Ok(contents) = std::fs::read_to_string(path) {
+                    if !contents.is_empty() {
+                        eprint!("{}", contents);
+                        use std::io::Write;
+                        let _ = std::io::stderr().flush();
+                    }
+                }
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    /// Read exit code from tempfile (DEF-P3-013/014)
+    #[allow(clippy::collapsible_if)]
+    fn read_exit_code(&self) -> i32 {
+        if let Some(ref path) = self.exit_code_path {
+            if path.exists() {
+                if let Ok(contents) = std::fs::read_to_string(path) {
+                    let _ = std::fs::remove_file(path);
+                    if let Ok(code) = contents.trim().parse::<i32>() {
+                        return code;
+                    }
+                }
+            }
+        }
+        0 // Default to 0 if no exit code file
     }
 
     /// Get the worker's PID
@@ -307,15 +346,17 @@ impl ZygoteLauncher {
                 .unwrap_or_else(|_| script.to_path_buf())
         };
 
-        // Create tempfile for stdout capture (use CLI PID + timestamp for uniqueness)
-        let stdout_path = std::env::temp_dir().join(format!(
-            "velo-out-{}-{}.tmp",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        // Create tempfiles for I/O capture (use CLI PID + timestamp for uniqueness)
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let pid = std::process::id();
+
+        let stdout_path = std::env::temp_dir().join(format!("velo-out-{}-{}.tmp", pid, timestamp));
+        let stderr_path = std::env::temp_dir().join(format!("velo-err-{}-{}.tmp", pid, timestamp));
+        let exit_code_path =
+            std::env::temp_dir().join(format!("velo-exit-{}-{}.tmp", pid, timestamp));
 
         // Send FORK command over socket
         let response = ipc::send_command(
@@ -324,6 +365,8 @@ impl ZygoteLauncher {
                 script_path,
                 args: args.iter().map(|s| s.to_string()).collect(),
                 stdout_path: Some(stdout_path.clone()),
+                stderr_path: Some(stderr_path.clone()),
+                exit_code_path: Some(exit_code_path.clone()),
             },
         )?;
 
@@ -331,6 +374,8 @@ impl ZygoteLauncher {
             ipc::ZygoteResponse::Forked { worker_pid } => Ok(WorkerHandle {
                 pid: worker_pid,
                 stdout_path: Some(stdout_path),
+                stderr_path: Some(stderr_path),
+                exit_code_path: Some(exit_code_path),
             }),
             ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
             _ => Err(ZygoteError::ProtocolError(

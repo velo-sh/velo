@@ -177,14 +177,16 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
             Ok(worker) => {
                 eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
 
-                // Wait for worker to complete
-                let _exit_code = worker.wait();
+                // Wait for worker to complete and get exit code
+                let exit_code = worker.wait().unwrap_or(1);
 
                 // Keep Zygote alive if we started it (daemon mode)
                 if started_new {
                     std::mem::forget(launcher);
                 }
-                return Ok(Some(()));
+
+                // Exit with worker's exit code (DEF-P3-013/014)
+                std::process::exit(exit_code);
             }
             Err(e) => {
                 // Check if this is a stale socket (connection refused)
@@ -202,8 +204,9 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
                         // Retry spawn
                         if let Ok(worker) = launcher.spawn_worker(script, &[]) {
                             eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                            let exit_code = worker.wait().unwrap_or(1);
                             std::mem::forget(launcher);
-                            return Ok(Some(()));
+                            std::process::exit(exit_code);
                         }
                     }
                 }

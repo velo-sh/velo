@@ -30,6 +30,42 @@ from typing import List, Optional, Set
 # Track active worker PIDs for cleanup
 _active_workers: Set[int] = set()
 
+# Project root for path validation (set on startup)
+_project_root: Optional[Path] = None
+
+# Sensitive paths that should never be executed (SEC-P3-001)
+_BLOCKED_PATHS = [
+    "/etc", "/var", "/usr", "/bin", "/sbin",
+    "/System", "/Library", "/private/etc",
+    "/root", "/home",  # Prevent access to other users
+]
+
+
+def validate_script_path(script_path: str) -> tuple[bool, str]:
+    """Validate script path for security (SEC-P3-001: path traversal fix).
+    
+    Blocks:
+    1. Paths containing '..' that could escape to sensitive locations
+    2. Paths within system directories
+    
+    Returns:
+        (is_valid, error_message) - error_message is empty if valid
+    """
+    try:
+        # Resolve to absolute path
+        script = Path(script_path).resolve()
+        script_str = str(script)
+        
+        # Check for blocked system paths
+        for blocked in _BLOCKED_PATHS:
+            if script_str.startswith(blocked + "/") or script_str == blocked:
+                return False, f"Access denied: script in protected system path '{blocked}'"
+        
+        # Path seems safe
+        return True, ""
+    except Exception as e:
+        return False, f"Invalid script path: {e}"
+
 
 def log(msg: str) -> None:
     """Log message with Zygote prefix. Safe when stderr is closed."""
@@ -136,14 +172,24 @@ def recv_command(conn: socket.socket) -> Optional[dict]:
     return json.loads(line)
 
 
-def handle_fork(script_path: str, args: List[str], stdout_path: Optional[str] = None) -> int:
-    """Fork and execute script in child process."""
+def handle_fork(
+    script_path: str,
+    args: List[str],
+    stdout_path: Optional[str] = None,
+    stderr_path: Optional[str] = None,
+    exit_code_path: Optional[str] = None,
+) -> int:
+    """Fork and execute script in child process.
+    
+    DEF-P3-013/014: Captures exit code from sys.exit() and os._exit().
+    """
     global _active_workers
     
     pid = os.fork()
     
     if pid == 0:
         # Child process
+        exit_code = 0
         try:
             # Reset signal handlers to default
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
@@ -154,7 +200,6 @@ def handle_fork(script_path: str, args: List[str], stdout_path: Optional[str] = 
                 try:
                     stdout_file = open(stdout_path, "w")
                     sys.stdout = stdout_file
-                    # stderr stays null (inherited from Zygote)
                 except OSError:
                     pass
             else:
@@ -162,7 +207,14 @@ def handle_fork(script_path: str, args: List[str], stdout_path: Optional[str] = 
                 try:
                     tty = open("/dev/tty", "w")
                     sys.stdout = tty
-                    sys.stderr = tty
+                except OSError:
+                    pass
+            
+            # Redirect stderr to file if provided
+            if stderr_path:
+                try:
+                    stderr_file = open(stderr_path, "w")
+                    sys.stderr = stderr_file
                 except OSError:
                     pass
             
@@ -174,12 +226,40 @@ def handle_fork(script_path: str, args: List[str], stdout_path: Optional[str] = 
                 code = compile(f.read(), script_path, "exec")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
-            # Flush output before exit
-            sys.stdout.flush()
-            sys.exit(0)
+            # Script completed successfully
+            exit_code = 0
+            
+        except SystemExit as e:
+            # DEF-P3-013: Capture sys.exit() code
+            if e.code is None:
+                exit_code = 0
+            elif isinstance(e.code, int):
+                exit_code = e.code
+            else:
+                # Non-integer exit code (e.g., string message)
+                exit_code = 1
         except Exception as e:
             print(f"Error executing {script_path}: {e}", file=sys.stderr)
-            sys.exit(1)
+            exit_code = 1
+        finally:
+            # Flush output before exit
+            try:
+                sys.stdout.flush()
+                if stderr_path:
+                    sys.stderr.flush()
+            except Exception:
+                pass
+            
+            # Write exit code to file (DEF-P3-013/014)
+            if exit_code_path:
+                try:
+                    with open(exit_code_path, "w") as f:
+                        f.write(str(exit_code))
+                except Exception:
+                    pass
+            
+            # Use os._exit to avoid cleanup that might interfere
+            os._exit(exit_code)
     else:
         # Parent process - track worker
         _active_workers.add(pid)
@@ -263,6 +343,8 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                         script_path = cmd.get("script_path", "")
                         args = cmd.get("args", [])
                         stdout_path = cmd.get("stdout_path")  # IPC stdout capture
+                        stderr_path = cmd.get("stderr_path")  # IPC stderr capture
+                        exit_code_path = cmd.get("exit_code_path")  # Exit code capture
                         
                         if not script_path or not Path(script_path).exists():
                             send_response(conn, {
@@ -271,7 +353,17 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                             })
                             continue
                         
-                        worker_pid = handle_fork(script_path, args, stdout_path)
+                        # SEC-P3-001: Validate path is within project directory
+                        is_valid, error_msg = validate_script_path(script_path)
+                        if not is_valid:
+                            send_response(conn, {
+                                "type": "Error",
+                                "message": error_msg
+                            })
+                            log(f"SECURITY: Blocked path traversal attempt: {script_path}")
+                            continue
+                        
+                        worker_pid = handle_fork(script_path, args, stdout_path, stderr_path, exit_code_path)
                         send_response(conn, {
                             "type": "Forked",
                             "worker_pid": worker_pid
