@@ -16,6 +16,7 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
+pub mod auto_config;
 pub mod cli;
 pub mod error;
 pub mod ipc;

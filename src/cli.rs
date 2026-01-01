@@ -17,7 +17,7 @@ velo - The high-performance Python runtime for the AI era
 
 USAGE:
     velo run [OPTIONS] <script.py>
-    velo zygote <start|stop|status>
+    velo zygote <start|stop|status|auto-config>
     velo info
 
 COMMANDS:
@@ -28,6 +28,12 @@ COMMANDS:
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
     --profile  Show detailed startup timing breakdown
+
+ZYGOTE SUBCOMMANDS:
+    start        Start Zygote daemon
+    stop         Stop Zygote daemon
+    status       Show Zygote status
+    auto-config  Generate preload config from profile data
 
 OPTIONS:
     -h, --help     Print help
@@ -278,9 +284,10 @@ fn cmd_zygote(args: &[String]) -> Result<()> {
         "start" => cmd_zygote_start(&project_dir, args)?,
         "stop" => cmd_zygote_stop(),
         "status" => cmd_zygote_status(),
+        "auto-config" => cmd_zygote_auto_config()?,
         subcmd => {
             eprintln!("Error: unknown zygote subcommand '{}'", subcmd);
-            eprintln!("Usage: velo zygote <start|stop|status>");
+            eprintln!("Usage: velo zygote <start|stop|status|auto-config>");
             std::process::exit(1);
         }
     }
@@ -372,4 +379,42 @@ fn cmd_zygote_status() {
 fn cmd_zygote_status() {
     println!("▸ Zygote Status");
     println!("└─ Not supported on this platform");
+}
+
+/// Handle 'velo zygote auto-config' command
+fn cmd_zygote_auto_config() -> Result<()> {
+    use crate::zygote::auto_config::ZygoteConfig;
+    use std::fs;
+
+    let profile_path = std::env::temp_dir().join("velo_profile/profile.json");
+
+    if !profile_path.exists() {
+        eprintln!("❌ No profile data found.");
+        eprintln!();
+        eprintln!("To generate profile data, run:");
+        eprintln!("  velo run --profile your_script.py");
+        eprintln!();
+        eprintln!("Then run auto-config again.");
+        std::process::exit(1);
+    }
+
+    let config = ZygoteConfig::from_profile_file(&profile_path)?;
+
+    // Display summary
+    println!("{}", config.summary());
+
+    // Write velo.toml
+    let toml_content = config.to_toml();
+    let toml_path = std::env::current_dir()?.join("velo.toml");
+
+    fs::write(&toml_path, &toml_content)?;
+    println!("📝 Generated: {}", toml_path.display());
+
+    if !config.preload.is_empty() {
+        println!();
+        println!("To start Zygote with these modules:");
+        println!("  velo zygote start --preload {}", config.preload.join(","));
+    }
+
+    Ok(())
 }
