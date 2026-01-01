@@ -10,4 +10,5 @@ pub mod profile;
 pub mod python;
 pub mod python_info;
 pub mod runner;
+pub mod serve;
 pub mod zygote;
