@@ -2,7 +2,7 @@
 
 > **Date**: 2026-01-02  
 > **Status**: Testing Complete  
-> **Result**: 94/94 tests PASSED ✅
+> **Result**: Previous agents: 94/94 PASS ✅, Agent D: 5 FAIL ❌
 
 ---
 
@@ -15,11 +15,11 @@
 | Agent B (Stability) | 19 | ✅ PASS |
 | Agent C (Security) | 24 | ✅ PASS |
 | Leader Brutal | 22 | ✅ PASS |
-| **Total** | **96** | ✅ PASS |
+| **Agent D (Destroyer)** | **14** | ❌ **5 FAIL** |
 
 ---
 
-## Defects Found
+## 🔴 CRITICAL DEFECTS FOUND (Agent D)
 
 ### DEF-3.5-001: `velo serve --help` returns error
 
@@ -27,21 +27,70 @@
 |-------|-------|
 | **Severity** | Minor |
 | **Status** | Open |
-| **Found By** | Agent B (Stability) |
-| **Test ID** | CORE-SERVE-002 |
+| **Found By** | Agent B, confirmed by Agent D |
 
-**Description**:
-```bash
-$ velo serve --help
-Error: invalid app format '--help'
-Expected 'module:app' (e.g., 'main:app')
+### DEF-3.5-002: Server doesn't actually start (uvicorn not invoked correctly)
+
+| Field | Value |
+|-------|-------|
+| **Severity** | 🔴 CRITICAL |
+| **Status** | Open |
+| **Found By** | Agent D (Destroyer) |
+| **Test ID** | FUNC-001, FUNC-002, FUNC-003 |
+
+**Error Output**:
+```
+🚀 Starting server...
+   App:       main:app
+   Framework: Unknown
+   Bind:      127.0.0.1:18001
+   Workers:   1
+
+/path/.venv/bin/python: No module named uvicorn
 ```
 
-**Expected**: `velo serve --help` should show subcommand help, not treat `--help` as an app argument.
+**Root Cause**: `velo serve` prints startup banner but fails to properly invoke uvicorn in the virtualenv.
 
-**Workaround**: Use `velo --help` to see all commands including serve.
+**Impact**: **Server never actually starts!** Users see "Starting server" but no server runs.
 
-**Recommendation**: Make `--help` take precedence over required positional argument.
+### DEF-3.5-003: App crash on import error not displayed
+
+| Field | Value |
+|-------|-------|
+| **Severity** | High |
+| **Status** | Open |
+| **Found By** | Agent D (Destroyer) |
+| **Test ID** | ERR-REC-002 |
+
+**Description**: When app crashes on import, the Python error is swallowed:
+```python
+# crash_on_import.py
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
+```
+
+User sees "No module named uvicorn" instead of the actual crash error.
+
+### DEF-3.5-004: Framework not detected
+
+| Field | Value |
+|-------|-------|
+| **Severity** | Medium |
+| **Status** | Open |
+| **Found By** | Agent D |
+
+**Output**: `Framework: Unknown` even for FastAPI apps.
+
+---
+
+## Root Cause Analysis
+
+The core issue is in `velo serve` implementation:
+1. It prints a nice banner ✅
+2. But then runs `python -m uvicorn` without ensuring uvicorn is available ❌
+3. It should either:
+   - Auto-install uvicorn if missing
+   - Use Zygote to run with pre-installed deps
+   - Give clear error about missing dependency
 
 ---
 
