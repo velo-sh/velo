@@ -9,3 +9,15 @@ dependencies = []
 
 [tool.uv]
 python-preference = "only-managed"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m not slow')",
+    "chaos: marks tests as resource-heavy chaos tests",
+    "brutal: marks tests as brutal stress tests",
+    "order: execution order for test hierarchy",
+]

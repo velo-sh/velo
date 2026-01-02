@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-01-02
+
+### Added
+
+- **`velo serve` command**: Serve ASGI/WSGI apps with Zygote pre-warming
+  - Syntax: `velo serve main:app --workers 4 --reload`
+  - Framework auto-detection (FastAPI, Django, Flask, Starlette)
+  - Wraps uvicorn with automatic Zygote integration
+  - `--host`, `--port`, `--workers`, `--reload`, `--no-zygote` options
+- **Worker pool management**: Health checks and graceful shutdown
+- **RFC-0003**: Phase 3.5 Ecosystem Integration documentation
+
 ## [0.2.0] - 2026-01-01
 
 ### Added
