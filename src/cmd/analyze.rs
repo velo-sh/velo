@@ -37,6 +37,32 @@ impl Default for AnalyzeArgs {
     }
 }
 
+/// Validate a path argument for security issues
+/// DEF-4.0-002: Reject special paths like /dev/null
+/// DEF-4.0-003: Reject paths with null bytes
+fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
+    // DEF-4.0-003: Check for null bytes
+    if path.contains('\0') {
+        anyhow::bail!("{} contains invalid null byte: {:?}", arg_name, path);
+    }
+
+    // DEF-4.0-002: Check for special device paths
+    let path_buf = PathBuf::from(path);
+    let path_str = path_buf.to_string_lossy();
+
+    // Block device paths on Unix
+    if path_str.starts_with("/dev/") {
+        anyhow::bail!("{} cannot be a device path: {}", arg_name, path_str);
+    }
+
+    // Block empty paths
+    if path.is_empty() {
+        anyhow::bail!("{} cannot be empty", arg_name);
+    }
+
+    Ok(path_buf)
+}
+
 /// Configuration from pyproject.toml [tool.velo] section
 #[derive(Debug, Clone, Default)]
 pub struct VeloConfig {
@@ -231,7 +257,7 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
         if let Some((key, value)) = arg.split_once('=') {
             match key {
                 "--output" | "-o" => {
-                    parsed.output = Some(PathBuf::from(value));
+                    parsed.output = Some(validate_path(value, "--output")?);
                 }
                 "--slow-threshold-ms" => {
                     parsed.slow_threshold_ms = value
@@ -253,7 +279,7 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
                 if i >= args.len() {
                     anyhow::bail!("--output requires a path argument");
                 }
-                parsed.output = Some(PathBuf::from(&args[i]));
+                parsed.output = Some(validate_path(&args[i], "--output")?);
             }
             "--suggest-preload" => {
                 parsed.suggest_preload = true;
@@ -279,7 +305,7 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
                 anyhow::bail!("Unknown option: {}", arg);
             }
             _ => {
-                parsed.file = Some(PathBuf::from(&args[i]));
+                parsed.file = Some(validate_path(&args[i], "file")?);
             }
         }
         i += 1;
@@ -789,5 +815,35 @@ slow_threshold_ms = 75
         ];
         let parsed = parse_args(&args).unwrap();
         assert_eq!(parsed.output, Some(PathBuf::from("report.json")));
+    }
+
+    #[test]
+    fn test_validate_path_dev_null() {
+        // DEF-4.0-002: /dev/null should be rejected
+        let result = validate_path("/dev/null", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("device path"));
+    }
+
+    #[test]
+    fn test_validate_path_null_byte() {
+        // DEF-4.0-003: Null bytes should be rejected
+        let result = validate_path("file\0.py", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("null byte"));
+    }
+
+    #[test]
+    fn test_validate_path_empty() {
+        let result = validate_path("", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[test]
+    fn test_validate_path_valid() {
+        let result = validate_path("main.py", "file");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from("main.py"));
     }
 }
