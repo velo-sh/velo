@@ -4,6 +4,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::cache::EnvCache;
+use crate::config::VeloConfig;
 use crate::python_info::{PythonInfo, PythonVersion};
 use crate::zygote::ZygoteLauncher;
 use crate::{python, runner};
@@ -110,8 +111,20 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
     let started_new = if !socket_path.exists() {
-        eprintln!("🚀 Starting Zygote...");
-        if let Err(e) = launcher.start(&[]) {
+        // Read preload config from pyproject.toml (DEV-FIX-001)
+        let config = VeloConfig::from_pyproject_toml();
+        let preload: Vec<&str> = config
+            .as_ref()
+            .map(|c| c.preload.iter().map(|s| s.as_str()).collect())
+            .unwrap_or_default();
+
+        if preload.is_empty() {
+            eprintln!("🚀 Starting Zygote...");
+        } else {
+            eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
+        }
+
+        if let Err(e) = launcher.start(&preload) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
