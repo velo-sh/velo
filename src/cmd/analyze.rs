@@ -174,6 +174,14 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     // Detect Python
     let python_path = python::detect_python(&project_dir)?;
 
+    // Security notice: velo analyze executes the script to gather real import times
+    // This is by design (RFC-0004) - measuring actual import performance requires execution
+    eprintln!(
+        "{}⚠️  Note: Script will be executed to measure import times{}",
+        colors::YELLOW,
+        colors::RESET
+    );
+
     // Run with profiling
     eprintln!(
         "{}📊 Analyzing imports for {}...{}",
@@ -217,7 +225,29 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
     let mut i = 2; // Skip "velo" and "analyze"
 
     while i < args.len() {
-        match args[i].as_str() {
+        let arg = &args[i];
+
+        // Handle --key=value syntax
+        if let Some((key, value)) = arg.split_once('=') {
+            match key {
+                "--output" | "-o" => {
+                    parsed.output = Some(PathBuf::from(value));
+                }
+                "--slow-threshold-ms" => {
+                    parsed.slow_threshold_ms = value
+                        .parse()
+                        .with_context(|| format!("Invalid --slow-threshold-ms value: {}", value))?;
+                }
+                _ => {
+                    anyhow::bail!("Unknown option: {}", key);
+                }
+            }
+            i += 1;
+            continue;
+        }
+
+        // Handle --key value syntax
+        match arg.as_str() {
             "--output" | "-o" => {
                 i += 1;
                 if i >= args.len() {
@@ -734,5 +764,30 @@ slow_threshold_ms = 75
         let config = VeloConfig::parse_toml(content).unwrap();
         assert!(config.preload.is_empty());
         assert_eq!(config.slow_threshold_ms, Some(75));
+    }
+
+    #[test]
+    fn test_parse_args_equals_syntax() {
+        // DEF-4.0-001: Support --key=value syntax
+        let args = vec![
+            "velo".to_string(),
+            "analyze".to_string(),
+            "--slow-threshold-ms=50".to_string(),
+            "main.py".to_string(),
+        ];
+        let parsed = parse_args(&args).unwrap();
+        assert_eq!(parsed.slow_threshold_ms, 50);
+        assert_eq!(parsed.file, Some(PathBuf::from("main.py")));
+    }
+
+    #[test]
+    fn test_parse_args_output_equals_syntax() {
+        let args = vec![
+            "velo".to_string(),
+            "analyze".to_string(),
+            "--output=report.json".to_string(),
+        ];
+        let parsed = parse_args(&args).unwrap();
+        assert_eq!(parsed.output, Some(PathBuf::from("report.json")));
     }
 }
