@@ -1,4 +1,4 @@
-//! Python environment detection and setup
+//! Python environment fingerprinting and setup
 //!
 //! This module handles:
 //! - Detecting the Python interpreter (venv, VELO_PYTHON, system)
