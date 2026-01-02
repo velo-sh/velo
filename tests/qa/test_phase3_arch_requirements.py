@@ -176,7 +176,7 @@ class TestConfiguration:
 
     def test_cfg_003_auto_config(self):
         """
-        CFG-003: Auto-config should generate velo.toml.
+        CFG-003: Auto-config should update pyproject.toml [tool.velo].
         
         Arch requirement: `velo zygote auto-config` after --profile generates config.
         """
@@ -200,11 +200,12 @@ print("app started")
             
             assert_no_crash(result)
             
-            # Check if velo.toml was created
-            config_path = env.path / "velo.toml"
-            if config_path.exists():
-                content = config_path.read_text()
-                print(f"\n  Auto-generated config:\n{content[:200]}")
+            # Check if [tool.velo] was added to pyproject.toml
+            pyproject_path = env.path / "pyproject.toml"
+            if pyproject_path.exists():
+                content = pyproject_path.read_text()
+                if "[tool.velo]" in content:
+                    print(f"\n  Auto-generated config in pyproject.toml:\n{content[:200]}")
         finally:
             env.cleanup()
 

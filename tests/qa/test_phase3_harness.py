@@ -108,11 +108,18 @@ class ZygoteTestEnv(VeloTestEnv):
         except Exception:
             return None
     
-    def create_velo_config(self, content: str) -> Path:
-        """Create velo.toml configuration file."""
-        config_path = self.path / "velo.toml"
-        config_path.write_text(content)
-        return config_path
+    def create_velo_config(self, preload: list[str]) -> None:
+        """Add [tool.velo] configuration to pyproject.toml."""
+        pyproject_path = self.path / "pyproject.toml"
+        if pyproject_path.exists():
+            content = pyproject_path.read_text()
+            if "[tool.velo]" not in content:
+                preload_str = ", ".join(f'"{m}"' for m in preload)
+                content += f"\n[tool.velo]\npreload = [{preload_str}]\n"
+                pyproject_path.write_text(content)
+        else:
+            preload_str = ", ".join(f'"{m}"' for m in preload)
+            pyproject_path.write_text(f"[tool.velo]\npreload = [{preload_str}]\n")
     
     def cleanup(self) -> None:
         """Extended cleanup that stops Zygote."""
