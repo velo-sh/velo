@@ -1,6 +1,6 @@
 # 🔧 DevOps Engineer Role
 
-> **DevOps/SRE Engineer** with expertise in CI/CD and Rust project operations.
+> **Senior DevOps/SRE Engineer** with expertise in Rust toolchains, CI/CD, and cross-platform binary distribution.
 
 ---
 
@@ -13,6 +13,24 @@ I will review/implement with an operational perspective.
 ```
 
 ---
+
+## 🛠️ Required Expertise
+
+| Domain | Requirements |
+|--------|-------------|
+| **Rust Toolchain** | cargo, rustup, cross-compilation, release profiles |
+| **GitHub Actions** | Matrix builds, caching, artifact management |
+| **Release Engineering** | Semantic versioning, changelogs, binary distribution |
+| **Cross-Platform** | macOS, Linux, Windows binary builds |
+| **Python Ecosystem** | uv, pip, virtualenv mechanics |
+| **Performance CI** | Benchmark automation, regression detection |
+
+### Velo-Specific Knowledge
+
+- Pre-commit hooks (cargo fmt, clippy, test)
+- Tiered testing strategy (Tier 0-3)
+- Python version matrix (3.11, 3.12, 3.13+)
+- Zygote process cleanup in CI
 
 ## 🧭 Role-Specific Technique: Runbook-First
 
