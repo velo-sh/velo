@@ -2,38 +2,40 @@
 
 **DEV-FIX-001**: Zygote should read `[tool.velo].preload` from pyproject.toml
 
+> **Status**: ✅ Implemented (Commit f0161a4)
+
 ## Background
 
 When user runs `velo run --zygote`, Zygote auto-starts but does NOT read preload config from pyproject.toml.
 
 **Current behavior**:
 - `velo zygote start --preload fastapi` → ✅ Works (275ms)
-- `velo run --zygote` with pyproject.toml config → ❌ Ignores preload (470ms)
+- `velo run --zygote` with pyproject.toml config → ✅ Now works! (275ms)
 
 ## Requirements
 
-### REQ-1: Read pyproject.toml on Zygote auto-start
+### REQ-1: Read pyproject.toml on Zygote auto-start ✅
 
 When `velo run --zygote` triggers Zygote auto-start:
 1. Read `pyproject.toml` from current directory
 2. Parse `[tool.velo].preload` array
 3. Pass modules to Zygote daemon via `--preload` arg
 
-### REQ-2: Affected files
+### REQ-2: Affected files ✅
 
 | File | Change |
 |------|--------|
 | `src/cmd/run.rs` | Read pyproject.toml before launching Zygote |
-| (New) `src/config.rs` | Parse `[tool.velo]` section |
+| `src/config.rs` | Parse `[tool.velo]` section |
 
-### REQ-3: Config format
+### REQ-3: Config format ✅
 
 ```toml
 [tool.velo]
 preload = ["fastapi", "pydantic", "uvicorn"]
 ```
 
-### REQ-4: Acceptance criteria
+### REQ-4: Acceptance criteria ✅
 
 ```bash
 # Given pyproject.toml with preload config
@@ -44,34 +46,27 @@ velo run --zygote app.py
 # Expected: ~275ms (not 470ms)
 ```
 
-### REQ-5: Preload 合并策略
+### REQ-5: Preload Merge Strategy (Future)
 
-**问题**：多个来源可能提供 preload 配置
+| Source | Priority |
+|--------|----------|
+| pyproject.toml | 1 (最高) |
+| CLI `--preload` | 2 |
+| Auto-detect | 3 (未来) |
 
-| 来源 | 优先级 | 说明 |
-|------|--------|------|
-| `pyproject.toml` | 1 (最高) | 用户意图 |
-| CLI `--preload` 参数 | 2 | 临时覆盖 |
-| Auto-detect (未来) | 3 | 自动补充 |
-
-**策略**：
-- 合并所有来源的模块列表
-- 去重 (保持顺序，后来的不重复添加)
-- 不存在冲突覆盖 (只做并集)
-
-**示例**：
-```
-pyproject.toml: ["fastapi", "numpy"]
-CLI --preload:  ["pydantic"]
-→ 最终: ["fastapi", "numpy", "pydantic"]
-```
+**策略**: 合并 + 去重 (并集，无冲突覆盖)
 
 ## Priority
 
 **P1** - Critical for Zygote performance claim (55% faster)
 
+## Implementation
+
+- Commit: `f0161a4`
+- New file: `src/config.rs` with `VeloConfig::from_pyproject_toml()`
+- Modified: `src/cmd/run.rs` to pass preload to Zygote launcher
+
 ## References
 
 - Benchmark: 470ms → 275ms with preload
 - Related QA: QA-REQ-001-zygote-preload.md
-
