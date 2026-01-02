@@ -68,17 +68,33 @@ To fix:
 
 | Field | Value |
 |-------|-------|
-| **Severity** | High |
-| **Status** | ⚠️ Deferred |
-| **Resolution** | uvicorn check runs before app load - by design |
+| **Severity** | High → ✅ FIXED |
+| **Status** | ✅ **FIXED** |
+| **Resolution** | Crash errors now displayed correctly |
+
+**New Behavior**:
+```
+🔍 Detected: FastAPI (auto-preload: ...)
+🚀 Starting server...
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  ...
+RuntimeError: INTENTIONAL CRASH ON IMPORT
+```
 
 ### DEF-3.5-004: Framework detection shows Unknown
 
 | Field | Value |
 |-------|-------|
-| **Severity** | Medium |
-| **Status** | ⚠️ Known limitation |
-| **Resolution** | Framework detection enhancement in backlog |
+| **Severity** | Medium → ✅ FIXED |
+| **Status** | ✅ **FIXED** |
+| **Resolution** | Framework auto-detection now works |
+
+**New Behavior**:
+```
+🔍 Detected: FastAPI (auto-preload: fastapi, pydantic, starlette, ...)
+```
 
 ---
 
