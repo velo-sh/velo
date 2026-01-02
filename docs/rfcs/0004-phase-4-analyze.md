@@ -6,6 +6,11 @@
 > **Target Release**: Velo v0.4.0  
 > **Discussion**: [GitHub Discussions](https://github.com/velo-sh/velo/discussions)
 
+### Related Documents
+
+- [TEST_ARCHITECTURE.md](../TEST_ARCHITECTURE.md) - Test environment isolation (**MUST READ**)
+- [AGENTS.md](../../AGENTS.md) - AI agent configuration
+
 ---
 
 ## 1. Executive Summary
