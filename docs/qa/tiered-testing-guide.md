@@ -196,9 +196,46 @@ tests/qa/
 
 ---
 
-## 7. Running Tests
+## 7. Test Environment Standards
 
-### 7.1 Quick Commands
+### 7.1 The `isolated_env` Fixture
+
+> **RULE**: Tests that run velo commands MUST use `isolated_env` fixture to ensure local/CI consistency.
+
+```python
+def test_uvicorn_missing_error(isolated_env):
+    """Test behavior when uvicorn not installed."""
+    env = isolated_env  # Clean venv, NO extra dependencies
+    env.create_app("main.py", "app = None")
+    
+    result = env.run_velo("serve", "main:app")
+    assert "Missing dependency" in result.stderr
+```
+
+### 7.2 Fixture API
+
+| Method | Description |
+|--------|-------------|
+| `env.path` | Temporary directory path |
+| `env.python` | Path to isolated Python |
+| `env.velo` | Path to velo binary |
+| `env.create_app(name, code)` | Create app file |
+| `env.install(*packages)` | Install packages in isolated venv |
+| `env.run_velo(*args)` | Run velo command |
+
+### 7.3 Why Isolated Environment?
+
+| Problem | Solution |
+|---------|----------|
+| Local has uvicorn, CI doesn't | `isolated_env` starts with NO dependencies |
+| Tests pollute each other | Each test gets fresh venv |
+| "Works on my machine" | Same behavior everywhere |
+
+---
+
+## 8. Running Tests
+
+### 8.1 Quick Commands
 
 ```bash
 # Smoke test (3s)
@@ -214,7 +251,7 @@ tests/qa/
 ./scripts/qa-fast.sh 3
 ```
 
-### 7.2 Specific Tests
+### 8.2 Specific Tests
 
 ```bash
 # Run single test
@@ -229,7 +266,7 @@ uv run python -m pytest --cov=. tests/qa/
 
 ---
 
-## 8. Related Documents
+## 9. Related Documents
 
 | Document | Purpose |
 |----------|---------|
