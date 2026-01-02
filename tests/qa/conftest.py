@@ -18,6 +18,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier1: Fast tests (<30s) - security, error handling")
     config.addinivalue_line("markers", "tier2: Standard tests (<10min) - full functionality")
     config.addinivalue_line("markers", "tier3: Heavy tests (~5min) - chaos, stress tests")
+    config.addinivalue_line("markers", "slow: Tests that install real packages (slow)")
+    config.addinivalue_line("markers", "perf: Performance benchmark tests")
 
 
 @pytest.fixture(autouse=True, scope="module")
