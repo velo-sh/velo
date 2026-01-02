@@ -31,13 +31,23 @@ echo -e "$PASS"
 # Step 2: Fix venv permissions (common issue)
 echo ""
 echo -e "${YELLOW}[2/6] Fixing venv permissions...${NC}"
-chmod +x .venv/bin/python3 2>/dev/null || true
+# Fix all python binaries in .venv
+find .venv -name "python*" -type f -exec chmod +x {} \; 2>/dev/null || true
+find .venv -name "python*" -type l -exec chmod +x {} \; 2>/dev/null || true
+# Fix benchmark venvs
 find ../velo-benchmarks -name "python*" -exec chmod +x {} \; 2>/dev/null || true
 echo -e "$PASS"
+
+# Helper function to ensure permissions before uv run
+fix_perms() {
+    chmod +x .venv/bin/python3 2>/dev/null || true
+    chmod +x .venv/bin/python 2>/dev/null || true
+}
 
 # Step 3: Tier 0 Smoke Tests
 echo ""
 echo -e "${YELLOW}[3/6] Running Tier 0 (Smoke)...${NC}"
+fix_perms
 if uv run pytest tests/qa/test_phase4*.py -m tier0 -q; then
     echo -e "$PASS"
 else
@@ -48,6 +58,7 @@ fi
 # Step 4: All Agent Tests
 echo ""
 echo -e "${YELLOW}[4/6] Running Agent Tests...${NC}"
+fix_perms
 if uv run pytest tests/qa/test_phase4_analyze.py tests/qa/test_phase4_agent_*.py -v --tb=short; then
     echo -e "$PASS"
 else
@@ -58,6 +69,7 @@ fi
 # Step 5: Integration Tests (Real Projects)
 echo ""
 echo -e "${YELLOW}[5/6] Running Integration Tests (SLOW)...${NC}"
+fix_perms
 if uv run pytest tests/qa/test_phase4_integration.py -v --tb=short; then
     echo -e "$PASS"
 else
@@ -68,6 +80,10 @@ fi
 # Step 6: Benchmarks
 echo ""
 echo -e "${YELLOW}[6/6] Running Benchmarks...${NC}"
+fix_perms
+# Fix benchmark project venvs specifically
+find ../velo-benchmarks -name "python*" -type f -exec chmod +x {} \; 2>/dev/null || true
+find ../velo-benchmarks -name "python*" -type l -exec chmod +x {} \; 2>/dev/null || true
 if uv run python benchmark_projects.py --all; then
     echo -e "$PASS"
 else
