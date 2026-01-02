@@ -123,7 +123,6 @@ print(f"Import time: {elapsed*1000:.1f}ms")
             stop_zygote(velo_binary, tmp_path)
     
     @pytest.mark.happy_path
-    @pytest.mark.xfail(reason="DEV-FIX-001 not yet implemented - Zygote ignores pyproject.toml preload")
     def test_perf_preload_002_pyproject_toml(self, velo_binary, tmp_path):
         """
         PERF-PRELOAD-002: pyproject.toml preload achieves < 300ms
