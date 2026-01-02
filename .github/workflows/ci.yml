@@ -318,6 +318,130 @@ jobs:
         run: ./scripts/qa-fast.sh 3
 
   # ============================================
+  # Phase 5.0: Fast Loader QA (velo run --fast)
+  # ============================================
+
+  qa-fast-loader-smoke:
+    name: "QA 5.0: Smoke (L0)"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "L0: Smoke Tests (~3s)"
+        run: uv run pytest tests/qa/phase5/test_l0_smoke.py -v --tb=short -m smoke
+
+  qa-fast-loader-standard:
+    name: "QA 5.0: Standard (L1-L3)"
+    runs-on: ubuntu-latest
+    needs: qa-fast-loader-smoke
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "L1-L3: Happy Path + Sad Path + Config (~30s)"
+        run: |
+          uv run pytest tests/qa/test_phase5_loader.py \
+            tests/qa/phase5/test_l1_happy_path.py \
+            tests/qa/phase5/test_l2_sad_path.py \
+            tests/qa/phase5/test_l3_config.py \
+            tests/qa/phase5/test_python_loader.py \
+            tests/qa/phase5/test_cli_bundle.py \
+            -v --tb=short
+
+  qa-fast-loader-security:
+    name: "QA 5.0: Security (L4)"
+    runs-on: ubuntu-latest
+    needs: qa-fast-loader-standard
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "L4: Security Tests (RFC-0006 §3)"
+        run: uv run pytest tests/qa/phase5/test_l4_security.py -v --tb=short -m security
+
+  qa-fast-loader-chaos:
+    name: "QA 5.0: Chaos (L5)"
+    runs-on: ubuntu-latest
+    needs: qa-fast-loader-security
+    continue-on-error: true  # L5 chaos tests may be flaky
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "L5: Chaos/Edge Tests (stress testing)"
+        run: uv run pytest tests/qa/phase5/test_l5_chaos.py -v --tb=short -m edge
+
+  # ============================================
   # Phase 4.0: velo analyze QA
   # ============================================
 
