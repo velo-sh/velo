@@ -1,0 +1,2 @@
+{"commit":"82c27d6","date":"2026-01-02T18:34:40.128463+00:00","machine":"MacBook-Pro-4.local","bench":"blake3_4mb","value_ns":49469620}
+{"commit":"82c27d6","date":"2026-01-02T18:34:40.128463+00:00","machine":"MacBook-Pro-4.local","bench":"module_lookup","value_ns":232}
