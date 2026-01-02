@@ -13,13 +13,14 @@ use crate::{python, runner};
 pub fn cmd_run(args: &[String]) -> Result<()> {
     if args.len() < 3 {
         eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] <script.py>");
+        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
         std::process::exit(1);
     }
 
     // Parse flags
     let mut zygote_enabled = false;
     let mut profile_enabled = false;
+    let mut fast_enabled = false;
     let mut script_arg_idx = 2;
 
     for (i, arg) in args.iter().enumerate().skip(2) {
@@ -30,6 +31,10 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
             }
             "--profile" => {
                 profile_enabled = true;
+                script_arg_idx = i + 1;
+            }
+            "--fast" => {
+                fast_enabled = true;
                 script_arg_idx = i + 1;
             }
             a if a.starts_with('-') => {
@@ -45,7 +50,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     if script_arg_idx >= args.len() {
         eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] <script.py>");
+        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
         std::process::exit(1);
     }
 
@@ -66,7 +71,15 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     // Normal mode (or fallback)
     let (pythonpath, needs_capture) = python::setup_python_env(&project_dir, &python_path);
 
-    if profile_enabled {
+    // Fast mode: inject sitecustomize to activate bundle loader
+    if fast_enabled {
+        run_with_fast_loader(
+            &python_path,
+            &args[script_arg_idx],
+            &project_dir,
+            pythonpath,
+        )?;
+    } else if profile_enabled {
         runner::run_script_with_profile(&python_path, &args[script_arg_idx], pythonpath)?;
     } else {
         runner::run_script(&python_path, &args[script_arg_idx], pythonpath)?;
@@ -209,4 +222,123 @@ fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
             eprintln!("Warning: failed to capture sys.path: {}", e);
         }
     }
+}
+
+/// Run script with fast loader (bundle-accelerated imports)
+///
+/// RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
+fn run_with_fast_loader(
+    python_path: &Path,
+    script_path: &str,
+    project_dir: &Path,
+    pythonpath: Option<String>,
+) -> Result<()> {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // Find bundle.veloc - check multiple locations
+    let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
+    let possible_bundles = [
+        project_dir.join(".velo/cache/bundle.veloc"),
+        project_dir.join("bundle.veloc"),
+        script_dir.join("bundle.veloc"),
+    ];
+
+    let actual_bundle = possible_bundles.iter().find(|p| p.exists()).cloned();
+
+    let actual_bundle = match actual_bundle {
+        Some(p) => p,
+        None => {
+            eprintln!("⚠️  No bundle found. Build one first:");
+            eprintln!("    python python/bundle_builder.py .");
+            eprintln!("   Falling back to normal mode...");
+            return runner::run_script(python_path, script_path, pythonpath);
+        }
+    };
+
+    eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
+
+    // Create sitecustomize.py that activates the bundle
+    let mut sitecustomize = NamedTempFile::new()?;
+    let site_dir = sitecustomize.path().parent().unwrap().to_path_buf();
+
+    // Get absolute paths
+    let bundle_abs = actual_bundle.canonicalize()?;
+    let project_abs = project_dir.canonicalize()?;
+
+    // Find velo_loader.py - check multiple locations
+    let exe_path = std::env::current_exe()?;
+    let possible_paths = [
+        // 1. Project directory (development)
+        project_abs.join("python"),
+        // 2. Source workspace (cargo run from workspace)
+        exe_path
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("python"),
+        // 3. Next to executable (installed)
+        exe_path.parent().unwrap().join("python"),
+        // 4. Installed in share (system install)
+        exe_path
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("share/velo/python"),
+    ];
+
+    let velo_loader_path = possible_paths
+        .iter()
+        .find(|p| p.join("velo_loader.py").exists())
+        .cloned()
+        .unwrap_or_else(|| possible_paths[0].clone());
+
+    // Write sitecustomize content
+    writeln!(
+        sitecustomize,
+        r#"# Velo Fast Loader sitecustomize
+import sys
+sys.path.insert(0, r"{velo_loader}")
+
+try:
+    from velo_loader import activate_fast_mode
+    from pathlib import Path
+    
+    bundle_path = Path(r"{bundle}")
+    project_root = Path(r"{project}")
+    
+    _bundle = activate_fast_mode(bundle_path, project_root)
+    print("⚡ Fast loader active:", len(_bundle), "modules")
+except Exception as e:
+    print(f"⚠️  Fast loader failed: {{e}}")
+    print("   Falling back to normal imports...")
+"#,
+        velo_loader = velo_loader_path.display(),
+        bundle = bundle_abs.display(),
+        project = project_abs.display(),
+    )?;
+    sitecustomize.flush()?;
+
+    // Rename to sitecustomize.py
+    let site_file = site_dir.join("sitecustomize.py");
+    std::fs::copy(sitecustomize.path(), &site_file)?;
+
+    // Add site dir to PYTHONPATH
+    let site_dir_str = site_dir.to_string_lossy().to_string();
+    let enhanced_pythonpath = match pythonpath {
+        Some(p) if !p.is_empty() => format!("{}:{}", p, site_dir_str),
+        _ => site_dir_str,
+    };
+
+    // Run script with enhanced PYTHONPATH
+    let result = runner::run_script(python_path, script_path, Some(enhanced_pythonpath));
+
+    // Cleanup
+    let _ = std::fs::remove_file(&site_file);
+
+    result
 }
