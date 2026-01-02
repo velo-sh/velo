@@ -7,6 +7,7 @@ pub mod cache;
 pub mod cli;
 pub mod cmd;
 pub mod hardware;
+pub mod loader;
 pub mod profile;
 pub mod python;
 pub mod python_info;

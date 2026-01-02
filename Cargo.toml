@@ -22,9 +22,12 @@ hex = "0.4"
 anyhow = "1.0"
 rkyv = { version = "0.8.12", features = ["bytecheck"] }
 tempfile = "3"
+crc32fast = "1.4"
+thiserror = "1.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+fs2 = "0.4"
 
 [dev-dependencies]
 
