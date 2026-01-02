@@ -31,6 +31,61 @@ $ velo analyze
 Estimated improvement: 15-25% faster startup
 ```
 
+### 1.3 Design Principles ⚠️ CRITICAL
+
+> **Core Philosophy**: Runtime analysis over hardcoding. Velo must work with ANY Python library, not just popular frameworks.
+
+#### ❌ Anti-Patterns (Current Phase 3.5 Problems)
+
+```rust
+// BAD: Hardcoded framework list
+pub enum Framework { FastAPI, Django, Flask, Unknown }
+
+// BAD: Static preload mapping
+Framework::FastAPI => vec!["fastapi", "pydantic", ...]
+```
+
+**Problems with hardcoding**:
+- New frameworks (Sanic, Litestar, Tornado...) = Unknown
+- Custom libraries = not optimized
+- Every new framework requires code changes
+- Maintenance burden grows linearly
+
+#### ✅ Best Practices
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Measure, don't guess** | Use `--profile` to get real import times |
+| **User-defined config** | Read from `velo.toml`, don't hardcode |
+| **Heuristics as fallback** | Framework detection = hint only |
+| **Zero magic** | Show user what modules will be preloaded |
+
+```rust
+// GOOD: Runtime analysis
+pub fn analyze_imports(script: &Path) -> Vec<ImportMetric> {
+    let output = run_with_profile(script);
+    parse_import_times(output)  // Real data, not hardcoded
+}
+
+// GOOD: User config > heuristics
+fn get_preload_modules(project: &Path) -> Vec<String> {
+    if let Some(config) = read_velo_toml(project) {
+        return config.preload;  // User knows best
+    }
+    suggest_from_analysis()  // Fallback to runtime data
+}
+```
+
+#### Migration Path
+
+```
+Phase 3.5 (current):  Hardcoded framework detection
+                      ↓
+Phase 4.0 (this RFC): Runtime analysis + velo.toml
+                      ↓
+Phase 4.1 (future):   Deprecate hardcoded framework.rs
+```
+
 ---
 
 ## 2. Proposed Features
