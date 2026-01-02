@@ -212,7 +212,7 @@ ps aux | grep velo_zygote  # Should only show main Zygote
 # Manual verification
 velo run --profile slow_app.py
 velo zygote auto-config
-cat velo.toml  # Should contain preload = ["numpy", "pandas", ...]
+cat pyproject.toml  # Should contain [tool.velo] with preload = ["numpy", "pandas", ...]
 ```
 
 ---

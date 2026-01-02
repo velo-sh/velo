@@ -138,12 +138,28 @@ fn cmd_zygote_auto_config() -> Result<()> {
     // Display summary
     println!("{}", config.summary());
 
-    // Write velo.toml
-    let toml_content = config.to_toml();
-    let toml_path = std::env::current_dir()?.join("velo.toml");
+    // Update pyproject.toml with [tool.velo] section
+    let pyproject_path = std::env::current_dir()?.join("pyproject.toml");
 
-    fs::write(&toml_path, &toml_content)?;
-    println!("📝 Generated: {}", toml_path.display());
+    if pyproject_path.exists() {
+        let content = fs::read_to_string(&pyproject_path)?;
+        if content.contains("[tool.velo]") {
+            eprintln!("⚠️  [tool.velo] section already exists in pyproject.toml");
+            eprintln!("   Please update manually with:");
+            eprintln!("   preload = {:?}", config.preload);
+        } else {
+            // Append [tool.velo] section
+            let new_content = format!("{}\n{}", content, config.to_toml());
+            fs::write(&pyproject_path, new_content)?;
+            println!(
+                "📝 Updated: {} (added [tool.velo] section)",
+                pyproject_path.display()
+            );
+        }
+    } else {
+        eprintln!("⚠️  No pyproject.toml found. Add this to your pyproject.toml:");
+        println!("{}", config.to_toml());
+    }
 
     if !config.preload.is_empty() {
         println!();
