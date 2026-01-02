@@ -200,9 +200,9 @@ os.system("touch {marker}")
             
             result = p.analyze("danger.py")
             
-            # The os.system should not have executed
+            # CRITICAL: The os.system should not have executed
             # (analysis should be static or sandboxed)
-            # Note: if analyze runs the code, this might fail - that's the point!
+            assert not os.path.exists(marker), "SECURITY: os.system() escaped sandbox!"
 
 
 # =============================================================================
@@ -298,6 +298,10 @@ class TestInputValidation:
             # Should create literal file, not execute whoami
             literal_file = p.path / evil_output
             # The output should be treated as literal filename
+            # Check that no file with user's name was created
+            import getpass
+            username = getpass.getuser()
+            assert not os.path.exists(p.path / f"{username}.json"), f"Command substitution executed!"
 
 
 if __name__ == "__main__":
