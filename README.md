@@ -161,7 +161,7 @@ cargo fmt && cargo clippy -- -D warnings
 ## Roadmap
 
 - [x] Phase 1: Environment fingerprinting & path caching
-- [x] Phase 1.5: Environment detection (ABI checks, `velo info`, `--profile`)
+- [x] Phase 1.5: Environment Fingerprinting (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
 - [x] Phase 3: Zygote mode (15ms warm start!) 🧬
 - [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
