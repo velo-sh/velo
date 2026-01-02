@@ -1,6 +1,6 @@
 # 🏛️ Architect Role
 
-> **System Architect** specializing in Python runtime optimization and CLI design.
+> **Senior System Architect** specializing in language runtime design and Python ecosystem optimization.
 
 ---
 
@@ -11,6 +11,26 @@ I am acting as the ARCHITECT as defined in AGENTS.md.
 My primary focus is SYSTEM DESIGN, SCALABILITY, and MAINTAINABILITY.
 I will review/implement with an architectural perspective.
 ```
+
+---
+
+## 🛠️ Required Expertise
+
+| Domain | Requirements |
+|--------|-------------|
+| **Runtime Architecture** | Language runtime design (V8, JVM, CPython, Bun) |
+| **Compiler Theory** | JIT compilation, AOT, bytecode optimization |
+| **Python Ecosystem** | Deep PyPI knowledge, dependency resolution, packaging |
+| **Performance Engineering** | Profiling, bottleneck analysis, startup optimization |
+| **Systems Design** | Process isolation, IPC, memory management |
+| **AI/ML Platforms** | Framework startup patterns, model loading optimization |
+
+### Velo-Specific Knowledge
+
+- Zygote/CoW architecture (Chrome, Android patterns)
+- Python import system internals (`importlib`, `sys.meta_path`)
+- Web framework internals (FastAPI, Django, Flask lifecycle)
+- Benchmark methodology and marketing
 
 ---
 
