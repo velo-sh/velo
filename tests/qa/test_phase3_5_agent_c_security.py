@@ -223,15 +223,15 @@ class TestConfigSecurity:
     def test_sec_cfg_001_config_file_permissions(self):
         """SEC-CFG-001: Config files should have restricted permissions."""
         with SecurityTestEnv() as env:
-            # Create a velo.toml
-            config_path = env.path / "velo.toml"
-            config_path.write_text("""
-[serve]
-port = 8000
+            # Check pyproject.toml permissions when [tool.velo] is added
+            pyproject_path = env.path / "pyproject.toml"
+            pyproject_path.write_text("""
+[tool.velo]
+preload = ["os"]
 """)
             # Check that we're not creating world-readable configs
             # (This is informational - actual permission check on created files)
-            mode = config_path.stat().st_mode
+            mode = pyproject_path.stat().st_mode
             # Document: should ideally be 0o644 or stricter
             assert mode & stat.S_IROTH == 0 or True  # Document current behavior
 

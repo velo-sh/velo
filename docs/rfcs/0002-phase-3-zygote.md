@@ -156,16 +156,13 @@ def zygote_main(config_path: str):
 ### 2.3 Configuration
 
 ```toml
-# velo.toml (new file)
-[zygote]
-enabled = true
+# pyproject.toml
+[tool.velo]
 preload = ["numpy", "pandas", "fastapi", "sqlalchemy"]
-max_workers = 10
-idle_timeout = 300  # seconds
-socket_path = "/tmp/velo-zygote.sock"
+idle_timeout = 300  # seconds (for Zygote daemon)
 
 # Auto-detect from --profile data
-[zygote.auto]
+[tool.velo.zygote]
 threshold_ms = 50  # Pre-load modules that take > 50ms
 ```
 
@@ -235,7 +232,7 @@ velo zygote auto-config
 
 - [ ] Integration with `--profile` data
 - [ ] `velo zygote auto-config` command
-- [ ] `velo.toml` generation
+- [ ] `pyproject.toml [tool.velo]` generation
 
 ### 4.4 Phase 3.4: Optimization (1 week)
 

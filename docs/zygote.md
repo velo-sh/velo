@@ -95,7 +95,7 @@ Preload modules (3):
 
 Estimated startup savings: 746ms
 
-📝 Generated: velo.toml
+📝 Updated: pyproject.toml (added [tool.velo] section)
 ```
 
 ### 3. Start Zygote
