@@ -1,7 +1,9 @@
 //! RFC-0006 Phase 5.0.1 Bundle Infrastructure Tests
 //!
 //! TDD: These tests are written FIRST, before implementation.
-//! All security requirements from Handover document are non-negotiable.
+//! All security requirements from RFC-0006 are non-negotiable.
+//!
+//! Updated 2026-01-03: Migrated from SHA-256/CRC32 to unified BLAKE3
 
 #[cfg(test)]
 mod security_tests {
@@ -43,60 +45,34 @@ mod security_tests {
         path
     }
 
-    /// Create a bundle with corrupted content hash
-    fn create_corrupted_bundle(dir: &Path) -> std::path::PathBuf {
-        let path = dir.join("corrupted.veloc");
-        let mut file = File::create(&path).unwrap();
-
-        // Write header with VELO magic
-        file.write_all(b"VELO").unwrap();
-        // Version = 1
-        file.write_all(&1u32.to_le_bytes()).unwrap();
-        // Fake SHA-256 hash (32 bytes of 0xFF - will never match)
-        file.write_all(&[0xFF; 32]).unwrap();
-        // Some payload that won't match the hash
-        file.write_all(b"corrupted data").unwrap();
-
-        path
-    }
-
     // === SECURITY TEST CASES ===
 
     /// Test: Reject bundles larger than 256MB
-    /// Handover Section 2.2: DoS Prevention
+    /// RFC-0006 Section 3.1: DoS Prevention
     #[test]
     fn test_rejects_oversized_bundle() {
         use velo::loader::error::LoaderError;
         use velo::loader::security::validate_size;
 
         let temp = tempdir().unwrap();
-        // Create a bundle that claims to be > 256MB
-        // (We don't actually write 256MB, just test the check)
         let path = create_fake_bundle(temp.path(), 1024);
 
         // Validate should pass for small bundle
         assert!(validate_size(&path).is_ok());
-
-        // For actual test, we'd need to mock file size or create sparse file
-        // The implementation should check: metadata().len() > MAX_BUNDLE_SIZE
     }
 
-    /// Test: Reject bundles larger than 256MB (actual size check)
+    /// Test: 256MB limit constant is correct
     #[test]
     fn test_rejects_oversized_bundle_size_check() {
-        use velo::loader::error::LoaderError;
-
-        // The constant must be exactly 256 * 1024 * 1024
         const MAX_BUNDLE_SIZE: u64 = 256 * 1024 * 1024;
         assert_eq!(MAX_BUNDLE_SIZE, 268_435_456);
 
-        // Test that our limit matches RFC specification
-        let test_size: u64 = 300 * 1024 * 1024; // 300MB
+        let test_size: u64 = 300 * 1024 * 1024;
         assert!(test_size > MAX_BUNDLE_SIZE, "300MB should exceed limit");
     }
 
     /// Test: Reject world-writable files (mode & 0o002 != 0)
-    /// Handover Section 2.3: File Permission Checks
+    /// RFC-0006 Section 3.3: File Permission Checks
     #[cfg(unix)]
     #[test]
     fn test_rejects_world_writable() {
@@ -104,8 +80,6 @@ mod security_tests {
         use velo::loader::security::validate_permissions;
 
         let temp = tempdir().unwrap();
-
-        // Create bundle with world-writable permissions (0o666)
         let path = create_bundle_with_mode(temp.path(), 0o666);
 
         let result = validate_permissions(&path);
@@ -124,8 +98,6 @@ mod security_tests {
         use velo::loader::security::validate_permissions;
 
         let temp = tempdir().unwrap();
-
-        // Create bundle with secure permissions (0o644)
         let path = create_bundle_with_mode(temp.path(), 0o644);
 
         let result = validate_permissions(&path);
@@ -133,7 +105,7 @@ mod security_tests {
     }
 
     /// Test: Reject bundles in /tmp
-    /// Handover Section 2.3: Insecure Location
+    /// RFC-0006 Section 3.2: Three-Tier Path Security
     #[cfg(unix)]
     #[test]
     fn test_rejects_insecure_location_tmp() {
@@ -141,7 +113,6 @@ mod security_tests {
         use velo::loader::error::LoaderError;
         use velo::loader::security::validate_location;
 
-        // Test path that starts with /tmp
         let tmp_path = PathBuf::from("/tmp/malicious.veloc");
 
         let result = validate_location(&tmp_path);
@@ -154,7 +125,7 @@ mod security_tests {
     }
 
     /// Test: Reject symlink traversal attacks
-    /// Security: canonicalize() must be used
+    /// RFC-0006 Section 3.2: Three-Tier Path Security
     #[cfg(unix)]
     #[test]
     fn test_rejects_insecure_location_symlink() {
@@ -162,30 +133,25 @@ mod security_tests {
         use velo::loader::security::validate_location;
 
         let temp = tempdir().unwrap();
-
-        // Create a symlink that points to /tmp
         let symlink_path = temp.path().join("sneaky_link.veloc");
 
-        // Only run this test if we can create symlinks (skip on some CI)
         if std::os::unix::fs::symlink("/tmp/target", &symlink_path).is_ok() {
             let result = validate_location(&symlink_path);
-            // After canonicalize(), this should resolve to /tmp and be rejected
             assert!(result.is_err(), "Should reject symlink pointing to /tmp");
         }
     }
 
-    /// Test: Detect bundle corruption (SHA-256 mismatch)
-    /// Handover Section 2.1: Marshal Security Protocol
+    /// Test: Detect bundle corruption (BLAKE3 mismatch)
+    /// RFC-0006 Section 3.4: Unified BLAKE3 Verification
     #[test]
     fn test_detects_bundle_corruption() {
         use velo::loader::error::LoaderError;
-        use velo::loader::verify::verify_sha256;
+        use velo::loader::verify::verify_blake3;
 
-        // Data with known SHA-256
         let data = b"test data for hashing";
         let wrong_hash = [0u8; 32]; // All zeros - definitely wrong
 
-        let result = verify_sha256(data, &wrong_hash);
+        let result = verify_blake3(data, &wrong_hash);
         assert!(result.is_err(), "Should detect hash mismatch");
 
         match result {
@@ -194,33 +160,30 @@ mod security_tests {
         }
     }
 
-    /// Test: Verify correct SHA-256 passes
+    /// Test: Verify correct BLAKE3 passes
     #[test]
-    fn test_accepts_valid_sha256() {
-        use sha2::{Digest, Sha256};
-        use velo::loader::verify::verify_sha256;
+    fn test_accepts_valid_blake3() {
+        use velo::loader::verify::verify_blake3;
 
         let data = b"test data for hashing";
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let correct_hash: [u8; 32] = hasher.finalize().into();
+        let correct_hash = blake3::hash(data);
 
-        let result = verify_sha256(data, &correct_hash);
-        assert!(result.is_ok(), "Should accept valid hash");
+        let result = verify_blake3(data, correct_hash.as_bytes());
+        assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
     }
 
-    /// Test: Detect module corruption (CRC32 mismatch)
-    /// Handover Section 3: CRC32 模块校验
+    /// Test: Detect module corruption (BLAKE3 mismatch)
+    /// RFC-0006 Section 3.4: Unified BLAKE3 Verification
     #[test]
     fn test_detects_module_corruption() {
         use velo::loader::error::LoaderError;
-        use velo::loader::verify::verify_crc32;
+        use velo::loader::verify::verify_module_hash;
 
         let data = b"module bytecode data";
-        let wrong_crc = 0xDEADBEEF_u32; // Definitely wrong
+        let wrong_hash = [0xDE; 32]; // Definitely wrong
 
-        let result = verify_crc32(data, wrong_crc);
-        assert!(result.is_err(), "Should detect CRC32 mismatch");
+        let result = verify_module_hash(data, &wrong_hash, "test_module");
+        assert!(result.is_err(), "Should detect BLAKE3 mismatch");
 
         match result {
             Err(LoaderError::ModuleCorrupted { .. }) => (),
@@ -228,49 +191,30 @@ mod security_tests {
         }
     }
 
-    /// Test: Verify correct CRC32 passes
+    /// Test: Verify correct module hash passes
     #[test]
-    fn test_accepts_valid_crc32() {
-        use velo::loader::verify::verify_crc32;
+    fn test_accepts_valid_module_hash() {
+        use velo::loader::verify::verify_module_hash;
 
         let data = b"module bytecode data";
-        // Calculate correct CRC32 using the same algorithm
-        let correct_crc = crc32fast::hash(data);
+        let correct_hash = blake3::hash(data);
 
-        let result = verify_crc32(data, correct_crc);
-        assert!(result.is_ok(), "Should accept valid CRC32");
+        let result = verify_module_hash(data, correct_hash.as_bytes(), "test_module");
+        assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
     }
 
     /// Test: Atomic Read → Verify → Load sequence
-    /// Handover Section 2.1: TOCTOU Prevention
+    /// RFC-0006 Section 3.1: TOCTOU Prevention
     #[test]
     fn test_atomic_read_verify_load() {
-        // This test verifies the SEQUENCE of operations
-        // The implementation MUST:
-        // 1. Read entire file to RAM
-        // 2. Verify SHA-256 in memory
-        // 3. Only then parse/load modules
-
-        // We verify this by ensuring load_and_verify returns VerifiedBundle
-        // which contains the data already in memory
         use velo::loader::verify::VerifiedBundle;
-
-        // VerifiedBundle should contain:
-        // - The raw data (already read)
-        // - The parsed header
-        // - The module index
-        // This proves data was read before any parsing
+        // VerifiedBundle proves data was read to RAM before verification
     }
 }
 
 #[cfg(test)]
 mod format_tests {
     //! Bundle format tests (P0)
-
-    use std::fs::File;
-    use std::io::Write;
-    use std::path::Path;
-    use tempfile::tempdir;
 
     /// Test: Validate "VELO" magic bytes
     #[test]
@@ -279,7 +223,7 @@ mod format_tests {
         use velo::loader::header::BundleHeader;
 
         // Valid magic
-        let valid_data = b"VELO\x01\x00\x00\x00"; // VELO + version 1
+        let valid_data = b"VELO\x01\x00\x00\x00";
         let header = BundleHeader::parse_magic(&valid_data[..4]);
         assert!(header.is_ok(), "Should accept VELO magic");
 
@@ -300,17 +244,14 @@ mod format_tests {
         use velo::loader::error::LoaderError;
         use velo::loader::header::BundleHeader;
 
-        // Version 1 should be accepted
         let version_1 = 1u32;
         let result = BundleHeader::validate_version(version_1);
         assert!(result.is_ok());
 
-        // Version 0 should be rejected
         let version_0 = 0u32;
         let result = BundleHeader::validate_version(version_0);
         assert!(result.is_err());
 
-        // Version 999 should be rejected (future version)
         let version_future = 999u32;
         let result = BundleHeader::validate_version(version_future);
         assert!(result.is_err());
@@ -360,14 +301,12 @@ mod format_tests {
     }
 
     /// Test: 4KB page alignment
-    /// Handover Section 4: 对齐要求
     #[test]
     fn test_page_alignment_4k() {
         use velo::loader::header::BundleHeader;
 
         const PAGE_SIZE: u64 = 4096;
 
-        // Test alignment calculation
         let offset = 100u64;
         let aligned = BundleHeader::align_to_page(offset);
         assert_eq!(aligned, PAGE_SIZE, "100 should align to 4096");
@@ -382,21 +321,17 @@ mod format_tests {
     }
 
     /// Test: Padding bytes must be 0x00
-    /// Handover Section 8: 陷阱 - 随机填充
     #[test]
     fn test_padding_bytes_zero() {
         use velo::loader::header::BundleHeader;
 
-        // Generate padding for alignment
         let current_offset = 100usize;
         let padding = BundleHeader::generate_padding(current_offset);
 
-        // All padding bytes must be 0x00
         for byte in &padding {
             assert_eq!(*byte, 0x00, "Padding must be 0x00, not random");
         }
 
-        // Padding length should bring us to 4KB boundary
         assert_eq!(
             (current_offset + padding.len()) % 4096,
             0,
@@ -414,13 +349,8 @@ mod entry_tests {
     fn test_module_entry_roundtrip() {
         use velo::loader::entry::ModuleEntry;
 
-        let original = ModuleEntry {
-            name: "numpy.core".to_string(),
-            offset: 4096,
-            size: 1024,
-            crc32: 0xDEADBEEF,
-            source_hash: [0xAB; 32],
-        };
+        let data = b"test module bytecode";
+        let original = ModuleEntry::new("numpy.core".to_string(), 4096, 1024, data);
 
         // Serialize
         let bytes = original.to_bytes();
@@ -431,20 +361,19 @@ mod entry_tests {
         assert_eq!(restored.name, original.name);
         assert_eq!(restored.offset, original.offset);
         assert_eq!(restored.size, original.size);
-        assert_eq!(restored.crc32, original.crc32);
-        assert_eq!(restored.source_hash, original.source_hash);
+        assert_eq!(restored.hash, original.hash);
     }
 
     /// Test: O(1) module lookup
     #[test]
     fn test_module_lookup_o1() {
-        use std::collections::HashMap;
         use velo::loader::entry::ModuleIndex;
 
         // Create index with 1000 modules
         let mut index = ModuleIndex::new();
         for i in 0..1000 {
-            index.insert(format!("module_{}", i), i as u64, 100, 0);
+            let data = format!("module_{}_data", i).into_bytes();
+            index.insert(format!("module_{}", i), i as u64, 100, &data);
         }
 
         // Lookup should be O(1) - HashMap based
@@ -453,26 +382,20 @@ mod entry_tests {
         assert_eq!(result.unwrap().offset, 500);
     }
 
-    /// Test: Source hash for cache invalidation
+    /// Test: BLAKE3 hash for cache invalidation
+    /// RFC-0006: Unified hash replaces source_hash
     #[test]
-    fn test_source_hash_invalidation() {
-        use sha2::{Digest, Sha256};
-        use velo::loader::entry::ModuleEntry;
-
+    fn test_hash_invalidation() {
         // Original source
         let original_source = b"def foo(): pass";
-        let mut hasher = Sha256::new();
-        hasher.update(original_source);
-        let original_hash: [u8; 32] = hasher.finalize().into();
+        let original_hash = blake3::hash(original_source);
 
         // Modified source
         let modified_source = b"def foo(): return 1";
-        let mut hasher = Sha256::new();
-        hasher.update(modified_source);
-        let modified_hash: [u8; 32] = hasher.finalize().into();
+        let modified_hash = blake3::hash(modified_source);
 
         // Hashes should differ - triggering cache invalidation
-        assert_ne!(original_hash, modified_hash);
+        assert_ne!(original_hash.as_bytes(), modified_hash.as_bytes());
     }
 }
 
@@ -536,7 +459,6 @@ mod build_lock_tests {
         // Acquire and immediately drop
         {
             let _lock = BuildLock::acquire(&lock_path).unwrap();
-            // Lock is held here
         }
         // Lock should be released after drop
 

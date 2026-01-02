@@ -1,10 +1,15 @@
-//! Bundle verification (SHA-256 and CRC32)
+//! Bundle verification using BLAKE3
 //!
-//! RFC-0006 Handover Section 2.1: Marshal Security Protocol
+//! RFC-0006 Section 3.1: Secure Loading Sequence
 //! CRITICAL: Read → Verify → Load atomic sequence
+//!
+//! BLAKE3 provides:
+//! - 10x faster than SHA-256 (~3-6 GB/s vs ~0.5 GB/s)
+//! - Matches NVMe SSD speed (hash no longer bottleneck)
+//! - 256-bit output, 128-bit collision resistance
+//! - Native Merkle Tree support for Phase 5.3
 
 use crate::loader::error::{LoaderError, Result};
-use sha2::{Digest, Sha256};
 
 /// Verified bundle containing data already loaded into RAM
 #[derive(Debug)]
@@ -15,45 +20,34 @@ pub struct VerifiedBundle {
     pub header_end: usize,
 }
 
-/// Verify SHA-256 hash matches
+/// Verify BLAKE3 hash matches
 ///
-/// Handover Section 2.1: TOCTOU Prevention
+/// RFC-0006 Section 3.1: TOCTOU Prevention
 /// Data MUST already be in RAM when this is called.
-pub fn verify_sha256(data: &[u8], expected: &[u8; 32]) -> Result<()> {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let actual: [u8; 32] = hasher.finalize().into();
+///
+/// BLAKE3 is ~10x faster than SHA-256 (~3-6 GB/s)
+pub fn verify_blake3(data: &[u8], expected: &[u8; 32]) -> Result<()> {
+    let actual = blake3::hash(data);
 
-    if actual != *expected {
+    if actual.as_bytes() != expected {
         return Err(LoaderError::BundleCorrupted {
             expected: hex::encode(expected),
-            actual: hex::encode(actual),
+            actual: hex::encode(actual.as_bytes()),
         });
     }
 
     Ok(())
 }
 
-/// Verify CRC32 matches
+/// Verify module integrity using BLAKE3
 ///
-/// Fast integrity check (~20 GB/s)
-pub fn verify_crc32(data: &[u8], expected: u32) -> Result<()> {
-    let actual = crc32fast::hash(data);
+/// RFC-0006 Section 3.4: Unified BLAKE3 Verification
+/// Replaces CRC32 - BLAKE3 is fast enough (~3-6 GB/s) and provides
+/// both error detection AND tampering protection.
+pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -> Result<()> {
+    let actual = blake3::hash(data);
 
-    if actual != expected {
-        return Err(LoaderError::ModuleCorrupted {
-            module_name: "unknown".to_string(),
-        });
-    }
-
-    Ok(())
-}
-
-/// Verify module with name for better error messages
-pub fn verify_module_crc32(data: &[u8], expected: u32, module_name: &str) -> Result<()> {
-    let actual = crc32fast::hash(data);
-
-    if actual != expected {
+    if actual.as_bytes() != expected {
         return Err(LoaderError::ModuleCorrupted {
             module_name: module_name.to_string(),
         });
@@ -64,11 +58,12 @@ pub fn verify_module_crc32(data: &[u8], expected: u32, module_name: &str) -> Res
 
 /// Atomic: Read entire file → Verify → Return verified bundle
 ///
-/// Handover Section 2.1: TOCTOU Prevention
+/// RFC-0006 Section 3.1: Secure Loading Sequence
 /// This function implements the MANDATORY sequence:
-/// 1. Read entire file to RAM
-/// 2. Verify SHA-256 in memory
-/// 3. Return verified bundle (safe for parsing)
+/// 1. Sanity check: reject if size > 256MB (DoS prevention)
+/// 2. Read entire file to RAM
+/// 3. Verify BLAKE3 content_hash
+/// 4. Return verified bundle (safe for marshal.loads())
 pub fn load_and_verify(path: &std::path::Path) -> Result<VerifiedBundle> {
     use crate::loader::header::BundleHeader;
     use crate::loader::security;
@@ -97,9 +92,9 @@ pub fn load_and_verify(path: &std::path::Path) -> Result<VerifiedBundle> {
     // For now, assume header is 128 bytes
     let header_end = 128;
 
-    // Step 2c: Verify SHA-256 of data section
+    // Step 2c: Verify BLAKE3 of data section (~3-6 GB/s)
     if data.len() > header_end {
-        verify_sha256(&data[header_end..], &expected_hash)?;
+        verify_blake3(&data[header_end..], &expected_hash)?;
     }
 
     // Step 3: Return verified bundle
@@ -111,18 +106,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_crc32_calculation() {
+    fn test_blake3_calculation() {
         let data = b"test data";
-        let crc = crc32fast::hash(data);
-        assert!(crc != 0); // Just verify it computes something
+        let hash = blake3::hash(data);
+        assert!(hash.as_bytes().iter().any(|&b| b != 0)); // Non-zero hash
     }
 
     #[test]
-    fn test_sha256_calculation() {
-        let data = b"test data";
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let hash: [u8; 32] = hasher.finalize().into();
-        assert!(hash.iter().any(|&b| b != 0)); // Non-zero hash
+    fn test_blake3_speed_note() {
+        // BLAKE3 is ~10x faster than SHA-256
+        // ~3-6 GB/s vs ~0.5 GB/s
+        // This matches NVMe SSD speed, so hash is no longer the bottleneck
+        let data = vec![0u8; 1024 * 1024]; // 1MB
+        let _hash = blake3::hash(&data);
+        // In production: 1MB at 3GB/s = 0.33ms
     }
 }
