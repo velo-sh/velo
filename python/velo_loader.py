@@ -38,6 +38,26 @@ MAGIC = b"VELO"
 VERSION = 1
 MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
 
+# RFC-0006 §3.5: Marshal Recursion Limit (AUDIT-012)
+# Prevents Stack Overflow attacks via deeply nested bytecode
+MARSHAL_RECURSION_LIMIT = 1000
+
+
+def safe_marshal_loads(data: bytes) -> object:
+    """
+    Load marshalled data with recursion depth protection.
+    
+    RFC-0006 §3.5: Deeply nested bytecode can cause Stack Overflow.
+    This function temporarily lowers the recursion limit during marshal.loads().
+    """
+    import sys
+    old_limit = sys.getrecursionlimit()
+    try:
+        sys.setrecursionlimit(MARSHAL_RECURSION_LIMIT)
+        return marshal.loads(data)
+    finally:
+        sys.setrecursionlimit(old_limit)
+
 
 class ModuleEntry:
     """Module entry from bundle index"""
@@ -277,8 +297,9 @@ class VeloLoader(importlib.abc.Loader):
                 f"Module {self.name} failed integrity verification"
             )
         
-        # Load code object
-        code = marshal.loads(code_data)
+        # Load code object with recursion protection
+        # RFC-0006 §3.5: Use safe_marshal_loads() to prevent stack overflow
+        code = safe_marshal_loads(code_data)
         
         # Set __file__ to original source path
         # RFC-0006: Point to real file for debugging/tracebacks
