@@ -92,8 +92,6 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         eprintln!("uvicorn is required to run ASGI applications.");
         eprintln!("To fix:");
         eprintln!("    uv add uvicorn");
-        eprintln!("    # or");
-        eprintln!("    pip install uvicorn");
         std::process::exit(1);
     }
 
