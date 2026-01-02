@@ -106,6 +106,10 @@ velo info
 velo serve main:app --workers 4
 velo serve main:app --reload          # Hot reload
 velo serve main:app --no-zygote       # Without Zygote
+
+# 📊 Analyze import times (⚠️ executes the script!)
+velo analyze main.py                  # Analyze imports
+velo analyze --fix                    # Auto-update pyproject.toml
 ```
 
 

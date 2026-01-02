@@ -337,6 +337,10 @@ EXAMPLES:
     velo analyze main.py            # Analyze specific file
     velo analyze --slow-threshold-ms 50  # Custom threshold
     velo analyze --fix              # Update pyproject.toml automatically
+
+NOTE:
+    ⚠️  The script WILL BE EXECUTED to measure real import times.
+    Only run this on code you trust.
 "#
     );
 }
