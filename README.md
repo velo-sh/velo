@@ -10,7 +10,7 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow | **Up to 24% faster** with Zygote pre-warming 🧬 |
+| Python cold start is slow | **12x faster** with Zygote pre-warming 🧬 |
 | Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
 | ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
 | Dependency chaos | Auto-detects `uv` virtual environments |
@@ -49,30 +49,28 @@ cargo build --release
 
 ## Benchmark Results
 
-![Velo Zygote Benchmark](./assets/benchmark.png)
-
-### 🧬 Zygote Mode (v0.3.0)
+### 🧬 Zygote Mode (v0.5.0) - **12x Faster!**
 
 ```
-=== FastAPI Microservice ===
-CPython:             572ms
-Zygote (warm):       442ms  (23% faster!) ✅ ⚡
-
-=== Django Application ===
-CPython:             401ms
-Zygote (warm):       328ms  (18% faster) ✅
-
-=== Data Science Pipeline ===
-CPython:             233ms
-Zygote (warm):       187ms  (20% faster) ✅
+╔══════════════════════════════════════════════════════════╗
+║              FastAPI Hello World (Cold Start)            ║
+╠══════════════════════════════════════════════════════════╣
+║  CPython           ██████████████████████████░░░░  514ms ║
+║  Velo (cold)       █████████████████████████░░░░░  502ms ║
+║  Velo + Zygote     ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░   43ms ⚡║
+╚══════════════════════════════════════════════════════════╝
+                     🚀 11.9x faster than CPython
 ```
 
-### Standard Cache Mode
+### All Projects
 
-```
-CPython:             406ms
-Velo (cache hit):    400ms  (1% faster) ✅
-```
+| Project | CPython | Zygote | Speedup |
+|---------|---------|--------|---------|
+| **FastAPI** | 606ms | **43ms** | **14.0x** 🔥 |
+| **Django** | 409ms | **94ms** | **4.4x** 🔥 |
+| DataScience | 809ms | 471ms | 1.7x |
+
+> **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the Zygote daemon.
 
 ## How It Works
 
@@ -167,9 +165,10 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 1: Environment fingerprinting & path caching
 - [x] Phase 1.5: Environment Fingerprinting (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
-- [x] Phase 3: Zygote mode (15ms warm start!) 🧬
+- [x] Phase 3: Zygote mode 🧬
 - [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
-- [ ] Phase 4: Static analysis & import optimization
+- [x] Phase 4: Static analysis & security
+- [x] **Phase 5: Fast Loader & 14x Zygote speedup** 🚀
 
 ## License
 

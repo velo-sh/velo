@@ -195,6 +195,23 @@ def setup_project(name: str, config: dict) -> Path:
     script_path = project_dir / "bench.py"
     script_path.write_text(config["script"])
     
+    # Auto-add [tool.velo] preload config for Zygote performance
+    pyproject_path = project_dir / "pyproject.toml"
+    if pyproject_path.exists():
+        content = pyproject_path.read_text()
+        if "[tool.velo]" not in content:
+            preload_list = ', '.join(f'"{dep}"' for dep in config["deps"])
+            content += f"\n[tool.velo]\npreload = [{preload_list}]\n"
+            pyproject_path.write_text(content)
+            print(f"  Added [tool.velo] preload config")
+    
+    # Symlink velo_zygote for Zygote to work
+    zygote_link = project_dir / "velo_zygote"
+    velo_zygote_src = Path(__file__).parent / "velo_zygote"
+    if velo_zygote_src.exists() and not zygote_link.exists():
+        zygote_link.symlink_to(velo_zygote_src)
+        print(f"  Symlinked velo_zygote")
+    
     return project_dir
 
 
