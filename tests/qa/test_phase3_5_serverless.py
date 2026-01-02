@@ -288,6 +288,82 @@ def root():
 
 
 # =============================================================================
+# REGRESSION: DEF-3.5-003 and DEF-3.5-004
+# =============================================================================
+
+class TestDefectRegression:
+    """Regression tests for fixed defects - ensure they don't return."""
+    
+    def test_def_3_5_003_crash_error_displayed(self):
+        """
+        DEF-3.5-003: App crash errors were swallowed.
+        FIX: Crash traceback should now be displayed.
+        """
+        with ClientProject() as project:
+            project.set_pyproject()
+            # App that crashes on import
+            project.set_app("crash_app.py", '''
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
+''')
+            project.uv_add("fastapi", "uvicorn")
+            
+            proc, port = project.serve("crash_app:app")
+            time.sleep(3)
+            
+            # Read stderr
+            import fcntl, os
+            fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
+            try:
+                stderr = proc.stderr.read() or ""
+            except:
+                stderr = ""
+            
+            os.kill(proc.pid, 9)  # Clean up by PID
+            
+            # REGRESSION CHECK: Error should be displayed, not swallowed
+            stderr_lower = stderr.lower()
+            assert "traceback" in stderr_lower or "runtimeerror" in stderr_lower or "crash" in stderr_lower, \
+                f"DEF-3.5-003 regression: crash error not displayed! stderr: {stderr[:500]}"
+    
+    def test_def_3_5_004_framework_detection(self):
+        """
+        DEF-3.5-004: Framework showed 'Unknown' for FastAPI.
+        FIX: Should show 'Detected: FastAPI'.
+        """
+        with ClientProject() as project:
+            project.set_pyproject()
+            project.set_app("main.py", '''
+from fastapi import FastAPI
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"ok": True}
+''')
+            project.uv_add("fastapi", "uvicorn")
+            
+            proc, port = project.serve("main:app")
+            time.sleep(2)
+            
+            # Read stderr
+            import fcntl, os
+            fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
+            try:
+                stderr = proc.stderr.read() or ""
+            except:
+                stderr = ""
+            
+            os.kill(proc.pid, 9)  # Clean up by PID
+            
+            # REGRESSION CHECK: Should detect FastAPI, not show Unknown
+            stderr_lower = stderr.lower()
+            assert "detected" in stderr_lower and "fastapi" in stderr_lower, \
+                f"DEF-3.5-004 regression: framework not detected! stderr: {stderr[:500]}"
+            assert "unknown" not in stderr_lower or "detected: fastapi" in stderr_lower, \
+                f"DEF-3.5-004 regression: still showing 'Unknown'! stderr: {stderr[:500]}"
+
+
+# =============================================================================
 # SCENARIO 2: With dependencies (test normal operation)
 # =============================================================================
 
