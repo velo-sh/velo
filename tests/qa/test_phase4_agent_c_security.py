@@ -99,6 +99,7 @@ dependencies = {json.dumps(deps or [])}
 # C1: FILE SYSTEM SECURITY
 # =============================================================================
 
+@pytest.mark.tier1
 class TestFileSystemSecurity:
     """C1: File system security tests."""
     
@@ -159,6 +160,7 @@ class TestFileSystemSecurity:
 # C2: CODE EXECUTION SAFETY
 # =============================================================================
 
+@pytest.mark.tier1
 class TestCodeExecutionSafety:
     """C2: Ensure analyzing code doesn't execute it unsafely."""
     
@@ -209,6 +211,7 @@ os.system("touch {marker}")
 # C3: INFORMATION DISCLOSURE
 # =============================================================================
 
+@pytest.mark.tier1
 class TestInformationDisclosure:
     """C3: Prevent information leakage."""
     
@@ -265,6 +268,7 @@ class TestInformationDisclosure:
 # C4: INPUT VALIDATION
 # =============================================================================
 
+@pytest.mark.tier1
 class TestInputValidation:
     """C4: Input validation and injection prevention."""
     

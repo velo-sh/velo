@@ -136,6 +136,7 @@ def check_analyze_available():
 # SCENARIO 1: FastAPI Project Analysis
 # =============================================================================
 
+@pytest.mark.tier0
 class TestAnalyzeFastAPI:
     """Test velo analyze on FastAPI projects."""
     
@@ -165,6 +166,7 @@ app = FastAPI()
 # SCENARIO 2: DataScience Project (Slow Imports)
 # =============================================================================
 
+@pytest.mark.tier2
 class TestAnalyzeDataScience:
     """Test velo analyze on data science projects with slow imports."""
     
@@ -193,6 +195,7 @@ print("Data science app")
 # SCENARIO 3: Custom Threshold
 # =============================================================================
 
+@pytest.mark.tier2
 class TestAnalyzeThreshold:
     """Test --slow-threshold-ms parameter."""
     
@@ -225,6 +228,7 @@ class TestAnalyzeThreshold:
 # SCENARIO 4: --fix Mode
 # =============================================================================
 
+@pytest.mark.tier2
 class TestAnalyzeFix:
     """Test velo analyze --fix writes to pyproject.toml."""
     
@@ -253,6 +257,7 @@ class TestAnalyzeFix:
 # SCENARIO 5: No Slow Imports
 # =============================================================================
 
+@pytest.mark.tier2
 class TestAnalyzeNoSlowImports:
     """Test when no imports are slow."""
     
@@ -273,6 +278,7 @@ class TestAnalyzeNoSlowImports:
 # SCENARIO 6: Django Project
 # =============================================================================
 
+@pytest.mark.tier2
 class TestAnalyzeDjango:
     """Test velo analyze on Django project."""
     
@@ -286,6 +292,7 @@ class TestAnalyzeDjango:
 # EDGE CASES
 # =============================================================================
 
+@pytest.mark.tier1
 class TestAnalyzeEdgeCases:
     """Edge case tests for velo analyze."""
     
