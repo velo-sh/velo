@@ -181,6 +181,20 @@ pub struct AnalyzeArgs {
 |------|----------|----------|----------|
 | Default | Executes code with `--profile` | ✅ High (real measurements) | ⚠️ User consent required |
 | `--dry-run` | Static AST analysis | ⚠️ Estimated | ✅ No code execution |
+| **Sandbox (Future)** | Isolated execution | ✅ High | ✅ High |
+
+**Security Evolution Roadmap**:
+
+```
+Phase 4.0 (Current):  --dry-run static analysis
+                      ↓
+Phase 4.1:            Interactive consent prompt
+                      ↓
+Phase 5.0 (Ultimate): Sandbox execution (seccomp/namespace)
+                      ├── Linux: seccomp + namespace isolation
+                      ├── macOS: sandbox-exec
+                      └── Windows: AppContainer
+```
 
 **Production Implementation**:
 
