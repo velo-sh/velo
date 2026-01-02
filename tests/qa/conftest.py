@@ -8,6 +8,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+# =============================================================================
+# TIER MARKERS (per tiered-testing-guide.md)
+# =============================================================================
+
+def pytest_configure(config):
+    """Register tier markers for pytest."""
+    config.addinivalue_line("markers", "tier0: Smoke tests (<5s) - run always")
+    config.addinivalue_line("markers", "tier1: Fast tests (<30s) - security, error handling")
+    config.addinivalue_line("markers", "tier2: Standard tests (<10min) - full functionality")
+    config.addinivalue_line("markers", "tier3: Heavy tests (~5min) - chaos, stress tests")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def cleanup_zygote_between_modules():
     """Kill any stale Zygote processes and clean sockets before each test module.

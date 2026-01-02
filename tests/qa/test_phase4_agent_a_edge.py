@@ -85,6 +85,7 @@ dependencies = {json.dumps(deps or [])}
 # A1: PATH ATTACKS
 # =============================================================================
 
+@pytest.mark.tier1
 class TestPathAttacks:
     """A1: Path traversal and malicious path tests."""
     
@@ -142,9 +143,11 @@ class TestPathAttacks:
 # A2: MALFORMED INPUT
 # =============================================================================
 
+@pytest.mark.tier2
 class TestMalformedInput:
     """A2: Malformed and extreme input tests."""
     
+    @pytest.mark.tier3
     def test_a2_1_huge_file_timeout(self):
         """A2-1: Huge file should timeout, not OOM."""
         with EdgeProject() as p:
@@ -210,6 +213,7 @@ class TestMalformedInput:
 # A3: RACE CONDITIONS
 # =============================================================================
 
+@pytest.mark.tier3
 class TestRaceConditions:
     """A3: Race condition and concurrency tests."""
     

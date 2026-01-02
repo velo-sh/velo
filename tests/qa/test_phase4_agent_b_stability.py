@@ -98,6 +98,7 @@ dependencies = {json.dumps(deps or [])}
 # B1: HAPPY PATH
 # =============================================================================
 
+@pytest.mark.tier0
 class TestHappyPath:
     """B1: Core happy path tests."""
     
@@ -154,6 +155,7 @@ class TestHappyPath:
 # B2: OUTPUT FORMAT
 # =============================================================================
 
+@pytest.mark.tier2
 class TestOutputFormat:
     """B2: Output format verification."""
     
@@ -199,6 +201,7 @@ class TestOutputFormat:
 # B3: CLI PARAMETERS
 # =============================================================================
 
+@pytest.mark.tier1
 class TestCLIParameters:
     """B3: CLI parameter tests."""
     
@@ -283,6 +286,7 @@ class TestCLIParameters:
 # B4: REGRESSION TESTS
 # =============================================================================
 
+@pytest.mark.tier2
 class TestRegression:
     """B4: Regression tests from previous phases."""
     
