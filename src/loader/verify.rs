@@ -103,7 +103,6 @@ pub fn load_and_verify(path: &std::path::Path) -> Result<VerifiedBundle> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_blake3_calculation() {

@@ -77,6 +77,7 @@ pub fn run() -> Result<()> {
         "run" => cmd::cmd_run(&args)?,
         "serve" => cmd::cmd_serve(&args)?,
         "analyze" => cmd::cmd_analyze(&args)?,
+        "bench" => cmd::cmd_bench(&args)?,
         "bundle" => cmd::cmd_bundle(&args)?,
         "info" => cmd::cmd_info()?,
         "zygote" => cmd::cmd_zygote(&args)?,

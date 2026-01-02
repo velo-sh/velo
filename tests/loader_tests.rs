@@ -51,7 +51,6 @@ mod security_tests {
     /// RFC-0006 Section 3.1: DoS Prevention
     #[test]
     fn test_rejects_oversized_bundle() {
-        use velo::loader::error::LoaderError;
         use velo::loader::security::validate_size;
 
         let temp = tempdir().unwrap();
@@ -129,7 +128,6 @@ mod security_tests {
     #[cfg(unix)]
     #[test]
     fn test_rejects_insecure_location_symlink() {
-        use velo::loader::error::LoaderError;
         use velo::loader::security::validate_location;
 
         let temp = tempdir().unwrap();
@@ -207,7 +205,7 @@ mod security_tests {
     /// RFC-0006 Section 3.1: TOCTOU Prevention
     #[test]
     fn test_atomic_read_verify_load() {
-        use velo::loader::verify::VerifiedBundle;
+
         // VerifiedBundle proves data was read to RAM before verification
     }
 }
@@ -241,7 +239,6 @@ mod format_tests {
     /// Test: Version must be 1
     #[test]
     fn test_header_version_1() {
-        use velo::loader::error::LoaderError;
         use velo::loader::header::BundleHeader;
 
         let version_1 = 1u32;
@@ -290,7 +287,6 @@ mod format_tests {
     /// Test: Cache tag mismatch detection
     #[test]
     fn test_cache_tag_mismatch() {
-        use velo::loader::error::LoaderError;
         use velo::loader::header::BundleHeader;
 
         let bundle_tag = "cpython-312";
