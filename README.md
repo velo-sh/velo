@@ -49,7 +49,9 @@ cargo build --release
 
 ## Benchmark Results
 
-### 🧬 Zygote Mode (v0.5.0) - **12x Faster!**
+![Velo Benchmark](./assets/benchmark.png)
+
+### 🧬 Zygote Mode (v0.5.0) - **14x Faster!**
 
 ```
 ╔══════════════════════════════════════════════════════════╗
