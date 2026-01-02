@@ -155,6 +155,7 @@ I will review/implement with [ROLE]'s perspective.
 
 ### Technical Documentation
 - [RFCs](./docs/rfcs/README.md) - Design documents
+- [Zygote Guide](./docs/zygote.md) - Zygote architecture
 - [QA Docs](./docs/qa/README.md) - Test matrices and reports
 - [Roadmap](./docs/roadmap/2026-H1.md) - 2026 roadmap
 
