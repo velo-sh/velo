@@ -90,3 +90,28 @@ ValueError: embedded null byte
 2. [ ] **DEF-4.0-002**: Validate file is regular file in project
 3. [ ] **DEF-4.0-003**: Catch null byte in filename
 4. [ ] **DEF-4.0-004**: 🔴 CRITICAL - Ensure no code execution during analysis
+5. [ ] **DEF-4.0-005**: --fix not writing [tool.velo] section
+
+---
+
+## Integration Test Results
+
+| Test | Status |
+|------|--------|
+| FastAPI real project | ✅ PASSED |
+| Django real project | ✅ PASSED |
+| DataScience analyze | ✅ PASSED |
+| DataScience --fix | ✅ PASSED |
+| Threshold test | ❌ FAILED (CLI =syntax) |
+| PERF-001: <5s | ✅ PASSED |
+| PERF-002: Preload accuracy | ✅ PASSED |
+| PERF-003: DS improvement | ❌ FAILED (no entry point) |
+| PERF-004: Before/after | ❌ FAILED (--fix no write) |
+
+### DEF-4.0-005: --fix Not Writing [tool.velo] 🟠 HIGH
+
+**Test**: PERF-004  
+**Issue**: After `velo analyze --fix`, pyproject.toml has no `[tool.velo]` section
+
+**Expected**: `[tool.velo]` with `preload = [...]` added  
+**Actual**: File unchanged
