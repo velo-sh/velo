@@ -16,6 +16,7 @@ USAGE:
     velo run [OPTIONS] <script.py>
     velo serve <app> [OPTIONS]
     velo analyze [OPTIONS] [file.py]
+    velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
     velo info
 
@@ -23,6 +24,7 @@ COMMANDS:
     run      Run a Python script
     serve    Serve a Python ASGI/WSGI application
     analyze  Analyze import times and suggest optimizations
+    bundle   Bundle management (inspect, build)
     zygote   Manage Zygote pre-warming daemon
     info     Show environment information
 
@@ -75,6 +77,7 @@ pub fn run() -> Result<()> {
         "run" => cmd::cmd_run(&args)?,
         "serve" => cmd::cmd_serve(&args)?,
         "analyze" => cmd::cmd_analyze(&args)?,
+        "bundle" => cmd::cmd_bundle(&args)?,
         "info" => cmd::cmd_info()?,
         "zygote" => cmd::cmd_zygote(&args)?,
         cmd => {

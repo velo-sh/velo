@@ -3,12 +3,14 @@
 //! Organizes commands into separate files for maintainability.
 
 pub mod analyze;
+pub mod bundle;
 pub mod info;
 pub mod run;
 pub mod serve;
 pub mod zygote;
 
 pub use analyze::cmd_analyze;
+pub use bundle::cmd_bundle;
 pub use info::cmd_info;
 pub use run::cmd_run;
 pub use serve::cmd_serve;
