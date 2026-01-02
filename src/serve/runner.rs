@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use crate::serve::framework::{detect_framework, get_preload_modules};
 use crate::zygote::ZygoteLauncher;
 
 /// Arguments for `velo serve` command
@@ -70,22 +69,9 @@ impl ServeArgs {
 #[cfg(unix)]
 pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
     // Step 1: Validate app format
-    let (module, _attr) = args.parse_app()?;
+    let (_module, _attr) = args.parse_app()?;
 
-    // Step 2: Detect framework FIRST (shows user Velo understands their project)
-    let framework = detect_framework(module, project_dir);
-    let preload_modules = get_preload_modules(framework);
-
-    // Show framework detection result
-    if framework != crate::serve::framework::Framework::Unknown {
-        eprintln!(
-            "🔍 Detected: {} (auto-preload: {})",
-            framework,
-            preload_modules.join(", ")
-        );
-    }
-
-    // Step 3: Check uvicorn AFTER framework detection
+    // Step 2: Check uvicorn is installed
     if !check_uvicorn_installed(python_path) {
         eprintln!("❌ Missing dependency: uvicorn");
         eprintln!();
@@ -95,7 +81,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         std::process::exit(1);
     }
 
-    // Step 4: Start server
+    // Step 3: Start server
     eprintln!("🚀 Starting server...");
     eprintln!("   App:       {}", args.app);
     eprintln!("   Bind:      {}:{}", args.host, args.port);
@@ -104,20 +90,24 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         eprintln!("   Reload:    enabled");
     }
 
-    // Start Zygote if enabled and we have preload modules
-    if args.use_zygote && !preload_modules.is_empty() && crate::zygote::is_supported() {
+    // Start Zygote if enabled (without hardcoded framework preload)
+    // NOTE: For optimized preloading, use `velo analyze --suggest-preload`
+    if args.use_zygote && crate::zygote::is_supported() {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
-            eprintln!("⚡ Pre-warming Zygote with {} modules...", framework);
+            eprintln!(
+                "⚡ Zygote ready (use `velo analyze --suggest-preload` for optimized preloading)"
+            );
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
-            if let Err(e) = launcher.start(&preload_modules) {
-                eprintln!("⚠️  Zygote pre-warm failed: {}", e);
+            // Start Zygote without preload modules (empty list)
+            // Users can configure preload via pyproject.toml [tool.velo] preload
+            if let Err(e) = launcher.start(&[]) {
+                eprintln!("⚠️  Zygote startup failed: {}", e);
                 eprintln!("   Continuing without Zygote optimization");
             } else {
-                eprintln!("✅ Zygote ready");
                 // Keep Zygote alive
                 std::mem::forget(launcher);
             }
