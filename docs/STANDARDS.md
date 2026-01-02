@@ -157,18 +157,29 @@ class TestProfile:               # Feature tests
 
 ## 7. QA Workflow
 
+### Quick Reference
+
+```bash
+# Tiered testing (fail-fast)
+./scripts/qa-fast.sh 0   # Smoke (3s)
+./scripts/qa-fast.sh 1   # Fast (15s)
+./scripts/qa-fast.sh 2   # Standard (7min)
+./scripts/qa-fast.sh 3   # Heavy (optional)
+```
+
+### CI Pipeline
+
 ```
 1. Dev submits PR
 2. CI runs automatically:
-   - cargo test (unit tests)
-   - clippy (code quality)
-   - fmt (format check)
-   - qa-tests (adversarial tests)
-3. QA manual verification:
-   - Fill out QA_CHECKLIST_TEMPLATE.md
-   - Add adversarial tests
+   - Tier 0: Smoke (3s)
+   - Tier 1: Fast (15s)  
+   - Tier 2: Standard (7min)
+3. QA manual verification (if needed)
 4. Sign-off for release
 ```
+
+> See [docs/qa/tiered-testing-guide.md](./qa/tiered-testing-guide.md) for full QA standards.
 
 ---
 
