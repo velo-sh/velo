@@ -1,27 +1,44 @@
 //! Module entry and index structures
 //!
-//! RFC-0006 Section 2.5: ModuleEntry structure
+//! RFC-0006 Section 2.4: ModuleEntry with unified BLAKE3 hash
 
 use crate::loader::error::Result;
 use std::collections::HashMap;
 
 /// Module entry in bundle index
-#[derive(Debug, Clone)]
+///
+/// RFC-0006 Section 2.4: ModuleEntry structure
+/// Uses unified BLAKE3 hash (replaces CRC32 + source_hash)
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModuleEntry {
-    /// Fully qualified module name (e.g., "numpy.core")
+    /// Module name (e.g., "numpy.core")
     pub name: String,
-    /// Offset in data section
+    /// Offset in bundle data section
     pub offset: u64,
     /// Marshalled bytecode size
     pub size: u64,
-    /// CRC32 for fast integrity check (~20 GB/s)
-    pub crc32: u32,
-    /// SHA-256 of source file for cache invalidation
-    pub source_hash: [u8; 32],
+    /// BLAKE3 hash (unified: replaces CRC32 + source_hash)
+    ///
+    /// RFC-0006: BLAKE3 is a superset of CRC32 functionality:
+    /// - Detects bit errors (like CRC32)
+    /// - Detects tampering (unlike CRC32)
+    /// - ~3-6 GB/s (fast enough for per-module verification)
+    pub hash: [u8; 32],
 }
 
 impl ModuleEntry {
-    /// Serialize entry to bytes
+    /// Create new module entry with computed hash
+    pub fn new(name: String, offset: u64, size: u64, data: &[u8]) -> Self {
+        let hash = blake3::hash(data);
+        Self {
+            name,
+            offset,
+            size,
+            hash: *hash.as_bytes(),
+        }
+    }
+
+    /// Serialize to bytes
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
@@ -33,13 +50,12 @@ impl ModuleEntry {
         // Fixed fields
         bytes.extend_from_slice(&self.offset.to_le_bytes());
         bytes.extend_from_slice(&self.size.to_le_bytes());
-        bytes.extend_from_slice(&self.crc32.to_le_bytes());
-        bytes.extend_from_slice(&self.source_hash);
+        bytes.extend_from_slice(&self.hash);
 
         bytes
     }
 
-    /// Deserialize entry from bytes
+    /// Deserialize from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         let mut cursor = 0;
 
@@ -57,60 +73,72 @@ impl ModuleEntry {
         let size = u64::from_le_bytes(data[cursor..cursor + 8].try_into().unwrap());
         cursor += 8;
 
-        let crc32 = u32::from_le_bytes(data[cursor..cursor + 4].try_into().unwrap());
-        cursor += 4;
-
-        let mut source_hash = [0u8; 32];
-        source_hash.copy_from_slice(&data[cursor..cursor + 32]);
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(&data[cursor..cursor + 32]);
 
         Ok(ModuleEntry {
             name,
             offset,
             size,
-            crc32,
-            source_hash,
+            hash,
         })
+    }
+
+    /// Verify module data integrity using BLAKE3
+    pub fn verify(&self, data: &[u8]) -> Result<()> {
+        crate::loader::verify::verify_module_hash(data, &self.hash, &self.name)
     }
 }
 
-/// Module index for O(1) lookup
+/// O(1) module lookup index
 #[derive(Debug, Default)]
 pub struct ModuleIndex {
     modules: HashMap<String, ModuleEntry>,
 }
 
 impl ModuleIndex {
-    /// Create new empty index
+    /// Create empty index
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
         }
     }
 
-    /// Insert module entry
-    pub fn insert(&mut self, name: String, offset: u64, size: u64, crc32: u32) {
-        let entry = ModuleEntry {
-            name: name.clone(),
-            offset,
-            size,
-            crc32,
-            source_hash: [0u8; 32], // Will be filled during build
-        };
+    /// Insert module entry (computes hash from data)
+    pub fn insert(&mut self, name: String, offset: u64, size: u64, data: &[u8]) {
+        let entry = ModuleEntry::new(name.clone(), offset, size, data);
         self.modules.insert(name, entry);
     }
 
-    /// Get module entry by name (O(1) HashMap lookup)
+    /// Insert pre-computed entry
+    pub fn insert_entry(&mut self, entry: ModuleEntry) {
+        self.modules.insert(entry.name.clone(), entry);
+    }
+
+    /// O(1) lookup
     pub fn get(&self, name: &str) -> Option<&ModuleEntry> {
         self.modules.get(name)
     }
 
-    /// Number of modules in index
+    /// Number of modules
     pub fn len(&self) -> usize {
         self.modules.len()
     }
 
-    /// Check if index is empty
+    /// Check if empty
     pub fn is_empty(&self) -> bool {
         self.modules.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_module_entry_hash() {
+        let data = b"module bytecode";
+        let entry = ModuleEntry::new("test.module".to_string(), 0, data.len() as u64, data);
+        assert_eq!(entry.hash, *blake3::hash(data).as_bytes());
     }
 }
