@@ -15,12 +15,14 @@ velo - The high-performance Python runtime for the AI era
 USAGE:
     velo run [OPTIONS] <script.py>
     velo serve <app> [OPTIONS]
+    velo analyze [OPTIONS] [file.py]
     velo zygote <start|stop|status|auto-config>
     velo info
 
 COMMANDS:
     run      Run a Python script
     serve    Serve a Python ASGI/WSGI application
+    analyze  Analyze import times and suggest optimizations
     zygote   Manage Zygote pre-warming daemon
     info     Show environment information
 
@@ -34,6 +36,12 @@ SERVE OPTIONS:
     --workers <N>    Number of workers (default: 1)
     --reload         Enable hot reload
     --no-zygote      Disable Zygote integration
+
+ANALYZE OPTIONS:
+    --slow-threshold-ms <MS>  Threshold for 'slow' imports (default: 100)
+    --suggest-preload         Show preload suggestions
+    --fix                     Auto-update pyproject.toml with recommendations
+    --output <FILE>           Save JSON report to file
 
 ZYGOTE SUBCOMMANDS:
     start        Start Zygote daemon
@@ -66,6 +74,7 @@ pub fn run() -> Result<()> {
         }
         "run" => cmd::cmd_run(&args)?,
         "serve" => cmd::cmd_serve(&args)?,
+        "analyze" => cmd::cmd_analyze(&args)?,
         "info" => cmd::cmd_info()?,
         "zygote" => cmd::cmd_zygote(&args)?,
         cmd => {
