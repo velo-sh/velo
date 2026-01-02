@@ -52,9 +52,9 @@ $ time velo run --zygote fastapi_app.py   # Second: 260ms (same!) ❌
 - Zygote should remain running until `idle_timeout` (default 5 min)
 
 ### REQ-2: Module Preloading
-- Zygote should pre-import modules specified in `velo.toml`:
+- Zygote should pre-import modules specified in `pyproject.toml [tool.velo]`:
   ```toml
-  [zygote]
+  [tool.velo]
   preload = ["fastapi", "numpy", "pandas"]
   ```
 - Or use `--profile` data automatically

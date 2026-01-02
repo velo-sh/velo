@@ -88,8 +88,8 @@ uv sync
 |----|----------|-------|-----------------|-----------|
 | CFG-001 | Custom preload | Set `preload = ["fastapi"]` | Only FastAPI preloaded | ☐ |
 | CFG-002 | Custom timeout | Set `idle_timeout = 60` | Exits after 1 min | ☐ |
-| CFG-003 | Auto-config | `velo zygote auto-config` after --profile | Generates velo.toml | ☐ |
-| CFG-004 | Invalid config | Malformed velo.toml | Clear parse error | ☐ |
+| CFG-003 | Auto-config | `velo zygote auto-config` after --profile | Updates pyproject.toml [tool.velo] | ☐ |
+| CFG-004 | Invalid config | Malformed [tool.velo] section | Clear parse error | ☐ |
 
 ---
 
