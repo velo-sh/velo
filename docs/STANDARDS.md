@@ -131,7 +131,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 | Phase | Version | Codename | Description |
 |-------|---------|----------|-------------|
 | 1 | v0.1.x | Tachyon | Basic path caching |
-| 1.5 | v0.2.x | - | Environment detection enhancement |
+| 1.5 | v0.2.x | - | Environment Fingerprinting |
 | 2 | v0.3.x | Supervisor | Process isolation |
 | 3 | v0.4.x | Zygote | Process pre-warming |
 | 4 | v0.5.x | - | Static analysis |
