@@ -44,6 +44,28 @@ velo run --zygote app.py
 # Expected: ~275ms (not 470ms)
 ```
 
+### REQ-5: Preload 合并策略
+
+**问题**：多个来源可能提供 preload 配置
+
+| 来源 | 优先级 | 说明 |
+|------|--------|------|
+| `pyproject.toml` | 1 (最高) | 用户意图 |
+| CLI `--preload` 参数 | 2 | 临时覆盖 |
+| Auto-detect (未来) | 3 | 自动补充 |
+
+**策略**：
+- 合并所有来源的模块列表
+- 去重 (保持顺序，后来的不重复添加)
+- 不存在冲突覆盖 (只做并集)
+
+**示例**：
+```
+pyproject.toml: ["fastapi", "numpy"]
+CLI --preload:  ["pydantic"]
+→ 最终: ["fastapi", "numpy", "pydantic"]
+```
+
 ## Priority
 
 **P1** - Critical for Zygote performance claim (55% faster)
@@ -52,3 +74,4 @@ velo run --zygote app.py
 
 - Benchmark: 470ms → 275ms with preload
 - Related QA: QA-REQ-001-zygote-preload.md
+
