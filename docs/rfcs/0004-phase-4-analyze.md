@@ -201,7 +201,7 @@ mod analyze {
 ### Phase 4.0.2: Recommendations (1 week)
 
 - [ ] Implement preload suggestion algorithm
-- [ ] Generate `velo.toml` with `--fix`
+- [ ] Update `pyproject.toml [tool.velo]` with `--fix`
 - [ ] Add lazy import suggestions
 - [ ] Documentation
 
@@ -241,7 +241,7 @@ velo analyze --suggest-preload
 
 # Verify fix mode
 velo analyze --fix
-cat velo.toml
+cat pyproject.toml  # Check [tool.velo] section
 ```
 
 ---
