@@ -38,32 +38,88 @@ pub fn is_supported() -> bool {
 }
 
 /// Find the velo_zygote Python module path
+///
+/// Search order:
+/// 1. VELO_ZYGOTE_PATH environment variable (explicit override)
+/// 2. Compiled-in path from CARGO_MANIFEST_DIR (dev builds)
+/// 3. Relative to velo executable (installed builds)
+/// 4. ~/.local/share/velo/velo_zygote (user install)
+/// 5. /usr/local/share/velo/velo_zygote (system install)
+/// 6. Current working directory (fallback)
 #[allow(clippy::collapsible_if)]
 fn find_zygote_module() -> Result<PathBuf> {
-    // Try relative to executable first
+    const ZYGOTE_MAIN: &str = "velo_zygote/main.py";
+
+    // 1. Check VELO_ZYGOTE_PATH environment variable (explicit override)
+    if let Ok(env_path) = std::env::var("VELO_ZYGOTE_PATH") {
+        let path = PathBuf::from(&env_path);
+        if path.exists() {
+            return Ok(path.canonicalize().unwrap_or(path));
+        }
+        // If env var is set but path doesn't exist, log warning but continue searching
+        eprintln!("⚠️ VELO_ZYGOTE_PATH set but not found: {}", env_path);
+    }
+
+    // 2. Compiled-in path from CARGO_MANIFEST_DIR (dev builds)
+    // This is set at compile time and points to the source directory
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
+    if manifest_path.exists() {
+        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
+    }
+
+    // 3. Search relative to executable (installed builds)
     if let Ok(exe_path) = std::env::current_exe() {
-        // Search up to 3 levels from executable
+        // Search up to 4 levels from executable
         let mut search_dir = exe_path.parent().map(|p| p.to_path_buf());
-        for _ in 0..4 {
+        for _ in 0..5 {
             if let Some(ref dir) = search_dir {
-                let module_path = dir.join("velo_zygote/main.py");
+                let module_path = dir.join(ZYGOTE_MAIN);
                 if module_path.exists() {
                     return Ok(module_path.canonicalize().unwrap_or(module_path));
+                }
+                // Also check share/velo/ subdirectory (FHS-style install)
+                let share_path = dir.join("share/velo").join(ZYGOTE_MAIN);
+                if share_path.exists() {
+                    return Ok(share_path.canonicalize().unwrap_or(share_path));
                 }
                 search_dir = dir.parent().map(|p| p.to_path_buf());
             }
         }
     }
 
-    // Try current working directory
-    let cwd_path = PathBuf::from("velo_zygote/main.py");
+    // 4. User install location ~/.local/share/velo/
+    if let Ok(home) = std::env::var("HOME") {
+        let user_path = PathBuf::from(home)
+            .join(".local/share/velo")
+            .join(ZYGOTE_MAIN);
+        if user_path.exists() {
+            return Ok(user_path.canonicalize().unwrap_or(user_path));
+        }
+    }
+
+    // 5. System install location /usr/local/share/velo/
+    let system_path = PathBuf::from("/usr/local/share/velo").join(ZYGOTE_MAIN);
+    if system_path.exists() {
+        return Ok(system_path.canonicalize().unwrap_or(system_path));
+    }
+
+    // 6. Current working directory (fallback)
+    let cwd_path = PathBuf::from(ZYGOTE_MAIN);
     if cwd_path.exists() {
         return Ok(cwd_path.canonicalize().unwrap_or(cwd_path));
     }
 
-    Err(ZygoteError::StartFailed(
-        "Could not find velo_zygote/main.py".to_string(),
-    ))
+    Err(ZygoteError::StartFailed(format!(
+        "Could not find velo_zygote/main.py. Searched:\n\
+         - VELO_ZYGOTE_PATH env var\n\
+         - Compiled path: {}\n\
+         - Relative to executable\n\
+         - ~/.local/share/velo/\n\
+         - /usr/local/share/velo/\n\
+         - Current directory\n\
+         Set VELO_ZYGOTE_PATH to override.",
+        env!("CARGO_MANIFEST_DIR")
+    )))
 }
 
 /// Handle to a spawned worker process
