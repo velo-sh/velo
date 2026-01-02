@@ -101,6 +101,11 @@ velo run --profile script.py
 
 # Show environment information
 velo info
+
+# 🌐 Serve a web application (FastAPI, Django, Flask)
+velo serve main:app --workers 4
+velo serve main:app --reload          # Hot reload
+velo serve main:app --no-zygote       # Without Zygote
 ```
 
 
@@ -159,7 +164,7 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 1.5: Environment detection (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
 - [x] Phase 3: Zygote mode (15ms warm start!) 🧬
-- [ ] Phase 3.5: uvicorn integration
+- [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
 - [ ] Phase 4: Static analysis & import optimization
 
 ## License
