@@ -56,7 +56,7 @@ Framework::FastAPI => vec!["fastapi", "pydantic", ...]
 | Principle | Implementation |
 |-----------|----------------|
 | **Measure, don't guess** | Use `--profile` to get real import times |
-| **User-defined config** | Read from `velo.toml`, don't hardcode |
+| **User-defined config** | Read from `pyproject.toml [tool.velo]` |
 | **Heuristics as fallback** | Framework detection = hint only |
 | **Zero magic** | Show user what modules will be preloaded |
 
@@ -69,7 +69,7 @@ pub fn analyze_imports(script: &Path) -> Vec<ImportMetric> {
 
 // GOOD: User config > heuristics
 fn get_preload_modules(project: &Path) -> Vec<String> {
-    if let Some(config) = read_velo_toml(project) {
+    if let Some(config) = read_pyproject_velo(project) {
         return config.preload;  // User knows best
     }
     suggest_from_analysis()  // Fallback to runtime data
@@ -81,7 +81,7 @@ fn get_preload_modules(project: &Path) -> Vec<String> {
 ```
 Phase 3.5 (current):  Hardcoded framework detection
                       ↓
-Phase 4.0 (this RFC): Runtime analysis + velo.toml
+Phase 4.0 (this RFC): Runtime analysis + pyproject.toml [tool.velo]
                       ↓
 Phase 4.1 (future):   Deprecate hardcoded framework.rs
 ```
@@ -125,14 +125,14 @@ velo analyze --suggest-preload
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 2.3 Auto-Generate velo.toml
+### 2.3 Auto-Update pyproject.toml
 
 ```bash
 $ velo analyze --fix
 
-✅ Created velo.toml with recommended preload:
+✅ Updated pyproject.toml with recommended preload:
 
-[zygote]
+[tool.velo]
 preload = ["pandas", "numpy", "fastapi", "httpx"]
 ```
 
