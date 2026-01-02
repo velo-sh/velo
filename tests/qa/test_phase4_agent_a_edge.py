@@ -129,14 +129,12 @@ class TestPathAttacks:
             assert result.returncode == 0 or "error" in result.stderr.lower()
     
     def test_a1_5_null_byte_injection(self):
-        """A1-5: Null byte in filename rejected (security)."""
-        with EdgeProject() as p:
-            p.set_pyproject()
-            p.set_file("main.py", "print(1)")
-            # Null byte should be rejected, not truncate path
-            result = p.analyze("main\x00.py")
-            # Should error, not silently succeed
-            assert result.returncode != 0 or "error" in result.stderr.lower()
+        """A1-5: Null byte in filename rejected (security).
+        
+        NOTE: Cannot test via subprocess - null bytes terminate C strings.
+        Rust unit test test_validate_path_null_byte() covers this.
+        """
+        pytest.skip("subprocess cannot pass null bytes - covered by Rust unit test")
 
 
 # =============================================================================
