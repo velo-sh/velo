@@ -17,12 +17,19 @@
 
 ## Dev Tasks
 
-### Day 1: DELETE framework.rs
+### Day 1: DELETE framework.rs + velo.toml legacy
 
+**Part A: framework.rs**
 - [ ] Delete `src/serve/framework.rs`
 - [ ] Update `src/serve/mod.rs` (remove framework export)
 - [ ] Update `src/serve/runner.rs` (remove framework import/usage)
 - [ ] Verify: `cargo build` passes
+
+**Part B: velo.toml legacy cleanup**
+- [ ] Remove `velo.toml` generation in `src/cmd/zygote.rs:141-143`
+- [ ] Update `src/zygote/auto_config.rs` (remove `to_toml()` or redirect to pyproject.toml)
+- [ ] Update docs: `docs/zygote.md`, `docs/rfcs/0002-*.md`
+- [ ] Update tests: `test_phase3_*.py` files
 - [ ] Verify: `cargo test` passes
 
 ### Day 2-3: Split analyze.rs
