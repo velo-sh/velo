@@ -69,28 +69,37 @@ impl ServeArgs {
 /// * `project_dir` - Project directory
 #[cfg(unix)]
 pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
-    // Validate app format
+    // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
 
-    // Check if uvicorn is installed FIRST
+    // Step 2: Detect framework FIRST (shows user Velo understands their project)
+    let framework = detect_framework(module, project_dir);
+    let preload_modules = get_preload_modules(framework);
+
+    // Show framework detection result
+    if framework != crate::serve::framework::Framework::Unknown {
+        eprintln!(
+            "🔍 Detected: {} (auto-preload: {})",
+            framework,
+            preload_modules.join(", ")
+        );
+    }
+
+    // Step 3: Check uvicorn AFTER framework detection
     if !check_uvicorn_installed(python_path) {
-        eprintln!("❌ Error: uvicorn is not installed");
+        eprintln!("❌ Missing dependency: uvicorn");
         eprintln!();
         eprintln!("uvicorn is required to run ASGI applications.");
-        eprintln!("Install it with:");
+        eprintln!("To fix:");
         eprintln!("    uv add uvicorn");
         eprintln!("    # or");
         eprintln!("    pip install uvicorn");
         std::process::exit(1);
     }
 
-    // Detect framework for optimized preloading
-    let framework = detect_framework(module, project_dir);
-    let preload_modules = get_preload_modules(framework);
-
+    // Step 4: Start server
     eprintln!("🚀 Starting server...");
     eprintln!("   App:       {}", args.app);
-    eprintln!("   Framework: {}", framework);
     eprintln!("   Bind:      {}:{}", args.host, args.port);
     eprintln!("   Workers:   {}", args.workers);
     if args.reload {
