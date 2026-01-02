@@ -165,10 +165,38 @@ pub struct AnalyzeArgs {
     
     #[arg(long, default_value = "100")]
     pub slow_threshold_ms: u64,
+    
+    /// Safe mode: static AST analysis without executing code
+    #[arg(long)]
+    pub dry_run: bool,
 }
 ```
 
-### 3.2 Analysis Flow
+### 3.2 Security Considerations
+
+> [!CAUTION]
+> **Code Execution Warning**: By default, `velo analyze` runs your Python code to measure real import times. Use `--dry-run` for untrusted code.
+
+| Mode | Behavior | Accuracy | Security |
+|------|----------|----------|----------|
+| Default | Executes code with `--profile` | ✅ High (real measurements) | ⚠️ User consent required |
+| `--dry-run` | Static AST analysis | ⚠️ Estimated | ✅ No code execution |
+
+**Production Implementation**:
+
+```rust
+if args.dry_run {
+    // Safe: Parse AST, estimate times from known module data
+    analyze_static(file)
+} else {
+    // Warning: Code will be executed
+    eprintln!("⚠️  WARNING: This will execute your Python code.");
+    eprintln!("   Use --dry-run for static analysis.");
+    analyze_runtime(file)
+}
+```
+
+### 3.3 Analysis Flow
 
 ```
 1. Run script with --profile (existing feature)
