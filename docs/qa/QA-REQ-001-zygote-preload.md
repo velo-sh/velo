@@ -53,3 +53,32 @@ time velo run --zygote bench.py
 ```
 
 **Expected**: `~450-500ms` (baseline without preload)
+
+---
+
+### MERGE-001: Preload 合并策略验证 (After DEV-FIX-001)
+
+**Precondition**: DEV-FIX-001 implemented
+
+**Scenario**: pyproject.toml 和 CLI 同时提供 preload
+
+**Setup**:
+```toml
+# pyproject.toml
+[tool.velo]
+preload = ["fastapi", "numpy"]
+```
+
+**Steps**:
+```bash
+velo zygote stop
+# CLI 额外添加 pydantic
+velo zygote start --preload pydantic
+# 验证日志显示合并后的模块列表
+velo zygote status
+```
+
+**Expected**: 
+- Zygote 预热 `["fastapi", "numpy", "pydantic"]` (合并去重)
+- 无冲突报错
+
