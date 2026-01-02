@@ -5,7 +5,9 @@ description = "Velo project Python tooling"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 readme = "README.md"
-dependencies = []
+dependencies = [
+    "blake3>=1.0.8",
+]
 
 [tool.uv]
 python-preference = "only-managed"
