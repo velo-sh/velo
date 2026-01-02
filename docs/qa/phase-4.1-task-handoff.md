@@ -1,6 +1,7 @@
 # Phase 4.1 Task Handoff
 
 > **Branch**: `phase-4.1/cleanup-security`  
+> **RFC**: `docs/rfcs/0005-phase-4.1-cleanup-security.md`  
 > **Target**: v0.4.1
 
 ---
