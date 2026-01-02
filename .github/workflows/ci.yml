@@ -317,6 +317,100 @@ jobs:
       - name: "Tier 3: Heavy/Brutal Tests (~5min)"
         run: ./scripts/qa-fast.sh 3
 
+  # ============================================
+  # Phase 4.0: velo analyze QA
+  # ============================================
+
+  qa-analyze-core:
+    name: "QA 4.0: Analyze Core"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "Phase 4.0: Core + Agent Tests"
+        run: |
+          chmod +x .venv/bin/python3
+          uv run pytest tests/qa/test_phase4_analyze.py tests/qa/test_phase4_agent_*.py -v --tb=short
+
+  qa-analyze-integration:
+    name: "QA 4.0: Integration (SLOW)"
+    runs-on: ubuntu-latest
+    needs: qa-analyze-core
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "Phase 4.0: Integration Tests (Real Projects)"
+        run: |
+          chmod +x .venv/bin/python3
+          uv run pytest tests/qa/test_phase4_integration.py -v --tb=short
+
+  qa-benchmark:
+    name: "QA: Benchmark"
+    runs-on: ubuntu-latest
+    needs: qa-analyze-integration
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv pip install pytest
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "Benchmark: Performance Validation"
+        run: |
+          chmod +x .venv/bin/python3
+          uv run python benchmark_projects.py --all
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
