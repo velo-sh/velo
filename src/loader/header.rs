@@ -13,25 +13,68 @@ pub const VERSION: u32 = 1;
 /// Page size for alignment (4KB)
 pub const PAGE_SIZE: u64 = 4096;
 
-/// Bundle header structure (Handover Section 4)
+/// Hash algorithm identifier (RFC-0006 Section 2.17)
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashAlgorithm {
+    /// BLAKE3 (default, 3-6 GB/s)
+    Blake3 = 0,
+    // Reserved: Sha256 = 1, Sha3 = 2
+}
+
+impl HashAlgorithm {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(HashAlgorithm::Blake3),
+            _ => None,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            HashAlgorithm::Blake3 => "BLAKE3",
+        }
+    }
+}
+
+/// Bundle header structure (RFC-0006 Section 2.17)
+///
+/// Complete header with all fields for full RFC compliance.
 #[derive(Debug, Clone)]
 pub struct BundleHeader {
+    // === Identity ===
     /// Magic bytes: "VELO"
     pub magic: [u8; 4],
     /// Bundle format version
     pub version: u32,
-    /// SHA-256 of data section
+    /// Hash algorithm (0 = BLAKE3)
+    pub hash_algorithm: HashAlgorithm,
+
+    // === Bundle Structure ===
+    /// Size of module index section
+    pub index_size: u32,
+    /// Number of modules in bundle
+    pub module_count: u32,
+    /// Offset to module index
+    pub index_offset: u64,
+
+    // === Integrity ===
+    /// Hash of data section (algorithm per hash_algorithm)
     pub content_hash: [u8; 32],
+    /// BLAKE3 of import_graph.json (from Phase 4.0)
+    pub import_graph_hash: [u8; 32],
+
+    // === Python Environment ===
+    /// ABI tag (e.g., "cp312-darwin-arm64")
+    pub abi_tag: [u8; 32],
+    /// Environment fingerprint (BLAKE3 from Phase 1.5)
+    pub env_fingerprint: [u8; 32],
     /// Python version string (e.g., "3.12.1")
     pub python_version: [u8; 16],
     /// Cache tag (e.g., "cpython-312")
     pub cache_tag: [u8; 16],
     /// Optimization level: 0, 1 (-O), or 2 (-OO)
     pub optimize_level: u8,
-    /// Number of modules in bundle
-    pub module_count: u32,
-    /// Offset to module index
-    pub index_offset: u64,
     /// Page size (always 4096)
     pub page_size: u32,
 }
