@@ -105,6 +105,25 @@ class TestVeloInfo:              # Feature tests
 class TestProfile:               # Feature tests
 ```
 
+### 3.3 Test Architecture (CRITICAL)
+
+> ⚠️ **Environment Isolation**: Velo's test environment and user project environments MUST be completely isolated.
+
+See [docs/TEST_ARCHITECTURE.md](./TEST_ARCHITECTURE.md) for full details.
+
+**Quick Reference**:
+
+| Test Type | Environment | Location |
+|-----------|-------------|----------|
+| Unit Tests | Velo's `.venv` | `tests/unit/` |
+| Integration Tests | **Isolated temp project** | `tests/integration/` |
+
+```python
+# Integration tests MUST create isolated projects
+with tempfile.TemporaryDirectory() as tmpdir:
+    # Create pyproject.toml, run uv sync, then test
+```
+
 ---
 
 ## 4. Version and Phase Naming

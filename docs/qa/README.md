@@ -50,5 +50,6 @@ This directory contains QA testing documentation for Velo.
 
 ## 🔗 Related
 
+- [../TEST_ARCHITECTURE.md](../TEST_ARCHITECTURE.md) - **Test environment isolation (MUST READ)**
 - [../STANDARDS.md](../STANDARDS.md) - Project naming conventions
 - [../DEFINITION_OF_DONE.md](../DEFINITION_OF_DONE.md) - Quality gate standards
