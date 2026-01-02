@@ -142,6 +142,7 @@ I will review/implement with [ROLE]'s perspective.
 ## 🔗 Navigation
 
 ### Agent Roles
+- [Architect](./docs/agents/architect.md)
 - [Developer](./docs/agents/developer.md)
 - [QA Engineer](./docs/agents/qa-engineer.md)
 - [DevOps Engineer](./docs/agents/devops-engineer.md)
@@ -149,10 +150,12 @@ I will review/implement with [ROLE]'s perspective.
 ### Project Standards
 - [STANDARDS.md](./docs/STANDARDS.md) - Naming conventions
 - [TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) - Test isolation
+- [DOCUMENTATION_GUIDELINES.md](./docs/DOCUMENTATION_GUIDELINES.md) - Doc standards
 - [DEFINITION_OF_DONE.md](./docs/DEFINITION_OF_DONE.md) - Quality gates
 
 ### Technical Documentation
 - [RFCs](./docs/rfcs/README.md) - Design documents
+- [QA Docs](./docs/qa/README.md) - Test matrices and reports
 - [Roadmap](./docs/roadmap/2026-H1.md) - 2026 roadmap
 
 ---
