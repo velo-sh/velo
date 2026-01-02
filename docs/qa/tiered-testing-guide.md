@@ -98,9 +98,62 @@ Tier 0 ──PASS──▶ Tier 1 ──PASS──▶ Tier 2 ──PASS──▶
 
 ---
 
-## 3. CI Integration
+## 3. Final QA Verification (MANDATORY)
 
-### 3.1 Recommended Pipeline
+> ⚠️ **CRITICAL**: Before marking any Phase as "QA Passed", you MUST run the final verification script.
+
+### 3.1 One-Click Final Script
+
+每个 Phase 必须有一个最终验收脚本：
+
+```bash
+# Phase 4.0 Example
+./scripts/qa_phase4_final.sh
+```
+
+### 3.2 Final Verification Checklist
+
+| Step | Command | Required |
+|------|---------|----------|
+| 1 | `cargo build --release` | ✅ |
+| 2 | Fix venv permissions | ✅ |
+| 3 | Tier 0 (Smoke) | ✅ |
+| 4 | Agent Tests (A/B/C) | ✅ |
+| 5 | **Integration Tests** | ✅ |
+| 6 | **Benchmark Tests** | ✅ |
+
+### 3.3 Script Template
+
+新 Phase 验收脚本必须包含：
+
+```bash
+#!/bin/bash
+set -e
+
+# 1. Build
+cargo build --release
+
+# 2. Fix permissions
+chmod +x .venv/bin/python3
+
+# 3. Tiered tests
+uv run pytest -m tier0
+uv run pytest tests/qa/test_phaseX*.py -v
+
+# 4. Integration (MUST NOT SKIP)
+uv run pytest tests/qa/test_phaseX_integration.py -v
+
+# 5. Benchmarks (MUST NOT SKIP)
+uv run python benchmark_projects.py --all
+```
+
+> **Rule**: 如果没有 Integration 和 Benchmark 测试通过，Phase 不能标记为 "QA Passed"。
+
+---
+
+## 4. CI Integration
+
+### 4.1 Recommended Pipeline
 
 ```yaml
 jobs:
@@ -127,9 +180,16 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - run: ./scripts/qa-fast.sh 3
+
+  # MANDATORY: Benchmark as standalone job
+  benchmark:
+    needs: standard
+    runs-on: ubuntu-latest
+    steps:
+      - run: uv run python benchmark_projects.py --all
 ```
 
-### 3.2 PR Requirements
+### 4.2 PR Requirements
 
 | Check | Required | Gate |
 |-------|----------|------|
@@ -137,6 +197,7 @@ jobs:
 | Tier 1 (Fast) | ✅ | Merge blocked |
 | Tier 2 (Standard) | ✅ | Merge blocked |
 | Tier 3 (Heavy) | ⚠️ | Main branch only |
+| **Benchmark** | ✅ | Merge blocked |
 
 ---
 
