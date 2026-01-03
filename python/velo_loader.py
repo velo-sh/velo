@@ -39,6 +39,7 @@ except ImportError:
 MAGIC = b"VELO"
 VERSION = 1
 DEFAULT_MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
+MAX_BUNDLE_SIZE = DEFAULT_MAX_BUNDLE_SIZE  # Backward compatibility
 
 # RFC-0008 §2.18: Marshal Recursion Limit (H-4)
 # Strict limit to prevent stack-exhaustion DoS
