@@ -10,7 +10,7 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow | **12x faster** with **Instant Startup** 🧬 |
+| Python cold start is slow | **11.9x faster** with **Static Import Graph** ⚡ |
 | Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
 | ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
 | Dependency chaos | Auto-detects `uv` virtual environments |
@@ -49,30 +49,28 @@ cargo build --release
 
 ## Benchmark Results
 
-![Velo Benchmark](./assets/benchmark_v3.png)
+![Velo Benchmark](./assets/benchmark_v4.png)
 
-### 🧬 Velo Instant Mode (v0.6.0) - **60x Faster!**
+### ⚡ Velo v0.6.0 - **11.9x Faster!**
 
 ```
-╔══════════════════════════════════════════════════════════╗
-║              FastAPI Hello World (Startup)               ║
-╠══════════════════════════════════════════════════════════╣
-║  CPython           ██████████████████████████░░░░  514ms ║
-║  Velo (Cold)       █░░░░░░░░░░░░░░░░░░░░░░░░░░░░   17.7ms║
-║  Velo (Instant)    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    8.6ms⚡║
-╚══════════════════════════════════════════════════════════╝
-                     🚀 59.7x faster than CPython
+Python startup time (FastAPI):
+
+CPython  ████████████████████  614ms
+Velo     ██                     52ms ⚡
+
+🚀 11.9x faster than CPython
 ```
 
-### Warm Start Benchmarks
+### v0.6.0 Highlights: Static Import Graph
 
-| Project | CPython | Velo (Instant) | Speedup |
-|---------|---------|---------------|---------|
-| **Simple Script** | 22ms | **8.6ms** | **2.5x** 🔥 |
-| **Heavy Imports** | 514ms | **8.8ms** | **58.4x** 🔥 |
-| **FastAPI** | 606ms | **15ms** | **40.4x** 🔥 |
+| Feature | Before | After |
+|---------|--------|-------|
+| **stat() calls** | 300+ per startup | **0** ⚡ |
+| **Import lookup** | O(n) filesystem | **O(1)** hash |
+| **Startup time** | 614ms | **52ms** |
 
-> **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the **Velo background runner**.
+> **How?** We pre-compute your entire import graph at build time using Rust AST scanning + rkyv zero-copy serialization.
 
 ## How It Works
 
@@ -176,12 +174,12 @@ cargo fmt && cargo clippy -- -D warnings
 ## Roadmap
 
 - [x] Phase 1: Environment fingerprinting & path caching
-- [x] Phase 1.5: Environment Fingerprinting (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
-- [x] Phase 3: Instant Startup (Velo Mode) 🧬
-- [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
+- [x] Phase 3: Instant Startup 🧬
 - [x] Phase 4: Static analysis & security
-- [x] **Phase 5: Fast Loader & 14x Zygote speedup** 🚀
+- [x] Phase 5: Fast Loader (BLAKE3 + rkyv) 🚀
+- [x] **Phase 6: Static Import Graph (stat() → 0)** ⚡
+- [ ] Phase 7: Profile-Guided Optimization
 
 ## License
 
