@@ -20,7 +20,10 @@ class TestAgentAEdge:
         env.create_app("main.py", """
 import hard_mod          # Hard
 if False: import soft_if  # Soft
-try: import soft_try; except: pass # Soft
+try:
+    import soft_try
+except:
+    pass # Soft
 def f(): import soft_fn  # Soft
 """)
         env.create_app("hard_mod.py", "")

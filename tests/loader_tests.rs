@@ -257,7 +257,6 @@ mod security_tests {
         data[pos..pos + 8].copy_from_slice(&m_offset.to_le_bytes());
         pos += 8;
         data[pos..pos + 8].copy_from_slice(&m_size.to_le_bytes());
-        // pos += 8 + 32 + 1; // skip size, hash, is_pkg etc.
 
         // Calculate H-1 Hash: covers [0..20] and [52..EOF]
         let mut hasher = blake3::Hasher::new();
@@ -267,11 +266,7 @@ mod security_tests {
         data[20..52].copy_from_slice(hash.as_bytes());
 
         // 2. Write to temp file in a "secure" location (not /tmp)
-        // Velo security policy rejects /tmp, so we use current dir for testing
-        let temp = tempfile::Builder::new()
-            .prefix("atomic_test")
-            .tempdir_in(std::env::current_dir().unwrap())
-            .unwrap();
+        let temp = tempdir().unwrap();
         let path = temp.path().join("atomic_test.veloc");
         std::fs::write(&path, &data).unwrap();
 
@@ -283,6 +278,66 @@ mod security_tests {
         let bundle = result.unwrap();
         assert_eq!(bundle.data.len(), 256);
         assert_eq!(bundle.data[m_offset as usize], b'N', "Module data mismatch");
+    }
+
+    /// Test: Attempt TOCTOU swap during loading
+    /// RFC-0006 Section 3.1: TOCTOU Prevention via Shared Locks (H-5)
+    #[test]
+    fn test_toctou_adversarial_race() {
+        use std::sync::Arc;
+        use std::thread;
+        use velo::loader::verify::load_and_verify;
+
+        // 1. Setup a LARGE valid bundle to prolong the "loading window"
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("race.veloc");
+        let mut data = vec![0u8; 10 * 1024 * 1024]; // 10MB
+        data[0..4].copy_from_slice(b"VELO");
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
+        data[8..12].copy_from_slice(&0u32.to_le_bytes()); // count
+        data[12..20].copy_from_slice(&100u64.to_le_bytes()); // index_offset
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&data[0..20]);
+        hasher.update(&data[52..]);
+        let hash = hasher.finalize();
+        data[20..52].copy_from_slice(hash.as_bytes());
+
+        fs::write(&path, &data).unwrap();
+
+        let path_clone = path.clone();
+        let stop_attacker = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_attacker_clone = stop_attacker.clone();
+
+        // 2. Attacker thread: Constantly tries to overwrite the file with INVALID data
+        let attacker = thread::spawn(move || {
+            let evil_data = vec![0xDEu8; 1024];
+            while !stop_attacker_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                let _ = fs::OpenOptions::new()
+                    .write(true)
+                    .open(&path_clone)
+                    .and_then(|mut f| f.write_all(&evil_data));
+            }
+        });
+
+        // 3. Victim: Attempt to load
+        for _ in 0..10 {
+            let result = load_and_verify(&path, None);
+            if let Ok(bundle) = result {
+                assert_eq!(
+                    bundle.data[0..4],
+                    *b"VELO",
+                    "TOCTOU CRITICAL: Header corrupted by attacker!"
+                );
+                assert!(
+                    !bundle.data.contains(&0xDE),
+                    "TOCTOU CRITICAL: Evil data leaked into RAM!"
+                );
+            }
+        }
+
+        stop_attacker.store(true, std::sync::atomic::Ordering::Relaxed);
+        attacker.join().unwrap();
     }
 }
 
