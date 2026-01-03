@@ -51,6 +51,23 @@ uv run pytest tests/unit/     # Python unit tests
 
 ---
 
+### Type 1.5: Security Verification Tests
+
+**Purpose**: Prove internal security invariants (RFC-0008 §2.18)
+
+**Environment**: Velo Binary + Static Analysis + Targeted E2E
+
+**Location**:
+- `tests/qa/phase*_hardening.py`
+- `tests/qa/phase*_security_invariants.py`
+
+**Key Checked Invariants**:
+1. **P0-001**: Global Hash Coverage (Header + Data)
+2. **P0-004**: Marshal Depth Protection (Recursion=500)
+3. **P0-005**: Read Atomicity (`flock`)
+
+---
+
 ### Type 2: User Project Integration Tests
 
 **Purpose**: Test Velo booting actual user projects
@@ -134,18 +151,13 @@ print("OK")
 ## Directory Structure
 
 ```
-velo/
-├── .venv/                    # Velo development environment
-├── pyproject.toml            # Velo dependencies (pytest, ruff...)
-├── src/                      # Velo source code
-├── tests/
-│   ├── unit/                 # Type 1: Velo unit tests
-│   └── integration/          # Type 2: User project tests
-│       └── projects/         # Sample project templates
-│           ├── fastapi/
-│           ├── django/
-│           └── datascience/
-└── benchmark_projects.py     # Example of proper isolation
+tests/
+├── unit/                 # Type 1: Internal logic
+├── qa/                   # Type 1.5: Security & Verification
+│   ├── phase5_1/         # Zygote Async Verification
+│   └── phase5_2/         # Security Invariants (P0-001+)
+└── integration/          # Type 2: User projects
+    └── projects/         # Sample templates
 ```
 
 ---
