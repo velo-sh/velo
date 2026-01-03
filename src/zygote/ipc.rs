@@ -60,6 +60,8 @@ pub enum ZygoteCommand {
 pub enum ZygoteResponse {
     /// Zygote is ready to accept commands
     Ready,
+    /// Generic acknowledgment of command receipt
+    Ack,
     /// Zygote status information
     Status {
         /// Zygote process ID

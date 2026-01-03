@@ -474,7 +474,7 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                         
                     elif cmd_type == "Shutdown":
                         log("Received shutdown command")
-                        send_response(conn, {"type": "Ready"}) # Send any response as acknowledgment
+                        send_response(conn, {"type": "Ack"})
                         cleanup_workers()
                         conn.close()
                         sock.close()
