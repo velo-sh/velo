@@ -1,59 +1,59 @@
-# Velo Benchmark 使用手册
+# Velo Benchmark User Guide
 
-> 从用户角度一步步运行 Velo 性能基准测试
+> A step-by-step guide to running Velo performance benchmarks
 
-## 📋 目录
+## Table of Contents
 
-1. [前置条件](#-前置条件)
-2. [快速开始 (5分钟)](#-快速开始-5分钟)
-3. [测试单个框架](#-测试单个框架)
-4. [CI/CD 集成](#%EF%B8%8F-cicd-集成)
-5. [解读测试结果](#-解读测试结果)
-6. [常见问题](#-常见问题)
+1. [Prerequisites](#-prerequisites)
+2. [Quick Start (5 minutes)](#-quick-start-5-minutes)
+3. [Testing Individual Frameworks](#-testing-individual-frameworks)
+4. [CI/CD Integration](#%EF%B8%8F-cicd-integration)
+5. [Understanding Results](#-understanding-results)
+6. [FAQ](#-faq)
 
 ---
 
-## ✅ 前置条件
+## ✅ Prerequisites
 
-### 1. 确保 Velo 已编译
+### 1. Ensure Velo is Compiled
 
 ```bash
-# 在 velo_qa 根目录
+# In velo_qa root directory
 cargo build --release
 
-# 验证编译成功
+# Verify successful build
 ./target/release/velo --version
 ```
 
-### 2. 确保 Python 环境
+### 2. Ensure Python Environment
 
 ```bash
-# 推荐使用 uv
+# Recommended: use uv
 uv sync
 
-# 或者确保已安装 Python 3.11+
+# Or ensure Python 3.11+ is installed
 python3 --version
 ```
 
 ---
 
-## 🚀 快速开始 (5分钟)
+## 🚀 Quick Start (5 minutes)
 
-### Step 1: 进入 benchmarks 目录
+### Step 1: Navigate to benchmarks directory
 
 ```bash
 cd benchmarks
 ```
 
-### Step 2: 运行 Hello World 级别测试
+### Step 2: Run Hello World level tests
 
 ```bash
 python3 benchmark_framework_scale.py --all --level L1
 ```
 
-### Step 3: 查看结果
+### Step 3: View results
 
-输出示例：
+Example output:
 ```
 ==========================================================================================
 🎯 FRAMEWORK SCALING BENCHMARK RESULTS
@@ -66,76 +66,76 @@ django       L1    Hello World              1         22.3        271.6 ✅ PASS
 ==========================================================================================
 ```
 
-### Step 4: 运行完整测试 (所有级别)
+### Step 4: Run full test suite (all levels)
 
 ```bash
 python3 benchmark_framework_scale.py --all
 ```
 
-⏱️ 预计时间：约 3-5 分钟
+⏱️ Estimated time: ~3-5 minutes
 
 ---
 
-## 🎯 测试单个框架
+## 🎯 Testing Individual Frameworks
 
 ### FastAPI
 
 ```bash
-# 仅 FastAPI，所有级别
+# FastAPI only, all levels
 python3 benchmark_framework_scale.py --fastapi
 
-# FastAPI L5 企业级 (700 组件)
+# FastAPI L5 Enterprise (700 components)
 python3 benchmark_framework_scale.py --fastapi --level L5
 ```
 
 ### Flask
 
 ```bash
-# 仅 Flask，所有级别
+# Flask only, all levels
 python3 benchmark_framework_scale.py --flask
 
-# Flask L3 中型项目 (50 组件)
+# Flask L3 Medium project (50 components)
 python3 benchmark_framework_scale.py --flask --level L3
 ```
 
 ### Django
 
 ```bash
-# 仅 Django，所有级别
+# Django only, all levels
 python3 benchmark_framework_scale.py --django
 
-# Django L4 大型项目 (50 apps)
+# Django L4 Large project (50 apps)
 python3 benchmark_framework_scale.py --django --level L4
 ```
 
 ---
 
-## 🏗️ 企业级压力测试
+## 🏗️ Enterprise Stress Tests
 
-如果需要更真实的生产环境模拟：
+For realistic production environment simulation:
 
 ```bash
-# 运行企业级基准
+# Run enterprise benchmarks
 python3 benchmark_enterprise.py --all
 
-# 单独运行 FastAPI 企业级 (500+ Pydantic 模型)
+# FastAPI Enterprise only (500+ Pydantic models)
 python3 benchmark_enterprise.py --fastapi
 ```
 
 ---
 
-## ⚙️ CI/CD 集成
+## ⚙️ CI/CD Integration
 
-### Step 1: 导出 JSON 结果
+### Step 1: Export JSON results
 
 ```bash
 python3 benchmark_framework_scale.py --all --output ci_results.json
 ```
 
-### Step 2: 在 CI 脚本中检查阈值
+### Step 2: Check thresholds in CI script
 
 ```bash
-# 示例: 检查 L5 build 时间是否超过 150ms
+# Example: Check if L5 build time exceeds 150ms
 python3 -c "
 import json
 with open('ci_results.json') as f:
@@ -148,7 +148,7 @@ print('All benchmarks within threshold!')
 "
 ```
 
-### Step 3: GitHub Actions 集成示例
+### Step 3: GitHub Actions example
 
 ```yaml
 - name: Run Performance Benchmarks
@@ -163,84 +163,84 @@ print('All benchmarks within threshold!')
 
 ---
 
-## 📊 解读测试结果
+## 📊 Understanding Results
 
-### 指标说明
+### Metrics Explained
 
-| 指标 | 说明 | 目标 |
+| Metric | Description | Target |
 |:---|:---|:---|
-| **Build (ms)** | `velo bundle build` 耗时 | L5 < 150ms |
-| **Load (ms)** | `velo run --fast` 启动耗时 | L5 < 800ms |
-| **Components** | 生成的组件数量 | - |
+| **Build (ms)** | `velo bundle build` duration | L5 < 150ms |
+| **Load (ms)** | `velo run --fast` startup time | L5 < 800ms |
+| **Components** | Number of generated components | - |
 
-### 级别说明
+### Scale Levels Explained
 
-| Level | 场景 | 典型规模 |
+| Level | Scenario | Typical Scale |
 |:---:|:---|:---|
-| L1 | Hello World | 1-5 组件 |
-| L2 | 小型项目 | 10-20 组件 |
-| L3 | 中型项目 | 50-100 组件 |
-| L4 | 大型项目 | 200-500 组件 |
-| L5 | 企业级 | 500-1000+ 组件 |
+| L1 | Hello World | 1-5 components |
+| L2 | Small project | 10-20 components |
+| L3 | Medium project | 50-100 components |
+| L4 | Large project | 200-500 components |
+| L5 | Enterprise | 500-1000+ components |
 
-### 性能基线参考
+### Baseline Reference
 
 ```
-FastAPI L5 (700 组件): Build ~107ms, Load ~567ms
-Flask   L5 (200 组件): Build ~56ms,  Load ~284ms
-Django  L5 (100 apps): Build ~54ms,  Load ~316ms
+FastAPI L5 (700 components): Build ~107ms, Load ~567ms
+Flask   L5 (200 components): Build ~56ms,  Load ~284ms
+Django  L5 (100 apps):       Build ~54ms,  Load ~316ms
 ```
 
 ---
 
-## ❓ 常见问题
+## ❓ FAQ
 
-### Q: 测试失败显示 "Velo binary not found"
+### Q: Test fails with "Velo binary not found"
 
-**A:** 确保已编译 Release 版本：
+**A:** Ensure Release build is compiled:
 ```bash
-cd ..  # 回到 velo_qa 根目录
+cd ..  # Return to velo_qa root
 cargo build --release
 cd benchmarks
 ```
 
-### Q: FastAPI 测试报 "pydantic not found"
+### Q: FastAPI test reports "pydantic not found"
 
-**A:** 脚本会自动安装依赖，但如果失败，手动安装：
+**A:** The script auto-installs dependencies, but if it fails, install manually:
 ```bash
 uv add fastapi pydantic flask django
 ```
 
-### Q: 测试太慢
+### Q: Tests are too slow
 
-**A:** 可以只测试特定级别：
+**A:** Test specific levels only:
 ```bash
-# 只测 L1 和 L2
+# Test only L1 and L2
 python3 benchmark_framework_scale.py --all --level L1
 python3 benchmark_framework_scale.py --all --level L2
 ```
 
-### Q: 如何对比两次测试结果
+### Q: How to compare two test runs
 
-**A:** 导出 JSON 并对比：
+**A:** Export JSON and diff:
 ```bash
-# 第一次测试
+# First run
 python3 benchmark_framework_scale.py --all --output before.json
 
-# 修改代码后
+# After code changes
 python3 benchmark_framework_scale.py --all --output after.json
 
-# 对比 (手动或使用脚本)
+# Compare (manual or scripted)
 diff before.json after.json
 ```
 
 ---
 
-## 📎 相关链接
+## 📎 Related Links
 
-- [性能基线文档](../docs/qa/benchmarks/FRAMEWORK_SCALE_BASELINES.md)
-- [主 README](./README.md)
-- [QA 测试指南](../docs/qa/tiered-testing-guide.md)
+- [Performance Baselines](../docs/qa/benchmarks/FRAMEWORK_SCALE_BASELINES.md)
+- [Benchmarks README](./README.md)
+- [QA Testing Guide](../docs/qa/tiered-testing-guide.md)
 
 ---
 
