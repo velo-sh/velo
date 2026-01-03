@@ -145,10 +145,10 @@ mod security_tests {
         use velo::loader::error::LoaderError;
         use velo::loader::verify::verify_blake3;
 
-        let data = b"test data for hashing";
+        let data = vec![0u8; 100];
         let wrong_hash = [0u8; 32]; // All zeros - definitely wrong
 
-        let result = verify_blake3(data, &wrong_hash);
+        let result = verify_blake3(&data, &wrong_hash);
         assert!(result.is_err(), "Should detect hash mismatch");
 
         match result {
@@ -162,10 +162,15 @@ mod security_tests {
     fn test_accepts_valid_blake3() {
         use velo::loader::verify::verify_blake3;
 
-        let data = b"test data for hashing";
-        let correct_hash = blake3::hash(data);
+        let mut data = vec![0u8; 128];
+        data[0..4].copy_from_slice(b"VELO");
 
-        let result = verify_blake3(data, correct_hash.as_bytes());
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&data[0..20]);
+        hasher.update(&data[52..]);
+        let correct_hash = hasher.finalize();
+
+        let result = verify_blake3(&data, correct_hash.as_bytes());
         assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
     }
 
@@ -176,10 +181,10 @@ mod security_tests {
         use velo::loader::error::LoaderError;
         use velo::loader::verify::verify_module_hash;
 
-        let data = b"module bytecode data";
+        let data = vec![b'K', 42]; // Valid marshal: small int
         let wrong_hash = [0xDE; 32]; // Definitely wrong
 
-        let result = verify_module_hash(data, &wrong_hash, "test_module");
+        let result = verify_module_hash(&data, &wrong_hash, "test_module", 28);
         assert!(result.is_err(), "Should detect BLAKE3 mismatch");
 
         match result {
@@ -193,10 +198,10 @@ mod security_tests {
     fn test_accepts_valid_module_hash() {
         use velo::loader::verify::verify_module_hash;
 
-        let data = b"module bytecode data";
-        let correct_hash = blake3::hash(data);
+        let data = vec![b'K', 42]; // Valid marshal
+        let correct_hash = blake3::hash(&data);
 
-        let result = verify_module_hash(data, correct_hash.as_bytes(), "test_module");
+        let result = verify_module_hash(&data, correct_hash.as_bytes(), "test_module", 28);
         assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
     }
 

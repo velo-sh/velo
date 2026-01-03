@@ -161,6 +161,9 @@ class VeloBundleBuilder:
         header_padding = bytearray(HEADER_SIZE - 20)
         if graph_offset:
             struct.pack_into("<Q", header_padding, 60 - 20, graph_offset)
+            
+        # RFC-0009 v2.0: Dynamic Security Header Offset
+        struct.pack_into("<B", header_padding, 68 - 20, 28) # 28 for Python 3.11/3.12
         
         # 5. Compute Global Hash (H-1): Cover Prefix + Padding + Data + Graph + Index
         hasher = None

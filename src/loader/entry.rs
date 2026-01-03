@@ -84,9 +84,9 @@ impl ModuleEntry {
         })
     }
 
-    /// Verify module data integrity using BLAKE3
-    pub fn verify(&self, data: &[u8]) -> Result<()> {
-        crate::loader::verify::verify_module_hash(data, &self.hash, &self.name)
+    /// Verify module data integrity and nesting depth
+    pub fn verify(&self, data: &[u8], code_header_offset: u8) -> Result<()> {
+        crate::loader::verify::verify_module_hash(data, &self.hash, &self.name, code_header_offset)
     }
 }
 

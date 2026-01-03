@@ -1,46 +1,8 @@
-use rkyv::{Archive, Deserialize, Serialize, util::AlignedVec};
+use rkyv::util::AlignedVec;
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
-pub struct StaticImportGraph {
-    pub version: u32,
-    pub target_arch_id: u8, // S-01
-    pub endianness: u8,     // 0=LE, 1=BE
-    pub index_type: u8,     // 0=PHF, 1=HashMap
+pub use crate::graph::{ModuleRecord, StaticImportGraph, TargetArch};
 
-    pub module_records: Vec<ModuleRecord>,
-    pub string_pool: Vec<u8>,
-}
-
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
-pub struct ModuleRecord {
-    pub packed_start_info: u32,
-    pub pool_len: u32,
-    pub dependency_flags: u8,
-    pub dependency_indices: Vec<u32>,
-}
-
-impl ModuleRecord {
-    pub fn is_package(&self) -> bool {
-        (self.packed_start_info >> 31) != 0
-    }
-
-    pub fn pool_start(&self) -> u32 {
-        self.packed_start_info & 0x7FFFFFFF
-    }
-
-    pub fn new(pool_start: u32, pool_len: u32, is_package: bool) -> Self {
-        let mut packed = pool_start & 0x7FFFFFFF;
-        if is_package {
-            packed |= 1 << 31;
-        }
-        Self {
-            packed_start_info: packed,
-            pool_len,
-            dependency_flags: 0,
-            dependency_indices: Vec::new(),
-        }
-    }
-}
+// Methods moved to mod.rs or replaced by StaticImportGraph implementation
 
 pub fn serialize_to_aligned_bytes(graph: &StaticImportGraph) -> AlignedVec {
     // AlignedVec already has alignment. rkyv::to_bytes returns AlignedVec usually or similar.
@@ -52,19 +14,18 @@ pub fn calculate_padding(current_offset: u64, alignment: u64) -> u64 {
     (alignment - (current_offset % alignment)) % alignment
 }
 
-pub fn verify_graph(bytes: &[u8]) -> Result<(), String> {
-    use crate::graph::TargetArch;
-
+pub fn verify_graph(bytes: &[u8]) -> std::result::Result<(), String> {
     // Safety: bytes must be aligned for ArchivedStaticImportGraph
-    let graph = match rkyv::access::<ArchivedStaticImportGraph, rkyv::rancor::Error>(bytes) {
-        Ok(g) => g,
-        Err(e) => return Err(format!("Rkyv validation failed: {:?}", e)),
-    };
+    let graph =
+        match rkyv::access::<crate::graph::ArchivedStaticImportGraph, rkyv::rancor::Error>(bytes) {
+            Ok(g) => g,
+            Err(e) => return Err(format!("Rkyv validation failed: {:?}", e)),
+        };
 
-    if graph.target_arch_id != TargetArch::current() as u8 {
+    if graph.target_arch_id != TargetArch::current().id() {
         return Err(format!(
             "Architecture mismatch: expected {}, got {}",
-            TargetArch::current() as u8,
+            TargetArch::current().id(),
             graph.target_arch_id
         ));
     }
@@ -85,26 +46,35 @@ pub fn verify_graph(bytes: &[u8]) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::graph::TargetArch;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn test_benchmark_deserialization() {
         let mut graph = StaticImportGraph {
             version: 1,
-            target_arch_id: TargetArch::current() as u8,
+            target_arch_id: TargetArch::current().id(),
             endianness: if cfg!(target_endian = "big") { 1 } else { 0 },
+            dependency_pool: Vec::new(),
             index_type: 1,
+            module_names: Vec::new(),
             module_records: Vec::new(),
-            string_pool: Vec::new(),
+            load_order: Vec::new(),
+            source_hash: [0u8; 32],
+            mutable_path_packages: HashSet::new(),
+            search_locations: HashMap::new(),
+            namespace_packages: HashSet::new(),
+            package_paths: HashMap::new(),
         };
 
         // Create a reasonably sized graph (100 modules)
         for i in 0..100 {
-            let mut record = ModuleRecord::new((i * 10) as u32, 10, false);
-            record.dependency_indices = vec![0, 1, 2, 3, 4];
+            let pool_start = graph.dependency_pool.len() as u32;
+            graph.dependency_pool.extend_from_slice(&[0, 1, 2, 3, 4]);
+
+            let record = ModuleRecord::new(pool_start, 5, false, 0);
             graph.module_records.push(record);
-            graph
-                .string_pool
-                .extend_from_slice(format!("module_{:03}", i).as_bytes());
+            graph.module_names.push(format!("module_{:03}", i));
+            graph.load_order.push(i as u32);
         }
 
         let bytes = serialize_to_aligned_bytes(&graph);
@@ -120,16 +90,21 @@ mod tests {
 
     #[test]
     fn test_arch_mismatch() {
-        let mut graph = StaticImportGraph {
+        let graph = StaticImportGraph {
             version: 1,
             target_arch_id: 255,
             endianness: if cfg!(target_endian = "big") { 1 } else { 0 },
+            dependency_pool: Vec::new(),
             index_type: 1,
-            module_records: Vec::new(),
-            string_pool: Vec::new(),
+            module_names: vec!["test".to_string()],
+            module_records: vec![ModuleRecord::new(0, 0, false, 0)],
+            load_order: vec![0],
+            source_hash: [0u8; 32],
+            mutable_path_packages: HashSet::new(),
+            search_locations: HashMap::new(),
+            namespace_packages: HashSet::new(),
+            package_paths: HashMap::new(),
         };
-        graph.module_records.push(ModuleRecord::new(0, 4, false));
-        graph.string_pool.extend_from_slice(b"test");
 
         let bytes = serialize_to_aligned_bytes(&graph);
         let result = verify_graph(&bytes);

@@ -57,12 +57,18 @@ pub struct BundleHeader {
     pub module_count: u32,
     /// Offset to module index
     pub index_offset: u64,
+    /// Offset to static import graph (RFC-0009)
+    pub graph_offset: u64,
 
     // === Integrity ===
     /// Hash of data section (algorithm per hash_algorithm)
     pub content_hash: [u8; 32],
     /// BLAKE3 of import_graph.json (from Phase 4.0)
     pub import_graph_hash: [u8; 32],
+
+    // === Security ===
+    /// Offset to code object header (RFC-0009 v2.0 §4.2.1)
+    pub security_header_offset: u8,
 
     // === Python Environment ===
     /// ABI tag (e.g., "cp312-darwin-arm64")
