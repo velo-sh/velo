@@ -42,6 +42,9 @@ I will review/implement with a testing perspective.
 Velo's .venv ≠ User Project's .venv
 ```
 
+> [!CAUTION]
+> **INSECURE PATHS**: Testing with `/tmp` or `/var/tmp` will trigger `LoaderError::InsecureLocation`. Always use `tempdir_in(std::env::current_dir())` for integration tests involving bundle loading.
+
 ### Test Categories
 
 | Type | Environment | What to Test |
