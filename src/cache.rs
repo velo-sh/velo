@@ -62,7 +62,21 @@ pub struct EnvCache {
 }
 
 impl EnvCache {
-    /// Compute fingerprint from uv.lock file.
+    /// Derive a stable 32-byte machine key for Keyed BLAKE3 (H-6).
+    /// RFC-0008: Prevents cache sharing/spoofing between different machines.
+    fn get_machine_key() -> [u8; 32] {
+        // In production: derive from /etc/machine-id or similar
+        // For now: use a stable hardware-bound string
+        let mut key = [0u8; 32];
+        let machine_id = hostname::get()
+            .ok()
+            .unwrap_or_else(|| "unknown-host".into());
+        let hash = blake3::hash(machine_id.to_string_lossy().as_bytes());
+        key.copy_from_slice(hash.as_bytes());
+        key
+    }
+
+    /// Compute fingerprint from uv.lock file using Keyed BLAKE3 (H-6).
     pub fn compute_fingerprint(project_dir: &Path) -> Option<String> {
         let lock_file = project_dir.join("uv.lock");
         if !lock_file.exists() {
@@ -70,8 +84,9 @@ impl EnvCache {
         }
 
         let content = fs::read(&lock_file).ok()?;
-        let hash = Sha256::digest(&content);
-        Some(hex::encode(hash))
+        let key = Self::get_machine_key();
+        let hash = blake3::keyed_hash(&key, &content);
+        Some(hash.to_hex().to_string())
     }
 
     /// Load cache from disk if fingerprint matches.

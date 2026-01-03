@@ -40,9 +40,9 @@ MAGIC = b"VELO"
 VERSION = 1
 DEFAULT_MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
 
-# RFC-0006 §3.5: Marshal Recursion Limit (AUDIT-012)
-# Prevents Stack Overflow attacks via deeply nested bytecode
-MARSHAL_RECURSION_LIMIT = 1000
+# RFC-0008 §2.18: Marshal Recursion Limit (H-4)
+# Strict limit to prevent stack-exhaustion DoS
+MARSHAL_RECURSION_LIMIT = 500
 
 
 def safe_marshal_loads(data: bytes) -> object:
@@ -181,25 +181,30 @@ class VeloBundle:
     
     def _verify_content_hash(self) -> None:
         """
-        Verify bundle integrity using BLAKE3
+        Verify bundle integrity using Global Hash scheme (H-1)
         
-        RFC-0006 Section 3.4: Unified BLAKE3 Verification
+        RFC-0008: Hash covers Identity Prefix [0..20] and Content [52..EOF]
         """
         if self._content_hash is None:
             return
         
-        # Hash data section only (from header end to index offset)
-        # Builder hashes data_section which ends at index_offset
-        data_section = bytes(self.view[128:self._index_offset])
-        
+        # H-1 Global Hash: Cover Identity Prefix + Rest (Skips hash field)
+        hasher = None
         if HAS_BLAKE3:
-            actual = blake3_module.blake3(data_section).digest()
+            hasher = blake3_module.blake3()
         else:
-            # Fallback to SHA-256 if blake3 not installed
-            actual = hashlib.sha256(data_section).digest()
+            hasher = hashlib.sha256()
+            
+        hasher.update(bytes(self.view[0:20]))  # Identity Prefix
+        hasher.update(bytes(self.view[52:]))   # Content (header suffix + data + index)
+        actual = hasher.digest()
         
         if actual != self._content_hash:
-            raise ValueError("Bundle content hash verification failed")
+            raise ValueError(
+                f"Bundle content hash verification failed\n"
+                f"Expected: {self._content_hash.hex()}\n"
+                f"Actual:   {actual.hex()}"
+            )
     
     def get_code(self, name: str) -> Optional[bytes]:
         """

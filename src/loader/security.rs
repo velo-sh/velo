@@ -59,8 +59,8 @@ pub fn validate_permissions(_path: &Path) -> Result<()> {
 pub fn validate_location(path: &Path) -> Result<()> {
     let insecure_prefixes = ["/tmp", "/var/tmp", "/dev/shm"];
 
-    // First check the raw path (before resolving symlinks)
-    // This catches obvious cases like "/tmp/foo.veloc"
+    // Ritual Layer 1: Raw Path Analysis
+    // Reject obvious insecure prefixes in the input string
     let raw_path_str = path.to_string_lossy();
     for prefix in &insecure_prefixes {
         if raw_path_str.starts_with(prefix) {
@@ -70,23 +70,25 @@ pub fn validate_location(path: &Path) -> Result<()> {
         }
     }
 
-    // Check if path is a symlink and verify its target
+    // Ritual Layer 2: Symlink Target Verification
+    // If the path is a symlink, check where it points BEFORE resolution
     #[cfg(unix)]
-    if path.is_symlink()
-        && let Ok(target) = std::fs::read_link(path)
-    {
-        let target_str = target.to_string_lossy();
-        for prefix in &insecure_prefixes {
-            if target_str.starts_with(prefix) {
-                return Err(LoaderError::InsecureLocation {
-                    path: path.to_path_buf(),
-                });
+    if path.is_symlink() {
+        #[allow(clippy::collapsible_if)]
+        if let Ok(target) = std::fs::read_link(path) {
+            let target_str = target.to_string_lossy();
+            for prefix in &insecure_prefixes {
+                if target_str.starts_with(prefix) {
+                    return Err(LoaderError::InsecureLocation {
+                        path: path.to_path_buf(),
+                    });
+                }
             }
         }
     }
 
-    // Then try to canonicalize to resolve symlinks (CRITICAL for security)
-    // This catches symlink traversal attacks where target exists
+    // Ritual Layer 3: Canonical Resolution (Root-of-Trust)
+    // resolve all symlinks and ".." to find the actual physical location
     if let Ok(canonical) = path.canonicalize() {
         let canonical_str = canonical.to_string_lossy();
         for prefix in &insecure_prefixes {
@@ -95,7 +97,7 @@ pub fn validate_location(path: &Path) -> Result<()> {
             }
         }
     } else if let Some(parent) = path.parent() {
-        // If file doesn't exist, check the parent directory
+        // Fallback for non-existent files: validate the parent directory
         if let Ok(canonical_parent) = parent.canonicalize() {
             let parent_str = canonical_parent.to_string_lossy();
             for prefix in &insecure_prefixes {
