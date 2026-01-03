@@ -94,7 +94,18 @@ impl GraphBuilder {
             load_order,
             source_hash: [0u8; 32], // TODO: Compute from inputs
             mutable_path_packages: HashSet::new(),
-            search_locations: HashMap::new(),
+            search_locations: {
+                let mut locs = HashMap::new();
+                for (name, module) in &self.modules {
+                    if module.is_package
+                        && let Some(parent) = module.path.parent()
+                    {
+                        let path_str = parent.to_string_lossy().to_string();
+                        locs.insert(name.clone(), vec![path_str]);
+                    }
+                }
+                locs
+            },
             namespace_packages: HashSet::new(),
             package_paths: HashMap::new(),
         }
