@@ -22,7 +22,7 @@ class TestPhase6Integration:
         env.create_app("main.py", "import m0")
         
         # 2. Build
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # 3. Run with metrics reporting
         env_vars = os.environ.copy()
@@ -47,7 +47,7 @@ class TestPhase6Integration:
         env.create_app("mod.py", "DATA = 1")
         env.create_app("main.py", "import mod")
         
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Use strace to count stat calls on Linux, or skip if not available
         # This is a platform-specific smoke test (L4/L5)
@@ -67,7 +67,7 @@ class TestPhase6Integration:
         """L5: Verify VELO_REPORT_METRICS=1 outputs valid JSON with all RFC-0009 fields."""
         env = isolated_env
         env.create_app("main.py", "import os; print('OK')")
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         env_vars = os.environ.copy()
         env_vars["VELO_REPORT_METRICS"] = "1"
