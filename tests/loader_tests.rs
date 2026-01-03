@@ -229,7 +229,6 @@ mod security_tests {
     #[test]
     fn test_atomic_read_verify_load() {
         use velo::loader::verify::load_and_verify;
-        use tempfile::tempdir;
 
         // 1. Prepare a valid bundle data with H-1 scheme and H-4 marshal logic
         let mut data = vec![0u8; 256];
@@ -267,8 +266,12 @@ mod security_tests {
         let hash = hasher.finalize();
         data[20..52].copy_from_slice(hash.as_bytes());
         
-        // 2. Write to temp file
-        let temp = tempdir().unwrap();
+        // 2. Write to temp file in a "secure" location (not /tmp)
+        // Velo security policy rejects /tmp, so we use current dir for testing
+        let temp = tempfile::Builder::new()
+            .prefix("atomic_test")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
         let path = temp.path().join("atomic_test.veloc");
         std::fs::write(&path, &data).unwrap();
         
