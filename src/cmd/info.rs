@@ -54,7 +54,29 @@ pub fn cmd_info() -> Result<()> {
             println!("└─ Status:      No uv.lock found");
         }
     } else {
-        println!("└─ No cache (run a script first)");
+        println!("└─ No cache (run a script first)\n");
+    }
+
+    // Zygote Status
+    println!("▸ Zygote Status");
+    if !crate::zygote::is_supported() {
+        println!("└─ Not supported on this platform ⚠️");
+    } else {
+        use crate::zygote::ipc::ZygoteResponse;
+        match crate::zygote::get_status() {
+            Ok(ZygoteResponse::Status { pid, preload }) => {
+                println!("├─ PID:     {}", pid);
+                if preload.is_empty() {
+                    println!("└─ Preload: None");
+                } else {
+                    println!("└─ Preload: {}", preload.join(", "));
+                }
+                println!("   Status:  Active ✅");
+            }
+            _ => {
+                println!("└─ Status:  Not running (run with --zygote)");
+            }
+        }
     }
 
     Ok(())
