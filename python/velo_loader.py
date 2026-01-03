@@ -144,6 +144,11 @@ class VeloBundle:
         if version != VERSION:
             raise ValueError(f"Unsupported bundle version: {version}")
         
+        # RFC-0009 §2.1: Graph Offset at byte 60 (to avoid RFC-0006 hash_algo collision)
+        self._graph_offset = 0
+        if len(self.data) > 68:
+            self._graph_offset = struct.unpack("<Q", bytes(self.view[60:68]))[0]
+            
         # Store index offset for hash verification
         self._index_offset = index_offset
         
@@ -256,11 +261,25 @@ class VeloFinder(importlib.abc.MetaPathFinder):
     def __init__(self, bundle: VeloBundle, project_root: Optional[Path] = None):
         self.bundle = bundle
         self.project_root = project_root or Path.cwd()
-    
+        self.metrics = {
+            "graph_hits": 0,
+            "graph_misses": 0,
+            "fallback_reasons": {}
+        }
+        
+        # Register atexit report (Passive mode debugging)
+        import atexit
+        import os
+        if os.environ.get("VELO_DEBUG_GRAPH") == "1":
+            atexit.register(self._report_metrics)
+
     def find_spec(self, fullname: str, path, target=None):
         """Find module spec for import"""
+        # RFC-0009 Step 3: Passive verification
+        self._check_graph_passive(fullname)
+        
         if fullname not in self.bundle:
-            return None  # Fallback to standard import
+            return None
         
         entry = self.bundle.index[fullname]
         
@@ -270,6 +289,30 @@ class VeloFinder(importlib.abc.MetaPathFinder):
             is_package=entry.is_package,
             origin=f"<velo-bundle:{self.bundle.path}:{fullname}>"
         )
+
+    def _check_graph_passive(self, fullname: str) -> None:
+        """
+        Record hit/miss in metrics for the static graph (Passive Mode).
+        RFC-0009: Used to verify hit-rate accuracy before full activation.
+        """
+        # For Phase 6.0 Step 3, we simulate the check against the logical index for now
+        # until the graph section is fully populated by the Rust builder.
+        if fullname in self.bundle:
+            self.metrics["graph_hits"] += 1
+        else:
+            self.metrics["graph_misses"] += 1
+
+    def _report_metrics(self) -> None:
+        """Report metrics at process exit (Passive Mode)"""
+        hits = self.metrics["graph_hits"]
+        misses = self.metrics["graph_misses"]
+        
+        if hits > 0 or misses > 0:
+            sys.stderr.write("\n📊 Velo Static Graph Metrics (Passive Mode)\n")
+            sys.stderr.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+            sys.stderr.write(f"  Graph Hits:   {hits}\n")
+            sys.stderr.write(f"  Graph Misses: {misses}\n")
+            sys.stderr.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 
 class VeloLoader(importlib.abc.Loader):

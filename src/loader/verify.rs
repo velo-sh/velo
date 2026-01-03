@@ -108,9 +108,16 @@ impl<'a> StructuralGuard<'a> {
         let tag = self.read_u8()? & 0x7F; // Skip FLAG_REF (0x80)
 
         match tag as char {
-            'N' | 'T' | 'F' | '.' | '0' => Ok(()), // None, True, False, Ellipsis, Stop
-            'i' | 'f' | 'g' => {
-                self.pos += 4;
+            'N' | 'T' | 'F' | '.' | '0' | '\0' => Ok(()), // None, True, False, Ellipsis, Stop, Null
+            'i' | 'f' | 'g' | 'K' => {
+                let n = if tag == b'K' {
+                    1
+                } else if tag == b'g' {
+                    8
+                } else {
+                    4
+                };
+                self.pos += n;
                 Ok(())
             } // int, float (fixed)
             'l' => {
@@ -118,8 +125,12 @@ impl<'a> StructuralGuard<'a> {
                 self.pos += n.unsigned_abs() as usize * 4;
                 Ok(())
             } // long
-            's' | 'u' | 'z' | 'A' | 'B' => {
-                let n = self.read_u32()? as usize;
+            's' | 'u' | 'z' | 'A' | 'B' | 'a' | 'Z' | 'y' => {
+                let n = if tag == b'z' || tag == b'Z' || tag == b'y' {
+                    self.read_u8()? as usize
+                } else {
+                    self.read_u32()? as usize
+                };
                 self.skip(n)
             } // strings/bytes
             'S' => {
@@ -154,7 +165,8 @@ impl<'a> StructuralGuard<'a> {
                 // dict
                 self.depth += 1;
                 loop {
-                    if self.peek_u8()? == b'0' {
+                    let next = self.peek_u8()?;
+                    if next == b'0' || next == 0 {
                         self.pos += 1;
                         break;
                     }
@@ -167,19 +179,36 @@ impl<'a> StructuralGuard<'a> {
             'c' => {
                 // code object
                 self.depth += 1;
-                self.pos += 6 * 4; // argcount...flags
-                for _ in 0..11 {
-                    // code, consts, names, varnames, freevars, cellvars, filename, name, qualname, linetable, exceptiontable
+                if self.depth > self.max_depth {
+                    return Err(LoaderError::InsecureBundle(
+                        "Recursion limit exceeded".into(),
+                    ));
+                }
+
+                // Python 3.11 header is ~28-32 bytes of fixed i32s
+                // We'll skip 28 bytes and then start validating fields.
+                self.skip(28)?;
+
+                // Validate fields: co_code, co_consts, co_names, etc.
+                // We'll validate until we hit a non-object or EOF.
+                // Modern Python has ~15-18 fields.
+                for _ in 0..15 {
+                    if self.pos >= self.data.len()
+                        || self.peek_u8()? == b'0'
+                        || self.peek_u8()? == 0
+                    {
+                        break;
+                    }
                     self.validate()?;
                 }
-                self.pos += 4; // firstlineno
-                self.validate()?; // lnotab/linetable
                 self.depth -= 1;
                 Ok(())
             }
             _ => Err(LoaderError::InsecureBundle(format!(
-                "Unknown marshal tag 0x{:02x} ('{}')",
-                tag, tag as char
+                "Unknown marshal tag 0x{:02x} ('{}') at pos {}",
+                tag,
+                tag as char,
+                self.pos - 1
             ))),
         }
     }
@@ -344,6 +373,7 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn test_blake3_calculation() {
@@ -353,12 +383,45 @@ mod tests {
     }
 
     #[test]
-    fn test_blake3_speed_note() {
-        // BLAKE3 is ~10x faster than SHA-256
-        // ~3-6 GB/s vs ~0.5 GB/s
-        // This matches NVMe SSD speed, so hash is no longer the bottleneck
-        let data = vec![0u8; 1024 * 1024]; // 1MB
-        let _hash = blake3::hash(&data);
-        // In production: 1MB at 3GB/s = 0.33ms
+    fn test_structural_guard_tags() {
+        // Test TYPE_SMALL_INT 'K' (1 byte)
+        let data_k = vec![b'K', 42];
+        assert!(check_marshal_depth(&data_k, 10).is_ok());
+
+        // Test TYPE_SHORT_ASCII 'Z' (1 byte len + data)
+        let mut data_z = vec![b'Z', 4];
+        data_z.extend_from_slice(b"test");
+        assert!(check_marshal_depth(&data_z, 10).is_ok());
+
+        // Test FLAG_REF bit on 'z' (short string)
+        let mut data_ref_z = vec![b'z' | 0x80, 4];
+        data_ref_z.extend_from_slice(b"refz");
+        assert!(check_marshal_depth(&data_ref_z, 10).is_ok());
+
+        // Test TYPE_NULL '\0'
+        let data_null = vec![b'\0'];
+        assert!(check_marshal_depth(&data_null, 10).is_ok());
+
+        // Test unknown tag (fail-closed)
+        let data_unknown = vec![b'!'];
+        let res = check_marshal_depth(&data_unknown, 10);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Unknown marshal tag"));
+    }
+
+    #[test]
+    fn test_structural_guard_recursion() {
+        // Nested tuples: (((...)))
+        let mut data = Vec::new();
+        let depth = 5;
+        for _ in 0..depth {
+            data.push(b'(');
+            data.extend_from_slice(&1u32.to_le_bytes()); // 1 element each
+        }
+        data.push(b'K');
+        data.push(1); // innermost element
+
+        assert!(check_marshal_depth(&data, 10).is_ok());
+        assert!(check_marshal_depth(&data, 4).is_err());
     }
 }

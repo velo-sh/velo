@@ -36,9 +36,11 @@ pub fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) 
         .context("Failed to run Python")?;
 
     if !status.success() {
+        crate::graph::report_metrics();
         std::process::exit(status.code().unwrap_or(1));
     }
 
+    crate::graph::report_metrics();
     Ok(())
 }
 
@@ -131,8 +133,10 @@ pub fn run_script_with_profile(
     let _ = fs::remove_file(&profile_output);
 
     if !status.success() {
+        crate::graph::report_metrics();
         std::process::exit(status.code().unwrap_or(1));
     }
 
+    crate::graph::report_metrics();
     Ok(())
 }
