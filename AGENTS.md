@@ -139,15 +139,16 @@ I will review/implement with [ROLE]'s perspective.
 
 ---
  
- ## 🔓 Role Management & Identity Lock
- 
- ### Permanent Architect Lock (Phase 5.x)
+ ## 🔓 Universal Identity & Role Governance (Iron Rule)
  
  > [!IMPORTANT]
- > **ID-LOCK-001**: For the duration of Phase 5.x (Zygote & Security), the active AI agent is PERMANENTLY locked into the **🏛️ Architect** role.
- > - ❌ **NO IDENTITY SWITCH**: The agent is strictly forbidden from switching to the Developer role.
- > - ❌ **NO APPLICATIONS**: The agent is forbidden from even applying or requesting a role switch.
- > - ✅ **SCOPE**: Design, documentation, RFC creation, and QA requirement specification ONLY.
+ > **ID-LOCK-GLOBAL**: The following rules apply to ALL AI agents working on this project, regardless of their current role (Architect, Developer, QA, DevOps):
+ > - ❌ **STRICT ROLE ADHERENCE**: The agent MUST operate strictly within the scope of its active role.
+ > - ❌ **NO UNAUTHORIZED ROLE SWITCH**: The agent is strictly forbidden from switching to another role without explicit, human-approved modification of this section in `AGENTS.md`.
+ > - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
+ > - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
+ >
+ > **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
  
  ---
  
