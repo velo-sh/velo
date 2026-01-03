@@ -266,7 +266,11 @@ mod security_tests {
         data[20..52].copy_from_slice(hash.as_bytes());
 
         // 2. Write to temp file in a "secure" location (not /tmp)
-        let temp = tempdir().unwrap();
+        // Velo security policy rejects /tmp, so we use current dir for testing
+        let temp = tempfile::Builder::new()
+            .prefix("atomic_test")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
         let path = temp.path().join("atomic_test.veloc");
         std::fs::write(&path, &data).unwrap();
 
@@ -289,7 +293,11 @@ mod security_tests {
         use velo::loader::verify::load_and_verify;
 
         // 1. Setup a LARGE valid bundle to prolong the "loading window"
-        let temp = tempdir().unwrap();
+        // Velo security policy rejects /tmp, so we use current dir for testing
+        let temp = tempfile::Builder::new()
+            .prefix("toctou_test")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
         let path = temp.path().join("race.veloc");
         let mut data = vec![0u8; 10 * 1024 * 1024]; // 10MB
         data[0..4].copy_from_slice(b"VELO");
