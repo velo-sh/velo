@@ -1,21 +1,19 @@
-**QA Verdict**: **REJECTED** (Regressions in Versioning & Mismatched Metrics)
-**Build Hash reviewed**: `e528893`
+**QA Verdict**: **CONDITIONALLY APPROVED** (Core E2E PASSED, Minor P2/P3 remaining)
+**Build Hash reviewed**: `f925247`
 
-## ✅ PARTIALLY RESOLVED
+## ✅ RESOLVED
 *   **DEF-60-001 (P0)**: Stub Build Command (Verified)
 *   **DEF-60-002 (P1)**: AST Classification Failure (Verified Fixed in `e528893`)
-*   **DEF-60-005 (P2)**: Build Scale Timeouts (Verified FIXED: 5000 modules in 77ms using persistent workers)
+*   **DEF-60-005 (P2)**: Build Scale Timeouts (Verified FIXED: 5000 modules in 73ms)
+*   **DEF-60-006 (P1)**: Bundle Version 0 (Verified FIXED in `fb979bf`)
+*   **DEF-60-007 (P0)**: Bundle Content Hash Mismatch (Verified FIXED in `f925247`)
 
-## 🛑 NEW / PERSISTENT DEFECTS
-### 1. [NEW - P0] DEF-60-007: Bundle Content Hash Mismatch
-*   **Issue**: `velo run --fast` rejects bundles due to BLAKE3 hash verification failure.
-*   **Error**: `Bundle content hash verification failed. Expected: X, Actual: Y`
-*   **Impact**: **TOTAL LOADER FAILURE**. All bundles are rejected. Fast loader is non-functional.
-*   **Root Cause**: Build-time hash does not match load-time hash. Possible non-deterministic serialization or padding.
-*   **Reproduction**: `uv run pytest tests/qa/test_e2e_golden_path.py -k GOLD_001`
+## ✅ E2E Golden Path: **ALL 9 PASSED**
+- GOLD-001 (Full Cycle): FastAPI ✅ | Flask ✅ | Django ✅
+- GOLD-002 (Idempotency): FastAPI ✅ | Flask ✅ | Django ✅
+- GOLD-003 (Fallback): FastAPI ✅ | Flask ✅ | Django ✅
 
-### 2. [RESOLVED] DEF-60-006: Unsupported Bundle Version 0
-*   **Status**: FIXED in `fb979bf`. Version tag now correctly writes `1`.
+## ⚠️ REMAINING (P2/P3)
 
 ### 2. [RE-OPENED] DEF-60-004: Metrics JSON Location Mismatch
 *   **Issue**: `bundle build` emits metrics to `stdout`. QA spec and telemetry pipelines expect `stderr`.
