@@ -72,11 +72,16 @@ def test_stress_001_marshal_bomb(tmp_path, velo_binary):
         text=True
     )
     
-    # The output should contain "RecursionError"
-    assert "RecursionError" in result.stdout or "RecursionError" in result.stderr
+    # The Rust-level StructuralGuard should catch this BEFORE Python sees it
+    # Expected output: "Insecure bundle: Marshal recursion limit exceeded (max 500)"
+    assert ("Marshal recursion limit exceeded" in result.stderr or
+            "InsecureBundle" in result.stderr or
+            "RecursionError" in result.stderr), \
+        f"H-4 Guard did not trigger. stdout={result.stdout!r}, stderr={result.stderr!r}"
            
     # Ensure it didn't segfault
-    assert result.returncode != -11 
+    assert result.returncode != -11
+ 
 
 def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     """
