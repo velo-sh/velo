@@ -21,10 +21,18 @@ RFC-0006 hardcoded the 256MB limit for DoS prevention. Phase 5.2 externalizes th
 | Test ID | Scenario | Expected Result |
 |---------|----------|-----------------|
 | E2E-FAST-001 | `velo run --fast` with oversized bundle and no config | CLI error: Bundle too large (256MB limit) |
-| E2E-FAST-002 | `velo run --fast` with oversized bundle and override | Successful import & execution |
+| E2E-FAST-002 | `velo run --fast` with oversized bundle and override | Successful import & execution (Speedup ≥3x) |
+| E2E-COMPAT-003 | Django project with custom `max_bundle_size` | Server starts successfully (Fulfills RFC-0006 requirements) |
 | E2E-ZYG-001 | Zygote start with `max_bundle_size` in project TOML | Zygote respects the limit for preloaded bundles |
 
-## 4. Professional Advice for Implementation
-1. **Centralized Constant**: Define `DEFAULT_MAX_BUNDLE_SIZE` in `src/loader/security.rs` and export it. Do not repeat the `256 * 1024 * 1024` literal.
-2. **Parser Robustness**: The TOML parser in `config.rs` is currently minimal. Ensure it doesn't crash on MALFORMED numeric inputs; it should log a warning and use the default.
-3. **Python Sync**: The `velo_loader.py` must be updated to accept the limit as an argument during `activate_fast_mode` to ensure Python-side enforcement matches the Rust-side bypass.
+## 4. Hardening Traceability (Audit P0s)
+The following tests (to be implemented in `tests/security/`) MUST verify the P0 fixes:
+- **SEC-AUD-001**: Global Hash Tampering (Header/Data).
+- **SEC-AUD-002**: Recursive Marshal Bomb (Depth > 500).
+- **SEC-AUD-003**: Symlink/Canonicalization Bypass.
+- **SEC-AUD-004**: TOCTOU File Replacement (Atomic Read).
+
+## 5. Professional Advice for Implementation
+1. **Centralized Constant**: Define `DEFAULT_MAX_BUNDLE_SIZE` in `src/loader/security.rs`.
+2. **Triple Magic Check**: In `header.rs`, verify `MAGIC` + `VERSION` + `ABI` tag simultaneously.
+3. **Python Sync**: Inject the *effective limit* as a literal to Python to prevent Config Drift.
