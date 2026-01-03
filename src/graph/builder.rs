@@ -1,5 +1,6 @@
 use crate::graph::cycle::Tarjan;
 use crate::graph::dependency::{DependencyScanner, DependencyType};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -14,9 +15,19 @@ pub struct LogicalModule {
     pub topological_rank: Option<usize>,
 }
 
+#[derive(Serialize, Default, Debug)]
+pub struct BuildMetrics {
+    pub module_count: usize,
+    pub hard_dependencies: usize,
+    pub soft_dependencies: usize,
+    pub cyclic_dependencies: usize,
+    pub build_time_ms: u128,
+}
+
 pub struct GraphBuilder {
-    project_root: PathBuf,
-    modules: HashMap<String, LogicalModule>,
+    pub project_root: PathBuf,
+    pub modules: HashMap<String, LogicalModule>,
+    pub metrics: BuildMetrics,
 }
 
 impl GraphBuilder {
@@ -24,6 +35,7 @@ impl GraphBuilder {
         Self {
             project_root,
             modules: HashMap::new(),
+            metrics: BuildMetrics::default(),
         }
     }
 
@@ -114,7 +126,7 @@ impl GraphBuilder {
         }
     }
 
-    fn scan_project(&mut self) {
+    pub fn scan_project(&mut self) {
         // Walk the project root and find all .py files
         // (Similar to the logic in bundle_builder.py)
         // For now, assume we use a walker
@@ -168,10 +180,18 @@ impl GraphBuilder {
         let mut soft_deps = Vec::new();
         for dep in deps {
             match dep.dep_type {
-                DependencyType::Hard => hard_deps.push(dep.name),
-                DependencyType::Soft => soft_deps.push(dep.name),
+                DependencyType::Hard => {
+                    hard_deps.push(dep.name);
+                    self.metrics.hard_dependencies += 1;
+                }
+                DependencyType::Soft => {
+                    soft_deps.push(dep.name);
+                    self.metrics.soft_dependencies += 1;
+                }
             }
         }
+
+        self.metrics.module_count += 1;
 
         self.modules.insert(
             module_name.clone(),

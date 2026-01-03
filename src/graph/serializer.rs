@@ -81,7 +81,7 @@ mod tests {
 
         // Measure access (deserialization latency)
         let start = std::time::Instant::now();
-        let _ = verify_graph(&bytes).unwrap();
+        verify_graph(&bytes).unwrap();
         let elapsed = start.elapsed();
 
         println!("⚡ Static Graph Deserialization Latency: {:?}", elapsed);
