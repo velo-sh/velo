@@ -5,23 +5,20 @@
 use crate::loader::error::{LoaderError, Result};
 use std::path::Path;
 
-/// Maximum bundle size: 256MB (DoS prevention)
+/// Default maximum bundle size: 256MB (DoS prevention)
 ///
 /// Handover Section 2.2: 内存限制
-pub const MAX_BUNDLE_SIZE: u64 = 256 * 1024 * 1024;
+pub const DEFAULT_MAX_BUNDLE_SIZE: u64 = 256 * 1024 * 1024;
 
 /// Validate bundle file size before reading
 ///
 /// MUST be called BEFORE reading the file to prevent OOM DoS.
-pub fn validate_size(path: &Path) -> Result<()> {
+pub fn validate_size(path: &Path, limit: u64) -> Result<()> {
     let metadata = std::fs::metadata(path)?;
     let size = metadata.len();
 
-    if size > MAX_BUNDLE_SIZE {
-        return Err(LoaderError::BundleTooLarge {
-            size,
-            limit: MAX_BUNDLE_SIZE,
-        });
+    if size > limit {
+        return Err(LoaderError::BundleTooLarge { size, limit });
     }
 
     Ok(())
@@ -118,8 +115,8 @@ pub fn validate_location(path: &Path) -> Result<()> {
 ///
 /// This is the main entry point for security checks.
 /// Order matters: size → permissions → location
-pub fn validate_all(path: &Path) -> Result<()> {
-    validate_size(path)?;
+pub fn validate_all(path: &Path, limit: u64) -> Result<()> {
+    validate_size(path, limit)?;
     validate_permissions(path)?;
     validate_location(path)?;
     Ok(())
@@ -131,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_max_bundle_size_constant() {
-        assert_eq!(MAX_BUNDLE_SIZE, 256 * 1024 * 1024);
-        assert_eq!(MAX_BUNDLE_SIZE, 268_435_456);
+        assert_eq!(DEFAULT_MAX_BUNDLE_SIZE, 256 * 1024 * 1024);
+        assert_eq!(DEFAULT_MAX_BUNDLE_SIZE, 268_435_456);
     }
 }

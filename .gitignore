@@ -27,3 +27,4 @@ target
 .velo_cache/
 __pycache__/
 velo_zygote/velo_zygote
+test_large_bundle/

@@ -64,12 +64,14 @@ pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -
 /// 2. Read entire file to RAM
 /// 3. Verify BLAKE3 content_hash
 /// 4. Return verified bundle (safe for marshal.loads())
-pub fn load_and_verify(path: &std::path::Path) -> Result<VerifiedBundle> {
+pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<VerifiedBundle> {
     use crate::loader::header::BundleHeader;
     use crate::loader::security;
 
+    let effective_limit = limit.unwrap_or(security::DEFAULT_MAX_BUNDLE_SIZE);
+
     // Step 0: Security checks BEFORE reading
-    security::validate_all(path)?;
+    security::validate_all(path, effective_limit)?;
 
     // Step 1: Read entire file to RAM (TOCTOU-safe)
     let data = std::fs::read(path)?;
@@ -77,24 +79,38 @@ pub fn load_and_verify(path: &std::path::Path) -> Result<VerifiedBundle> {
     // Step 2a: Validate magic
     BundleHeader::parse_magic(&data)?;
 
-    // Step 2b: Extract content hash from header (bytes 8-40)
-    if data.len() < 40 {
+    // Step 2b: Extract content hash and index offset from header
+    // Header layout:
+    // 0..4: MAGIC
+    // 4..8: VERSION
+    // 8..12: COUNT
+    // 12..20: INDEX_OFFSET (u64 LE)
+    // 20..52: CONTENT_HASH (32 bytes)
+    if data.len() < 52 {
         return Err(LoaderError::BundleCorrupted {
-            expected: "valid header".to_string(),
-            actual: "truncated".to_string(),
+            expected: "valid header (at least 52 bytes)".to_string(),
+            actual: format!("{} bytes", data.len()),
         });
     }
 
-    let mut expected_hash = [0u8; 32];
-    expected_hash.copy_from_slice(&data[8..40]);
+    let mut index_offset_bytes = [0u8; 8];
+    index_offset_bytes.copy_from_slice(&data[12..20]);
+    let index_offset = u64::from_le_bytes(index_offset_bytes) as usize;
 
-    // Header ends at fixed size (we'll calculate properly later)
-    // For now, assume header is 128 bytes
+    let mut expected_hash = [0u8; 32];
+    expected_hash.copy_from_slice(&data[20..52]);
+
     let header_end = 128;
 
     // Step 2c: Verify BLAKE3 of data section (~3-6 GB/s)
-    if data.len() > header_end {
-        verify_blake3(&data[header_end..], &expected_hash)?;
+    if data.len() >= index_offset && index_offset > header_end {
+        verify_blake3(&data[header_end..index_offset], &expected_hash)?;
+    } else if index_offset > header_end {
+        // Truncated data section
+        return Err(LoaderError::BundleCorrupted {
+            expected: format!("data section up to {}", index_offset),
+            actual: "truncated".to_string(),
+        });
     }
 
     // Step 3: Return verified bundle

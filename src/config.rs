@@ -14,6 +14,8 @@ use std::path::Path;
 pub struct VeloConfig {
     /// Modules to preload in Zygote
     pub preload: Vec<String>,
+    /// Maximum bundle size in Bytes
+    pub max_bundle_size: Option<u64>,
 }
 
 impl VeloConfig {
@@ -33,6 +35,7 @@ impl VeloConfig {
     fn parse_toml(content: &str) -> Option<Self> {
         let mut in_tool_velo = false;
         let mut preload = Vec::new();
+        let mut max_bundle_size = None;
 
         for line in content.lines() {
             let line = line.trim();
@@ -55,13 +58,24 @@ impl VeloConfig {
                         preload = Self::parse_string_array(array_content);
                     }
                 }
+            } else if line.starts_with("max_bundle_size") {
+                if let Some(eq_idx) = line.find('=') {
+                    let value_str = line[eq_idx + 1..].trim();
+                    // Parse numeric value (MB) and convert to Bytes
+                    if let Ok(mb) = value_str.parse::<u64>() {
+                        max_bundle_size = Some(mb * 1024 * 1024);
+                    }
+                }
             }
         }
 
-        if preload.is_empty() {
+        if preload.is_empty() && max_bundle_size.is_none() {
             None
         } else {
-            Some(Self { preload })
+            Some(Self {
+                preload,
+                max_bundle_size,
+            })
         }
     }
 
@@ -129,5 +143,35 @@ name = "myapp"
     fn test_parse_string_array() {
         let result = VeloConfig::parse_string_array(r#""fastapi", "pydantic""#);
         assert_eq!(result, vec!["fastapi", "pydantic"]);
+    }
+
+    #[test]
+    fn test_parse_toml_max_bundle_size() {
+        let content = r#"
+[tool.velo]
+max_bundle_size = 512
+"#;
+        let config = VeloConfig::parse_toml(content).unwrap();
+        assert_eq!(config.max_bundle_size, Some(512 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_parse_toml_invalid_max_bundle_size() {
+        let content = r#"
+[tool.velo]
+max_bundle_size = "not a number"
+"#;
+        let config = VeloConfig::parse_toml(content);
+        // If preload is also missing, it returns None
+        assert!(config.is_none());
+
+        let content_with_preload = r#"
+[tool.velo]
+preload = ["fastapi"]
+max_bundle_size = -5
+"#;
+        let config = VeloConfig::parse_toml(content_with_preload).unwrap();
+        assert!(config.max_bundle_size.is_none());
+        assert_eq!(config.preload, vec!["fastapi"]);
     }
 }
