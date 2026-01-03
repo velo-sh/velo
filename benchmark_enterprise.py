@@ -87,6 +87,45 @@ django.setup()
 print('Enterprise Django Monolith Ready')
 """)
 
+    @staticmethod
+    def create_flask(path: Path, blueprints=50):
+        """Heavyweight Flask: 50 blueprints, nested imports, extension simulation."""
+        print(f"  Generating Flask Enterprise ({blueprints} blueprints)...")
+        app_dir = path / "app"
+        app_dir.mkdir(parents=True)
+        
+        # 1. Create Blueprints
+        bp_dir = app_dir / "modules"
+        bp_dir.mkdir()
+        for i in range(blueprints):
+            code = [
+                "from flask import Blueprint, jsonify",
+                f"bp_{i} = Blueprint('bp_{i}', __name__)",
+                f"@bp_{i}.route('/{i}')",
+                f"def route_{i}(): return jsonify(status='ok {i}')"
+            ]
+            # Add a vertical import (dependency between blueprints)
+            if i > 0:
+                code.insert(0, f"from .module_{i-1} import bp_{i-1}")
+            (bp_dir / f"module_{i}.py").write_text("\n".join(code))
+            
+        (bp_dir / "__init__.py").write_text("".join([f"from .module_{i} import bp_{i}\n" for i in range(blueprints)]))
+
+        # 2. Main Entry
+        main_code = [
+            "from flask import Flask",
+            "from .modules import " + ", ".join([f"bp_{i}" for i in range(blueprints)]),
+            "app = Flask(__name__)"
+        ]
+        for i in range(blueprints):
+            main_code.append(f"app.register_blueprint(bp_{i})")
+        main_code.append("@app.get('/')\ndef index(): return 'Flask Lite'")
+        (app_dir / "main.py").write_text("\n".join(main_code))
+        (app_dir / "__init__.py").write_text("")
+
+        # 3. Entry point
+        (path / "entry.py").write_text("from app.main import app\nprint('Enterprise Flask Ready')")
+
 def run_bench(name: Path, iterations=5):
     """Run benchmark comparison."""
     print(f"\nBenchmark: {name.name}")
@@ -129,6 +168,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--fastapi", action="store_true")
     parser.add_argument("--django", action="store_true")
+    parser.add_argument("--flask", action="store_true")
     args = parser.parse_args()
     
     BENCH_ROOT.mkdir(parents=True, exist_ok=True)
@@ -141,6 +181,11 @@ def main():
     if args.django:
         p = setup_project("enterprise_django", ["django"])
         EnterpriseGenerator.create_django(p)
+        run_bench(p)
+
+    if args.flask:
+        p = setup_project("enterprise_flask", ["flask"])
+        EnterpriseGenerator.create_flask(p)
         run_bench(p)
 
 if __name__ == "__main__":
