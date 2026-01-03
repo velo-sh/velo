@@ -10,7 +10,7 @@ The high-performance Python runtime for the AI era, built with Rust.
 
 | Problem | Solution |
 |---------|----------|
-| Python cold start is slow | **12x faster** with Zygote pre-warming 🧬 |
+| Python cold start is slow | **12x faster** with **Instant Startup** 🧬 |
 | Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
 | ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
 | Dependency chaos | Auto-detects `uv` virtual environments |
@@ -49,9 +49,9 @@ cargo build --release
 
 ## Benchmark Results
 
-![Velo Benchmark](./assets/benchmark_v2.png)
+![Velo Benchmark](./assets/benchmark_v3.png)
 
-### 🧬 Zygote Mode (v0.6.0) - **60x Faster!**
+### 🧬 Velo Instant Mode (v0.6.0) - **60x Faster!**
 
 ```
 ╔══════════════════════════════════════════════════════════╗
@@ -59,20 +59,20 @@ cargo build --release
 ╠══════════════════════════════════════════════════════════╣
 ║  CPython           ██████████████████████████░░░░  514ms ║
 ║  Velo (Cold)       █░░░░░░░░░░░░░░░░░░░░░░░░░░░░   17.7ms║
-║  Velo + Zygote     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    8.6ms⚡║
+║  Velo (Instant)    ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    8.6ms⚡║
 ╚══════════════════════════════════════════════════════════╝
                      🚀 59.7x faster than CPython
 ```
 
 ### Warm Start Benchmarks
 
-| Project | CPython | Velo (Zygote) | Speedup |
+| Project | CPython | Velo (Instant) | Speedup |
 |---------|---------|---------------|---------|
 | **Simple Script** | 22ms | **8.6ms** | **2.5x** 🔥 |
 | **Heavy Imports** | 514ms | **8.8ms** | **58.4x** 🔥 |
 | **FastAPI** | 606ms | **15ms** | **40.4x** 🔥 |
 
-> **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the Zygote daemon.
+> **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the **Velo background runner**.
 
 ## How It Works
 
@@ -89,7 +89,7 @@ cargo build --release
 # Run a Python script with optimized startup
 velo run script.py
 
-# 🧬 Run with Zygote for instant startup (49x faster!)
+# 🧬 Run with Instant Mode (49x faster!)
 velo run --zygote script.py
 
 # Manage Zygote daemon
@@ -106,7 +106,7 @@ velo info
 # 🌐 Serve a web application (FastAPI, Django, Flask)
 velo serve main:app --workers 4
 velo serve main:app --reload          # Hot reload
-velo serve main:app --no-zygote       # Without Zygote
+velo serve main:app --no-zygote       # Standard mode
 
 # 📊 Analyze import times (⚠️ executes the script!)
 velo analyze main.py                  # Analyze imports
@@ -168,7 +168,7 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 1: Environment fingerprinting & path caching
 - [x] Phase 1.5: Environment Fingerprinting (ABI checks, `velo info`, `--profile`)
 - [x] Phase 2: Process isolation (multi-Python support)
-- [x] Phase 3: Zygote mode 🧬
+- [x] Phase 3: Instant Startup (Velo Mode) 🧬
 - [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
 - [x] Phase 4: Static analysis & security
 - [x] **Phase 5: Fast Loader & 14x Zygote speedup** 🚀
