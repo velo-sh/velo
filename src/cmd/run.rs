@@ -396,14 +396,15 @@ fn run_with_fast_loader(
 
     eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
 
+    let bundle_abs = actual_bundle.canonicalize()?;
+    let project_abs = project_dir.canonicalize()?;
+
     // Create a unique temporary directory for sitecustomize.py
     // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
     let temp_dir = tempfile::tempdir()?;
     let site_file = temp_dir.path().join("sitecustomize.py");
 
     // Get absolute paths
-    let bundle_abs = actual_bundle.canonicalize()?;
-    let project_abs = project_dir.canonicalize()?;
 
     // Find velo_loader.py - check multiple locations
     let exe_path = std::env::current_exe()?;
@@ -432,7 +433,7 @@ fn run_with_fast_loader(
 
     let velo_loader_path = possible_paths
         .iter()
-        .find(|p| p.join("velo_loader.py").exists())
+        .find(|p: &&PathBuf| p.join("velo_loader.py").exists())
         .cloned()
         .unwrap_or_else(|| possible_paths[0].clone());
 
