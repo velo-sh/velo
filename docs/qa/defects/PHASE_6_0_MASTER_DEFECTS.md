@@ -1,18 +1,23 @@
-# Master Defect Report: Phase 6.0 Static Graph (RFC-0009)
+**QA Verdict**: **REJECTED** (Regressions in Versioning & Mismatched Metrics)
+**Build Hash reviewed**: `e528893`
 
-**QA Verdict**: **REJECTED** (Critical Logic & Observability Gaps)
-**Build Hash reviewed**: `2b635e9`
+## ✅ PARTIALLY RESOLVED
+*   **DEF-60-001 (P0)**: Stub Build Command (Verified)
+*   **DEF-60-002 (P1)**: AST Classification Failure (Verified Fixed in `e528893`)
+*   **DEF-60-005 (P2)**: Build Scale Timeouts (Verified FIXED: 5000 modules in 77ms using persistent workers)
 
-## 🛑 P1 - Critical Logic Defects
+## 🛑 NEW / PERSISTENT DEFECTS
+### 1. [NEW] DEF-60-006: Unsupported Bundle Version 0
+*   **Issue**: `bundle build` fails to write version tag `1` to `header[4..8]`.
+*   **Impact**: `velo run --fast` rejects all newly created bundles.
+*   **Reproduction**: `uv run pytest tests/qa/test_phase6_agent_a_edge.py::TestAgentAEdge::test_EDGE_603_toctou_symlink_swap`
 
-### 1. DEF-60-002: AST Classification Failure (Agent A)
-*   **Test**: `test_L0_1_ast_dependency_classification`
-*   **Reproduction**: `uv run pytest tests/qa/test_phase6_agent_a_edge.py::TestAgentAEdge::test_L0_1_ast_dependency_classification`
-*   **Issue**: `DependencyScanner` fails to distinguish "Hard" vs "Soft" imports. Imports inside `def`, `if False`, or `try/except` are incorrectly treated as hard dependencies.
-*   **Root Cause**: Incorrect AST visiting logic or failure to propagate "soft" flags to the Graph Builder.
+### 2. [RE-OPENED] DEF-60-004: Metrics JSON Location Mismatch
+*   **Issue**: `bundle build` emits metrics to `stdout`. QA spec and telemetry pipelines expect `stderr`.
+*   **Impact**: Blocks integration gating.
 
-### 2. DEF-60-003: Lazy Import Semantic Violation (Agent B)
-*   **Test**: `test_FUNC_603_lazy_import_compliance`
+### 3. [PERSISTENT] DEF-60-003: Lazy Import Semantic Violation
+*   **Issue**: Loading order ignores lazy graph constraints (`assert 104 < 91` FAILED).
 *   **Reproduction**: `uv run pytest tests/qa/test_phase6_agent_b_stability.py::TestAgentBStability::test_FUNC_603_lazy_import_compliance`
 *   **Issue**: Load order indices are non-compliant. The binary loads modules in eager order even when `is_lazy` flags are active.
 *   **Impact**: Violates RFC-0009 Startup requirements.
