@@ -139,9 +139,19 @@ cargo test
 
 # Run QA tests
 uv run python -m pytest tests/qa/ -v
+```
 
-# Benchmark against real projects (includes Zygote mode)
-python3 benchmark_projects.py --all -n 5
+### Performance Benchmarks
+
+See [benchmarks/](./benchmarks/) for comprehensive performance testing:
+
+```bash
+cd benchmarks
+
+# Quick start: Run all framework tests
+python3 benchmark_framework_scale.py --all
+
+# Step-by-step guide: benchmarks/BENCHMARK_GUIDE.md
 ```
 
 ### Code Quality

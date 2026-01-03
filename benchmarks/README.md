@@ -2,11 +2,14 @@
 
 A comprehensive performance benchmarking suite for Velo's `bundle build` and Fast Loader.
 
+> 📖 **新手用户?** 请查看 [一步步使用手册 (BENCHMARK_GUIDE.md)](./BENCHMARK_GUIDE.md)
+
 ## 📁 Directory Structure
 
 ```
 benchmarks/
 ├── README.md                     # This file
+├── BENCHMARK_GUIDE.md            # Step-by-step usage guide (中文)
 ├── benchmark_framework_scale.py  # Multi-level framework scaling (L1-L5)
 ├── benchmark_enterprise.py       # Enterprise-grade stress tests
 ├── benchmark_projects.py         # Project-level benchmarks
