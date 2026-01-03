@@ -253,7 +253,7 @@ pub fn cmd_bundle_build(args: &[String]) -> Result<()> {
     // 1. Build Graph
     let mut builder = GraphBuilder::new(project_dir.to_path_buf());
     let build_start = std::time::Instant::now();
-    builder.scan_project();
+    builder.build(); // Perform scan, resolution, and topological sort
     let graph = builder.to_static_graph();
     let mut metrics = builder.metrics;
     metrics.build_time_ms = build_start.elapsed().as_millis();
@@ -348,6 +348,7 @@ pub fn cmd_bundle_build(args: &[String]) -> Result<()> {
 
     let mut header = vec![0u8; 128];
     header[0..4].copy_from_slice(b"VELO");
+    header[4..8].copy_from_slice(&1u32.to_le_bytes()); // RFC-0009 Version 1
     header[8..12].copy_from_slice(&(modules.len() as u32).to_le_bytes());
     header[12..20].copy_from_slice(&(index_offset as u64).to_le_bytes());
     header[60..68].copy_from_slice(&(graph_offset as u64).to_le_bytes());
@@ -370,7 +371,7 @@ pub fn cmd_bundle_build(args: &[String]) -> Result<()> {
     );
 
     let metrics_json = serde_json::to_string_pretty(&metrics)?;
-    println!("\n📊 Velo Build Metrics (JSON)\n{}", metrics_json);
+    eprintln!("\n📊 Velo Build Metrics (JSON)\n{}", metrics_json);
 
     Ok(())
 }
