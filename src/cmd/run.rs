@@ -23,7 +23,6 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     let mut async_enabled = false;
     let mut profile_enabled = false;
     let mut fast_enabled = false;
-    let mut async_enabled = false;
     let mut script_arg_idx = 2;
 
     for (i, arg) in args.iter().enumerate().skip(2) {
@@ -43,10 +42,6 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
             }
             "--fast" => {
                 fast_enabled = true;
-                script_arg_idx = i + 1;
-            }
-            "--async" => {
-                async_enabled = true;
                 script_arg_idx = i + 1;
             }
             a if a.starts_with('-') => {
@@ -177,17 +172,6 @@ fn try_zygote_run(
                     std::process::exit(0);
                 }
 
-                eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
-
-                if async_enabled {
-                    eprintln!("⚡ Async mode active (Return-on-Fork)");
-                    // Special case: don't wait, don't clean up launcher yet
-                    if started_new {
-                        std::mem::forget(launcher);
-                    }
-                    return Ok(Some(()));
-                }
-
                 // Wait for worker to complete and get exit code
                 let exit_code = worker.wait().unwrap_or(1);
 
@@ -214,14 +198,22 @@ fn try_zygote_run(
 
                         // Retry spawn
                         if let Ok(worker) = launcher.spawn_worker(script, &[], async_enabled) {
-                            eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
-
                             if async_enabled {
-                                eprintln!("⚡ Async mode active (Return-on-Fork)");
+                                eprintln!(
+                                    "⚡ Worker spawned in background (PID: {})",
+                                    worker.pid()
+                                );
+                                if let Some(stdout) = worker.stdout_path() {
+                                    eprintln!("📝 Logs (stdout): {}", stdout.display());
+                                }
+                                if let Some(stderr) = worker.stderr_path() {
+                                    eprintln!("📝 Logs (stderr): {}", stderr.display());
+                                }
                                 std::mem::forget(launcher);
                                 return Ok(Some(()));
                             }
 
+                            eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
                             let exit_code = worker.wait().unwrap_or(1);
                             std::mem::forget(launcher);
                             std::process::exit(exit_code);
