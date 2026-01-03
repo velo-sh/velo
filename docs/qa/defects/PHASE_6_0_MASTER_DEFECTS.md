@@ -7,10 +7,15 @@
 *   **DEF-60-005 (P2)**: Build Scale Timeouts (Verified FIXED: 5000 modules in 77ms using persistent workers)
 
 ## 🛑 NEW / PERSISTENT DEFECTS
-### 1. [NEW] DEF-60-006: Unsupported Bundle Version 0
-*   **Issue**: `bundle build` fails to write version tag `1` to `header[4..8]`.
-*   **Impact**: `velo run --fast` rejects all newly created bundles.
-*   **Reproduction**: `uv run pytest tests/qa/test_phase6_agent_a_edge.py::TestAgentAEdge::test_EDGE_603_toctou_symlink_swap`
+### 1. [NEW - P0] DEF-60-007: Bundle Content Hash Mismatch
+*   **Issue**: `velo run --fast` rejects bundles due to BLAKE3 hash verification failure.
+*   **Error**: `Bundle content hash verification failed. Expected: X, Actual: Y`
+*   **Impact**: **TOTAL LOADER FAILURE**. All bundles are rejected. Fast loader is non-functional.
+*   **Root Cause**: Build-time hash does not match load-time hash. Possible non-deterministic serialization or padding.
+*   **Reproduction**: `uv run pytest tests/qa/test_e2e_golden_path.py -k GOLD_001`
+
+### 2. [RESOLVED] DEF-60-006: Unsupported Bundle Version 0
+*   **Status**: FIXED in `fb979bf`. Version tag now correctly writes `1`.
 
 ### 2. [RE-OPENED] DEF-60-004: Metrics JSON Location Mismatch
 *   **Issue**: `bundle build` emits metrics to `stdout`. QA spec and telemetry pipelines expect `stderr`.
