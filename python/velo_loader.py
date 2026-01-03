@@ -19,12 +19,14 @@ Usage:
 """
 
 import importlib.abc
-import importlib.machinery
-import marshal
-import struct
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+import marshal
+import struct
+import importlib.abc
+import importlib.machinery
+import hashlib
+from typing import Dict, List, Optional, Tuple
 
 try:
     import blake3 as blake3_module
@@ -36,7 +38,7 @@ except ImportError:
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"
 VERSION = 1
-MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
+DEFAULT_MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
 
 # RFC-0006 §3.5: Marshal Recursion Limit (AUDIT-012)
 # Prevents Stack Overflow attacks via deeply nested bytecode
@@ -85,8 +87,9 @@ class VeloBundle:
     - Atomic read before any parsing
     """
     
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, max_size: Optional[int] = None):
         self.path = path
+        self.max_size = max_size or DEFAULT_MAX_BUNDLE_SIZE
         self.data: Optional[bytes] = None
         self.view: Optional[memoryview] = None
         self.index: Dict[str, ModuleEntry] = {}
@@ -101,9 +104,9 @@ class VeloBundle:
         """
         # Security: Size check before read
         file_size = self.path.stat().st_size
-        if file_size > MAX_BUNDLE_SIZE:
+        if file_size > self.max_size:
             raise ValueError(
-                f"Bundle too large: {file_size} bytes > {MAX_BUNDLE_SIZE} bytes"
+                f"Bundle too large: {file_size} bytes > {self.max_size} bytes"
             )
         
         # Atomic read entire file
@@ -365,13 +368,14 @@ def uninstall_hook(finder: VeloFinder) -> None:
 
 # Convenience function for velo run --fast
 def activate_fast_mode(bundle_path: Path, 
-                       project_root: Optional[Path] = None) -> VeloBundle:
+                        project_root: Optional[Path] = None,
+                        max_size: Optional[int] = None) -> VeloBundle:
     """
     Activate fast loader mode
     
     Called from sitecustomize.py injected by velo run --fast
     """
-    bundle = VeloBundle(bundle_path)
+    bundle = VeloBundle(bundle_path, max_size=max_size)
     bundle.open()
     install_hook(bundle, project_root)
     return bundle

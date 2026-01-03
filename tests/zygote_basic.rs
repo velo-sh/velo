@@ -132,7 +132,7 @@ mod spawn_tests {
         launcher.start(&[]).unwrap();
 
         // Spawn worker
-        let worker = launcher.spawn_worker(&script_path, &[]).unwrap();
+        let worker = launcher.spawn_worker(&script_path, &[], false).unwrap();
         assert!(worker.pid() > 0);
 
         // Wait for output file to be created (worker runs in Python Zygote, not our process)

@@ -51,13 +51,12 @@ mod security_tests {
     /// RFC-0006 Section 3.1: DoS Prevention
     #[test]
     fn test_rejects_oversized_bundle() {
-        use velo::loader::security::validate_size;
+        use velo::loader::security::{DEFAULT_MAX_BUNDLE_SIZE, validate_size};
 
         let temp = tempdir().unwrap();
         let path = create_fake_bundle(temp.path(), 1024);
 
-        // Validate should pass for small bundle
-        assert!(validate_size(&path).is_ok());
+        assert!(validate_size(&path, DEFAULT_MAX_BUNDLE_SIZE).is_ok());
     }
 
     /// Test: 256MB limit constant is correct

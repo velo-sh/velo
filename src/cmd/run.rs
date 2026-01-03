@@ -68,8 +68,22 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
         std::process::exit(1);
     }
 
-    // Determine project directory
-    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    // Determine project directory by looking for pyproject.toml starting from script's parent
+    let script_path = Path::new(&args[script_arg_idx]);
+    let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+
+    if let Some(parent) = script_path.parent() {
+        if parent.join("pyproject.toml").exists() {
+            project_dir = parent.to_path_buf();
+        } else if let Some(grandparent) = parent.parent() {
+            if grandparent.join("pyproject.toml").exists() {
+                project_dir = grandparent.to_path_buf();
+            }
+        }
+    }
+
+    // Load config from discovered project root
+    let config = VeloConfig::from_path(&project_dir.join("pyproject.toml")).unwrap_or_default();
 
     // Detect user's Python
     let python_path = python::detect_python(&project_dir)?;
@@ -92,6 +106,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
             &args[script_arg_idx],
             &project_dir,
             pythonpath,
+            config.max_bundle_size,
         )?;
     } else if profile_enabled {
         runner::run_script_with_profile(&python_path, &args[script_arg_idx], pythonpath)?;
@@ -295,6 +310,7 @@ fn run_with_fast_loader(
     script_path: &str,
     project_dir: &Path,
     pythonpath: Option<String>,
+    max_bundle_size: Option<u64>,
 ) -> Result<()> {
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -373,8 +389,9 @@ try:
     
     bundle_path = Path(r"{bundle}")
     project_root = Path(r"{project}")
+    max_size = {max_size}
     
-    _bundle = activate_fast_mode(bundle_path, project_root)
+    _bundle = activate_fast_mode(bundle_path, project_root, max_size)
     print("⚡ Fast loader active:", len(_bundle), "modules")
 except Exception as e:
     print(f"⚠️  Fast loader failed: {{e}}")
@@ -383,6 +400,9 @@ except Exception as e:
         velo_loader = velo_loader_path.display(),
         bundle = bundle_abs.display(),
         project = project_abs.display(),
+        max_size = max_bundle_size
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "None".to_string()),
     )?;
     sitecustomize.flush()?;
 
