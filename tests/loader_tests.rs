@@ -232,40 +232,40 @@ mod security_tests {
 
         // 1. Prepare a valid bundle data with H-1 scheme and H-4 marshal logic
         let mut data = vec![0u8; 256];
-        
+
         // Magic + Version (0..8)
         data[0..4].copy_from_slice(b"VELO");
-        data[4..8].copy_from_slice(&1u32.to_le_bytes()); 
-        
+        data[4..8].copy_from_slice(&1u32.to_le_bytes());
+
         // module_count (8..12) + index_offset (128)
-        data[8..12].copy_from_slice(&1u32.to_le_bytes()); 
+        data[8..12].copy_from_slice(&1u32.to_le_bytes());
         let index_offset = 128u64;
         data[12..20].copy_from_slice(&index_offset.to_le_bytes());
-        
+
         // Mock module data at offset 200, size 1 (None = 'N' in marshal)
         let m_offset = 200u64;
         let m_size = 1u64;
         data[m_offset as usize] = b'N';
-        
+
         // Build module index entry at index_offset (128)
         let mut pos = index_offset as usize;
         let name = "test_mod";
-        data[pos..pos+2].copy_from_slice(&(name.len() as u16).to_le_bytes());
+        data[pos..pos + 2].copy_from_slice(&(name.len() as u16).to_le_bytes());
         pos += 2;
-        data[pos..pos+name.len()].copy_from_slice(name.as_bytes());
+        data[pos..pos + name.len()].copy_from_slice(name.as_bytes());
         pos += name.len();
-        data[pos..pos+8].copy_from_slice(&m_offset.to_le_bytes());
+        data[pos..pos + 8].copy_from_slice(&m_offset.to_le_bytes());
         pos += 8;
-        data[pos..pos+8].copy_from_slice(&m_size.to_le_bytes());
+        data[pos..pos + 8].copy_from_slice(&m_size.to_le_bytes());
         // pos += 8 + 32 + 1; // skip size, hash, is_pkg etc.
-        
+
         // Calculate H-1 Hash: covers [0..20] and [52..EOF]
         let mut hasher = blake3::Hasher::new();
         hasher.update(&data[0..20]);
         hasher.update(&data[52..]);
         let hash = hasher.finalize();
         data[20..52].copy_from_slice(hash.as_bytes());
-        
+
         // 2. Write to temp file in a "secure" location (not /tmp)
         // Velo security policy rejects /tmp, so we use current dir for testing
         let temp = tempfile::Builder::new()
@@ -274,10 +274,10 @@ mod security_tests {
             .unwrap();
         let path = temp.path().join("atomic_test.veloc");
         std::fs::write(&path, &data).unwrap();
-        
+
         // 3. Load and verify
         let result = load_and_verify(&path, None);
-        
+
         // 4. Assert
         assert!(result.is_ok(), "Load and verify failed: {:?}", result.err());
         let bundle = result.unwrap();
