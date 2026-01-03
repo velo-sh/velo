@@ -60,7 +60,7 @@ fn get_socket_timeout_secs() -> u64 {
 
 /// Get Zygote status
 pub fn get_status() -> Result<ZygoteResponse> {
-    use ipc::{default_socket_path, send_command, ZygoteCommand};
+    use ipc::{ZygoteCommand, default_socket_path, send_command};
 
     let socket_path = default_socket_path();
     if !socket_path.exists() {
