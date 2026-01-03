@@ -1,7 +1,7 @@
 //! Handle 'velo run' command
 
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
 use crate::config::VeloConfig;
@@ -96,7 +96,14 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     // Zygote mode: use pre-warmed process
     if zygote_enabled {
-        if let Some(()) = try_zygote_run(&python_path, &args[script_arg_idx], async_enabled)? {
+        if let Some(()) = try_zygote_run(
+            &python_path,
+            &args[script_arg_idx],
+            async_enabled,
+            fast_enabled,
+            &project_dir,
+            &config,
+        )? {
             return Ok(());
         }
         // Fallback to normal mode if Zygote fails
@@ -134,6 +141,9 @@ fn try_zygote_run(
     python_path: &Path,
     script_path: &str,
     async_enabled: bool,
+    fast_enabled: bool,
+    project_dir: &Path,
+    config: &VeloConfig,
 ) -> Result<Option<()>> {
     use crate::zygote;
 
@@ -175,7 +185,24 @@ fn try_zygote_run(
 
     // Try to spawn via Zygote
     if socket_path.exists() {
-        match launcher.spawn_worker(script, &[], async_enabled) {
+        let (bundle_path, max_size) = if fast_enabled {
+            (
+                find_bundle(project_dir, script_path),
+                config.max_bundle_size,
+            )
+        } else {
+            (None, None)
+        };
+
+        match launcher.spawn_worker(
+            script,
+            &[],
+            async_enabled,
+            fast_enabled,
+            bundle_path,
+            Some(project_dir.to_path_buf()),
+            max_size,
+        ) {
             Ok(worker) => {
                 if async_enabled {
                     eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
@@ -218,7 +245,24 @@ fn try_zygote_run(
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
-                        if let Ok(worker) = launcher.spawn_worker(script, &[], async_enabled) {
+                        let (bundle_path, max_size) = if fast_enabled {
+                            (
+                                find_bundle(project_dir, script_path),
+                                config.max_bundle_size,
+                            )
+                        } else {
+                            (None, None)
+                        };
+
+                        if let Ok(worker) = launcher.spawn_worker(
+                            script,
+                            &[],
+                            async_enabled,
+                            fast_enabled,
+                            bundle_path,
+                            Some(project_dir.to_path_buf()),
+                            max_size,
+                        ) {
                             if async_enabled {
                                 eprintln!(
                                     "⚡ Worker spawned in background (PID: {})",
@@ -308,6 +352,17 @@ fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
     }
 }
 
+fn find_bundle(project_dir: &Path, script_path: &str) -> Option<PathBuf> {
+    let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
+    let possible_bundles = [
+        project_dir.join(".velo/cache/bundle.veloc"),
+        project_dir.join("bundle.veloc"),
+        script_dir.join("bundle.veloc"),
+    ];
+
+    possible_bundles.iter().find(|p| p.exists()).cloned()
+}
+
 /// Run script with fast loader (bundle-accelerated imports)
 ///
 /// RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
@@ -321,16 +376,7 @@ fn run_with_fast_loader(
     use std::io::Write;
 
     // Find bundle.veloc - check multiple locations
-    let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
-    let possible_bundles = [
-        project_dir.join(".velo/cache/bundle.veloc"),
-        project_dir.join("bundle.veloc"),
-        script_dir.join("bundle.veloc"),
-    ];
-
-    let actual_bundle = possible_bundles.iter().find(|p| p.exists()).cloned();
-
-    let actual_bundle = match actual_bundle {
+    let actual_bundle = match find_bundle(project_dir, script_path) {
         Some(p) => p,
         None => {
             eprintln!("⚠️  No bundle found. Build one first:");
@@ -339,6 +385,14 @@ fn run_with_fast_loader(
             return runner::run_script(python_path, script_path, pythonpath);
         }
     };
+
+    // RFC-0008: Mandatory Security Pre-validation (H-1, H-2, H-4, H-5)
+    // This provides a structural lock at the Rust boundary.
+    if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
+        eprintln!("⚠️  Fast loader security check failed: {}", e);
+        eprintln!("   Falling back to normal imports...");
+        return runner::run_script(python_path, script_path, pythonpath);
+    }
 
     eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
 

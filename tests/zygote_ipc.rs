@@ -44,6 +44,10 @@ mod ipc_tests {
             stderr_path: None,
             exit_code_path: None,
             async_mode: false,
+            fast_mode: false,
+            bundle_path: None,
+            project_root: None,
+            max_bundle_size: None,
         };
         let serialized = serde_json::to_string(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = serde_json::from_str(&serialized).unwrap();
@@ -125,6 +129,10 @@ mod ipc_tests {
                 stderr_path: None,
                 exit_code_path: None,
                 async_mode: false,
+                fast_mode: false,
+                bundle_path: None,
+                project_root: None,
+                max_bundle_size: None,
             },
         )
         .unwrap();

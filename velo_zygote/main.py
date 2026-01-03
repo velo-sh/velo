@@ -205,6 +205,10 @@ def handle_fork(
     stdout_path: Optional[str] = None,
     stderr_path: Optional[str] = None,
     exit_code_path: Optional[str] = None,
+    fast_mode: bool = False,
+    bundle_path: Optional[str] = None,
+    project_root: Optional[str] = None,
+    max_bundle_size: Optional[int] = None,
 ) -> int:
     """Fork and execute script in child process.
     
@@ -250,6 +254,26 @@ def handle_fork(
             
             # Set up sys.argv
             sys.argv = [script_path] + args
+            
+            # RFC-0008: Activate Fast Mode in Zygote Worker (BUG-51-001)
+            if fast_mode and bundle_path:
+                try:
+                    # Ensure we can find velo_loader
+                    if project_root:
+                        loader_dir = str(Path(project_root) / "python")
+                        if loader_dir not in sys.path:
+                            sys.path.insert(0, loader_dir)
+                    
+                    from velo_loader import activate_fast_mode
+                    _bundle = activate_fast_mode(
+                        Path(bundle_path), 
+                        Path(project_root) if project_root else None,
+                        max_bundle_size
+                    )
+                    # Don't print to avoid polluting stdout unless verified
+                    # log(f"Worker Fast Loader active: {len(_bundle)} modules")
+                except Exception as e:
+                    print(f"⚠️ Worker Fast Loader failed: {e}", file=sys.stderr)
             
             # Execute the script
             with open(script_path, "rb") as f:
@@ -381,6 +405,10 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                         stderr_path = cmd.get("stderr_path")
                         exit_code_path = cmd.get("exit_code_path")
                         async_mode = cmd.get("async_mode", False)
+                        fast_mode = cmd.get("fast_mode", False)
+                        bundle_path = cmd.get("bundle_path")
+                        project_root = cmd.get("project_root")
+                        max_bundle_size = cmd.get("max_bundle_size")
                         
                         if not script_path or not Path(script_path).exists():
                             send_response(conn, {
@@ -399,7 +427,10 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                             log(f"SECURITY: Blocked path traversal attempt: {script_path}")
                             continue
                         
-                        worker_pid = handle_fork(script_path, args, stdout_path, stderr_path, exit_code_path)
+                        worker_pid = handle_fork(
+                            script_path, args, stdout_path, stderr_path, exit_code_path,
+                            fast_mode, bundle_path, project_root, max_bundle_size
+                        )
                         
                         if async_mode:
                             # Return PID immediately (RFC-0008)

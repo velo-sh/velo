@@ -422,11 +422,16 @@ impl ZygoteLauncher {
 
     /// Fork a new worker from the Zygote
     #[cfg(unix)]
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn_worker(
         &self,
         script: &Path,
         args: &[&str],
         async_mode: bool,
+        fast_mode: bool,
+        bundle_path: Option<PathBuf>,
+        project_root: Option<PathBuf>,
+        max_bundle_size: Option<u64>,
     ) -> Result<WorkerHandle> {
         if !self.is_running() {
             return Err(ZygoteError::NotRunning);
@@ -463,6 +468,10 @@ impl ZygoteLauncher {
                 stdout_path: Some(stdout_path.clone()),
                 stderr_path: Some(stderr_path.clone()),
                 exit_code_path: Some(exit_code_path.clone()),
+                fast_mode,
+                bundle_path,
+                project_root,
+                max_bundle_size,
             },
         )?;
 
