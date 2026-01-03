@@ -42,6 +42,25 @@ This protocol follows Velo's standard tiered testing model, with specific focus 
 
 ## 3. Scale & Stress Tests (L3)
 
+### 🛠️ TC-NEG-004: Arch/Endianness Mismatch (S-01)
+- **Goal**: Prevent corruption from cross-architecture graph loading.
+- **Action**: Build bundle on x86_64; attempt to run on ARM64 (or vice-versa), or spoof `arch_id` in header.
+- **Expected**: Loader detects mismatch; emits `LoaderError::ArchMismatch` and falls back safely.
+
+### 🛠️ TC-NEG-005: Graph Depth Bomb (SEC-01)
+- **Goal**: Protect against stack exhaustion DoS.
+- **Action**: Construct a malicious Rkyv stream with 101 levels of pointer nesting.
+- **Expected**: `rkyv::check_archived_root` fails with `ContextError::DepthLimitExceeded`.
+
+### 🛠️ TC-NEG-006: Path Traversal Evasion (SEC-02)
+- **Goal**: Prevent reading files outside the bundle.
+- **Action**: Inject `../../../../etc/passwd` into a `search_locations` entry.
+- **Expected**: Loader's path sanitizer throws `SecurityError` during resolution.
+
+---
+
+## 3. Scale & Stress Tests (L3)
+
 ### 📈 TC-STR-001: "Hard Limit" Enforcement
 - **Goal**: Verify CI/Build failure at 5000 modules.
 - **Action**: Generate a synthetic project with 5,001 empty modules.
@@ -66,6 +85,16 @@ This protocol follows Velo's standard tiered testing model, with specific focus 
 - **Action**: Multiple bundles contributing modules to the same namespace.
 - **Expected**: `VeloFinder` correctly merges graph entries with `sys.path` search.
 
+### 🧪 TC-ENV-003: sys.modules Shadowing (P-01)
+- **Goal**: Verify that existing modules are not re-initialized.
+- **Action**: Manually insert a mock module into `sys.modules` before an import.
+- **Expected**: Python returns the mock module; Static Graph lookup is bypassed.
+
+### 🛡️ TC-ENV-004: 4KB Page Alignment Audit (S-02)
+- **Goal**: Verify section alignment for OS performance.
+- **Action**: Use `od -t x1 bundle.veloc` to check the offset of the Graph Section.
+- **Expected**: Offset is a multiple of 4096; preceding bytes are `0x00`.
+
 ---
 
 ## 5. Performance Validation (L5)
@@ -75,6 +104,7 @@ This protocol follows Velo's standard tiered testing model, with specific focus 
 | **Deserialization** | `velo run --profile` | `graph_deserialize_latency_us` < 500 |
 | **I/O Elimination** | `strace -e stat velo run` | 0 `stat()` calls for modules in graph |
 | **Memory Ceiling** | `valgrind --tool=massif` | Heap usage peak < 200KB overhead |
+| **Metrics (OPS-01)** | `VELO_REPORT_METRICS=1 velo run` | JSON blob on `stderr` containing `graph_hits`/`misses` |
 
 ---
 
