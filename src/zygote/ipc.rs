@@ -23,6 +23,9 @@ pub enum ZygoteCommand {
     Fork {
         script_path: PathBuf,
         args: Vec<String>,
+        /// Whether to return PID immediately without waiting for completion
+        #[serde(default)]
+        async_mode: bool,
         /// Optional path for stdout capture (worker writes here)
         #[serde(default)]
         stdout_path: Option<PathBuf>,
@@ -44,7 +47,12 @@ pub enum ZygoteResponse {
     /// Zygote is ready to accept commands
     Ready,
     /// A worker was successfully forked
-    Forked { worker_pid: u32 },
+    Forked {
+        worker_pid: u32,
+        /// Exit code (available in sync mode after completion)
+        #[serde(default)]
+        exit_code: Option<i32>,
+    },
     /// An error occurred
     Error { message: String },
 }

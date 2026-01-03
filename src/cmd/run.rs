@@ -20,6 +20,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     // Parse flags
     let mut zygote_enabled = false;
+    let mut async_enabled = false;
     let mut profile_enabled = false;
     let mut fast_enabled = false;
     let mut script_arg_idx = 2;
@@ -27,6 +28,11 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     for (i, arg) in args.iter().enumerate().skip(2) {
         match arg.as_str() {
             "--zygote" => {
+                zygote_enabled = true;
+                script_arg_idx = i + 1;
+            }
+            "--async" => {
+                async_enabled = true;
                 zygote_enabled = true;
                 script_arg_idx = i + 1;
             }
@@ -63,7 +69,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     // Zygote mode: use pre-warmed process
     if zygote_enabled {
-        if let Some(()) = try_zygote_run(&python_path, &args[script_arg_idx])? {
+        if let Some(()) = try_zygote_run(&python_path, &args[script_arg_idx], async_enabled)? {
             return Ok(());
         }
         // Fallback to normal mode if Zygote fails
@@ -96,7 +102,11 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
 /// Try to run via Zygote, returns Some(()) on success, None on failure
 #[cfg(unix)]
-fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
+fn try_zygote_run(
+    python_path: &Path,
+    script_path: &str,
+    async_enabled: bool,
+) -> Result<Option<()>> {
     use crate::zygote;
 
     if !zygote::is_supported() {
@@ -137,8 +147,24 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
 
     // Try to spawn via Zygote
     if socket_path.exists() {
-        match launcher.spawn_worker(script, &[]) {
+        match launcher.spawn_worker(script, &[], async_enabled) {
             Ok(worker) => {
+                if async_enabled {
+                    eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
+                    if let Some(stdout) = worker.stdout_path() {
+                        eprintln!("📝 Logs (stdout): {}", stdout.display());
+                    }
+                    if let Some(stderr) = worker.stderr_path() {
+                        eprintln!("📝 Logs (stderr): {}", stderr.display());
+                    }
+
+                    // Keep Zygote alive but exit CLI immediately
+                    if started_new {
+                        std::mem::forget(launcher);
+                    }
+                    std::process::exit(0);
+                }
+
                 eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
 
                 // Wait for worker to complete and get exit code
@@ -166,7 +192,7 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
-                        if let Ok(worker) = launcher.spawn_worker(script, &[]) {
+                        if let Ok(worker) = launcher.spawn_worker(script, &[], async_enabled) {
                             eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
                             let exit_code = worker.wait().unwrap_or(1);
                             std::mem::forget(launcher);
@@ -185,7 +211,11 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
 }
 
 #[cfg(not(unix))]
-fn try_zygote_run(_python_path: &Path, _script_path: &str) -> Result<Option<()>> {
+fn try_zygote_run(
+    _python_path: &Path,
+    _script_path: &str,
+    _async_enabled: bool,
+) -> Result<Option<()>> {
     // Zygote not supported on non-Unix platforms
     Ok(None)
 }

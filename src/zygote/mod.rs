@@ -248,6 +248,16 @@ impl WorkerHandle {
     pub fn pid(&self) -> u32 {
         self.pid
     }
+
+    /// Get path to captured stdout
+    pub fn stdout_path(&self) -> Option<&PathBuf> {
+        self.stdout_path.as_ref()
+    }
+
+    /// Get path to captured stderr
+    pub fn stderr_path(&self) -> Option<&PathBuf> {
+        self.stderr_path.as_ref()
+    }
 }
 
 /// Zygote launcher - manages the Zygote process lifecycle
@@ -412,7 +422,12 @@ impl ZygoteLauncher {
 
     /// Fork a new worker from the Zygote
     #[cfg(unix)]
-    pub fn spawn_worker(&self, script: &Path, args: &[&str]) -> Result<WorkerHandle> {
+    pub fn spawn_worker(
+        &self,
+        script: &Path,
+        args: &[&str],
+        async_mode: bool,
+    ) -> Result<WorkerHandle> {
         if !self.is_running() {
             return Err(ZygoteError::NotRunning);
         }
@@ -444,6 +459,7 @@ impl ZygoteLauncher {
             ipc::ZygoteCommand::Fork {
                 script_path,
                 args: args.iter().map(|s| s.to_string()).collect(),
+                async_mode,
                 stdout_path: Some(stdout_path.clone()),
                 stderr_path: Some(stderr_path.clone()),
                 exit_code_path: Some(exit_code_path.clone()),
@@ -451,12 +467,26 @@ impl ZygoteLauncher {
         )?;
 
         match response {
-            ipc::ZygoteResponse::Forked { worker_pid } => Ok(WorkerHandle {
-                pid: worker_pid,
-                stdout_path: Some(stdout_path),
-                stderr_path: Some(stderr_path),
-                exit_code_path: Some(exit_code_path),
-            }),
+            ipc::ZygoteResponse::Forked {
+                worker_pid,
+                exit_code,
+            } => {
+                // If we have an exit code already (sync mode), we can write it to the temp file
+                // to reuse the existing WorkerHandle::wait() logic or just handle it here.
+                #[allow(clippy::collapsible_if)]
+                if let Some(code) = exit_code {
+                    if let Err(e) = std::fs::write(&exit_code_path, code.to_string()) {
+                        eprintln!("⚠️ Failed to write premature exit code: {}", e);
+                    }
+                }
+
+                Ok(WorkerHandle {
+                    pid: worker_pid,
+                    stdout_path: Some(stdout_path),
+                    stderr_path: Some(stderr_path),
+                    exit_code_path: Some(exit_code_path),
+                })
+            }
             ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
             _ => Err(ZygoteError::ProtocolError(
                 "Unexpected response to Fork command".to_string(),
@@ -465,7 +495,12 @@ impl ZygoteLauncher {
     }
 
     #[cfg(not(unix))]
-    pub fn spawn_worker(&self, _script: &Path, _args: &[&str]) -> Result<WorkerHandle> {
+    pub fn spawn_worker(
+        &self,
+        _script: &Path,
+        _args: &[&str],
+        _async_mode: bool,
+    ) -> Result<WorkerHandle> {
         Err(ZygoteError::NotSupported)
     }
 }
