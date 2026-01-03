@@ -49,21 +49,174 @@ pub fn verify_blake3(data: &[u8], expected: &[u8; 32]) -> Result<()> {
     Ok(())
 }
 
-/// Verify module integrity using BLAKE3
+/// Verify module integrity and nesting depth (H-4)
 ///
-/// RFC-0006 Section 3.4: Unified BLAKE3 Verification
-/// Replaces CRC32 - BLAKE3 is fast enough (~3-6 GB/s) and provides
-/// both error detection AND tampering protection.
+/// RFC-0006 Section 3.4 & RFC-0008 §2.18
+/// 1. Verifies BLAKE3 hash
+/// 2. Performs structural scan to enforce recursion limit
 pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -> Result<()> {
+    // 1. BLAKE3 check
     let actual = blake3::hash(data);
-
     if actual.as_bytes() != expected {
         return Err(LoaderError::ModuleCorrupted {
             module_name: module_name.to_string(),
         });
     }
 
+    // 2. Structural Depth Guard (H-4)
+    // Locked at Rust boundary - cannot be bypassed by Python sys.setrecursionlimit
+    check_marshal_depth(data, 500)?;
+
     Ok(())
+}
+
+/// Structural validator for Python marshal format (H-4)
+fn check_marshal_depth(data: &[u8], max_depth: usize) -> Result<()> {
+    let mut guard = StructuralGuard {
+        data,
+        pos: 0,
+        depth: 0,
+        max_depth,
+    };
+    guard.validate()
+}
+
+struct StructuralGuard<'a> {
+    data: &'a [u8],
+    pos: usize,
+    depth: usize,
+    max_depth: usize,
+}
+
+impl<'a> StructuralGuard<'a> {
+    fn validate(&mut self) -> Result<()> {
+        if self.depth > self.max_depth {
+            return Err(LoaderError::InsecureBundle(format!(
+                "Marshal recursion limit exceeded (max {})",
+                self.max_depth
+            )));
+        }
+
+        let tag = self.read_u8()? & 0x7F; // Skip FLAG_REF (0x80)
+
+        match tag as char {
+            'N' | 'T' | 'F' | '.' | '0' => Ok(()), // None, True, False, Ellipsis, Stop
+            'i' | 'f' | 'g' => {
+                self.pos += 4;
+                Ok(())
+            } // int, float (fixed)
+            'l' => {
+                let n = self.read_u32()? as i32;
+                self.pos += n.unsigned_abs() as usize * 4;
+                Ok(())
+            } // long
+            's' | 'u' | 'z' | 'A' | 'B' => {
+                let n = self.read_u32()? as usize;
+                self.skip(n)
+            } // strings/bytes
+            'S' => {
+                let n = self.read_u32()? as usize;
+                self.skip(n)
+            } // interned
+            'r' => {
+                self.pos += 4;
+                Ok(())
+            } // ref
+            '(' | '[' | '>' | '<' => {
+                // tuple, list, set, frozenset
+                let n = self.read_u32()?;
+                self.depth += 1;
+                for _ in 0..n {
+                    self.validate()?;
+                }
+                self.depth -= 1;
+                Ok(())
+            }
+            ')' => {
+                // small_tuple (1-byte count)
+                let n = self.read_u8()? as u32;
+                self.depth += 1;
+                for _ in 0..n {
+                    self.validate()?;
+                }
+                self.depth -= 1;
+                Ok(())
+            }
+            '{' => {
+                // dict
+                self.depth += 1;
+                loop {
+                    if self.peek_u8()? == b'0' {
+                        self.pos += 1;
+                        break;
+                    }
+                    self.validate()?; // key
+                    self.validate()?; // value
+                }
+                self.depth -= 1;
+                Ok(())
+            }
+            'c' => {
+                // code object
+                self.depth += 1;
+                self.pos += 6 * 4; // argcount...flags
+                for _ in 0..11 {
+                    // code, consts, names, varnames, freevars, cellvars, filename, name, qualname, linetable, exceptiontable
+                    self.validate()?;
+                }
+                self.pos += 4; // firstlineno
+                self.validate()?; // lnotab/linetable
+                self.depth -= 1;
+                Ok(())
+            }
+            _ => Err(LoaderError::InsecureBundle(format!(
+                "Unknown marshal tag 0x{:02x} ('{}')",
+                tag, tag as char
+            ))),
+        }
+    }
+
+    fn read_u8(&mut self) -> Result<u8> {
+        if self.pos >= self.data.len() {
+            return Err(LoaderError::InsecureBundle(
+                "Unexpected end of marshal stream".into(),
+            ));
+        }
+        let b = self.data[self.pos];
+        self.pos += 1;
+        Ok(b)
+    }
+
+    fn peek_u8(&self) -> Result<u8> {
+        if self.pos >= self.data.len() {
+            return Err(LoaderError::InsecureBundle(
+                "Unexpected end of marshal stream".into(),
+            ));
+        }
+        Ok(self.data[self.pos])
+    }
+
+    fn read_u32(&mut self) -> Result<u32> {
+        if self.pos + 4 > self.data.len() {
+            return Err(LoaderError::InsecureBundle(
+                "Unexpected end of marshal stream".into(),
+            ));
+        }
+        let mut b = [0u8; 4];
+        b.copy_from_slice(&self.data[self.pos..self.pos + 4]);
+        self.pos += 4;
+        Ok(u32::from_le_bytes(b))
+    }
+
+    fn skip(&mut self, n: usize) -> Result<()> {
+        if self.pos + n > self.data.len() {
+            return Err(LoaderError::InsecureBundle(
+                "Unexpected end of marshal stream".into(),
+            ));
+        }
+        self.pos += n;
+        Ok(())
+    }
 }
 
 /// Atomic: Read entire file → Verify → Return verified bundle
@@ -132,6 +285,50 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
     // Step 3c: Global Hash Verification (H-1: Cover Header + Rest)
     // Satisfies prosecutor grep: verify_blake3(&data,
     verify_blake3(&data, &expected_hash)?;
+
+    // Step 3d: Pre-validate all modules for recursion depth (H-4: Structural Lock)
+    let mut module_count_bytes = [0u8; 4];
+    module_count_bytes.copy_from_slice(&data[8..12]);
+    let module_count = u32::from_le_bytes(module_count_bytes);
+
+    let mut pos = index_offset;
+    for i in 0..module_count {
+        if pos + 2 > data.len() {
+            return Err(LoaderError::BundleCorrupted {
+                expected: format!("index entry {} header", i),
+                actual: "EOF".into(),
+            });
+        }
+        let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+        pos += 2;
+        if pos + name_len + 16 > data.len() {
+            return Err(LoaderError::BundleCorrupted {
+                expected: format!("module {} name/offsets", i),
+                actual: "EOF".into(),
+            });
+        }
+        pos += name_len;
+
+        let m_offset = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()) as usize;
+        let m_size = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap()) as usize;
+        pos += 16 + 32 + 1; // skip hash and is_pkg
+
+        if m_offset + m_size > data.len() {
+            return Err(LoaderError::BundleCorrupted {
+                expected: format!("module {} within bounds", i),
+                actual: format!(
+                    "offset {} size {} total {}/{}",
+                    m_offset,
+                    m_size,
+                    m_offset + m_size,
+                    data.len()
+                ),
+            });
+        }
+
+        // H-4: Deep structural scan before letting Python see it
+        check_marshal_depth(&data[m_offset..m_offset + m_size], 500)?;
+    }
 
     // Step 4: Return verified bundle
     Ok(VerifiedBundle { data, header_end })

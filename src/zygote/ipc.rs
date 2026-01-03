@@ -35,6 +35,18 @@ pub enum ZygoteCommand {
         /// Optional path for exit code capture (worker writes here)
         #[serde(default)]
         exit_code_path: Option<PathBuf>,
+        /// Whether to enable Fast Mode (bundle-accelerated imports)
+        #[serde(default)]
+        fast_mode: bool,
+        /// Path to the bundle file for Fast Mode
+        #[serde(default)]
+        bundle_path: Option<PathBuf>,
+        /// Project root directory
+        #[serde(default)]
+        project_root: Option<PathBuf>,
+        /// Max bundle size limit
+        #[serde(default)]
+        max_bundle_size: Option<u64>,
     },
     /// Shutdown the Zygote process
     Shutdown,

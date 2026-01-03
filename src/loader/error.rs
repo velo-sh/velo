@@ -83,6 +83,10 @@ pub enum LoaderError {
     #[error("Symlink bypass detected: {path}")]
     SymlinkBypass { path: PathBuf },
 
+    /// Insecure bundle content (e.g. recursion limit)
+    #[error("Insecure bundle: {0}")]
+    InsecureBundle(String),
+
     // === Runtime (5xx) ===
     /// Module not found in bundle
     #[error("Module not found: {name}")]
@@ -140,6 +144,7 @@ impl LoaderError {
             LoaderError::InsecurePermissions { .. } => 401,
             LoaderError::InsecureLocation { .. } => 400,
             LoaderError::SymlinkBypass { .. } => 402,
+            LoaderError::InsecureBundle(_) => 403,
 
             // Runtime (5xx)
             LoaderError::ModuleNotFound { .. } => 500,
