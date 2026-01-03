@@ -1,26 +1,27 @@
 # QA Integrity Report (v2) - Phase 5.x Security Baseline
 
 ## 📊 Summary
-**Status**: 🟢 SECURITY GREEN
+**Status**: 🔴 SECURITY RED (Stability Failure)
 **Date**: 2026-01-03
-**Commit**: 3ec5c31
-**Verification Result**: 100% PASS (8 test cases)
+**Commit**: 08af068 (v5.1.2)
+**Verification Result**: 🔴 STABILITY FAILURE
 
-Functional requirements for **SEC-P5-001** and mandatory security invariants from **RFC-0008 §2.18** are now fully implemented and verified. The system is hardened against P0 audit-level exploits.
+While internal security invariants (H-1, H-5) are implemented, recent stress testing revealed a **CRITICAL bypass** of the H-4 protector (Marshal Bomb) and a core functionality conflict between Zygote and Fast modes.
 
-## ✅ Verified Invariants (P0)
+## 🛑 Critical Stability Defect (P0)
 
-### 1. Global Hash Coverage (P0-001 / H-1)
-- **Status**: **PASS**. `verify.rs` and `velo_loader.py` now implement the Global Hash scheme covering [0..20] and [52..EOF].
+### 1. Marshal Depth Bypass (H-4 / BUG-51-002)
+- **Status**: **FAILED**. `sys.setrecursionlimit(500)` is ignored by `marshal.loads()`.
+- **Proof**: `test_stress_001_marshal_bomb` in `test_stability_stress.py`.
+- **Remediation Required**: Implement structural validation of marshalled data before loading, or a native guard.
 
-### 2. Marshal Depth Protection (P0-004 / H-4)
-- **Status**: **PASS**. `MARSHAL_RECURSION_LIMIT` is strictly 500 in `velo_loader.py`.
+### 2. Zygote-Fast Conflict (BUG-51-001)
+- **Status**: **FAILED**. `--zygote` ignores `--fast` flag, bypassing all Phase 5 security logic.
+- **Remediation Required**: Update Zygote IPC to propagate and activate bundle loader in workers.
 
-### 3. Read Atomicity (P0-005 / H-5)
-- **Status**: **PASS**. `verify.rs` integrates `flock(LockShared)` for the entire verification segment.
-
-### 4. Boundary Validation (P0-002 / H-2)
-- **Status**: **PASS**. Robust `index_offset` and physical length checks implemented.
+## ✅ Verified Invariants (Maintained)
+- **H-1 (Global Hash)**: Still active for standard `--fast` runs.
+- **H-5 (Read Atomicity)**: Still active in `verify.rs`.
 
 ## 🛠️ Verification Artifacts
 - **Regression Suite**: `tests/qa/phase5_2/test_bundle_config.py` (8 PASSED)
