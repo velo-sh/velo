@@ -138,8 +138,20 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
 
 ---
-
-## 🔗 Navigation
+ 
+ ## 🔓 Role Management & Identity Lock
+ 
+ ### Permanent Architect Lock (Phase 5.x)
+ 
+ > [!IMPORTANT]
+ > **ID-LOCK-001**: For the duration of Phase 5.x (Zygote & Security), the active AI agent is PERMANENTLY locked into the **🏛️ Architect** role.
+ > - ❌ **NO IDENTITY SWITCH**: The agent is strictly forbidden from switching to the Developer role.
+ > - ❌ **NO APPLICATIONS**: The agent is forbidden from even applying or requesting a role switch.
+ > - ✅ **SCOPE**: Design, documentation, RFC creation, and QA requirement specification ONLY.
+ 
+ ---
+ 
+ ## 🔗 Navigation
 
 ### Agent Roles
 - [Architect](./docs/agents/architect.md)
