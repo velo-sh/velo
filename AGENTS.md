@@ -60,17 +60,17 @@ See [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) for full details.
 
 ## ⚠️ Agent Pitfalls (Must Avoid)
 
-As an AI Agent, please self-check the following two high-frequency failure points before submitting code:
+As an AI Agent, please self-check the following high-frequency failure points before submitting code:
 
 ### 1. The `/tmp` Trap (Insecure Path Block)
 - **Symptom**: Test fails with `LoaderError::InsecureLocation { path: "/tmp/..." }`.
-- **Root Cause**: Velo's security policy strictly forbids loading code from `/tmp` or `/var/tmp` (to prevent symlink attacks).
-- **Mitigation**: DO NOT use default `tempdir()`. Use `tempfile::Builder` and specify a path within the project root (e.g., `.velo/test_tmp`).
+- **Root Cause**: Velo's security policy strictly forbids loading code from insecure paths like `/tmp`, `/var/tmp`, `/dev/shm` to prevent symlink attacks.
+- **Mitigation**: DO NOT use default `tempdir()`. Use `tempfile::Builder` and specify a path within the project root (e.g., `tempfile::Builder::new().tempdir_in(std::env::current_dir()?)`).
 
-### 2. Manual `cargo fmt` Requirement
-- **Symptom**: CI check `cargo fmt --check` fails.
-- **Root Cause**: Remote editing via AI tools does not trigger auto-formatting. Minor spacing or operator alignment issues (like `pos+2` vs `pos + 2`) will trigger CI errors.
-- **Mitigation**: You **MUST** explicitly run `cargo fmt --all` before `git add`.
+### 2. Formatting Failures (`cargo fmt`)
+AI tools often bypass local formatting. This is the #1 cause of CI failures.
+- **Solution**: Follow the rule in [Critical Rules](#must-do) below.
+- **TIP**: Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit.
 
 ---
 
@@ -145,6 +145,9 @@ I will review/implement with [ROLE]'s perspective.
 - ❌ Hardcode framework/library lists
 - ❌ Skip `uv sync` when testing user projects
 - ❌ Commit without running pre-commit hooks
+
+> [!TIP]
+> Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit. This prevents most style-related CI failures.
 
 ### MUST DO
 
