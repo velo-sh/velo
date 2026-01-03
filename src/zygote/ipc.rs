@@ -50,6 +50,8 @@ pub enum ZygoteCommand {
     },
     /// Shutdown the Zygote process
     Shutdown,
+    /// Query Zygote status
+    Status,
 }
 
 /// Responses sent from Zygote to Launcher
@@ -58,6 +60,15 @@ pub enum ZygoteCommand {
 pub enum ZygoteResponse {
     /// Zygote is ready to accept commands
     Ready,
+    /// Generic acknowledgment of command receipt
+    Ack,
+    /// Zygote status information
+    Status {
+        /// Zygote process ID
+        pid: u32,
+        /// List of preloaded modules
+        preload: Vec<String>,
+    },
     /// A worker was successfully forked
     Forked {
         worker_pid: u32,
@@ -162,4 +173,29 @@ pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<Zygote
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
     serde_json::from_str(&line).map_err(|e| ZygoteError::ProtocolError(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_serialization() {
+        let resp = ZygoteResponse::Status {
+            pid: 1234,
+            preload: vec!["numpy".to_string(), "pandas".to_string()],
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"type\":\"Status\""));
+        assert!(json.contains("\"pid\":1234"));
+        assert!(json.contains("\"preload\":[\"numpy\",\"pandas\"]"));
+
+        let decoded: ZygoteResponse = serde_json::from_str(&json).unwrap();
+        if let ZygoteResponse::Status { pid, preload } = decoded {
+            assert_eq!(pid, 1234);
+            assert_eq!(preload, vec!["numpy", "pandas"]);
+        } else {
+            panic!("Decoded wrong variant");
+        }
+    }
 }

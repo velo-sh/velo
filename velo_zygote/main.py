@@ -35,6 +35,9 @@ _active_workers: Set[int] = set()
 # Project root for path validation (set on startup)
 _project_root: Optional[Path] = None
 
+# Track preloaded modules
+_preloaded_modules: List[str] = []
+
 # Sensitive paths that should never be executed (SEC-P3-001)
 _BLOCKED_PATHS = [
     "/etc", "/var", "/usr", "/bin", "/sbin",
@@ -141,9 +144,12 @@ class WorkerSafety:
 
 def preload_modules(modules: List[str]) -> None:
     """Pre-import specified modules to warm the interpreter."""
+    global _preloaded_modules
     for module in modules:
         try:
             __import__(module)
+            if module not in _preloaded_modules:
+                _preloaded_modules.append(module)
             log(f"Pre-loaded: {module}")
         except ImportError as e:
             log(f"Warning: Failed to pre-load {module}: {e}")
@@ -468,12 +474,21 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                         
                     elif cmd_type == "Shutdown":
                         log("Received shutdown command")
+                        send_response(conn, {"type": "Ack"})
                         cleanup_workers()
                         conn.close()
                         sock.close()
                         Path(socket_path).unlink(missing_ok=True)
                         log("Zygote shutdown complete")
                         return
+                    
+                    elif cmd_type == "Status":
+                        send_response(conn, {
+                            "type": "Status",
+                            "pid": os.getpid(),
+                            "preload": _preloaded_modules
+                        })
+                        log(f"Sent Status: PID {os.getpid()}, {len(_preloaded_modules)} modules")
                     
                     else:
                         send_response(conn, {

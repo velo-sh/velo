@@ -16,6 +16,10 @@ pub struct VeloConfig {
     pub preload: Vec<String>,
     /// Maximum bundle size in Bytes
     pub max_bundle_size: Option<u64>,
+    /// Zygote worker timeout in seconds
+    pub zygote_worker_timeout: Option<u64>,
+    /// Zygote socket startup timeout in seconds
+    pub zygote_socket_timeout: Option<u64>,
 }
 
 impl VeloConfig {
@@ -36,6 +40,8 @@ impl VeloConfig {
         let mut in_tool_velo = false;
         let mut preload = Vec::new();
         let mut max_bundle_size = None;
+        let mut zygote_worker_timeout = None;
+        let mut zygote_socket_timeout = None;
 
         for line in content.lines() {
             let line = line.trim();
@@ -66,15 +72,35 @@ impl VeloConfig {
                         max_bundle_size = Some(mb * 1024 * 1024);
                     }
                 }
+            } else if line.starts_with("zygote_worker_timeout") {
+                if let Some(eq_idx) = line.find('=') {
+                    let value_str = line[eq_idx + 1..].trim();
+                    if let Ok(secs) = value_str.parse::<u64>() {
+                        zygote_worker_timeout = Some(secs);
+                    }
+                }
+            } else if line.starts_with("zygote_socket_timeout") {
+                if let Some(eq_idx) = line.find('=') {
+                    let value_str = line[eq_idx + 1..].trim();
+                    if let Ok(secs) = value_str.parse::<u64>() {
+                        zygote_socket_timeout = Some(secs);
+                    }
+                }
             }
         }
 
-        if preload.is_empty() && max_bundle_size.is_none() {
+        if preload.is_empty()
+            && max_bundle_size.is_none()
+            && zygote_worker_timeout.is_none()
+            && zygote_socket_timeout.is_none()
+        {
             None
         } else {
             Some(Self {
                 preload,
                 max_bundle_size,
+                zygote_worker_timeout,
+                zygote_socket_timeout,
             })
         }
     }
@@ -173,5 +199,17 @@ max_bundle_size = -5
         let config = VeloConfig::parse_toml(content_with_preload).unwrap();
         assert!(config.max_bundle_size.is_none());
         assert_eq!(config.preload, vec!["fastapi"]);
+    }
+
+    #[test]
+    fn test_parse_toml_with_zygote_timeouts() {
+        let content = r#"
+[tool.velo]
+zygote_worker_timeout = 60
+zygote_socket_timeout = 20
+"#;
+        let config = VeloConfig::parse_toml(content).unwrap();
+        assert_eq!(config.zygote_worker_timeout, Some(60));
+        assert_eq!(config.zygote_socket_timeout, Some(20));
     }
 }
