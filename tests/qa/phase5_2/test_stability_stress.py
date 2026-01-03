@@ -1,6 +1,6 @@
 """
-Velo QA: Stability & Security Stress Tests (打脸 Dev 专用)
-==========================================================
+Velo QA: Stability & Security Stress Tests (Dev Accountability Suite)
+======================================================================
 QA Team Audit Date: 2026-01-03
 Developer Delivery: 08af068 (phase-5.1/zygote-optimization)
 
@@ -12,8 +12,9 @@ security vulnerabilities in the Developer's delivery. They serve as
 - BUG-51-001: --zygote flag ignores --fast, bypassing all Phase 5 security.
 - BUG-51-002: H-4 Marshal Bomb bypass - sys.setrecursionlimit is IGNORED.
 
-**VERDICT**: 🔴 REJECTED. Dev must fix before re-submission.
+**VERDICT**: REJECTED. Dev must fix before re-submission.
 """
+
 
 import pytest
 import subprocess
