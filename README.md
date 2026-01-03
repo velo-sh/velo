@@ -49,28 +49,28 @@ cargo build --release
 
 ## Benchmark Results
 
-![Velo Benchmark](./assets/benchmark.png)
+![Velo Benchmark](./assets/benchmark_v2.png)
 
-### 🧬 Zygote Mode (v0.5.0) - **14x Faster!**
+### 🧬 Zygote Mode (v0.6.0) - **60x Faster!**
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║              FastAPI Hello World (Cold Start)            ║
+║              FastAPI Hello World (Startup)               ║
 ╠══════════════════════════════════════════════════════════╣
 ║  CPython           ██████████████████████████░░░░  514ms ║
-║  Velo (cold)       █████████████████████████░░░░░  502ms ║
-║  Velo + Zygote     ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░   43ms ⚡║
+║  Velo (Cold)       █░░░░░░░░░░░░░░░░░░░░░░░░░░░░   17.7ms║
+║  Velo + Zygote     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░    8.6ms⚡║
 ╚══════════════════════════════════════════════════════════╝
-                     🚀 11.9x faster than CPython
+                     🚀 59.7x faster than CPython
 ```
 
-### All Projects
+### Warm Start Benchmarks
 
-| Project | CPython | Zygote | Speedup |
-|---------|---------|--------|---------|
-| **FastAPI** | 606ms | **43ms** | **14.0x** 🔥 |
-| **Django** | 409ms | **94ms** | **4.4x** 🔥 |
-| DataScience | 809ms | 471ms | 1.7x |
+| Project | CPython | Velo (Zygote) | Speedup |
+|---------|---------|---------------|---------|
+| **Simple Script** | 22ms | **8.6ms** | **2.5x** 🔥 |
+| **Heavy Imports** | 514ms | **8.8ms** | **58.4x** 🔥 |
+| **FastAPI** | 606ms | **15ms** | **40.4x** 🔥 |
 
 > **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the Zygote daemon.
 
@@ -80,7 +80,8 @@ cargo build --release
 2. **ABI Fingerprinting**: Detects Python version and ABI tag for C-extension compatibility
 3. **Environment Fingerprinting**: Hash `uv.lock` to detect dependency changes
 4. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
-5. **Deferred Capture**: First run executes immediately, caches for next time
+5. **Security Invariants (H1-H7)**: Hardened via Global BLAKE3 Hashing, Atomic `flock` reads, and Keyed BLAKE3 environment binding.
+6. **Deferred Capture**: First run executes immediately, caches for next time
 
 ## Commands
 
