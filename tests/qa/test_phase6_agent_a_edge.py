@@ -30,7 +30,7 @@ def f(): import soft_fn  # Soft
         
         # Build - Inspect graph for classification metadata
         # (Assuming 'velo build --inspect' exists or checking binary for pre-load flags)
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Verify result: Hard should be pre-mapped, Soft should fallback or be marked lazy
         result = env.run_velo("run", "--fast", "main.py")
@@ -45,7 +45,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "import a; print('CYCLE_OK')")
         
         # Build should not fail or hang
-        result = env.run_velo("build")
+        result = env.run_velo("bundle", "build")
         assert result.returncode == 0
         
         # Run should handle cyclic import normally (Python semantics)
@@ -64,7 +64,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "import m0; print(m0.DATA)")
         
         # Build with graph
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Run with fast loader
         result = env.run_velo("run", "--fast", "main.py")
@@ -89,7 +89,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "\n".join(main_code) + "\nprint('LOADED_ALL')")
         
         # Build should succeed and compress prefixes
-        result = env.run_velo("build")
+        result = env.run_velo("bundle", "build")
         assert result.returncode == 0
         
         # Run should be fast
@@ -112,7 +112,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "import link; print(link.VERSION)")
         
         # Phase 1: Build with target A
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         res1 = env.run_velo("run", "--fast", "main.py")
         assert "A" in res1.stdout
         
@@ -156,7 +156,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "\n".join(imports) + "\nprint('WIDE_OK')")
         
         # Build - Stress Tarjan's SCC and Phf generation
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Run - Ensure no OOM during pre-mapping
         result = env.run_velo("run", "--fast", "main.py")

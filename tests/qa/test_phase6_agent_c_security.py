@@ -15,7 +15,7 @@ class TestAgentCSecurity:
         env.create_app("main.py", "print('SAFE')")
         
         # 1. Build valid bundle
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         bundle_path = env.path / "bundle.veloc"
         assert bundle_path.exists()
         
@@ -36,7 +36,7 @@ class TestAgentCSecurity:
         """SEC-602: Verify H-10 sandboxing prevents traversal attacks via direct header patching."""
         env = isolated_env
         env.create_app("main.py", "print('OK')")
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         bundle_path = env.path / "bundle.veloc"
         
         # Attacker patches 'search_locations' in the bundle to point to system files
@@ -65,7 +65,7 @@ class TestAgentCSecurity:
         env.create_app("b.py", "import c")
         env.create_app("c.py", "DATA = 1")
         env.create_app("main.py", "import a")
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # 2. Patch the graph record to make it cyclic: C -> A
         # Based on Rkyv layout, we'd need to find the ModuleRecord for 'c' and point its deps to 'a'
@@ -82,7 +82,7 @@ class TestAgentCSecurity:
         """L1-2: Verify fallback when endianness doesn't match."""
         env = isolated_env
         env.create_app("main.py", "print('ENDIAN_OK')")
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         bundle_path = env.path / "bundle.veloc"
         
         # Patch endianness bit (Assuming offset 18 in header)
@@ -98,7 +98,7 @@ class TestAgentCSecurity:
         env.create_app("main.py", "print('OK')")
         
         # 1. Build bundle
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         bundle_path = env.path / "bundle.veloc"
         
         # 2. Spoof arch_id in the header (offset 16-17 based on typical Velo layout)

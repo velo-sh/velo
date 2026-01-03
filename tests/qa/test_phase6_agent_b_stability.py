@@ -28,7 +28,7 @@ __path__.append(os.path.join(os.path.dirname(__file__), 'extra'))
         
         env.create_app("main.py", "from pkg_root.sub_pkg import module_c; print(module_c.VAL)")
         
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         result = env.run_velo("run", "--fast", "main.py")
         assert result.returncode == 0
         assert "nested_detected" in result.stdout
@@ -54,7 +54,7 @@ import ns_pkg.mod_b
 print(f"A:{{ns_pkg.mod_a.SOURCE}} B:{{ns_pkg.mod_b.SOURCE}}")
 """)
         
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         result = env.run_velo("run", "--fast", "main.py")
         
         assert result.returncode == 0
@@ -70,7 +70,7 @@ mod = importlib.import_module(name)
 print(f"VAL:{mod.VAL}")
 """)
         env.create_app("mod_a.py", "VAL = 'dynamic_ok'")
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Run with metrics to verify fallback_reason
         os.environ["VELO_REPORT_METRICS"] = "1"
@@ -87,7 +87,7 @@ except ImportError:
     print("SOFT_OK")
 """)
         # We don't create optional_mod.py at build time
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Run should handle ImportError gracefully
         result = env.run_velo("run", "--fast", "main.py")
@@ -115,7 +115,7 @@ import mod
 print(f"CALLED:{'mod' in import_calls}")
 """)
         
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         result = env.run_velo("run", "--fast", "main.py")
         
         assert result.returncode == 0
@@ -132,7 +132,7 @@ print('MAIN_START')
 x = mod
 """)
         
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         
         # Run with lazy imports enabled (if supported by Python version)
         # We check if mod execution is deferred
@@ -162,6 +162,6 @@ x = mod
         # We can't easily force PHF failure from here without changing Velo code,
         # but we can verify the 'index_type' field detection if we had access to the binary structure.
         # For now, we ensure basic functionality with standard build.
-        env.run_velo("build")
+        env.run_velo("bundle", "build")
         result = env.run_velo("run", "--fast", "main.py")
         assert "OK" in result.stdout
