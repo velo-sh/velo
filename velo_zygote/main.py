@@ -258,10 +258,18 @@ def handle_fork(
             # RFC-0008: Activate Fast Mode in Zygote Worker (BUG-51-001)
             if fast_mode and bundle_path:
                 try:
-                    # Ensure we can find velo_loader
-                    if project_root:
-                        loader_dir = str(Path(project_root) / "python")
-                        if loader_dir not in sys.path:
+                    # Search for velo_loader in multiple locations
+                    possible_loader_dirs = [
+                        # 1. Relative to this script (velo_zygote/main.py -> python/)
+                        str(Path(__file__).parent.parent / "python"),
+                        # 2. Project root (if provided)
+                        str(Path(project_root) / "python") if project_root else None,
+                        # 3. Installed location (site-packages)
+                        None,  # Already in sys.path if installed
+                    ]
+                    
+                    for loader_dir in possible_loader_dirs:
+                        if loader_dir and loader_dir not in sys.path and Path(loader_dir).exists():
                             sys.path.insert(0, loader_dir)
                     
                     from velo_loader import activate_fast_mode
@@ -270,8 +278,7 @@ def handle_fork(
                         Path(project_root) if project_root else None,
                         max_bundle_size
                     )
-                    # Don't print to avoid polluting stdout unless verified
-                    # log(f"Worker Fast Loader active: {len(_bundle)} modules")
+                    # Worker activated - don't print to avoid polluting stdout
                 except Exception as e:
                     print(f"⚠️ Worker Fast Loader failed: {e}", file=sys.stderr)
             
