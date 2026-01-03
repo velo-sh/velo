@@ -193,12 +193,44 @@ mod tests {
     }
 
     #[test]
-    fn test_if_false_dependency() {
-        let source = "if False:\n    import soft_if";
+    fn test_combined_l0_1() {
+        let source = "import hard_mod\nif False:\n    import soft_if\ntry:\n    import soft_try\nexcept:\n    pass\ndef f():\n    import soft_fn";
         let mut scanner = DependencyScanner::new();
         let deps = scanner.scan(source);
-        assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0].name, "soft_if");
-        assert_eq!(deps[0].dep_type, DependencyType::Soft);
+
+        // Debug output
+        for d in &deps {
+            println!("{:?}", d);
+        }
+
+        assert_eq!(deps.len(), 4);
+
+        // Check hard_mod
+        let hard = deps.iter().find(|d| d.name == "hard_mod").unwrap();
+        assert_eq!(hard.dep_type, DependencyType::Hard);
+
+        // Check soft_if
+        let soft_if = deps.iter().find(|d| d.name == "soft_if").unwrap();
+        assert_eq!(
+            soft_if.dep_type,
+            DependencyType::Soft,
+            "soft_if should be Soft"
+        );
+
+        // Check soft_try
+        let soft_try = deps.iter().find(|d| d.name == "soft_try").unwrap();
+        assert_eq!(
+            soft_try.dep_type,
+            DependencyType::Soft,
+            "soft_try should be Soft"
+        );
+
+        // Check soft_fn
+        let soft_fn = deps.iter().find(|d| d.name == "soft_fn").unwrap();
+        assert_eq!(
+            soft_fn.dep_type,
+            DependencyType::Soft,
+            "soft_fn should be Soft"
+        );
     }
 }
