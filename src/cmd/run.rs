@@ -73,9 +73,15 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
     if let Some(parent) = script_path.parent() {
-        if parent.join("pyproject.toml").exists() {
-            project_dir = parent.to_path_buf();
-        } else if let Some(grandparent) = parent.parent() {
+        let p = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+
+        if p.join("pyproject.toml").exists() {
+            project_dir = p.to_path_buf();
+        } else if let Some(grandparent) = p.parent() {
             if grandparent.join("pyproject.toml").exists() {
                 project_dir = grandparent.to_path_buf();
             }
@@ -313,7 +319,6 @@ fn run_with_fast_loader(
     max_bundle_size: Option<u64>,
 ) -> Result<()> {
     use std::io::Write;
-    use tempfile::NamedTempFile;
 
     // Find bundle.veloc - check multiple locations
     let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
@@ -337,9 +342,10 @@ fn run_with_fast_loader(
 
     eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
 
-    // Create sitecustomize.py that activates the bundle
-    let mut sitecustomize = NamedTempFile::new()?;
-    let site_dir = sitecustomize.path().parent().unwrap().to_path_buf();
+    // Create a unique temporary directory for sitecustomize.py
+    // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
+    let temp_dir = tempfile::tempdir()?;
+    let site_file = temp_dir.path().join("sitecustomize.py");
 
     // Get absolute paths
     let bundle_abs = actual_bundle.canonicalize()?;
@@ -377,8 +383,9 @@ fn run_with_fast_loader(
         .unwrap_or_else(|| possible_paths[0].clone());
 
     // Write sitecustomize content
+    let mut f = std::fs::File::create(&site_file)?;
     writeln!(
-        sitecustomize,
+        f,
         r#"# Velo Fast Loader sitecustomize
 import sys
 sys.path.insert(0, r"{velo_loader}")
@@ -404,24 +411,58 @@ except Exception as e:
             .map(|s| s.to_string())
             .unwrap_or_else(|| "None".to_string()),
     )?;
-    sitecustomize.flush()?;
-
-    // Rename to sitecustomize.py
-    let site_file = site_dir.join("sitecustomize.py");
-    std::fs::copy(sitecustomize.path(), &site_file)?;
+    f.flush()?;
 
     // Add site dir to PYTHONPATH
-    let site_dir_str = site_dir.to_string_lossy().to_string();
+    let site_dir_str = temp_dir.path().to_string_lossy().to_string();
     let enhanced_pythonpath = match pythonpath {
         Some(p) if !p.is_empty() => format!("{}:{}", p, site_dir_str),
         _ => site_dir_str,
     };
 
     // Run script with enhanced PYTHONPATH
-    let result = runner::run_script(python_path, script_path, Some(enhanced_pythonpath));
+    // Cleanup: temp_dir will be automatically deleted when goes out of scope
+    runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+}
 
-    // Cleanup
-    let _ = std::fs::remove_file(&site_file);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
 
-    result
+    #[test]
+    fn test_project_dir_detection_relative_path() -> Result<()> {
+        let temp = tempdir()?;
+        let project_root = temp.path();
+
+        // Create pyproject.toml in temp dir
+        File::create(project_root.join("pyproject.toml"))?;
+
+        // Scenario: Script is "main.py" and we are in the same directory
+        let script_path = Path::new("main.py");
+        let parent = script_path.parent().unwrap();
+        assert_eq!(parent.as_os_str(), "");
+
+        // The logic from cmd_run:
+        let p = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+
+        // Verify we can find pyproject.toml using this path
+        // (Simulating the check in cmd_run)
+        let found = project_root.join(p).join("pyproject.toml").exists();
+        assert!(
+            found,
+            "Should find pyproject.toml even with empty parent path"
+        );
+
+        // Verify canonicalize works on the fixed path
+        let abs_path = project_root.join(p).canonicalize()?;
+        assert!(abs_path.is_absolute());
+
+        Ok(())
+    }
 }
