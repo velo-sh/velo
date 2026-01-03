@@ -67,6 +67,12 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 Velo's .venv ≠ User Project's .venv
 ```
 
+> [!WARNING]
+> **SECURITY REDLINE**: Velo blocks loading from `/tmp`. Do NOT use default `tempfile::TemporaryDirectory()` for bundle loading tests. Use project-local paths instead.
+
+> [!IMPORTANT]
+> **STYLE POLICY**: AI Agents must manually run `cargo fmt --all` before any commit to ensure CI compliance.
+
 | Test Type | Environment |
 |-----------|-------------|
 | Unit Tests | Velo's `.venv` |

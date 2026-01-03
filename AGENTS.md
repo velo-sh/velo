@@ -58,6 +58,22 @@ See [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) for full details.
 
 ---
 
+## ⚠️ Agent Pitfalls (Must Avoid)
+
+As an AI Agent, please self-check the following two high-frequency failure points before submitting code:
+
+### 1. The `/tmp` Trap (Insecure Path Block)
+- **Symptom**: Test fails with `LoaderError::InsecureLocation { path: "/tmp/..." }`.
+- **Root Cause**: Velo's security policy strictly forbids loading code from `/tmp` or `/var/tmp` (to prevent symlink attacks).
+- **Mitigation**: DO NOT use default `tempdir()`. Use `tempfile::Builder` and specify a path within the project root (e.g., `.velo/test_tmp`).
+
+### 2. Manual `cargo fmt` Requirement
+- **Symptom**: CI check `cargo fmt --check` fails.
+- **Root Cause**: Remote editing via AI tools does not trigger auto-formatting. Minor spacing or operator alignment issues (like `pos+2` vs `pos + 2`) will trigger CI errors.
+- **Mitigation**: You **MUST** explicitly run `cargo fmt --all` before `git add`.
+
+---
+
 ## 🧭 Universal Work Methodology
 
 Every AI agent follows this pattern:
