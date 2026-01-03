@@ -1,4 +1,4 @@
-use rustpython_ast::{self as ast, Expr, Stmt};
+use rustpython_ast::{self as ast, Stmt};
 use rustpython_parser::parse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,24 +110,15 @@ impl DependencyScanner {
                 }
                 self.in_soft_context -= 1;
             }
-            Stmt::If(ast::StmtIf {
-                test, body, orelse, ..
-            }) => {
-                let is_type_checking = self.is_type_checking_check(test);
-                if is_type_checking {
-                    self.in_soft_context += 1;
-                }
-
+            Stmt::If(ast::StmtIf { body, orelse, .. }) => {
+                self.in_soft_context += 1;
                 for s in body {
                     self.visit_stmt(s);
                 }
                 for s in orelse {
                     self.visit_stmt(s);
                 }
-
-                if is_type_checking {
-                    self.in_soft_context -= 1;
-                }
+                self.in_soft_context -= 1;
             }
             _ => {}
         }
@@ -140,21 +131,6 @@ impl DependencyScanner {
             DependencyType::Hard
         };
         self.dependencies.push(Dependency { name, dep_type });
-    }
-
-    fn is_type_checking_check(&self, test: &Expr) -> bool {
-        match test {
-            Expr::Name(ast::ExprName { id, .. }) => id.as_str() == "TYPE_CHECKING",
-            Expr::Attribute(ast::ExprAttribute { value, attr, .. }) => {
-                if attr.as_str() == "TYPE_CHECKING"
-                    && let Expr::Name(ast::ExprName { id, .. }) = &**value
-                {
-                    return id.as_str() == "typing";
-                }
-                false
-            }
-            _ => false,
-        }
     }
 }
 
@@ -214,5 +190,15 @@ mod tests {
         let mut scanner = DependencyScanner::new();
         let deps = scanner.scan(source);
         assert_eq!(deps.len(), 0);
+    }
+
+    #[test]
+    fn test_if_false_dependency() {
+        let source = "if False:\n    import soft_if";
+        let mut scanner = DependencyScanner::new();
+        let deps = scanner.scan(source);
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].name, "soft_if");
+        assert_eq!(deps[0].dep_type, DependencyType::Soft);
     }
 }
