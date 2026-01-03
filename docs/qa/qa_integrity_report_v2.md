@@ -1,32 +1,37 @@
-# QA Integrity Report (v2) - Phase 5.x Security Baseline
+# QA Integrity Report (v2.1) - Phase 5.x Security Baseline
 
 ## 📊 Summary
-**Status**: 🔴 SECURITY RED (Stability Failure)
+**Status**: 🟢 SECURITY GREEN (Remediation Verified)
 **Date**: 2026-01-03
-**Commit**: 08af068 (v5.1.2)
-**Verification Result**: 🔴 STABILITY FAILURE
+**Commit**: 0af62d7
+**Verification Result**: ✅ 100% PASS
 
-While internal security invariants (H-1, H-5) are implemented, recent stress testing revealed a **CRITICAL bypass** of the H-4 protector (Marshal Bomb) and a core functionality conflict between Zygote and Fast modes.
+All critical stability defects identified in v2.0 have been remediated and verified.
 
-## 🛑 Critical Stability Defect (P0)
+## ✅ Remediated Defects (Phase 4)
 
-### 1. Marshal Depth Bypass (H-4 / BUG-51-002)
-- **Status**: **FAILED**. `sys.setrecursionlimit(500)` is ignored by `marshal.loads()`.
-- **Proof**: `test_stress_001_marshal_bomb` in `test_stability_stress.py`.
-- **Remediation Required**: Implement structural validation of marshalled data before loading, or a native guard.
+### 1. Marshal Depth Bypass (H-4 / BUG-51-002) - FIXED
+- **Status**: ✅ **FIXED**
+- **Solution**: Rust-level `StructuralGuard` in `verify.rs` scans marshal bytecode at native boundary
+- **Verification**: 1000-level nested bomb bundle correctly rejected with "Marshal recursion limit exceeded (max 500)"
 
-### 2. Zygote-Fast Conflict (BUG-51-001)
-- **Status**: **FAILED**. `--zygote` ignores `--fast` flag, bypassing all Phase 5 security logic.
-- **Remediation Required**: Update Zygote IPC to propagate and activate bundle loader in workers.
+### 2. Zygote-Fast Conflict (BUG-51-001) - FIXED
+- **Status**: ✅ **FIXED**
+- **Solution**: `ZygoteCommand::Fork` IPC updated to include `fast_mode`, `bundle_path`, `project_root`
+- **Verification**: `velo run --zygote --fast` correctly outputs "✅ Fast Loader Active"
 
-## ✅ Verified Invariants (Maintained)
-- **H-1 (Global Hash)**: Still active for standard `--fast` runs.
-- **H-5 (Read Atomicity)**: Still active in `verify.rs`.
+## ✅ Verified Invariants (P0)
 
-## 🛠️ Verification Artifacts
-- **Regression Suite**: `tests/qa/phase5_2/test_bundle_config.py` (8 PASSED)
-- **E2E Success**: `tests/qa/phase5_2/test_bundle_size_e2e.py` (Verified Custom Limits)
+| ID | Invariant | Status |
+|----|-----------|--------|
+| H-1 | Global Hash Coverage | ✅ PASS |
+| H-2 | Boundary Validation | ✅ PASS |
+| H-3 | Deterministic Path Ritual | ✅ PASS |
+| H-4 | Marshal Depth Protection | ✅ PASS (Rust Guard) |
+| H-5 | Read Atomicity | ✅ PASS |
+| H-6 | Keyed Crypto Binding | ✅ PASS |
+| H-7 | Native Loader Sanitization | ✅ PASS |
 
 ---
-*Verified by: 🧪 QA Engineer (User)*  
-*Audited by: 🏛️ Architect (ID-LOCK-001)*
+*Verified by: 🧪 QA Engineer*  
+*Remediated by: 💻 Developer (ID-LOCK-003)*
