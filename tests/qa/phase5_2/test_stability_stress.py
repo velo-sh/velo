@@ -92,8 +92,9 @@ def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     from bundle_builder import build_from_project
     build_from_project(tmp_path)
     
-    # Stop any existing Zygote
-    subprocess.run([velo_binary, "run", "--zygote", "--async", "main.py"], cwd=tmp_path) # Just to be sure launcher is alive
+    # IMPORTANT: Stop and restart Zygote to ensure updated Python code is loaded
+    subprocess.run([velo_binary, "zygote", "stop"], capture_output=True)
+    subprocess.run([velo_binary, "zygote", "start"], capture_output=True)
     
     # Run with both flags
     result = subprocess.run(
@@ -105,6 +106,10 @@ def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     
     # Current behavior (BUG): It says "Standard Loader" because Zygote doesn't load the bundle
     # If it was fixed, it should say "Fast Loader Active"
+    print(f"DEBUG stdout: {result.stdout}")
+    print(f"DEBUG stderr: {result.stderr}")
+    print(f"DEBUG returncode: {result.returncode}")
+    
     if "Standard Loader" in result.stdout:
         pytest.fail("BUG-51-001: --zygote ignored --fast flag. Fast loader not active in Zygote worker.")
     
