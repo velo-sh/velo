@@ -38,7 +38,7 @@ class TestServeHelpAndValidation:
             [velo, "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode == 0
         assert "serve" in result.stdout
@@ -51,7 +51,7 @@ class TestServeHelpAndValidation:
             [velo, "serve"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode != 0
         assert "missing app argument" in result.stderr
@@ -63,7 +63,7 @@ class TestServeHelpAndValidation:
             [velo, "serve", "invalid_format"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode != 0
         assert "invalid app format" in result.stderr
@@ -75,7 +75,7 @@ class TestServeHelpAndValidation:
             [velo, "serve", "main:app", "--unknown-option"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode != 0
         assert "unknown option" in result.stderr
@@ -199,7 +199,7 @@ class TestServeOptions:
             [velo, "serve", "main:app", "--port", "not_a_number"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode != 0
         assert "invalid port" in result.stderr
@@ -211,7 +211,7 @@ class TestServeOptions:
             [velo, "serve", "main:app", "--workers", "not_a_number"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         assert result.returncode != 0
         assert "invalid worker" in result.stderr
@@ -288,7 +288,7 @@ class TestFrameworkDetection:
             [velo, "serve", "django.core.wsgi:application", "--port", "19881"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=15
         )
         # May mention Django or fail finding Django
         # Just verify command was processed

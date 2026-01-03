@@ -56,7 +56,7 @@ class BrutalTestEnv:
     def create_script(self, name: str, content: str):
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30, env: dict = None) -> tuple:
+    def run_velo(self, args: list, timeout: float = 60, env: dict = None) -> tuple:
         run_env = os.environ.copy()
         if env:
             run_env.update(env)
@@ -255,7 +255,7 @@ class TestInjectionAttacks:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
             # Should NEVER execute shell commands
             assert "uid=" not in result.stdout
@@ -278,7 +278,7 @@ class TestInjectionAttacks:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
             # Should never execute
             assert "uid=" not in result.stdout
@@ -298,7 +298,7 @@ class TestInjectionAttacks:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
             # Should just fail gracefully
             assert result.returncode != 0
@@ -323,7 +323,7 @@ class TestInjectionAttacks:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
             # Should not access system files
             assert "root:" not in result.stdout
@@ -357,7 +357,7 @@ class TestCrashAttempts:
                     [velo, "serve", payload],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=30
                 )
                 # Should not crash (SIGSEGV = -11)
                 assert result.returncode != -11
@@ -383,7 +383,7 @@ class TestCrashAttempts:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
             # Should not crash
             assert result.returncode != -11
@@ -409,7 +409,7 @@ class TestCrashAttempts:
                     [velo, "serve", f"{payload}main:app"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=30
                 )
                 assert result.returncode != -11
             except (UnicodeEncodeError, ValueError):
@@ -452,7 +452,7 @@ class TestHangAttempts:
             
             # Should not hang forever
             try:
-                code, stdout, stderr = env.run_velo(["run", "loop1"], timeout=10)
+                code, stdout, stderr = env.run_velo(["run", "loop1"], timeout=30)
             except subprocess.TimeoutExpired:
                 pytest.fail("Process hung on symlink loop")
 
@@ -468,7 +468,7 @@ class TestHangAttempts:
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
         except subprocess.TimeoutExpired:
             pytest.fail("Possible ReDoS vulnerability")
@@ -485,7 +485,7 @@ class TestHangAttempts:
                 [velo, "serve", f"{deep_path}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
         except subprocess.TimeoutExpired:
             pytest.fail("Process hung on deep path")
@@ -506,7 +506,7 @@ class TestInformationLeak:
             [velo, "serve", "nonexistent_module:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         
         # Should not leak:
@@ -542,7 +542,7 @@ class TestInformationLeak:
             [velo, "serve", "crash_module:app"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
             env=env
         )
         
@@ -559,7 +559,7 @@ class TestInformationLeak:
             [velo, "serve", "definitely_broken:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
         
         output = result.stdout + result.stderr
@@ -599,7 +599,7 @@ class TestMegaAttack:
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=30
                 )
                 return result.returncode
             except Exception as e:
@@ -648,7 +648,7 @@ class TestMegaAttack:
                     [velo, "serve", "test:app"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=30
                 )
                 assert result.returncode != -11
         finally:

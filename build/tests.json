@@ -1,6 +1,13 @@
 {
   "contracts": {},
   "tests": {
+    "tests/qa/phase5/test_l0_smoke.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "FFFF",
+      "sha1": "07350a917504d5168c52c13b4fffc342c0378586",
+      "txhash": []
+    },
     "tests/qa/phase5_2/test_bundle_config.py": {
       "coverage": false,
       "isolated": false,
