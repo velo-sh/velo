@@ -43,6 +43,8 @@ pub struct BundleInfo {
     pub content_hash: [u8; 32],
     pub total_size: u64,
     pub modules: Vec<ModuleInfo>,
+    pub graph_offset: u64,
+    pub security_header_offset: u8,
 }
 
 /// Module info from bundle index
@@ -87,6 +89,15 @@ pub fn read_bundle_info(path: &Path) -> Result<BundleInfo> {
     // Hash algorithm is at byte 52 (after content_hash)
     let hash_algo_byte = if data.len() > 52 { data[52] } else { 0 };
     let hash_algorithm = HashAlgorithm::from_u8(hash_algo_byte).unwrap_or(HashAlgorithm::Blake3);
+
+    // RFC-0009: Graph Offset (60..68)
+    let mut graph_offset = 0;
+    if data.len() > 68 {
+        graph_offset = u64::from_le_bytes(data[60..68].try_into()?);
+    }
+
+    // RFC-0009 v2.0: Security Header Offset (68)
+    let security_header_offset = if data.len() > 68 { data[68] } else { 28 };
 
     // Parse module index
     let mut modules = Vec::new();
@@ -151,6 +162,8 @@ pub fn read_bundle_info(path: &Path) -> Result<BundleInfo> {
         content_hash,
         total_size,
         modules,
+        graph_offset,
+        security_header_offset,
     })
 }
 
@@ -238,6 +251,8 @@ pub fn cmd_bundle_inspect(args: &[String]) -> Result<()> {
             "  Content Hash:   {}...",
             hex::encode(&info.content_hash[..16])
         );
+        println!("  Graph Offset:   {}", info.graph_offset);
+        println!("  Security Off:   {}", info.security_header_offset);
 
         if verify {
             let valid = verify_bundle(path)?;

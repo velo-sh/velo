@@ -35,58 +35,68 @@ impl GraphBuilder {
         self.modules.values().cloned().collect()
     }
 
-    pub fn to_static_graph(&self) -> crate::graph::serializer::StaticImportGraph {
-        use crate::graph::TargetArch;
-        use crate::graph::serializer::{ModuleRecord, StaticImportGraph};
+    pub fn to_static_graph(&self) -> crate::graph::StaticImportGraph {
+        use crate::graph::{ModuleRecord, StaticImportGraph, TargetArch};
+        use std::collections::{HashMap, HashSet};
 
         let mut module_records = Vec::new();
-        let mut string_pool = Vec::new();
+        let mut module_names = Vec::new();
+        let mut dependency_pool = Vec::new();
         let mut name_to_idx = HashMap::new();
 
         // Sort by Topological Rank (RFC-0009 §2.3) then by name for determinism
-        let mut names: Vec<_> = self.modules.keys().collect();
-        names.sort_by_key(|&n| (self.modules[n].topological_rank, n));
+        let mut sorted_names: Vec<_> = self.modules.keys().collect();
+        sorted_names.sort_by_key(|&n| (self.modules[n].topological_rank, n));
 
-        // 1. Build initial records and string pool
-        for (idx, &name) in names.iter().enumerate() {
-            let module = &self.modules[name];
-            let name_bytes = module.name.as_bytes();
-            let pool_start = string_pool.len() as u32;
-            let pool_len = name_bytes.len() as u32;
-
-            string_pool.extend_from_slice(name_bytes);
-
-            let record = ModuleRecord::new(pool_start, pool_len, module.is_package);
-            module_records.push(record);
+        // 1. Build name to index mapping
+        for (idx, &name) in sorted_names.iter().enumerate() {
             name_to_idx.insert(name.clone(), idx as u32);
+            module_names.push(name.clone());
         }
 
-        // 2. Fill in dependencies
-        for (idx, &name) in names.iter().enumerate() {
+        // 2. Build records and dependency pool
+        for name in &module_names {
             let module = &self.modules[name];
-            let mut dep_indices = Vec::new();
+            let pool_start = dependency_pool.len() as u32;
 
+            let mut count = 0;
             for dep in &module.dependencies {
                 if let Some(&dep_idx) = name_to_idx.get(dep) {
-                    dep_indices.push(dep_idx);
+                    dependency_pool.push(dep_idx);
+                    count += 1;
                 }
             }
 
-            module_records[idx].dependency_indices = dep_indices;
-
-            // Set flags (has_soft_deps)
-            if !module.soft_dependencies.is_empty() {
-                module_records[idx].dependency_flags |= 1 << 0;
-            }
+            let record = ModuleRecord::new(
+                pool_start,
+                count,
+                module.is_package,
+                if module.soft_dependencies.is_empty() {
+                    0
+                } else {
+                    1
+                },
+            );
+            module_records.push(record);
         }
+
+        // 3. Load order indices
+        let load_order = (0..module_records.len() as u32).collect();
 
         StaticImportGraph {
             version: 1,
-            target_arch_id: TargetArch::current() as u8,
+            target_arch_id: TargetArch::current().id(),
             endianness: if cfg!(target_endian = "big") { 1 } else { 0 },
-            index_type: 1, // Standard HashMap for now (Fallback)
+            dependency_pool,
+            index_type: 1, // HashMap
+            module_names,
             module_records,
-            string_pool,
+            load_order,
+            source_hash: [0u8; 32], // TODO: Compute from inputs
+            mutable_path_packages: HashSet::new(),
+            search_locations: HashMap::new(),
+            namespace_packages: HashSet::new(),
+            package_paths: HashMap::new(),
         }
     }
 
@@ -301,17 +311,7 @@ mod tests {
 
         let graph = builder.to_static_graph();
 
-        // Find names in order
-        let names: Vec<String> = graph
-            .module_records
-            .iter()
-            .map(|r| {
-                let start = (r.packed_start_info & 0x7FFFFFFF) as usize;
-                let end = start + r.pool_len as usize;
-                String::from_utf8_lossy(&graph.string_pool[start..end]).to_string()
-            })
-            .collect();
-
+        let names = &graph.module_names;
         let idx_a = names.iter().position(|r| r == "A").unwrap();
         let idx_b = names.iter().position(|r| r == "B").unwrap();
         let idx_c = names.iter().position(|r| r == "C").unwrap();
@@ -329,5 +329,11 @@ mod tests {
             idx_b,
             idx_a
         );
+
+        // Verify dependency linkage
+        let record_a = &graph.module_records[idx_a];
+        assert_eq!(record_a.pool_len, 1);
+        let dep_idx = graph.dependency_pool[record_a.pool_start() as usize];
+        assert_eq!(dep_idx, idx_b as u32);
     }
 }

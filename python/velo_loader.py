@@ -149,6 +149,11 @@ class VeloBundle:
         if len(self.data) > 68:
             self._graph_offset = struct.unpack("<Q", bytes(self.view[60:68]))[0]
             
+        # RFC-0009 v2.0: Security Header Offset at byte 68
+        self._security_offset = 28
+        if len(self.data) > 68:
+            self._security_offset = self.view[68]
+            
         # Store index offset for hash verification
         self._index_offset = index_offset
         

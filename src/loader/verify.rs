@@ -26,6 +26,8 @@ pub struct VerifiedBundle {
     pub data: Vec<u8>,
     /// Header end offset (data starts after this)
     pub header_end: usize,
+    /// RFC-0009 v2.0: Offset for code object header security scan
+    pub security_header_offset: u8,
 }
 
 /// Verify BLAKE3 hash using the Global Hash scheme (H-1)
@@ -57,12 +59,12 @@ pub fn verify_blake3(data: &[u8], expected: &[u8; 32]) -> Result<()> {
     Ok(())
 }
 
-/// Verify module integrity and nesting depth (H-4)
-///
-/// RFC-0006 Section 3.4 & RFC-0008 §2.18
-/// 1. Verifies BLAKE3 hash
-/// 2. Performs structural scan to enforce recursion limit
-pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -> Result<()> {
+pub fn verify_module_hash(
+    data: &[u8],
+    expected: &[u8; 32],
+    module_name: &str,
+    code_header_offset: u8,
+) -> Result<()> {
     // 1. BLAKE3 check
     let actual = blake3::hash(data);
     if actual.as_bytes() != expected {
@@ -73,18 +75,19 @@ pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -
 
     // 2. Structural Depth Guard (H-4)
     // Locked at Rust boundary - cannot be bypassed by Python sys.setrecursionlimit
-    check_marshal_depth(data, MARSHAL_RECURSION_LIMIT)?;
+    check_marshal_depth(data, MARSHAL_RECURSION_LIMIT, code_header_offset)?;
 
     Ok(())
 }
 
 /// Structural validator for Python marshal format (H-4)
-fn check_marshal_depth(data: &[u8], max_depth: usize) -> Result<()> {
+fn check_marshal_depth(data: &[u8], max_depth: usize, code_header_offset: u8) -> Result<()> {
     let mut guard = StructuralGuard {
         data,
         pos: 0,
         depth: 0,
         max_depth,
+        code_header_offset,
     };
     guard.validate()
 }
@@ -94,6 +97,7 @@ struct StructuralGuard<'a> {
     pos: usize,
     depth: usize,
     max_depth: usize,
+    code_header_offset: u8,
 }
 
 impl<'a> StructuralGuard<'a> {
@@ -185,9 +189,8 @@ impl<'a> StructuralGuard<'a> {
                     ));
                 }
 
-                // Python 3.11 header is ~28-32 bytes of fixed i32s
-                // We'll skip 28 bytes and then start validating fields.
-                self.skip(28)?;
+                // RFC-0009 v2.0: Use dynamic offset instead of hardcoded 28
+                self.skip(self.code_header_offset as usize)?;
 
                 // Validate fields: co_code, co_consts, co_names, etc.
                 // We'll validate until we hit a non-object or EOF.
@@ -301,6 +304,14 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
     index_offset_bytes.copy_from_slice(&data[12..20]);
     let index_offset = u64::from_le_bytes(index_offset_bytes) as usize;
 
+    // RFC-0009: Graph Offset (60..68)
+    let mut graph_offset_bytes = [0u8; 8];
+    graph_offset_bytes.copy_from_slice(&data[60..68]);
+    let graph_offset = u64::from_le_bytes(graph_offset_bytes);
+
+    // RFC-0009 v2.0: Security Header Offset (68)
+    let security_header_offset = if data.len() > 68 { data[68] } else { 28 };
+
     let mut expected_hash = [0u8; 32];
     expected_hash.copy_from_slice(&data[20..52]);
 
@@ -316,6 +327,13 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         return Err(LoaderError::BundleCorrupted {
             expected: format!("index_offset between {} and {}", header_end, data.len()),
             actual: index_offset.to_string(),
+        });
+    }
+
+    if graph_offset != 0 && (graph_offset < header_end as u64 || graph_offset > data.len() as u64) {
+        return Err(LoaderError::BundleCorrupted {
+            expected: format!("graph_offset between {} and {}", header_end, data.len()),
+            actual: graph_offset.to_string(),
         });
     }
 
@@ -364,11 +382,19 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         }
 
         // H-4: Deep structural scan before letting Python see it
-        check_marshal_depth(&data[m_offset..m_offset + m_size], 500)?;
+        check_marshal_depth(
+            &data[m_offset..m_offset + m_size],
+            500,
+            security_header_offset,
+        )?;
     }
 
     // Step 4: Return verified bundle
-    Ok(VerifiedBundle { data, header_end })
+    Ok(VerifiedBundle {
+        data,
+        header_end,
+        security_header_offset,
+    })
 }
 
 #[cfg(test)]
@@ -384,27 +410,26 @@ mod tests {
 
     #[test]
     fn test_structural_guard_tags() {
-        // Test TYPE_SMALL_INT 'K' (1 byte)
         let data_k = vec![b'K', 42];
-        assert!(check_marshal_depth(&data_k, 10).is_ok());
+        assert!(check_marshal_depth(&data_k, 10, 28).is_ok());
 
         // Test TYPE_SHORT_ASCII 'Z' (1 byte len + data)
         let mut data_z = vec![b'Z', 4];
         data_z.extend_from_slice(b"test");
-        assert!(check_marshal_depth(&data_z, 10).is_ok());
+        assert!(check_marshal_depth(&data_z, 10, 28).is_ok());
 
         // Test FLAG_REF bit on 'z' (short string)
         let mut data_ref_z = vec![b'z' | 0x80, 4];
         data_ref_z.extend_from_slice(b"refz");
-        assert!(check_marshal_depth(&data_ref_z, 10).is_ok());
+        assert!(check_marshal_depth(&data_ref_z, 10, 28).is_ok());
 
         // Test TYPE_NULL '\0'
         let data_null = vec![b'\0'];
-        assert!(check_marshal_depth(&data_null, 10).is_ok());
+        assert!(check_marshal_depth(&data_null, 10, 28).is_ok());
 
         // Test unknown tag (fail-closed)
         let data_unknown = vec![b'!'];
-        let res = check_marshal_depth(&data_unknown, 10);
+        let res = check_marshal_depth(&data_unknown, 10, 28);
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Unknown marshal tag"));
     }
@@ -421,7 +446,25 @@ mod tests {
         data.push(b'K');
         data.push(1); // innermost element
 
-        assert!(check_marshal_depth(&data, 10).is_ok());
-        assert!(check_marshal_depth(&data, 4).is_err());
+        assert!(check_marshal_depth(&data, 10, 28).is_ok());
+        assert!(check_marshal_depth(&data, 4, 28).is_err());
+    }
+
+    #[test]
+    fn test_structural_guard_custom_offset() {
+        let mut data = vec![b'c'];
+        data.extend_from_slice(&[0; 10]); // padding
+        data.push(b'K');
+        data.push(1);
+
+        // Offset 10: skip 10 zeros, hit 'K' (int 1)
+        assert!(check_marshal_depth(&data, 5, 10).is_ok());
+
+        // Offset 5: skip 5 zeros, hit 0 (valid NULL but breaks loop)
+        // Let's use an actual invalid tag to test is_err
+        let mut data_fail = vec![b'c'];
+        data_fail.extend_from_slice(&[0; 5]);
+        data_fail.push(b'!'); // Invalid tag
+        assert!(check_marshal_depth(&data_fail, 5, 5).is_err());
     }
 }
