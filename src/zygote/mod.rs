@@ -26,6 +26,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::Duration;
 
+/// Worker execution timeout in seconds
+/// Long-running scripts may need a higher value; configurable is planned
+pub const WORKER_TIMEOUT_SECS: u64 = 30;
+
+/// Socket startup timeout in seconds
+/// CI environments may need a higher value
+pub const SOCKET_STARTUP_TIMEOUT_SECS: u64 = 10;
+
 /// Check if Zygote is supported on this platform
 #[cfg(unix)]
 pub fn is_supported() -> bool {
@@ -136,9 +144,8 @@ impl WorkerHandle {
     /// If timeout expires, we kill the worker process.
     #[cfg(unix)]
     pub fn wait(&self) -> Result<i32> {
-        const TIMEOUT_SECS: u64 = 30;
         let start = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(TIMEOUT_SECS);
+        let timeout = std::time::Duration::from_secs(WORKER_TIMEOUT_SECS);
 
         // Wait for exit_code file to exist (worker writes it when done)
         let mut timed_out = false;
@@ -155,7 +162,7 @@ impl WorkerHandle {
                     timed_out = true;
                     eprintln!(
                         "⏱️ Worker {} timed out after {}s, killing...",
-                        self.pid, TIMEOUT_SECS
+                        self.pid, WORKER_TIMEOUT_SECS
                     );
                     // Kill the worker process
                     unsafe {
@@ -344,7 +351,7 @@ impl ZygoteLauncher {
         self.zygote_pid = Some(pid);
 
         // Wait for socket to be created (with timeout)
-        let timeout = Duration::from_secs(10);
+        let timeout = Duration::from_secs(SOCKET_STARTUP_TIMEOUT_SECS);
         let start = std::time::Instant::now();
         while !self.socket_path.exists() {
             if start.elapsed() > timeout {

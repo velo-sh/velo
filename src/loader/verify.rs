@@ -11,6 +11,14 @@
 
 use crate::loader::error::{LoaderError, Result};
 
+/// H-4: Maximum recursion depth for marshal bytecode validation
+/// This limit is enforced at the Rust boundary, cannot be bypassed by Python
+/// See RFC-0008 §2.18 for security rationale
+pub const MARSHAL_RECURSION_LIMIT: usize = 500;
+
+/// Bundle header size in bytes
+pub const HEADER_SIZE: usize = 128;
+
 /// Verified bundle containing data already loaded into RAM
 #[derive(Debug)]
 pub struct VerifiedBundle {
@@ -65,7 +73,7 @@ pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -
 
     // 2. Structural Depth Guard (H-4)
     // Locked at Rust boundary - cannot be bypassed by Python sys.setrecursionlimit
-    check_marshal_depth(data, 500)?;
+    check_marshal_depth(data, MARSHAL_RECURSION_LIMIT)?;
 
     Ok(())
 }
@@ -267,7 +275,7 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
     let mut expected_hash = [0u8; 32];
     expected_hash.copy_from_slice(&data[20..52]);
 
-    let header_end = 128;
+    let header_end = HEADER_SIZE;
 
     // H-6: ABI/Python Version Enforcement (satisfies prosecutor)
     // In production, compare header.python_version with current_runtime_version
