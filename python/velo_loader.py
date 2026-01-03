@@ -30,10 +30,11 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     import blake3 as blake3_module
-    HAS_BLAKE3 = True
 except ImportError:
-    HAS_BLAKE3 = False
-    import hashlib
+    raise ImportError(
+        "blake3 is required for Velo bundle verification. "
+        "Install with: pip install blake3"
+    )
 
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"
@@ -200,12 +201,7 @@ class VeloBundle:
             return
         
         # H-1 Global Hash: Cover Identity Prefix + Rest (Skips hash field)
-        hasher = None
-        if HAS_BLAKE3:
-            hasher = blake3_module.blake3()
-        else:
-            hasher = hashlib.sha256()
-            
+        hasher = blake3_module.blake3()
         hasher.update(bytes(self.view[0:20]))  # Identity Prefix
         hasher.update(bytes(self.view[52:]))   # Content (header suffix + data + index)
         actual = hasher.digest()
@@ -240,10 +236,7 @@ class VeloBundle:
         
         entry = self.index[name]
         
-        if HAS_BLAKE3:
-            actual = blake3_module.blake3(data).digest()
-        else:
-            actual = hashlib.sha256(data).digest()
+        actual = blake3_module.blake3(data).digest()
         
         return actual == entry.hash
     
