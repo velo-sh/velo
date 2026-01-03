@@ -436,7 +436,7 @@ print(f"Result: {{deep()}}")
         RFC-0006 §3.5: Limit must be 1000
         """
         from velo_loader import MARSHAL_RECURSION_LIMIT
-        assert MARSHAL_RECURSION_LIMIT == 1000, "MARSHAL_RECURSION_LIMIT must be 1000"
+        assert MARSHAL_RECURSION_LIMIT == 500, "MARSHAL_RECURSION_LIMIT must be 500"
     
     @pytest.mark.security
     def test_safe_marshal_loads_exists(self):

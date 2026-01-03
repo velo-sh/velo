@@ -138,8 +138,29 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
 
 ---
-
-## 🔗 Navigation
+ 
+ ## 🔓 Universal Identity & Role Governance (Iron Rule)
+ 
+ > [!IMPORTANT]
+ > **ID-LOCK-GLOBAL**: The following rules apply to ALL AI agents working on this project, regardless of their current role (Architect, Developer, QA, DevOps):
+ > - ❌ **STRICT ROLE ADHERENCE**: The agent MUST operate strictly within the scope of its active role.
+ > - ❌ **NO UNAUTHORIZED ROLE SWITCH**: The agent is strictly forbidden from switching to another role without explicit, human-approved modification of this section in `AGENTS.md`.
+ > - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
+ > - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
+ >
+ > **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
+ 
+ ### ✅ Role Transitions & Governance Logs
+ 
+-[ID-LOCK-002] Phase 5.x Implementation Handover complete. Role: 💻 Developer.
+-Authorized by: gjwang (2026-01-03 13:30)
++[ID-LOCK-003] Phase 4 Stability Remediation. Role: 💻 Developer.
++Authorized by: gjwang (2026-01-03 14:15) via QA Leader directive.
++Objective: Fix H-4 (Marshal recursion bypass) and Zygote IPC sync (BUG-51-001).
+ 
+ ---
+ 
+ ## 🔗 Navigation
 
 ### Agent Roles
 - [Architect](./docs/agents/architect.md)

@@ -19,12 +19,14 @@ Usage:
 """
 
 import importlib.abc
-import importlib.machinery
-import marshal
-import struct
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+import marshal
+import struct
+import importlib.abc
+import importlib.machinery
+import hashlib
+from typing import Dict, List, Optional, Tuple
 
 try:
     import blake3 as blake3_module
@@ -36,11 +38,12 @@ except ImportError:
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"
 VERSION = 1
-MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
+DEFAULT_MAX_BUNDLE_SIZE = 256 * 1024 * 1024  # 256MB security limit
+MAX_BUNDLE_SIZE = DEFAULT_MAX_BUNDLE_SIZE  # Backward compatibility
 
-# RFC-0006 §3.5: Marshal Recursion Limit (AUDIT-012)
-# Prevents Stack Overflow attacks via deeply nested bytecode
-MARSHAL_RECURSION_LIMIT = 1000
+# RFC-0008 §2.18: Marshal Recursion Limit (H-4)
+# Strict limit to prevent stack-exhaustion DoS
+MARSHAL_RECURSION_LIMIT = 500
 
 
 def safe_marshal_loads(data: bytes) -> object:
@@ -85,8 +88,9 @@ class VeloBundle:
     - Atomic read before any parsing
     """
     
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, max_size: Optional[int] = None):
         self.path = path
+        self.max_size = max_size or DEFAULT_MAX_BUNDLE_SIZE
         self.data: Optional[bytes] = None
         self.view: Optional[memoryview] = None
         self.index: Dict[str, ModuleEntry] = {}
@@ -101,9 +105,9 @@ class VeloBundle:
         """
         # Security: Size check before read
         file_size = self.path.stat().st_size
-        if file_size > MAX_BUNDLE_SIZE:
+        if file_size > self.max_size:
             raise ValueError(
-                f"Bundle too large: {file_size} bytes > {MAX_BUNDLE_SIZE} bytes"
+                f"Bundle too large: {file_size} bytes > {self.max_size} bytes"
             )
         
         # Atomic read entire file
@@ -178,25 +182,30 @@ class VeloBundle:
     
     def _verify_content_hash(self) -> None:
         """
-        Verify bundle integrity using BLAKE3
+        Verify bundle integrity using Global Hash scheme (H-1)
         
-        RFC-0006 Section 3.4: Unified BLAKE3 Verification
+        RFC-0008: Hash covers Identity Prefix [0..20] and Content [52..EOF]
         """
         if self._content_hash is None:
             return
         
-        # Hash data section only (from header end to index offset)
-        # Builder hashes data_section which ends at index_offset
-        data_section = bytes(self.view[128:self._index_offset])
-        
+        # H-1 Global Hash: Cover Identity Prefix + Rest (Skips hash field)
+        hasher = None
         if HAS_BLAKE3:
-            actual = blake3_module.blake3(data_section).digest()
+            hasher = blake3_module.blake3()
         else:
-            # Fallback to SHA-256 if blake3 not installed
-            actual = hashlib.sha256(data_section).digest()
+            hasher = hashlib.sha256()
+            
+        hasher.update(bytes(self.view[0:20]))  # Identity Prefix
+        hasher.update(bytes(self.view[52:]))   # Content (header suffix + data + index)
+        actual = hasher.digest()
         
         if actual != self._content_hash:
-            raise ValueError("Bundle content hash verification failed")
+            raise ValueError(
+                f"Bundle content hash verification failed\n"
+                f"Expected: {self._content_hash.hex()}\n"
+                f"Actual:   {actual.hex()}"
+            )
     
     def get_code(self, name: str) -> Optional[bytes]:
         """
@@ -365,13 +374,14 @@ def uninstall_hook(finder: VeloFinder) -> None:
 
 # Convenience function for velo run --fast
 def activate_fast_mode(bundle_path: Path, 
-                       project_root: Optional[Path] = None) -> VeloBundle:
+                        project_root: Optional[Path] = None,
+                        max_size: Optional[int] = None) -> VeloBundle:
     """
     Activate fast loader mode
     
     Called from sitecustomize.py injected by velo run --fast
     """
-    bundle = VeloBundle(bundle_path)
+    bundle = VeloBundle(bundle_path, max_size=max_size)
     bundle.open()
     install_hook(bundle, project_root)
     return bundle

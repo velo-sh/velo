@@ -88,52 +88,64 @@ class VeloBundleBuilder:
         if not self.modules:
             raise ValueError("No modules to bundle")
         
-        # Build data section first, then calculate offsets
+        # 1. Build data section and module offsets
         data_section = bytearray()
-        module_offsets: list[tuple[ModuleData, int]] = []  # (module, offset_in_file)
+        module_offsets: list[tuple[ModuleData, int]] = []
         
         for mod in self.modules:
-            # Offset in file = HEADER_SIZE + current position in data_section
             file_offset = HEADER_SIZE + len(data_section)
             module_offsets.append((mod, file_offset))
-            
             data_section.extend(mod.code)
             
             # Align to 4KB boundary
             padding = (4096 - (len(data_section) % 4096)) % 4096
             data_section.extend(b'\x00' * padding)
         
-        # Index starts after data section
+        # 2. Build index section
+        index_buffer = bytearray()
+        for mod, offset in module_offsets:
+            name_bytes = mod.name.encode("utf-8")
+            index_buffer.extend(struct.pack("<H", len(name_bytes)))
+            index_buffer.extend(name_bytes)
+            index_buffer.extend(struct.pack("<QQ", offset, len(mod.code)))
+            index_buffer.extend(mod.hash)
+            index_buffer.extend(struct.pack("<B", int(mod.is_package)))
+        
         index_offset = HEADER_SIZE + len(data_section)
         
-        # Calculate content hash of data section
-        if HAS_BLAKE3:
-            content_hash = blake3_module.blake3(bytes(data_section)).digest()
-        else:
-            content_hash = hashlib.sha256(bytes(data_section)).digest()
+        # 3. Construct Header components for H-1 Global Hash
+        # Prefix (0..20): MAGIC, VERSION, MODULE_COUNT, INDEX_OFFSET
+        header_prefix = bytearray()
+        header_prefix.extend(MAGIC)                                          # 0..4
+        header_prefix.extend(struct.pack("<I", VERSION))                     # 4..8
+        header_prefix.extend(struct.pack("<I", len(self.modules)))           # 8..12
+        header_prefix.extend(struct.pack("<Q", index_offset))                # 12..20
         
-        # Write bundle
+        # Header padding (52..128)
+        header_suffix = b'\x00' * (HEADER_SIZE - 52)
+        
+        # 4. Compute Global Hash (H-1): Cover Prefix + Rest
+        # Skips 20..52 (the content_hash field itself)
+        hasher = None
+        if HAS_BLAKE3:
+            hasher = blake3_module.blake3()
+        else:
+            import hashlib
+            hasher = hashlib.sha256()
+            
+        hasher.update(header_prefix)
+        hasher.update(header_suffix)
+        hasher.update(data_section)
+        hasher.update(index_buffer)
+        content_hash = hasher.digest()
+        
+        # 5. Write bundle
         with open(output_path, "wb") as f:
-            # Write header
-            f.write(MAGIC)                                          # 4 bytes
-            f.write(struct.pack("<I", VERSION))                     # 4 bytes
-            f.write(struct.pack("<I", len(self.modules)))           # 4 bytes
-            f.write(struct.pack("<Q", index_offset))                # 8 bytes
-            f.write(content_hash)                                   # 32 bytes
-            # Pad header to 128 bytes
-            f.write(b'\x00' * (HEADER_SIZE - f.tell()))
-            
-            # Write data section
-            f.write(data_section)
-            
-            # Write index
-            for mod, offset in module_offsets:
-                name_bytes = mod.name.encode("utf-8")
-                f.write(struct.pack("<H", len(name_bytes)))         # 2 bytes
-                f.write(name_bytes)                                 # variable
-                f.write(struct.pack("<QQ", offset, len(mod.code)))  # 16 bytes
-                f.write(mod.hash)                                   # 32 bytes
-                f.write(struct.pack("<B", int(mod.is_package)))     # 1 byte
+            f.write(header_prefix)          # 0..20
+            f.write(content_hash)           # 20..52
+            f.write(header_suffix)          # 52..128
+            f.write(data_section)           # 128..index_offset
+            f.write(index_buffer)           # index_offset..EOF
         
         print(f"✅ Bundle created: {output_path}")
         print(f"   Modules: {len(self.modules)}")
