@@ -57,14 +57,40 @@ uv run pytest tests/unit/     # Python unit tests
 
 **Environment**: Velo Binary + Static Analysis + Targeted E2E
 
-**Location**:
-- `tests/qa/phase*_hardening.py`
-- `tests/qa/phase*_security_invariants.py`
+### 2.1 Specialist Personas
+- **Agent A (Edge & Graph)**: Scale, Topology, AST classification.
+- **Agent B (Core & Flow)**: CPython parity, Hooks, `__path__` mutation.
+- **Agent C (Security & Integrity)**: BLAKE3, rkyv, Arch-pinning, Sandboxing.
+
+### 2.2 Mandatory Platform Matrix (Phase 6.0)
+| OS | Arch | Status |
+|----|------|--------|
+| macOS 14+ | ARM64 | **REQUIRED** |
+| macOS 14+ | x86_64 | **REQUIRED** |
+| Ubuntu 22.04+ | x86_64 | **REQUIRED** |
+
+> [!IMPORTANT]
+> **Cold Cache Requirement**: Performance bench (L6-STAT) MUST be run on cold disk cache.
 
 **Key Checked Invariants**:
 1. **P0-001**: Global Hash Coverage (Header + Data)
 2. **P0-004**: Marshal Depth Protection (Recursion=500)
 3. **P0-005**: Read Atomicity (`flock`)
+4. **P0-008**: Graph Semantic Integrity (No cycles)
+5. **P0-010**: Path Sandbox Enforcement (In-Bundle)
+
+---
+
+### Type 1.6: Runtime Integrity Tests (Phase 6.0)
+
+**Purpose**: Verify zero-copy performance and syscall elimination.
+
+**Environment**: Velo Binary + `strace/dtrace` + `VELO_REPORT_METRICS=1`
+
+**Key Methods**:
+1. **Syscall Audit**: Count `stat()` calls for bundled modules (Target = 0).
+2. **Latency Gating**: `graph_deserialize_latency_us` must be < 500μs.
+3. **Memory Pressure**: Verify O(1) PHF lookups under fragmented heap.
 
 ---
 

@@ -7,6 +7,7 @@ pub mod cache;
 pub mod cli;
 pub mod cmd;
 pub mod config;
+pub mod graph;
 pub mod hardware;
 pub mod loader;
 pub mod profile;

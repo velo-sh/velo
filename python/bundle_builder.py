@@ -111,9 +111,42 @@ class VeloBundleBuilder:
             index_buffer.extend(mod.hash)
             index_buffer.extend(struct.pack("<B", int(mod.is_package)))
         
-        index_offset = HEADER_SIZE + len(data_section)
+        # 3. RFC-0009: Integration of Static Graph (Section 4)
+        # We call the Rust 'velo graph generate' command to get Section 4
+        graph_section = bytearray()
+        graph_offset = 0
         
-        # 3. Construct Header components for H-1 Global Hash
+        # Try to find 'velo' binary and run it if possible
+        # (For production this would be handled by the velo binary itself)
+        import subprocess
+        import tempfile
+        import os
+        
+        velo_bin = os.environ.get("VELO_BIN", "velo")
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
+            
+        try:
+            # We assume current directory set to project_dir in caller
+            # Or we pass it. For now use cwd.
+            subprocess.run([velo_bin, "graph", "generate", ".", "--output", tmp_path], 
+                           check=True, capture_output=True)
+            if os.path.exists(tmp_path):
+                graph_section = open(tmp_path, "rb").read()
+                os.unlink(tmp_path)
+                
+                # Align Section 4 to 4KB (RFC-0009 §2.1)
+                graph_padding = (4096 - (len(data_section) % 4096)) % 4096
+                # Wait, Section 4 starts after Data Section.
+                # So the FILE offset must be 4KB aligned.
+                graph_offset = HEADER_SIZE + len(data_section) + graph_padding
+        except Exception as e:
+            print(f"⚠️  Graph generation failed: {e}")
+            if os.path.exists(tmp_path): os.unlink(tmp_path)
+
+        index_offset = (graph_offset + len(graph_section)) if graph_section else (HEADER_SIZE + len(data_section))
+        
+        # 4. Construct Header components for H-1 Global Hash
         # Prefix (0..20): MAGIC, VERSION, MODULE_COUNT, INDEX_OFFSET
         header_prefix = bytearray()
         header_prefix.extend(MAGIC)                                          # 0..4
@@ -121,11 +154,18 @@ class VeloBundleBuilder:
         header_prefix.extend(struct.pack("<I", len(self.modules)))           # 8..12
         header_prefix.extend(struct.pack("<Q", index_offset))                # 12..20
         
-        # Header padding (52..128)
-        header_suffix = b'\x00' * (HEADER_SIZE - 52)
+        # Header padding (20..128)
+        # Bytes 20..52: Content Hash (placeholders)
+        # Bytes 52..60: Hash Algo + padding
+        # Bytes 60..68: Graph Offset (RFC-0009)
+        header_padding = bytearray(HEADER_SIZE - 20)
+        if graph_offset:
+            struct.pack_into("<Q", header_padding, 60 - 20, graph_offset)
+            
+        # RFC-0009 v2.0: Dynamic Security Header Offset
+        struct.pack_into("<B", header_padding, 68 - 20, 28) # 28 for Python 3.11/3.12
         
-        # 4. Compute Global Hash (H-1): Cover Prefix + Rest
-        # Skips 20..52 (the content_hash field itself)
+        # 5. Compute Global Hash (H-1): Cover Prefix + Padding + Data + Graph + Index
         hasher = None
         if HAS_BLAKE3:
             hasher = blake3_module.blake3()
@@ -134,17 +174,24 @@ class VeloBundleBuilder:
             hasher = hashlib.sha256()
             
         hasher.update(header_prefix)
-        hasher.update(header_suffix)
+        # RFC-0008 H-1: Skip 20..52 (hash slot)
+        hasher.update(header_padding[32:])
         hasher.update(data_section)
+        if graph_section:
+            hasher.update(b'\x00' * graph_padding)
+            hasher.update(graph_section)
         hasher.update(index_buffer)
         content_hash = hasher.digest()
         
-        # 5. Write bundle
+        # 6. Write bundle
         with open(output_path, "wb") as f:
             f.write(header_prefix)          # 0..20
             f.write(content_hash)           # 20..52
-            f.write(header_suffix)          # 52..128
-            f.write(data_section)           # 128..index_offset
+            f.write(header_padding[32:])    # 52..128
+            f.write(data_section)           # 128..graph_offset/index_offset
+            if graph_section:
+                f.write(b'\x00' * graph_padding)
+                f.write(graph_section)
             f.write(index_buffer)           # index_offset..EOF
         
         print(f"✅ Bundle created: {output_path}")

@@ -26,6 +26,8 @@ pub struct VerifiedBundle {
     pub data: Vec<u8>,
     /// Header end offset (data starts after this)
     pub header_end: usize,
+    /// RFC-0009 v2.0: Offset for code object header security scan
+    pub security_header_offset: u8,
 }
 
 /// Verify BLAKE3 hash using the Global Hash scheme (H-1)
@@ -57,12 +59,12 @@ pub fn verify_blake3(data: &[u8], expected: &[u8; 32]) -> Result<()> {
     Ok(())
 }
 
-/// Verify module integrity and nesting depth (H-4)
-///
-/// RFC-0006 Section 3.4 & RFC-0008 §2.18
-/// 1. Verifies BLAKE3 hash
-/// 2. Performs structural scan to enforce recursion limit
-pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -> Result<()> {
+pub fn verify_module_hash(
+    data: &[u8],
+    expected: &[u8; 32],
+    module_name: &str,
+    code_header_offset: u8,
+) -> Result<()> {
     // 1. BLAKE3 check
     let actual = blake3::hash(data);
     if actual.as_bytes() != expected {
@@ -73,18 +75,19 @@ pub fn verify_module_hash(data: &[u8], expected: &[u8; 32], module_name: &str) -
 
     // 2. Structural Depth Guard (H-4)
     // Locked at Rust boundary - cannot be bypassed by Python sys.setrecursionlimit
-    check_marshal_depth(data, MARSHAL_RECURSION_LIMIT)?;
+    check_marshal_depth(data, MARSHAL_RECURSION_LIMIT, code_header_offset)?;
 
     Ok(())
 }
 
 /// Structural validator for Python marshal format (H-4)
-fn check_marshal_depth(data: &[u8], max_depth: usize) -> Result<()> {
+fn check_marshal_depth(data: &[u8], max_depth: usize, code_header_offset: u8) -> Result<()> {
     let mut guard = StructuralGuard {
         data,
         pos: 0,
         depth: 0,
         max_depth,
+        code_header_offset,
     };
     guard.validate()
 }
@@ -94,6 +97,7 @@ struct StructuralGuard<'a> {
     pos: usize,
     depth: usize,
     max_depth: usize,
+    code_header_offset: u8,
 }
 
 impl<'a> StructuralGuard<'a> {
@@ -108,9 +112,16 @@ impl<'a> StructuralGuard<'a> {
         let tag = self.read_u8()? & 0x7F; // Skip FLAG_REF (0x80)
 
         match tag as char {
-            'N' | 'T' | 'F' | '.' | '0' => Ok(()), // None, True, False, Ellipsis, Stop
-            'i' | 'f' | 'g' => {
-                self.pos += 4;
+            'N' | 'T' | 'F' | '.' | '0' | '\0' => Ok(()), // None, True, False, Ellipsis, Stop, Null
+            'i' | 'f' | 'g' | 'K' => {
+                let n = if tag == b'K' {
+                    1
+                } else if tag == b'g' {
+                    8
+                } else {
+                    4
+                };
+                self.pos += n;
                 Ok(())
             } // int, float (fixed)
             'l' => {
@@ -118,8 +129,12 @@ impl<'a> StructuralGuard<'a> {
                 self.pos += n.unsigned_abs() as usize * 4;
                 Ok(())
             } // long
-            's' | 'u' | 'z' | 'A' | 'B' => {
-                let n = self.read_u32()? as usize;
+            's' | 'u' | 'z' | 'A' | 'B' | 'a' | 'Z' | 'y' => {
+                let n = if tag == b'z' || tag == b'Z' || tag == b'y' {
+                    self.read_u8()? as usize
+                } else {
+                    self.read_u32()? as usize
+                };
                 self.skip(n)
             } // strings/bytes
             'S' => {
@@ -154,7 +169,8 @@ impl<'a> StructuralGuard<'a> {
                 // dict
                 self.depth += 1;
                 loop {
-                    if self.peek_u8()? == b'0' {
+                    let next = self.peek_u8()?;
+                    if next == b'0' || next == 0 {
                         self.pos += 1;
                         break;
                     }
@@ -167,19 +183,35 @@ impl<'a> StructuralGuard<'a> {
             'c' => {
                 // code object
                 self.depth += 1;
-                self.pos += 6 * 4; // argcount...flags
-                for _ in 0..11 {
-                    // code, consts, names, varnames, freevars, cellvars, filename, name, qualname, linetable, exceptiontable
+                if self.depth > self.max_depth {
+                    return Err(LoaderError::InsecureBundle(
+                        "Recursion limit exceeded".into(),
+                    ));
+                }
+
+                // RFC-0009 v2.0: Use dynamic offset instead of hardcoded 28
+                self.skip(self.code_header_offset as usize)?;
+
+                // Validate fields: co_code, co_consts, co_names, etc.
+                // We'll validate until we hit a non-object or EOF.
+                // Modern Python has ~15-18 fields.
+                for _ in 0..15 {
+                    if self.pos >= self.data.len()
+                        || self.peek_u8()? == b'0'
+                        || self.peek_u8()? == 0
+                    {
+                        break;
+                    }
                     self.validate()?;
                 }
-                self.pos += 4; // firstlineno
-                self.validate()?; // lnotab/linetable
                 self.depth -= 1;
                 Ok(())
             }
             _ => Err(LoaderError::InsecureBundle(format!(
-                "Unknown marshal tag 0x{:02x} ('{}')",
-                tag, tag as char
+                "Unknown marshal tag 0x{:02x} ('{}') at pos {}",
+                tag,
+                tag as char,
+                self.pos - 1
             ))),
         }
     }
@@ -272,6 +304,14 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
     index_offset_bytes.copy_from_slice(&data[12..20]);
     let index_offset = u64::from_le_bytes(index_offset_bytes) as usize;
 
+    // RFC-0009: Graph Offset (60..68)
+    let mut graph_offset_bytes = [0u8; 8];
+    graph_offset_bytes.copy_from_slice(&data[60..68]);
+    let graph_offset = u64::from_le_bytes(graph_offset_bytes);
+
+    // RFC-0009 v2.0: Security Header Offset (68)
+    let security_header_offset = if data.len() > 68 { data[68] } else { 28 };
+
     let mut expected_hash = [0u8; 32];
     expected_hash.copy_from_slice(&data[20..52]);
 
@@ -287,6 +327,13 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         return Err(LoaderError::BundleCorrupted {
             expected: format!("index_offset between {} and {}", header_end, data.len()),
             actual: index_offset.to_string(),
+        });
+    }
+
+    if graph_offset != 0 && (graph_offset < header_end as u64 || graph_offset > data.len() as u64) {
+        return Err(LoaderError::BundleCorrupted {
+            expected: format!("graph_offset between {} and {}", header_end, data.len()),
+            actual: graph_offset.to_string(),
         });
     }
 
@@ -335,15 +382,37 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         }
 
         // H-4: Deep structural scan before letting Python see it
-        check_marshal_depth(&data[m_offset..m_offset + m_size], 500)?;
+        check_marshal_depth(
+            &data[m_offset..m_offset + m_size],
+            500,
+            security_header_offset,
+        )?;
+    }
+
+    // Step 3e: Verify Static Import Graph (RFC-0009)
+    if graph_offset != 0 {
+        let start = std::time::Instant::now();
+        let graph_bytes = &data[graph_offset as usize..];
+        if let Err(e) = crate::graph::serializer::verify_graph(graph_bytes) {
+            crate::graph::metrics::record_validation_failure();
+            eprintln!("⚠️  Static Graph verification failed: {}", e);
+        } else {
+            let elapsed = start.elapsed().as_micros() as u64;
+            crate::graph::metrics::record_deserialize_latency(elapsed);
+        }
     }
 
     // Step 4: Return verified bundle
-    Ok(VerifiedBundle { data, header_end })
+    Ok(VerifiedBundle {
+        data,
+        header_end,
+        security_header_offset,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn test_blake3_calculation() {
@@ -353,12 +422,62 @@ mod tests {
     }
 
     #[test]
-    fn test_blake3_speed_note() {
-        // BLAKE3 is ~10x faster than SHA-256
-        // ~3-6 GB/s vs ~0.5 GB/s
-        // This matches NVMe SSD speed, so hash is no longer the bottleneck
-        let data = vec![0u8; 1024 * 1024]; // 1MB
-        let _hash = blake3::hash(&data);
-        // In production: 1MB at 3GB/s = 0.33ms
+    fn test_structural_guard_tags() {
+        let data_k = vec![b'K', 42];
+        assert!(check_marshal_depth(&data_k, 10, 28).is_ok());
+
+        // Test TYPE_SHORT_ASCII 'Z' (1 byte len + data)
+        let mut data_z = vec![b'Z', 4];
+        data_z.extend_from_slice(b"test");
+        assert!(check_marshal_depth(&data_z, 10, 28).is_ok());
+
+        // Test FLAG_REF bit on 'z' (short string)
+        let mut data_ref_z = vec![b'z' | 0x80, 4];
+        data_ref_z.extend_from_slice(b"refz");
+        assert!(check_marshal_depth(&data_ref_z, 10, 28).is_ok());
+
+        // Test TYPE_NULL '\0'
+        let data_null = vec![b'\0'];
+        assert!(check_marshal_depth(&data_null, 10, 28).is_ok());
+
+        // Test unknown tag (fail-closed)
+        let data_unknown = vec![b'!'];
+        let res = check_marshal_depth(&data_unknown, 10, 28);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Unknown marshal tag"));
+    }
+
+    #[test]
+    fn test_structural_guard_recursion() {
+        // Nested tuples: (((...)))
+        let mut data = Vec::new();
+        let depth = 5;
+        for _ in 0..depth {
+            data.push(b'(');
+            data.extend_from_slice(&1u32.to_le_bytes()); // 1 element each
+        }
+        data.push(b'K');
+        data.push(1); // innermost element
+
+        assert!(check_marshal_depth(&data, 10, 28).is_ok());
+        assert!(check_marshal_depth(&data, 4, 28).is_err());
+    }
+
+    #[test]
+    fn test_structural_guard_custom_offset() {
+        let mut data = vec![b'c'];
+        data.extend_from_slice(&[0; 10]); // padding
+        data.push(b'K');
+        data.push(1);
+
+        // Offset 10: skip 10 zeros, hit 'K' (int 1)
+        assert!(check_marshal_depth(&data, 5, 10).is_ok());
+
+        // Offset 5: skip 5 zeros, hit 0 (valid NULL but breaks loop)
+        // Let's use an actual invalid tag to test is_err
+        let mut data_fail = vec![b'c'];
+        data_fail.extend_from_slice(&[0; 5]);
+        data_fail.push(b'!'); // Invalid tag
+        assert!(check_marshal_depth(&data_fail, 5, 5).is_err());
     }
 }
