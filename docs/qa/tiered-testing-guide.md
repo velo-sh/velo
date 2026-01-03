@@ -71,7 +71,7 @@ Tier 0 ──PASS──▶ Tier 1 ──PASS──▶ Tier 2 ──PASS──▶
 |-------|-------|------------|
 | **A** | Edge Cases | `test_phase*_agent_a_edge.py` |
 | **B** | Stability | `test_phase*_agent_b_stability.py` |
-| **C** | Security | `test_phase*_agent_c_security.py` |
+| **C** | Security | `test_phase*_agent_c_security.py`, `test_bundle_config.py` |
 | **D** | Destroyer | `test_phase*_agent_d_destroyer.py` |
 
 ### 2.2 Test ID Prefixes
@@ -91,6 +91,7 @@ Tier 0 ──PASS──▶ Tier 1 ──PASS──▶ Tier 2 ──PASS──▶
 |-------|-------------|-------------|
 | L0 | Smoke - Does it start? | Always |
 | L1 | Happy Path - Basic journey | Always |
+| **L1-SEC** | **Security Invariants (P0-001 to P0-008)** | **Every Commit** |
 | L2 | Sad Path - Error handling | Always |
 | L3 | Config - Options work | Before merge |
 | L4 | Lifecycle - Signals, shutdown | Before merge |
