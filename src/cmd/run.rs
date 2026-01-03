@@ -23,6 +23,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     let mut async_enabled = false;
     let mut profile_enabled = false;
     let mut fast_enabled = false;
+    let mut async_enabled = false;
     let mut script_arg_idx = 2;
 
     for (i, arg) in args.iter().enumerate().skip(2) {
@@ -44,6 +45,10 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
                 fast_enabled = true;
                 script_arg_idx = i + 1;
             }
+            "--async" => {
+                async_enabled = true;
+                script_arg_idx = i + 1;
+            }
             a if a.starts_with('-') => {
                 eprintln!("Error: unknown option '{}'", a);
                 std::process::exit(1);
@@ -57,7 +62,14 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     if script_arg_idx >= args.len() {
         eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
+        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] [--async] <script.py>");
+        std::process::exit(1);
+    }
+
+    // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
+    if async_enabled && profile_enabled {
+        eprintln!("Error: --async and --profile are mutually exclusive");
+        eprintln!("Profiling requires synchronous execution to capture full trace.");
         std::process::exit(1);
     }
 
@@ -167,6 +179,15 @@ fn try_zygote_run(
 
                 eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
 
+                if async_enabled {
+                    eprintln!("⚡ Async mode active (Return-on-Fork)");
+                    // Special case: don't wait, don't clean up launcher yet
+                    if started_new {
+                        std::mem::forget(launcher);
+                    }
+                    return Ok(Some(()));
+                }
+
                 // Wait for worker to complete and get exit code
                 let exit_code = worker.wait().unwrap_or(1);
 
@@ -194,6 +215,13 @@ fn try_zygote_run(
                         // Retry spawn
                         if let Ok(worker) = launcher.spawn_worker(script, &[], async_enabled) {
                             eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+
+                            if async_enabled {
+                                eprintln!("⚡ Async mode active (Return-on-Fork)");
+                                std::mem::forget(launcher);
+                                return Ok(Some(()));
+                            }
+
                             let exit_code = worker.wait().unwrap_or(1);
                             std::mem::forget(launcher);
                             std::process::exit(exit_code);

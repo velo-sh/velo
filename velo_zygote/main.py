@@ -23,6 +23,8 @@ import os
 import signal
 import socket
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -39,6 +41,9 @@ _BLOCKED_PATHS = [
     "/System", "/Library", "/private/etc",
     "/root", "/home",  # Prevent access to other users
 ]
+
+# Worker TTL (seconds) - 0 means no TTL
+_worker_ttl: int = 3600 
 
 
 def validate_script_path(script_path: str) -> tuple[bool, str]:
@@ -110,6 +115,28 @@ def setup_signal_handlers() -> None:
     
     # Ignore SIGPIPE - prevents crash when parent closes stderr
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+
+
+class WorkerSafety:
+    """Manages worker safety: orphan protection and TTL (AUDIT-51-001)."""
+    @staticmethod
+    def start_guardian(parent_pid: int, ttl: int):
+        def guardian():
+            start_time = time.time()
+            while True:
+                # 1. Check if orphaned (parent died)
+                if os.getppid() != parent_pid:
+                    # Don't use log() here as stderr might be messed up
+                    os._exit(1)
+                
+                # 2. Check TTL
+                if ttl > 0 and (time.time() - start_time) > ttl:
+                    os._exit(1)
+                
+                time.sleep(10)
+        
+        t = threading.Thread(target=guardian, daemon=True)
+        t.start()
 
 
 def preload_modules(modules: List[str]) -> None:
@@ -191,6 +218,9 @@ def handle_fork(
         # Child process
         exit_code = 0
         try:
+            # Start guardian to prevent leakage (AUDIT-51-001)
+            WorkerSafety.start_guardian(os.getppid(), _worker_ttl)
+
             # Reset signal handlers to default
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
@@ -289,17 +319,22 @@ def cleanup_workers() -> None:
     _active_workers.clear()
 
 
-def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_timeout: int = 300) -> None:
+def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_timeout: int = 300, worker_ttl: int = 3600) -> None:
     """Main entry point for Zygote process.
     
     Args:
         socket_path: Path to Unix socket
         preload: List of modules to pre-import
         idle_timeout: Seconds to wait before exiting (default 5 min)
+        worker_ttl: Worker time-to-live in seconds
     """
+    global _worker_ttl
+    _worker_ttl = worker_ttl
+    
     log(f"Starting Zygote (PID: {os.getpid()})")
     log(f"Socket: {socket_path}")
     log(f"Idle timeout: {idle_timeout}s")
+    log(f"Worker TTL: {worker_ttl}s")
     
     # Setup signal handlers for orphan cleanup
     setup_signal_handlers()
@@ -443,7 +478,8 @@ if __name__ == "__main__":
     parser.add_argument("--socket", required=True, help="Unix socket path")
     parser.add_argument("--preload", nargs="*", default=[], help="Modules to pre-import")
     parser.add_argument("--timeout", type=int, default=300, help="Idle timeout in seconds (default: 300)")
+    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL in seconds (default: 3600)")
     
     args = parser.parse_args()
-    zygote_main(args.socket, args.preload, args.timeout)
+    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl)
 
