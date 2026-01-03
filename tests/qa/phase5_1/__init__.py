@@ -1,1 +1,1 @@
-from .conftest_markers import pytest_configure
+# Marker registration handled by conftest.py
