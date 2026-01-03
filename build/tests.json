@@ -18,8 +18,8 @@
     "tests/qa/phase5_2/test_bundle_config.py": {
       "coverage": false,
       "isolated": false,
-      "results": "FFF",
-      "sha1": "ce268ac0a7d625cfe16955b301bf7e46d448eaf4",
+      "results": "FFF.F",
+      "sha1": "25cc1170d6dff3b9a8f504dad532516384c34076",
       "txhash": []
     }
   },

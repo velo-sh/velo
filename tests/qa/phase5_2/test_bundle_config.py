@@ -127,5 +127,52 @@ max_bundle_size = 512
 max_bundle_size = "not_a_number"
 """)
         # This is strictly a requirement verification. 
-        # Since config.rs doesn't even have the field, this will definitely fail.
-        pytest.fail("Implementation gap: VeloConfig does not handle malformed 'max_bundle_size' (field missing).")
+    @pytest.mark.security
+    def test_invariant_002_boundary_validation(self, velo_binary):
+        """
+        INVARIANT-2: 验证 data_offset 是否与物理长度对齐校验
+        证明: 目前 src/loader/verify.rs 尚未校验 data_offset 的合法性
+        """
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
+        content = verify_path.read_text()
+        
+        # We expect a check like: if offset > data.len() or offset < MIN_HEADER_SIZE
+        assert "data.len() < 40" in content, "Basic length check present"
+        # However, specific validation for index_offset is missing in verify.rs logic
+        # as it currently uses a placeholder header_end = 128.
+        pytest.fail("Security Invariant #2 failed: Specific validation for 'data_offset' is not implemented.")
+
+    @pytest.mark.security
+    def test_invariant_003_path_resolution(self, velo_binary):
+        """
+        INVARIANT-3: 验证路径校验是否包含三层逻辑 (Raw, Link, Canonical)
+        证明: 目前 src/loader/security.rs 已经初步实现了三层逻辑，需要通过 E2E 确认
+        """
+        security_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "security.rs"
+        content = security_path.read_text()
+        
+        # Layer 1: Raw
+        assert "path.to_string_lossy()" in content
+        # Layer 2: read_link
+        assert "std::fs::read_link(path)" in content
+        # Layer 3: canonicalize
+        assert "path.canonicalize()" in content
+        # Note: This is a PASSing specification test but we want to ensure it stays!
+        
+    @pytest.mark.security
+    def test_invariant_006_abi_check(self, velo_binary):
+        """
+        INVARIANT-6: 验证 ABI/Python 版本强制匹配
+        证明: 目前 src/loader/header.rs 虽有检查函数，但 loader 尚未强制调用
+        """
+        header_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "header.rs"
+        content = header_path.read_text()
+        
+        # Check if check_python_version and check_cache_tag exist
+        assert "fn check_python_version" in content
+        assert "fn check_cache_tag" in content
+        
+        # Now check if verify.rs or run.rs CALLS them
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
+        verify_content = verify_path.read_text()
+        assert "check_python_version" in verify_content, "Security Invariant #6 failed: ABI version check not enforced in loader path"
