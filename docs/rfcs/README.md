@@ -21,6 +21,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0005](./0005-phase-4.1-cleanup-security.md) | Phase 4.1 Cleanup & Security | ✅ Implemented | v0.4.1 |
 | [0006](./0006-phase-5.0-fast-loader.md) | Phase 5.0 Fast Loader | ✅ Implemented | v0.5.0 |
 | [0007](./0007-benchmarking-infrastructure.md) | Performance Tracking | ✅ Implemented | v0.5.0 |
+| [0008](./0008-phase-5.1-zygote-optimization.md) | Phase 5.1 Zygote 10ms | 📝 Draft | v0.5.1 |
 
 ## RFC Lifecycle
 
