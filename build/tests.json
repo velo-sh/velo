@@ -5,14 +5,21 @@
       "coverage": false,
       "isolated": false,
       "results": "...",
-      "sha1": "cdf8264ba70cd820cb1f2cff18099823df565156",
+      "sha1": "9c3975bb0a678d77ddf2a9ffe2dce500de6a4d16",
       "txhash": []
     },
     "tests/qa/phase5_1/test_l2_5_async_advanced.py": {
       "coverage": false,
       "isolated": false,
       "results": ".s.",
-      "sha1": "9ba77e9cdac0b984d0d99da699c1e98ea1769cc6",
+      "sha1": "9742a0c205eb1b5afe05e6cb67ab389f13481be0",
+      "txhash": []
+    },
+    "tests/qa/phase5_2/test_bundle_config.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "FFF",
+      "sha1": "ce268ac0a7d625cfe16955b301bf7e46d448eaf4",
       "txhash": []
     }
   },
