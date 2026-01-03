@@ -16,6 +16,7 @@ This document defines the official QA methodology for Velo, including tiered tes
 | `./scripts/qa-fast.sh 1` | Fast tests | ~15s |
 | `./scripts/qa-fast.sh 2` | Standard | ~7min |
 | `./scripts/qa-fast.sh 3` | Heavy/Brutal | ~5min |
+| **Phase 6.0** | **L6 Optimizations** | **Uncompromising** |
 
 ---
 
@@ -92,10 +93,12 @@ Tier 0 ──PASS──▶ Tier 1 ──PASS──▶ Tier 2 ──PASS──▶
 | L0 | Smoke - Does it start? | Always |
 | L1 | Happy Path - Basic journey | Always |
 | **L1-SEC** | **Security Invariants (P0-001 to P0-008)** | **Every Commit** |
-| L2 | Sad Path - Error handling | Always |
-| L3 | Config - Options work | Before merge |
-| L4 | Lifecycle - Signals, shutdown | Before merge |
 | L5 | Integration - Zygote, frameworks | Before release |
+| **L6** | **Static Graph (Phase 6.0)** | **Bilateral Audit** |
+| **L6-AST** | **Hard vs Soft Dependency extraction** | **Build-Time Gate** |
+| **L6-SCC** | **SCC Cyclic Handling (Tarjan's)** | **Correctness Gate** |
+| **L6-STAT** | **Syscall Audit (0-stat Rule)** | **Performance Gate** |
+| **L6-SEC** | **rkyv Security & Arch Binding** | **Security Gate** |
 
 ---
 
@@ -221,6 +224,7 @@ Before marking a feature complete:
 | Phase 3 | 70% | - |
 | Phase 3.5 | 70% | - |
 | Phase 4+ | 80% | - |
+| **Phase 6.0** | **85%** | - |
 
 ---
 
