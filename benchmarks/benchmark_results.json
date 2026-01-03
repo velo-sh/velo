@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-01-03 20:04:06",
+  "results": [
+    {
+      "framework": "fastapi",
+      "level": "L5",
+      "scale_name": "Enterprise",
+      "components": 700,
+      "build_time_ms": 106.66008398402482,
+      "load_time_ms": 566.4692502003163,
+      "success": true,
+      "error": null
+    },
+    {
+      "framework": "flask",
+      "level": "L5",
+      "scale_name": "Enterprise",
+      "components": 200,
+      "build_time_ms": 56.25224998220801,
+      "load_time_ms": 284.3531670048833,
+      "success": true,
+      "error": null
+    },
+    {
+      "framework": "django",
+      "level": "L5",
+      "scale_name": "Enterprise",
+      "components": 100,
+      "build_time_ms": 53.890665993094444,
+      "load_time_ms": 315.84269157610834,
+      "success": true,
+      "error": null
+    }
+  ]
+}
