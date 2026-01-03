@@ -207,9 +207,116 @@ impl GraphBuilder {
         );
     }
 
+    /// ARCH-6.0-13: Namespace Mapper
+    ///
+    /// Resolves dependencies by:
+    /// 1. Resolving relative imports to absolute module names
+    /// 2. Filtering out stdlib/external dependencies (keep only project-internal)
     fn resolve_dependencies(&mut self) {
-        // Here we could resolve relative imports or filter out stdlib
-        // For Phase 6.0, we mostly care about internal dependencies
+        // Build path -> module_name mapping for future resolution
+        let _path_to_name: HashMap<PathBuf, String> = self
+            .modules
+            .values()
+            .map(|m| (m.path.clone(), m.name.clone()))
+            .collect();
+
+        // Collect all known module names for filtering
+        let known_modules: std::collections::HashSet<String> =
+            self.modules.keys().cloned().collect();
+
+        // Process each module
+        let module_names: Vec<String> = self.modules.keys().cloned().collect();
+        for name in module_names {
+            let module = self.modules.get(&name).unwrap();
+            let module_package = Self::get_package_name(&module.name);
+
+            // Resolve and filter hard dependencies
+            let resolved_hard: Vec<String> = module
+                .dependencies
+                .iter()
+                .filter_map(|dep| {
+                    let resolved = self.resolve_import(dep, &module_package);
+                    // Keep only dependencies that are in our project
+                    if known_modules.contains(&resolved) {
+                        Some(resolved)
+                    } else {
+                        None // Filter out stdlib/external
+                    }
+                })
+                .collect();
+
+            // Resolve and filter soft dependencies
+            let resolved_soft: Vec<String> = module
+                .soft_dependencies
+                .iter()
+                .filter_map(|dep| {
+                    let resolved = self.resolve_import(dep, &module_package);
+                    if known_modules.contains(&resolved) {
+                        Some(resolved)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Update the module with resolved dependencies
+            if let Some(m) = self.modules.get_mut(&name) {
+                m.dependencies = resolved_hard;
+                m.soft_dependencies = resolved_soft;
+            }
+        }
+    }
+
+    /// Resolve a potentially relative import to an absolute module name
+    ///
+    /// Python relative import semantics:
+    /// - `.foo` (1 dot) = current package + foo
+    /// - `..foo` (2 dots) = parent package + foo
+    fn resolve_import(&self, import_name: &str, current_package: &Option<String>) -> String {
+        if !import_name.starts_with('.') {
+            // Absolute import - return as-is
+            return import_name.to_string();
+        }
+
+        // Relative import - count leading dots
+        let dots = import_name.chars().take_while(|&c| c == '.').count();
+        let relative_part = &import_name[dots..];
+
+        let Some(package) = current_package else {
+            // Top-level module trying relative import - invalid, return as-is
+            return import_name.to_string();
+        };
+
+        // Navigate up the package hierarchy
+        // dots=1 means current package (0 levels up)
+        // dots=2 means parent package (1 level up)
+        let levels_up = dots - 1;
+        let parts: Vec<&str> = package.split('.').collect();
+
+        if levels_up > parts.len() {
+            // Trying to go above root - invalid
+            return import_name.to_string();
+        }
+
+        // Build the resolved name
+        let base_parts = &parts[..parts.len() - levels_up];
+        if relative_part.is_empty() {
+            base_parts.join(".")
+        } else if base_parts.is_empty() {
+            relative_part.to_string()
+        } else {
+            format!("{}.{}", base_parts.join("."), relative_part)
+        }
+    }
+
+    /// Get the package name for a module (everything before the last segment)
+    fn get_package_name(module_name: &str) -> Option<String> {
+        let parts: Vec<&str> = module_name.split('.').collect();
+        if parts.len() > 1 {
+            Some(parts[..parts.len() - 1].join("."))
+        } else {
+            None
+        }
     }
 
     /// RFC-0009 §2.3: Order modules topologically (dependencies before dependants)
@@ -369,5 +476,47 @@ mod tests {
         assert_eq!(record_a.pool_len, 1);
         let dep_idx = graph.dependency_pool[record_a.pool_start() as usize];
         assert_eq!(dep_idx, idx_b as u32);
+    }
+
+    #[test]
+    fn test_resolve_relative_imports() {
+        let builder = GraphBuilder::new(PathBuf::from("."));
+
+        // Test absolute import (no change)
+        let result = builder.resolve_import("os", &None);
+        assert_eq!(result, "os");
+
+        // Test single-dot relative import: .foo from pkg.sub -> pkg.sub.foo (current package)
+        let result = builder.resolve_import(".foo", &Some("pkg.sub".to_string()));
+        assert_eq!(result, "pkg.sub.foo");
+
+        // Test double-dot relative import: ..bar from pkg.sub -> pkg.bar (parent package)
+        let result = builder.resolve_import("..bar", &Some("pkg.sub".to_string()));
+        assert_eq!(result, "pkg.bar");
+
+        // Test single-dot import of package itself: . from pkg.sub -> pkg.sub
+        let result = builder.resolve_import(".", &Some("pkg.sub".to_string()));
+        assert_eq!(result, "pkg.sub");
+
+        // Test relative import from top-level (should return as-is)
+        let result = builder.resolve_import(".foo", &None);
+        assert_eq!(result, ".foo");
+
+        // Test triple-dot: ...baz from pkg.sub.deep -> pkg.baz
+        let result = builder.resolve_import("...baz", &Some("pkg.sub.deep".to_string()));
+        assert_eq!(result, "pkg.baz");
+    }
+
+    #[test]
+    fn test_get_package_name() {
+        assert_eq!(
+            GraphBuilder::get_package_name("pkg.sub.module"),
+            Some("pkg.sub".to_string())
+        );
+        assert_eq!(GraphBuilder::get_package_name("module"), None);
+        assert_eq!(
+            GraphBuilder::get_package_name("pkg.module"),
+            Some("pkg".to_string())
+        );
     }
 }
