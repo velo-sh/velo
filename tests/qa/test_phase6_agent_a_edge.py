@@ -20,7 +20,7 @@ class TestAgentAEdge:
         env.create_app("main.py", """
 import hard_mod          # Hard
 if False: import soft_if  # Soft
-try: import soft_try     # Soft
+try: import soft_try; except: pass # Soft
 def f(): import soft_fn  # Soft
 """)
         env.create_app("hard_mod.py", "")
@@ -51,6 +51,9 @@ def f(): import soft_fn  # Soft
         # Run should handle cyclic import normally (Python semantics)
         result = env.run_velo("run", "--fast", "main.py")
         assert "CYCLE_OK" in result.stdout
+
+    @pytest.mark.parametrize("depth", [10, 50, 100])
+    def test_EDGE_601_deep_dependency_dag(self, isolated_env, depth):
         """EDGE-601: Verify resolution of deep dependency chains without stack overflow."""
         env = isolated_env
         
@@ -138,7 +141,7 @@ def f(): import soft_fn  # Soft
         env.create_app("main.py", "import m0")
         
         # Build should fail at gating
-        result = env.run_velo("build")
+        result = env.run_velo("bundle", "build")
         assert result.returncode != 0
         assert "LimitError" in result.stderr or "MaxGraphSizeExceeded" in result.stderr
 
