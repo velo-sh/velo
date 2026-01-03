@@ -19,6 +19,7 @@ USAGE:
     velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
     velo info
+    velo graph <generate|verify> [OPTIONS]
 
 COMMANDS:
     run      Run a Python script
@@ -81,6 +82,7 @@ pub fn run() -> Result<()> {
         "bundle" => cmd::cmd_bundle(&args)?,
         "info" => cmd::cmd_info()?,
         "zygote" => cmd::cmd_zygote(&args)?,
+        "graph" => cmd::cmd_graph(&args)?,
         cmd => {
             eprintln!("Error: unknown command '{}'", cmd);
             eprintln!("{}", USAGE);

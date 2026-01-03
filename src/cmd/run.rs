@@ -375,72 +375,74 @@ fn run_with_fast_loader(
 ) -> Result<()> {
     use std::io::Write;
 
-    // Find bundle.veloc - check multiple locations
-    let actual_bundle = match find_bundle(project_dir, script_path) {
-        Some(p) => p,
-        None => {
-            eprintln!("⚠️  No bundle found. Build one first:");
-            eprintln!("    python python/bundle_builder.py .");
-            eprintln!("   Falling back to normal mode...");
+    let res = (|| -> Result<()> {
+        // Find bundle.veloc - check multiple locations
+        let actual_bundle = match find_bundle(project_dir, script_path) {
+            Some(p) => p,
+            None => {
+                eprintln!("⚠️  No bundle found. Build one first:");
+                eprintln!("    python python/bundle_builder.py .");
+                eprintln!("   Falling back to normal mode...");
+                return runner::run_script(python_path, script_path, pythonpath);
+            }
+        };
+
+        // RFC-0008: Mandatory Security Pre-validation (H-1, H-2, H-4, H-5)
+        // This provides a structural lock at the Rust boundary.
+        if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
+            eprintln!("⚠️  Fast loader security check failed: {}", e);
+            eprintln!("   Falling back to normal imports...");
             return runner::run_script(python_path, script_path, pythonpath);
         }
-    };
 
-    // RFC-0008: Mandatory Security Pre-validation (H-1, H-2, H-4, H-5)
-    // This provides a structural lock at the Rust boundary.
-    if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
-        eprintln!("⚠️  Fast loader security check failed: {}", e);
-        eprintln!("   Falling back to normal imports...");
-        return runner::run_script(python_path, script_path, pythonpath);
-    }
+        eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
 
-    eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
+        let bundle_abs = actual_bundle.canonicalize()?;
+        let project_abs = project_dir.canonicalize()?;
 
-    // Create a unique temporary directory for sitecustomize.py
-    // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
-    let temp_dir = tempfile::tempdir()?;
-    let site_file = temp_dir.path().join("sitecustomize.py");
+        // Create a unique temporary directory for sitecustomize.py
+        // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
+        let temp_dir = tempfile::tempdir()?;
+        let site_file = temp_dir.path().join("sitecustomize.py");
 
-    // Get absolute paths
-    let bundle_abs = actual_bundle.canonicalize()?;
-    let project_abs = project_dir.canonicalize()?;
+        // Get absolute paths
 
-    // Find velo_loader.py - check multiple locations
-    let exe_path = std::env::current_exe()?;
-    let possible_paths = [
-        // 1. Project directory (development)
-        project_abs.join("python"),
-        // 2. Source workspace (cargo run from workspace)
-        exe_path
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("python"),
-        // 3. Next to executable (installed)
-        exe_path.parent().unwrap().join("python"),
-        // 4. Installed in share (system install)
-        exe_path
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("share/velo/python"),
-    ];
+        // Find velo_loader.py - check multiple locations
+        let exe_path = std::env::current_exe()?;
+        let possible_paths = [
+            // 1. Project directory (development)
+            project_abs.join("python"),
+            // 2. Source workspace (cargo run from workspace)
+            exe_path
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("python"),
+            // 3. Next to executable (installed)
+            exe_path.parent().unwrap().join("python"),
+            // 4. Installed in share (system install)
+            exe_path
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("share/velo/python"),
+        ];
 
-    let velo_loader_path = possible_paths
-        .iter()
-        .find(|p| p.join("velo_loader.py").exists())
-        .cloned()
-        .unwrap_or_else(|| possible_paths[0].clone());
+        let velo_loader_path = possible_paths
+            .iter()
+            .find(|p: &&PathBuf| p.join("velo_loader.py").exists())
+            .cloned()
+            .unwrap_or_else(|| possible_paths[0].clone());
 
-    // Write sitecustomize content
-    let mut f = std::fs::File::create(&site_file)?;
-    writeln!(
-        f,
-        r#"# Velo Fast Loader sitecustomize
+        // Write sitecustomize content
+        let mut f = std::fs::File::create(&site_file)?;
+        writeln!(
+            f,
+            r#"# Velo Fast Loader sitecustomize
 import sys
 sys.path.insert(0, r"{velo_loader}")
 
@@ -458,25 +460,30 @@ except Exception as e:
     print(f"⚠️  Fast loader failed: {{e}}")
     print("   Falling back to normal imports...")
 "#,
-        velo_loader = velo_loader_path.display(),
-        bundle = bundle_abs.display(),
-        project = project_abs.display(),
-        max_size = max_bundle_size
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "None".to_string()),
-    )?;
-    f.flush()?;
+            velo_loader = velo_loader_path.display(),
+            bundle = bundle_abs.display(),
+            project = project_abs.display(),
+            max_size = max_bundle_size
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+        )?;
+        f.flush()?;
 
-    // Add site dir to PYTHONPATH
-    let site_dir_str = temp_dir.path().to_string_lossy().to_string();
-    let enhanced_pythonpath = match pythonpath {
-        Some(p) if !p.is_empty() => format!("{}:{}", p, site_dir_str),
-        _ => site_dir_str,
-    };
+        // Add site dir to PYTHONPATH
+        let site_dir_str = temp_dir.path().to_string_lossy().to_string();
+        let enhanced_pythonpath = match pythonpath {
+            Some(p) if !p.is_empty() => format!("{}:{}", p, site_dir_str),
+            _ => site_dir_str,
+        };
 
-    // Run script with enhanced PYTHONPATH
-    // Cleanup: temp_dir will be automatically deleted when goes out of scope
-    runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+        // Run script with enhanced PYTHONPATH
+        // Cleanup: temp_dir will be automatically deleted when goes out of scope
+        runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+    })();
+
+    // Always report metrics, even on error
+    crate::graph::report_metrics();
+    res
 }
 
 #[cfg(test)]
