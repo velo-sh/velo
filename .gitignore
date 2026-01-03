@@ -26,3 +26,4 @@ target
 /target
 .velo_cache/
 __pycache__/
+velo_zygote/velo_zygote
