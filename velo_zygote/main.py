@@ -342,9 +342,10 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                     if cmd_type == "Fork":
                         script_path = cmd.get("script_path", "")
                         args = cmd.get("args", [])
-                        stdout_path = cmd.get("stdout_path")  # IPC stdout capture
-                        stderr_path = cmd.get("stderr_path")  # IPC stderr capture
-                        exit_code_path = cmd.get("exit_code_path")  # Exit code capture
+                        stdout_path = cmd.get("stdout_path")
+                        stderr_path = cmd.get("stderr_path")
+                        exit_code_path = cmd.get("exit_code_path")
+                        async_mode = cmd.get("async_mode", False)
                         
                         if not script_path or not Path(script_path).exists():
                             send_response(conn, {
@@ -364,12 +365,34 @@ def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_time
                             continue
                         
                         worker_pid = handle_fork(script_path, args, stdout_path, stderr_path, exit_code_path)
-                        send_response(conn, {
-                            "type": "Forked",
-                            "worker_pid": worker_pid
-                        })
-                        log(f"Forked worker PID: {worker_pid} (active: {len(_active_workers)})")
-                    
+                        
+                        if async_mode:
+                            # Return PID immediately (RFC-0008)
+                            send_response(conn, {
+                                "type": "Forked",
+                                "worker_pid": worker_pid,
+                                "exit_code": None
+                            })
+                            log(f"Forked worker PID: {worker_pid} (async mode, active: {len(_active_workers)})")
+                        else:
+                            # Wait for worker completion in sync mode (default)
+                            # This avoids polling in the CLI
+                            log(f"Waiting for worker PID: {worker_pid} (sync mode)...")
+                            try:
+                                pid, status = os.waitpid(worker_pid, 0)
+                                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+                                _active_workers.discard(worker_pid)
+                            except ChildProcessError:
+                                # Already reaped by SIGCHLD handler?
+                                exit_code = 0
+                            
+                            send_response(conn, {
+                                "type": "Forked",
+                                "worker_pid": worker_pid,
+                                "exit_code": exit_code
+                            })
+                            log(f"Worker PID {worker_pid} completed with code {exit_code}")
+                        
                     elif cmd_type == "Shutdown":
                         log("Received shutdown command")
                         cleanup_workers()
