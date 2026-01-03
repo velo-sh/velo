@@ -94,6 +94,28 @@ See [FRAMEWORK_SCALE_BASELINES.md](../docs/qa/benchmarks/FRAMEWORK_SCALE_BASELIN
 | Flask | 200 | 56ms | 284ms |
 | Django | 100 | 54ms | 316ms |
 
+---
+
+## 🚀 Velo vs CPython: Head-to-Head Comparison
+
+Run the comparison benchmark to see Velo's speedup over pure CPython:
+
+```bash
+python3 benchmark_velo_vs_cpython.py --scenario all
+```
+
+### Latest Results (Phase 6.0 Fast Loader):
+
+| Scenario | Components | CPython | Velo | Speedup |
+|:---|:---:|:---:|:---:|:---:|
+| Hello World | 1 | 382ms | 214ms | **⚡ 1.8x** |
+| Small API | 20 | 427ms | 231ms | **⚡ 1.9x** |
+| Medium API | 100 | 448ms | 272ms | **⚡ 1.6x** |
+| Large API | 300 | 644ms | 321ms | **⚡ 2.0x** |
+| Enterprise | 700 | 691ms | 409ms | **⚡ 1.7x** |
+
+> 💡 **Want even faster?** Use `velo run --zygote` for up to **60x speedup** with pre-warmed Python!
+
 ## 🔧 CI/CD Integration
 
 Export results to JSON for automated regression detection:

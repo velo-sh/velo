@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-01-03 20:35:17",
+  "results": [
+    {
+      "framework": "fastapi",
+      "scenario": "hello",
+      "scenario_name": "Hello World",
+      "components": 1,
+      "cpython_ms": 382.42512471818674,
+      "velo_cold_ms": 238.97995799779892,
+      "velo_warm_ms": 213.65695795975626,
+      "speedup_cold": 1.6002393168121194,
+      "speedup_warm": 1.78990250713117,
+      "success": true
+    },
+    {
+      "framework": "fastapi",
+      "scenario": "small",
+      "scenario_name": "Small API",
+      "components": 20,
+      "cpython_ms": 427.36468033399433,
+      "velo_cold_ms": 340.0517919799313,
+      "velo_warm_ms": 230.59637506958097,
+      "speedup_cold": 1.256763500188277,
+      "speedup_warm": 1.8533018145018099,
+      "success": true
+    },
+    {
+      "framework": "fastapi",
+      "scenario": "medium",
+      "scenario_name": "Medium API",
+      "components": 100,
+      "cpython_ms": 447.71055574528873,
+      "velo_cold_ms": 311.6873750695959,
+      "velo_warm_ms": 272.3543749889359,
+      "speedup_cold": 1.4364090160704155,
+      "speedup_warm": 1.6438529976376421,
+      "success": true
+    },
+    {
+      "framework": "fastapi",
+      "scenario": "large",
+      "scenario_name": "Large API",
+      "components": 300,
+      "cpython_ms": 643.6848476684341,
+      "velo_cold_ms": 365.5174580635503,
+      "velo_warm_ms": 320.78441698104143,
+      "speedup_cold": 1.7610235392820022,
+      "speedup_warm": 2.0065963731226892,
+      "success": true
+    },
+    {
+      "framework": "fastapi",
+      "scenario": "enterprise",
+      "scenario_name": "Enterprise",
+      "components": 700,
+      "cpython_ms": 691.2582499984031,
+      "velo_cold_ms": 569.2044999450445,
+      "velo_warm_ms": 408.7885409826413,
+      "speedup_cold": 1.2144286457066706,
+      "speedup_warm": 1.6909922385220593,
+      "success": true
+    }
+  ],
+  "summary": {
+    "max_speedup": 2.0065963731226892,
+    "avg_speedup": 1.796929186183074
+  }
+}
