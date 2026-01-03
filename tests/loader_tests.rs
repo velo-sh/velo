@@ -157,21 +157,34 @@ mod security_tests {
         }
     }
 
-    /// Test: Verify correct BLAKE3 passes
+    /// Test: Verify correct BLAKE3 passes (H-1 Global Hash scheme)
+    /// RFC-0008: Hash covers [0..20] (Identity Prefix) + [52..EOF] (Content)
     #[test]
     fn test_accepts_valid_blake3() {
         use velo::loader::verify::verify_blake3;
 
+        // Create test data with proper H-1 structure (minimum 52 bytes)
         let mut data = vec![0u8; 128];
+        // Fill identity prefix [0..20] with test data
         data[0..4].copy_from_slice(b"VELO");
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // version
+        data[8..12].copy_from_slice(&1u32.to_le_bytes()); // module_count
+        data[12..20].copy_from_slice(&128u64.to_le_bytes()); // index_offset
+        // [20..52] is where hash will go
+        // Fill content [52..] with test data
+        data[52..60].copy_from_slice(b"CONTENT!");
 
+        // Calculate hash using H-1 scheme: [0..20] + [52..]
         let mut hasher = blake3::Hasher::new();
         hasher.update(&data[0..20]);
         hasher.update(&data[52..]);
         let correct_hash = hasher.finalize();
 
+        // Place hash in [20..52]
+        data[20..52].copy_from_slice(correct_hash.as_bytes());
+
         let result = verify_blake3(&data, correct_hash.as_bytes());
-        assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
+        assert!(result.is_ok(), "Should accept valid H-1 BLAKE3 hash");
     }
 
     /// Test: Detect module corruption (BLAKE3 mismatch)
@@ -194,15 +207,21 @@ mod security_tests {
     }
 
     /// Test: Verify correct module hash passes
+    /// Note: verify_module_hash also checks marshal depth (H-4), so we need valid marshal
     #[test]
     fn test_accepts_valid_module_hash() {
         use velo::loader::verify::verify_module_hash;
 
-        let data = vec![b'K', 42]; // Valid marshal
-        let correct_hash = blake3::hash(&data);
+        // Create minimal valid marshal data: b'N' = None (simplest valid marshal object)
+        // This passes the H-4 depth check since it has depth 0
+        let data: &[u8] = b"N"; // Marshal code for None
+        let correct_hash = blake3::hash(data);
 
-        let result = verify_module_hash(&data, correct_hash.as_bytes(), "test_module", 28);
-        assert!(result.is_ok(), "Should accept valid BLAKE3 hash");
+        let result = verify_module_hash(data, correct_hash.as_bytes(), "test_module", 28);
+        assert!(
+            result.is_ok(),
+            "Should accept valid BLAKE3 hash with valid marshal data"
+        );
     }
 
     /// Test: Atomic Read → Verify → Load sequence
