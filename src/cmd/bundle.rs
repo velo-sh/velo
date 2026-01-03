@@ -208,7 +208,19 @@ pub fn cmd_bundle_inspect(args: &[String]) -> Result<()> {
         println!("  Load Order:     {} (lazy)", info.load_order.len());
 
         if verify {
-            // ... verify logic ...
+            // Verify BLAKE3 hash using H-1 scheme: [0..20] + [52..EOF]
+            let data = std::fs::read(path)?;
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&data[0..20]);
+            hasher.update(&data[52..]);
+            let computed = hasher.finalize();
+
+            if computed.as_bytes() == &info.content_hash {
+                println!("  Integrity:      ✅ Verified (BLAKE3 hash matches)");
+            } else {
+                println!("  Integrity:      ❌ FAILED (hash mismatch)");
+                return Err(anyhow!("Bundle integrity check failed"));
+            }
         }
 
         if show_modules {
