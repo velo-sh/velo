@@ -149,6 +149,7 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ Use runtime analysis over hardcoding
 - ✅ Run `cargo fmt && cargo clippy` before commit
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
+- ✅ **Write ALL code and documentation in English only (no Chinese characters)**
 
 ---
 
