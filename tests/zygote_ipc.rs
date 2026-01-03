@@ -43,6 +43,11 @@ mod ipc_tests {
             stdout_path: None,
             stderr_path: None,
             exit_code_path: None,
+            async_mode: false,
+            fast_mode: false,
+            bundle_path: None,
+            project_root: None,
+            max_bundle_size: None,
         };
         let serialized = serde_json::to_string(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = serde_json::from_str(&serialized).unwrap();
@@ -55,12 +60,18 @@ mod ipc_tests {
         assert!(matches!(deserialized, ZygoteResponse::Ready));
 
         // Test FORKED response
-        let forked_resp = ZygoteResponse::Forked { worker_pid: 12345 };
+        let forked_resp = ZygoteResponse::Forked {
+            worker_pid: 12345,
+            exit_code: None,
+        };
         let serialized = serde_json::to_string(&forked_resp).unwrap();
         let deserialized: ZygoteResponse = serde_json::from_str(&serialized).unwrap();
         assert!(matches!(
             deserialized,
-            ZygoteResponse::Forked { worker_pid: 12345 }
+            ZygoteResponse::Forked {
+                worker_pid: 12345,
+                ..
+            }
         ));
     }
 
@@ -97,7 +108,11 @@ mod ipc_tests {
             assert!(matches!(cmd, ZygoteCommand::Fork { .. }));
 
             // Send FORKED response
-            let resp = serde_json::to_string(&ZygoteResponse::Forked { worker_pid: 42 }).unwrap();
+            let resp = serde_json::to_string(&ZygoteResponse::Forked {
+                worker_pid: 42,
+                exit_code: None,
+            })
+            .unwrap();
             writeln!(stream_write, "{}", resp).unwrap();
         });
 
@@ -113,6 +128,11 @@ mod ipc_tests {
                 stdout_path: None,
                 stderr_path: None,
                 exit_code_path: None,
+                async_mode: false,
+                fast_mode: false,
+                bundle_path: None,
+                project_root: None,
+                max_bundle_size: None,
             },
         )
         .unwrap();
@@ -120,7 +140,7 @@ mod ipc_tests {
         // Verify response
         assert!(matches!(
             response,
-            ZygoteResponse::Forked { worker_pid: 42 }
+            ZygoteResponse::Forked { worker_pid: 42, .. }
         ));
 
         server_handle.join().unwrap();

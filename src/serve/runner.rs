@@ -9,6 +9,9 @@ use std::process::{Command, Stdio};
 use crate::serve::framework::{detect_framework, get_preload_modules};
 use crate::zygote::ZygoteLauncher;
 
+/// Default port for the server
+pub const DEFAULT_PORT: u16 = 8000;
+
 /// Arguments for `velo serve` command
 #[derive(Debug, Clone)]
 pub struct ServeArgs {
@@ -31,7 +34,7 @@ impl Default for ServeArgs {
         Self {
             app: String::new(),
             host: "127.0.0.1".to_string(),
-            port: 8000,
+            port: DEFAULT_PORT,
             workers: 1,
             reload: false,
             use_zygote: true, // Zygote enabled by default
@@ -232,7 +235,7 @@ mod tests {
     fn test_default_args() {
         let args = ServeArgs::default();
         assert_eq!(args.host, "127.0.0.1");
-        assert_eq!(args.port, 8000);
+        assert_eq!(args.port, DEFAULT_PORT);
         assert_eq!(args.workers, 1);
         assert!(!args.reload);
         assert!(args.use_zygote);
@@ -242,7 +245,7 @@ mod tests {
     fn test_new_with_app() {
         let args = ServeArgs::new("main:app".to_string());
         assert_eq!(args.app, "main:app");
-        assert_eq!(args.port, 8000);
+        assert_eq!(args.port, DEFAULT_PORT);
     }
 
     #[test]

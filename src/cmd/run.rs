@@ -1,7 +1,7 @@
 //! Handle 'velo run' command
 
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
 use crate::config::VeloConfig;
@@ -20,6 +20,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     // Parse flags
     let mut zygote_enabled = false;
+    let mut async_enabled = false;
     let mut profile_enabled = false;
     let mut fast_enabled = false;
     let mut script_arg_idx = 2;
@@ -27,6 +28,11 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     for (i, arg) in args.iter().enumerate().skip(2) {
         match arg.as_str() {
             "--zygote" => {
+                zygote_enabled = true;
+                script_arg_idx = i + 1;
+            }
+            "--async" => {
+                async_enabled = true;
                 zygote_enabled = true;
                 script_arg_idx = i + 1;
             }
@@ -51,19 +57,53 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     if script_arg_idx >= args.len() {
         eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
+        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] [--async] <script.py>");
         std::process::exit(1);
     }
 
-    // Determine project directory
-    let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
+    if async_enabled && profile_enabled {
+        eprintln!("Error: --async and --profile are mutually exclusive");
+        eprintln!("Profiling requires synchronous execution to capture full trace.");
+        std::process::exit(1);
+    }
+
+    // Determine project directory by looking for pyproject.toml starting from script's parent
+    let script_path = Path::new(&args[script_arg_idx]);
+    let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+
+    if let Some(parent) = script_path.parent() {
+        let p = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+
+        if p.join("pyproject.toml").exists() {
+            project_dir = p.to_path_buf();
+        } else if let Some(grandparent) = p.parent() {
+            if grandparent.join("pyproject.toml").exists() {
+                project_dir = grandparent.to_path_buf();
+            }
+        }
+    }
+
+    // Load config from discovered project root
+    let config = VeloConfig::from_path(&project_dir.join("pyproject.toml")).unwrap_or_default();
 
     // Detect user's Python
     let python_path = python::detect_python(&project_dir)?;
 
     // Zygote mode: use pre-warmed process
     if zygote_enabled {
-        if let Some(()) = try_zygote_run(&python_path, &args[script_arg_idx])? {
+        if let Some(()) = try_zygote_run(
+            &python_path,
+            &args[script_arg_idx],
+            async_enabled,
+            fast_enabled,
+            &project_dir,
+            &config,
+        )? {
             return Ok(());
         }
         // Fallback to normal mode if Zygote fails
@@ -79,6 +119,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
             &args[script_arg_idx],
             &project_dir,
             pythonpath,
+            config.max_bundle_size,
         )?;
     } else if profile_enabled {
         runner::run_script_with_profile(&python_path, &args[script_arg_idx], pythonpath)?;
@@ -96,7 +137,14 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
 /// Try to run via Zygote, returns Some(()) on success, None on failure
 #[cfg(unix)]
-fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
+fn try_zygote_run(
+    python_path: &Path,
+    script_path: &str,
+    async_enabled: bool,
+    fast_enabled: bool,
+    project_dir: &Path,
+    config: &VeloConfig,
+) -> Result<Option<()>> {
     use crate::zygote;
 
     if !zygote::is_supported() {
@@ -137,9 +185,40 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
 
     // Try to spawn via Zygote
     if socket_path.exists() {
-        match launcher.spawn_worker(script, &[]) {
+        let (bundle_path, max_size) = if fast_enabled {
+            (
+                find_bundle(project_dir, script_path),
+                config.max_bundle_size,
+            )
+        } else {
+            (None, None)
+        };
+
+        match launcher.spawn_worker(
+            script,
+            &[],
+            async_enabled,
+            fast_enabled,
+            bundle_path,
+            Some(project_dir.to_path_buf()),
+            max_size,
+        ) {
             Ok(worker) => {
-                eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                if async_enabled {
+                    eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
+                    if let Some(stdout) = worker.stdout_path() {
+                        eprintln!("📝 Logs (stdout): {}", stdout.display());
+                    }
+                    if let Some(stderr) = worker.stderr_path() {
+                        eprintln!("📝 Logs (stderr): {}", stderr.display());
+                    }
+
+                    // Keep Zygote alive but exit CLI immediately
+                    if started_new {
+                        std::mem::forget(launcher);
+                    }
+                    std::process::exit(0);
+                }
 
                 // Wait for worker to complete and get exit code
                 let exit_code = worker.wait().unwrap_or(1);
@@ -166,7 +245,39 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
-                        if let Ok(worker) = launcher.spawn_worker(script, &[]) {
+                        let (bundle_path, max_size) = if fast_enabled {
+                            (
+                                find_bundle(project_dir, script_path),
+                                config.max_bundle_size,
+                            )
+                        } else {
+                            (None, None)
+                        };
+
+                        if let Ok(worker) = launcher.spawn_worker(
+                            script,
+                            &[],
+                            async_enabled,
+                            fast_enabled,
+                            bundle_path,
+                            Some(project_dir.to_path_buf()),
+                            max_size,
+                        ) {
+                            if async_enabled {
+                                eprintln!(
+                                    "⚡ Worker spawned in background (PID: {})",
+                                    worker.pid()
+                                );
+                                if let Some(stdout) = worker.stdout_path() {
+                                    eprintln!("📝 Logs (stdout): {}", stdout.display());
+                                }
+                                if let Some(stderr) = worker.stderr_path() {
+                                    eprintln!("📝 Logs (stderr): {}", stderr.display());
+                                }
+                                std::mem::forget(launcher);
+                                return Ok(Some(()));
+                            }
+
                             eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
                             let exit_code = worker.wait().unwrap_or(1);
                             std::mem::forget(launcher);
@@ -185,7 +296,11 @@ fn try_zygote_run(python_path: &Path, script_path: &str) -> Result<Option<()>> {
 }
 
 #[cfg(not(unix))]
-fn try_zygote_run(_python_path: &Path, _script_path: &str) -> Result<Option<()>> {
+fn try_zygote_run(
+    _python_path: &Path,
+    _script_path: &str,
+    _async_enabled: bool,
+) -> Result<Option<()>> {
     // Zygote not supported on non-Unix platforms
     Ok(None)
 }
@@ -237,6 +352,17 @@ fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
     }
 }
 
+fn find_bundle(project_dir: &Path, script_path: &str) -> Option<PathBuf> {
+    let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
+    let possible_bundles = [
+        project_dir.join(".velo/cache/bundle.veloc"),
+        project_dir.join("bundle.veloc"),
+        script_dir.join("bundle.veloc"),
+    ];
+
+    possible_bundles.iter().find(|p| p.exists()).cloned()
+}
+
 /// Run script with fast loader (bundle-accelerated imports)
 ///
 /// RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
@@ -245,21 +371,12 @@ fn run_with_fast_loader(
     script_path: &str,
     project_dir: &Path,
     pythonpath: Option<String>,
+    max_bundle_size: Option<u64>,
 ) -> Result<()> {
     use std::io::Write;
-    use tempfile::NamedTempFile;
 
     // Find bundle.veloc - check multiple locations
-    let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
-    let possible_bundles = [
-        project_dir.join(".velo/cache/bundle.veloc"),
-        project_dir.join("bundle.veloc"),
-        script_dir.join("bundle.veloc"),
-    ];
-
-    let actual_bundle = possible_bundles.iter().find(|p| p.exists()).cloned();
-
-    let actual_bundle = match actual_bundle {
+    let actual_bundle = match find_bundle(project_dir, script_path) {
         Some(p) => p,
         None => {
             eprintln!("⚠️  No bundle found. Build one first:");
@@ -269,11 +386,20 @@ fn run_with_fast_loader(
         }
     };
 
+    // RFC-0008: Mandatory Security Pre-validation (H-1, H-2, H-4, H-5)
+    // This provides a structural lock at the Rust boundary.
+    if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
+        eprintln!("⚠️  Fast loader security check failed: {}", e);
+        eprintln!("   Falling back to normal imports...");
+        return runner::run_script(python_path, script_path, pythonpath);
+    }
+
     eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
 
-    // Create sitecustomize.py that activates the bundle
-    let mut sitecustomize = NamedTempFile::new()?;
-    let site_dir = sitecustomize.path().parent().unwrap().to_path_buf();
+    // Create a unique temporary directory for sitecustomize.py
+    // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
+    let temp_dir = tempfile::tempdir()?;
+    let site_file = temp_dir.path().join("sitecustomize.py");
 
     // Get absolute paths
     let bundle_abs = actual_bundle.canonicalize()?;
@@ -311,8 +437,9 @@ fn run_with_fast_loader(
         .unwrap_or_else(|| possible_paths[0].clone());
 
     // Write sitecustomize content
+    let mut f = std::fs::File::create(&site_file)?;
     writeln!(
-        sitecustomize,
+        f,
         r#"# Velo Fast Loader sitecustomize
 import sys
 sys.path.insert(0, r"{velo_loader}")
@@ -323,8 +450,9 @@ try:
     
     bundle_path = Path(r"{bundle}")
     project_root = Path(r"{project}")
+    max_size = {max_size}
     
-    _bundle = activate_fast_mode(bundle_path, project_root)
+    _bundle = activate_fast_mode(bundle_path, project_root, max_size)
     print("⚡ Fast loader active:", len(_bundle), "modules")
 except Exception as e:
     print(f"⚠️  Fast loader failed: {{e}}")
@@ -333,25 +461,62 @@ except Exception as e:
         velo_loader = velo_loader_path.display(),
         bundle = bundle_abs.display(),
         project = project_abs.display(),
+        max_size = max_bundle_size
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "None".to_string()),
     )?;
-    sitecustomize.flush()?;
-
-    // Rename to sitecustomize.py
-    let site_file = site_dir.join("sitecustomize.py");
-    std::fs::copy(sitecustomize.path(), &site_file)?;
+    f.flush()?;
 
     // Add site dir to PYTHONPATH
-    let site_dir_str = site_dir.to_string_lossy().to_string();
+    let site_dir_str = temp_dir.path().to_string_lossy().to_string();
     let enhanced_pythonpath = match pythonpath {
         Some(p) if !p.is_empty() => format!("{}:{}", p, site_dir_str),
         _ => site_dir_str,
     };
 
     // Run script with enhanced PYTHONPATH
-    let result = runner::run_script(python_path, script_path, Some(enhanced_pythonpath));
+    // Cleanup: temp_dir will be automatically deleted when goes out of scope
+    runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+}
 
-    // Cleanup
-    let _ = std::fs::remove_file(&site_file);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
 
-    result
+    #[test]
+    fn test_project_dir_detection_relative_path() -> Result<()> {
+        let temp = tempdir()?;
+        let project_root = temp.path();
+
+        // Create pyproject.toml in temp dir
+        File::create(project_root.join("pyproject.toml"))?;
+
+        // Scenario: Script is "main.py" and we are in the same directory
+        let script_path = Path::new("main.py");
+        let parent = script_path.parent().unwrap();
+        assert_eq!(parent.as_os_str(), "");
+
+        // The logic from cmd_run:
+        let p = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+
+        // Verify we can find pyproject.toml using this path
+        // (Simulating the check in cmd_run)
+        let found = project_root.join(p).join("pyproject.toml").exists();
+        assert!(
+            found,
+            "Should find pyproject.toml even with empty parent path"
+        );
+
+        // Verify canonicalize works on the fixed path
+        let abs_path = project_root.join(p).canonicalize()?;
+        assert!(abs_path.is_absolute());
+
+        Ok(())
+    }
 }
