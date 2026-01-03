@@ -389,6 +389,19 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         )?;
     }
 
+    // Step 3e: Verify Static Import Graph (RFC-0009)
+    if graph_offset != 0 {
+        let start = std::time::Instant::now();
+        let graph_bytes = &data[graph_offset as usize..];
+        if let Err(e) = crate::graph::serializer::verify_graph(graph_bytes) {
+            crate::graph::metrics::record_validation_failure();
+            eprintln!("⚠️  Static Graph verification failed: {}", e);
+        } else {
+            let elapsed = start.elapsed().as_micros() as u64;
+            crate::graph::metrics::record_deserialize_latency(elapsed);
+        }
+    }
+
     // Step 4: Return verified bundle
     Ok(VerifiedBundle {
         data,
