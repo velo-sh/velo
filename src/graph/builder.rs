@@ -81,7 +81,10 @@ impl GraphBuilder {
         }
 
         // 3. Load order indices
-        let load_order = (0..module_records.len() as u32).collect();
+        // 3. Load order indices
+        // FUNC-603: Default to Empty (Lazy) loading. Only explicit preloads should go here.
+        // Previously: (0..module_records.len() as u32).collect(); which forced Eager loading.
+        let load_order = Vec::new();
 
         StaticImportGraph {
             version: 1,
