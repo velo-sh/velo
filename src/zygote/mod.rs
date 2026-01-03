@@ -22,6 +22,7 @@ pub mod error;
 pub mod ipc;
 
 use error::{Result, ZygoteError};
+use ipc::ZygoteResponse;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::Duration;
@@ -43,6 +44,32 @@ pub fn is_supported() -> bool {
 #[cfg(not(unix))]
 pub fn is_supported() -> bool {
     false
+}
+
+fn get_worker_timeout_secs() -> u64 {
+    crate::config::VeloConfig::from_pyproject_toml()
+        .and_then(|c| c.zygote_worker_timeout)
+        .unwrap_or(WORKER_TIMEOUT_SECS)
+}
+
+fn get_socket_timeout_secs() -> u64 {
+    crate::config::VeloConfig::from_pyproject_toml()
+        .and_then(|c| c.zygote_socket_timeout)
+        .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
+}
+
+/// Get Zygote status
+pub fn get_status() -> Result<ZygoteResponse> {
+    use ipc::{default_socket_path, send_command, ZygoteCommand};
+
+    let socket_path = default_socket_path();
+    if !socket_path.exists() {
+        return Err(ZygoteError::ConnectionFailed(
+            "Socket file not found".to_string(),
+        ));
+    }
+
+    send_command(&socket_path, ZygoteCommand::Status)
 }
 
 /// Find the velo_zygote Python module path
@@ -145,7 +172,8 @@ impl WorkerHandle {
     #[cfg(unix)]
     pub fn wait(&self) -> Result<i32> {
         let start = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(WORKER_TIMEOUT_SECS);
+        let timeout_secs = get_worker_timeout_secs();
+        let timeout = std::time::Duration::from_secs(timeout_secs);
 
         // Wait for exit_code file to exist (worker writes it when done)
         let mut timed_out = false;
@@ -162,7 +190,7 @@ impl WorkerHandle {
                     timed_out = true;
                     eprintln!(
                         "⏱️ Worker {} timed out after {}s, killing...",
-                        self.pid, WORKER_TIMEOUT_SECS
+                        self.pid, timeout_secs
                     );
                     // Kill the worker process
                     unsafe {
@@ -351,14 +379,16 @@ impl ZygoteLauncher {
         self.zygote_pid = Some(pid);
 
         // Wait for socket to be created (with timeout)
-        let timeout = Duration::from_secs(SOCKET_STARTUP_TIMEOUT_SECS);
+        let timeout_secs = get_socket_timeout_secs();
+        let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
         while !self.socket_path.exists() {
             if start.elapsed() > timeout {
                 self.stop()?;
-                return Err(ZygoteError::StartFailed(
-                    "Timeout waiting for Zygote socket".to_string(),
-                ));
+                return Err(ZygoteError::StartFailed(format!(
+                    "Timeout waiting for Zygote socket after {}s",
+                    timeout_secs
+                )));
             }
             std::thread::sleep(Duration::from_millis(50));
         }
