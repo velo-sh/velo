@@ -79,7 +79,7 @@ app = FastAPI()
         # Threshold: < 1000us (1ms) even for 500 models
         assert latency < 1000, f"Load regression: {latency}μs > 1000μs"
 
-    @pytest.mark.xfail(reason="P3: Flask metrics parsing needs update to new output format")
+    @pytest.mark.xfail(reason="P3: Flask metrics output missing graph_deserialize_latency_us (tracked in ARCH-60-001)")
     @pytest.mark.parametrize("scale", ["medium", "large"])
     def test_PERF_603_flask_regression_scale(self, isolated_env, scale):
         """PERF-603: Track Flask Blueprint scan latency regression."""
@@ -104,11 +104,21 @@ app = FastAPI()
         env_vars["VELO_REPORT_METRICS"] = "1"
         result_run = env.run_velo("run", "--fast", "main.py", env=env_vars)
         
+        # 4. Parse metrics from both stdout and stderr (robust parsing)
         latency = 999999
-        for line in result_run.stderr.splitlines():
+        combined_output = result_run.stdout + result_run.stderr
+        for line in combined_output.splitlines():
             if '"graph_deserialize_latency_us"' in line:
-                latency = json.loads(line).get("graph_deserialize_latency_us", 999999)
-                break
+                try:
+                    if line.strip().startswith("{"):
+                        latency = json.loads(line).get("graph_deserialize_latency_us", 999999)
+                    else:
+                        start = combined_output.find("{", combined_output.find(line))
+                        end = combined_output.find("}", start) + 1
+                        latency = json.loads(combined_output[start:end]).get("graph_deserialize_latency_us", 999999)
+                    break
+                except (json.JSONDecodeError, ValueError):
+                    continue
         
         assert latency < 1000, f"Flask load regression: {latency}μs"
 
