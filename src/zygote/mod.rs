@@ -53,13 +53,34 @@ fn get_worker_timeout_secs() -> u64 {
         .unwrap_or(WORKER_TIMEOUT_SECS)
 }
 
+/// Returns the socket startup timeout in seconds.
+///
+/// This checks the project's `pyproject.toml` for `zygote_socket_timeout` and, if present,
+/// uses that value; otherwise it falls back to `SOCKET_STARTUP_TIMEOUT_SECS`.
+///
+/// # Examples
+///
+/// ```
+/// let secs = get_socket_timeout_secs();
+/// assert!(secs > 0);
+/// ```
 fn get_socket_timeout_secs() -> u64 {
     crate::config::VeloConfig::from_pyproject_toml()
         .and_then(|c| c.zygote_socket_timeout)
         .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
 }
 
-/// Get the path to the Zygote log file
+/// Returns the filesystem path where the Zygote process should write its log.
+///
+/// If the `HOME` environment variable is set, the path is `<HOME>/.local/state/velo/zygote.log`.
+/// Otherwise, a file named `velo-zygote.log` in the system temporary directory is returned.
+///
+/// # Examples
+///
+/// ```
+/// let p = get_log_path();
+/// assert!(p.to_string_lossy().ends_with("zygote.log"));
+/// ```
 pub fn get_log_path() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
         PathBuf::from(home).join(".local/state/velo/zygote.log")
@@ -68,7 +89,26 @@ pub fn get_log_path() -> PathBuf {
     }
 }
 
-/// Get Zygote status
+/// Query the Zygote daemon for its runtime status.
+///
+/// Sends a `Status` command over the Zygote IPC socket and returns the daemon's response.
+///
+/// # Returns
+///
+/// `Ok(ZygoteResponse)` with the daemon status on success, `Err(ZygoteError::ConnectionFailed)` if the socket file is not found, or other `ZygoteError` variants if IPC fails.
+///
+/// # Examples
+///
+/// ```
+/// use zygote::get_status;
+/// use zygote::ipc::ZygoteResponse;
+///
+/// let resp = get_status().expect("failed to query zygote");
+/// match resp {
+///     ZygoteResponse::Status { .. } => println!("Zygote is running"),
+///     other => println!("Unexpected response: {:?}", other),
+/// }
+/// ```
 pub fn get_status() -> Result<ZygoteResponse> {
     use ipc::{ZygoteCommand, default_socket_path, send_command};
 
@@ -330,10 +370,30 @@ impl ZygoteLauncher {
         self
     }
 
-    /// Start the Zygote process with pre-loaded modules
+    /// Starts the Zygote process and arranges for the given Python modules to be pre-imported.
     ///
-    /// # Arguments
-    /// * `preload` - List of Python modules to pre-import
+    /// The launcher will spawn a detached Zygote process that preloads the specified modules,
+    /// redirects the Zygote's stdout/stderr to a per-user log file, and waits for the Zygote
+    /// IPC socket to appear before returning. If the socket does not appear within the
+    /// configured timeout, the launcher will stop the Zygote and return an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `preload` - Modules to pre-import in the Zygote process before it begins serving forks.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ZygoteError::StartFailed` if the Zygote cannot be started (for example: failing
+    /// to open the log file, failing to spawn the process, or timing out while waiting for the socket).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    /// let socket = PathBuf::from("/tmp/velo_zygote.sock");
+    /// let mut launcher = crate::zygote::ZygoteLauncher::new(socket);
+    /// launcher.start(&["numpy", "pandas"]).unwrap();
+    /// ```
     #[cfg(unix)]
     pub fn start(&mut self, preload: &[&str]) -> Result<()> {
         if self.is_running() {
@@ -580,6 +640,19 @@ impl ZygoteLauncher {
 }
 
 impl Drop for ZygoteLauncher {
+    /// Ensures the launcher is stopped and cleaned up when it is dropped.
+    ///
+    /// This Drop implementation calls `stop()` to attempt a graceful shutdown and
+    /// resource cleanup; any error returned by `stop()` is ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// {
+    ///     let launcher = zygote::ZygoteLauncher::new("/tmp/zy_socket".into());
+    ///     // launcher goes out of scope here and `drop` will call `stop()`.
+    /// }
+    /// ```
     fn drop(&mut self) {
         // Ensure cleanup on drop
         let _ = self.stop();
