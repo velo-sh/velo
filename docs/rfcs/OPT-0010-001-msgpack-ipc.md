@@ -1,8 +1,8 @@
-# Future Optimization: MessagePack IPC Protocol
+# OPT-0010-001: MessagePack IPC Protocol
 
-> **Status**: PROPOSED  
-> **Priority**: P2 (Future)  
-> **Target**: v0.7.0+  
+> **Status**: APPROVED  
+> **Priority**: P1 (Phase 6.1)  
+> **Target**: v0.6.1  
 > **RFC**: Extends RFC-0010
 
 ---
@@ -72,4 +72,4 @@ pip install msgpack
 
 ---
 
-**Architect Sign-off**: Design approved. Deferred to v0.7.0.
+**Architect Sign-off**: APPROVED for v0.6.1. Implement as part of Phase 6.1.
