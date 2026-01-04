@@ -37,6 +37,7 @@ signal-hook = "0.3"      # Unix signal handling
 colored = "2.0"          # Terminal colors
 tiny_http = "0.12"       # Minimal HTTP for health checks
 strsim = "0.11"          # "Did you mean?" suggestions
+regex = "1.10"           # Strict security validation (SEC-P0-001)
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

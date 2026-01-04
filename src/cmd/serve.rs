@@ -4,7 +4,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 use crate::python;
-use crate::serve::{self, LogFormat, ServeArgs};
+use crate::serve::{self, LogFormat, ServeArgs, ServeError};
+use regex::Regex;
 
 /// Handle 'velo serve' command
 pub fn cmd_serve(args: &[String]) -> Result<()> {
@@ -173,22 +174,63 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
 /// SEC-P0-001: Validate app target for shell injection prevention (ADR D1)
 ///
 /// Rejects shell metacharacters that could enable command injection.
-/// Must be called at CLI layer before any subprocess work.
+/// Uses strict allowlist regex per RFC-0010 SEC-P0-001.
 fn validate_app_target(app: &str) -> Result<()> {
-    const FORBIDDEN: &[char] = &[
-        '|', '&', ';', '$', '`', '\\', '"', '\'', '<', '>', '\n', '\r', '\0',
-    ];
+    // RFC-0010 SEC-P0-001: Strict regex for app format
+    // Allow: module.path:object OR module.path:factory()
+    let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_.]*:[a-zA-Z_][a-zA-Z0-9_]*(\(\))?$").unwrap();
 
-    if app.chars().any(|c| FORBIDDEN.contains(&c)) {
-        use crate::serve::ServeError;
-        let err = ServeError::ShellMetacharacters {
-            app: app.to_string(),
-        };
-        eprintln!("{}", err.format_source_pointed());
-        std::process::exit(err.exit_code());
+    if !re.is_match(app) {
+        // Fallback check for common shell metacharacters to give better error message
+        const FORBIDDEN: &[char] = &[
+            '|', '&', ';', '$', '`', '\\', '"', '\'', '<', '>', '\n', '\r', '\0',
+        ];
+
+        if app.chars().any(|c| FORBIDDEN.contains(&c)) {
+            let err = ServeError::ShellMetacharacters {
+                app: app.to_string(),
+            };
+            eprintln!("{}", err.format_source_pointed());
+            std::process::exit(err.exit_code());
+        }
+
+        // Generic invalid format error if regex fails but no dangerous chars
+        // This enforces the "module:app" structure strictly
+        eprintln!("Error: invalid app format '{}'", app);
+        eprintln!(
+            "Expected 'module:app' (e.g., 'main:app') matching regex: {}",
+            re.as_str()
+        );
+        std::process::exit(1);
     }
 
     Ok(())
+}
+
+/// SEC-P0-002: Path Traversal Protection (RFC §4.10.2)
+///
+/// Ensures auto-discovery scanning does not escape project directory.
+#[allow(dead_code)] // Currently helper for future auto-discovery usage
+fn validate_scan_path(path: &Path, project_dir: &Path) -> Result<PathBuf> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("Invalid path: {}", e))?;
+    let project = project_dir
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("Invalid project dir: {}", e))?;
+
+    // Must be within project directory
+    if !canonical.starts_with(&project) {
+        let err = ServeError::PathTraversal {
+            path: path.to_path_buf(),
+        };
+        // We return anyhow::Result to match cmd_serve signature if used there,
+        // but strictly we should use ServeError.
+        // Since cmd_serve uses anyhow, we'll convert.
+        anyhow::bail!(err);
+    }
+
+    Ok(canonical)
 }
 
 /// Suggest similar flags for typos (D11, RFC §4.12.2)
@@ -261,4 +303,56 @@ NOTE:
     Requires uvicorn (ASGI) or gunicorn (WSGI) to be installed.
     Run: uv add uvicorn"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_app_target_valid() {
+        assert!(validate_app_target("main:app").is_ok());
+        assert!(validate_app_target("my_module:app").is_ok());
+        assert!(validate_app_target("pkg.mod:app").is_ok());
+        assert!(validate_app_target("main:create_app()").is_ok());
+    }
+
+    #[test]
+    fn test_validate_app_target_invalid_regex() {
+        // These should fail regex check
+        // "main:app;" is caught by fallback shell check too, but regex is first line of defense
+        // "main:app " (space) is caught by regex
+        // "1main:app" (invalid start char)
+
+        // We can't easily assert exit(1) in unit tests without a harness,
+        // but we can check the regex directly since validate_app_target uses exit()
+        let re = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_.]*:[a-zA-Z_][a-zA-Z0-9_]*(\(\))?$").unwrap();
+
+        assert!(!re.is_match("1main:app"));
+        assert!(!re.is_match("main:app "));
+        assert!(!re.is_match("main:app;"));
+        assert!(!re.is_match("../main:app"));
+    }
+
+    #[test]
+    fn test_validate_scan_path() {
+        use std::fs::File;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let project_dir = dir.path();
+        let file_path = project_dir.join("test.txt");
+        File::create(&file_path).unwrap();
+
+        // Valid path inside project
+        assert!(validate_scan_path(&file_path, project_dir).is_ok());
+
+        // Invalid path outside project
+        let outside_dir = tempdir().unwrap();
+        let outside_file = outside_dir.path().join("evil.txt");
+        File::create(&outside_file).unwrap();
+
+        // This should fail
+        assert!(validate_scan_path(&outside_file, project_dir).is_err());
+    }
 }
