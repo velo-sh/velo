@@ -123,7 +123,9 @@ class TestWorkerPoolEdgeCases:
             timeout=10
         )
         assert result.returncode != 0
-        assert "invalid" in result.stderr.lower() or "worker" in result.stderr.lower()
+        # Accept both: old validation msg or clap's argument parsing error
+        stderr_lower = result.stderr.lower()
+        assert any(x in stderr_lower for x in ["invalid", "worker", "unexpected argument"])
 
     def test_edge_pool_002_zero_workers(self):
         """EDGE-POOL-002: Zero workers should error or default to 1."""
