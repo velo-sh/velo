@@ -30,6 +30,10 @@ chat:
 # Custom Instructions to the AI
 instructions: |
   - Focus on code logic, security vulnerabilities, and performance bottlenecks.
+  - Categorize all findings into 'Critical', 'Major', 'Minor', or 'Nitpick'.
+  - **THRESHOLD FOR APPROVAL**: 
+    - You MUST provide an 'APPROVE' status if the only issues identified are 'Nitpick' or 'Minor'.
+    - You should ONLY block approval (keep the status as 'Reviewed' or 'Request Changes') if 'Major' or 'Critical' issues are found.
   - If the changes are minor or purely documentation/styling, and the CI passes, favor approving the PR.
   - For complex logic, be strict and ensure it doesn't break existing patterns found in the codebase.
   - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
