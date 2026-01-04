@@ -24,6 +24,7 @@ import threading
 import subprocess
 import pytest
 from pathlib import Path
+from typing import Tuple
 from unittest.mock import patch, MagicMock
 
 # Import the actual implementation from velo_zygote
@@ -83,9 +84,10 @@ def create_active_socket():
     import uuid
     created_sockets = []
     
-    def _create(version: int = PROTOCOL_VERSION) -> tuple[Path, socket.socket]:
+    def _create(version: int = PROTOCOL_VERSION) -> Tuple[Path, socket.socket]:
         socket_path = Path(f"/tmp/velo-test-{uuid.uuid4().hex[:8]}-v{version:02x}.sock")
-        socket_path.unlink(missing_ok=True)
+        if socket_path.exists():
+            socket_path.unlink()
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.bind(str(socket_path))
         sock.listen(1)
@@ -97,7 +99,8 @@ def create_active_socket():
     # Cleanup
     for socket_path, sock in created_sockets:
         sock.close()
-        socket_path.unlink(missing_ok=True)
+        if socket_path.exists():
+            socket_path.unlink()
 
 
 # ============================================================================
