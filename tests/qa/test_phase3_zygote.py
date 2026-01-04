@@ -44,12 +44,16 @@ class ZygoteTestHelper:
         )
         
         # Wait for socket to be created
+        # Wait for socket to be created
         for _ in range(50):
+            if self.process.poll() is not None:
+                stderr = self.process.stderr.read().decode()
+                raise RuntimeError(f"Zygote process died early! RC={self.process.returncode}, Stderr: {stderr}")
             if self.socket_path.exists():
                 break
             time.sleep(0.1)
         else:
-            raise RuntimeError("Zygote socket not created in time")
+            raise RuntimeError(f"Zygote socket not created in time. Stderr: {self.process.stderr.read().decode()}")
     
     def connect(self) -> socket.socket:
         """Connect to Zygote socket."""
@@ -96,28 +100,32 @@ class TestZygoteReady:
     
     def test_zygote_starts_and_signals_ready(self, tmp_path):
         """Test that Zygote starts and sends READY signal."""
-        socket_path = tmp_path / "test.sock"
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            helper.start()
-            sock = helper.connect()  # This verifies READY was received
-            sock.close()
-        finally:
-            helper.stop()
+        # Use /tmp to avoid AF_UNIX path length limits on macOS
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            helper = ZygoteTestHelper(socket_path)
+            
+            try:
+                helper.start()
+                sock = helper.connect()  # This verifies READY was received
+                sock.close()
+            finally:
+                helper.stop()
     
     def test_zygote_preloads_modules(self, tmp_path):
         """Test that Zygote pre-loads specified modules."""
-        socket_path = tmp_path / "test.sock"
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            # Pre-load a standard library module
-            helper.start(preload=["json", "os"])
-            sock = helper.connect()
-            sock.close()
-        finally:
-            helper.stop()
+        # Use /tmp to avoid AF_UNIX path length limits on macOS
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            helper = ZygoteTestHelper(socket_path)
+            
+            try:
+                # Pre-load a standard library module
+                helper.start(preload=["json", "os"])
+                sock = helper.connect()
+                sock.close()
+            finally:
+                helper.stop()
 
 
 class TestZygoteFork:
@@ -125,104 +133,108 @@ class TestZygoteFork:
     
     def test_fork_executes_script(self, tmp_path):
         """Test that Fork command executes a script."""
-        socket_path = tmp_path / "test.sock"
-        output_file = tmp_path / "output.txt"
-        
-        # Create test script
-        script_path = tmp_path / "test_script.py"
-        script_path.write_text(f"""
+        # Use /tmp to avoid AF_UNIX path length limits on macOS
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            output_file = tmp_path / "output.txt"
+            
+            # Create test script
+            script_path = tmp_path / "test_script.py"
+            script_path.write_text(f"""
 with open('{output_file}', 'w') as f:
     f.write('hello from worker')
 """)
-        
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            helper.start()
-            sock = helper.connect()
             
-            # Send Fork command
-            response = helper.send_command(sock, {
-                "type": "Fork",
-                "script_path": str(script_path),
-                "args": []
-            })
+            helper = ZygoteTestHelper(socket_path)
             
-            assert response.get("type") == "Forked"
-            assert "worker_pid" in response
-            
-            # Wait for worker to complete
-            time.sleep(0.5)
-            
-            # Verify script executed
-            assert output_file.exists()
-            assert output_file.read_text() == "hello from worker"
-            
-            sock.close()
-        finally:
-            helper.stop()
+            try:
+                helper.start()
+                sock = helper.connect()
+                
+                # Send Fork command
+                response = helper.send_command(sock, {
+                    "type": "Fork",
+                    "script_path": str(script_path),
+                    "args": []
+                })
+                
+                assert response.get("type") == "Forked"
+                assert "worker_pid" in response
+                
+                # Wait for worker to complete
+                time.sleep(0.5)
+                
+                # Verify script executed
+                assert output_file.exists()
+                assert output_file.read_text() == "hello from worker"
+                
+                sock.close()
+            finally:
+                helper.stop()
     
     def test_fork_with_args(self, tmp_path):
         """Test that Fork command passes arguments to script."""
-        socket_path = tmp_path / "test.sock"
-        output_file = tmp_path / "args.txt"
-        
-        # Create test script that writes sys.argv
-        script_path = tmp_path / "test_args.py"
-        script_path.write_text(f"""
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            output_file = tmp_path / "args.txt"
+            
+            # Create test script that writes sys.argv
+            script_path = tmp_path / "test_args.py"
+            script_path.write_text(f"""
 import sys
 with open('{output_file}', 'w') as f:
     f.write(' '.join(sys.argv[1:]))
 """)
-        
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            helper.start()
-            sock = helper.connect()
             
-            # Send Fork command with args
-            response = helper.send_command(sock, {
-                "type": "Fork",
-                "script_path": str(script_path),
-                "args": ["--arg1", "value1"]
-            })
+            helper = ZygoteTestHelper(socket_path)
             
-            assert response.get("type") == "Forked"
-            
-            # Wait for worker to complete
-            time.sleep(0.5)
-            
-            # Verify args were passed
-            assert output_file.exists()
-            assert output_file.read_text() == "--arg1 value1"
-            
-            sock.close()
-        finally:
-            helper.stop()
+            try:
+                helper.start()
+                sock = helper.connect()
+                
+                # Send Fork command with args
+                response = helper.send_command(sock, {
+                    "type": "Fork",
+                    "script_path": str(script_path),
+                    "args": ["--arg1", "value1"]
+                })
+                
+                assert response.get("type") == "Forked"
+                
+                # Wait for worker to complete
+                time.sleep(0.5)
+                
+                # Verify args were passed
+                assert output_file.exists()
+                assert output_file.read_text() == "--arg1 value1"
+                
+                sock.close()
+            finally:
+                helper.stop()
     
     def test_fork_nonexistent_script(self, tmp_path):
         """Test that Fork returns error for nonexistent script."""
-        socket_path = tmp_path / "test.sock"
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            helper.start()
-            sock = helper.connect()
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            helper = ZygoteTestHelper(socket_path)
             
-            # Send Fork command for nonexistent script
-            response = helper.send_command(sock, {
-                "type": "Fork",
-                "script_path": "/nonexistent/script.py",
-                "args": []
-            })
-            
-            assert response.get("type") == "Error"
-            assert "not found" in response.get("message", "").lower()
-            
-            sock.close()
-        finally:
-            helper.stop()
+            try:
+                helper.start()
+                sock = helper.connect()
+                
+                # Send Fork command for nonexistent script
+                response = helper.send_command(sock, {
+                    "type": "Fork",
+                    "script_path": "/nonexistent/script.py",
+                    "args": []
+                })
+                
+                assert response.get("type") == "Error"
+                assert "not found" in response.get("message", "").lower()
+                
+                sock.close()
+            finally:
+                helper.stop()
 
 
 class TestZygoteShutdown:
@@ -230,25 +242,26 @@ class TestZygoteShutdown:
     
     def test_shutdown_cleans_up_socket(self, tmp_path):
         """Test that Shutdown command cleans up socket file."""
-        socket_path = tmp_path / "test.sock"
-        helper = ZygoteTestHelper(socket_path)
-        
-        try:
-            helper.start()
-            assert socket_path.exists()
+        with tempfile.TemporaryDirectory(dir="/tmp") as td:
+            socket_path = Path(td) / "test.sock"
+            helper = ZygoteTestHelper(socket_path)
             
-            sock = helper.connect()
-            helper.send_command(sock, {"type": "Shutdown"})
-            sock.close()
-            
-            # Wait for cleanup
-            time.sleep(0.5)
-            
-            # Socket should be removed
-            assert not socket_path.exists()
-        finally:
-            if helper.process:
-                helper.process.terminate()
+            try:
+                helper.start()
+                assert socket_path.exists()
+                
+                sock = helper.connect()
+                helper.send_command(sock, {"type": "Shutdown"})
+                sock.close()
+                
+                # Wait for cleanup
+                time.sleep(0.5)
+                
+                # Socket should be removed
+                assert not socket_path.exists()
+            finally:
+                if helper.process:
+                    helper.process.terminate()
 
 
 if __name__ == "__main__":

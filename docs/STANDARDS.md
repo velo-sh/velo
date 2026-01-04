@@ -24,8 +24,8 @@ velo/
 │   │   └── phase-1.5-test-matrix.md
 │   └── testing/                # Testing guides
 │       └── phase-1.5-qa-guide.md
+├── setup-dev.sh                # Dev environment setup (project root)
 ├── scripts/
-│   ├── setup-dev.sh            # Dev environment setup
 │   ├── test-phase{X.Y}.sh      # Dev acceptance tests
 │   └── ci-qa.sh                # QA CI test runner
 ├── src/                        # Rust source code
@@ -57,7 +57,7 @@ velo/
 |------|--------|---------|
 | Dev Acceptance | `test-phase{X.Y}.sh` | `test-phase1.5.sh` |
 | CI Runner | `ci-{scope}.sh` | `ci-qa.sh` |
-| Setup Script | `setup-{purpose}.sh` | `setup-dev.sh` |
+| Setup Script | `setup-{purpose}.sh` | `./setup-dev.sh` (root) |
 
 ### 2.3 Test Files (Python)
 

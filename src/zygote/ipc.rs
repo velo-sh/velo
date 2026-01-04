@@ -1,19 +1,25 @@
 //! Zygote IPC - Unix Socket communication between launcher and Zygote process
 //!
-//! Protocol:
+//! Protocol (MessagePack with length prefix):
 //! ```text
-//! Launcher → Zygote:   FORK <script_path> <args>
-//!                      SHUTDOWN
-//! Zygote → Launcher:   READY
-//!                      FORKED <worker_pid>
-//!                      ERROR <message>
+//! ┌──────────────┬───────────────────────┐
+//! │ Length (4B)  │ MessagePack Payload   │
+//! │ Little-endian│                       │
+//! └──────────────┴───────────────────────┘
 //! ```
+//!
+//! Message types:
+//! - Launcher → Zygote:   Fork, Shutdown, Status
+//! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+
+/// Maximum message size (1MB) - prevents DoS via oversized messages
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 
 /// Commands sent from Launcher to Zygote
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,37 +106,132 @@ pub fn cleanup_socket(socket_path: &Path) {
     }
 }
 
+// ============================================================================
+// MessagePack serialization helpers (length-prefix + version framing)
+// ============================================================================
+
+/// Protocol version (ADV-1)
+/// Layout: [Length 4B LE] [Version 1B] [Payload MsgPack]
+const PROTOCOL_VERSION: u8 = 0x01;
+
+/// Write a MessagePack message with length prefix and version byte
+fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+    let payload = rmp_serde::to_vec(msg).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    // Security: Check message size
+    if payload.len() > MAX_MESSAGE_SIZE {
+        return Err(ZygoteError::ProtocolError(format!(
+            "Message too large: {} bytes (max {})",
+            payload.len(),
+            MAX_MESSAGE_SIZE
+        )));
+    }
+
+    // ADV-2: TRACE logging (decode to readable format)
+    #[cfg(debug_assertions)]
+    eprintln!("[IPC SEND] {:?}", msg);
+
+    // Write 4-byte length prefix (little-endian) - includes version + payload
+    let total_len = 1 + payload.len(); // version byte + payload
+    let len_bytes = (total_len as u32).to_le_bytes();
+    stream
+        .write_all(&len_bytes)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    // Write version byte (ADV-1)
+    stream
+        .write_all(&[PROTOCOL_VERSION])
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    // Write payload
+    stream
+        .write_all(&payload)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    stream
+        .flush()
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    Ok(())
+}
+
+/// Read a MessagePack message with length prefix and version byte
+fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
+    stream: &mut UnixStream,
+) -> Result<T> {
+    // Read 4-byte length prefix (includes version + payload)
+    let mut len_buf = [0u8; 4];
+    stream
+        .read_exact(&mut len_buf)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    let total_len = u32::from_le_bytes(len_buf) as usize;
+
+    // Security: Check message size
+    if total_len > MAX_MESSAGE_SIZE {
+        return Err(ZygoteError::ProtocolError(format!(
+            "Message too large: {} bytes (max {})",
+            total_len, MAX_MESSAGE_SIZE
+        )));
+    }
+
+    // Need at least version byte
+    if total_len < 1 {
+        return Err(ZygoteError::ProtocolError(
+            "Message too small to contain version byte".to_string(),
+        ));
+    }
+
+    // Read version byte (ADV-1)
+    let mut version_buf = [0u8; 1];
+    stream
+        .read_exact(&mut version_buf)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    let version = version_buf[0];
+    if version != PROTOCOL_VERSION {
+        return Err(ZygoteError::ProtocolError(format!(
+            "Protocol version mismatch: got {}, expected {}",
+            version, PROTOCOL_VERSION
+        )));
+    }
+
+    // Read payload (total_len - 1 for version byte)
+    let payload_len = total_len - 1;
+    let mut buf = vec![0u8; payload_len];
+    stream
+        .read_exact(&mut buf)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    // Deserialize
+    let msg: T =
+        rmp_serde::from_slice(&buf).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    // ADV-2: TRACE logging (decode to readable format)
+    #[cfg(debug_assertions)]
+    eprintln!("[IPC RECV] {:?}", msg);
+
+    Ok(msg)
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
 /// Accept a command from a client connection
 pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteCommand)> {
-    let (stream, _) = listener
+    let (mut stream, _) = listener
         .accept()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-    let mut reader = BufReader::new(
-        stream
-            .try_clone()
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?,
-    );
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-
-    let cmd: ZygoteCommand =
-        serde_json::from_str(&line).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let cmd: ZygoteCommand = read_message(&mut stream)?;
 
     Ok((stream, cmd))
 }
 
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
-    let json =
-        serde_json::to_string(&response).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
-    writeln!(stream, "{}", json).map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-    stream
-        .flush()
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-    Ok(())
+    write_message(stream, &response)
 }
 
 /// Connect to the Zygote and send a command, returning the response
@@ -138,19 +239,8 @@ pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<Zygote
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| ZygoteError::ConnectionFailed(e.to_string()))?;
 
-    let stream_clone = stream
-        .try_clone()
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-    let mut reader = BufReader::new(stream_clone);
-
     // First, receive READY response from Zygote
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-
-    let ready_response: ZygoteResponse =
-        serde_json::from_str(&line).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let ready_response: ZygoteResponse = read_message(&mut stream)?;
 
     if !matches!(ready_response, ZygoteResponse::Ready) {
         return Err(ZygoteError::ProtocolError(
@@ -159,20 +249,10 @@ pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<Zygote
     }
 
     // Send command
-    let json =
-        serde_json::to_string(&command).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
-    writeln!(stream, "{}", json).map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-    stream
-        .flush()
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    write_message(&mut stream, &command)?;
 
     // Read response to command
-    line.clear();
-    reader
-        .read_line(&mut line)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-
-    serde_json::from_str(&line).map_err(|e| ZygoteError::ProtocolError(e.to_string()))
+    read_message(&mut stream)
 }
 
 #[cfg(test)]
@@ -185,17 +265,74 @@ mod tests {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
         };
-        let json = serde_json::to_string(&resp).unwrap();
-        assert!(json.contains("\"type\":\"Status\""));
-        assert!(json.contains("\"pid\":1234"));
-        assert!(json.contains("\"preload\":[\"numpy\",\"pandas\"]"));
 
-        let decoded: ZygoteResponse = serde_json::from_str(&json).unwrap();
+        // Test MessagePack roundtrip
+        let bytes = rmp_serde::to_vec(&resp).unwrap();
+        let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).unwrap();
+
         if let ZygoteResponse::Status { pid, preload } = decoded {
             assert_eq!(pid, 1234);
             assert_eq!(preload, vec!["numpy", "pandas"]);
         } else {
             panic!("Decoded wrong variant");
         }
+    }
+
+    #[test]
+    fn test_fork_command_serialization() {
+        let cmd = ZygoteCommand::Fork {
+            script_path: PathBuf::from("/tmp/test.py"),
+            args: vec!["--flag".to_string()],
+            async_mode: true,
+            stdout_path: None,
+            stderr_path: None,
+            exit_code_path: None,
+            fast_mode: false,
+            bundle_path: None,
+            project_root: None,
+            max_bundle_size: None,
+        };
+
+        let bytes = rmp_serde::to_vec(&cmd).unwrap();
+        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).unwrap();
+
+        if let ZygoteCommand::Fork {
+            script_path,
+            async_mode,
+            ..
+        } = decoded
+        {
+            assert_eq!(script_path, PathBuf::from("/tmp/test.py"));
+            assert!(async_mode);
+        } else {
+            panic!("Decoded wrong variant");
+        }
+    }
+
+    #[test]
+    fn test_message_size_smaller_than_json() {
+        let cmd = ZygoteCommand::Fork {
+            script_path: PathBuf::from("/tmp/test.py"),
+            args: vec!["arg1".to_string(), "arg2".to_string()],
+            async_mode: true,
+            stdout_path: Some(PathBuf::from("/tmp/out.txt")),
+            stderr_path: Some(PathBuf::from("/tmp/err.txt")),
+            exit_code_path: Some(PathBuf::from("/tmp/exit.txt")),
+            fast_mode: true,
+            bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
+            project_root: Some(PathBuf::from("/home/user/project")),
+            max_bundle_size: Some(1024 * 1024),
+        };
+
+        let msgpack_bytes = rmp_serde::to_vec(&cmd).unwrap();
+        let json_bytes = serde_json::to_vec(&cmd).unwrap();
+
+        // MessagePack should be smaller
+        assert!(
+            msgpack_bytes.len() < json_bytes.len(),
+            "MessagePack {} bytes should be smaller than JSON {} bytes",
+            msgpack_bytes.len(),
+            json_bytes.len()
+        );
     }
 }

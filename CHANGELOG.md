@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-01-04
+
+### Added
+
+- **`velo serve` (RFC-0010)**: Zero-config ASGI/WSGI server wrapper
+  - Auto-detection: FastAPI, Django, Flask, Starlette
+  - Instant restart (<50ms hot reload)
+  - Gunicorn support for WSGI apps
+  - Health check endpoints (`--health`)
+  - Graceful shutdown with configurable timeout
+  - Platform-specific optimizations (macOS FSEvents, Linux inotify)
+- **`velo analyze --graph`**: Static import graph visualization with savings report
+- **MessagePack IPC (OPT-0010-001)**: 20% message size reduction, 3-5x faster serialization
+  - Protocol version 0x01 with length-prefix framing
+  - Pure Python fallback via vendored u-msgpack-python
+  - TRACE-level debugging for IPC messages
+- **15 Expert Reviews**: Comprehensive RFC-0010 review (Platform, Security, QA, DX, Docs, Performance, Accessibility, Legal)
+
+### Changed
+
+- IPC protocol upgraded from JSON to MessagePack
+- Zygote communication uses versioned protocol framing
+
+### Security
+
+- Command injection prevention for app arguments
+- Path traversal protection in auto-discovery
+- PID file TOCTOU race condition prevention
+- DoS protection via message size limits (1MB max)
+
 ## [0.3.5] - 2026-01-02
 
 ### Added

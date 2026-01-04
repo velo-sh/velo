@@ -123,7 +123,7 @@ cargo test
 
 - [AGENTS.md](../../AGENTS.md) - Top-level configuration
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml) - CI pipeline
-- [scripts/setup-dev.sh](../../scripts/setup-dev.sh) - Dev setup
+- [setup-dev.sh](../../setup-dev.sh) - Dev setup
 
 ---
 
