@@ -148,7 +148,22 @@ fn find_python_helper(project_dir: &Path, name: &str) -> Option<PathBuf> {
         current = parent.to_path_buf();
     }
 
-    // 3. TODO: check relative to executable for installed mode
+    // 3. Check relative to executable (installed or dev layout)
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut current = exe_path.to_path_buf();
+        while let Some(parent) = current.parent() {
+            let path = parent.join("python").join(name);
+            if path.exists() {
+                return Some(path);
+            }
+            // Also check for 'python' dir in parent's siblings (for target/debug layout)
+            let path = parent.join("..").join("python").join(name);
+            if path.exists() {
+                return Some(path);
+            }
+            current = parent.to_path_buf();
+        }
+    }
 
     None
 }
