@@ -2,8 +2,10 @@
 //!
 //! RFC-0006 Phase 5.0.3: Bundle CLI
 //!
+//! Uses clap for argument parsing with derive macros.
 
 use anyhow::{Result, anyhow};
+use clap::{Parser, Subcommand};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -151,17 +153,12 @@ pub fn read_bundle_info(path: &Path) -> Result<BundleInfo> {
     })
 }
 
-pub fn cmd_bundle_inspect(args: &[String]) -> Result<()> {
-    if args.len() < 4 {
-        eprintln!("Usage: velo bundle inspect <path> [--verify] [--modules] [--json]");
-        std::process::exit(1);
-    }
-
-    let path = Path::new(&args[3]);
-    let verify = args.iter().any(|a| a == "--verify");
-    let show_modules = args.iter().any(|a| a == "--modules");
-    let json_output = args.iter().any(|a| a == "--json");
-
+fn cmd_bundle_inspect_impl(
+    path: &Path,
+    verify: bool,
+    show_modules: bool,
+    json_output: bool,
+) -> Result<()> {
     if !path.exists() {
         return Err(anyhow!("Bundle not found: {}", path.display()));
     }
@@ -233,32 +230,68 @@ pub fn cmd_bundle_inspect(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Bundle management for Velo Fast Loader
+#[derive(Parser, Debug)]
+#[command(name = "bundle", about = "Bundle management for fast loading")]
+pub struct BundleCmd {
+    #[command(subcommand)]
+    pub command: BundleSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BundleSubcommand {
+    /// Inspect a bundle file
+    Inspect {
+        /// Path to bundle file
+        #[arg(required = true)]
+        path: PathBuf,
+
+        /// Verify bundle integrity (BLAKE3 hash check)
+        #[arg(long)]
+        verify: bool,
+
+        /// Show module list
+        #[arg(long)]
+        modules: bool,
+
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Build a new bundle from project
+    Build {
+        /// Project directory to bundle (default: current directory)
+        #[arg(default_value = ".")]
+        project_dir: PathBuf,
+
+        /// Output bundle file path (default: bundle.veloc)
+        #[arg(long, short, default_value = "bundle.veloc")]
+        output: PathBuf,
+    },
+}
+
+/// Handle 'velo bundle' command (entry point from cli.rs)
 pub fn cmd_bundle(args: &[String]) -> Result<()> {
-    if args.len() < 3 {
-        eprintln!("Usage: velo bundle <inspect|build> [options]");
-        std::process::exit(1);
-    }
-    match args[2].as_str() {
-        "inspect" => cmd_bundle_inspect(args),
-        "build" => cmd_bundle_build(args),
-        _ => Err(anyhow!("Unknown subcommand")),
+    // Parse with clap - skip "velo" prefix
+    let cmd = BundleCmd::try_parse_from(&args[1..])?;
+
+    match cmd.command {
+        BundleSubcommand::Inspect {
+            path,
+            verify,
+            modules,
+            json,
+        } => cmd_bundle_inspect_impl(&path, verify, modules, json),
+        BundleSubcommand::Build {
+            project_dir,
+            output,
+        } => cmd_bundle_build_impl(&project_dir, &output),
     }
 }
 
-pub fn cmd_bundle_build(args: &[String]) -> Result<()> {
+fn cmd_bundle_build_impl(project_dir: &Path, output_path: &Path) -> Result<()> {
     use crate::graph::builder::GraphBuilder;
     use crate::graph::serializer::serialize_to_aligned_bytes;
-
-    let project_dir = if args.len() > 3 {
-        Path::new(&args[3])
-    } else {
-        Path::new(".")
-    };
-    let output_path = if args.len() > 4 {
-        Path::new(&args[4])
-    } else {
-        Path::new("bundle.veloc")
-    };
 
     eprintln!("📦 Building bundle from: {}", project_dir.display());
 
@@ -439,4 +472,104 @@ struct ModuleData {
     code: Vec<u8>,
     hash: [u8; 32],
     is_package: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_inspect_subcommand() {
+        let cmd =
+            BundleCmd::try_parse_from(["bundle", "inspect", "bundle.veloc", "--verify"]).unwrap();
+        match cmd.command {
+            BundleSubcommand::Inspect {
+                path,
+                verify,
+                modules,
+                json,
+            } => {
+                assert_eq!(path.to_str().unwrap(), "bundle.veloc");
+                assert!(verify);
+                assert!(!modules);
+                assert!(!json);
+            }
+            _ => panic!("Expected Inspect subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_inspect_with_all_flags() {
+        let cmd = BundleCmd::try_parse_from([
+            "bundle",
+            "inspect",
+            "test.veloc",
+            "--verify",
+            "--modules",
+            "--json",
+        ])
+        .unwrap();
+        match cmd.command {
+            BundleSubcommand::Inspect {
+                verify,
+                modules,
+                json,
+                ..
+            } => {
+                assert!(verify);
+                assert!(modules);
+                assert!(json);
+            }
+            _ => panic!("Expected Inspect subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_build_default() {
+        let cmd = BundleCmd::try_parse_from(["bundle", "build"]).unwrap();
+        match cmd.command {
+            BundleSubcommand::Build {
+                project_dir,
+                output,
+            } => {
+                assert_eq!(project_dir.to_str().unwrap(), ".");
+                assert_eq!(output.to_str().unwrap(), "bundle.veloc");
+            }
+            _ => panic!("Expected Build subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_build_with_args() {
+        let cmd = BundleCmd::try_parse_from([
+            "bundle",
+            "build",
+            "/my/project",
+            "--output",
+            "custom.veloc",
+        ])
+        .unwrap();
+        match cmd.command {
+            BundleSubcommand::Build {
+                project_dir,
+                output,
+            } => {
+                assert_eq!(project_dir.to_str().unwrap(), "/my/project");
+                assert_eq!(output.to_str().unwrap(), "custom.veloc");
+            }
+            _ => panic!("Expected Build subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_missing_inspect_path_error() {
+        let result = BundleCmd::try_parse_from(["bundle", "inspect"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_missing_subcommand_error() {
+        let result = BundleCmd::try_parse_from(["bundle"]);
+        assert!(result.is_err());
+    }
 }
