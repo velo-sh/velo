@@ -65,14 +65,16 @@ def listening_socket():
     import uuid
     socket_path = Path(f"/tmp/velo-test-{uuid.uuid4().hex[:8]}.sock")
     # Remove any stale socket
-    socket_path.unlink(missing_ok=True)
+    if socket_path.exists():
+        socket_path.unlink()
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(str(socket_path))
     sock.listen(128)  # Large backlog for performance testing
     yield socket_path, sock
     sock.close()
-    socket_path.unlink(missing_ok=True)
+    if socket_path.exists():
+        socket_path.unlink()
 
 
 # ============================================================================
