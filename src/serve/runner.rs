@@ -16,14 +16,101 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::serve::config::ServeArgs;
+use crate::serve::config::{LogFormat, ServeArgs};
 use crate::serve::error::ServeError;
 use crate::serve::framework::{detect_framework, get_preload_modules};
 use crate::zygote::ZygoteLauncher;
 
 // ============================================================================
-// Security helpers (ADR D3, D4)
+// Logging & Security helpers (ADR D3, D4, D5)
 // ============================================================================
+
+/// Structured logger for serve command (ADR D5)
+struct ServeLogger {
+    format: LogFormat,
+    verbose_level: u8,
+}
+
+impl ServeLogger {
+    fn new(format: LogFormat, verbose_level: u8) -> Self {
+        Self {
+            format,
+            verbose_level,
+        }
+    }
+
+    fn info(&self, msg: &str) {
+        self.log("info", msg, None);
+    }
+
+    fn info_with(&self, msg: &str, detail: &str) {
+        if self.verbose_level >= 1 {
+            self.log("info", msg, Some(detail));
+        } else {
+            self.log("info", msg, None);
+        }
+    }
+
+    fn verbose(&self, msg: &str) {
+        if self.verbose_level >= 1 {
+            self.log("info", msg, None);
+        }
+    }
+
+    fn warn(&self, msg: &str) {
+        self.log("warn", msg, None);
+    }
+
+    fn error(&self, msg: &str) {
+        self.log("error", msg, None);
+    }
+
+    fn debug(&self, msg: &str) {
+        if self.verbose_level >= 2 {
+            self.log("debug", msg, None);
+        }
+    }
+
+    fn trace(&self, msg: &str) {
+        if self.verbose_level >= 3 {
+            self.log("trace", msg, None);
+        }
+    }
+
+    fn log(&self, level: &str, msg: &str, detail: Option<&str>) {
+        match self.format {
+            LogFormat::Json => {
+                let timestamp =
+                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                let mut output = format!(
+                    "{{\"timestamp\":\"{}\",\"level\":\"{}\",\"msg\":\"{}\"",
+                    timestamp, level, msg
+                );
+                if let Some(d) = detail {
+                    output.push_str(&format!(",\"detail\":\"{}\"", d));
+                }
+                output.push('}');
+                eprintln!("{}", output);
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
+            }
+            LogFormat::Text => {
+                use colored::Colorize;
+                let level_colored = match level {
+                    "info" => "info".blue().bold(),
+                    "warn" => "warn".yellow().bold(),
+                    "error" => "error".red().bold(),
+                    _ => level.normal(),
+                };
+                if let Some(d) = detail {
+                    eprintln!("{}: {} {}", level_colored, msg, d);
+                } else {
+                    eprintln!("{}: {}", level_colored, msg);
+                }
+            }
+        }
+    }
+}
 
 /// SEC-P0-005: Remove dangerous environment variables before subprocess spawn (ADR D3)
 ///
@@ -266,6 +353,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
 
+    // Step 4: Setup Logger
+    let logger = ServeLogger::new(args.log_format, args.verbose);
+
     // Step 2: Detect framework FIRST (shows user Velo understands their project)
     let framework = detect_framework(module, project_dir);
     let preload_modules = get_preload_modules(framework);
@@ -275,17 +365,18 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
     // Show framework detection result
     if framework != crate::serve::framework::Framework::Unknown {
-        eprintln!(
-            "🔍 Detected: {} → {} (auto-preload: {})",
-            framework,
-            server,
-            preload_modules.join(", ")
+        logger.info_with(
+            &format!("Detected: {} → {}", framework, server),
+            &format!("(auto-preload: {})", preload_modules.join(", ")),
         );
+    } else {
+        logger.trace("Framework: Unknown (auto-detection missed)");
     }
 
     // Step 4: Check server is installed
+    logger.debug(&format!("Checking if {} is installed...", server));
     if !check_server_installed(server, python_path) {
-        eprintln!("❌ Missing dependency: {}", server);
+        logger.error(&format!("Missing dependency: {}", server));
         eprintln!();
         eprintln!("{} is required to run {} applications.", server, framework);
         eprintln!("To fix:");
@@ -303,14 +394,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let mut _zygote_guard: Option<crate::zygote::ZygoteLauncher> = None;
 
     // Step 6: Start server
-    eprintln!("🚀 Starting server...");
-    eprintln!("   App:       {}", args.app);
-    eprintln!("   Server:    {}", server);
-    eprintln!("   Bind:      {}:{}", args.host, args.port);
-    eprintln!("   Workers:   {}", args.workers);
-    eprintln!("   Timeout:   {}s", args.timeout);
-    if args.reload {
-        eprintln!("   Reload:    enabled");
+    logger.info("Starting server...");
+    if args.log_format == LogFormat::Text {
+        eprintln!("   App:       {}", args.app);
+        eprintln!("   Server:    {}", server);
+        eprintln!("   Bind:      {}:{}", args.host, args.port);
+        eprintln!("   Workers:   {}", args.workers);
+        eprintln!("   Timeout:   {}s", args.timeout);
+        if args.reload {
+            eprintln!("   Reload:    enabled");
+        }
     }
 
     // Start Zygote if enabled and we have preload modules
@@ -318,25 +411,28 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
-            eprintln!("⚡ Pre-warming Zygote with {} modules...", framework);
+            logger.info(&format!("Pre-warming Zygote with {} modules...", framework));
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
             if let Err(e) = launcher.start(&preload_modules) {
-                eprintln!("⚠️  Zygote pre-warm failed: {}", e);
-                eprintln!("   Continuing without Zygote optimization");
+                logger.warn(&format!("Zygote pre-warm failed: {}", e));
+                if args.log_format == LogFormat::Text {
+                    eprintln!("   Continuing without Zygote optimization");
+                }
             } else {
-                eprintln!("✅ Zygote ready");
+                logger.info("Zygote ready");
                 // RAII: Keep Zygote alive as long as this function runs
                 // When this function returns/unwinds, _zygote_guard will drop and kill the Zygote
                 _zygote_guard = Some(launcher);
             }
         } else {
-            eprintln!("⚡ Using existing Zygote");
+            logger.info("Using existing Zygote");
         }
     }
 
     // Build server command based on server type
+    logger.debug(&format!("Building command for {}...", server));
     let mut cmd = Command::new(python_path);
     cmd.arg("-m").arg(server.module_name());
 
@@ -379,10 +475,24 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     apply_macos_signal_reset(&mut cmd);
 
     // Set working directory and inherit stdio
+    logger.verbose(&format!("Current directory: {:?}", project_dir));
     cmd.current_dir(project_dir)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+
+    // PERF-P0-001: Dry run mode
+    if args.dry_run {
+        logger.info(&format!(
+            "Dry run: Command would be: {:?} {:?}",
+            cmd.get_program(),
+            cmd.get_args()
+                .map(|v| v.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        return Ok(());
+    }
 
     eprintln!();
 
@@ -390,7 +500,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let mut child = ManagedChild::spawn(cmd, args.pid_file.clone())
         .map_err(|e| anyhow::anyhow!("Failed to start server: {}", e))?;
 
-    eprintln!("✅ Server started (PID: {})", child.id());
+    logger.info(&format!("Server started (PID: {})", child.id()));
 
     // CN-P0-001: Spawn health server if --health-bind is set (ADR D2)
     let _health_server = if let Some(ref health_bind) = args.health_bind {
@@ -401,7 +511,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
         match HealthServer::spawn(health_bind, std::sync::Arc::clone(&ready)) {
             Ok(server) => {
-                eprintln!("🏥 Health server: http://{}/healthz", health_bind);
+                logger.info(&format!("Health server: http://{}/healthz", health_bind));
                 // Mark as ready (in real impl, we'd wait for first HTTP response)
                 ready.store(true, std::sync::atomic::Ordering::SeqCst);
                 Some(server)
@@ -447,26 +557,26 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     }
                     signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                         eprintln!();
-                        eprintln!("🛑 Shutdown signal received, waiting for graceful shutdown...");
+                        logger.info("Shutdown signal received, waiting for graceful shutdown...");
 
                         if let Err(e) = child.terminate() {
-                            eprintln!("⚠️  Failed to send SIGTERM: {}", e);
+                            logger.warn(&format!("Failed to send SIGTERM: {}", e));
                         }
 
                         // Wait for graceful shutdown with timeout
                         let timeout = Duration::from_secs(args.timeout);
                         match child.wait_timeout(timeout) {
                             Ok(Some(_)) => {
-                                eprintln!("✅ Server shut down gracefully");
+                                logger.info("Server shut down gracefully");
                                 return Ok(());
                             }
                             Ok(None) => {
-                                eprintln!(
-                                    "⚠️  Graceful shutdown timed out after {}s, force killing...",
+                                logger.warn(&format!(
+                                    "Graceful shutdown timed out after {}s, force killing...",
                                     args.timeout
-                                );
+                                ));
                                 if let Err(e) = child.kill() {
-                                    eprintln!("❌ Failed to kill server: {}", e);
+                                    logger.error(&format!("Failed to kill server: {}", e));
                                 }
                                 return Ok(());
                             }
