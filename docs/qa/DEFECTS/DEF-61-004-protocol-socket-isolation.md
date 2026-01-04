@@ -244,13 +244,89 @@ fn verify_handshake(stream: &mut UnixStream) -> Result<u8> {
 
 ---
 
-## Future Work (v0.7.0)
+## Future Work
 
-- [ ] Magic Handshake (PROTOCOL_VERSION = 0x02)
-- [ ] XDG_RUNTIME_DIR support on Linux
-- [ ] Socket file lock (flock) for atomic startup
+### v0.6.2 (This Hotfix)
+- [x] Versioned socket path (`zygote-v1.sock`)
+- [x] User-isolated directory (`/tmp/velo-{UID}/`)
+- [x] Connection test for stale detection
+- [x] Socket directory permissions (0700)
+
+### v0.7.0 (Protocol Enhancement)
+| Feature | Source | Description |
+|---------|--------|-------------|
+| Magic Handshake | IPC Expert | `b"VELO"` + version byte for double verification |
+| PID File + flock | Nginx | Prevent duplicate Zygote with file lock |
+
+```rust
+// Nginx-style PID lock
+fn acquire_pid_lock(dir: &Path) -> Result<File> {
+    let pid_file = dir.join("zygote.pid");
+    let f = OpenOptions::new().create(true).write(true).open(&pid_file)?;
+    flock(f.as_raw_fd(), FlockArg::LockExclusiveNonblock)?;
+    writeln!(&f, "{}", std::process::id())?;
+    Ok(f)
+}
+```
+
+### v0.8.0 (Performance)
+| Feature | Source | Description |
+|---------|--------|-------------|
+| Persistent IPC Connection | Node.js Cluster | Reuse socket across multiple Fork commands |
+| Worker ID Assignment | Node.js | `VELO_WORKER_ID` environment variable |
+
+```
+Current:  connect → fork → close (per request)
+Improved: connect → fork → fork → fork → ... → close (session)
+```
+
+### v1.0.0 (Production Deployment)
+| Feature | Source | Description |
+|---------|--------|-------------|
+| systemd Socket Activation | systemd | On-demand Zygote startup via `$LISTEN_FDS` |
+| Hot Upgrade | Bun | Zero-downtime protocol version upgrade |
+| XDG_RUNTIME_DIR | FHS | Use `/run/user/{UID}/velo/` on Linux |
+
+**systemd Socket Activation**:
+```ini
+# /etc/systemd/user/velo-zygote.socket
+[Socket]
+ListenStream=%t/velo/zygote.sock
+
+[Install]
+WantedBy=sockets.target
+```
+
+```ini
+# /etc/systemd/user/velo-zygote.service
+[Service]
+ExecStart=/usr/bin/velo zygote start --socket-fd=3
+Type=notify
+```
+
+**Hot Upgrade (Bun-style)**:
+```
+1. New Velo binary deployed
+2. CLI detects version mismatch via handshake
+3. CLI sends "Upgrade" command to old Zygote
+4. Old Zygote spawns new Zygote (new version)
+5. Old Zygote graceful shutdown
+6. New Zygote inherits socket
+```
+
+---
+
+## Industry Reference
+
+| Runtime | Socket Strategy | Isolation | Protocol |
+|---------|-----------------|-----------|----------|
+| Nginx | `/var/run/nginx.sock` | PID lock | Binary |
+| Bun | `/tmp/bun-*` | Per-session | Binary |
+| Node.js | IPC Channel | Per-cluster | JSON |
+| Velo | `/tmp/velo-{UID}/zygote-v1.sock` | User + Version | MessagePack |
 
 ---
 
 **Architect Sign-off**: ✅ Expert-reviewed, Ready for Developer
 **Review Date**: 2026-01-04
+**Experts Consulted**: 8 (Unix/POSIX, IPC, Process, Security, Nginx, Bun, Node.js, systemd)
