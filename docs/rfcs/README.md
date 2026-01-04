@@ -22,6 +22,13 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0006](./0006-phase-5.0-fast-loader.md) | Phase 5.0 Fast Loader | ✅ Implemented | v0.5.0 |
 | [0007](./0007-benchmarking-infrastructure.md) | Performance Tracking | ✅ Implemented | v0.5.0 |
 | [0008](./0008-phase-5.1-zygote-optimization.md) | Phase 5.1 Zygote 10ms | ✅ Accepted | v0.5.1 |
+| [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Approved | v0.6.1 |
+
+## Architecture Decision Records (ADRs)
+
+| ADR | Title | RFC | Status |
+|-----|-------|-----|--------|
+| [ADR-0010-001](./ADR-0010-001-gap-decisions.md) | Gap Analysis Decisions | RFC-0010 | ✅ Approved |
 
 ## RFC Lifecycle
 
