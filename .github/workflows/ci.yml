@@ -37,10 +37,10 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Create venv
+      - name: Create venv and install deps
         run: |
           uv venv --python ${{ matrix.python-version }}
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
 
       - name: Build
         run: cargo build --release
@@ -101,7 +101,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -129,7 +129,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -157,7 +157,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -187,7 +187,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -222,7 +222,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -250,7 +250,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -278,7 +278,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -309,7 +309,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -341,7 +341,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -369,7 +369,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -404,7 +404,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -433,7 +433,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -465,7 +465,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -495,7 +495,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
@@ -525,7 +525,7 @@ jobs:
       - name: Setup Python environment
         run: |
           uv venv --python 3.11
-          uv pip install pytest requests psutil msgpack
+          uv sync --extra dev
       
       - name: Build release binary
         run: cargo build --release
