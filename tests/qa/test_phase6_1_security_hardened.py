@@ -143,5 +143,63 @@ class TestPhase61SecurityHardened:
         assert proc.poll() is None
         proc.kill()
 
+    def test_sec_p0_002_relative_path_traversal(self, isolated_env, capsys):
+        """
+        SEC-P0-002: Path Traversal (Relative Proof).
+        Proves: analyze allows escaping project root via '..'
+        """
+        env = isolated_env
+        # Try to scan a path outside the project using relative dots
+        # /private/etc is usually accessible on mac
+        traversal_path = "../../" * 10 + "etc/passwd"
+        
+        result = subprocess.run(
+            [env.velo, "analyze", traversal_path],
+            cwd=env.path,
+            capture_output=True,
+            text=True
+        )
+        
+        # If it returns success or attempts to scan, it's a violation.
+        # It SHOULD fail with an error like "Path is outside project root"
+        # Since we found it's vulnerable, we expect this assert to FAIL in its current state
+        # (meaning the 'proof' works)
+        assert "outside" in result.stderr.lower() or result.returncode != 0
+
+    def test_sec_p0_004_port_probe(self, isolated_env):
+        """
+        SEC-P0-004: Health Recon (Zero Wiring Proof).
+        Proves: Even when --health-bind is passed, NO SOCKET is opened.
+        """
+        import socket
+        env = isolated_env
+        health_port = 8082
+        
+        # Start server with health binding
+        proc = subprocess.Popen(
+            [env.velo, "serve", "main:app", "--health-bind", f"127.0.0.1:{health_port}"],
+            cwd=env.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        time.sleep(3)
+        try:
+            # Try to connect via raw socket to prove it's NOT listening
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            conn_result = s.connect_ex(("127.0.0.1", health_port))
+            s.close()
+            
+            # If conn_result == 0, it means the port IS open
+            # If conn_result != 0, it means it's closed (confirmed deficiency)
+            # We want this test to FAIL if the port is CLOSED (as proof of deficiency)
+            # wait, normally tests assert what SHOULD happen.
+            # Here we want to CODIFY the failure.
+            assert conn_result == 0, f"Deficiency Verified: Health Port {health_port} is NOT open despite --health-bind."
+        finally:
+            proc.kill()
+
 if __name__ == "__main__":
     pytest.main([__file__])
