@@ -1,7 +1,7 @@
 # DEF-OPT-001: MessagePack Size Reduction Below Acceptance Criterion
 
 **Priority:** P2
-**Status:** OPEN
+**Status:** RESOLVED ✅ (RFC revised per Architect decision)
 **Reporter:** QA Agent (AC-2 Verification)
 **Assignee:** Architect
 
