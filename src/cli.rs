@@ -92,6 +92,20 @@ pub fn run() -> Result<()> {
 
     // Centralized error handling (P0 refactor)
     if let Err(e) = result {
+        // DEF-61-002: Check if this is a clap help/version request (exit code 0)
+        if let Some(clap_err) = e.downcast_ref::<clap::Error>() {
+            // Clap handles printing for DisplayHelp and DisplayVersion
+            clap_err.print().ok();
+            match clap_err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    std::process::exit(0);
+                }
+                _ => {
+                    std::process::exit(2); // Clap usage errors
+                }
+            }
+        }
+
         // Format error with "Error:" prefix for consistency
         eprintln!("Error: {}", e);
         std::process::exit(1);
