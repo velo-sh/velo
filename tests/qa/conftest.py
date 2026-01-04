@@ -96,9 +96,9 @@ def isolated_env(tmp_path):
                 ["uv", "venv", "--seed", str(self.venv_path)],
                 cwd=self.path, check=True, capture_output=True
             )
-            # Install blake3 for hash verification compatibility
+            # Install blake3 for hash verification and uvicorn for server testing
             subprocess.run(
-                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3"],
+                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn"],
                 cwd=self.path, capture_output=True
             )
             # Create empty uv.lock so velo detects it as a project
