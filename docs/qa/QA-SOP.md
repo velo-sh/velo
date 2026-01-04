@@ -1,7 +1,7 @@
 # QA Standard Operating Procedure (SOP)
 
 > Derived from Phase 6.0 QA Working Group Experience
-> Version 2.0 | 2026-01-04
+> Version 2.1 | 2026-01-04
 
 ---
 
@@ -387,7 +387,32 @@ When a fix causes new failures:
 4. Then verify actual behavior
 5. Document root cause
 
-### 7.3 Pre-Delivery Checklist
+**"Hammering Dev" Principle:**
+
+- QA exists to break code, not to accept excuses
+- If developer says "works on my machine", demand proof
+- Reproducibility is non-negotiable
+- Every fix must pass the SAME test suite that found the bug
+
+### 7.3 False Negative Forensic Audit
+
+**When a test passes but behavior is wrong:**
+
+1. Check if test harness has syntax errors
+2. Verify test is actually executing (not skipped silently)
+3. Run with `-v` or `--capture=no` to see actual output
+4. Compare expected vs actual assertions
+
+```bash
+# Verify test is running
+uv run pytest tests/qa/test_suspect.py -v --tb=short
+
+# Check for silent failures
+uv run pytest tests/qa/test_suspect.py -x --capture=no
+```
+
+### 7.4 Pre-Delivery Checklist
+
 
 ```markdown
 ## Developer Pre-Delivery Checklist
@@ -488,6 +513,53 @@ docs/qa/defects/PHASE_X_MASTER_DEFECTS.md
 3. **MUST NOT use XFAIL to hide real bugs**
    - P0/P1 issues CANNOT be XFAIL'd
    - Only design-intentional gaps allowed
+
+### 8.4 Skip Marker Policy
+
+**When marking test as SKIP:**
+
+1. **Use for tests that CANNOT run** (not "should not" run)
+   ```python
+   @pytest.mark.skip(reason="P2: Deep chains require loader optimization - tracked as DEF-60-008")
+   ```
+
+2. **MUST reference the defect tracking it**
+
+3. **Difference from XFAIL:**
+   - `XFAIL`: Test runs but expected to fail (design limitation)
+   - `SKIP`: Test does NOT run (blocking bug or environment issue)
+
+### 8.5 Walkthrough Requirement
+
+**After completing QA, create a walkthrough document:**
+
+```
+docs/qa/phase-X-walkthrough.md
+```
+
+**Contents:**
+- Summary of what was tested
+- Key findings and resolutions
+- Evidence screenshots/recordings (if applicable)
+- Lessons learned
+
+### 8.6 Emergency Rollback Procedure
+
+**If a critical regression is discovered post-merge:**
+
+1. **Immediately notify stakeholders**
+2. **Create P0 defect report**
+3. **Consider git revert if:**
+   - E2E Golden Path fails
+   - Security invariant broken
+   - Data corruption possible
+
+```bash
+# Emergency rollback
+git revert <commit-hash> --no-edit
+git push origin main
+# Then create hotfix branch
+```
 
 ---
 
@@ -914,7 +986,7 @@ After each phase completion:
 ## 16. Appendix: Checklists & Templates
 
 
-### 10.1 Quick Reference: QA Workflow
+### 16.1 Quick Reference: QA Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -959,7 +1031,7 @@ After each phase completion:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 10.2 Template: Agent Findings
+### 16.2 Template: Agent Findings
 
 ```markdown
 # Agent [A/B/C] Findings Report
@@ -1002,7 +1074,7 @@ output here
 **Agent Signature:** Agent A
 ```
 
-### 10.3 Template: Architecture Decision Request
+### 16.3 Template: Architecture Decision Request
 
 ```markdown
 # ARCH-XX-XXX: [Title]
@@ -1051,8 +1123,10 @@ Based on decision, QA will:
 |:---:|:---|:---|:---|
 | 1.0 | 2026-01-04 | QA Working Group | Initial version from Phase 6.0 retrospective |
 | 2.0 | 2026-01-04 | QA Leader | Added CI/CD, Developer Guide, Coverage Matrix, Security Matrix, Performance, Knowledge Base |
+| 2.1 | 2026-01-04 | QA Leader | Audit fixes: Skip policy, Walkthrough requirement, Emergency rollback, Hammering Dev principle, False Negative Forensic, Fixed section numbering |
 
 ---
 
-**Velo QA Working Group** | SOP v2.0
+**Velo QA Working Group** | SOP v2.1
+
 
