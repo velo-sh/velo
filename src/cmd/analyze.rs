@@ -64,39 +64,58 @@ fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
     }
 
     // SEC-P0-002: Path Traversal Protection
-    // Ensure the path is within the project root
+    // Ensure the path is within the project root for BOTH absolute AND relative paths
     let path_buf = PathBuf::from(path);
-    if path_buf.is_absolute() {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
-        let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
+    let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
 
-        // If the path exists, canonicalize it to resolve symlinks and '..'
-        if path_buf.exists() {
-            let canonical_path = path_buf
-                .canonicalize()
-                .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+    // Convert relative path to absolute by joining with project root
+    let full_path = if path_buf.is_absolute() {
+        path_buf.clone()
+    } else {
+        project_root.join(&path_buf)
+    };
 
-            if !canonical_path.starts_with(&canonical_root) {
-                anyhow::bail!(
-                    "{} access denied: path is outside project root {}",
-                    arg_name,
-                    canonical_root.display()
-                );
-            }
-        } else {
-            // Even if it doesn't exist, we prevent absolute paths outside the root
-            // by checking the prefix
-            if !path_buf.starts_with(&canonical_root) {
-                anyhow::bail!(
-                    "{} access denied: path is outside project root {}",
-                    arg_name,
-                    canonical_root.display()
-                );
-            }
+    // If the path exists, canonicalize it to resolve symlinks and '..'
+    if full_path.exists() {
+        let canonical_path = full_path
+            .canonicalize()
+            .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+
+        if !canonical_path.starts_with(&canonical_root) {
+            anyhow::bail!(
+                "{} access denied: path traversal detected (resolves outside project root)",
+                arg_name
+            );
+        }
+    } else {
+        // For non-existent paths, check for obvious traversal patterns
+        // This catches ../../etc/passwd even if the file doesn't exist locally
+        let normalized = normalize_path_components(&full_path);
+        if !normalized.starts_with(&canonical_root) {
+            anyhow::bail!(
+                "{} access denied: path traversal detected (would resolve outside project root)",
+                arg_name
+            );
         }
     }
 
     Ok(path_buf)
+}
+
+/// Normalize path by resolving .. and . components without requiring the path to exist
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                components.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => components.push(c),
+        }
+    }
+    components.iter().collect()
 }
 
 /// Configuration from pyproject.toml [tool.velo] section
@@ -980,5 +999,21 @@ slow_threshold_ms = 75
         let result = validate_path("main.py", "file");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PathBuf::from("main.py"));
+    }
+
+    #[test]
+    fn test_validate_path_relative_traversal() {
+        // SEC-P0-002: Relative path traversal should be rejected
+        let result = validate_path("../../etc/passwd", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn test_validate_path_relative_traversal_nested() {
+        // SEC-P0-002: Nested relative path traversal should be rejected
+        let result = validate_path("subdir/../../../etc/passwd", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
     }
 }
