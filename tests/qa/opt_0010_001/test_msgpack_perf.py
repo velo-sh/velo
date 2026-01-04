@@ -9,33 +9,19 @@ Tests performance of MessagePack IPC protocol:
 
 import unittest
 import pytest
+import json
 import time
 
+# Try to import msgpack for size comparison
+try:
+    import msgpack
+    MSGPACK_AVAILABLE = True
+except ImportError:
+    MSGPACK_AVAILABLE = False
 
-@pytest.mark.skip(reason="Awaiting OPT-0010-001 implementation (v0.7.0+)")
+
 class TestMsgpackPerformance(unittest.TestCase):
     """Agent D: Performance Testing for MessagePack IPC."""
-
-    # Baseline values (to be captured before implementation)
-    BASELINE_COLD_START_MS = None  # Will be captured
-    BASELINE_MESSAGE_SIZE_BYTES = None  # Will be captured
-
-    def test_perf_opt_001_cold_start_improvement(self):
-        """
-        PERF-OPT-001: Cold start latency (AC-1)
-        
-        Acceptance Criterion: Zygote cold start improved by >20%
-        
-        Test:
-        1. Measure Zygote cold start with MessagePack IPC
-        2. Compare to baseline (JSON IPC)
-        3. Assert improvement >= 20%
-        
-        Baseline: {BASELINE_COLD_START_MS}ms (JSON)
-        Target:   <{BASELINE_COLD_START_MS * 0.8}ms (MessagePack)
-        """
-        # TODO: Implement when MessagePack IPC is available
-        self.skipTest("Awaiting implementation")
 
     def test_perf_opt_002_message_size_reduction(self):
         """
@@ -48,26 +34,55 @@ class TestMsgpackPerformance(unittest.TestCase):
         2. Serialize same command as MessagePack
         3. Compare sizes
         4. Assert MessagePack is >= 40% smaller
-        
-        Baseline: {BASELINE_MESSAGE_SIZE_BYTES} bytes (JSON)
-        Target:   <{BASELINE_MESSAGE_SIZE_BYTES * 0.6} bytes (MessagePack)
         """
-        # TODO: Implement when MessagePack IPC is available
-        self.skipTest("Awaiting implementation")
+        if not MSGPACK_AVAILABLE:
+            self.skipTest("msgpack not installed")
+        
+        # Typical Fork command structure
+        fork_command = {
+            "type": "Fork",
+            "script_path": "/home/user/project/main.py",
+            "args": ["--port", "8000", "--workers", "4"],
+            "async_mode": False,
+            "stdout_path": "/tmp/velo-stdout-12345",
+            "stderr_path": "/tmp/velo-stderr-12345",
+            "exit_code_path": "/tmp/velo-exit-12345",
+            "fast_mode": True,
+            "bundle_path": "/home/user/project/.velo/cache/bundle.veloc",
+            "project_root": "/home/user/project",
+            "max_bundle_size": 268435456,  # 256MB
+        }
+        
+        # Serialize as JSON
+        json_bytes = json.dumps(fork_command).encode('utf-8')
+        json_size = len(json_bytes)
+        
+        # Serialize as MessagePack
+        msgpack_bytes = msgpack.packb(fork_command)
+        msgpack_size = len(msgpack_bytes)
+        
+        # Calculate reduction
+        reduction = (json_size - msgpack_size) / json_size * 100
+        
+        print(f"\n  JSON size:     {json_size} bytes")
+        print(f"  MsgPack size:  {msgpack_size} bytes")
+        print(f"  Reduction:     {reduction:.1f}%")
+        
+        # AC-2: Must be at least 40% smaller
+        self.assertGreaterEqual(
+            reduction, 40.0,
+            f"MessagePack should be >=40% smaller than JSON, got {reduction:.1f}%"
+        )
 
+    @pytest.mark.skip(reason="Requires Zygote integration - deferred to E2E phase")
+    def test_perf_opt_001_cold_start_improvement(self):
+        """PERF-OPT-001: Cold start latency (AC-1) - Requires Zygote E2E."""
+        pass
+
+    @pytest.mark.skip(reason="JSON fallback not implemented yet")
     def test_perf_opt_003_json_fallback_latency(self):
-        """
-        PERF-OPT-003: JSON fallback latency (AC-3 related)
-        
-        Requirement: JSON fallback should have acceptable overhead.
-        
-        Test:
-        1. Trigger JSON fallback mode
-        2. Measure IPC roundtrip latency
-        3. Assert latency <= baseline JSON + 10%
-        """
-        # TODO: Implement when MessagePack IPC is available
-        self.skipTest("Awaiting implementation")
+        """PERF-OPT-003: JSON fallback latency - Deferred."""
+        pass
 
 
 if __name__ == '__main__':
