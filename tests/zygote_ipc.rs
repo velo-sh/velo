@@ -1,9 +1,10 @@
 //! Unit tests for Zygote IPC (Unix Socket communication)
 //!
-//! TDD: These tests are written FIRST, before implementation.
+//! TDD: These tests verify MessagePack protocol with length-prefix framing.
 
 #[cfg(unix)]
 mod ipc_tests {
+    use std::io::{Read, Write};
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -31,12 +32,12 @@ mod ipc_tests {
         assert!(!socket_path.exists());
     }
 
-    /// Test message serialization/deserialization
+    /// Test message serialization/deserialization with MessagePack
     #[test]
     fn test_message_roundtrip() {
         use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
 
-        // Test FORK command
+        // Test FORK command with MessagePack
         let fork_cmd = ZygoteCommand::Fork {
             script_path: PathBuf::from("/tmp/test.py"),
             args: vec!["--arg1".to_string()],
@@ -49,23 +50,23 @@ mod ipc_tests {
             project_root: None,
             max_bundle_size: None,
         };
-        let serialized = serde_json::to_string(&fork_cmd).unwrap();
-        let deserialized: ZygoteCommand = serde_json::from_str(&serialized).unwrap();
+        let serialized = rmp_serde::to_vec(&fork_cmd).unwrap();
+        let deserialized: ZygoteCommand = rmp_serde::from_slice(&serialized).unwrap();
         assert!(matches!(deserialized, ZygoteCommand::Fork { .. }));
 
-        // Test READY response
+        // Test READY response with MessagePack
         let ready_resp = ZygoteResponse::Ready;
-        let serialized = serde_json::to_string(&ready_resp).unwrap();
-        let deserialized: ZygoteResponse = serde_json::from_str(&serialized).unwrap();
+        let serialized = rmp_serde::to_vec(&ready_resp).unwrap();
+        let deserialized: ZygoteResponse = rmp_serde::from_slice(&serialized).unwrap();
         assert!(matches!(deserialized, ZygoteResponse::Ready));
 
-        // Test FORKED response
+        // Test FORKED response with MessagePack
         let forked_resp = ZygoteResponse::Forked {
             worker_pid: 12345,
             exit_code: None,
         };
-        let serialized = serde_json::to_string(&forked_resp).unwrap();
-        let deserialized: ZygoteResponse = serde_json::from_str(&serialized).unwrap();
+        let serialized = rmp_serde::to_vec(&forked_resp).unwrap();
+        let deserialized: ZygoteResponse = rmp_serde::from_slice(&serialized).unwrap();
         assert!(matches!(
             deserialized,
             ZygoteResponse::Forked {
@@ -75,10 +76,30 @@ mod ipc_tests {
         ));
     }
 
-    /// Test socket roundtrip communication
+    /// Helper: Send MessagePack message with length prefix
+    fn send_msgpack<T: serde::Serialize>(stream: &mut std::os::unix::net::UnixStream, msg: &T) {
+        let payload = rmp_serde::to_vec(msg).unwrap();
+        let len_bytes = (payload.len() as u32).to_le_bytes();
+        stream.write_all(&len_bytes).unwrap();
+        stream.write_all(&payload).unwrap();
+        stream.flush().unwrap();
+    }
+
+    /// Helper: Receive MessagePack message with length prefix
+    fn recv_msgpack<T: serde::de::DeserializeOwned>(
+        stream: &mut std::os::unix::net::UnixStream,
+    ) -> T {
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).unwrap();
+        let len = u32::from_le_bytes(len_buf) as usize;
+        let mut buf = vec![0u8; len];
+        stream.read_exact(&mut buf).unwrap();
+        rmp_serde::from_slice(&buf).unwrap()
+    }
+
+    /// Test socket roundtrip communication with MessagePack protocol
     #[test]
     fn test_socket_roundtrip() {
-        use std::io::{BufRead, BufReader, Write};
         use std::thread;
         use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
 
@@ -86,34 +107,30 @@ mod ipc_tests {
         let socket_path = temp_dir.path().join("test-roundtrip.sock");
         let socket_path_clone = socket_path.clone();
 
-        // Start server in background thread
+        // Start server in background thread (mock Zygote with MessagePack)
         let server_handle = thread::spawn(move || {
             let listener = velo::zygote::ipc::create_listener(&socket_path_clone).unwrap();
 
             // Accept connection
-            let (stream, _) = listener.accept().unwrap();
-            let mut stream_write = stream.try_clone().unwrap();
-            let mut reader = BufReader::new(stream);
+            let (mut stream, _) = listener.accept().unwrap();
 
-            // Send READY first (per protocol)
-            let ready = serde_json::to_string(&ZygoteResponse::Ready).unwrap();
-            writeln!(stream_write, "{}", ready).unwrap();
+            // Send READY first (per protocol) using MessagePack
+            send_msgpack(&mut stream, &ZygoteResponse::Ready);
 
-            // Read command
-            let mut line = String::new();
-            reader.read_line(&mut line).unwrap();
-            let cmd: ZygoteCommand = serde_json::from_str(&line).unwrap();
+            // Read command using MessagePack
+            let cmd: ZygoteCommand = recv_msgpack(&mut stream);
 
             // Verify we got FORK command
             assert!(matches!(cmd, ZygoteCommand::Fork { .. }));
 
-            // Send FORKED response
-            let resp = serde_json::to_string(&ZygoteResponse::Forked {
-                worker_pid: 42,
-                exit_code: None,
-            })
-            .unwrap();
-            writeln!(stream_write, "{}", resp).unwrap();
+            // Send FORKED response using MessagePack
+            send_msgpack(
+                &mut stream,
+                &ZygoteResponse::Forked {
+                    worker_pid: 42,
+                    exit_code: None,
+                },
+            );
         });
 
         // Give server time to start
