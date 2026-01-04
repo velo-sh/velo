@@ -10,7 +10,10 @@
 **Expert Review**: ✅ Completed (12 experts: 8 Runtime + 4 QA)
 
 > **Attachments**:
-> - [DEF-61-004-qa-review.md](./DEF-61-004-qa-review.md) - QA Expert Review (17 test cases, pytest spec)
+> - [DEF-61-004-qa-review.md](./DEF-61-004-qa-review.md) - QA Expert Review (17 test cases)
+> - [DEF-61-004-dev-checklist.md](./DEF-61-004-dev-checklist.md) - Developer Handover (4.5h)
+> - [DEF-61-004-qa-checklist.md](./DEF-61-004-qa-checklist.md) - QA Handover (17 tests)
+> - [DEF-61-004-magic-handshake.md](./DEF-61-004-magic-handshake.md) - Magic Handshake Design (v0.7.0)
 
 ---
 
