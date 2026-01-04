@@ -541,27 +541,28 @@ class ZygoteServer:
             return {"type": "Error", "message": f"Worker {worker_pid} not found"}
         
         try:
+            # Use polling with os.waitpid(WNOHANG) instead of SIGALRM
+            # This avoids thread-safety issues with signal handling
             if timeout_secs:
-                # Set alarm for timeout
-                def timeout_handler(signum, frame):
-                    raise TimeoutError()
-                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(timeout_secs)
-            
-            _, exit_status = os.waitpid(worker_pid, 0)
-            
-            if timeout_secs:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-            
-            exit_code = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
-            self.workers.pop(worker_pid, None)
-            return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": exit_code}
-        except TimeoutError:
-            if timeout_secs:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-            return {"type": "Error", "message": "Wait timeout"}
+                import time
+                end_time = time.time() + timeout_secs
+                while time.time() < end_time:
+                    pid, exit_status = os.waitpid(worker_pid, os.WNOHANG)
+                    if pid == worker_pid:
+                        # Worker exited
+                        exit_code = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
+                        self.workers.pop(worker_pid, None)
+                        return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": exit_code}
+                    # Sleep briefly to avoid busy waiting
+                    time.sleep(0.1)
+                # Timeout reached
+                return {"type": "Error", "message": "Wait timeout"}
+            else:
+                # No timeout, blocking wait
+                _, exit_status = os.waitpid(worker_pid, 0)
+                exit_code = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
+                self.workers.pop(worker_pid, None)
+                return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": exit_code}
         except ChildProcessError:
             self.workers.pop(worker_pid, None)
             return {"type": "Error", "message": "Process not found"}
