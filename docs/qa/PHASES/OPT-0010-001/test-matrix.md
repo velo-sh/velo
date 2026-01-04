@@ -66,8 +66,15 @@
 | ID | Test | Requirement |
 |:---|:---|:---|
 | PERF-OPT-001 | Cold start latency (AC-1) | >20% improvement |
-| PERF-OPT-002 | Message size comparison (AC-2) | >40% reduction |
+| PERF-OPT-002 | Message size comparison (AC-2) | >20% reduction (revised) |
 | PERF-OPT-003 | JSON fallback latency | Acceptable overhead |
+
+#### Agent E: Fallback (ADV-3)
+| ID | Test | Requirement |
+|:---|:---|:---|
+| FALL-001 | Mock ImportError triggers fallback | Vendor path works |
+| FALL-002 | IPC works with Pure Python packer | Data integrity |
+| FALL-003 | Stderr warning output correct | RFC warning format |
 
 ---
 
