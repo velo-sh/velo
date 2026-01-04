@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Velo QA: Phase 3 Brutal Attack Tests
 =====================================

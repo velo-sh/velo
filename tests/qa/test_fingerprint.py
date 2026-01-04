@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Velo QA: Fingerprint Attack Tests (FP-xxx)
 ==========================================

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Phase 5.0 Fast Loader: L1 Happy Path Tests
 
