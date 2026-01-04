@@ -87,8 +87,97 @@ pub enum ZygoteResponse {
 }
 
 /// Get the default socket path for Zygote IPC
+///
+/// DEF-61-004: Socket path includes protocol version for upgrade isolation
+/// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
 pub fn default_socket_path() -> PathBuf {
-    std::env::temp_dir().join("velo-zygote.sock")
+    get_socket_dir().join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
+}
+
+/// Get the user-isolated socket directory
+///
+/// DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
+/// Directory has 0700 permissions for security
+pub fn get_socket_dir() -> PathBuf {
+    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
+    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let dir = PathBuf::from(xdg_dir).join("velo");
+        if ensure_socket_dir(&dir) {
+            return dir;
+        }
+    }
+
+    // 2. Try user-isolated temp directory
+    let uid = unsafe { libc::getuid() };
+    let user_dir = std::env::temp_dir().join(format!("velo-{}", uid));
+    if ensure_socket_dir(&user_dir) {
+        // Check path length (Unix socket limit: 108 chars)
+        let test_path = user_dir.join("velo-zygote-v01.sock");
+        if test_path.to_string_lossy().len() < 108 {
+            return user_dir;
+        }
+    }
+
+    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
+    let fallback_dir = PathBuf::from("/tmp").join(format!("velo-{}", uid));
+    let _ = ensure_socket_dir(&fallback_dir);
+    fallback_dir
+}
+
+/// Ensure socket directory exists with proper permissions (0700)
+fn ensure_socket_dir(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !dir.exists() && std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+
+    // Set 0700 permissions (owner only)
+    if let Ok(metadata) = dir.metadata() {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o700);
+        let _ = std::fs::set_permissions(dir, perms);
+    }
+
+    true
+}
+
+/// Check if a socket is alive (responds to connection attempt)
+pub fn is_socket_alive(socket_path: &Path) -> bool {
+    if !socket_path.exists() {
+        return false;
+    }
+
+    // Try to connect - if it succeeds, socket is alive
+    UnixStream::connect(socket_path).is_ok()
+}
+
+/// Clean up stale sockets from previous versions
+///
+/// DEF-61-004: On startup, remove sockets that are not alive
+/// This handles upgrade scenarios where old Zygote processes died
+pub fn cleanup_stale_sockets() {
+    let socket_dir = get_socket_dir();
+
+    if !socket_dir.exists() {
+        return;
+    }
+
+    // Find all velo-zygote-*.sock files
+    if let Ok(entries) = std::fs::read_dir(&socket_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Only clean up velo-zygote sockets that are not alive
+                if name.starts_with("velo-zygote-")
+                    && name.ends_with(".sock")
+                    && !is_socket_alive(&path)
+                {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
 }
 
 /// Create a Unix socket listener at the specified path
@@ -110,9 +199,10 @@ pub fn cleanup_socket(socket_path: &Path) {
 // MessagePack serialization helpers (length-prefix + version framing)
 // ============================================================================
 
-/// Protocol version (ADV-1)
+/// Protocol version (ADV-1 + DEF-61-004)
 /// Layout: [Length 4B LE] [Version 1B] [Payload MsgPack]
-const PROTOCOL_VERSION: u8 = 0x01;
+/// Used in socket path: velo-zygote-v{:02x}.sock
+pub const PROTOCOL_VERSION: u8 = 0x01;
 
 /// Write a MessagePack message with length prefix and version byte
 fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
