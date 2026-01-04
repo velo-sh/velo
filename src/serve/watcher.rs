@@ -127,15 +127,12 @@ impl FileWatcher {
     /// Check inotify watch limit on Linux (LNX-P0-001)
     #[cfg(target_os = "linux")]
     fn check_inotify_limit() {
-        if let Ok(limit_str) = std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches") {
-            if let Ok(limit) = limit_str.trim().parse::<usize>() {
-                if limit < 65536 {
-                    eprintln!("⚠️  Warning: Low inotify limit ({})", limit);
-                    eprintln!(
-                        "   To fix: echo 65536 | sudo tee /proc/sys/fs/inotify/max_user_watches"
-                    );
-                }
-            }
+        if let Ok(limit_str) = std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
+            && let Ok(limit) = limit_str.trim().parse::<usize>()
+            && limit < 65536
+        {
+            eprintln!("⚠️  Warning: Low inotify limit ({})", limit);
+            eprintln!("   To fix: echo 65536 | sudo tee /proc/sys/fs/inotify/max_user_watches");
         }
     }
 
