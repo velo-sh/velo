@@ -7,9 +7,36 @@
 
 ---
 
-## Summary
+## Scope Clarification
 
-Upgrade Rust ↔ Python IPC from JSON to MessagePack for improved performance.
+| Communication Type | Current | Upgrade Needed |
+|--------------------|---------|----------------|
+| **Rust ↔ Rust (in-process)** | `mpsc::channel<ServerEvent>` | ❌ No - already zero-cost |
+| **Rust ↔ Python (cross-process)** | JSON + Unix Socket | ✅ Yes - upgrade to MessagePack |
+
+### Rust ↔ Rust (No Change Needed)
+
+```rust
+// Already optimal: type-safe channel, zero serialization overhead
+let (tx, rx) = mpsc::channel::<ServerEvent>();
+tx.send(ServerEvent::Signal(15)); // Direct enum passing, no serialization
+```
+
+### Rust ↔ Python (This Proposal)
+
+```
+Current:
+┌─────────────┐    JSON (slow)     ┌──────────────┐
+│  Rust CLI   │ ◄───────────────► │ Python Zygote │
+│             │    Unix Socket     │               │
+└─────────────┘                    └──────────────┘
+
+Proposed:
+┌─────────────┐   MessagePack      ┌──────────────┐
+│  Rust CLI   │ ◄───────────────► │ Python Zygote │
+│ (rmp-serde) │    Unix Socket     │  (msgpack)    │
+└─────────────┘                    └──────────────┘
+```
 
 ## Motivation
 
@@ -18,15 +45,6 @@ Upgrade Rust ↔ Python IPC from JSON to MessagePack for improved performance.
 | Serialization | 1x | 3-5x faster |
 | Message size | 1x | ~50% smaller |
 | Cross-language | ✅ | ✅ |
-
-## Proposed Architecture
-
-```
-┌─────────────┐     MessagePack      ┌──────────────┐
-│  Rust CLI   │ ◄──────────────────► │ Python Zygote │
-│  (rmp-serde)│   Unix Socket        │  (msgpack)    │
-└─────────────┘                      └──────────────┘
-```
 
 ## Dependencies
 
