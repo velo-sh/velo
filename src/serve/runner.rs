@@ -297,6 +297,11 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let (tx, rx) = mpsc::channel();
     spawn_signal_forwarder(tx.clone())?;
 
+    // RAII Guard for Zygote (Recommendation #3)
+    // Needs to stay alive for the duration of the server
+    #[allow(unused_mut)]
+    let mut _zygote_guard: Option<crate::zygote::ZygoteLauncher> = None;
+
     // Step 6: Start server
     eprintln!("🚀 Starting server...");
     eprintln!("   App:       {}", args.app);
@@ -322,8 +327,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 eprintln!("   Continuing without Zygote optimization");
             } else {
                 eprintln!("✅ Zygote ready");
-                // Keep Zygote alive
-                std::mem::forget(launcher);
+                // RAII: Keep Zygote alive as long as this function runs
+                // When this function returns/unwinds, _zygote_guard will drop and kill the Zygote
+                _zygote_guard = Some(launcher);
             }
         } else {
             eprintln!("⚡ Using existing Zygote");
