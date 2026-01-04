@@ -10,9 +10,9 @@
 | Document | Lines | Purpose |
 |:---|:---:|:---|
 | `QA-SOP.md` | 1130 | Master SOP (NEW) |
-| `tiered-testing-guide.md` | 347 | Tiered testing methodology |
-| `QA_REFLECTION_first_principles.md` | 110 | Testing philosophy |
-| `QA_CHECKLIST_TEMPLATE.md` | 78 | Checklist template |
+| `TIERED-TESTING-GUIDE.md` | 347 | Tiered testing methodology |
+| `../ARCHIVE/QA-REFLECTION-FIRST-PRINCIPLES.md` | 110 | Testing philosophy |
+| `../TEMPLATES/CHECKLIST-TEMPLATE.md` | 78 | Checklist template |
 
 ---
 
@@ -23,8 +23,8 @@
 | Source | Tier System | Notes |
 |:---|:---|:---|
 | **SOP §3.3** | L0-L5 (6 levels) | L0=Golden, L1=Feature, L2=Edge, L3=Stress, L4=Security, L5=Perf |
-| **tiered-testing-guide** | Tier 0-3 (4 tiers) | Tier0=Smoke, Tier1=Fast, Tier2=Standard, Tier3=Heavy |
-| **tiered-testing-guide §2.3** | L0-L6 (7 levels) | L0-L5 + L6 Static Graph |
+| **TIERED-TESTING-GUIDE** | Tier 0-3 (4 tiers) | Tier0=Smoke, Tier1=Fast, Tier2=Standard, Tier3=Heavy |
+| **TIERED-TESTING-GUIDE §2.3** | L0-L6 (7 levels) | L0-L5 + L6 Static Graph |
 
 **⚠️ INCONSISTENCY**: SOP uses "L" prefix, tiered-testing uses both "Tier" and "L" interchangeably.
 
@@ -36,13 +36,13 @@
 
 | Item | Source | Status in SOP |
 |:---|:---|:---|
-| Tier 4 agent: Agent D (Destroyer) | tiered-testing-guide §2.1 | ❌ NOT mentioned |
-| `qa-fast.sh` script reference | tiered-testing-guide §1.1 | ❌ NOT mentioned |
-| Fail-Fast Rule visual | tiered-testing-guide §1.3 | ❌ NOT mentioned |
-| First Principles Testing Pyramid | QA_REFLECTION | ❌ NOT copied |
-| Gate 0: Performance Regression BLOCKING | QA_CHECKLIST_TEMPLATE | ⚠️ Partial (in §14) |
-| Coverage Targets (60%-85%) | tiered-testing-guide §4.2 | ❌ NOT mentioned |
-| Flaky Test rule | QA_CHECKLIST_TEMPLATE | ❌ NOT mentioned |
+| Tier 4 agent: Agent D (Destroyer) | TIERED-TESTING-GUIDE §2.1 | ❌ NOT mentioned |
+| `qa-fast.sh` script reference | TIERED-TESTING-GUIDE §1.1 | ❌ NOT mentioned |
+| Fail-Fast Rule visual | TIERED-TESTING-GUIDE §1.3 | ❌ NOT mentioned |
+| First Principles Testing Pyramid | ARCHIVE/QA-REFLECTION | ❌ NOT copied |
+| Gate 0: Performance Regression BLOCKING | TEMPLATES/CHECKLIST-TEMPLATE | ⚠️ Partial (in §14) |
+| Coverage Targets (60%-85%) | TIERED-TESTING-GUIDE §4.2 | ❌ NOT mentioned |
+| Flaky Test rule | TEMPLATES/CHECKLIST-TEMPLATE | ❌ NOT mentioned |
 
 ---
 

@@ -116,7 +116,7 @@ docs/qa/
 | [Definition of Done](../DEFINITION_OF_DONE.md) | Project-wide quality gates |
 | [Project Standards](../STANDARDS.md) | Naming conventions |
 | [Test Architecture](../TEST_ARCHITECTURE.md) | Test environment guide |
-| [Benchmark Suite](../../benchmarks/) | Performance benchmarks |
+| [Benchmark Suite](../../benchmark_projects.py) | Performance benchmarks |
 | [Test Files](../../tests/qa/) | Pytest test suites |
 | [RFC Documents](../rfcs/) | Feature specifications |
 
