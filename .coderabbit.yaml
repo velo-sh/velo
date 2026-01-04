@@ -19,6 +19,10 @@ reviews:
   knowledge_base:
     enabled: true
 
+  tools:
+    docstrings: false       # Disables automatic generation and committing of docstrings
+    autofix: false          # Disables automatic code fix suggestions via commits
+    
 # Chat features allowed in PR comments
 chat:
   enabled: true             # You can talk to AI in the comments to refine the PR.
@@ -28,6 +32,8 @@ instructions: |
   - Focus on code logic, security vulnerabilities, and performance bottlenecks.
   - If the changes are minor or purely documentation/styling, and the CI passes, favor approving the PR.
   - For complex logic, be strict and ensure it doesn't break existing patterns found in the codebase.
+  - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
+  - All suggestions must be provided strictly as comments for human review.
 
 # (Optional) Skip specific files to save review noise
 path_filters:
