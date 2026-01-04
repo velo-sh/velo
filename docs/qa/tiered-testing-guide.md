@@ -336,6 +336,7 @@ uv run python -m pytest --cov=. tests/qa/
 
 | Document | Purpose |
 |----------|---------|
+| **[QA-SOP.md](./QA-SOP.md)** | **Master QA Standard Operating Procedure (1200+ lines)** |
 | [DEFINITION_OF_DONE.md](../DEFINITION_OF_DONE.md) | Quality gate standards |
 | [STANDARDS.md](../STANDARDS.md) | Project naming conventions |
 | [QA_CHECKLIST_TEMPLATE.md](./QA_CHECKLIST_TEMPLATE.md) | Manual checklist |
@@ -343,4 +344,5 @@ uv run python -m pytest --cov=. tests/qa/
 
 ---
 
-**Last Updated**: 2026-01-02
+**Last Updated**: 2026-01-04
+

@@ -1,7 +1,7 @@
 # QA Standard Operating Procedure (SOP)
 
 > Derived from Phase 6.0 QA Working Group Experience
-> Version 2.1 | 2026-01-04
+> Version 2.2 | 2026-01-04
 
 ---
 
@@ -53,6 +53,7 @@ This SOP defines the complete QA workflow for high-quality, reproducible quality
 │  Agent A (Edge)      - Edge cases, scale limits, boundary tests │
 │  Agent B (Stability) - Stress tests, concurrency, reliability   │
 │  Agent C (Security)  - Security invariants, attack vectors      │
+│  Agent D (Destroyer) - Chaos tests, brutal edge cases, breaking │
 │  External Experts    - Independent review, Python Core, Perf    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -158,7 +159,55 @@ Define test tiers based on criticality:
 | **L4** | Security | Every release | MUST PASS |
 | **L5** | Performance regression | Nightly | Baseline comparison |
 
----
+### 3.4 Fail-Fast Rule
+
+> **If Tier N fails, do NOT run Tier N+1.**
+
+```
+Tier 0 ──PASS──▶ Tier 1 ──PASS──▶ Tier 2 ──PASS──▶ Tier 3
+   │                │                │                │
+ FAIL             FAIL             FAIL             FAIL
+   │                │                │                │
+   ▼                ▼                ▼                ▼
+ STOP            STOP             STOP            (optional)
+```
+
+### 3.5 First Principles Testing Pyramid
+
+> **"Tests passing ≠ Feature working"** - If you only test the system's boundaries, not its core, your test coverage is an illusion.
+
+```
+           ▲
+          /·\     Level 5: Chaos/Brutal (LAST)
+         /···\    Stress tests, chaos tests
+        /─────\
+       /·······\  Level 4: Security
+      /·········\ Injection, leaks, permissions
+     /───────────\
+    /·············\  Level 3: Edge Cases
+   /···············\ Extreme inputs, overflow
+  /─────────────────\
+ /···················\  Level 2: SAD PATH (failure paths)
+/·····················\ Invalid input, module not found
+/───────────────────────\
+/·························\  Level 1: HAPPY PATH (basics)
+/···························\ Does basic functionality work?
+/─────────────────────────────\
+         Level 0: SMOKE
+     Does it start at all?
+```
+
+**Testing Order**: ALWAYS test Level 0 first, then Level 1, then Level 2...
+
+### 3.6 Coverage Targets
+
+| Phase | Target | Description |
+|:---|:---:|:---|
+| Phase 1-2 | 60% | Early development |
+| Phase 3-4 | 70% | Feature complete |
+| Phase 5+ | 80% | Stability phase |
+| **Phase 6.0+** | **85%** | **Production ready** |
+
 
 ## 4. Phase 1: Test Design & Implementation
 
@@ -227,6 +276,13 @@ Examples:
 - [ ] SEC-602: Symlink escape
 - [ ] SEC-603: Reserved name collision
 - [ ] SEC-604: rkyv bomb protection
+
+## Agent D (Destroyer) - test_phaseX_leader_brutal.py
+- [ ] CHAOS-001: Resource exhaustion attack
+- [ ] CHAOS-002: Concurrent stress test
+- [ ] CHAOS-003: Random input fuzzing
+- [ ] CHAOS-004: Signal handling chaos
+- [ ] CHAOS-005: Filesystem corruption recovery
 ```
 
 ---
@@ -739,7 +795,32 @@ if __name__ == "__main__":
 | `Agent Tests` | Every PR | WARN (review required) |
 | `Performance Benchmarks` | Push to main | WARN + notify |
 
----
+### 10.4 Flaky Test Policy
+
+> **Rule**: Tests that fail randomly are as bad as no tests.
+
+**Flaky Test Definition**: A test that passes/fails non-deterministically.
+
+**Response to Flaky Tests:**
+1. **Quarantine immediately** - Move to separate file or mark skip
+2. **Investigate root cause** (race condition, timing, external dependency)
+3. **Fix or remove** - Do NOT leave flaky tests in the suite
+4. **Verify stability** - Must pass 3 consecutive runs before reintegration
+
+### 10.5 Tiered Test Scripts
+
+For quick local verification, use the tiered test scripts:
+
+```bash
+# See: tiered-testing-guide.md for details
+./scripts/qa-fast.sh 0   # Tier 0: Smoke (3s)
+./scripts/qa-fast.sh 1   # Tier 1: Fast (15s)
+./scripts/qa-fast.sh 2   # Tier 2: Standard (7min)
+./scripts/qa-fast.sh 3   # Tier 3: Heavy (5min)
+```
+
+> **Cross-reference**: [tiered-testing-guide.md](./tiered-testing-guide.md) for full details.
+
 
 ## 11. Developer Quick Reference
 
@@ -1124,9 +1205,10 @@ Based on decision, QA will:
 | 1.0 | 2026-01-04 | QA Working Group | Initial version from Phase 6.0 retrospective |
 | 2.0 | 2026-01-04 | QA Leader | Added CI/CD, Developer Guide, Coverage Matrix, Security Matrix, Performance, Knowledge Base |
 | 2.1 | 2026-01-04 | QA Leader | Audit fixes: Skip policy, Walkthrough requirement, Emergency rollback, Hammering Dev principle, False Negative Forensic, Fixed section numbering |
+| 2.2 | 2026-01-04 | QA Leader | Alignment with tiered-testing-guide: Added Agent D, Fail-Fast Rule, First Principles Pyramid, Coverage Targets, Flaky Test Policy, qa-fast.sh reference |
 
 ---
 
-**Velo QA Working Group** | SOP v2.1
+**Velo QA Working Group** | SOP v2.2
 
 
