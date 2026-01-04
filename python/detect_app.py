@@ -36,6 +36,8 @@ FRAMEWORK_PATTERNS = [
     ("Django", "Django"),
     ("Sanic", "Sanic"),
     ("Quart", "Quart"),
+    ("get_wsgi_application", "Django"),
+    ("get_asgi_application", "Django"),
 ]
 
 # Factory function patterns
