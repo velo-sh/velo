@@ -783,6 +783,13 @@ class ZygoteServer:
         LogUtils.log("Shutdown complete.")
 
 
+def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600):
+    """Main entry point for Zygote process."""
+    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl)
+    server.start()
+
+
+
 if __name__ == "__main__":
     import argparse
     
