@@ -24,7 +24,7 @@ pub struct ServeCmd {
     pub host: String,
 
     /// Bind port
-    #[arg(long, default_value_t = 8000)]
+    #[arg(long, default_value_t = 8000, value_parser = clap::value_parser!(u16).range(1..))]
     pub port: u16,
 
     /// Shorthand for --host and --port (e.g., 0.0.0.0:8080)
@@ -32,8 +32,8 @@ pub struct ServeCmd {
     pub bind: Option<String>,
 
     /// Number of workers (default: 1, auto in --prod)
-    #[arg(long, default_value_t = 1)]
-    pub workers: u32,
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(i32).range(1..), allow_hyphen_values = true)]
+    pub workers: i32,
 
     /// Graceful shutdown timeout in seconds
     #[arg(long, default_value_t = 30)]
@@ -97,7 +97,7 @@ impl ServeCmd {
             args.port = self.port;
         }
 
-        args.workers = self.workers;
+        args.workers = self.workers as u32;
         args.timeout = self.timeout;
         args.health_bind = self.health_bind.clone();
         args.pid_file = self.pid_file.clone();

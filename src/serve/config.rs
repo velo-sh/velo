@@ -117,6 +117,7 @@ impl ServeArgs {
             validate_scan_path(path, &project_dir)?;
         }
 
+        self.validate_ranges()?;
         Ok(())
     }
 
@@ -143,6 +144,22 @@ impl ServeArgs {
                 app: self.app.clone(),
             }
             .into());
+        }
+
+        Ok(())
+    }
+
+    /// Validate workers and port ranges
+    fn validate_ranges(&self) -> Result<()> {
+        if self.workers == 0 {
+            return Err(ServeError::InvalidWorkerCount {
+                count: self.workers,
+            }
+            .into());
+        }
+
+        if self.port == 0 {
+            return Err(ServeError::InvalidPort { port: self.port }.into());
         }
 
         Ok(())
