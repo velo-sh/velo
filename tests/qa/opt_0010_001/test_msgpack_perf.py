@@ -68,10 +68,10 @@ class TestMsgpackPerformance(unittest.TestCase):
         print(f"  MsgPack size:  {msgpack_size} bytes")
         print(f"  Reduction:     {reduction:.1f}%")
         
-        # AC-2: Must be at least 40% smaller
+        # AC-2: Must be at least 20% smaller (revised from 40% per DEF-OPT-001)
         self.assertGreaterEqual(
-            reduction, 40.0,
-            f"MessagePack should be >=40% smaller than JSON, got {reduction:.1f}%"
+            reduction, 20.0,
+            f"MessagePack should be >=20% smaller than JSON, got {reduction:.1f}%"
         )
 
     @pytest.mark.skip(reason="Requires Zygote integration - deferred to E2E phase")
