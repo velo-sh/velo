@@ -142,14 +142,20 @@ I will review/implement with [ROLE]'s perspective.
 - ❌ Hardcode framework/library lists
 - ❌ Skip `uv sync` when testing user projects
 - ❌ Commit without running pre-commit hooks
+- ❌ Use different lint/check flags than CI (causes silent failures)
 
 ### MUST DO
 
 - ✅ Create isolated temp projects for integration tests
 - ✅ Use runtime analysis over hardcoding
-- ✅ Run `cargo fmt && cargo clippy` before commit
+- ✅ Run `cargo fmt && cargo clippy --all-targets --all-features -- -D warnings` before commit
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
 - ✅ **Write ALL code and documentation in English only (no Chinese characters)**
+- ✅ **Ensure local checks match CI** (see `.github/workflows/ci.yml` for exact commands)
+
+> [!WARNING]
+> **CI Consistency**: Pre-commit hooks in `.githooks/` MUST use the same flags as CI.
+> If you modify lint commands, update BOTH `.githooks/pre-commit` AND `.github/workflows/ci.yml`.
 
 ---
 
