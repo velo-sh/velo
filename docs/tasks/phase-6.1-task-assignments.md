@@ -36,6 +36,7 @@
 | **D11**| DX Typo Matching: Integrate `strsim` for Levenshtein-based CLI flag suggestions. | §4.12.2 | `src/cmd/serve.rs` |
 | **D12**| Diagnostic UI: Rust-style source-pointing errors for failed detection. | §4.12.1 | `src/serve/error.rs` |
 | **D13**| Production Mode: Implement `--prod` flag (reload disabled, auto-worker scaling). | §5.1.1 | `src/cmd/serve.rs` |
+| **D14**| MessagePack IPC: Upgrade Rust↔Python IPC from JSON to MessagePack. | [FUTURE-msgpack-ipc](../rfcs/FUTURE-msgpack-ipc.md) | `src/zygote/ipc.rs`, `python/velo_zygote/` |
 
 ---
 
