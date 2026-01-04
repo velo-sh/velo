@@ -76,23 +76,39 @@ mod ipc_tests {
         ));
     }
 
-    /// Helper: Send MessagePack message with length prefix
+    /// Protocol version for testing
+    const PROTOCOL_VERSION: u8 = 0x01;
+
+    /// Helper: Send MessagePack message with length prefix and version byte
     fn send_msgpack<T: serde::Serialize>(stream: &mut std::os::unix::net::UnixStream, msg: &T) {
         let payload = rmp_serde::to_vec(msg).unwrap();
-        let len_bytes = (payload.len() as u32).to_le_bytes();
+        let total_len = 1 + payload.len(); // version + payload
+        let len_bytes = (total_len as u32).to_le_bytes();
         stream.write_all(&len_bytes).unwrap();
+        stream.write_all(&[PROTOCOL_VERSION]).unwrap(); // version byte
         stream.write_all(&payload).unwrap();
         stream.flush().unwrap();
     }
 
-    /// Helper: Receive MessagePack message with length prefix
+    /// Helper: Receive MessagePack message with length prefix and version byte
     fn recv_msgpack<T: serde::de::DeserializeOwned>(
         stream: &mut std::os::unix::net::UnixStream,
     ) -> T {
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).unwrap();
-        let len = u32::from_le_bytes(len_buf) as usize;
-        let mut buf = vec![0u8; len];
+        let total_len = u32::from_le_bytes(len_buf) as usize;
+
+        // Read version byte
+        let mut version_buf = [0u8; 1];
+        stream.read_exact(&mut version_buf).unwrap();
+        assert_eq!(
+            version_buf[0], PROTOCOL_VERSION,
+            "Protocol version mismatch"
+        );
+
+        // Read payload
+        let payload_len = total_len - 1;
+        let mut buf = vec![0u8; payload_len];
         stream.read_exact(&mut buf).unwrap();
         rmp_serde::from_slice(&buf).unwrap()
     }
