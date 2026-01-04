@@ -45,6 +45,12 @@ We welcome feedback on any RFC! Please:
 1. Open a [GitHub Issue](https://github.com/velo-sh/velo/issues) referencing the RFC number
 2. Or submit a PR with suggested changes
 
+## Future Work
+
+| Proposal | Title | Target |
+|----------|-------|--------|
+| [FUTURE-msgpack-ipc](./FUTURE-msgpack-ipc.md) | MessagePack IPC Protocol | v0.7.0+ |
+
 ## Past RFCs
 
 *None yet - we're just getting started!*
