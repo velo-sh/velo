@@ -13,7 +13,6 @@ use crate::zygote::ipc;
 /// Global worker counter (avoid temp file conflicts)
 static WORKER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-
 pub struct Worker {
     pub pid: u32,
     pub port: u16,
