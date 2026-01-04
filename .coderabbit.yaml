@@ -3,7 +3,7 @@ version: "2"
 
 # Core review settings
 reviews:
-  profile: assertive        # Options: chill, assertive. 'assertive' is better for auto-merge decisions.
+  profile: assertive        # Options: chill, assertive.
   auto_review:
     enabled: true           # Automatically review every new PR.
     drafts: false           # Do not review PRs marked as Draft.
@@ -15,33 +15,35 @@ reviews:
   summaries:
     enabled: true
 
-  # RAG / Knowledge Base: Allows AI to understand the whole codebase, not just the diff
+  # RAG / Knowledge Base: Allows AI to understand the whole codebase
   knowledge_base:
     enabled: true
 
+  # --- These MUST be moved inside 'reviews' block ---
   tools:
-    docstrings: false       # Disables automatic generation and committing of docstrings
-    autofix: false          # Disables automatic code fix suggestions via commits
-    
-# Chat features allowed in PR comments
+    docstrings: false
+    autofix: false
+
+  # --- Moved from root to inside 'reviews' ---
+  path_filters:
+    - "!dist/**"
+    - "!**/node_modules/**"
+    - "!vendor/**"
+    - "!*.lock"
+
+  # --- Moved from root to inside 'reviews' ---
+  instructions: |
+    - Focus on code logic, security vulnerabilities, and performance bottlenecks.
+    - Categorize all findings into 'Critical', 'Major', 'Minor', or 'Nitpick'.
+    - **THRESHOLD FOR APPROVAL**: 
+      - You MUST provide an 'APPROVE' status if the only issues identified are 'Nitpick' or 'Minor'.
+      - You should ONLY block approval (keep the status as 'Reviewed' or 'Request Changes') if 'Major' or 'Critical' issues are found.
+    - If the changes are minor or purely documentation/styling, and the CI passes, favor approving the PR.
+    - For complex logic, be strict and ensure it doesn't break existing patterns found in the codebase.
+    - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
+    - All suggestions must be provided strictly as comments for human review.
+# --------------------------------------------------
+
+# Chat features allowed in PR comments (Root Level is OK for 'chat')
 chat:
-  enabled: true             # You can talk to AI in the comments to refine the PR.
-
-# Custom Instructions to the AI
-instructions: |
-  - Focus on code logic, security vulnerabilities, and performance bottlenecks.
-  - Categorize all findings into 'Critical', 'Major', 'Minor', or 'Nitpick'.
-  - **THRESHOLD FOR APPROVAL**: 
-    - You MUST provide an 'APPROVE' status if the only issues identified are 'Nitpick' or 'Minor'.
-    - You should ONLY block approval (keep the status as 'Reviewed' or 'Request Changes') if 'Major' or 'Critical' issues are found.
-  - If the changes are minor or purely documentation/styling, and the CI passes, favor approving the PR.
-  - For complex logic, be strict and ensure it doesn't break existing patterns found in the codebase.
-  - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
-  - All suggestions must be provided strictly as comments for human review.
-
-# (Optional) Skip specific files to save review noise
-path_filters:
-  - "!dist/**"
-  - "!**/node_modules/**"
-  - "!vendor/**"
-  - "!*.lock"
+  enabled: true
