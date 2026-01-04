@@ -156,4 +156,4 @@ Velo Supervisor
 
 ---
 
-**Status**: DRAFT - Awaiting Architect review and CTO approval.
+**RFC Record**: Implemented on 2026-01-04
