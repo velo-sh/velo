@@ -5,7 +5,7 @@ mod integration_tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    use velo::cmd::bundle::{cmd_bundle_build, cmd_bundle_inspect, read_bundle_info};
+    use velo::cmd::bundle::{cmd_bundle, read_bundle_info};
 
     #[test]
     fn test_bundle_build_interactive() -> Result<()> {
@@ -27,16 +27,17 @@ mod integration_tests {
 
         let output_bundle = tmp_dir.path().join("output.veloc");
 
-        // Run build command
+        // Run build command via clap-based cmd_bundle
         let args = vec![
             "velo".to_string(),
             "bundle".to_string(),
             "build".to_string(),
             project_root.to_string_lossy().to_string(),
+            "--output".to_string(),
             output_bundle.to_string_lossy().to_string(),
         ];
 
-        cmd_bundle_build(&args)?;
+        cmd_bundle(&args)?;
 
         assert!(output_bundle.exists());
         assert!(output_bundle.metadata()?.len() > 128); // Header + something
@@ -51,7 +52,7 @@ mod integration_tests {
         ];
 
         // This prints to stdout, so we just check it doesn't fail
-        cmd_bundle_inspect(&inspect_args)?;
+        cmd_bundle(&inspect_args)?;
 
         // Verify Graph section is present
         let info = read_bundle_info(&output_bundle)?;
