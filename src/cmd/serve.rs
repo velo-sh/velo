@@ -131,8 +131,8 @@ struct DetectedApp {
     app: String,
 }
 
-fn find_python_helper(project_dir: &Path, name: &str) -> Option<PathBuf> {
-    // 1. Try project_dir/python/ (dev layout)
+pub fn find_python_helper(project_dir: &Path, name: &str) -> Option<PathBuf> {
+    // 1. Check project_dir/python/name (user's project or current repo)
     let path = project_dir.join("python").join(name);
     if path.exists() {
         return Some(path);
@@ -147,8 +147,7 @@ fn find_python_helper(project_dir: &Path, name: &str) -> Option<PathBuf> {
         }
         current = parent.to_path_buf();
     }
-
-    // 3. Check relative to executable (installed or dev layout)
+    // 2. Check relative to executable (installed or dev layout)
     if let Ok(exe_path) = std::env::current_exe() {
         let mut current = exe_path.to_path_buf();
         while let Some(parent) = current.parent() {
@@ -207,14 +206,13 @@ fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<S
     }
 
     let apps: Vec<DetectedApp> = serde_json::from_slice(&output.stdout).ok()?;
-
     let mut best_match = None;
     let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
 
     for app in apps {
         let full_name = format!("{}:{}", app.module, app.app);
         let dist = strsim::levenshtein(target, &full_name);
-        if dist > 0 && dist < min_dist {
+        if dist > 0 && dist <= min_dist {
             min_dist = dist;
             best_match = Some(full_name);
         }

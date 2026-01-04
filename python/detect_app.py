@@ -16,7 +16,7 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, List
 
 
 class AppInfo(NamedTuple):
@@ -55,9 +55,9 @@ class AppDetector(ast.NodeVisitor):
     
     def __init__(self, source_path: Path):
         self.source_path = source_path
-        self.apps: list[AppInfo] = []
-        self.factories: list[AppInfo] = []
-        self._current_function: Optional[str] = None
+        self.apps = [] # type: List[AppInfo]
+        self.factories = [] # type: List[AppInfo]
+        self._current_function = None # type: Optional[str]
     
     def visit_Assign(self, node: ast.Assign) -> None:
         """Detect: app = FastAPI() or application = Flask(__name__)"""
@@ -156,7 +156,7 @@ class AppDetector(ast.NodeVisitor):
             return self.source_path.stem
 
 
-def detect_app_in_file(file_path: Path) -> list[AppInfo]:
+def detect_app_in_file(file_path: Path) -> List[AppInfo]:
     """Detect ASGI/WSGI apps in a single Python file."""
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -171,7 +171,7 @@ def detect_app_in_file(file_path: Path) -> list[AppInfo]:
     return detector.apps if detector.apps else detector.factories
 
 
-def detect_all_apps_in_directory(directory: Path) -> list[AppInfo]:
+def detect_all_apps_in_directory(directory: Path) -> List[AppInfo]:
     """
     Detect all potential ASGI/WSGI apps in a directory.
     """
