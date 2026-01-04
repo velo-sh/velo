@@ -23,5 +23,5 @@ pub use framework::{
     get_server_type,
 };
 pub use health::{HealthError, HealthServer};
-pub use runner::{ManagedChild, ShutdownCoordinator, run_server};
+pub use runner::{ManagedChild, run_server};
 pub use worker::WorkerPool;
