@@ -35,19 +35,10 @@ fn parse_workers(s: &str) -> Result<u32, String> {
 /// Custom parser for port argument with clear error messages
 fn parse_port(s: &str) -> Result<u16, String> {
     match s.parse::<i64>() {
-        Ok(n) if n < 1 => Err(format!(
-            "invalid port '{}': must be between 1 and 65535",
-            s
-        )),
-        Ok(n) if n > 65535 => Err(format!(
-            "invalid port '{}': must be between 1 and 65535",
-            s
-        )),
+        Ok(n) if n < 1 => Err(format!("invalid port '{}': must be between 1 and 65535", s)),
+        Ok(n) if n > 65535 => Err(format!("invalid port '{}': must be between 1 and 65535", s)),
         Ok(n) => Ok(n as u16),
-        Err(_) => Err(format!(
-            "invalid port '{}': must be a valid number",
-            s
-        )),
+        Err(_) => Err(format!("invalid port '{}': must be a valid number", s)),
     }
 }
 
