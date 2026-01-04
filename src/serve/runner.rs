@@ -191,14 +191,19 @@ impl ManagedChild {
         #[cfg(unix)]
         apply_process_group(&mut cmd);
 
-        let child = cmd.spawn().map_err(|e| ServeError::ServerStartFailed {
+        let mut child = cmd.spawn().map_err(|e| ServeError::ServerStartFailed {
             reason: e.to_string(),
             exit_code: 1,
         })?;
 
         // Write PID file if requested (SEC-P0-003: use O_EXCL)
-        if let Some(ref path) = pid_file {
-            Self::write_pid_file_safe(path, child.id())?;
+        if let Some(ref path) = pid_file
+            && let Err(e) = Self::write_pid_file_safe(path, child.id())
+        {
+            // CRITICAL: Kill the already-spawned child to prevent orphan
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(e);
         }
 
         Ok(Self { child, pid_file })
@@ -773,18 +778,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     } else if let Err(e) = child_result {
         logger.error(&format!("Failed to start server: {}", e));
-        // Keep health server alive if it was spawned, waiting for signals to exit
-        loop {
-            match rx.recv_timeout(Duration::from_secs(1)) {
-                Ok(ServerEvent::Signal(sig)) => {
-                    if sig == signal_hook::consts::SIGINT || sig == signal_hook::consts::SIGTERM {
-                        return Err(anyhow::anyhow!("Server failed to start: {}", e));
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                _ => {}
-            }
-        }
+        // Return error immediately - no reason to wait for signals on startup failure
         return Err(anyhow::anyhow!("Server failed to start: {}", e));
     }
 
