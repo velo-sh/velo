@@ -414,6 +414,17 @@ impl ZygoteLauncher {
         let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
         while !self.socket_path.exists() {
+            // Check if process is still running (DEF-61-005)
+            if let Some(ref mut child) = self.zygote_process
+                && let Ok(Some(status)) = child.try_wait()
+            {
+                return Err(ZygoteError::StartFailed(format!(
+                    "Zygote process exited prematurely with status: {}. Check log at: {}",
+                    status,
+                    get_log_path().display()
+                )));
+            }
+
             if start.elapsed() > timeout {
                 self.stop()?;
                 return Err(ZygoteError::StartFailed(format!(
