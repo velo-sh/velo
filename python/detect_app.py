@@ -145,11 +145,15 @@ class AppDetector(ast.NodeVisitor):
         return None
     
     def _get_module_path(self) -> str:
-        """Get the module path from the file path (POSIX style per RFC §12.3.1)."""
-        # Return relative path without .py extension, using dots
-        rel_path = self.source_path.with_suffix("")
-        # Use POSIX-style path for cross-platform consistency
-        return str(rel_path.as_posix()).replace("/", ".")
+        """Get the module path relative to the scan directory (POSIX style)."""
+        # scan_dir is set in main and passed here? No, I need to pass it or use CWD
+        # For simplicity, use relative path if possible
+        try:
+            rel_path = self.source_path.relative_to(Path.cwd()).with_suffix("")
+            return str(rel_path.as_posix()).replace("/", ".")
+        except ValueError:
+            # Fallback to absolute if not relative to CWD
+            return self.source_path.stem
 
 
 def detect_app_in_file(file_path: Path) -> list[AppInfo]:
@@ -167,42 +171,27 @@ def detect_app_in_file(file_path: Path) -> list[AppInfo]:
     return detector.apps if detector.apps else detector.factories
 
 
-def detect_app_in_directory(directory: Path) -> Optional[AppInfo]:
+def detect_all_apps_in_directory(directory: Path) -> list[AppInfo]:
     """
-    Detect ASGI/WSGI app in a directory.
-    
-    Search order (per RFC-0010 §5.2.2):
-    1. main.py
-    2. app.py  
-    3. application.py
-    4. wsgi.py / asgi.py
-    5. Any .py file with app pattern
+    Detect all potential ASGI/WSGI apps in a directory.
     """
-    priority_files = [
-        "main.py",
-        "app.py",
-        "application.py",
-        "wsgi.py",
-        "asgi.py",
-    ]
+    all_apps = []
     
-    # Check priority files first
-    for filename in priority_files:
-        file_path = directory / filename
-        if file_path.exists():
-            apps = detect_app_in_file(file_path)
-            if apps:
-                return apps[0]
+    # Priority files list
+    priority_files = ["main.py", "app.py", "application.py", "wsgi.py", "asgi.py"]
     
-    # Fallback: scan all .py files
+    # Scan all .py files in the directory
     for py_file in sorted(directory.glob("*.py")):
         if py_file.name.startswith("_"):
             continue
         apps = detect_app_in_file(py_file)
         if apps:
-            return apps[0]
+            all_apps.extend(apps)
+            
+    # Sort so priority files come first
+    all_apps.sort(key=lambda x: (0 if x.path.name in priority_files else 1, x.path.name))
     
-    return None
+    return all_apps
 
 
 def main():
@@ -217,23 +206,27 @@ def main():
     
     args = parser.parse_args()
     
-    app = detect_app_in_directory(args.dir.resolve())
+    apps = detect_all_apps_in_directory(args.dir.resolve())
     
-    if app is None:
+    if not apps:
         print("error: No ASGI/WSGI app detected", file=sys.stderr)
         sys.exit(1)
     
     if args.output == "json":
-        print(json.dumps({
-            "module": app.module,
-            "app": app.app,
-            "type": app.framework,
-            "factory": app.factory,
-            "path": str(app.path.as_posix()),  # RFC §12.3.1: POSIX paths
-        }))
+        # Return all found apps in JSON
+        results = []
+        for app in apps:
+            results.append({
+                "module": app.module,
+                "app": app.app,
+                "type": app.framework,
+                "factory": app.factory,
+                "path": str(app.path.as_posix()),
+            })
+        print(json.dumps(results))
     else:
-        # Simple format: module:app
-        print(f"{app.module}:{app.app}")
+        # Simple format: just the first one module:app
+        print(f"{apps[0].module}:{apps[0].app}")
 
 
 if __name__ == "__main__":

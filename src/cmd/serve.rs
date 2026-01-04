@@ -9,14 +9,15 @@ use std::path::{Path, PathBuf};
 use crate::python;
 use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
+use colored::Colorize;
 
 /// Serve a Python ASGI/WSGI application
 #[derive(Parser, Debug)]
 #[command(name = "serve", about = "Serve a Python ASGI/WSGI application")]
 pub struct ServeCmd {
     /// Application path (e.g., 'main:app', 'myapp.main:create_app()')
-    #[arg(required = true)]
-    pub app: String,
+    #[arg()]
+    pub app: Option<String>,
 
     /// Bind host
     #[arg(long, default_value = "127.0.0.1")]
@@ -47,8 +48,21 @@ pub struct ServeCmd {
     pub pid_file: Option<PathBuf>,
 
     /// Output format: text (default) or json
-    #[arg(long, value_name = "FMT", default_value = "text")]
+    #[arg(
+        long,
+        value_name = "FMT",
+        default_value = "text",
+        alias = "output-format"
+    )]
     pub log_format: String,
+
+    /// Set verbosity level (can be used multiple times)
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+
+    /// Dry run mode (log command and exit)
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// Enable hot reload (disabled in --prod)
     #[arg(long)]
@@ -66,7 +80,7 @@ pub struct ServeCmd {
 impl ServeCmd {
     /// Convert clap args to ServeArgs
     pub fn to_serve_args(&self) -> Result<ServeArgs> {
-        let mut args = ServeArgs::new(self.app.clone());
+        let mut args = ServeArgs::new(self.app.clone().unwrap_or_default());
 
         // Handle --bind shorthand
         if let Some(ref bind) = self.bind {
@@ -98,37 +112,139 @@ impl ServeCmd {
             other => anyhow::bail!("unknown log format '{}'. Use 'text' or 'json'", other),
         };
 
+        args.verbose = self.verbose;
+        args.dry_run = self.dry_run;
+
         // Apply prod mode settings
         args.apply_prod_mode();
 
         // Validate (SEC-P0-001)
         args.validate()?;
 
-        // Validate app format
-        if !args.app.contains(':') {
-            anyhow::bail!(
-                "invalid app format '{}'\nExpected 'module:app' (e.g., 'main:app')",
-                args.app
-            );
-        }
-
         Ok(args)
     }
 }
 
-/// Handle 'velo serve' command (entry point from cli.rs)
+#[derive(serde::Deserialize)]
+struct DetectedApp {
+    module: String,
+    app: String,
+}
+
+fn find_python_helper(project_dir: &Path, name: &str) -> Option<PathBuf> {
+    // 1. Try project_dir/python/ (dev layout)
+    let path = project_dir.join("python").join(name);
+    if path.exists() {
+        return Some(path);
+    }
+
+    // 2. Try walking up from project_dir
+    let mut current = project_dir.to_path_buf();
+    while let Some(parent) = current.parent() {
+        let path = parent.join("python").join(name);
+        if path.exists() {
+            return Some(path);
+        }
+        current = parent.to_path_buf();
+    }
+
+    // 3. TODO: check relative to executable for installed mode
+
+    None
+}
+
+fn discover_app(python_path: &Path, project_dir: &Path) -> Result<String> {
+    let script_path = find_python_helper(project_dir, "detect_app.py")
+        .ok_or_else(|| anyhow::anyhow!("Internal error: could not find detect_app.py"))?;
+
+    let output = std::process::Command::new(python_path)
+        .arg(&script_path)
+        .arg("--output")
+        .arg("json")
+        .current_dir(project_dir)
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!("No ASGI/WSGI app detected. Please specify one: velo serve main:app");
+    }
+
+    let apps: Vec<DetectedApp> = serde_json::from_slice(&output.stdout)?;
+    if apps.is_empty() {
+        anyhow::bail!("No ASGI/WSGI app detected. Please specify one: velo serve main:app");
+    }
+
+    // Default to the first (highest priority) one
+    Ok(format!("{}:{}", apps[0].module, apps[0].app))
+}
+
+fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<String> {
+    let script_path = find_python_helper(project_dir, "detect_app.py")?;
+    let output = std::process::Command::new(python_path)
+        .arg(&script_path)
+        .arg("--output")
+        .arg("json")
+        .current_dir(project_dir)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let apps: Vec<DetectedApp> = serde_json::from_slice(&output.stdout).ok()?;
+
+    let mut best_match = None;
+    let mut min_dist = 3; // Max threshold per RFC
+
+    for app in apps {
+        let full_name = format!("{}:{}", app.module, app.app);
+        let dist = strsim::levenshtein(target, &full_name);
+        if dist > 0 && dist < min_dist {
+            min_dist = dist;
+            best_match = Some(full_name);
+        }
+    }
+
+    best_match
+}
+
 pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Parse with clap - skip "velo serve" prefix
     let cmd = ServeCmd::try_parse_from(&args[1..])?;
-
-    // Convert to ServeArgs
-    let serve_args = cmd.to_serve_args()?;
 
     // Determine project directory
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
     // Detect user's Python
     let python_path = python::detect_python(&project_dir)?;
+
+    // Handle auto-discovery if app is not provided
+    let mut cmd = cmd;
+    if cmd.app.is_none() {
+        match discover_app(&python_path, &project_dir) {
+            Ok(app) => {
+                eprintln!("✨ Detected app: {}", app);
+                cmd.app = Some(app);
+            }
+            Err(e) => return Err(e),
+        }
+    } else {
+        // If app is provided, check if it matches candidates, if not suggest
+        if let Some(suggestion) = cmd
+            .app
+            .as_ref()
+            .and_then(|app_str| suggest_app(app_str, &python_path, &project_dir))
+        {
+            eprintln!(
+                "   {} a similar app exists: {}",
+                "tip:".yellow(),
+                suggestion.cyan()
+            );
+        }
+    }
+
+    // Convert to ServeArgs
+    let serve_args = cmd.to_serve_args()?;
 
     // Run the server
     serve::run_server(&serve_args, &python_path, &project_dir)?;
@@ -143,7 +259,7 @@ mod tests {
     #[test]
     fn test_parse_basic() {
         let cmd = ServeCmd::try_parse_from(["serve", "main:app"]).unwrap();
-        assert_eq!(cmd.app, "main:app");
+        assert_eq!(cmd.app.as_deref(), Some("main:app"));
         assert_eq!(cmd.host, "127.0.0.1");
         assert_eq!(cmd.port, 8000);
     }
@@ -161,6 +277,7 @@ mod tests {
             "4",
         ])
         .unwrap();
+        assert_eq!(cmd.app.as_deref(), Some("main:app"));
         assert_eq!(cmd.host, "0.0.0.0");
         assert_eq!(cmd.port, 8080);
         assert_eq!(cmd.workers, 4);
@@ -190,9 +307,11 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_app_error() {
+    fn test_missing_app_ok() {
         let result = ServeCmd::try_parse_from(["serve"]);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let cmd = result.unwrap();
+        assert!(cmd.app.is_none());
     }
 
     #[test]

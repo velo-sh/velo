@@ -6,6 +6,7 @@
 //! - Help and version display
 
 use anyhow::Result;
+use colored::Colorize;
 
 use crate::cmd;
 
@@ -92,22 +93,27 @@ pub fn run() -> Result<()> {
 
     // Centralized error handling (P0 refactor)
     if let Err(e) = result {
-        // DEF-61-002: Check if this is a clap help/version request (exit code 0)
+        // Handle clap errors
         if let Some(clap_err) = e.downcast_ref::<clap::Error>() {
-            // Clap handles printing for DisplayHelp and DisplayVersion
             clap_err.print().ok();
             match clap_err.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
                     std::process::exit(0);
                 }
                 _ => {
-                    std::process::exit(2); // Clap usage errors
+                    std::process::exit(2);
                 }
             }
         }
 
-        // Format error with "Error:" prefix for consistency
-        eprintln!("Error: {}", e);
+        // Handle ServeError with rich formatting
+        if let Some(serve_err) = e.downcast_ref::<crate::serve::error::ServeError>() {
+            eprintln!("{}", serve_err.format_source_pointed());
+            std::process::exit(serve_err.exit_code());
+        }
+
+        // Generic error format
+        eprintln!("{}: {}", "error".red().bold(), e);
         std::process::exit(1);
     }
 
