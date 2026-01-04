@@ -1,5 +1,7 @@
 # DEF-61-004: Protocol Version Socket Isolation
 
+> **Parent**: [OPT-0010-001-msgpack-ipc.md](../../rfcs/OPT-0010-001-msgpack-ipc.md) (MessagePack IPC Protocol)
+
 **Status**: OPEN → IN REVIEW
 **Severity**: P1 (Stability)
 **Reporter**: Architect
