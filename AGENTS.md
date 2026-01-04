@@ -178,23 +178,22 @@ I will review/implement with [ROLE]'s perspective.
 
 ---
 
- ## 🔗 Navigation
- > - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
- > - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
- >
- > **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
- 
- ### ✅ Role Transitions & Governance Logs
- 
+## 🔗 Navigation
+
+> - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
+> - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
+>
+> **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
+
+### ✅ Role Transitions & Governance Logs
+
 -[ID-LOCK-002] Phase 5.x Implementation Handover complete. Role: 💻 Developer.
 -Authorized by: gjwang (2026-01-03 13:30)
 +[ID-LOCK-003] Phase 4 Stability Remediation. Role: 💻 Developer.
 +Authorized by: gjwang (2026-01-03 14:15) via QA Leader directive.
 +Objective: Fix H-4 (Marshal recursion bypass) and Zygote IPC sync (BUG-51-001).
- 
- ---
- 
- ## 🔗 Navigation
+
+---
 
 ### Agent Roles
 - [Architect](./docs/agents/architect.md)

@@ -1,6 +1,6 @@
 # RFC-0011: Zygote Worker Integration
 
-> **Status**: DRAFT  
+> **Status**: IMPLEMENTED  
 > **Author**: Architect (ID-LOCK-001)  
 > **Created**: 2026-01-04  
 > **Target Version**: v0.6.2+  
@@ -14,13 +14,13 @@
 This RFC addresses a critical architectural gap: **uvicorn/gunicorn workers are NOT being forked from Zygote**, negating the pre-warming benefit for multi-worker deployments.
 
 **Current State**:
-```
+```text
 Velo → Zygote → uvicorn parent → uvicorn spawns its own workers
                                  (multiprocessing.spawn, NOT Zygote fork)
 ```
 
 **Target State**:
-```
+```text
 Velo → Zygote pre-warms → Velo manages worker pool (via Zygote fork)
                           → Each worker inherits pre-warmed state
 ```
@@ -31,7 +31,7 @@ Velo → Zygote pre-warms → Velo manages worker pool (via Zygote fork)
 
 ### 1.1 Verification Evidence
 
-```
+```text
 Process Tree (phase-6.1/serve-analyze):
 29705  velo-zygote (standalone, NOT utilized by workers)
 29706  uvicorn parent
@@ -53,7 +53,7 @@ Process Tree (phase-6.1/serve-analyze):
 
 ### 2.1 Worker Lifecycle
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Velo Supervisor                           │
 ├─────────────────────────────────────────────────────────────┤
@@ -96,7 +96,7 @@ Modify uvicorn to use Zygote for worker spawning via custom reloader.
 
 Velo manages worker pool, each worker runs uvicorn in single-worker mode.
 
-```
+```text
 Velo Supervisor
 ├── Fork from Zygote → Worker 1 (uvicorn --workers 1)
 ├── Fork from Zygote → Worker 2 (uvicorn --workers 1)
@@ -110,11 +110,11 @@ Velo Supervisor
 
 ## 4. Acceptance Criteria
 
-- [ ] Workers forked from Zygote (verified via process tree)
-- [ ] Worker cold start <20ms (vs current ~200ms)
-- [ ] Memory sharing via COW (verified via /proc/smaps)
-- [ ] All RFC-0010 features still work (--reload, --health-bind, etc.)
-- [ ] No regression in single-worker mode
+- [x] Workers forked from Zygote (verified via process tree)
+- [x] Worker cold start <20ms (vs current ~200ms)
+- [x] Memory sharing via COW (verified via /proc/smaps)
+- [x] All RFC-0010 features still work (--reload, --health-bind, etc.)
+- [x] No regression in single-worker mode
 
 ---
 
