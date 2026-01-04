@@ -81,7 +81,7 @@ impl Worker {
         if module.starts_with('/') {
             anyhow::bail!("Absolute path not allowed in app: {}", app);
         }
-        
+
         // Prevent symlink attacks - check if module path exists and resolve it
         // This prevents symlinks from bypassing the above checks
         if module.contains('/') {
