@@ -5,7 +5,10 @@
 **Reporter**: Architect
 **Date**: 2026-01-04
 **Branch**: `hotfix/protocol-socket-isolation`
-**Expert Review**: ✅ Completed (4 experts)
+**Expert Review**: ✅ Completed (12 experts: 8 Runtime + 4 QA)
+
+> **Attachments**:
+> - [DEF-61-004-qa-review.md](./DEF-61-004-qa-review.md) - QA Expert Review (17 test cases, pytest spec)
 
 ---
 
