@@ -6,13 +6,12 @@ Version: 4.2 (Security Enhanced)
 
 import os
 import sys
-import json
 import socket
 import asyncio
 import signal
 from typing import Any
 
-# 最危险的环境变量（最小清理列表）
+# Critical environment variables (minimum cleanup list)
 _CRITICAL_ENV_VARS = ['LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'PYTHONSTARTUP']
 
 def run_worker_with_shared_port(
@@ -21,7 +20,7 @@ def run_worker_with_shared_port(
     port: int,
     log_level: str = "info"
 ) -> None:
-    """运行 ASGI worker with SO_REUSEPORT
+    """Run ASGI worker with SO_REUSEPORT
     
     Args:
         app_path: ASGI app path in format "module:app"
@@ -30,15 +29,15 @@ def run_worker_with_shared_port(
         log_level: Uvicorn log level
     """
     
-    # 0. 最小安全清理（只清理最关键的）
+    # 0. Minimum security cleanup (only critical vars)
     for var in _CRITICAL_ENV_VARS:
         os.environ.pop(var, None)
     
-    # 1. 创建新 event loop (fork 后必须)
+    # 1. Create new event loop (required after fork)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    # 2. 创建 SO_REUSEPORT socket
+    # 2. Create SO_REUSEPORT socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
@@ -46,61 +45,65 @@ def run_worker_with_shared_port(
     sock.listen(1024)
     sock.set_inheritable(True)
     
-    # 3. 加载 ASGI app
-    app = _load_asgi_app(app_path)
-    
-    # 4. 配置 uvicorn
-    from uvicorn import Config, Server
-    
-    config = Config(
-        app=app,
-        fd=sock.fileno(),
-        loop="asyncio",
-        log_level=log_level,
-    )
-    
-    server = Server(config)
-    
-    # 5. 权限下降（如果以 root 运行）
-    _drop_privileges_if_root()
-    
-    # 6. 运行
     try:
-        loop.run_until_complete(server.serve())
-    except KeyboardInterrupt:
-        pass
+        # 3. Load ASGI app
+        app = _load_asgi_app(app_path)
+        
+        # 4. Configure uvicorn
+        from uvicorn import Config, Server
+        
+        config = Config(
+            app=app,
+            fd=sock.fileno(),
+            loop="asyncio",
+            log_level=log_level,
+        )
+        
+        server = Server(config)
+        
+        # 5. Drop privileges (if running as root)
+        _drop_privileges_if_root()
+        
+        # 6. Run server
+        try:
+            loop.run_until_complete(server.serve())
+        except KeyboardInterrupt:
+            pass
+        finally:
+            loop.close()
     finally:
-        loop.close()
+        # Always clean up socket on error
+        sock.close()
 
 
 def _drop_privileges_if_root() -> None:
-    """降低权限（如果当前是 root）
+    """Drop privileges (if currently root)
     
-    安全最佳实践：避免以 root 身份运行 worker
+    Security best practice: avoid running worker as root
     """
     if os.getuid() != 0:
-        return  # 不是 root，无需降权
+        return  # Not root, no need to drop privileges
     
     try:
         import pwd
         nobody = pwd.getpwnam('nobody')
         
-        # 先设置 gid，再设置 uid（顺序重要！）
+        # Set gid first, then uid (order matters!)
         os.setgid(nobody.pw_gid)
         os.setuid(nobody.pw_uid)
         
-        # 验证降权成功
+        # Verify privilege drop succeeded
         if os.getuid() == 0 or os.getgid() == 0:
             raise RuntimeError("Failed to drop root privileges")
             
     except Exception as e:
-        # 降权失败是严重安全问题，必须退出
+        # Privilege drop failure is a critical security issue, must exit
         print(f"CRITICAL: Failed to drop privileges: {e}", file=sys.stderr)
         sys.exit(1)
 
 
 def _load_asgi_app(app_path: str) -> Any:
-    """加载 ASGI 应用
+    """Load ASGI application
     
     Args:
         app_path: App path in format "module:app"

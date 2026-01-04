@@ -537,12 +537,10 @@ class ZygoteServer:
 
     def _handle_wait_worker(self, worker_pid: int, timeout_secs: Optional[int]) -> Dict:
         """Wait for a worker to exit"""
-        import time
         if worker_pid not in self.workers:
             return {"type": "Error", "message": f"Worker {worker_pid} not found"}
         
         try:
-            import signal
             if timeout_secs:
                 # Set alarm for timeout
                 def timeout_handler(signum, frame):
@@ -582,7 +580,6 @@ class ZygoteServer:
 
     def _handle_worker_status(self, worker_pid: int) -> Dict:
         """Query worker status"""
-        import time
         if worker_pid not in self.workers:
             return {
                 "type": "WorkerInfo",
@@ -622,7 +619,6 @@ class ZygoteServer:
         async_mode = cmd.get("async_mode", False)
 
         # Track the worker
-        import time
         self.workers[worker_pid] = (time.time(), None)
 
         if async_mode:
