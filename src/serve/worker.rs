@@ -2,214 +2,286 @@
 //!
 //! Manages multiple uvicorn workers with Zygote pre-warming.
 
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use anyhow::Result;
+use serde_json::json;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use crate::zygote::ipc;
 
-/// Worker process handle
+/// Global worker counter (avoid temp file conflicts)
+static WORKER_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// RAII guard for temporary script cleanup
+/// Ensures script is deleted even if fork fails
+struct TempScriptGuard<'a>(&'a Path);
+
+impl<'a> Drop for TempScriptGuard<'a> {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(self.0);
+    }
+}
+
 pub struct Worker {
-    process: Child,
-    port: u16,
+    pub pid: u32,
+    pub port: u16,
     started_at: Instant,
+    zygote_socket: PathBuf,
+    script_path: Option<PathBuf>,
 }
 
 impl Worker {
-    /// Check if worker is still running
-    pub fn is_running(&mut self) -> bool {
-        match self.process.try_wait() {
-            Ok(None) => true,     // Still running
-            Ok(Some(_)) => false, // Exited
-            Err(_) => false,      // Error checking
-        }
-    }
+    /// Spawn worker via Zygote fork
+    pub fn spawn_via_zygote(
+        zygote_socket: &Path,
+        app: &str,
+        host: &str,
+        port: u16,
+    ) -> Result<Self> {
+        // Security validation
+        Self::validate_app_path(app)?;
 
-    /// Get worker startup time
-    pub fn uptime(&self) -> Duration {
-        self.started_at.elapsed()
-    }
+        // Generate unique script path
+        let worker_id = WORKER_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let script_path = Self::create_temp_script_path(worker_id)?;
 
-    /// Kill the worker
-    pub fn kill(&mut self) -> Result<()> {
-        self.process.kill().context("Failed to kill worker")?;
-        self.process.wait()?;
-        Ok(())
-    }
+        // Generate worker script
+        let script_content = Self::generate_worker_script(app, host, port)?;
 
-    /// Get worker port
-    pub fn port(&self) -> u16 {
-        self.port
-    }
-}
+        // Write script securely
+        Self::write_script_securely(&script_path, &script_content)?;
 
-/// Worker pool for managing multiple uvicorn instances
-pub struct WorkerPool {
-    workers: Vec<Worker>,
-    base_port: u16,
-    python_path: std::path::PathBuf,
-    app: String,
-    project_dir: std::path::PathBuf,
-}
-
-impl WorkerPool {
-    /// Create a new worker pool
-    pub fn new(python_path: &Path, app: &str, project_dir: &Path, base_port: u16) -> Self {
-        Self {
-            workers: Vec::new(),
-            base_port,
-            python_path: python_path.to_path_buf(),
-            app: app.to_string(),
-            project_dir: project_dir.to_path_buf(),
-        }
-    }
-
-    /// Spawn N workers
-    pub fn spawn_workers(&mut self, count: u32, host: &str) -> Result<()> {
-        for i in 0..count {
-            let port = self.base_port + i as u16;
-            let worker = self.spawn_single_worker(host, port)?;
-            self.workers.push(worker);
-        }
-        Ok(())
-    }
-
-    /// Spawn a single worker on specified port
-    fn spawn_single_worker(&self, host: &str, port: u16) -> Result<Worker> {
-        let mut cmd = Command::new(&self.python_path);
-        cmd.arg("-m")
-            .arg("uvicorn")
-            .arg(&self.app)
-            .arg("--host")
-            .arg(host)
-            .arg("--port")
-            .arg(port.to_string())
-            .current_dir(&self.project_dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
-        let process = cmd.spawn().context("Failed to spawn uvicorn worker")?;
+        // Fork via Zygote
+        let worker_pid = Self::fork_via_zygote(zygote_socket, &script_path)?;
 
         Ok(Worker {
-            process,
+            pid: worker_pid,
             port,
             started_at: Instant::now(),
+            zygote_socket: zygote_socket.to_path_buf(),
+            script_path: Some(script_path),
         })
     }
 
-    /// Check health of all workers, restart dead ones
-    pub fn health_check(&mut self, host: &str) -> Result<usize> {
-        let mut restarted = 0;
-        let mut dead_indices = Vec::new();
+    /// Validate app path security
+    fn validate_app_path(app: &str) -> Result<()> {
+        if !app.contains(':') {
+            anyhow::bail!("Invalid app format: expected 'module:app'");
+        }
 
-        for (i, worker) in self.workers.iter_mut().enumerate() {
-            if !worker.is_running() {
-                dead_indices.push(i);
+        let (module, _) = app.split_once(':').unwrap();
+
+        // Prevent path traversal
+        if module.contains("..") {
+            anyhow::bail!("Path traversal detected in app: {}", app);
+        }
+
+        // Prevent absolute path injection
+        if module.starts_with('/') {
+            anyhow::bail!("Absolute path not allowed in app: {}", app);
+        }
+        
+        // Prevent symlink attacks - check if module path exists and resolve it
+        // This prevents symlinks from bypassing the above checks
+        if module.contains('/') {
+            // If it looks like a file path, verify it's not a symlink
+            let path = std::path::Path::new(module);
+            if path.exists() {
+                // canonicalize() will fail if it's a broken symlink
+                // and will resolve symlinks, allowing us to check the real path
+                if let Ok(canonical) = path.canonicalize() {
+                    let canonical_str = canonical.to_string_lossy();
+                    // Re-check the canonical path agains our security rules
+                    if canonical_str.contains("..") || canonical_str.starts_with('/') {
+                        anyhow::bail!("Symlink points to forbidden path: {}", canonical_str);
+                    }
+                }
             }
         }
-
-        for i in dead_indices.into_iter().rev() {
-            let port = self.workers[i].port;
-            self.workers.remove(i);
-
-            eprintln!("♻️  Restarting dead worker on port {}", port);
-            let worker = self.spawn_single_worker(host, port)?;
-            self.workers.push(worker);
-            restarted += 1;
-        }
-
-        Ok(restarted)
-    }
-
-    /// Get number of active workers
-    pub fn active_count(&mut self) -> usize {
-        let mut count = 0;
-        for worker in &mut self.workers {
-            if worker.is_running() {
-                count += 1;
-            }
-        }
-        count
-    }
-
-    /// Shutdown all workers
-    pub fn shutdown(&mut self) {
-        for worker in &mut self.workers {
-            let _ = worker.kill();
-        }
-        self.workers.clear();
-    }
-
-    /// Wait for a signal and run health checks periodically
-    pub fn run_supervisor(&mut self, host: &str) -> Result<()> {
-        // Set up signal handlers
-        ctrlc_handler(|| {});
-
-        eprintln!(
-            "📊 Supervisor running, {} workers active",
-            self.active_count()
-        );
-        eprintln!("   Press Ctrl+C to stop\n");
-
-        while !shutdown_requested() {
-            std::thread::sleep(Duration::from_secs(5));
-
-            let restarted = self.health_check(host)?;
-            if restarted > 0 {
-                eprintln!("📊 Health check: {} workers restarted", restarted);
-            }
-        }
-
-        eprintln!("\n🛑 Shutting down workers...");
-        self.shutdown();
-        eprintln!("✅ All workers stopped");
 
         Ok(())
     }
+
+    /// Create temp script path
+    fn create_temp_script_path(worker_id: u64) -> Result<PathBuf> {
+        let temp_dir = std::env::var("VELO_TEMP_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+
+        std::fs::create_dir_all(&temp_dir)?;
+
+        let script_name = format!("velo-worker-{}-{}.py", std::process::id(), worker_id);
+
+        Ok(temp_dir.join(script_name))
+    }
+
+    /// Generate worker script (injection-safe)
+    fn generate_worker_script(app: &str, host: &str, port: u16) -> Result<String> {
+        let velo_lib_path = std::env::var("VELO_WORKER_PATH")
+            .or_else(|_| Self::detect_velo_lib_path())
+            .unwrap_or_else(|_| "/usr/local/lib/velo/velo_zygote".to_string());
+
+        let config = json!({
+            "app_path": app,
+            "host": host,
+            "port": port,
+            "log_level": "info"
+        });
+
+        Ok(format!(
+            r#"#!/usr/bin/env python3
+import sys
+import json
+import os
+
+# Add project directory to sys.path
+sys.path.insert(0, os.getcwd())
+
+# Add velo_zygote to path
+sys.path.insert(0, {})
+
+from worker_runner import run_worker_with_shared_port
+
+config = json.loads('{}')
+run_worker_with_shared_port(**config)
+"#,
+            serde_json::to_string(&velo_lib_path)?,
+            serde_json::to_string(&config)?
+        ))
+    }
+
+    /// Detect velo_zygote library path
+    fn detect_velo_lib_path() -> Result<String> {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let lib_path = parent.join("velo_zygote");
+                if lib_path.exists() {
+                    return Ok(lib_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        anyhow::bail!("Could not detect VELO_WORKER_PATH")
+    }
+
+    /// Write script securely (0600 permissions)
+    fn write_script_securely(path: &Path, content: &str) -> Result<()> {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+
+            file.write_all(content.as_bytes())?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)?;
+
+            file.write_all(content.as_bytes())?;
+        }
+
+        Ok(())
+    }
+
+    /// Fork via Zygote IPC
+    fn fork_via_zygote(zygote_socket: &Path, script_path: &Path) -> Result<u32> {
+        let response = ipc::send_command(
+            zygote_socket,
+            ipc::ZygoteCommand::Fork {
+                script_path: script_path.to_path_buf(),
+                args: vec![],
+                async_mode: true,
+                stdout_path: None,
+                stderr_path: None,
+                exit_code_path: None,
+                fast_mode: false,
+                bundle_path: None,
+                project_root: None,
+                max_bundle_size: None,
+            },
+        )?;
+
+        match response {
+            ipc::ZygoteResponse::Forked { worker_pid, .. } => Ok(worker_pid),
+            ipc::ZygoteResponse::Error { message } => {
+                anyhow::bail!("Zygote fork failed: {}", message)
+            }
+            _ => anyhow::bail!("Unexpected response from Zygote"),
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        match ipc::send_command(
+            &self.zygote_socket,
+            ipc::ZygoteCommand::WorkerStatus {
+                worker_pid: self.pid,
+            },
+        ) {
+            Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
+            _ => false,
+        }
+    }
+
+    pub fn shutdown(&self, timeout: Duration) -> Result<()> {
+        // 1. SIGTERM
+        ipc::send_command(
+            &self.zygote_socket,
+            ipc::ZygoteCommand::SignalWorker {
+                worker_pid: self.pid,
+                signal: 15, // SIGTERM
+            },
+        )?;
+
+        // 2. Wait
+        let response = ipc::send_command(
+            &self.zygote_socket,
+            ipc::ZygoteCommand::WaitWorker {
+                worker_pid: self.pid,
+                timeout_secs: Some(timeout.as_secs()),
+            },
+        )?;
+
+        match response {
+            ipc::ZygoteResponse::WorkerExited { .. } => Ok(()),
+            _ => {
+                // 3. SIGKILL
+                ipc::send_command(
+                    &self.zygote_socket,
+                    ipc::ZygoteCommand::SignalWorker {
+                        worker_pid: self.pid,
+                        signal: 9, // SIGKILL
+                    },
+                )?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn uptime(&self) -> Duration {
+        self.started_at.elapsed()
+    }
 }
 
-impl Drop for WorkerPool {
+impl Drop for Worker {
     fn drop(&mut self) {
-        self.shutdown();
+        if let Some(ref path) = self.script_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
-}
-
-/// Global shutdown flag for signal handling
-#[cfg(unix)]
-static SHUTDOWN_REQUESTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Set up Ctrl+C handler using simple atomic flag
-#[cfg(unix)]
-fn ctrlc_handler<F: FnOnce() + Send + 'static>(_handler: F) {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-
-    INIT.call_once(|| unsafe {
-        libc::signal(libc::SIGINT, sigint_handler as libc::sighandler_t);
-        libc::signal(libc::SIGTERM, sigint_handler as libc::sighandler_t);
-    });
-
-    extern "C" fn sigint_handler(_: libc::c_int) {
-        SHUTDOWN_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
-/// Check if shutdown was requested via signal
-#[cfg(unix)]
-pub fn shutdown_requested() -> bool {
-    SHUTDOWN_REQUESTED.load(std::sync::atomic::Ordering::SeqCst)
-}
-
-#[cfg(not(unix))]
-fn ctrlc_handler<F: FnOnce() + Send + 'static>(_handler: F) {
-    // On non-Unix, just ignore - will need proper Windows handling
-}
-
-#[cfg(not(unix))]
-pub fn shutdown_requested() -> bool {
-    false
 }
 
 #[cfg(test)]
@@ -217,14 +289,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_worker_pool_new() {
-        let pool = WorkerPool::new(
-            Path::new("/usr/bin/python3"),
-            "main:app",
-            Path::new("/tmp"),
-            8000,
-        );
-        assert_eq!(pool.base_port, 8000);
-        assert_eq!(pool.app, "main:app");
+    fn test_validate_app_path_valid() {
+        assert!(Worker::validate_app_path("main:app").is_ok());
+        assert!(Worker::validate_app_path("myapp.main:create_app").is_ok());
+    }
+
+    #[test]
+    fn test_validate_app_path_invalid() {
+        assert!(Worker::validate_app_path("../evil:app").is_err());
+        assert!(Worker::validate_app_path("/etc/passwd:data").is_err());
+        assert!(Worker::validate_app_path("nocolon").is_err());
+    }
+
+    #[test]
+    fn test_temp_script_uniqueness() {
+        let path1 = Worker::create_temp_script_path(0).unwrap();
+        let path2 = Worker::create_temp_script_path(1).unwrap();
+        assert_ne!(path1, path2);
     }
 }

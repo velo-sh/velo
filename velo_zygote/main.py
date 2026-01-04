@@ -422,6 +422,7 @@ class ZygoteServer:
         self.worker_manager = WorkerManager(worker_ttl)
         self.preload = preload or []
         self._preloaded_modules: List[str] = []
+        self.workers: Dict[int, Tuple[float, Any]] = {}  # pid -> (start_time, process)
 
     def start(self):
         try:
@@ -518,10 +519,94 @@ class ZygoteServer:
                 "pid": os.getpid(),
                 "preload": self._preloaded_modules
             }
+        elif cmd_type == "WaitWorker":
+            worker_pid = cmd.get("worker_pid")
+            timeout_secs = cmd.get("timeout_secs")
+            return self._handle_wait_worker(worker_pid, timeout_secs)
+        elif cmd_type == "SignalWorker":
+            worker_pid = cmd.get("worker_pid")
+            signal_num = cmd.get("signal")
+            return self._handle_signal_worker(worker_pid, signal_num)
+        elif cmd_type == "WorkerStatus":
+            worker_pid = cmd.get("worker_pid")
+            return self._handle_worker_status(worker_pid)
         elif cmd_type == "Shutdown":
              return {"type": "Ack"}
         else:
             return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+
+    def _handle_wait_worker(self, worker_pid: int, timeout_secs: Optional[int]) -> Dict:
+        """Wait for a worker to exit"""
+        import time
+        if worker_pid not in self.workers:
+            return {"type": "Error", "message": f"Worker {worker_pid} not found"}
+        
+        try:
+            import signal
+            if timeout_secs:
+                # Set alarm for timeout
+                def timeout_handler(signum, frame):
+                    raise TimeoutError()
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_secs)
+            
+            _, exit_status = os.waitpid(worker_pid, 0)
+            
+            if timeout_secs:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+            
+            exit_code = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
+            self.workers.pop(worker_pid, None)
+            return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": exit_code}
+        except TimeoutError:
+            if timeout_secs:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+            return {"type": "Error", "message": "Wait timeout"}
+        except ChildProcessError:
+            self.workers.pop(worker_pid, None)
+            return {"type": "Error", "message": "Process not found"}
+
+    def _handle_signal_worker(self, worker_pid: int, signal_num: int) -> Dict:
+        """Send signal to a worker"""
+        if worker_pid not in self.workers:
+            return {"type": "Error", "message": f"Worker {worker_pid} not found"}
+        
+        try:
+            os.kill(worker_pid, signal_num)
+            return {"type": "Ack"}
+        except ProcessLookupError:
+            self.workers.pop(worker_pid, None)
+            return {"type": "Error", "message": "Process not found"}
+
+    def _handle_worker_status(self, worker_pid: int) -> Dict:
+        """Query worker status"""
+        import time
+        if worker_pid not in self.workers:
+            return {
+                "type": "WorkerInfo",
+                "worker_pid": worker_pid,
+                "is_running": False,
+                "uptime_secs": 0
+            }
+        
+        start_time, _ = self.workers[worker_pid]
+        try:
+            os.kill(worker_pid, 0)
+            is_running = True
+        except ProcessLookupError:
+            is_running = False
+            self.workers.pop(worker_pid, None)
+        
+        uptime = int(time.time() - start_time) if is_running else 0
+        return {
+            "type": "WorkerInfo",
+            "worker_pid": worker_pid,
+            "is_running": is_running,
+            "uptime_secs": uptime
+        }
+
 
     def _cmd_fork(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         script_path = cmd.get("script_path", "")
@@ -536,6 +621,10 @@ class ZygoteServer:
         worker_pid = ForkHandler.handle_fork(cmd, self.worker_manager, self._preloaded_modules)
         async_mode = cmd.get("async_mode", False)
 
+        # Track the worker
+        import time
+        self.workers[worker_pid] = (time.time(), None)
+
         if async_mode:
             LogUtils.log(f"Forked worker PID: {worker_pid} (async)")
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
@@ -546,10 +635,12 @@ class ZygoteServer:
                 pid, status = os.waitpid(worker_pid, 0)
                 exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
                 self.worker_manager.remove_worker(worker_pid)
+                self.workers.pop(worker_pid, None)
             except ChildProcessError:
                 exit_code = 0 
             
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
+
 
     def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
         """Receive MessagePack message with length prefix and version byte (ADV-1)."""
@@ -694,12 +785,12 @@ class ZygoteServer:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Velo Zygote Process (Refactored)")
+    
+    parser = argparse.ArgumentParser(description="Velo Zygote Process")
     parser.add_argument("--socket", required=True, help="Unix socket path")
     parser.add_argument("--preload", nargs="*", default=[], help="Modules to pre-import")
-    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout")
-    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL")
+    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout in seconds (default: 300)")
+    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL in seconds (default: 3600)")
     
     args = parser.parse_args()
-    server = ZygoteServer(args.socket, args.preload, args.timeout, args.worker_ttl)
-    server.start()
+    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl)

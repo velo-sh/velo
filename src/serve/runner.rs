@@ -606,6 +606,69 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
+    // NEW: Multi-worker Zygote mode (use our Worker implementation)
+    if args.workers > 1
+        && args.use_zygote
+        && !preload_modules.is_empty()
+        && _zygote_guard.is_some()
+        && server == Server::Uvicorn
+    {
+        eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
+
+        use crate::serve::worker::Worker;
+        let socket_path = crate::zygote::ipc::default_socket_path();
+        let mut workers = Vec::new();
+
+        // Spawn N workers
+        for i in 0..args.workers {
+            match Worker::spawn_via_zygote(&socket_path, &args.app, &args.host, args.port) {
+                Ok(worker) => {
+                    eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
+                    workers.push(worker);
+                }
+                Err(e) => {
+                    eprintln!("  ❌ Failed to spawn worker {}: {}", i + 1, e);
+                    // Cleanup already spawned workers
+                    for worker in workers.iter() {
+                        let _ = worker.shutdown(Duration::from_secs(5));
+                    }
+                    anyhow::bail!("Failed to spawn workers via Zygote");
+                }
+            }
+        }
+
+        eprintln!("✅ All workers ready");
+        eprintln!();
+
+        // Wait for signal
+        loop {
+            match rx.recv() {
+                Ok(ServerEvent::Signal(sig)) => match sig {
+                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                        eprintln!("\n🛑 Received shutdown signal, stopping workers...");
+                        for (i, worker) in workers.iter().enumerate() {
+                            eprint!("  Stopping worker {}... ", i + 1);
+                            match worker.shutdown(Duration::from_secs(args.timeout)) {
+                                Ok(_) => eprintln!("✅"),
+                                Err(e) => eprintln!("⚠️ {}", e),
+                            }
+                        }
+                        eprintln!("✅ All workers stopped");
+                        return Ok(());
+                    }
+                    _ => {}
+                },
+                Ok(ServerEvent::WorkerExit) => {
+                    // Worker exited (only on Windows/non-Unix)
+                }
+                Err(_) => break,
+            }
+        }
+
+        return Ok(());
+    }
+
+    // FALLBACK: Standard uvicorn/gunicorn mode
     // Build server command based on server type
     logger.debug(&format!("Building command for {}...", server));
     let mut cmd = Command::new(python_path);
