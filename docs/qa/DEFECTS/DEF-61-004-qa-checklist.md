@@ -8,7 +8,9 @@
 
 ## 📋 QA Summary
 
-验证协议版本 Socket 隔离实现,确保升级/降级场景无问题。
+Verify Protocol Version Socket Isolation implementation, ensuring upgrade/downgrade scenarios work correctly.
+
+**Test Scaffolding Status**: ✅ Complete (18 tests: 3 PASSED, 15 XFAIL awaiting dev)
 
 ---
 
@@ -16,38 +18,39 @@
 
 ### Phase 0: Test Setup
 
-- [ ] **0.1** 创建测试文件 `tests/qa/test_def_61_004_socket_isolation.py`
-- [ ] **0.2** 导入必要模块 (pytest, mock, tempfile)
-- [ ] **0.3** 设置 fixtures
+- [x] **0.1** Create test file `tests/qa/test_def_61_004_socket_isolation.py`
+- [x] **0.2** Import required modules (pytest, mock, tempfile)
+- [x] **0.3** Set up fixtures (temp directories, mock sockets)
+- [x] **0.4** Create performance test file `tests/qa/test_def_61_004_performance.py`
 
 ### Phase 1: Core Tests (T1-T5)
 
-- [ ] **T1** 版本升级清理旧 Socket
-- [ ] **T2** Socket 路径格式正确
-- [ ] **T3** 运行中 Socket 不被删除
-- [ ] **T4** 目录权限 0700
-- [ ] **T5** 多用户隔离
+- [ ] **T1** Version upgrade cleans old socket (xfail - awaiting dev)
+- [ ] **T2** Socket path format correct (xfail - awaiting dev)
+- [ ] **T3** Active socket NOT deleted (xfail - awaiting dev)
+- [x] **T4** Directory permissions 0700 ✅ PASSED
+- [x] **T5** Multi-user isolation ✅ PASSED
 
 ### Phase 2: Edge Case Tests (T6-T10)
 
-- [ ] **T6** 长 $TMPDIR 路径回退
-- [ ] **T7** 权限错误优雅处理
-- [ ] **T8** 并发启动无竞态
-- [ ] **T9** 符号链接攻击防护
-- [ ] **T10** 磁盘空间不足
+- [ ] **T6** Long $TMPDIR path fallback (xfail - awaiting dev)
+- [ ] **T7** Permission error graceful handling (xfail - awaiting dev)
+- [ ] **T8** Concurrent startup no race (xfail - awaiting dev)
+- [ ] **T9** Symlink attack protection (xfail - awaiting dev)
+- [ ] **T10** Disk space exhausted (xfail - awaiting dev)
 
 ### Phase 3: Regression Tests (REG-001 to REG-004)
 
-- [ ] **REG-001** 全新安装 v0.6.2
-- [ ] **REG-002** 升级 v0.6.1 → v0.6.2
-- [ ] **REG-003** 降级 v0.6.2 → v0.6.1
-- [ ] **REG-004** 多用户并行
+- [ ] **REG-001** Fresh install v0.6.2 (xfail - awaiting dev)
+- [ ] **REG-002** Upgrade v0.6.1 → v0.6.2 (xfail - awaiting dev)
+- [ ] **REG-003** Downgrade v0.6.2 → v0.6.1 (xfail - awaiting dev)
+- [ ] **REG-004** Multi-user parallel (xfail - awaiting dev)
 
 ### Phase 4: Performance Tests
 
-- [ ] **AC-9** `get_socket_dir()` < 1ms
-- [ ] **AC-10** `cleanup_stale_sockets()` < 100ms
-- [ ] **AC-11** Socket 连接 < 5ms
+- [ ] **AC-9** `get_socket_dir()` < 1ms (xfail - awaiting dev)
+- [ ] **AC-10** `cleanup_stale_sockets()` < 100ms (xfail - awaiting dev)
+- [x] **AC-11** Socket connection < 5ms ✅ PASSED
 
 ---
 
@@ -62,8 +65,8 @@
 
 ## 🔗 Reference Documents
 
-- [DEF-61-004-qa-review.md](./DEF-61-004-qa-review.md) - 完整 pytest 规格
-- [DEF-61-004-protocol-socket-isolation.md](./DEF-61-004-protocol-socket-isolation.md) - 设计文档
+- [DEF-61-004-qa-review.md](./DEF-61-004-qa-review.md) - Full pytest specification
+- [DEF-61-004-protocol-socket-isolation.md](./DEF-61-004-protocol-socket-isolation.md) - Design document
 
 ---
 
@@ -90,9 +93,9 @@
 
 ## ⚠️ Test Environment Requirements
 
-1. **两个 Velo 版本**: v0.6.1 (JSON) 和 v0.6.2 (MessagePack)
-2. **多用户测试**: 需要两个不同 UID 的用户
-3. **权限测试**: 需要 root 权限创建受限目录
+1. **Two Velo versions**: v0.6.1 (JSON) and v0.6.2 (MessagePack)
+2. **Multi-user testing**: Requires two different UID users
+3. **Permission testing**: May require elevated privileges
 
 ---
 
@@ -100,14 +103,14 @@
 
 | AC | Description | Test(s) | Pass Criteria |
 |----|-------------|---------|---------------|
-| AC-1 | 版本号路径 | T2 | 路径含 `zygote-v1.sock` |
-| AC-2 | 用户隔离 | T5 | 路径含 `velo-{UID}/` |
-| AC-3 | 连接测试 | T1, T3 | 活 Socket 不删除 |
-| AC-4 | 权限 0700 | T4 | `stat` 验证 |
-| AC-5 | Benchmark | Manual | 无 30s 超时 |
-| AC-6 | 无回归 | CI | 182 tests pass |
-| AC-7 | 路径 < 108 | T6 | 长路径回退 |
-| AC-8 | 错误处理 | T7 | 无 panic |
+| AC-1 | Version in path | T2 | Path contains `zygote-v1.sock` |
+| AC-2 | User isolation | T5 | Path contains `velo-{UID}/` |
+| AC-3 | Connection test | T1, T3 | Active socket preserved |
+| AC-4 | Permissions 0700 | T4 | `stat` verification |
+| AC-5 | Benchmark | Manual | No 30s timeout |
+| AC-6 | No regression | CI | All tests pass |
+| AC-7 | Path < 108 | T6 | Fallback on long paths |
+| AC-8 | Error handling | T7 | No panic |
 | AC-9 | dir < 1ms | Perf | benchmark |
 | AC-10 | cleanup < 100ms | Perf | benchmark |
 | AC-11 | connect < 5ms | Perf | benchmark |
@@ -117,10 +120,10 @@
 ## 📊 Test Execution Order
 
 ```
-1. Unit Tests (T1-T5)        ← Developer 完成后立即执行
-2. Edge Case Tests (T6-T10)  ← Developer 修复后
-3. Regression Tests          ← 合并前
-4. Performance Tests         ← 最后
+1. Unit Tests (T1-T5)        ← Execute after Developer completes
+2. Edge Case Tests (T6-T10)  ← After Developer fixes
+3. Regression Tests          ← Before merge
+4. Performance Tests         ← Final step
 ```
 
 ---
