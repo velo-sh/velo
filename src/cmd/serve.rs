@@ -1,6 +1,6 @@
 //! Handle 'velo serve' command
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 use crate::python;
@@ -9,155 +9,14 @@ use crate::serve::config::{LogFormat, ServeArgs};
 
 /// Handle 'velo serve' command
 pub fn cmd_serve(args: &[String]) -> Result<()> {
-    // Handle --help early
+    // Handle --help early (this is the only acceptable exit point)
     if args.len() >= 3 && (args[2] == "--help" || args[2] == "-h") {
         print_serve_help();
-        std::process::exit(0);
+        return Ok(());
     }
 
-    if args.len() < 3 {
-        eprintln!("Error: missing app argument");
-        eprintln!("Usage: velo serve <app> [OPTIONS]");
-        eprintln!("Example: velo serve main:app --workers 4");
-        eprintln!("\nRun 'velo serve --help' for more information");
-        std::process::exit(1);
-    }
-
-    // Parse arguments
-    let mut serve_args = ServeArgs::new(args[2].clone());
-    let mut i = 3;
-
-    while i < args.len() {
-        match args[i].as_str() {
-            "--host" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --host requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.host = args[i].clone();
-            }
-            "--port" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --port requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.port = args[i].parse().unwrap_or_else(|_| {
-                    eprintln!("Error: invalid port number '{}'", args[i]);
-                    std::process::exit(1);
-                });
-            }
-            // --bind is shorthand for --host:--port (e.g., --bind 0.0.0.0:8080)
-            "--bind" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --bind requires a value (e.g., 0.0.0.0:8080)");
-                    std::process::exit(1);
-                }
-                if let Some((host, port)) = args[i].rsplit_once(':') {
-                    serve_args.host = host.to_string();
-                    serve_args.port = port.parse().unwrap_or_else(|_| {
-                        eprintln!("Error: invalid port in bind address '{}'", args[i]);
-                        std::process::exit(1);
-                    });
-                } else {
-                    eprintln!("Error: --bind requires HOST:PORT format (e.g., 0.0.0.0:8080)");
-                    std::process::exit(1);
-                }
-            }
-            "--workers" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --workers requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.workers = args[i].parse().unwrap_or_else(|_| {
-                    eprintln!("Error: invalid worker count '{}'", args[i]);
-                    std::process::exit(1);
-                });
-            }
-            "--timeout" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --timeout requires a value (seconds)");
-                    std::process::exit(1);
-                }
-                serve_args.timeout = args[i].parse().unwrap_or_else(|_| {
-                    eprintln!("Error: invalid timeout '{}'", args[i]);
-                    std::process::exit(1);
-                });
-            }
-            "--health-bind" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --health-bind requires a value (e.g., 0.0.0.0:8081)");
-                    std::process::exit(1);
-                }
-                serve_args.health_bind = Some(args[i].clone());
-            }
-            "--pid-file" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --pid-file requires a path");
-                    std::process::exit(1);
-                }
-                serve_args.pid_file = Some(PathBuf::from(&args[i]));
-            }
-            "--log-format" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --log-format requires a value (text or json)");
-                    std::process::exit(1);
-                }
-                serve_args.log_format = match args[i].as_str() {
-                    "text" => LogFormat::Text,
-                    "json" => LogFormat::Json,
-                    other => {
-                        eprintln!(
-                            "Error: unknown log format '{}'. Use 'text' or 'json'",
-                            other
-                        );
-                        std::process::exit(1);
-                    }
-                };
-            }
-            "--reload" => {
-                serve_args.reload = true;
-            }
-            "--prod" => {
-                serve_args.prod = true;
-            }
-            "--no-zygote" => {
-                serve_args.use_zygote = false;
-            }
-            arg if arg.starts_with('-') => {
-                // Suggest similar flags using strsim
-                suggest_similar_flag(arg);
-                std::process::exit(1);
-            }
-            _ => {
-                // Unexpected positional argument
-                eprintln!("Error: unexpected argument '{}'", args[i]);
-                std::process::exit(1);
-            }
-        }
-        i += 1;
-    }
-
-    // Apply prod mode settings (disables reload, auto workers)
-    serve_args.apply_prod_mode();
-
-    // SEC-P0-001: Validate app target for shell injection (ADR D1)
-    // Fail-fast: reject malicious input before ANY subprocess work
-    serve_args.validate()?;
-
-    // Validate app format
-    if !serve_args.app.contains(':') {
-        eprintln!("Error: invalid app format '{}'", serve_args.app);
-        eprintln!("Expected 'module:app' (e.g., 'main:app')");
-        std::process::exit(1);
-    }
+    // Parse arguments, returning Result instead of exit()
+    let serve_args = parse_serve_args(args)?;
 
     // Determine project directory
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
@@ -171,8 +30,123 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Suggest similar flags for typos (D11, RFC §4.12.2)
-fn suggest_similar_flag(unknown: &str) {
+/// Parse serve command arguments into ServeArgs
+/// Returns Result instead of calling exit()
+fn parse_serve_args(args: &[String]) -> Result<ServeArgs> {
+    if args.len() < 3 {
+        bail!(
+            "missing app argument\n\
+             Usage: velo serve <app> [OPTIONS]\n\
+             Example: velo serve main:app --workers 4\n\n\
+             Run 'velo serve --help' for more information"
+        );
+    }
+
+    let mut serve_args = ServeArgs::new(args[2].clone());
+    let mut i = 3;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "--host" => {
+                i += 1;
+                serve_args.host = require_value(args, i, "--host")?;
+            }
+            "--port" => {
+                i += 1;
+                let val = require_value(args, i, "--port")?;
+                serve_args.port = val
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid port number '{}'", val))?;
+            }
+            "--bind" => {
+                i += 1;
+                let val = require_value(args, i, "--bind")?;
+                if let Some((host, port)) = val.rsplit_once(':') {
+                    serve_args.host = host.to_string();
+                    serve_args.port = port
+                        .parse()
+                        .map_err(|_| anyhow::anyhow!("invalid port in bind address '{}'", val))?;
+                } else {
+                    bail!("--bind requires HOST:PORT format (e.g., 0.0.0.0:8080)");
+                }
+            }
+            "--workers" => {
+                i += 1;
+                let val = require_value(args, i, "--workers")?;
+                serve_args.workers = val
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid worker count '{}'", val))?;
+            }
+            "--timeout" => {
+                i += 1;
+                let val = require_value(args, i, "--timeout")?;
+                serve_args.timeout = val
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid timeout '{}'", val))?;
+            }
+            "--health-bind" => {
+                i += 1;
+                serve_args.health_bind = Some(require_value(args, i, "--health-bind")?);
+            }
+            "--pid-file" => {
+                i += 1;
+                let val = require_value(args, i, "--pid-file")?;
+                serve_args.pid_file = Some(PathBuf::from(val));
+            }
+            "--log-format" => {
+                i += 1;
+                let val = require_value(args, i, "--log-format")?;
+                serve_args.log_format = match val.as_str() {
+                    "text" => LogFormat::Text,
+                    "json" => LogFormat::Json,
+                    other => bail!("unknown log format '{}'. Use 'text' or 'json'", other),
+                };
+            }
+            "--reload" => {
+                serve_args.reload = true;
+            }
+            "--prod" => {
+                serve_args.prod = true;
+            }
+            "--no-zygote" => {
+                serve_args.use_zygote = false;
+            }
+            arg if arg.starts_with('-') => {
+                return Err(unknown_flag_error(arg));
+            }
+            other => {
+                bail!("unexpected argument '{}'", other);
+            }
+        }
+        i += 1;
+    }
+
+    // Apply prod mode settings (disables reload, auto workers)
+    serve_args.apply_prod_mode();
+
+    // SEC-P0-001: Validate app target for shell injection (ADR D1)
+    serve_args.validate()?;
+
+    // Validate app format
+    if !serve_args.app.contains(':') {
+        bail!(
+            "invalid app format '{}'\nExpected 'module:app' (e.g., 'main:app')",
+            serve_args.app
+        );
+    }
+
+    Ok(serve_args)
+}
+
+/// Helper: require a value for a flag, return Result
+fn require_value(args: &[String], i: usize, flag: &str) -> Result<String> {
+    args.get(i)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("{} requires a value", flag))
+}
+
+/// Helper: create error for unknown flag with suggestion
+fn unknown_flag_error(unknown: &str) -> anyhow::Error {
     use strsim::jaro_winkler;
 
     const VALID_FLAGS: &[&str] = &[
@@ -200,9 +174,14 @@ fn suggest_similar_flag(unknown: &str) {
         }
     }
 
-    eprintln!("Error: unknown option '{}'", unknown);
     if let Some((suggestion, _)) = best_match {
-        eprintln!("       Did you mean '{}'?", suggestion);
+        anyhow::anyhow!(
+            "unknown option '{}'\n       Did you mean '{}'?",
+            unknown,
+            suggestion
+        )
+    } else {
+        anyhow::anyhow!("unknown option '{}'", unknown)
     }
 }
 

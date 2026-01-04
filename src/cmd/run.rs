@@ -1,6 +1,6 @@
 //! Handle 'velo run' command
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
@@ -9,13 +9,18 @@ use crate::python_info::{PythonInfo, PythonVersion};
 use crate::zygote::ZygoteLauncher;
 use crate::{python, runner};
 
+/// Exit code wrapper for proper exit handling
+/// This allows the CLI to exit with a specific code without calling exit() directly
+pub struct ExitCode(pub i32);
+
 /// Handle 'velo run' command
 #[allow(clippy::collapsible_if)]
 pub fn cmd_run(args: &[String]) -> Result<()> {
     if args.len() < 3 {
-        eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
-        std::process::exit(1);
+        bail!(
+            "missing script path\n\
+             Usage: velo run [--zygote] [--profile] [--fast] <script.py>"
+        );
     }
 
     // Parse flags
@@ -45,8 +50,7 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
                 script_arg_idx = i + 1;
             }
             a if a.starts_with('-') => {
-                eprintln!("Error: unknown option '{}'", a);
-                std::process::exit(1);
+                bail!("unknown option '{}'", a);
             }
             _ => {
                 script_arg_idx = i;
@@ -56,16 +60,18 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     }
 
     if script_arg_idx >= args.len() {
-        eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] [--async] <script.py>");
-        std::process::exit(1);
+        bail!(
+            "missing script path\n\
+             Usage: velo run [--zygote] [--profile] [--fast] [--async] <script.py>"
+        );
     }
 
     // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
     if async_enabled && profile_enabled {
-        eprintln!("Error: --async and --profile are mutually exclusive");
-        eprintln!("Profiling requires synchronous execution to capture full trace.");
-        std::process::exit(1);
+        bail!(
+            "--async and --profile are mutually exclusive\n\
+             Profiling requires synchronous execution to capture full trace."
+        );
     }
 
     // Determine project directory by looking for pyproject.toml starting from script's parent
