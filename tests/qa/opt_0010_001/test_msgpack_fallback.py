@@ -52,9 +52,9 @@ class TestMsgpackFallback(unittest.TestCase):
         # Import vendored umsgpack directly
         vendor_path = Path(__file__).parent.parent.parent.parent / "python" / "velo" / "_vendor"
         if str(vendor_path) not in sys.path:
-            sys.path.insert(0, str(vendor_path.parent.parent))
+            sys.path.insert(0, str(vendor_path))
         
-        from velo._vendor import umsgpack
+        import umsgpack
         
         # Test data structure - typical Fork command
         fork_command = {
