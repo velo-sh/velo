@@ -7,44 +7,44 @@
 
 ---
 
-## 🎯 Purpose
+## Purpose
 
-**双重保险**: 防止误连接到非 Velo 的 Unix Socket,提供快速协议版本检测。
+**Defense in Depth**: Prevent accidental connection to non-Velo Unix Sockets, provide fast protocol version detection.
 
-| 场景 | 仅版本号隔离 (v0.6.2) | Magic + 版本号 (v0.7.0) |
-|------|----------------------|------------------------|
-| 连接到其他程序 Socket | ❌ 可能误判 | ✅ 100ms 内拒绝 |
-| 协议版本不匹配 | ⚠️ 30s 超时 | ✅ 立即检测 |
-| 调试诊断 | 模糊错误 | 清晰错误信息 |
-| 误操作恢复 | 需等待 | 立即失败 |
+| Scenario | Version-only Isolation (v0.6.2) | Magic + Version (v0.7.0) |
+|----------|--------------------------------|-------------------------|
+| Connect to other program's socket | May misidentify | Reject within 100ms |
+| Protocol version mismatch | 30s timeout | Immediate detection |
+| Debug diagnostics | Unclear errors | Clear error messages |
+| Misconfiguration recovery | Must wait | Fail fast |
 
 ---
 
-## 🔄 Connection Flow
+## Connection Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Magic Handshake 流程                      │
+│                    Magic Handshake Flow                      │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   CLI (Rust)                       Zygote (Python)          │
 │    │                                 │                      │
 │    │──── connect(socket) ───────────►│                      │
 │    │                                 │                      │
-│    │◄──── "VELO" + 0x02 ────────────│  Step 1: Zygote 先发  │
+│    │◄──── "VELO" + 0x02 ────────────│  Step 1: Zygote first │
 │    │                                 │                      │
-│    │     Step 2: CLI 验证            │                      │
+│    │     Step 2: CLI validates       │                      │
 │    │     ├── Magic = "VELO"?         │                      │
 │    │     └── Version compatible?     │                      │
 │    │                                 │                      │
-│    │     ❌ 不匹配:                  │                      │
+│    │     ❌ Mismatch:                │                      │
 │    │        disconnect()             │                      │
 │    │        print("Protocol error")  │                      │
 │    │                                 │                      │
-│    │     ✅ 匹配:                    │                      │
+│    │     ✅ Match:                   │                      │
 │    │        continue protocol        │                      │
 │    │                                 │                      │
-│    │──── Fork Command ──────────────►│  Step 3: 正常通信    │
+│    │──── Fork Command ──────────────►│  Step 3: Normal IPC  │
 │    │◄──── Forked Response ──────────│                      │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
