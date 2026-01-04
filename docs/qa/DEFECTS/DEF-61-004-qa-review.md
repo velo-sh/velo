@@ -1,5 +1,9 @@
 # DEF-61-004: QA Expert Review Appendix
 
+> **Parent**: [DEF-61-004-protocol-socket-isolation.md](./DEF-61-004-protocol-socket-isolation.md)
+> **Type**: QA Review Attachment
+> **Status**: ⚠️ Conditional Approval
+
 **Document**: DEF-61-004-protocol-socket-isolation.md
 **Review Date**: 2026-01-04
 **Reviewers**: 4 QA Experts
