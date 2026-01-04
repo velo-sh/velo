@@ -18,6 +18,17 @@
 
 ---
 
+## 🛡️ The 4 QA Commandments (Living Culture)
+
+> *"Code compiles, documentation rots."* — Keep this library alive.
+
+1. **Fight Entropy**: Before every Phase Kick-off, the Leader MUST scan `STANDARDS/`. If a rule isn't followed, fix the behavior or update the doc.
+2. **Single Source of Truth**: Never answer process questions with oral tradition. Quote the `QA-SOP.md`. If the answer isn't there, **update the SOP**.
+3. **Delete with Confidence**: `ARCHIVE/` has a shelf life. If a file is >6 months old and unread, delete it. Bad info is worse than no info.
+4. **Mine the Gold**: Every Retrospective MUST produce nuggets for `KNOWLEDGE-TREASURY.md`. Don't waste a painful lesson.
+
+---
+
 ## 📁 Directory Structure
 
 ```
