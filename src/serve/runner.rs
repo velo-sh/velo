@@ -371,6 +371,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
     use std::time::Instant;
 
+    // MANDATE R5: Capture the absolute start including early validation
     let start_time = Instant::now();
 
     // Step 1: Validate app format
@@ -641,7 +642,19 @@ fn count_python_files(path: &Path) -> usize {
                 if file_type.is_dir() {
                     let name = entry.file_name();
                     let name_str = name.to_string_lossy();
-                    if name_str != ".git" && name_str != "__pycache__" && name_str != ".venv" {
+                    // MANDATE R4: Ignore all common venv names and the current VIRTUAL_ENV
+                    let venv_env = std::env::var("VIRTUAL_ENV").unwrap_or_default();
+                    let is_active_venv =
+                        !venv_env.is_empty() && entry.path().to_string_lossy().contains(&venv_env);
+
+                    if name_str != ".git"
+                        && name_str != "__pycache__"
+                        && name_str != ".venv"
+                        && name_str != "venv"
+                        && name_str != ".env"
+                        && name_str != "env"
+                        && !is_active_venv
+                    {
                         count += count_python_files(&entry.path());
                     }
                 } else {

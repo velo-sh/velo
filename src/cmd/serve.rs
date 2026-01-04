@@ -209,7 +209,7 @@ fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<S
     let apps: Vec<DetectedApp> = serde_json::from_slice(&output.stdout).ok()?;
 
     let mut best_match = None;
-    let mut min_dist = 3; // Max threshold per RFC
+    let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
 
     for app in apps {
         let full_name = format!("{}:{}", app.module, app.app);

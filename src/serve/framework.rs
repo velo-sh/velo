@@ -67,23 +67,43 @@ pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
 
 /// Infer Django settings module path
 pub fn detect_django_settings(project_dir: &Path) -> Option<String> {
-    // Strategy: find settings.py in a first-level subdirectory
-    if let Ok(entries) = std::fs::read_dir(project_dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                let path = entry.path();
-                let settings = path.join("settings.py");
-                if let (Some(dir_name), true, true) = (
-                    path.file_name().and_then(|n| n.to_str()),
-                    settings.exists(),
-                    path.join("__init__.py").exists(),
-                ) {
-                    return Some(format!("{}.settings", dir_name));
+    // Strategy: find settings.py in a subdirectory (recursive depth 2)
+    // Common layouts:
+    // 1. project/myproj/settings.py
+    // 2. project/src/myproj/settings.py
+    fn search(current_dir: &Path, depth: u8) -> Option<String> {
+        if depth == 0 {
+            return None;
+        }
+        if let Ok(entries) = std::fs::read_dir(current_dir) {
+            for entry in entries.flatten() {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    let path = entry.path();
+                    let settings = path.join("settings.py");
+
+                    if settings.exists()
+                        && path.join("__init__.py").exists()
+                        && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
+                    {
+                        // If we are at depth 1, it's "dir_name.settings"
+                        // If we crawled deeper, we need to handle that, but for now depth 2 usually means
+                        // one level below the root or src.
+                        return Some(format!("{}.settings", dir_name));
+                    }
+
+                    // Recurse once if we haven't found it
+                    if depth > 1
+                        && let Some(found) = search(&path, depth - 1)
+                    {
+                        return Some(found);
+                    }
                 }
             }
         }
+        None
     }
-    None
+
+    search(project_dir, 2)
 }
 
 /// Detect framework from dependency file contents
