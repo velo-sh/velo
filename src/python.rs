@@ -7,7 +7,7 @@
 //! - Setting up the Python environment with caching
 
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::cache::EnvCache;
@@ -18,11 +18,12 @@ use crate::cache::EnvCache;
 /// 2. .venv/bin/python (local uv/virtualenv)
 /// 3. VELO_PYTHON environment variable
 /// 4. System python3
-#[allow(clippy::collapsible_if)]
-pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
+pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
     // 1. Check VIRTUAL_ENV env var
-    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-        let path = std::path::PathBuf::from(venv);
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV")
+        && !venv.trim().is_empty()
+    {
+        let path = PathBuf::from(venv);
         let python = if cfg!(windows) {
             path.join("Scripts/python.exe")
         } else {
@@ -33,15 +34,22 @@ pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
         }
     }
 
-    // 2. Check for .venv/bin/python
-    let venv_python = project_dir.join(".venv/bin/python");
-    if venv_python.exists() {
-        return Ok(venv_python);
+    // 2. Check for common venv names
+    for name in [".venv", "venv", ".env", "env"] {
+        let path = project_dir.join(name);
+        let python = if cfg!(windows) {
+            path.join("Scripts/python.exe")
+        } else {
+            path.join("bin/python")
+        };
+        if python.exists() {
+            return Ok(python);
+        }
     }
 
     // 3. Check VELO_PYTHON env var
-    if let Ok(python) = std::env::var("VELO_PYTHON") {
-        let path = std::path::PathBuf::from(&python);
+    if let Ok(python_path_str) = std::env::var("VELO_PYTHON") {
+        let path = PathBuf::from(python_path_str);
         if path.exists() {
             return Ok(path);
         }
@@ -49,24 +57,29 @@ pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
 
     // 4. Fall back to system python3
     // First check if python3 exists in PATH
-    if let Ok(output) = Command::new("which").arg("python3").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(std::path::PathBuf::from(path));
-        }
+    if let Ok(output) = Command::new("which").arg("python3").output()
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok(std::path::PathBuf::from(path));
     }
 
     anyhow::bail!("No Python interpreter found. Please create a .venv or set VELO_PYTHON")
 }
 
-/// Detect .venv/lib/python*/site-packages
-pub fn detect_venv_site_packages(project_dir: &Path) -> Option<String> {
-    let venv_lib = project_dir.join(".venv/lib");
-    if !venv_lib.exists() {
+/// Detect site-packages path relative to the interpreter path
+pub fn detect_site_packages(python_path: &Path) -> Option<String> {
+    // Derive venv root from python path (python is in venv/bin/python or venv/Scripts/python.exe)
+    // Derive venv root from python path (python is in venv/bin/python or venv/Scripts/python.exe)
+    // On both Windows and Unix, we expect the bin/Scripts to be one level below the root.
+    let venv_root = python_path.parent()?.parent()?;
+
+    let lib_dir = venv_root.join("lib");
+    if !lib_dir.exists() {
         return None;
     }
 
-    if let Ok(entries) = std::fs::read_dir(&venv_lib) {
+    if let Ok(entries) = std::fs::read_dir(&lib_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -118,8 +131,8 @@ pub fn setup_python_env(project_dir: &Path, _python: &Path) -> (Option<String>, 
         }
     }
 
-    // No cache - try to detect venv site-packages at least
-    if let Some(site_packages) = detect_venv_site_packages(project_dir) {
+    // No cache - try to detect site-packages from the actual python path
+    if let Some(site_packages) = detect_site_packages(_python) {
         // We have site-packages but no full cache - use it but request capture
         return (Some(site_packages), true);
     }
