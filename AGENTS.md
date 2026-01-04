@@ -180,10 +180,7 @@ I will review/implement with [ROLE]'s perspective.
 
 ## 🔗 Navigation
 
-> - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
-> - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
->
-> **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
+> For governance rules and role transition policies, see [Universal Identity & Role Governance](#-universal-identity--role-governance) above.
 
 ### ✅ Role Transitions & Governance Logs
 
