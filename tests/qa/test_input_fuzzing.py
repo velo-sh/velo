@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Velo QA: Input Fuzzing Tests (FUZZ-xxx)
 =======================================

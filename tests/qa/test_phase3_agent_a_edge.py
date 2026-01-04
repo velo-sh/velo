@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Velo QA: Agent A - Edge Case Hunter (EDGE-xxx)
 ===============================================

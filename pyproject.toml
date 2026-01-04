@@ -31,3 +31,8 @@ markers = [
     "brutal: marks tests as brutal stress tests",
     "order: execution order for test hierarchy",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
