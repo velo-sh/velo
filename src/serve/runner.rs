@@ -12,6 +12,8 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -150,16 +152,15 @@ fn sanitize_subprocess_env(cmd: &mut Command) {
     }
 }
 
-/// MAC-P0-002: Reset signal handlers in child process (ADR D4)
-///
-/// Prevents zombie workers when uvicorn/gunicorn forks workers.
-#[cfg(target_os = "macos")]
-fn apply_macos_signal_reset(cmd: &mut Command) {
+#[cfg(unix)]
+fn apply_process_group(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
-
     unsafe {
         cmd.pre_exec(|| {
-            // Reset SIGINT/SIGTERM to default in child
+            // Become a process group leader (STB-RS-003)
+            libc::setpgid(0, 0);
+
+            // Reset SIGINT/SIGTERM to default in child (MAC-P0-002)
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             Ok(())
@@ -187,6 +188,9 @@ impl ManagedChild {
     /// * `cmd` - Command to spawn
     /// * `pid_file` - Optional PID file path to create
     pub fn spawn(mut cmd: Command, pid_file: Option<PathBuf>) -> Result<Self, ServeError> {
+        #[cfg(unix)]
+        apply_process_group(&mut cmd);
+
         let child = cmd.spawn().map_err(|e| ServeError::ServerStartFailed {
             reason: e.to_string(),
             exit_code: 1,
@@ -263,13 +267,16 @@ impl ManagedChild {
 
     /// Send SIGTERM to the child process (graceful shutdown).
     #[cfg(unix)]
-    pub fn terminate(&self) -> Result<(), ServeError> {
-        // Send SIGTERM
+    pub fn terminate(&mut self) -> Result<(), ServeError> {
         let pid = self.child.id() as i32;
+        // Send SIGTERM to the entire process group (negative PID)
         unsafe {
-            libc::kill(pid, libc::SIGTERM);
+            if libc::kill(-pid, libc::SIGTERM) == 0 {
+                return Ok(());
+            }
         }
-        Ok(())
+        // Fallback to killing just the child if process group kill fails
+        self.child.kill().map_err(ServeError::SignalError)
     }
 
     #[cfg(not(unix))]
@@ -279,10 +286,17 @@ impl ManagedChild {
 
     /// Force kill the child process.
     pub fn kill(&mut self) -> Result<(), ServeError> {
-        self.child.kill().map_err(ServeError::SignalError)?;
-        // Reap to prevent zombie
-        let _ = self.child.wait();
-        Ok(())
+        #[cfg(unix)]
+        {
+            let pid = self.child.id() as i32;
+            // Send SIGKILL to the entire process group (negative PID)
+            unsafe {
+                if libc::kill(-pid, libc::SIGKILL) == 0 {
+                    return Ok(());
+                }
+            }
+        }
+        self.child.kill().map_err(ServeError::SignalError)
     }
 
     /// Get the child's PID.
@@ -305,6 +319,34 @@ impl Drop for ManagedChild {
 }
 
 // ============================================================================
+// Shutdown Management (SEC-P0-001)
+// ============================================================================
+
+/// Coordinator for graceful shutdown.
+pub struct ShutdownCoordinator {
+    /// Atomic flag set to true when shutdown is requested.
+    pub flag: Arc<AtomicBool>,
+}
+
+impl ShutdownCoordinator {
+    /// Create a new shutdown coordinator.
+    pub fn new() -> Result<Self, std::io::Error> {
+        let flag = Arc::new(AtomicBool::new(false));
+        Ok(Self { flag })
+    }
+
+    /// Request shutdown.
+    pub fn request_shutdown(&self) {
+        self.flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Check if shutdown was requested.
+    pub fn is_shutting_down(&self) -> bool {
+        self.flag.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+// ============================================================================
 // Event Bus Definitions (Recommendation #1)
 // ============================================================================
 
@@ -313,6 +355,8 @@ impl Drop for ManagedChild {
 pub enum ServerEvent {
     /// Signal received (SIGINT, SIGTERM, SIGCHLD)
     Signal(i32),
+    /// Hot reload requested
+    Reload,
     /// Worker thread exit (only used on Windows/non-Unix)
     #[allow(dead_code)]
     WorkerExit,
@@ -380,6 +424,21 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // Step 4: Setup Logger
     let logger = ServeLogger::new(args.log_format, args.verbose);
 
+    // RAII Guard for Health Server (SEC-P0-004)
+    let mut _health_server: Option<crate::serve::health::HealthServer> = None;
+    let health_ready = Arc::new(AtomicBool::new(false));
+    if let Some(ref bind) = args.health_bind {
+        match crate::serve::health::HealthServer::spawn(bind, Arc::clone(&health_ready)) {
+            Ok(server) => {
+                logger.info(&format!("Health server listening on {}", bind));
+                _health_server = Some(server);
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to start health server: {}", e));
+            }
+        }
+    }
+
     // Step 1.1: Scaling Warning (R4)
     let file_count = count_python_files(project_dir);
     if file_count > 5000 {
@@ -427,12 +486,61 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         eprintln!("{} is required to run {} applications.", server, framework);
         eprintln!("To fix:");
         eprintln!("    {}", server.install_hint());
-        std::process::exit(1);
+        return Err(anyhow::anyhow!("Missing dependency: {}", server));
     }
 
-    // Step 5: Setup Event Bus (Recommendation #1)
+    // Shutdown Coordinator (SEC-P0-001)
+    let shutdown_coordinator =
+        crate::serve::runner::ShutdownCoordinator::new().map_err(ServeError::SignalError)?;
+
+    // Step 5:    // Event Bus (Recommendation #1)
     let (tx, rx) = mpsc::channel();
+
+    // Signal Forwarder
+    #[cfg(unix)]
     spawn_signal_forwarder(tx.clone())?;
+
+    // Hot Reload Watcher (D6, D7)
+    let mut _watcher: Option<Arc<crate::serve::watcher::FileWatcher>> = None;
+    if args.reload {
+        let watcher = crate::serve::watcher::FileWatcher::new(
+            shutdown_coordinator.flag.clone(),
+            crate::serve::watcher::DEFAULT_DEBOUNCE_MS,
+        )?;
+        watcher.watch(project_dir)?;
+        let watcher = Arc::new(watcher);
+
+        // Spawn a thread to poll the watcher and bridge events to the bus
+        let tx_clone = tx.clone();
+        let watcher_clone = Arc::clone(&watcher);
+        thread::spawn(move || {
+            loop {
+                match watcher_clone.poll() {
+                    Ok(true) => {
+                        if tx_clone.send(ServerEvent::Reload).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(false) => {
+                        // Sleep briefly to avoid busy wait
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Watcher error: {}", e);
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+                if watcher_clone
+                    .shutdown_flag
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    break;
+                }
+            }
+        });
+
+        _watcher = Some(watcher);
+    }
 
     // RAII Guard for Zygote (Recommendation #3)
     // Needs to stay alive for the duration of the server
@@ -516,9 +624,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // SEC-P0-005: Remove dangerous environment variables (ADR D3)
     sanitize_subprocess_env(&mut cmd);
 
-    // MAC-P0-002: Reset signal handlers in child (ADR D4)
-    #[cfg(target_os = "macos")]
-    apply_macos_signal_reset(&mut cmd);
+    // MAC-P0-002: Reset signal handlers in child (ADR D4) and STB-RS-003: Process Group
+    // Handled inside ManagedChild::spawn now, but we keep this as a note
+    // Actually, we should remove this call site as it's now handled by ManagedChild::spawn
 
     // Set working directory and inherit stdio
     logger.verbose(&format!("Current directory: {:?}", project_dir));
@@ -555,82 +663,105 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     }
 
     // Spawn with ManagedChild for RAII cleanup (D2)
-    let mut child = ManagedChild::spawn(cmd, args.pid_file.clone())
-        .map_err(|e| anyhow::anyhow!("Failed to start server: {}", e))?;
+    let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
 
-    logger.info(&format!("Server started (PID: {})", child.id()));
+    if let Ok(ref mut child) = child_result {
+        logger.info(&format!("Server started (PID: {})", child.id()));
+        health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // Main loop: Wait for Events (Zero Busy Wait)
-    loop {
-        // Block until event received
-        match rx.recv() {
-            Ok(ServerEvent::Signal(sig)) => {
-                match sig {
-                    signal_hook::consts::SIGCHLD => {
-                        // Optimistic: Child might have exited
-                        // Only try_wait() on SIGCHLD to avoid polling
-                        match child.wait_timeout(Duration::from_millis(0)) {
-                            Ok(Some(status)) => {
-                                if !status.success() {
-                                    let code = status.code().unwrap_or(1);
-                                    if code == 1 {
-                                        eprintln!();
-                                        eprintln!(
-                                            "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
-                                        );
+        // Main loop: Wait for Events (Zero Busy Wait)
+        loop {
+            // Block until event received
+            match rx.recv() {
+                Ok(ServerEvent::Signal(sig)) => {
+                    match sig {
+                        signal_hook::consts::SIGCHLD => {
+                            // Optimistic: Child might have exited
+                            match child.wait_timeout(Duration::from_millis(0)) {
+                                Ok(Some(status)) => {
+                                    if !status.success() {
+                                        let code = status.code().unwrap_or(1);
+                                        if code == 1 {
+                                            eprintln!();
+                                            eprintln!(
+                                                "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+                                            );
+                                        }
+                                        logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
+                                        health_ready
+                                            .store(false, std::sync::atomic::Ordering::SeqCst);
+                                        continue;
                                     }
-                                    std::process::exit(code);
+                                    return Ok(());
                                 }
-                                return Ok(());
+                                Ok(None) => continue,
+                                Err(e) => {
+                                    return Err(anyhow::anyhow!("Error waiting for server: {}", e));
+                                }
                             }
-                            Ok(None) => {
-                                // False alarm, child still running (or another child)
-                                continue;
+                        }
+                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                            eprintln!();
+                            logger
+                                .info("Shutdown signal received, waiting for graceful shutdown...");
+
+                            if let Err(e) = child.terminate() {
+                                logger.warn(&format!("Failed to send SIGTERM: {}", e));
                             }
-                            Err(e) => anyhow::bail!("Error waiting for server: {}", e),
+
+                            // Wait with timeout
+                            match child.wait_timeout(Duration::from_secs(args.timeout)) {
+                                Ok(Some(_)) => {
+                                    logger.info("Server stopped gracefully");
+                                    return Ok(());
+                                }
+                                Ok(None) => {
+                                    logger.warn("Shutdown timeout expired, force killing...");
+                                    let _ = child.kill();
+                                    return Ok(());
+                                }
+                                Err(e) => anyhow::bail!("Error during shutdown: {}", e),
+                            }
+                        }
+                        _ => {
+                            // CN-P0-002: Forward other signals to child group
+                            let pid = child.id() as i32;
+                            unsafe {
+                                libc::kill(-pid, sig);
+                            }
                         }
                     }
-                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                        eprintln!();
-                        logger.info("Shutdown signal received, waiting for graceful shutdown...");
-
-                        if let Err(e) = child.terminate() {
-                            logger.warn(&format!("Failed to send SIGTERM: {}", e));
-                        }
-
-                        // Wait for graceful shutdown with timeout
-                        let timeout = Duration::from_secs(args.timeout);
-                        match child.wait_timeout(timeout) {
-                            Ok(Some(_)) => {
-                                logger.info("Server shut down gracefully");
-                                return Ok(());
-                            }
-                            Ok(None) => {
-                                logger.warn(&format!(
-                                    "Graceful shutdown timed out after {}s, force killing...",
-                                    args.timeout
-                                ));
-                                if let Err(e) = child.kill() {
-                                    logger.error(&format!("Failed to kill server: {}", e));
-                                }
-                                return Ok(());
-                            }
-                            Err(e) => anyhow::bail!("Error waiting for shutdown: {}", e),
-                        }
-                    }
-                    _ => {}
                 }
-            }
-            Ok(ServerEvent::WorkerExit) => {
-                // Not used in Unix path currently, but handle for future
-                return Ok(());
-            }
-            Err(_) => {
-                // Channel closed, unexpected
-                anyhow::bail!("Event bus closed unexpectedly");
+                Ok(ServerEvent::Reload) => {
+                    logger.info("Changes detected, restarting server...");
+                    if let Ok(ref mut child) = child_result {
+                        let _ = child.kill();
+                    }
+                    // Break loop to trigger fresh spawn in the caller
+                    return Ok(());
+                }
+                Err(_) => break, // Bus disconnected
+                _ => {}
             }
         }
+    } else if let Err(e) = child_result {
+        logger.error(&format!("Failed to start server: {}", e));
+        // Keep health server alive if it was spawned, waiting for signals to exit
+        loop {
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(ServerEvent::Signal(sig)) => {
+                    if sig == signal_hook::consts::SIGINT || sig == signal_hook::consts::SIGTERM {
+                        return Err(anyhow::anyhow!("Server failed to start: {}", e));
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                _ => {}
+            }
+        }
+        return Err(anyhow::anyhow!("Server failed to start: {}", e));
     }
+
+    Ok(())
 }
 
 /// Helper to count Python files for scaling warnings (R4)

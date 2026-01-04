@@ -1,32 +1,18 @@
 {
   "contracts": {},
   "tests": {
-    "tests/qa/test_phase6_1_architect_audit.py": {
+    "tests/qa/test_phase6_1_security_hardened.py": {
       "coverage": false,
       "isolated": false,
-      "results": ".........",
-      "sha1": "91311a41d4b3c609a30f4e7304300efba53cf617",
+      "results": "F",
+      "sha1": "498677cb93f8d117a506b17a94c174a47478ae1a",
       "txhash": []
     },
-    "tests/qa/test_phase6_1_hardened.py": {
+    "tests/qa/test_phase6_1_stability_hardened.py": {
       "coverage": false,
       "isolated": false,
-      "results": "....",
-      "sha1": "251135c37fff3d05f87f741d28ed09a1b19eb425",
-      "txhash": []
-    },
-    "tests/qa/test_phase6_1_remediation.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "....",
-      "sha1": "f4ab54697cb92e77a1c5683c6b9b46d4a80284b9",
-      "txhash": []
-    },
-    "tests/qa/test_portability_governance.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": ".",
-      "sha1": "054086be9f772c2cc0ea9b0695ce745cf42da87b",
+      "results": "F",
+      "sha1": "d9ba1dba3683f981be3f40519a6cef1ff39113e6",
       "txhash": []
     }
   },
