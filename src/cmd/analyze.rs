@@ -44,23 +44,56 @@ impl Default for AnalyzeArgs {
 /// DEF-4.0-002: Reject special paths like /dev/null
 /// DEF-4.0-003: Reject paths with null bytes
 fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
+    // DEF-4.0-001: Check for empty path
+    if path.is_empty() {
+        anyhow::bail!("{} is empty", arg_name);
+    }
+
     // DEF-4.0-003: Check for null bytes
     if path.contains('\0') {
         anyhow::bail!("{} contains invalid null byte: {:?}", arg_name, path);
     }
 
-    // DEF-4.0-002: Check for special device paths
-    let path_buf = PathBuf::from(path);
-    let path_str = path_buf.to_string_lossy();
-
-    // Block device paths on Unix
-    if path_str.starts_with("/dev/") {
-        anyhow::bail!("{} cannot be a device path: {}", arg_name, path_str);
+    // DEF-4.0-002: Reject device paths
+    if path.starts_with("/dev/") {
+        anyhow::bail!(
+            "{} access denied: device path not allowed: {}",
+            arg_name,
+            path
+        );
     }
 
-    // Block empty paths
-    if path.is_empty() {
-        anyhow::bail!("{} cannot be empty", arg_name);
+    // SEC-P0-002: Path Traversal Protection
+    // Ensure the path is within the project root
+    let path_buf = PathBuf::from(path);
+    if path_buf.is_absolute() {
+        let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+        let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
+
+        // If the path exists, canonicalize it to resolve symlinks and '..'
+        if path_buf.exists() {
+            let canonical_path = path_buf
+                .canonicalize()
+                .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+
+            if !canonical_path.starts_with(&canonical_root) {
+                anyhow::bail!(
+                    "{} access denied: path is outside project root {}",
+                    arg_name,
+                    canonical_root.display()
+                );
+            }
+        } else {
+            // Even if it doesn't exist, we prevent absolute paths outside the root
+            // by checking the prefix
+            if !path_buf.starts_with(&canonical_root) {
+                anyhow::bail!(
+                    "{} access denied: path is outside project root {}",
+                    arg_name,
+                    canonical_root.display()
+                );
+            }
+        }
     }
 
     Ok(path_buf)
