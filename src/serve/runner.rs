@@ -307,8 +307,24 @@ impl ManagedChild {
 
 impl Drop for ManagedChild {
     fn drop(&mut self) {
-        // Ensure child is killed and reaped on panic or normal exit
-        let _ = self.child.kill();
+        // STB-RS-003: Kill entire process group (PGID = child PID since child is group leader)
+        // This ensures uvicorn workers and other grandchildren are also terminated
+        #[cfg(unix)]
+        {
+            let pgid = self.child.id() as i32;
+            // Send SIGKILL to the entire process group (negative PID)
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        }
+
+        // Fallback for non-Unix or if process group kill failed
+        #[cfg(not(unix))]
+        {
+            let _ = self.child.kill();
+        }
+
+        // Wait for child to be reaped (prevents zombies)
         let _ = self.child.wait();
 
         // Cleanup PID file
