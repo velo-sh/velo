@@ -13,15 +13,6 @@ use crate::zygote::ipc;
 /// Global worker counter (avoid temp file conflicts)
 static WORKER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// RAII guard for temporary script cleanup
-/// Ensures script is deleted even if fork fails
-struct TempScriptGuard<'a>(&'a Path);
-
-impl<'a> Drop for TempScriptGuard<'a> {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(self.0);
-    }
-}
 
 pub struct Worker {
     pub pid: u32,
@@ -153,12 +144,12 @@ run_worker_with_shared_port(**config)
 
     /// Detect velo_zygote library path
     fn detect_velo_lib_path() -> Result<String> {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let lib_path = parent.join("velo_zygote");
-                if lib_path.exists() {
-                    return Ok(lib_path.to_string_lossy().to_string());
-                }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            let lib_path = parent.join("velo_zygote");
+            if lib_path.exists() {
+                return Ok(lib_path.to_string_lossy().to_string());
             }
         }
 
