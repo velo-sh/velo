@@ -285,6 +285,57 @@ Examples:
 - [ ] CHAOS-005: Filesystem corruption recovery
 ```
 
+### 4.5 Integration Testing Methodology
+
+Integration testing bridges the gap between unit tests and E2E tests.
+It verifies that components work together correctly.
+
+#### 4.5.1 Integration Test Scope
+
+| Layer | Components | Verification |
+|:---|:---|:---|
+| **CLI → Core** | Command parsing → Business logic | CLI invokes correct handlers |
+| **Core → External** | Velo → Python/uvicorn/gunicorn | Subprocess spawning works |
+| **Core → Filesystem** | Bundle creation → File system | Files are created correctly |
+
+#### 4.5.2 Integration Test Requirements
+
+1. **Binary Available**: Tests require compiled `velo` binary
+2. **Isolated Environment**: Each test creates fresh temp directories
+3. **Real Subprocesses**: Actual `uvicorn`/`gunicorn` processes (not mocked)
+4. **Timeout Enforcement**: All integration tests must have timeouts
+
+#### 4.5.3 Integration Test Structure
+
+```python
+class TestIntegration(unittest.TestCase):
+    VELO_BINARY = None  # Auto-detected in setUpClass
+    
+    @classmethod
+    def setUpClass(cls):
+        # Find velo binary (release > debug > PATH)
+        ...
+    
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.processes = []
+    
+    def tearDown(self):
+        # Kill all spawned processes
+        for proc in self.processes:
+            proc.terminate()
+        shutil.rmtree(self.test_dir)
+```
+
+#### 4.5.4 E2E vs Integration Test Distinction
+
+| Aspect | Integration Test | E2E Test |
+|:---|:---|:---|
+| **Scope** | Component interactions | Full user journey |
+| **External Deps** | Real but isolated | Real production-like |
+| **Duration** | Seconds | Minutes |
+| **Frequency** | Every PR | Daily/Release |
+
 ---
 
 ## 5. Phase 2: Multi-Agent Review Process
@@ -821,6 +872,83 @@ For quick local verification, use the tiered test scripts:
 
 > **Cross-reference**: [tiered-testing-guide.md](./tiered-testing-guide.md) for full details.
 
+### 10.6 Performance Baseline Management
+
+Performance regression monitoring requires baseline data for comparison.
+
+#### 10.6.1 Baseline File Format
+
+Store baselines in JSON format for automated comparison:
+
+```json
+{
+  "version": "1.0",
+  "generated": "2026-01-04T00:00:00Z",
+  "commit": "abc1234",
+  "baselines": {
+    "fastapi_L1": {"build_ms": 45, "load_ms": 320},
+    "fastapi_L3": {"build_ms": 67, "load_ms": 450},
+    "django_L1": {"build_ms": 52, "load_ms": 380}
+  }
+}
+```
+
+**Location**: `docs/qa/BASELINES/PERFORMANCE_BASELINE.json`
+
+#### 10.6.2 Regression Detection Rules
+
+| Metric | Threshold | Action |
+|:---|:---:|:---|
+| Build Time | +10% | WARNING |
+| Build Time | +25% | BLOCK |
+| Load Time | +10% | WARNING |
+| Load Time | +25% | BLOCK |
+| Memory | +20% | WARNING |
+
+#### 10.6.3 Baseline Update Process
+
+1. **Run benchmark suite** on main branch
+2. **Review results** for anomalies
+3. **Update baseline file** with new values
+4. **Commit with message**: `perf: update baseline (commit: xyz)`
+5. **Require approval** from QA Leader
+
+#### 10.6.4 Baseline Comparison Script
+
+```python
+# scripts/compare_baseline.py
+import json
+import sys
+
+def compare(current_file, baseline_file, threshold=0.10):
+    with open(current_file) as f:
+        current = json.load(f)
+    with open(baseline_file) as f:
+        baseline = json.load(f)
+    
+    regressions = []
+    for key, base_vals in baseline["baselines"].items():
+        if key not in current["baselines"]:
+            continue
+        curr_vals = current["baselines"][key]
+        
+        for metric in ["build_ms", "load_ms"]:
+            if metric not in curr_vals:
+                continue
+            delta = (curr_vals[metric] - base_vals[metric]) / base_vals[metric]
+            if delta > threshold:
+                regressions.append(f"{key}.{metric}: {delta*100:.1f}% regression")
+    
+    if regressions:
+        print("❌ PERFORMANCE REGRESSION DETECTED:")
+        for r in regressions:
+            print(f"  - {r}")
+        sys.exit(1)
+    else:
+        print("✅ No performance regressions detected")
+```
+
+---
 
 ## 11. Developer Quick Reference
 
