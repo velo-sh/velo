@@ -703,6 +703,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                                 "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
                                             );
                                         }
+
+                                        // If reload is NOT enabled, exit immediately on failure
+                                        if !args.reload {
+                                            return Err(anyhow::anyhow!(
+                                                "Server exited with code {}",
+                                                code
+                                            ));
+                                        }
+
+                                        // Reload IS enabled: wait for file changes to trigger restart
                                         logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
                                         health_ready
                                             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -716,6 +726,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                 }
                             }
                         }
+
                         signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                             eprintln!();
                             logger
