@@ -1,7 +1,7 @@
 # Velo QA Documentation Library
 
 > **QA Working Group Shared Assets**
-> Last Updated: 2026-01-04
+> Reorganized: 2026-01-04
 
 ---
 
@@ -9,126 +9,103 @@
 
 | If you want to... | Read this |
 |:---|:---|
-| **Start QA work on a new Phase** | [QA-SOP.md](./QA-SOP.md) |
-| **Understand testing methodology** | [tiered-testing-guide.md](./tiered-testing-guide.md) |
-| **Check/create defect reports** | [defects/](./defects/) |
-| **Run benchmarks** | [../../benchmarks/](../../benchmarks/) |
-| **Explore all knowledge assets** | [KNOWLEDGE_TREASURY.md](./KNOWLEDGE_TREASURY.md) |
-
+| **Start QA work on a new Phase** | [STANDARDS/QA-SOP.md](./STANDARDS/QA-SOP.md) |
+| **Understand testing methodology** | [STANDARDS/TIERED-TESTING-GUIDE.md](./STANDARDS/TIERED-TESTING-GUIDE.md) |
+| **Explore all knowledge assets** | [STANDARDS/KNOWLEDGE-TREASURY.md](./STANDARDS/KNOWLEDGE-TREASURY.md) |
+| **Use a checklist template** | [TEMPLATES/CHECKLIST-TEMPLATE.md](./TEMPLATES/CHECKLIST-TEMPLATE.md) |
+| **Review feature requirements** | [REQUIREMENTS/](./REQUIREMENTS/) |
+| **Check defect reports** | [DEFECTS/](./DEFECTS/) |
 
 ---
 
-## 📚 Document Categories
+## 📁 Directory Structure
 
-### 🔴 TIER 1: Master Standards (MUST READ)
-
-These are the **authoritative** QA documents. All QA work must follow these standards.
-
-| Document | Lines | Purpose |
-|:---|:---:|:---|
-| **[QA-SOP.md](./QA-SOP.md)** | **1214** | **Master Standard Operating Procedure** |
-| [tiered-testing-guide.md](./tiered-testing-guide.md) | 348 | Tiered testing methodology (Tier 0-3, L0-L6) |
-| [QA_REFLECTION_first_principles.md](./QA_REFLECTION_first_principles.md) | 110 | Testing philosophy & lessons learned |
-
-### 🟡 TIER 2: Templates & Checklists
-
-Reusable templates for QA activities.
-
-| Document | Purpose |
-|:---|:---|
-| [QA_CHECKLIST_TEMPLATE.md](./QA_CHECKLIST_TEMPLATE.md) | Manual QA checklist template |
-| [QA-STANDARDS-ALIGNMENT.md](./QA-STANDARDS-ALIGNMENT.md) | Standards alignment audit (internal) |
-
-### 🟢 TIER 3: Phase-Specific Records
-
-Historical records organized by Phase. Use these as reference for future work.
-
-#### Phase 6.x (Static Graph)
-| Document | Type |
-|:---|:---|
-| [phase-6.0-static-graph-verification.md](./phase-6.0-static-graph-verification.md) | Verification report |
-| [phase-6.0-reviews/](./phase-6.0-reviews/) | Expert review documents (18 files) |
-| [phase-6.1-qa-framework.md](./phase-6.1-qa-framework.md) | QA framework |
-| [phase-6.1-multi-agent-tests.md](./phase-6.1-multi-agent-tests.md) | Multi-agent test plan |
-| [phase-6.1-reviews/](./phase-6.1-reviews/) | Review documents |
-
-#### Phase 5.x (Zygote)
-| Document | Type |
-|:---|:---|
-| [phase-5.0-qa-framework.md](./phase-5.0-qa-framework.md) | QA framework |
-| [phase-5.0-reviews/](./phase-5.0-reviews/) | Expert review documents (18 files) |
-
-#### Phase 4.x (Security)
-| Document | Type |
-|:---|:---|
-| [phase-4.0-defect-report.md](./phase-4.0-defect-report.md) | Defect report |
-| [phase-4.0-task-handoff.md](./phase-4.0-task-handoff.md) | Task handoff |
-| [phase-4.1-task-handoff.md](./phase-4.1-task-handoff.md) | Task handoff |
-
-#### Phase 3.x (Core)
-| Document | Type |
-|:---|:---|
-| [phase-3-test-matrix.md](./phase-3-test-matrix.md) | Test matrix |
-| [phase-3-multi-agent-tests.md](./phase-3-multi-agent-tests.md) | Multi-agent tests |
-| [phase-3-defect-report.md](./phase-3-defect-report.md) | Defect report |
-| [phase-3.5-test-matrix.md](./phase-3.5-test-matrix.md) | Test matrix |
-| [phase-3.5-multi-agent-tests.md](./phase-3.5-multi-agent-tests.md) | Multi-agent tests |
-| [phase-3.5-test-gap-analysis.md](./phase-3.5-test-gap-analysis.md) | Gap analysis |
-| [phase-3.5-defect-report.md](./phase-3.5-defect-report.md) | Defect report |
-
-#### Phase 1.x (Foundation)
-| Document | Type |
-|:---|:---|
-| [phase-1.5-test-matrix.md](./phase-1.5-test-matrix.md) | Test matrix |
-
-### 🔵 TIER 4: Defects & Issues
-
-Active and historical defect tracking.
-
-| Location | Contents |
-|:---|:---|
-| [defects/](./defects/) | Master defect reports (5 files) |
-| [DEF-003-zygote-prewarm.md](./DEF-003-zygote-prewarm.md) | Zygote prewarm issue |
-| [DEV-FIX-001-zygote-auto-preload.md](./DEV-FIX-001-zygote-auto-preload.md) | Developer fix record |
-| [BUG-REPORT-CODE-COVERAGE-BLAKE3.md](./BUG-REPORT-CODE-COVERAGE-BLAKE3.md) | BLAKE3 coverage issue |
-
-### 🟣 TIER 5: Requirements & Specifications
-
-QA requirements for specific features.
-
-| Document | Feature |
-|:---|:---|
-| [QA-REQ-001-zygote-preload.md](./QA-REQ-001-zygote-preload.md) | Zygote preload |
-| [QA-REQ-002-zygote-async.md](./QA-REQ-002-zygote-async.md) | Zygote async |
-| [QA-REQ-003-bundle-config.md](./QA-REQ-003-bundle-config.md) | Bundle config |
-| [QA-REQ-004-security-hardening.md](./QA-REQ-004-security-hardening.md) | Security hardening |
-
-### ⚪ TIER 6: Miscellaneous
-
-Other important documents.
-
-| Document | Purpose |
-|:---|:---|
-| [arch/](./arch/) | Architecture decision records |
-| [arch-handover-2026-01-02.md](./arch-handover-2026-01-02.md) | Architecture handover |
-| [QA-AUDIT-RFC-0009.md](./QA-AUDIT-RFC-0009.md) | RFC-0009 audit |
-| [security_blueprints.md](./security_blueprints.md) | Security blueprints |
-| [framework-battle-plan.md](./framework-battle-plan.md) | Framework benchmark plan |
-| [qa_integrity_report_v2.md](./qa_integrity_report_v2.md) | Integrity report |
-| [benchmarks/](./benchmarks/) | Benchmark baselines |
+```
+docs/qa/
+├── README.md                      # This index
+├── QA-DOCUMENTATION-AUDIT.md      # Cleanup audit record
+│
+├── STANDARDS/                     # 🔴 TIER 1: Master Standards
+│   ├── QA-SOP.md                  # Master SOP (1200+ lines)
+│   ├── TIERED-TESTING-GUIDE.md    # Testing methodology
+│   ├── KNOWLEDGE-TREASURY.md      # Knowledge asset index
+│   └── QA-STANDARDS-ALIGNMENT.md  # Alignment audit
+│
+├── TEMPLATES/                     # 🟡 TIER 2: Reusable Templates
+│   └── CHECKLIST-TEMPLATE.md      # QA checklist template
+│
+├── REQUIREMENTS/                  # 🟢 Feature Requirements
+│   ├── REQ-001-zygote-preload.md
+│   ├── REQ-002-zygote-async.md
+│   ├── REQ-003-bundle-config.md
+│   └── REQ-004-security-hardening.md
+│
+├── DEFECTS/                       # 🔵 Defect Reports
+│   └── (defect files)
+│
+├── PHASES/                        # 📚 Phase-Specific Records
+│   ├── phase-1.5/
+│   │   └── test-matrix.md
+│   ├── phase-3/
+│   │   ├── defect-report.md
+│   │   ├── multi-agent-tests.md
+│   │   └── test-matrix.md
+│   ├── phase-3.5/
+│   │   ├── defect-report.md
+│   │   ├── multi-agent-tests.md
+│   │   ├── test-gap-analysis.md
+│   │   └── test-matrix.md
+│   ├── phase-4/
+│   │   ├── defect-report.md
+│   │   ├── task-handoff-4.0.md
+│   │   └── task-handoff-4.1.md
+│   ├── phase-5/
+│   │   ├── qa-framework.md
+│   │   └── reviews/              # (18 review files)
+│   └── phase-6/
+│       ├── static-graph-verification.md
+│       ├── multi-agent-tests-6.1.md
+│       ├── qa-framework-6.1.md
+│       ├── reviews-6.0/          # (18 review files)
+│       └── reviews-6.1/
+│
+└── ARCHIVE/                       # 📦 Historical/Superseded
+    ├── QA-AUDIT-RFC-0009.md
+    ├── QA-INTEGRITY-REPORT-V2.md
+    ├── QA-REFLECTION-FIRST-PRINCIPLES.md
+    ├── SECURITY-BLUEPRINTS.md
+    ├── arch-handover-2026-01-02.md
+    ├── framework-battle-plan.md
+    ├── arch/
+    └── benchmarks/
+```
 
 ---
 
 ## 📊 Statistics
 
-| Category | Count | Total Lines |
-|:---|:---:|:---:|
-| Master Standards | 3 | ~1,700 |
-| Templates | 2 | ~180 |
-| Phase Records | 15+ | ~60,000 |
-| Defect Records | 8+ | ~5,000 |
-| Requirements | 4 | ~8,000 |
-| **Total** | **33+ files** | **~75,000+ lines** |
+| Category | Files | Description |
+|:---|:---:|:---|
+| STANDARDS | 4 | Master documents (1500+ lines) |
+| TEMPLATES | 1 | Reusable templates |
+| REQUIREMENTS | 4 | Feature specifications |
+| DEFECTS | - | Defect reports |
+| PHASES | 60+ | Phase-specific records |
+| ARCHIVE | 8+ | Historical documents |
+| **Total** | **~80** | **All QA documentation** |
+
+---
+
+## 📝 Naming Conventions
+
+| Category | Format | Example |
+|:---|:---|:---|
+| **Standards** | `UPPER-CASE-HYPHEN.md` | `QA-SOP.md` |
+| **Templates** | `UPPER-CASE-HYPHEN.md` | `CHECKLIST-TEMPLATE.md` |
+| **Requirements** | `REQ-XXX-*.md` | `REQ-001-zygote-preload.md` |
+| **Defects** | `DEF-XX-YYY-*.md` | `DEF-60-007-hash-mismatch.md` |
+| **Phase Docs** | `lowercase-hyphen.md` | `test-matrix.md` |
+| **Reviews** | `lowercase-hyphen.md` | `agent-a-edge-review.md` |
 
 ---
 
@@ -136,42 +113,45 @@ Other important documents.
 
 | Document | Location |
 |:---|:---|
+| [Definition of Done](../DEFINITION_OF_DONE.md) | Project-wide quality gates |
+| [Project Standards](../STANDARDS.md) | Naming conventions |
+| [Test Architecture](../TEST_ARCHITECTURE.md) | Test environment guide |
 | [Benchmark Suite](../../benchmarks/) | Performance benchmarks |
 | [Test Files](../../tests/qa/) | Pytest test suites |
 | [RFC Documents](../rfcs/) | Feature specifications |
 
 ---
 
-## 📝 How to Use This Library
+## 📋 How to Use
 
 ### For New QA Team Members
-1. Read **[QA-SOP.md](./QA-SOP.md)** completely (1214 lines)
-2. Understand **[tiered-testing-guide.md](./tiered-testing-guide.md)**
-3. Review **[QA_REFLECTION_first_principles.md](./QA_REFLECTION_first_principles.md)**
-4. Look at recent Phase records for examples
+1. Read **[STANDARDS/QA-SOP.md](./STANDARDS/QA-SOP.md)** (1200+ lines)
+2. Understand **[STANDARDS/TIERED-TESTING-GUIDE.md](./STANDARDS/TIERED-TESTING-GUIDE.md)**
+3. Explore **[STANDARDS/KNOWLEDGE-TREASURY.md](./STANDARDS/KNOWLEDGE-TREASURY.md)**
+4. Review recent PHASES for examples
 
 ### For Starting a New Phase
-1. Create `phase-X.Y-qa-framework.md` based on previous phases
-2. Create `phase-X.Y-multi-agent-tests.md` for agent assignments
-3. Create `phase-X.Y-reviews/` directory for expert reviews
+1. Create directory: `PHASES/phase-X.Y/`
+2. Add `test-matrix.md`, `multi-agent-tests.md`
+3. Create `reviews/` for expert reviews
 4. Follow SOP workflow exactly
 
 ### For Reporting Defects
-1. Use format: `DEF-{phase}-{number}`
-2. Follow template in [defects/](./defects/)
-3. Update master defect report after resolution
+1. Create file: `DEFECTS/DEF-XX-YYY-short-name.md`
+2. Use defect template from SOP
+3. Update status as work progresses
 
 ---
 
-## 📋 Maintenance
+## 🔄 Maintenance
 
 | Task | Frequency | Owner |
 |:---|:---|:---|
 | Update SOP | Per Phase | QA Leader |
-| Update tiered-testing-guide | As needed | QA Leader |
-| Archive old phase docs | End of Phase | QA Team |
-| Review standards alignment | Quarterly | QA Leader |
+| Archive old docs | End of Phase | QA Team |
+| Review alignment | Quarterly | QA Leader |
+| Create phase directory | Start of Phase | QA Leader |
 
 ---
 
-**Velo QA Working Group** | Documentation Library v1.0
+**Velo QA Working Group** | Library v2.0 | Reorganized 2026-01-04
