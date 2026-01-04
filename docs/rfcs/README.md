@@ -49,7 +49,7 @@ We welcome feedback on any RFC! Please:
 
 | Proposal | Title | Target |
 |----------|-------|--------|
-| [FUTURE-msgpack-ipc](./FUTURE-msgpack-ipc.md) | MessagePack IPC Protocol | v0.7.0+ |
+| [FUTURE-msgpack-ipc](./OPT-0010-001-msgpack-ipc.md) | MessagePack IPC Protocol | v0.7.0+ |
 
 ## Past RFCs
 
