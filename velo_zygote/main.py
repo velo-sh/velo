@@ -28,10 +28,62 @@ from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
 
 # ============================================================================
-# Protocol Constants (ADV-1)
+# Protocol Constants (ADV-1 + DEF-61-004)
 # ============================================================================
 PROTOCOL_VERSION = 0x01
 MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB security limit
+
+
+# ============================================================================
+# Socket Path Functions (DEF-61-004: Protocol Socket Isolation)
+# ============================================================================
+
+def get_socket_dir() -> Path:
+    """Get the user-isolated socket directory.
+    
+    DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
+    Directory has 0700 permissions for security.
+    """
+    # 1. Try XDG_RUNTIME_DIR (preferred on Linux)
+    xdg_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg_dir:
+        dir_path = Path(xdg_dir) / "velo"
+        if ensure_socket_dir(dir_path):
+            return dir_path
+    
+    # 2. Try user-isolated temp directory
+    uid = os.getuid()
+    import tempfile
+    user_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+    if ensure_socket_dir(user_dir):
+        # Check path length (Unix socket limit: 108 chars)
+        test_path = user_dir / "velo-zygote-v01.sock"
+        if len(str(test_path)) < 108:
+            return user_dir
+    
+    # 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
+    fallback_dir = Path("/tmp") / f"velo-{uid}"
+    ensure_socket_dir(fallback_dir)
+    return fallback_dir
+
+
+def ensure_socket_dir(dir_path: Path) -> bool:
+    """Ensure socket directory exists with 0700 permissions."""
+    try:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        # Set 0700 permissions (owner only)
+        os.chmod(dir_path, 0o700)
+        return True
+    except (OSError, PermissionError):
+        return False
+
+
+def get_versioned_socket_path() -> Path:
+    """Get the versioned socket path for this protocol version.
+    
+    DEF-61-004: Format: {socket_dir}/velo-zygote-v{PROTOCOL_VERSION:02x}.sock
+    """
+    return get_socket_dir() / f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
 
 # ============================================================================
 # MessagePack Import with Pure Python Fallback (ADV-3)

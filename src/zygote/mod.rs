@@ -345,6 +345,9 @@ impl ZygoteLauncher {
     /// * `preload` - List of Python modules to pre-import
     #[cfg(unix)]
     pub fn start(&mut self, preload: &[&str]) -> Result<()> {
+        // DEF-61-004: Clean up stale sockets from previous versions before starting
+        ipc::cleanup_stale_sockets();
+
         if self.is_running() {
             return Ok(());
         }
