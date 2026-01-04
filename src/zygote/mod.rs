@@ -23,8 +23,9 @@ pub mod ipc;
 
 use error::{Result, ZygoteError};
 use ipc::ZygoteResponse;
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 /// Worker execution timeout in seconds
@@ -56,6 +57,24 @@ fn get_socket_timeout_secs() -> u64 {
     crate::config::VeloConfig::from_pyproject_toml()
         .and_then(|c| c.zygote_socket_timeout)
         .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
+}
+
+/// Get the path to the Zygote log file
+///
+/// # Log File Behavior
+/// - **Location**: `~/.local/state/velo/zygote.log` (fallback: `$TMPDIR/velo-zygote.log`)
+/// - **Mode**: Append-only (no automatic rotation)
+/// - **Growth**: Log file will grow indefinitely until manually truncated or Zygote is restarted
+///
+/// # Note
+/// For long-running deployments, consider implementing log rotation externally (e.g., logrotate)
+/// or periodically clearing the file via `> ~/.local/state/velo/zygote.log`.
+pub fn get_log_path() -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".local/state/velo/zygote.log")
+    } else {
+        std::env::temp_dir().join("velo-zygote.log")
+    }
 }
 
 /// Get Zygote status
@@ -363,11 +382,37 @@ impl ZygoteLauncher {
             });
         }
 
-        // Redirect stdout/stderr to null for daemon mode
-        // Worker output goes through a different channel (not Zygote's stdout)
-        use std::process::Stdio;
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null());
+        // Setup logging
+        let log_path = get_log_path();
+        if let Some(parent) = log_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                ZygoteError::StartFailed(format!(
+                    "Failed to create log directory {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
+        }
+
+        eprintln!("📝 Zygote logs: {}", log_path.display());
+
+        let log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| {
+                ZygoteError::StartFailed(format!(
+                    "Failed to open log file {}: {}",
+                    log_path.display(),
+                    e
+                ))
+            })?;
+
+        // Redirect stdout/stderr to log file for daemon mode
+        cmd.stdout(Stdio::from(log_file.try_clone().map_err(|e| {
+            ZygoteError::StartFailed(format!("Failed to clone log file handle: {}", e))
+        })?));
+        cmd.stderr(Stdio::from(log_file));
 
         // Spawn the Zygote process
         let child = cmd
@@ -555,5 +600,16 @@ impl Drop for ZygoteLauncher {
     fn drop(&mut self) {
         // Ensure cleanup on drop
         let _ = self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_log_path() {
+        let path = get_log_path();
+        assert!(path.to_string_lossy().contains("zygote.log"));
     }
 }

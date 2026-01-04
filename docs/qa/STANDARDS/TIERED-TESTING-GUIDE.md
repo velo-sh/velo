@@ -12,10 +12,10 @@ This document defines the official QA methodology for Velo, including tiered tes
 
 | Command | Description | Time |
 |---------|-------------|------|
-| `./scripts/qa-fast.sh 0` | Smoke tests | ~3s |
-| `./scripts/qa-fast.sh 1` | Fast tests | ~15s |
-| `./scripts/qa-fast.sh 2` | Standard | ~7min |
-| `./scripts/qa-fast.sh 3` | Heavy/Brutal | ~5min |
+| `../../../scripts/qa-fast.sh 0` | Smoke tests | ~3s |
+| `../../../scripts/qa-fast.sh 1` | Fast tests | ~15s |
+| `../../../scripts/qa-fast.sh 2` | Standard | ~7min |
+| `../../../scripts/qa-fast.sh 3` | Heavy/Brutal | ~5min |
 | **Phase 6.0** | **L6 Optimizations** | **Uncompromising** |
 
 ---
@@ -164,26 +164,26 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - run: ./scripts/qa-fast.sh 0
+      - run: ../../../scripts/qa-fast.sh 0
   
   fast:
     needs: smoke
     runs-on: ubuntu-latest
     steps:
-      - run: ./scripts/qa-fast.sh 1
+      - run: ../../../scripts/qa-fast.sh 1
   
   standard:
     needs: fast
     runs-on: ubuntu-latest
     steps:
-      - run: ./scripts/qa-fast.sh 2
+      - run: ../../../scripts/qa-fast.sh 2
   
   heavy:
     needs: standard
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
-      - run: ./scripts/qa-fast.sh 3
+      - run: ../../../scripts/qa-fast.sh 3
 
   # MANDATORY: Benchmark as standalone job
   benchmark:
@@ -305,16 +305,16 @@ def test_uvicorn_missing_error(isolated_env):
 
 ```bash
 # Smoke test (3s)
-./scripts/qa-fast.sh 0
+../../../scripts/qa-fast.sh 0
 
 # Fast tests (15s)
-./scripts/qa-fast.sh 1
+../../../scripts/qa-fast.sh 1
 
 # Full suite (7min)
-./scripts/qa-fast.sh 2
+../../../scripts/qa-fast.sh 2
 
 # Brutal tests (5min, optional)
-./scripts/qa-fast.sh 3
+../../../scripts/qa-fast.sh 3
 ```
 
 ### 8.2 Specific Tests
@@ -336,11 +336,13 @@ uv run python -m pytest --cov=. tests/qa/
 
 | Document | Purpose |
 |----------|---------|
-| [DEFINITION_OF_DONE.md](../DEFINITION_OF_DONE.md) | Quality gate standards |
-| [STANDARDS.md](../STANDARDS.md) | Project naming conventions |
-| [QA_CHECKLIST_TEMPLATE.md](./QA_CHECKLIST_TEMPLATE.md) | Manual checklist |
-| [QA_REFLECTION_first_principles.md](./QA_REFLECTION_first_principles.md) | Testing lessons learned |
+| **[QA-SOP.md](./QA-SOP.md)** | **Master QA Standard Operating Procedure (1200+ lines)** |
+| [DEFINITION_OF_DONE.md](../../DEFINITION_OF_DONE.md) | Quality gate standards |
+| [STANDARDS.md](../../STANDARDS.md) | Project naming conventions |
+| [CHECKLIST-TEMPLATE.md](../TEMPLATES/CHECKLIST-TEMPLATE.md) | Manual checklist |
+| [QA-REFLECTION-FIRST-PRINCIPLES.md](../ARCHIVE/QA-REFLECTION-FIRST-PRINCIPLES.md) | Testing lessons learned |
 
 ---
 
-**Last Updated**: 2026-01-02
+**Last Updated**: 2026-01-04
+
