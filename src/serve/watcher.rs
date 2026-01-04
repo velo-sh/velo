@@ -23,7 +23,7 @@ pub const DEFAULT_DEBOUNCE_MS: u64 = 300;
 pub const MAX_EVENTS_PER_SECOND: usize = 100;
 
 /// Maximum number of watched files before warning
-pub const MAX_WATCHED_FILES: usize = 10_000;
+pub const MAX_WATCHED_FILES: usize = 5_000;
 
 // ============================================================================
 // Watcher State Machine (D7, RFC §4.4)

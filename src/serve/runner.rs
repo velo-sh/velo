@@ -78,19 +78,35 @@ impl ServeLogger {
     }
 
     fn log(&self, level: &str, msg: &str, detail: Option<&str>) {
+        self.log_with_timing(level, msg, detail, None);
+    }
+
+    fn log_with_timing(
+        &self,
+        level: &str,
+        msg: &str,
+        detail: Option<&str>,
+        timing_ms: Option<u128>,
+    ) {
         match self.format {
             LogFormat::Json => {
                 let timestamp =
                     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                let mut output = format!(
-                    "{{\"timestamp\":\"{}\",\"level\":\"{}\",\"msg\":\"{}\"",
-                    timestamp, level, msg
-                );
-                if let Some(d) = detail {
-                    output.push_str(&format!(",\"detail\":\"{}\"", d));
+
+                let mut json = serde_json::json!({
+                    "timestamp": timestamp,
+                    "level": level,
+                    "msg": msg,
+                });
+
+                if let Some(t) = timing_ms {
+                    json["timing_ms"] = serde_json::json!(t);
                 }
-                output.push('}');
-                eprintln!("{}", output);
+                if let Some(d) = detail {
+                    json["detail"] = serde_json::json!(d);
+                }
+
+                eprintln!("{}", json);
                 use std::io::Write;
                 let _ = std::io::stderr().flush();
             }
@@ -102,11 +118,15 @@ impl ServeLogger {
                     "error" => "error".red().bold(),
                     _ => level.normal(),
                 };
-                if let Some(d) = detail {
-                    eprintln!("{}: {} {}", level_colored, msg, d);
+                let mut base = if let Some(d) = detail {
+                    format!("{}: {} {}", level_colored, msg, d)
                 } else {
-                    eprintln!("{}: {}", level_colored, msg);
+                    format!("{}: {}", level_colored, msg)
+                };
+                if let Some(t) = timing_ms {
+                    base.push_str(&format!(" ({:.1}ms)", t as f64));
                 }
+                eprintln!("{}", base);
             }
         }
     }
@@ -349,6 +369,9 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
 #[cfg(unix)]
 pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
+    use std::time::Instant;
+
+    let start_time = Instant::now();
 
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
@@ -356,9 +379,31 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // Step 4: Setup Logger
     let logger = ServeLogger::new(args.log_format, args.verbose);
 
+    // Step 1.1: Scaling Warning (R4)
+    let file_count = count_python_files(project_dir);
+    if file_count > 5000 {
+        logger.warn(&format!("Large number of files detected ({})", file_count));
+        logger.warn("help: Watching many files may impact performance.");
+    }
+
     // Step 2: Detect framework FIRST (shows user Velo understands their project)
     let framework = detect_framework(module, project_dir);
     let preload_modules = get_preload_modules(framework);
+
+    // Step 2.1: Django settings inference (R2)
+    if framework == crate::serve::framework::Framework::Django
+        && std::env::var("DJANGO_SETTINGS_MODULE").is_err()
+    {
+        if let Some(settings) = crate::serve::framework::detect_django_settings(project_dir) {
+            logger.verbose(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
+            unsafe {
+                std::env::set_var("DJANGO_SETTINGS_MODULE", settings);
+            }
+        } else {
+            logger.warn("Django detected but DJANGO_SETTINGS_MODULE is not set.");
+            logger.warn("help: High-performance preloading may be impaired.");
+        }
+    }
 
     // Step 3: Select server based on framework (D4)
     let server = get_server_type(framework);
@@ -481,7 +526,10 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    // PERF-P0-001: Dry run mode
+    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+    let ready_ms = start_time.elapsed().as_millis();
+    logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
+
     if args.dry_run {
         logger.info(&format!(
             "Dry run: Command would be: {:?} {:?}",
@@ -494,36 +542,22 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         return Ok(());
     }
 
-    eprintln!();
+    if args.log_format == LogFormat::Text {
+        eprintln!("   App:       {}", args.app);
+        eprintln!("   Server:    {}", server);
+        eprintln!("   Bind:      {}:{}", args.host, args.port);
+        eprintln!("   Workers:   {}", args.workers);
+        eprintln!("   Timeout:   {}s", args.timeout);
+        if args.reload {
+            eprintln!("   Reload:    enabled");
+        }
+    }
 
     // Spawn with ManagedChild for RAII cleanup (D2)
     let mut child = ManagedChild::spawn(cmd, args.pid_file.clone())
         .map_err(|e| anyhow::anyhow!("Failed to start server: {}", e))?;
 
     logger.info(&format!("Server started (PID: {})", child.id()));
-
-    // CN-P0-001: Spawn health server if --health-bind is set (ADR D2)
-    let _health_server = if let Some(ref health_bind) = args.health_bind {
-        use crate::serve::health::HealthServer;
-
-        // Initially not ready, will be set after first successful response
-        let ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-        match HealthServer::spawn(health_bind, std::sync::Arc::clone(&ready)) {
-            Ok(server) => {
-                logger.info(&format!("Health server: http://{}/healthz", health_bind));
-                // Mark as ready (in real impl, we'd wait for first HTTP response)
-                ready.store(true, std::sync::atomic::Ordering::SeqCst);
-                Some(server)
-            }
-            Err(e) => {
-                eprintln!("⚠️  Failed to start health server: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
 
     // Main loop: Wait for Events (Zero Busy Wait)
     loop {
@@ -596,6 +630,33 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             }
         }
     }
+}
+
+/// Helper to count Python files for scaling warnings (R4)
+fn count_python_files(path: &Path) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str != ".git" && name_str != "__pycache__" && name_str != ".venv" {
+                        count += count_python_files(&entry.path());
+                    }
+                } else {
+                    let path = entry.path();
+                    if path
+                        .extension()
+                        .is_some_and(|ext| ext == "py" || ext == "pyi")
+                    {
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    count
 }
 
 #[cfg(not(unix))]

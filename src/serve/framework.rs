@@ -65,6 +65,27 @@ pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
     Framework::Unknown
 }
 
+/// Infer Django settings module path
+pub fn detect_django_settings(project_dir: &Path) -> Option<String> {
+    // Strategy: find settings.py in a first-level subdirectory
+    if let Ok(entries) = std::fs::read_dir(project_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let path = entry.path();
+                let settings = path.join("settings.py");
+                if let (Some(dir_name), true, true) = (
+                    path.file_name().and_then(|n| n.to_str()),
+                    settings.exists(),
+                    path.join("__init__.py").exists(),
+                ) {
+                    return Some(format!("{}.settings", dir_name));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Detect framework from dependency file contents
 fn detect_from_deps(content: &str) -> Framework {
     let content_lower = content.to_lowercase();

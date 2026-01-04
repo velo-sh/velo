@@ -14,18 +14,32 @@ use crate::cache::EnvCache;
 
 /// Detect the project's Python interpreter.
 /// Priority:
-/// 1. .venv/bin/python (uv/virtualenv)
-/// 2. VELO_PYTHON environment variable
-/// 3. System python3
+/// 1. VIRTUAL_ENV environment variable (activated venv)
+/// 2. .venv/bin/python (local uv/virtualenv)
+/// 3. VELO_PYTHON environment variable
+/// 4. System python3
 #[allow(clippy::collapsible_if)]
 pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
-    // 1. Check for .venv/bin/python
+    // 1. Check VIRTUAL_ENV env var
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+        let path = std::path::PathBuf::from(venv);
+        let python = if cfg!(windows) {
+            path.join("Scripts/python.exe")
+        } else {
+            path.join("bin/python")
+        };
+        if python.exists() {
+            return Ok(python);
+        }
+    }
+
+    // 2. Check for .venv/bin/python
     let venv_python = project_dir.join(".venv/bin/python");
     if venv_python.exists() {
         return Ok(venv_python);
     }
 
-    // 2. Check VELO_PYTHON env var
+    // 3. Check VELO_PYTHON env var
     if let Ok(python) = std::env::var("VELO_PYTHON") {
         let path = std::path::PathBuf::from(&python);
         if path.exists() {
@@ -33,7 +47,7 @@ pub fn detect_python(project_dir: &Path) -> Result<std::path::PathBuf> {
         }
     }
 
-    // 3. Fall back to system python3
+    // 4. Fall back to system python3
     // First check if python3 exists in PATH
     if let Ok(output) = Command::new("which").arg("python3").output() {
         if output.status.success() {
