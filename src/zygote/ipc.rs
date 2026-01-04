@@ -58,6 +58,16 @@ pub enum ZygoteCommand {
     Shutdown,
     /// Query Zygote status
     Status,
+    /// Wait for a worker to exit
+    WaitWorker {
+        worker_pid: u32,
+        #[serde(default)]
+        timeout_secs: Option<u64>,
+    },
+    /// Send signal to a worker
+    SignalWorker { worker_pid: u32, signal: i32 },
+    /// Query worker status
+    WorkerStatus { worker_pid: u32 },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -81,6 +91,14 @@ pub enum ZygoteResponse {
         /// Exit code (available in sync mode after completion)
         #[serde(default)]
         exit_code: Option<i32>,
+    },
+    /// Worker exited with code
+    WorkerExited { worker_pid: u32, exit_code: i32 },
+    /// Worker status info
+    WorkerInfo {
+        worker_pid: u32,
+        is_running: bool,
+        uptime_secs: u64,
     },
     /// An error occurred
     Error { message: String },
