@@ -103,6 +103,73 @@ pub fn get_preload_modules(framework: Framework) -> Vec<&'static str> {
     }
 }
 
+// ============================================================================
+// Server Selection (D4, RFC §4.2)
+// ============================================================================
+
+/// Server type for running the application
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Server {
+    /// Uvicorn for ASGI apps (FastAPI, Starlette)
+    Uvicorn,
+    /// Gunicorn for WSGI apps (Django, Flask)
+    Gunicorn,
+}
+
+impl std::fmt::Display for Server {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Server::Uvicorn => write!(f, "uvicorn"),
+            Server::Gunicorn => write!(f, "gunicorn"),
+        }
+    }
+}
+
+impl Server {
+    /// Get the module name for running with `python -m`
+    pub fn module_name(&self) -> &'static str {
+        match self {
+            Server::Uvicorn => "uvicorn",
+            Server::Gunicorn => "gunicorn",
+        }
+    }
+
+    /// Get the install command hint
+    pub fn install_hint(&self) -> &'static str {
+        match self {
+            Server::Uvicorn => "uv add uvicorn",
+            Server::Gunicorn => "uv add gunicorn",
+        }
+    }
+}
+
+/// Get the appropriate server for a framework
+///
+/// Per RFC §4.2:
+/// - FastAPI, Starlette → uvicorn (ASGI)
+/// - Django, Flask → gunicorn (WSGI)
+pub fn get_server_type(framework: Framework) -> Server {
+    match framework {
+        Framework::FastAPI | Framework::Starlette => Server::Uvicorn,
+        Framework::Django | Framework::Flask => Server::Gunicorn,
+        Framework::Unknown => Server::Uvicorn, // Default to uvicorn
+    }
+}
+
+/// Check if the server is installed
+pub fn check_server_installed(server: Server, python_path: &std::path::Path) -> bool {
+    use std::process::{Command, Stdio};
+
+    let check_cmd = format!("import {}", server.module_name());
+    Command::new(python_path)
+        .args(["-c", &check_cmd])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +212,97 @@ dependencies = ["fastapi", "uvicorn"]
     fn test_preload_modules_unknown() {
         let modules = get_preload_modules(Framework::Unknown);
         assert!(modules.is_empty());
+    }
+
+    // ========================================================================
+    // Server enum tests (D4)
+    // ========================================================================
+
+    #[test]
+    fn test_server_display_uvicorn() {
+        assert_eq!(format!("{}", Server::Uvicorn), "uvicorn");
+    }
+
+    #[test]
+    fn test_server_display_gunicorn() {
+        assert_eq!(format!("{}", Server::Gunicorn), "gunicorn");
+    }
+
+    #[test]
+    fn test_server_module_name_uvicorn() {
+        assert_eq!(Server::Uvicorn.module_name(), "uvicorn");
+    }
+
+    #[test]
+    fn test_server_module_name_gunicorn() {
+        assert_eq!(Server::Gunicorn.module_name(), "gunicorn");
+    }
+
+    #[test]
+    fn test_server_install_hint_uvicorn() {
+        assert_eq!(Server::Uvicorn.install_hint(), "uv add uvicorn");
+    }
+
+    #[test]
+    fn test_server_install_hint_gunicorn() {
+        assert_eq!(Server::Gunicorn.install_hint(), "uv add gunicorn");
+    }
+
+    // ========================================================================
+    // get_server_type tests (D4)
+    // ========================================================================
+
+    #[test]
+    fn test_get_server_type_fastapi_returns_uvicorn() {
+        let server = get_server_type(Framework::FastAPI);
+        assert_eq!(server, Server::Uvicorn);
+    }
+
+    #[test]
+    fn test_get_server_type_starlette_returns_uvicorn() {
+        let server = get_server_type(Framework::Starlette);
+        assert_eq!(server, Server::Uvicorn);
+    }
+
+    #[test]
+    fn test_get_server_type_django_returns_gunicorn() {
+        let server = get_server_type(Framework::Django);
+        assert_eq!(server, Server::Gunicorn);
+    }
+
+    #[test]
+    fn test_get_server_type_flask_returns_gunicorn() {
+        let server = get_server_type(Framework::Flask);
+        assert_eq!(server, Server::Gunicorn);
+    }
+
+    #[test]
+    fn test_get_server_type_unknown_defaults_to_uvicorn() {
+        let server = get_server_type(Framework::Unknown);
+        assert_eq!(server, Server::Uvicorn);
+    }
+
+    // ========================================================================
+    // Preload modules tests - additional
+    // ========================================================================
+
+    #[test]
+    fn test_preload_modules_django() {
+        let modules = get_preload_modules(Framework::Django);
+        assert!(modules.contains(&"django"));
+        assert!(modules.contains(&"django.core"));
+    }
+
+    #[test]
+    fn test_preload_modules_flask() {
+        let modules = get_preload_modules(Framework::Flask);
+        assert!(modules.contains(&"flask"));
+        assert!(modules.contains(&"werkzeug"));
+    }
+
+    #[test]
+    fn test_preload_modules_starlette() {
+        let modules = get_preload_modules(Framework::Starlette);
+        assert!(modules.contains(&"starlette"));
     }
 }

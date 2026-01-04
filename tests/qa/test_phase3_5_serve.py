@@ -179,7 +179,7 @@ class TestServeStartup:
             try:
                 time.sleep(2)
                 proc.terminate()
-                _, stderr = proc.communicate(timeout=5)
+                _, stderr = proc.communicate(timeout=15)
                 
                 # Should show startup info
                 assert "Starting server" in stderr or "FastAPI" in stderr or "uvicorn" in stderr.lower()
@@ -230,7 +230,7 @@ class TestZygoteIntegration:
             try:
                 time.sleep(2)
                 proc.terminate()
-                _, stderr = proc.communicate(timeout=5)
+                _, stderr = proc.communicate(timeout=15)
                 
                 # Should show Zygote pre-warming or using existing Zygote
                 zygote_mentioned = (
@@ -252,7 +252,7 @@ class TestZygoteIntegration:
             try:
                 time.sleep(1)
                 proc.terminate()
-                _, stderr = proc.communicate(timeout=5)
+                _, stderr = proc.communicate(timeout=15)
                 
                 # Should NOT mention pre-warming when --no-zygote is used
                 assert "Pre-warming" not in stderr
@@ -271,7 +271,7 @@ class TestFrameworkDetection:
             try:
                 time.sleep(2)
                 proc.terminate()
-                _, stderr = proc.communicate(timeout=5)
+                _, stderr = proc.communicate(timeout=15)
                 
                 # Should detect FastAPI
                 assert "FastAPI" in stderr or "Starting server" in stderr

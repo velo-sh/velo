@@ -1,18 +1,11 @@
 {
   "contracts": {},
   "tests": {
-    "tests/qa/phase5_2/test_bundle_config.py": {
+    "tests/qa/test_phase3_5_serve.py": {
       "coverage": false,
       "isolated": false,
-      "results": "s........",
-      "sha1": "b56087291fe26c22ebf6c818a8142227eaff52c7",
-      "txhash": []
-    },
-    "tests/qa/phase5_2/test_stability_stress.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "F",
-      "sha1": "ff2937873fb8b34749512eae722101b9d45c4177",
+      "results": "....F.......s",
+      "sha1": "011fe3a9c6aaf88eeaff0dba15028c02348b0853",
       "txhash": []
     }
   },
