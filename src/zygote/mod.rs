@@ -60,6 +60,15 @@ fn get_socket_timeout_secs() -> u64 {
 }
 
 /// Get the path to the Zygote log file
+///
+/// # Log File Behavior
+/// - **Location**: `~/.local/state/velo/zygote.log` (fallback: `$TMPDIR/velo-zygote.log`)
+/// - **Mode**: Append-only (no automatic rotation)
+/// - **Growth**: Log file will grow indefinitely until manually truncated or Zygote is restarted
+///
+/// # Note
+/// For long-running deployments, consider implementing log rotation externally (e.g., logrotate)
+/// or periodically clearing the file via `> ~/.local/state/velo/zygote.log`.
 pub fn get_log_path() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
         PathBuf::from(home).join(".local/state/velo/zygote.log")
@@ -376,8 +385,16 @@ impl ZygoteLauncher {
         // Setup logging
         let log_path = get_log_path();
         if let Some(parent) = log_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent).map_err(|e| {
+                ZygoteError::StartFailed(format!(
+                    "Failed to create log directory {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
         }
+
+        eprintln!("📝 Zygote logs: {}", log_path.display());
 
         let log_file = OpenOptions::new()
             .create(true)
