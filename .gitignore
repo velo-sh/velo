@@ -29,3 +29,4 @@ __pycache__/
 velo_zygote/velo_zygote
 test_large_bundle/
 *.veloc
+build/
