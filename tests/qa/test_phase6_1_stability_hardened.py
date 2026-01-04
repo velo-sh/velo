@@ -347,5 +347,143 @@ app = lambda s, r, se: None
             if proc.poll() is None:
                 proc.kill()
 
+
+# =============================================================================
+# REGRESSION TESTS - Solidify Bug Fixes (2026-01-04)
+# =============================================================================
+
+@pytest.mark.tier1
+class TestRegressionBugFixes:
+    """
+    Regression tests for bugs fixed on 2026-01-04.
+    These tests ensure the bugs don't resurface.
+    """
+
+    def test_reg_001_exit_on_child_failure_without_reload(self, isolated_env):
+        """
+        BUG-6.1-001: velo serve hangs on child failure when --reload is not enabled.
+        
+        Root cause: When uvicorn exits with error (e.g., module not found),
+        velo would 'continue' waiting for reload signal even without --reload.
+        
+        Fix: Return error immediately when child fails and --reload is not enabled.
+        Commit: af815a2
+        """
+        env = isolated_env
+        # No main.py - module doesn't exist
+        
+        import time
+        start = time.perf_counter()
+        
+        result = subprocess.run(
+            [env.velo, "serve", "nonexistent_module:app"],
+            cwd=env.path,
+            capture_output=True,
+            text=True,
+            timeout=10  # Should exit well before this
+        )
+        
+        elapsed = time.perf_counter() - start
+        
+        # Must exit with error code
+        assert result.returncode != 0, "Should exit with error when module not found"
+        # Must exit quickly (not hang for 30s)
+        assert elapsed < 5, f"Should exit in <5s, but took {elapsed:.1f}s (hanging bug)"
+        # Should have helpful error message
+        assert "Could not import" in result.stdout + result.stderr or \
+               "exited with code" in result.stdout + result.stderr
+
+    def test_reg_002_process_group_cleanup_kills_workers(self, isolated_env):
+        """
+        BUG-6.1-002: Drop only killed direct child, not process group.
+        
+        Root cause: ManagedChild::drop() called self.child.kill() which only kills
+        the direct child (uvicorn main process), not workers in the same process group.
+        
+        Fix: Use kill(-pgid, SIGKILL) to kill entire process group in Drop.
+        Commit: c915723
+        """
+        env = isolated_env
+        env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
+        
+        port = get_free_port()
+        
+        proc = subprocess.Popen(
+            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
+            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            preexec_fn=os.setsid
+        )
+        
+        time.sleep(3)
+        parent_pid = proc.pid
+        
+        # Find ALL children (uvicorn + workers)
+        try:
+            children = psutil.Process(parent_pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            pytest.skip("Process exited before we could get children")
+        
+        assert len(children) >= 1, "Expected at least one child process"
+        child_pids = [c.pid for c in children]
+        
+        # Send SIGTERM (graceful shutdown - allows Drop to run)
+        os.kill(parent_pid, signal.SIGTERM)
+        
+        # Wait for exit
+        for _ in range(15):
+            if proc.poll() is not None:
+                break
+            time.sleep(1)
+        else:
+            os.killpg(parent_pid, signal.SIGKILL)
+            pytest.fail("Velo did not exit within 15s after SIGTERM")
+        
+        time.sleep(2)
+        
+        # ALL children must be cleaned up (not just direct child)
+        for child_pid in child_pids:
+            assert not psutil.pid_exists(child_pid), \
+                f"Leak Detected: Child {child_pid} survived graceful shutdown (process group not killed)"
+
+    def test_reg_003_partial_import_capture_on_crash(self, isolated_env):
+        """
+        BUG-6.1-003: velo analyze returns empty table when script crashes on import.
+        
+        Root cause: sitecustomize.py only used atexit which doesn't run on crash.
+        When script fails to import a module (e.g., ModuleNotFoundError), atexit
+        callbacks are never called, so profile data is never written.
+        
+        Fix: Added sys.excepthook handler to write profile data before exception propagates.
+        Commit: ce4200b
+        """
+        env = isolated_env
+        
+        # Script that imports something (captures time) then crashes on missing module
+        env.create_app("crash_test.py", """
+import json  # This should be captured
+import nonexistent_pandas  # This will crash
+print("OK")
+""")
+        
+        result = subprocess.run(
+            [env.velo, "analyze", "crash_test.py"],
+            cwd=env.path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        # Command may fail (due to import crash), but output should NOT be empty
+        output = result.stdout.lower()
+        
+        # MUST have captured the successful import (json) before crash
+        # The table should show json import time, not be completely empty
+        has_timing = "ms" in output
+        has_import = "json" in output
+        
+        assert has_timing or has_import, \
+            f"Partial imports not captured on crash. Output:\n{result.stdout[:500]}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
