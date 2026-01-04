@@ -36,8 +36,9 @@ class TestMsgpackFallback(unittest.TestCase):
         # Verify fallback implementation exists
         self.assertIn("_USING_PURE_PYTHON_MSGPACK", source, 
                      "Fallback flag must be defined")
-        self.assertIn("from velo._vendor import umsgpack", source,
-                     "Must import from vendored path")
+        # Developer refactored: now directly imports umsgpack after adding to sys.path
+        self.assertIn("import umsgpack", source,
+                     "Must import umsgpack (directly or from vendor path)")
         self.assertIn("except (ImportError, OSError)", source,
                      "Must catch both ImportError and OSError for fallback")
 
