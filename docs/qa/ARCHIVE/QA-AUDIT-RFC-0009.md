@@ -6,7 +6,7 @@
 
 ## 1. Executive Summary
 
-A comprehensive QA audit was performed on [RFC-0009: Phase 6.0 - Static Import Graph](file:///Users/gjwang/eclipse-workspace/rust_source/velo_qa/docs/rfcs/0009-phase-6.0-static-graph.md). The audit confirms that the Architect has successfully incorporated all high-priority (P0/P1) findings from 9 independent expert reviews conducted on 2026-01-03.
+A comprehensive QA audit was performed on [RFC-0009: Phase 6.0 - Static Import Graph](file://./docs/rfcs/0009-phase-6.0-static-graph.md). The audit confirms that the Architect has successfully incorporated all high-priority (P0/P1) findings from 9 independent expert reviews conducted on 2026-01-03.
 
 ## 2. Expert Finding Reconciliation
 

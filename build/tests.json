@@ -1,5 +1,20 @@
 {
   "contracts": {},
-  "tests": {},
+  "tests": {
+    "tests/qa/test_phase6_1_architect_audit.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": ".........",
+      "sha1": "91311a41d4b3c609a30f4e7304300efba53cf617",
+      "txhash": []
+    },
+    "tests/qa/test_phase6_1_remediation.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "....",
+      "sha1": "f4ab54697cb92e77a1c5683c6b9b46d4a80284b9",
+      "txhash": []
+    }
+  },
   "tx": {}
 }
