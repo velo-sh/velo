@@ -226,7 +226,11 @@ time.sleep(60)
         )
         
         # Wait for ready
-        while "READY" not in proc.stdout.readline(): pass
+        line_count = 0
+        while line_count < 10:
+            line = proc.stdout.readline()
+            if "READY" in line: break
+            line_count += 1
         
         # Write 5MB file slowly (1MB chunks every 200ms)
         app_file = env.path / "main.py"
@@ -241,15 +245,69 @@ time.sleep(60)
         # Requirement: It should only restart once or twice, not for every chunk.
         # And specifically, it should eventually reach FINAL_READY.
         output = ""
-        while True:
-            line = self._read_with_timeout(proc.stdout, timeout=5)
-            if not line: break
-            output += line
+        try:
+            while True:
+                line = self._read_with_timeout(proc.stdout, timeout=5)
+                if not line: break
+                output += line
+        finally:
+            proc.kill()
         
-        proc.kill()
         assert "FINAL_READY" in output
         # If it triggers too early, it might fail to import or show partial code errors
         assert "SyntaxError" not in output, "Race Detected: Watcher triggered on partially written file"
+
+    def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
+        """
+        STB-RS-002 (Hard-Cap): Continuous events MUST trigger a restart after hard-cap (max 5s).
+        Proves: Watcher does not reset debouncer indefinitely (Starvation).
+        """
+        env = isolated_env
+        app_code = """
+import os
+import time
+print(f"START_{os.getpid()}")
+app = lambda s, r, se: None
+"""
+        app_file = env.path / "main.py"
+        app_file.write_text(app_code)
+        
+        # Start server
+        proc = subprocess.Popen(
+            [env.velo, "serve", "main:app", "--reload"],
+            cwd=env.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        try:
+            # Wait for first start
+            time.sleep(2)
+            # Continuous events every 150ms for 4 seconds
+            # Debounce delay is 300ms. If we send events every 150ms, it should NEVER restart
+            # unless a hard-cap (of say 2s or 5s) is implemented.
+            for i in range(30):
+                with open(app_file, "a") as f:
+                    f.write(f"\n# event {i}")
+                time.sleep(0.15)
+                
+            # Now wait a bit for any pending restart to complete
+            time.sleep(2)
+            
+            # Kill and collect
+            proc.terminate()
+            out, err = proc.communicate(timeout=1)
+            starts = out.count("START_")
+            # If starvation exists, starts will be 1 (the initial one).
+            # If hard-cap exists, starts will be >= 2.
+            assert starts >= 2, f"Starvation Detected: Only {starts} starts found after 4s of continuous events. Hard-cap missing in watcher.rs."
+        except Exception:
+            proc.kill()
+            raise
+        finally:
+            if proc.poll() is None:
+                proc.kill()
 
 if __name__ == "__main__":
     pytest.main([__file__])
