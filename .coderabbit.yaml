@@ -12,8 +12,7 @@ reviews:
   review_status: true       
   
   # High-level summary of the PR
-  summaries:
-    enabled: true
+  high_level_summary: true
 
   # Path filters
   path_filters:
@@ -41,16 +40,16 @@ reviews:
         - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
         - All suggestions must be provided strictly as comments for human review.
 
+  # Static analysis tools
+  tools:
+    ruff:
+      enabled: true
+    shellcheck:
+      enabled: true
+
 # RAG / Knowledge Base: Allows AI to understand the whole codebase
 knowledge_base:
   opt_out: false
-
-# Static analysis tools
-tools:
-  ruff:
-    enabled: true
-  shellcheck:
-    enabled: true
 
 # Chat features allowed in PR comments
 chat:
