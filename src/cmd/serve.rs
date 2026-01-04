@@ -11,6 +11,27 @@ use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
 use colored::Colorize;
 
+/// Custom parser for workers argument with clear error messages
+fn parse_workers(s: &str) -> Result<u32, String> {
+    match s.parse::<i64>() {
+        Ok(n) if n < 0 => Err(format!(
+            "invalid worker count '{}': must be a positive number (at least 1)",
+            s
+        )),
+        Ok(0) => Err("invalid worker count '0': must be at least 1".to_string()),
+        Ok(n) if n > u32::MAX as i64 => Err(format!(
+            "invalid worker count '{}': exceeds maximum value {}",
+            s,
+            u32::MAX
+        )),
+        Ok(n) => Ok(n as u32),
+        Err(_) => Err(format!(
+            "invalid worker count '{}': must be a valid number",
+            s
+        )),
+    }
+}
+
 /// Serve a Python ASGI/WSGI application
 #[derive(Parser, Debug)]
 #[command(name = "serve", about = "Serve a Python ASGI/WSGI application")]
@@ -32,8 +53,8 @@ pub struct ServeCmd {
     pub bind: Option<String>,
 
     /// Number of workers (default: 1, auto in --prod)
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(i32).range(1..), allow_hyphen_values = true)]
-    pub workers: i32,
+    #[arg(long, default_value_t = 1, value_parser = parse_workers, allow_hyphen_values = true)]
+    pub workers: u32,
 
     /// Graceful shutdown timeout in seconds
     #[arg(long, default_value_t = 30)]
@@ -97,7 +118,7 @@ impl ServeCmd {
             args.port = self.port;
         }
 
-        args.workers = self.workers as u32;
+        args.workers = self.workers;
         args.timeout = self.timeout;
         args.health_bind = self.health_bind.clone();
         args.pid_file = self.pid_file.clone();
