@@ -123,7 +123,7 @@ velo analyze --fix                    # Auto-update pyproject.toml
 # Clone and setup (installs pre-commit hooks, creates venv, verifies build)
 git clone https://github.com/velo-sh/velo.git
 cd velo
-./scripts/setup-dev.sh
+./setup-dev.sh
 ```
 
 **Locked Versions** (same for local and CI):

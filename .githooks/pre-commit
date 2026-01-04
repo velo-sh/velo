@@ -16,8 +16,8 @@ cargo clippy -- -D warnings || {
     exit 1
 }
 
-echo "🔍 Running cargo test (lib only)..."
-cargo test --lib || {
+echo "🔍 Running cargo test (all tests)..."
+cargo test || {
     echo "❌ Tests failed. Fix the tests above."
     exit 1
 }
