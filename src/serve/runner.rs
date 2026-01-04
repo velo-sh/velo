@@ -11,8 +11,9 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::serve::config::ServeArgs;
@@ -197,65 +198,59 @@ impl Drop for ManagedChild {
 }
 
 // ============================================================================
-// ShutdownCoordinator - Signal handling (D3, RFC §4.9.4)
+// Event Bus Definitions (Recommendation #1)
 // ============================================================================
 
-/// Coordinates graceful shutdown across threads.
+/// Events that can wake up the main server loop
+#[derive(Debug)]
+pub enum ServerEvent {
+    /// Signal received (SIGINT, SIGTERM, SIGCHLD)
+    Signal(i32),
+    /// Worker thread exit (only used on Windows/non-Unix)
+    #[allow(dead_code)]
+    WorkerExit,
+}
+
+/// Spawns a thread to forward signals to the event bus.
 ///
-/// Handles SIGTERM and SIGINT by setting a shared flag.
-#[derive(Clone)]
-pub struct ShutdownCoordinator {
-    flag: Arc<AtomicBool>,
-}
+/// On Unix, we listen for:
+/// - SIGINT (Ctrl+C)
+/// - SIGTERM (Graceful shutdown)
+/// - SIGCHLD (Child process exit)
+#[cfg(unix)]
+fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeError> {
+    use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
 
-impl ShutdownCoordinator {
-    /// Create a new shutdown coordinator.
-    pub fn new() -> Self {
-        Self {
-            flag: Arc::new(AtomicBool::new(false)),
+    let mut signals = Signals::new([SIGINT, SIGTERM, SIGCHLD]).map_err(ServeError::SignalError)?;
+
+    thread::spawn(move || {
+        for signal in signals.forever() {
+            if tx.send(ServerEvent::Signal(signal)).is_err() {
+                // Receiver dropped, exit thread
+                break;
+            }
         }
-    }
+    });
 
-    /// Register signal handlers (Unix only).
-    ///
-    /// After calling this, SIGTERM and SIGINT will set the shutdown flag.
-    #[cfg(unix)]
-    pub fn register_signals(&self) -> Result<(), ServeError> {
-        use signal_hook::consts::{SIGINT, SIGTERM};
-        use signal_hook::flag;
-
-        flag::register(SIGTERM, Arc::clone(&self.flag)).map_err(ServeError::SignalError)?;
-        flag::register(SIGINT, Arc::clone(&self.flag)).map_err(ServeError::SignalError)?;
-
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    pub fn register_signals(&self) -> Result<(), ServeError> {
-        // Windows: Ctrl+C handler could be added here
-        Ok(())
-    }
-
-    /// Check if shutdown has been requested.
-    pub fn is_shutdown(&self) -> bool {
-        self.flag.load(Ordering::SeqCst)
-    }
-
-    /// Get a clone of the shutdown flag for sharing with threads.
-    pub fn clone_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.flag)
-    }
-
-    /// Trigger shutdown programmatically.
-    pub fn trigger(&self) {
-        self.flag.store(true, Ordering::SeqCst);
-    }
+    Ok(())
 }
 
-impl Default for ShutdownCoordinator {
-    fn default() -> Self {
-        Self::new()
-    }
+#[cfg(not(unix))]
+fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeError> {
+    // Windows implementation primarily relies on Ctrl-C handler
+    // Note: This is simplified compared to Unix SIGCHLD
+    let tx_clone = tx.clone();
+    ctrlc::set_handler(move || {
+        // Use an arbitrary signal number for Ctrl-C on Windows equivalent to SIGINT
+        let _ = tx_clone.send(ServerEvent::Signal(2)); // 2 = SIGINT
+    })
+    .map_err(|e| ServeError::ServerStartFailed {
+        reason: format!("Failed to set ctrl-c handler: {}", e),
+        exit_code: 1,
+    })?;
+
+    Ok(())
 }
 
 /// Run the ASGI/WSGI application via uvicorn/gunicorn
@@ -298,11 +293,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         std::process::exit(1);
     }
 
-    // Step 5: Setup shutdown coordinator (D3, D5)
-    let shutdown = ShutdownCoordinator::new();
-    shutdown
-        .register_signals()
-        .map_err(|e| anyhow::anyhow!("Failed to register signal handlers: {}", e))?;
+    // Step 5: Setup Event Bus (Recommendation #1)
+    let (tx, rx) = mpsc::channel();
+    spawn_signal_forwarder(tx.clone())?;
 
     // Step 6: Start server
     eprintln!("🚀 Starting server...");
@@ -416,60 +409,74 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         None
     };
 
-    // Main loop: wait for child or shutdown signal
+    // Main loop: Wait for Events (Zero Busy Wait)
     loop {
-        // Check if child exited
-        match child.wait_timeout(Duration::from_millis(100)) {
-            Ok(Some(status)) => {
-                // Child exited
-                if !status.success() {
-                    let code = status.code().unwrap_or(1);
-                    if code == 1 {
-                        eprintln!();
-                        eprintln!(
-                            "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
-                        );
+        // Block until event received
+        match rx.recv() {
+            Ok(ServerEvent::Signal(sig)) => {
+                match sig {
+                    signal_hook::consts::SIGCHLD => {
+                        // Optimistic: Child might have exited
+                        // Only try_wait() on SIGCHLD to avoid polling
+                        match child.wait_timeout(Duration::from_millis(0)) {
+                            Ok(Some(status)) => {
+                                if !status.success() {
+                                    let code = status.code().unwrap_or(1);
+                                    if code == 1 {
+                                        eprintln!();
+                                        eprintln!(
+                                            "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+                                        );
+                                    }
+                                    std::process::exit(code);
+                                }
+                                return Ok(());
+                            }
+                            Ok(None) => {
+                                // False alarm, child still running (or another child)
+                                continue;
+                            }
+                            Err(e) => anyhow::bail!("Error waiting for server: {}", e),
+                        }
                     }
-                    std::process::exit(code);
+                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                        eprintln!();
+                        eprintln!("🛑 Shutdown signal received, waiting for graceful shutdown...");
+
+                        if let Err(e) = child.terminate() {
+                            eprintln!("⚠️  Failed to send SIGTERM: {}", e);
+                        }
+
+                        // Wait for graceful shutdown with timeout
+                        let timeout = Duration::from_secs(args.timeout);
+                        match child.wait_timeout(timeout) {
+                            Ok(Some(_)) => {
+                                eprintln!("✅ Server shut down gracefully");
+                                return Ok(());
+                            }
+                            Ok(None) => {
+                                eprintln!(
+                                    "⚠️  Graceful shutdown timed out after {}s, force killing...",
+                                    args.timeout
+                                );
+                                if let Err(e) = child.kill() {
+                                    eprintln!("❌ Failed to kill server: {}", e);
+                                }
+                                return Ok(());
+                            }
+                            Err(e) => anyhow::bail!("Error waiting for shutdown: {}", e),
+                        }
+                    }
+                    _ => {}
                 }
+            }
+            Ok(ServerEvent::WorkerExit) => {
+                // Not used in Unix path currently, but handle for future
                 return Ok(());
             }
-            Ok(None) => {
-                // Child still running, check for shutdown signal
-                if shutdown.is_shutdown() {
-                    eprintln!();
-                    eprintln!("🛑 Shutdown signal received, waiting for graceful shutdown...");
-
-                    // Send SIGTERM to child
-                    if let Err(e) = child.terminate() {
-                        eprintln!("⚠️  Failed to send SIGTERM: {}", e);
-                    }
-
-                    // Wait for graceful shutdown with timeout (D5, RFC §4.3)
-                    let timeout = Duration::from_secs(args.timeout);
-                    match child.wait_timeout(timeout) {
-                        Ok(Some(_)) => {
-                            eprintln!("✅ Server shut down gracefully");
-                            return Ok(());
-                        }
-                        Ok(None) => {
-                            eprintln!(
-                                "⚠️  Graceful shutdown timed out after {}s, force killing...",
-                                args.timeout
-                            );
-                            if let Err(e) = child.kill() {
-                                eprintln!("❌ Failed to kill server: {}", e);
-                            }
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            anyhow::bail!("Error waiting for shutdown: {}", e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                anyhow::bail!("Error waiting for server: {}", e);
+            Err(_) => {
+                // Channel closed, unexpected
+                anyhow::bail!("Event bus closed unexpectedly");
             }
         }
     }
@@ -519,48 +526,6 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ========================================================================
-    // ShutdownCoordinator tests (D3)
-    // ========================================================================
-
-    #[test]
-    fn test_shutdown_coordinator_initial_state() {
-        let coord = ShutdownCoordinator::new();
-        assert!(
-            !coord.is_shutdown(),
-            "Coordinator should not be in shutdown state initially"
-        );
-    }
-
-    #[test]
-    fn test_shutdown_coordinator_trigger() {
-        let coord = ShutdownCoordinator::new();
-        coord.trigger();
-        assert!(
-            coord.is_shutdown(),
-            "Coordinator should be in shutdown state after trigger"
-        );
-    }
-
-    #[test]
-    fn test_shutdown_coordinator_multiple_triggers() {
-        let coord = ShutdownCoordinator::new();
-        coord.trigger();
-        coord.trigger();
-        coord.trigger();
-        assert!(coord.is_shutdown(), "Multiple triggers should be safe");
-    }
-
-    #[test]
-    fn test_shutdown_coordinator_flag_sharing() {
-        let coord = ShutdownCoordinator::new();
-        let flag = coord.clone_flag();
-
-        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst));
-        coord.trigger();
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
-    }
 
     // ========================================================================
     // ManagedChild tests (D2) - Note: These require spawning actual processes
