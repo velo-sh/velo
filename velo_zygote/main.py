@@ -46,27 +46,42 @@ try:
 
 except (ImportError, OSError) as e:
     # 2. Fallback to vendored Pure Python implementation
-    try:
-        # Try relative import path
-        _vendor_path = Path(__file__).parent.parent / "python" / "velo" / "_vendor"
-        if str(_vendor_path) not in sys.path:
-            sys.path.insert(0, str(_vendor_path))
-        
-        from velo._vendor import umsgpack
-        
-        sys.stderr.write("[Velo] ⚠️  Warning: fast 'msgpack' extension failed to load.\n")
-        sys.stderr.write("[Velo]    Falling back to pure Python implementation (slower IPC).\n")
-        sys.stderr.write("[Velo]    Run: pip install msgpack  (requires C compiler)\n")
-        sys.stderr.flush()
-        
-        packer = lambda msg: umsgpack.packb(msg)
-        unpacker = lambda data: umsgpack.unpackb(data)
-        _USING_PURE_PYTHON_MSGPACK = True
-        
-    except ImportError as e2:
+    _fallback_loaded = False
+    
+    # Search paths for vendored umsgpack.py
+    _search_paths = [
+        # Relative to this file: velo_zygote/main.py -> python/velo/_vendor
+        Path(__file__).parent.parent / "python" / "velo" / "_vendor",
+        # If running from project root
+        Path.cwd() / "python" / "velo" / "_vendor",
+        # If installed as package
+        Path(__file__).parent / "_vendor",
+    ]
+    
+    for _vendor_path in _search_paths:
+        if (_vendor_path / "umsgpack.py").exists():
+            if str(_vendor_path) not in sys.path:
+                sys.path.insert(0, str(_vendor_path))
+            try:
+                import umsgpack
+                
+                sys.stderr.write("[Velo] ⚠️  Warning: fast 'msgpack' extension failed to load.\n")
+                sys.stderr.write("[Velo]    Falling back to pure Python implementation (slower IPC).\n")
+                sys.stderr.write("[Velo]    Run: pip install msgpack  (requires C compiler)\n")
+                sys.stderr.flush()
+                
+                packer = lambda msg: umsgpack.packb(msg)
+                unpacker = lambda data: umsgpack.unpackb(data)
+                _USING_PURE_PYTHON_MSGPACK = True
+                _fallback_loaded = True
+                break
+            except ImportError:
+                continue
+    
+    if not _fallback_loaded:
         sys.stderr.write(f"[Velo] ❌ Error: msgpack not available and fallback failed.\n")
-        sys.stderr.write(f"[Velo]    Details: {e}\n")
-        sys.stderr.write(f"[Velo]    Fallback error: {e2}\n")
+        sys.stderr.write(f"[Velo]    Original error: {e}\n")
+        sys.stderr.write(f"[Velo]    Searched: {[str(p) for p in _search_paths]}\n")
         sys.stderr.write(f"[Velo]    Run: pip install msgpack\n")
         sys.exit(1)
 
