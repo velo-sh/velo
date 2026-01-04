@@ -60,10 +60,11 @@ check_and_install "cargo-nextest" \
     "cargo install cargo-nextest"
 
 echo ""
-echo "== Python Tools =="
-check_and_install "uv" \
-    "uv --version" \
-    "curl -LsSf https://astral.sh/uv/install.sh | sh"
+echo "== Python Environment =="
+echo "▸ Creating venv and installing deps from pyproject.toml..."
+uv venv --python 3.11
+uv sync --extra dev  # Single source of truth: pyproject.toml
+echo -e "  ${GREEN}Done${NC}"
 
 echo ""
 echo "============================================"
@@ -73,6 +74,7 @@ echo ""
 echo "Quick commands:"
 echo "  cargo build --release     # Build"
 echo "  cargo test                # Run tests"
+echo "  uv run pytest             # Python tests"
 echo "  cargo llvm-cov --html     # Coverage report"
 echo "  cargo nextest run         # Fast parallel tests"
 echo ""
