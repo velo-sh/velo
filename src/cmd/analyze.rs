@@ -442,9 +442,18 @@ fn run_with_profile(python_path: &Path, script: &Path, project_dir: &Path) -> Re
     // Build PYTHONPATH with sitecustomize directory first
     let pythonpath = temp_dir.path().to_string_lossy().to_string();
 
-    // Run script with profiling enabled
+    // Create a wrapper script that imports sitecustomize before running the user script
+    // Python doesn't auto-load sitecustomize.py from PYTHONPATH - only from site-packages
+    let wrapper = format!(
+        r#"import sys; sys.path.insert(0, "{}"); import sitecustomize; exec(open("{}").read())"#,
+        &pythonpath,
+        script.to_string_lossy()
+    );
+
+    // Run wrapper with profiling enabled
     let output = Command::new(python_path)
-        .arg(script)
+        .arg("-c")
+        .arg(&wrapper)
         .current_dir(project_dir)
         .env("PYTHONPATH", &pythonpath)
         .env(
