@@ -37,17 +37,19 @@ Velo uses **process isolation** - it detects your project's Python and spawns it
 ## Quick Start
 
 ```bash
-# Build
+# Clone and build
+git clone https://github.com/velo-sh/velo.git && cd velo
 cargo build --release
 
-# Run a Python script (uses .venv/bin/python automatically)
-./target/release/velo run your_script.py
+# Test it works (creates a temp script)
+echo 'print("Hello from Velo!")' > /tmp/hello.py
+./target/release/velo run /tmp/hello.py
 
-# 🌐 NEW! Serve a web app (zero-config)
-./target/release/velo serve   # Auto-detects FastAPI/Django/Flask
+# 🌐 For web apps: just run velo serve in your FastAPI/Django/Flask project
+# ./target/release/velo serve
 ```
 
-First run captures paths with slight overhead. Second run uses cache, faster than CPython.
+First run caches paths. Second run is faster than CPython.
 
 ## Benchmark Results
 
