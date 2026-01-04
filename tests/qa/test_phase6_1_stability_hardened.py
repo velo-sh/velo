@@ -215,8 +215,9 @@ time.sleep(60)
         port = get_free_port()
         
         # Start server in new session
+        # Use --timeout 5 for fast graceful shutdown in tests
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}"],
+            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             preexec_fn=os.setsid
         )
@@ -228,8 +229,19 @@ time.sleep(60)
         child_pids = [c.pid for c in children]
         
         # Graceful shutdown with SIGTERM (allows Drop to run)
-        proc.terminate()
-        proc.wait(timeout=15)  # Allow time for graceful shutdown
+        # NOTE: Use os.kill() directly instead of proc.terminate() because
+        # eventlet monkey-patches subprocess and its terminate() doesn't work properly
+        os.kill(parent_pid, signal.SIGTERM)
+        
+        # Wait for process to exit (allow time for graceful shutdown + force kill)
+        for _ in range(15):
+            if proc.poll() is not None:
+                break
+            time.sleep(1)
+        else:
+            # Force kill if still running
+            os.killpg(parent_pid, signal.SIGKILL)
+            pytest.fail("Velo did not exit within 15s after SIGTERM")
         
         time.sleep(2)
         # Requirement: All child processes MUST be cleaned up
