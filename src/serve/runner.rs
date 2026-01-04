@@ -391,14 +391,14 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let framework = detect_framework(module, project_dir);
     let preload_modules = get_preload_modules(framework);
 
-    // Step 2.1: Django settings inference (R2)
+    // Step 3: Handle Django settings inference (R2)
     if framework == crate::serve::framework::Framework::Django
         && std::env::var("DJANGO_SETTINGS_MODULE").is_err()
     {
         if let Some(settings) = crate::serve::framework::detect_django_settings(project_dir) {
-            logger.verbose(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
+            logger.info(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
             unsafe {
-                std::env::set_var("DJANGO_SETTINGS_MODULE", settings);
+                std::env::set_var("DJANGO_SETTINGS_MODULE", &settings);
             }
         } else {
             logger.warn("Django detected but DJANGO_SETTINGS_MODULE is not set.");
