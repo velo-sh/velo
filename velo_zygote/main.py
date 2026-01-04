@@ -5,8 +5,9 @@ Velo Zygote Python Module (Refactored Phase 6.2)
 This module implements the Zygote process (Python side) using an Object-Oriented architecture.
 It eliminates global mutable state and encapsulates process management.
 
-Protocol: MessagePack with length prefix
-  - 4-byte little-endian length header
+Protocol: MessagePack with length prefix + version byte (ADV-1)
+  - 4-byte little-endian length (includes version + payload)
+  - 1-byte protocol version (0x01)
   - MessagePack payload
 
 Architecture:
@@ -26,11 +27,48 @@ import traceback
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
 
+# ============================================================================
+# Protocol Constants (ADV-1)
+# ============================================================================
+PROTOCOL_VERSION = 0x01
+MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB security limit
+
+# ============================================================================
+# MessagePack Import with Pure Python Fallback (ADV-3)
+# ============================================================================
+_USING_PURE_PYTHON_MSGPACK = False
+
 try:
+    # 1. Try high-performance C extension first
     import msgpack
-except ImportError:
-    print("Error: msgpack not installed. Run: pip install msgpack", file=sys.stderr)
-    sys.exit(1)
+    packer = lambda msg: msgpack.packb(msg, use_bin_type=True)
+    unpacker = lambda data: msgpack.unpackb(data, raw=False)
+
+except (ImportError, OSError) as e:
+    # 2. Fallback to vendored Pure Python implementation
+    try:
+        # Try relative import path
+        _vendor_path = Path(__file__).parent.parent / "python" / "velo" / "_vendor"
+        if str(_vendor_path) not in sys.path:
+            sys.path.insert(0, str(_vendor_path))
+        
+        from velo._vendor import umsgpack
+        
+        sys.stderr.write("[Velo] ⚠️  Warning: fast 'msgpack' extension failed to load.\n")
+        sys.stderr.write("[Velo]    Falling back to pure Python implementation (slower IPC).\n")
+        sys.stderr.write("[Velo]    Run: pip install msgpack  (requires C compiler)\n")
+        sys.stderr.flush()
+        
+        packer = lambda msg: umsgpack.packb(msg)
+        unpacker = lambda data: umsgpack.unpackb(data)
+        _USING_PURE_PYTHON_MSGPACK = True
+        
+    except ImportError as e2:
+        sys.stderr.write(f"[Velo] ❌ Error: msgpack not available and fallback failed.\n")
+        sys.stderr.write(f"[Velo]    Details: {e}\n")
+        sys.stderr.write(f"[Velo]    Fallback error: {e2}\n")
+        sys.stderr.write(f"[Velo]    Run: pip install msgpack\n")
+        sys.exit(1)
 
 
 # Sensitive paths that should never be executed (SEC-P3-001)
@@ -421,30 +459,49 @@ class ZygoteServer:
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
 
     def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
-        """Receive MessagePack message with length prefix."""
+        """Receive MessagePack message with length prefix and version byte (ADV-1)."""
         try:
-            # Read 4-byte length prefix
+            # Read 4-byte length prefix (includes version + payload)
             len_data = conn.recv(4)
             if len(len_data) < 4:
                 return None
-            msg_len = struct.unpack('<I', len_data)[0]
+            total_len = struct.unpack('<I', len_data)[0]
             
-            # Security: Max message size 1MB
-            if msg_len > 1024 * 1024:
-                LogUtils.log(f"Message too large: {msg_len} bytes")
+            # Security: Max message size
+            if total_len > MAX_MESSAGE_SIZE:
+                LogUtils.log(f"Message too large: {total_len} bytes")
                 return None
             
-            # Read payload
+            # Need at least version byte
+            if total_len < 1:
+                LogUtils.log("Message too small to contain version byte")
+                return None
+            
+            # Read version byte (ADV-1)
+            version_data = conn.recv(1)
+            if len(version_data) < 1:
+                return None
+            version = version_data[0]
+            
+            if version != PROTOCOL_VERSION:
+                LogUtils.log(f"Protocol version mismatch: got {version}, expected {PROTOCOL_VERSION}")
+                return None
+            
+            # Read payload (total_len - 1 for version byte)
+            payload_len = total_len - 1
             data = b""
-            while len(data) < msg_len:
-                chunk = conn.recv(min(4096, msg_len - len(data)))
+            while len(data) < payload_len:
+                chunk = conn.recv(min(4096, payload_len - len(data)))
                 if not chunk:
                     return None
                 data += chunk
             
             # Unpack with rmp_serde compatibility
-            raw_result = msgpack.unpackb(data, raw=False)
-            LogUtils.debug_log(f"Raw msgpack recv: {repr(raw_result)}")
+            raw_result = unpacker(data)
+            
+            # ADV-2: TRACE logging
+            LogUtils.debug_log(f"[IPC RECV] {repr(raw_result)}")
+            
             return self._smart_unpack(raw_result)
         except Exception as e:
             LogUtils.debug_log(f"Recv error: {e}")
@@ -522,10 +579,17 @@ class ZygoteServer:
         return {"type": str(result)}
 
     def _send_response(self, conn: socket.socket, resp: Dict):
-        """Send MessagePack message with length prefix."""
-        payload = msgpack.packb(resp, use_bin_type=True)
-        header = struct.pack('<I', len(payload))
-        conn.sendall(header + payload)
+        """Send MessagePack message with length prefix and version byte (ADV-1)."""
+        payload = packer(resp)  # Uses global packer for fallback support
+        
+        # ADV-2: TRACE logging
+        LogUtils.debug_log(f"[IPC SEND] {repr(resp)}")
+        
+        # Length includes version byte + payload
+        total_len = 1 + len(payload)
+        header = struct.pack('<I', total_len)
+        version = bytes([PROTOCOL_VERSION])
+        conn.sendall(header + version + payload)
 
     def _cleanup(self, sock: socket.socket):
         LogUtils.log("Cleaning up...")

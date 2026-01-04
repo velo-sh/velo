@@ -107,11 +107,15 @@ pub fn cleanup_socket(socket_path: &Path) {
 }
 
 // ============================================================================
-// MessagePack serialization helpers (length-prefix framing)
+// MessagePack serialization helpers (length-prefix + version framing)
 // ============================================================================
 
-/// Write a MessagePack message with length prefix
-fn write_message<T: Serialize>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+/// Protocol version (ADV-1)
+/// Layout: [Length 4B LE] [Version 1B] [Payload MsgPack]
+const PROTOCOL_VERSION: u8 = 0x01;
+
+/// Write a MessagePack message with length prefix and version byte
+fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
     let payload = rmp_serde::to_vec(msg).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
 
     // Security: Check message size
@@ -123,10 +127,20 @@ fn write_message<T: Serialize>(stream: &mut UnixStream, msg: &T) -> Result<()> {
         )));
     }
 
-    // Write 4-byte length prefix (little-endian)
-    let len_bytes = (payload.len() as u32).to_le_bytes();
+    // ADV-2: TRACE logging (decode to readable format)
+    #[cfg(debug_assertions)]
+    eprintln!("[IPC SEND] {:?}", msg);
+
+    // Write 4-byte length prefix (little-endian) - includes version + payload
+    let total_len = 1 + payload.len(); // version byte + payload
+    let len_bytes = (total_len as u32).to_le_bytes();
     stream
         .write_all(&len_bytes)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    // Write version byte (ADV-1)
+    stream
+        .write_all(&[PROTOCOL_VERSION])
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
     // Write payload
@@ -141,32 +155,63 @@ fn write_message<T: Serialize>(stream: &mut UnixStream, msg: &T) -> Result<()> {
     Ok(())
 }
 
-/// Read a MessagePack message with length prefix
-fn read_message<T: for<'de> Deserialize<'de>>(stream: &mut UnixStream) -> Result<T> {
-    // Read 4-byte length prefix
+/// Read a MessagePack message with length prefix and version byte
+fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
+    stream: &mut UnixStream,
+) -> Result<T> {
+    // Read 4-byte length prefix (includes version + payload)
     let mut len_buf = [0u8; 4];
     stream
         .read_exact(&mut len_buf)
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-    let len = u32::from_le_bytes(len_buf) as usize;
+    let total_len = u32::from_le_bytes(len_buf) as usize;
 
     // Security: Check message size
-    if len > MAX_MESSAGE_SIZE {
+    if total_len > MAX_MESSAGE_SIZE {
         return Err(ZygoteError::ProtocolError(format!(
             "Message too large: {} bytes (max {})",
-            len, MAX_MESSAGE_SIZE
+            total_len, MAX_MESSAGE_SIZE
         )));
     }
 
-    // Read payload
-    let mut buf = vec![0u8; len];
+    // Need at least version byte
+    if total_len < 1 {
+        return Err(ZygoteError::ProtocolError(
+            "Message too small to contain version byte".to_string(),
+        ));
+    }
+
+    // Read version byte (ADV-1)
+    let mut version_buf = [0u8; 1];
+    stream
+        .read_exact(&mut version_buf)
+        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+    let version = version_buf[0];
+    if version != PROTOCOL_VERSION {
+        return Err(ZygoteError::ProtocolError(format!(
+            "Protocol version mismatch: got {}, expected {}",
+            version, PROTOCOL_VERSION
+        )));
+    }
+
+    // Read payload (total_len - 1 for version byte)
+    let payload_len = total_len - 1;
+    let mut buf = vec![0u8; payload_len];
     stream
         .read_exact(&mut buf)
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
     // Deserialize
-    rmp_serde::from_slice(&buf).map_err(|e| ZygoteError::ProtocolError(e.to_string()))
+    let msg: T =
+        rmp_serde::from_slice(&buf).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    // ADV-2: TRACE logging (decode to readable format)
+    #[cfg(debug_assertions)]
+    eprintln!("[IPC RECV] {:?}", msg);
+
+    Ok(msg)
 }
 
 // ============================================================================
