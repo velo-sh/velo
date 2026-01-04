@@ -446,7 +446,7 @@ jobs:
   # RFC-0010 Security & Stability Verification
   # ============================================
 
-  qa-6.1-security-hardened:
+  qa-phase61-security-hardened:
     name: "QA 6.1: Security Hardened (RFC-0010)"
     runs-on: ubuntu-latest
     needs: build
@@ -474,10 +474,10 @@ jobs:
       - name: "Security: Command Injection, Path Traversal, Env Sanitization"
         run: uv run pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short
 
-  qa-6.1-stability-hardened:
+  qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
-    needs: qa-6.1-security-hardened
+    needs: qa-phase61-security-hardened
     steps:
       - uses: actions/checkout@v4
       
@@ -502,10 +502,10 @@ jobs:
       - name: "Stability: RAII Cleanup, Signal Forwarding, Debouncer"
         run: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
 
-  qa-6.1-dx-performance:
+  qa-phase61-dx-performance:
     name: "QA 6.1: DX & Performance"
     runs-on: ubuntu-latest
-    needs: qa-6.1-stability-hardened
+    needs: qa-phase61-stability-hardened
     continue-on-error: true  # Performance tests may be flaky
     steps:
       - uses: actions/checkout@v4
