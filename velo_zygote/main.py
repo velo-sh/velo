@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """
-Velo Zygote Python Module
+Velo Zygote Python Module (Refactored Phase 6.2)
 
-This module implements the Zygote process (Python side):
-1. Pre-import heavy modules
-2. Wait for fork commands from Rust launcher
-3. Fork and execute scripts in child processes
+This module implements the Zygote process (Python side) using an Object-Oriented architecture.
+It eliminates global mutable state and encapsulates process management.
 
-Protocol (Unix Socket, JSON newline-delimited):
-  Launcher -> Zygote:
-    {"type": "Fork", "script_path": "/path/to/script.py", "args": [...]}
-    {"type": "Shutdown"}
-  
-  Zygote -> Launcher:
-    {"type": "Ready"}
-    {"type": "Forked", "worker_pid": 12345}
-    {"type": "Error", "message": "..."}
+Architecture:
+  ZygoteServer: Main service responding to socket commands.
+  WorkerManager: Manages child process lifecycle and reaping.
+  ForkHandler: Handles the complexity of forking and environment setup.
 """
 
 import json
@@ -25,514 +18,425 @@ import socket
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict, Any, Tuple
 
-
-# Track active worker PIDs for cleanup
-_active_workers: Set[int] = set()
-
-# Project root for path validation (set on startup)
-_project_root: Optional[Path] = None
-
-# Track preloaded modules
-_preloaded_modules: List[str] = []
 
 # Sensitive paths that should never be executed (SEC-P3-001)
 _BLOCKED_PATHS = [
     "/etc", "/var", "/usr", "/bin", "/sbin",
     "/System", "/Library", "/private/etc",
-    "/root", "/home",  # Prevent access to other users
+    "/root", "/home",
 ]
 
-# Worker TTL (seconds) - 0 means no TTL
-_worker_ttl: int = 3600 
 
-
-def validate_script_path(script_path: str) -> tuple[bool, str]:
-    """Validate script path for security (SEC-P3-001: path traversal fix).
+class LogUtils:
+    """Utilities for safe logging in a daemonized process."""
     
-    Blocks:
-    1. Paths containing '..' that could escape to sensitive locations
-    2. Paths within system directories
-    
-    Returns:
-        (is_valid, error_message) - error_message is empty if valid
-    """
-    try:
-        # Resolve to absolute path
-        script = Path(script_path).resolve()
-        script_str = str(script)
-        
-        # Check for blocked system paths
-        for blocked in _BLOCKED_PATHS:
-            if script_str.startswith(blocked + "/") or script_str == blocked:
-                return False, f"Access denied: script in protected system path '{blocked}'"
-        
-        # Path seems safe
-        return True, ""
-    except Exception as e:
-        return False, f"Invalid script path: {e}"
-
-
-def log(msg: str) -> None:
-    """Log message with Zygote prefix. Safe when stderr is closed."""
-    try:
-        print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
-    except (BrokenPipeError, OSError):
-        pass  # Ignore - stderr may be closed in daemon mode
-
-
-def debug_log(msg: str) -> None:
-    """Write debug log to file for daemon mode debugging."""
-    try:
-        with open("/tmp/velo-zygote-debug.log", "a") as f:
-            import datetime
-            f.write(f"{datetime.datetime.now()} - {msg}\n")
-            f.flush()
-    except Exception:
-        pass
-
-
-def reap_zombies(signum=None, frame=None) -> None:
-    """Reap zombie child processes (SIGCHLD handler)."""
-    global _active_workers
-    while True:
+    @staticmethod
+    def log(msg: str) -> None:
+        """Log message with Zygote prefix."""
         try:
-            pid, status = os.waitpid(-1, os.WNOHANG)
-            if pid == 0:
+            print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
+        except (BrokenPipeError, OSError):
+            pass
+
+    @staticmethod
+    def debug_log(msg: str) -> None:
+        """Write debug log to file for daemon mode debugging."""
+        try:
+            with open("/tmp/velo-zygote-debug.log", "a") as f:
+                import datetime
+                f.write(f"{datetime.datetime.now()} - {msg}\n")
+                f.flush()
+        except Exception:
+            pass
+
+
+class PathValidator:
+    """Security validation for script paths."""
+
+    @staticmethod
+    def validate(script_path: str) -> Tuple[bool, str]:
+        """
+        Validate script path for security (SEC-P3-001).
+        Blocks paths containing '..' or pointing to system directories.
+        """
+        try:
+            script = Path(script_path).resolve()
+            script_str = str(script)
+            
+            for blocked in _BLOCKED_PATHS:
+                if script_str.startswith(blocked + "/") or script_str == blocked:
+                    return False, f"Access denied: script in protected system path '{blocked}'"
+            
+            return True, ""
+        except Exception as e:
+            return False, f"Invalid script path: {e}"
+
+
+class WorkerManager:
+    """Manages child worker processes and reaping."""
+
+    def __init__(self, worker_ttl: int = 3600):
+        self._active_workers: Set[int] = set()
+        self._worker_ttl = worker_ttl
+        self._lock = threading.Lock()
+
+    def add_worker(self, pid: int):
+        with self._lock:
+            self._active_workers.add(pid)
+
+    def remove_worker(self, pid: int):
+        with self._lock:
+            self._active_workers.discard(pid)
+
+    def reap_zombies(self, signum, frame):
+        """SIGCHLD handler to reap dead children."""
+        while True:
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break
+                self.remove_worker(pid)
+            except ChildProcessError:
                 break
-            _active_workers.discard(pid)
-        except ChildProcessError:
-            break
 
+    def cleanup_all(self):
+        """Kill all workers on shutdown."""
+        with self._lock:
+            pids = list(self._active_workers)
+        
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        
+        time.sleep(0.1)
+        
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        
+        with self._lock:
+            self._active_workers.clear()
 
-def setup_signal_handlers() -> None:
-    """Setup signal handlers for orphan cleanup."""
-    # Reap zombie children automatically
-    signal.signal(signal.SIGCHLD, reap_zombies)
-    
-    # Ignore SIGTERM - parent exit sends SIGTERM to process group
-    # We want Zygote to stay alive after parent exits
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    
-    # Ignore SIGPIPE - prevents crash when parent closes stderr
-    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-
-
-class WorkerSafety:
-    """Manages worker safety: orphan protection and TTL (AUDIT-51-001)."""
     @staticmethod
     def start_guardian(parent_pid: int, ttl: int):
+        """Child process guardian to prevent orphans (AUDIT-51-001)."""
         def guardian():
             start_time = time.time()
             while True:
-                # 1. Check if orphaned (parent died)
                 if os.getppid() != parent_pid:
-                    # Don't use log() here as stderr might be messed up
                     os._exit(1)
-                
-                # 2. Check TTL
                 if ttl > 0 and (time.time() - start_time) > ttl:
                     os._exit(1)
-                
                 time.sleep(10)
         
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
 
 
-def preload_modules(modules: List[str]) -> None:
-    """Pre-import specified modules to warm the interpreter."""
-    global _preloaded_modules
-    for module in modules:
-        try:
-            __import__(module)
-            if module not in _preloaded_modules:
-                _preloaded_modules.append(module)
-            log(f"Pre-loaded: {module}")
-        except ImportError as e:
-            log(f"Warning: Failed to pre-load {module}: {e}")
+class ForkHandler:
+    """Handles the forking logic and child process environment setup."""
 
+    @staticmethod
+    def handle_fork(
+        cmd: Dict[str, Any],
+        worker_manager: WorkerManager,
+        preloaded_modules: List[str]
+    ) -> int:
+        """
+        Fork and execute script.
+        Returns worker PID (parent) or exits (child).
+        """
+        script_path = cmd.get("script_path", "")
+        args = cmd.get("args", [])
+        stdout_path = cmd.get("stdout_path")
+        stderr_path = cmd.get("stderr_path")
+        exit_code_path = cmd.get("exit_code_path")
+        fast_mode = cmd.get("fast_mode", False)
+        bundle_path = cmd.get("bundle_path")
+        project_root = cmd.get("project_root")
+        max_bundle_size = cmd.get("max_bundle_size")
 
-def is_socket_in_use(socket_path: str) -> bool:
-    """Check if a socket is actively being used by another Zygote."""
-    try:
-        test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        test_sock.settimeout(0.5)
-        test_sock.connect(socket_path)
-        # If connect succeeds, socket is in use
-        test_sock.close()
-        return True
-    except (ConnectionRefusedError, FileNotFoundError, socket.timeout):
-        return False
-    except Exception:
-        return False
+        pid = os.fork()
 
+        if pid == 0:
+            # Child Process
+            ForkHandler._child_process(
+                script_path, args, stdout_path, stderr_path, exit_code_path,
+                fast_mode, bundle_path, project_root, max_bundle_size,
+                worker_manager._worker_ttl
+            )
+            return 0 # Should not be reached
+        else:
+            # Parent Process
+            worker_manager.add_worker(pid)
+            return pid
 
-def create_socket(socket_path: str) -> socket.socket:
-    """Create and bind Unix socket."""
-    path = Path(socket_path)
-    
-    # Only remove stale socket - don't delete if actively in use
-    if path.exists():
-        if is_socket_in_use(socket_path):
-            raise RuntimeError(f"Socket {socket_path} is already in use by another Zygote")
-        path.unlink()
-    
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.bind(socket_path)
-    sock.listen(5)  # Allow multiple pending connections
-    return sock
-
-
-def send_response(conn: socket.socket, response: dict) -> None:
-    """Send JSON response over socket."""
-    msg = json.dumps(response) + "\n"
-    conn.sendall(msg.encode("utf-8"))
-
-
-def recv_command(conn: socket.socket) -> Optional[dict]:
-    """Receive JSON command from socket."""
-    data = b""
-    while b"\n" not in data:
-        chunk = conn.recv(1024)
-        if not chunk:
-            return None
-        data += chunk
-    
-    line = data.decode("utf-8").strip()
-    return json.loads(line)
-
-
-def handle_fork(
-    script_path: str,
-    args: List[str],
-    stdout_path: Optional[str] = None,
-    stderr_path: Optional[str] = None,
-    exit_code_path: Optional[str] = None,
-    fast_mode: bool = False,
-    bundle_path: Optional[str] = None,
-    project_root: Optional[str] = None,
-    max_bundle_size: Optional[int] = None,
-) -> int:
-    """Fork and execute script in child process.
-    
-    DEF-P3-013/014: Captures exit code from sys.exit() and os._exit().
-    """
-    global _active_workers
-    
-    pid = os.fork()
-    
-    if pid == 0:
-        # Child process
+    @staticmethod
+    def _child_process(
+        script_path: str, args: List[str], stdout_path: Optional[str],
+        stderr_path: Optional[str], exit_code_path: Optional[str],
+        fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
+        max_bundle_size: Optional[int], worker_ttl: int
+    ):
         exit_code = 0
         try:
-            # Start guardian to prevent leakage (AUDIT-51-001)
-            WorkerSafety.start_guardian(os.getppid(), _worker_ttl)
+            # 1. Start Guardian
+            WorkerManager.start_guardian(os.getppid(), worker_ttl)
 
-            # Reset signal handlers to default
+            # 2. Reset Signals
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            
-            # Redirect stdout to file if provided (for IPC capture)
-            if stdout_path:
-                try:
-                    stdout_file = open(stdout_path, "w")
-                    sys.stdout = stdout_file
-                except OSError:
-                    pass
-            else:
-                # Try terminal fallback
-                try:
-                    tty = open("/dev/tty", "w")
-                    sys.stdout = tty
-                except OSError:
-                    pass
-            
-            # Redirect stderr to file if provided
-            if stderr_path:
-                try:
-                    stderr_file = open(stderr_path, "w")
-                    sys.stderr = stderr_file
-                except OSError:
-                    pass
-            
-            # Set up sys.argv
+
+            # 3. I/O Redirection
+            ForkHandler._redirect_io(stdout_path, stderr_path)
+
+            # 4. Setup Sys Args
             sys.argv = [script_path] + args
-            
-            # RFC-0008: Activate Fast Mode in Zygote Worker (BUG-51-001)
+
+            # 5. Fast Mode Activation
             if fast_mode and bundle_path:
-                try:
-                    # Search for velo_loader in multiple locations
-                    possible_loader_dirs = [
-                        # 1. Relative to this script (velo_zygote/main.py -> python/)
-                        str(Path(__file__).parent.parent / "python"),
-                        # 2. Project root (if provided)
-                        str(Path(project_root) / "python") if project_root else None,
-                        # 3. Installed location (site-packages)
-                        None,  # Already in sys.path if installed
-                    ]
-                    
-                    for loader_dir in possible_loader_dirs:
-                        if loader_dir and loader_dir not in sys.path and Path(loader_dir).exists():
-                            sys.path.insert(0, loader_dir)
-                    
-                    from velo_loader import activate_fast_mode
-                    _bundle = activate_fast_mode(
-                        Path(bundle_path), 
-                        Path(project_root) if project_root else None,
-                        max_bundle_size
-                    )
-                    # Worker activated - don't print to avoid polluting stdout
-                except Exception as e:
-                    print(f"⚠️ Worker Fast Loader failed: {e}", file=sys.stderr)
-            
-            # Execute the script
+                ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
+
+            # 6. Execute Script
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
-            # Script completed successfully
             exit_code = 0
-            
+
         except SystemExit as e:
-            # DEF-P3-013: Capture sys.exit() code
-            if e.code is None:
-                exit_code = 0
-            elif isinstance(e.code, int):
-                exit_code = e.code
-            else:
-                # Non-integer exit code (e.g., string message)
-                exit_code = 1
+            exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
         except Exception as e:
             print(f"Error executing {script_path}: {e}", file=sys.stderr)
             exit_code = 1
         finally:
-            # Flush output before exit
-            try:
-                sys.stdout.flush()
-                if stderr_path:
-                    sys.stderr.flush()
-            except Exception:
-                pass
-            
-            # Write exit code to file (DEF-P3-013/014)
-            if exit_code_path:
-                try:
-                    with open(exit_code_path, "w") as f:
-                        f.write(str(exit_code))
-                except Exception:
-                    pass
-            
-            # Use os._exit to avoid cleanup that might interfere
+            ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
             os._exit(exit_code)
-    else:
-        # Parent process - track worker
-        _active_workers.add(pid)
-        return pid
 
-
-def cleanup_workers() -> None:
-    """Kill all active workers on shutdown."""
-    global _active_workers
-    for pid in list(_active_workers):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    
-    # Wait briefly for workers to exit
-    import time
-    time.sleep(0.1)
-    
-    # Force kill any remaining
-    for pid in list(_active_workers):
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    
-    _active_workers.clear()
-
-
-def zygote_main(socket_path: str, preload: Optional[List[str]] = None, idle_timeout: int = 300, worker_ttl: int = 3600) -> None:
-    """Main entry point for Zygote process.
-    
-    Args:
-        socket_path: Path to Unix socket
-        preload: List of modules to pre-import
-        idle_timeout: Seconds to wait before exiting (default 5 min)
-        worker_ttl: Worker time-to-live in seconds
-    """
-    global _worker_ttl
-    _worker_ttl = worker_ttl
-    
-    log(f"Starting Zygote (PID: {os.getpid()})")
-    log(f"Socket: {socket_path}")
-    log(f"Idle timeout: {idle_timeout}s")
-    log(f"Worker TTL: {worker_ttl}s")
-    
-    # Setup signal handlers for orphan cleanup
-    setup_signal_handlers()
-    
-    # Pre-import heavy modules
-    if preload:
-        log(f"Pre-loading modules: {', '.join(preload)}")
-        preload_modules(preload)
-    
-    # Create socket
-    sock = create_socket(socket_path)
-    log("Zygote ready, waiting for connections...")
-    
-    try:
-        while True:
+    @staticmethod
+    def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
+        if stdout_path:
             try:
-                debug_log("Before accept()")
-                log("DEBUG: Waiting for connection (accept)...")
-                sock.settimeout(idle_timeout)  # Timeout only on accept() for idle exit
-                conn, _ = sock.accept()
-                debug_log("After accept() - got connection")
-                log("DEBUG: Connection accepted, setting timeout...")
-                conn.settimeout(30)  # Per-connection timeout for commands
+                sys.stdout = open(stdout_path, "w")
+            except OSError: pass
+        else:
+            try:
+                sys.stdout = open("/dev/tty", "w")
+            except OSError: pass
+
+        if stderr_path:
+            try:
+                sys.stderr = open(stderr_path, "w")
+            except OSError: pass
+
+    @staticmethod
+    def _activate_fast_mode(bundle_path: str, project_root: Optional[str], max_size: Optional[int]):
+        try:
+            # Search for velo_loader
+            possible_loader_dirs = [
+                str(Path(__file__).parent.parent / "python"),
+                str(Path(project_root) / "python") if project_root else None,
+            ]
+            for loader_dir in possible_loader_dirs:
+                if loader_dir and loader_dir not in sys.path and Path(loader_dir).exists():
+                    sys.path.insert(0, loader_dir)
+
+            from velo_loader import activate_fast_mode
+            activate_fast_mode(
+                Path(bundle_path), 
+                Path(project_root) if project_root else None,
+                max_size
+            )
+        except Exception as e:
+            print(f"⚠️ Worker Fast Loader failed: {e}", file=sys.stderr)
+
+    @staticmethod
+    def _cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code):
+        try:
+            sys.stdout.flush()
+            if stderr_path: sys.stderr.flush()
+        except: pass
+
+        if exit_code_path:
+            try:
+                with open(exit_code_path, "w") as f:
+                    f.write(str(exit_code))
+            except: pass
+
+
+class ZygoteServer:
+    """Main Zygote Service."""
+
+    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600):
+        self.socket_path = socket_path
+        self.idle_timeout = idle_timeout
+        self.worker_manager = WorkerManager(worker_ttl)
+        self.preload = preload or []
+        self._preloaded_modules: List[str] = []
+
+    def start(self):
+        try:
+            LogUtils.log(f"Starting ZygoteServer (PID: {os.getpid()})")
+            self._setup_signals()
+            self._preload_modules()
+            self._run_loop()
+        except Exception:
+            traceback.print_exc()
+            sys.exit(1)
+
+    def _setup_signals(self):
+        signal.signal(signal.SIGCHLD, self.worker_manager.reap_zombies)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN) # Ignore SIGTERM, let parent kill via socket or SIGKILL
+        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+
+    def _preload_modules(self):
+        for module in self.preload:
+            try:
+                __import__(module)
+                if module not in self._preloaded_modules:
+                    self._preloaded_modules.append(module)
+                LogUtils.log(f"Pre-loaded: {module}")
+            except ImportError as e:
+                LogUtils.log(f"Warning: Failed to pre-load {module}: {e}")
+
+    def _create_socket(self) -> socket.socket:
+        path = Path(self.socket_path)
+        if path.exists():
+             # Basic stale checking
+            if self._is_socket_in_use():
+                raise RuntimeError(f"Socket {self.socket_path} in use")
+            path.unlink()
+        
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.bind(self.socket_path)
+        sock.listen(5)
+        return sock
+
+    def _is_socket_in_use(self) -> bool:
+        try:
+            test = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            test.settimeout(0.5)
+            test.connect(self.socket_path)
+            test.close()
+            return True
+        except:
+            return False
+
+    def _run_loop(self):
+        sock = self._create_socket()
+        LogUtils.log("Zygote ready.")
+        
+        try:
+            while True:
+                try:
+                    sock.settimeout(self.idle_timeout)
+                    conn, _ = sock.accept()
+                    conn.settimeout(30)
+                    self._handle_connection(conn)
+                except socket.timeout:
+                    LogUtils.log(f"Idle timeout ({self.idle_timeout}s).")
+                    break
+        except KeyboardInterrupt:
+            LogUtils.log("Interrupted.")
+        finally:
+            self._cleanup(sock)
+
+    def _handle_connection(self, conn: socket.socket):
+        try:
+            self._send_response(conn, {"type": "Ready"})
+            while True:
+                cmd = self._recv_command(conn)
+                if not cmd: break
                 
-                # Signal ready on new connection
-                send_response(conn, {"type": "Ready"})
-                log("DEBUG: Sent Ready, entering command loop...")
-                
-                # Handle commands
-                while True:
-                    log("DEBUG: Waiting for command (recv)...")
-                    cmd = recv_command(conn)
-                    log(f"DEBUG: Received: {cmd}")
-                    if cmd is None:
-                        log("DEBUG: recv_command returned None, breaking inner loop")
-                        break
-                    
-                    cmd_type = cmd.get("type")
-                    
-                    if cmd_type == "Fork":
-                        script_path = cmd.get("script_path", "")
-                        args = cmd.get("args", [])
-                        stdout_path = cmd.get("stdout_path")
-                        stderr_path = cmd.get("stderr_path")
-                        exit_code_path = cmd.get("exit_code_path")
-                        async_mode = cmd.get("async_mode", False)
-                        fast_mode = cmd.get("fast_mode", False)
-                        bundle_path = cmd.get("bundle_path")
-                        project_root = cmd.get("project_root")
-                        max_bundle_size = cmd.get("max_bundle_size")
-                        
-                        if not script_path or not Path(script_path).exists():
-                            send_response(conn, {
-                                "type": "Error",
-                                "message": f"Script not found: {script_path}"
-                            })
-                            continue
-                        
-                        # SEC-P3-001: Validate path is within project directory
-                        is_valid, error_msg = validate_script_path(script_path)
-                        if not is_valid:
-                            send_response(conn, {
-                                "type": "Error",
-                                "message": error_msg
-                            })
-                            log(f"SECURITY: Blocked path traversal attempt: {script_path}")
-                            continue
-                        
-                        worker_pid = handle_fork(
-                            script_path, args, stdout_path, stderr_path, exit_code_path,
-                            fast_mode, bundle_path, project_root, max_bundle_size
-                        )
-                        
-                        if async_mode:
-                            # Return PID immediately (RFC-0008)
-                            send_response(conn, {
-                                "type": "Forked",
-                                "worker_pid": worker_pid,
-                                "exit_code": None
-                            })
-                            log(f"Forked worker PID: {worker_pid} (async mode, active: {len(_active_workers)})")
-                        else:
-                            # Wait for worker completion in sync mode (default)
-                            # This avoids polling in the CLI
-                            log(f"Waiting for worker PID: {worker_pid} (sync mode)...")
-                            try:
-                                pid, status = os.waitpid(worker_pid, 0)
-                                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
-                                _active_workers.discard(worker_pid)
-                            except ChildProcessError:
-                                # Already reaped by SIGCHLD handler?
-                                exit_code = 0
-                            
-                            send_response(conn, {
-                                "type": "Forked",
-                                "worker_pid": worker_pid,
-                                "exit_code": exit_code
-                            })
-                            log(f"Worker PID {worker_pid} completed with code {exit_code}")
-                        
-                    elif cmd_type == "Shutdown":
-                        log("Received shutdown command")
-                        send_response(conn, {"type": "Ack"})
-                        cleanup_workers()
-                        conn.close()
-                        sock.close()
-                        Path(socket_path).unlink(missing_ok=True)
-                        log("Zygote shutdown complete")
-                        return
-                    
-                    elif cmd_type == "Status":
-                        send_response(conn, {
-                            "type": "Status",
-                            "pid": os.getpid(),
-                            "preload": _preloaded_modules
-                        })
-                        log(f"Sent Status: PID {os.getpid()}, {len(_preloaded_modules)} modules")
-                    
-                    else:
-                        send_response(conn, {
-                            "type": "Error",
-                            "message": f"Unknown command: {cmd_type}"
-                        })
-                
-                log("DEBUG: Inner loop exited, closing conn, continuing outer loop...")
-                conn.close()
+                response = self._process_command(cmd)
+                if response:
+                    self._send_response(conn, response)
+                    if cmd.get("type") == "Shutdown":
+                        raise KeyboardInterrupt # Trigger graceful shutdown
+        except Exception as e:
+            LogUtils.debug_log(f"Connection error: {e}")
+        finally:
+            conn.close()
+
+    def _process_command(self, cmd: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        cmd_type = cmd.get("type")
+
+        if cmd_type == "Fork":
+            return self._cmd_fork(cmd)
+        elif cmd_type == "Status":
+            return {
+                "type": "Status",
+                "pid": os.getpid(),
+                "preload": self._preloaded_modules
+            }
+        elif cmd_type == "Shutdown":
+             return {"type": "Ack"}
+        else:
+            return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+
+    def _cmd_fork(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        script_path = cmd.get("script_path", "")
+        if not script_path or not Path(script_path).exists():
+             return {"type": "Error", "message": f"Script not found: {script_path}"}
+        
+        valid, err = PathValidator.validate(script_path)
+        if not valid:
+            LogUtils.log(f"SECURITY BLOCK: {err}")
+            return {"type": "Error", "message": err}
+
+        worker_pid = ForkHandler.handle_fork(cmd, self.worker_manager, self._preloaded_modules)
+        async_mode = cmd.get("async_mode", False)
+
+        if async_mode:
+            LogUtils.log(f"Forked worker PID: {worker_pid} (async)")
+            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
+        else:
+            LogUtils.log(f"Waiting for worker PID: {worker_pid} (sync)")
+            # Sync wait
+            try:
+                pid, status = os.waitpid(worker_pid, 0)
+                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+                self.worker_manager.remove_worker(worker_pid)
+            except ChildProcessError:
+                exit_code = 0 
             
-            except socket.timeout:
-                debug_log("Exit: socket.timeout")
-                log(f"Idle timeout ({idle_timeout}s), shutting down...")
-                break
-            except KeyboardInterrupt:
-                debug_log("Exit: KeyboardInterrupt")
-                log("Interrupted, shutting down...")
-                break
-            except BaseException as e:
-                debug_log(f"Exit: BaseException {type(e).__name__}: {e}")
-                log(f"Error in main loop: {type(e).__name__}: {e}")
-                if isinstance(e, SystemExit):
-                    debug_log(f"SystemExit code: {e.code}")
-                import traceback
-                log(f"Traceback: {traceback.format_exc()}")
-    
-    finally:
-        debug_log("Entering finally block")
-        log("DEBUG: Exiting main loop, entering finally...")
-        cleanup_workers()
+            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
+
+    def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
+        data = b""
+        while b"\n" not in data:
+            chunk = conn.recv(1024)
+            if not chunk: return None
+            data += chunk
+        return json.loads(data.split(b'\n')[0])
+
+    def _send_response(self, conn: socket.socket, resp: Dict):
+        conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+
+    def _cleanup(self, sock: socket.socket):
+        LogUtils.log("Cleaning up...")
+        self.worker_manager.cleanup_all()
         sock.close()
-        Path(socket_path).unlink(missing_ok=True)
-        log("Zygote shutdown complete")
+        Path(self.socket_path).unlink(missing_ok=True)
+        LogUtils.log("Shutdown complete.")
 
 
 if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Velo Zygote Process")
+    parser = argparse.ArgumentParser(description="Velo Zygote Process (Refactored)")
     parser.add_argument("--socket", required=True, help="Unix socket path")
     parser.add_argument("--preload", nargs="*", default=[], help="Modules to pre-import")
-    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout in seconds (default: 300)")
-    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL in seconds (default: 3600)")
+    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout")
+    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL")
     
     args = parser.parse_args()
-    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl)
-
+    server = ZygoteServer(args.socket, args.preload, args.timeout, args.worker_ttl)
+    server.start()
