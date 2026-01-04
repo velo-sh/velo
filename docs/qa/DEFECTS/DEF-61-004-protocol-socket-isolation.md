@@ -228,8 +228,102 @@ fn verify_handshake(stream: &mut UnixStream) -> Result<u8> {
 - [ ] AC-4: Socket directory created with 0700 permissions
 - [ ] AC-5: Benchmark passes without manual restart
 - [ ] AC-6: No regression in existing tests
+- [ ] AC-7: Socket path length < 108 chars (Unix limit)
+- [ ] AC-8: Graceful error handling in cleanup
 
 ---
+
+## ⚠️ Implementation Recommendations
+
+### 1. Permissions Enforcement
+
+```rust
+fn get_socket_dir() -> PathBuf {
+    let uid = unsafe { libc::getuid() };
+    let dir = std::env::temp_dir().join(format!("velo-{}", uid));
+    
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir).ok();
+        
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // CRITICAL: fchmod after creation to bypass umask
+            // std::fs::set_permissions respects umask, so use explicit mode
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok();
+            
+            // Verify permissions were set correctly
+            if let Ok(meta) = std::fs::metadata(&dir) {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode != 0o700 {
+                    eprintln!("⚠️ Socket directory has weak permissions: {:o}", mode);
+                }
+            }
+        }
+    }
+    dir
+}
+```
+
+### 2. Socket Path Length Limit (108 chars)
+
+Unix domain sockets have a **108-character path limit**. On macOS, `$TMPDIR` can be deeply nested:
+```
+/var/folders/8g/255rhyf93xb8bh6m6lp0j75m0000gn/T/velo-501/zygote-v1.sock
+```
+This is ~70 chars, safe. But if `$TMPDIR` is longer, fall back to `/tmp`:
+
+```rust
+fn get_socket_dir() -> PathBuf {
+    const MAX_SOCKET_PATH: usize = 108;
+    const SOCKET_NAME_LEN: usize = 20; // "zygote-v255.sock" max
+    
+    let uid = unsafe { libc::getuid() };
+    let preferred = std::env::temp_dir().join(format!("velo-{}", uid));
+    
+    // Check if path would be too long
+    if preferred.to_string_lossy().len() + SOCKET_NAME_LEN > MAX_SOCKET_PATH {
+        eprintln!("⚠️ $TMPDIR path too long, falling back to /tmp");
+        return PathBuf::from(format!("/tmp/velo-{}", uid));
+    }
+    
+    preferred
+}
+```
+
+### 3. Graceful Error Handling in Cleanup
+
+```rust
+pub fn cleanup_stale_sockets() {
+    let socket_dir = get_socket_dir();
+    
+    // Don't crash if directory doesn't exist yet
+    let entries = match std::fs::read_dir(&socket_dir) {
+        Ok(e) => e,
+        Err(_) => return, // Directory doesn't exist, nothing to clean
+    };
+    
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        
+        if name_str.starts_with("zygote-v") && name_str.ends_with(".sock") {
+            // ... existing logic ...
+            
+            // Graceful delete - ignore permission errors
+            match std::fs::remove_file(&path) {
+                Ok(_) => eprintln!("🔄 Cleaned stale socket: {}", name_str),
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // Should never happen with user-isolated dirs, but be safe
+                    eprintln!("⚠️ Cannot remove socket (permission denied): {}", name_str);
+                }
+                Err(e) => {
+                    eprintln!("⚠️ Failed to remove socket: {} ({})", name_str, e);
+                }
+            }
+        }
+    }
+}
 
 ## Work Estimate (Updated)
 
