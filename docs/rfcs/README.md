@@ -22,7 +22,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0006](./0006-phase-5.0-fast-loader.md) | Phase 5.0 Fast Loader | ✅ Implemented | v0.5.0 |
 | [0007](./0007-benchmarking-infrastructure.md) | Performance Tracking | ✅ Implemented | v0.5.0 |
 | [0008](./0008-phase-5.1-zygote-optimization.md) | Phase 5.1 Zygote 10ms | ✅ Accepted | v0.5.1 |
-| [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Approved | v0.6.1 |
+| [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Implemented | v0.6.1 |
 
 ## Architecture Decision Records (ADRs)
 
@@ -45,11 +45,11 @@ We welcome feedback on any RFC! Please:
 1. Open a [GitHub Issue](https://github.com/velo-sh/velo/issues) referencing the RFC number
 2. Or submit a PR with suggested changes
 
-## Future Work
+## Optimization RFCs
 
-| Proposal | Title | Target |
-|----------|-------|--------|
-| [OPT-0010-001](./OPT-0010-001-msgpack-ipc.md) | MessagePack IPC Protocol | v0.7.0+ |
+| RFC | Title | Status | Target |
+|-----|-------|--------|--------|
+| [OPT-0010-001](./OPT-0010-001-msgpack-ipc.md) | MessagePack IPC Protocol | ✅ Implemented | v0.6.1 |
 
 ## Past RFCs
 

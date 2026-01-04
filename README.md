@@ -171,7 +171,9 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 3: Instant Startup (Velo Mode) 🧬
 - [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
 - [x] Phase 4: Static analysis & security
-- [x] **Phase 5: Fast Loader & 14x Zygote speedup** 🚀
+- [x] Phase 5: Fast Loader & 14x Zygote speedup 🚀
+- [x] Phase 6: Static Import Graph & Security Hardening (H1-H10)
+- [x] **Phase 6.1: velo serve + velo analyze (The Hook)** 🎣
 
 ## License
 
