@@ -71,6 +71,22 @@ See [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) for full details.
 
 ---
 
+## ⚠️ Agent Pitfalls (Must Avoid)
+
+As an AI Agent, please self-check the following high-frequency failure points before submitting code:
+
+### 1. The `/tmp` Trap (Insecure Path Block)
+- **Symptom**: Test fails with `LoaderError::InsecureLocation { path: "/tmp/..." }`.
+- **Root Cause**: Velo's security policy strictly forbids loading code from insecure paths like `/tmp`, `/var/tmp`, `/dev/shm` to prevent symlink attacks.
+- **Mitigation**: DO NOT use default `tempdir()`. Use `tempfile::Builder` and specify a path within the project root (e.g., `tempfile::Builder::new().tempdir_in(std::env::current_dir()?)`).
+
+### 2. Formatting Failures (`cargo fmt`)
+AI tools often bypass local formatting. This is the #1 cause of CI failures.
+- **Solution**: Follow the rule in [Critical Rules](#must-do) below.
+- **TIP**: Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit.
+
+---
+
 ## 🧭 Universal Work Methodology
 
 Every AI agent follows this pattern:
@@ -142,6 +158,9 @@ I will review/implement with [ROLE]'s perspective.
 - ❌ Hardcode framework/library lists
 - ❌ Skip `uv sync` when testing user projects
 - ❌ Commit without running pre-commit hooks
+
+> [!TIP]
+> Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit. This prevents most style-related CI failures.
 
 ### MUST DO
 
