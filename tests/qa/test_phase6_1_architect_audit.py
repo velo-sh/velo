@@ -117,3 +117,79 @@ def test_json_logging_contains_framework_detection(test_env):
             found_detected = True
             break
     assert found_detected
+    assert proc.returncode is not None
+
+def test_zero_config_discovery(test_env):
+    """DX-P0-002: Verify zero-config auto-discovery."""
+    velo = get_velo_binary()
+    result = subprocess.run(
+        [velo, "serve", "--dry-run"],
+        cwd=test_env,
+        capture_output=True,
+        text=True
+    )
+    
+    print(result.stderr)
+    assert result.returncode == 0
+    assert "✨ Detected app: main:app" in result.stderr
+    assert "Dry run: Command" in result.stderr
+
+def test_dry_run_semantics(test_env):
+    """PERF-P0-001: Verify dry-run exit semantics and command logging."""
+    velo = get_velo_binary()
+    result = subprocess.run(
+        [velo, "serve", "main:app", "--dry-run"],
+        cwd=test_env,
+        capture_output=True,
+        text=True
+    )
+    
+    print(result.stderr)
+    assert result.returncode == 0
+    assert "info: Starting server..." in result.stderr
+    assert "Dry run: Command would be:" in result.stderr
+    # On dry run, we might not always see Zygote shutdown if it's very fast,
+    # let's just check it doesn't fail.
+
+def test_typo_suggestion_tip(test_env):
+    """DX-P0-002: Verify typo suggestions (Levenshtein)."""
+    velo = get_velo_binary()
+    result = subprocess.run(
+        [velo, "serve", "main:ap", "--dry-run"],
+        cwd=test_env,
+        capture_output=True,
+        text=True
+    )
+    
+    print(result.stderr)
+    assert "tip:" in result.stderr
+    assert "a similar app exists: main:app" in result.stderr
+
+def test_path_traversal_rejection(test_env):
+    """SEC-P0-002: Verify path traversal protection."""
+    velo = get_velo_binary()
+    # Try using an absolute path outside project root
+    result = subprocess.run(
+        [velo, "serve", "main:app", "--pid-file", "/tmp/velo.pid", "--dry-run"],
+        cwd=test_env,
+        capture_output=True,
+        text=True
+    )
+    
+    assert result.returncode != 0
+    assert "Path traversal detected" in result.stderr
+    assert "/tmp/velo.pid" in result.stderr
+
+def test_path_traversal_relative_rejection(test_env):
+    """SEC-P0-002: Verify relative path traversal protection (..)."""
+    velo = get_velo_binary()
+    # Try using '..' to escape
+    result = subprocess.run(
+        [velo, "serve", "main:app", "--pid-file", "../outside.pid", "--dry-run"],
+        cwd=test_env,
+        capture_output=True,
+        text=True
+    )
+    
+    assert result.returncode != 0
+    assert "Path traversal detected" in result.stderr
