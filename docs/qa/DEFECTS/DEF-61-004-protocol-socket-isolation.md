@@ -1,10 +1,11 @@
 # DEF-61-004: Protocol Version Socket Isolation
 
-**Status**: OPEN
+**Status**: OPEN → IN REVIEW
 **Severity**: P1 (Stability)
 **Reporter**: Architect
 **Date**: 2026-01-04
 **Branch**: `hotfix/protocol-socket-isolation`
+**Expert Review**: ✅ Completed (4 experts)
 
 ---
 
@@ -21,36 +22,48 @@ After upgrading Velo binary (JSON → MessagePack IPC), stale Zygote processes c
 
 CLI connects to old socket, sends MessagePack, Zygote can't parse → 30s timeout.
 
-## Reproduction
+---
 
-```bash
-# 1. Run old Velo (JSON protocol)
-./target/release/velo zygote start
+## Expert Review Summary
 
-# 2. Upgrade Velo (cargo build --release with MessagePack)
-
-# 3. Run with --zygote
-./target/release/velo run --zygote script.py
-# → 30 second timeout!
-```
+| Expert | Verdict | Key Feedback |
+|--------|---------|--------------|
+| Unix/POSIX | ⚠️ Improve | Use user-isolated directory |
+| IPC Protocol | ✅ OK + Enhance | Add Magic Handshake for v2 |
+| Process Lifecycle | ⚠️ Improve | Connection test before cleanup |
+| Security | ✅ OK | Verify socket permissions |
 
 ---
 
-## Solution Design
+## Solution Design (Expert-Enhanced)
 
-### Approach: Socket Path with Protocol Version
+### Socket Path Format
 
-**Current**:
+**Old (problematic)**:
 ```
 /tmp/velo-zygote.sock
 ```
 
-**Proposed**:
+**New (user-isolated + versioned)**:
 ```
-/tmp/velo-zygote-v{PROTOCOL_VERSION}.sock
+$TMPDIR/velo-$UID/zygote-v{PROTOCOL_VERSION}.sock
 ```
 
-Example: `/tmp/velo-zygote-v1.sock`
+Examples:
+- macOS: `/var/folders/.../velo-501/zygote-v1.sock`
+- Linux: `/tmp/velo-1000/zygote-v1.sock`
+
+### Stale Detection Strategy
+
+Before deleting old sockets, **attempt connection** to verify truly stale:
+
+```
+1. Find velo socket files
+2. For each socket not matching current version:
+   a. Try to connect (timeout 100ms)
+   b. If connection fails → Socket is stale → Delete
+   c. If connection succeeds → Another Velo running → Leave alone, warn user
+```
 
 ---
 
@@ -62,29 +75,71 @@ Example: `/tmp/velo-zygote-v1.sock`
 /// Protocol version (ADV-1)
 pub const PROTOCOL_VERSION: u8 = 0x01;
 
+/// Get user-isolated socket directory
+/// Creates directory with user-only permissions (0700)
+fn get_socket_dir() -> PathBuf {
+    let uid = unsafe { libc::getuid() };
+    let dir = std::env::temp_dir().join(format!("velo-{}", uid));
+    
+    if !dir.exists() {
+        // Create with restrictive permissions (0700)
+        std::fs::create_dir_all(&dir).ok();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok();
+        }
+    }
+    dir
+}
+
 /// Get the default socket path for Zygote IPC
-/// Socket path now includes protocol version for isolation
 pub fn default_socket_path() -> PathBuf {
-    std::env::temp_dir().join(format!("velo-zygote-v{}.sock", PROTOCOL_VERSION))
+    get_socket_dir().join(format!("zygote-v{}.sock", PROTOCOL_VERSION))
+}
+
+/// Check if a socket is alive (connection test)
+fn is_socket_alive(path: &Path) -> bool {
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+    
+    match UnixStream::connect(path) {
+        Ok(stream) => {
+            // Set short timeout and try to read
+            stream.set_read_timeout(Some(Duration::from_millis(100))).ok();
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 /// Clean up stale sockets from older protocol versions
 pub fn cleanup_stale_sockets() {
-    let temp = std::env::temp_dir();
-    let current_socket = format!("velo-zygote-v{}.sock", PROTOCOL_VERSION);
+    let socket_dir = get_socket_dir();
+    let current_socket = format!("zygote-v{}.sock", PROTOCOL_VERSION);
     
-    // Find and remove old version sockets
-    if let Ok(entries) = std::fs::read_dir(&temp) {
+    if let Ok(entries) = std::fs::read_dir(&socket_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
             
-            if name_str.starts_with("velo-zygote-v") 
-               && name_str.ends_with(".sock")
-               && name_str != current_socket 
-            {
-                eprintln!("🔄 Cleaning stale Zygote socket: {}", name_str);
-                let _ = std::fs::remove_file(entry.path());
+            // Only process zygote socket files
+            if name_str.starts_with("zygote-v") && name_str.ends_with(".sock") {
+                // Skip current version
+                if name_str == current_socket {
+                    continue;
+                }
+                
+                let path = entry.path();
+                
+                // Connection test: only delete if truly stale
+                if !is_socket_alive(&path) {
+                    eprintln!("🔄 Cleaning stale Zygote socket: {}", name_str);
+                    let _ = std::fs::remove_file(&path);
+                } else {
+                    eprintln!("⚠️  Found running Zygote (different version): {}", name_str);
+                    eprintln!("   Run 'velo zygote stop' to stop it.");
+                }
             }
         }
     }
@@ -94,21 +149,62 @@ pub fn cleanup_stale_sockets() {
 ### 2. Python Side (`velo_zygote/main.py`)
 
 ```python
+import os
+import tempfile
+
 PROTOCOL_VERSION = 0x01
 
-# In ZygoteServer.__init__ or at module level
-def get_versioned_socket_path():
-    import tempfile
-    return f"{tempfile.gettempdir()}/velo-zygote-v{PROTOCOL_VERSION}.sock"
+def get_socket_dir() -> str:
+    """Get user-isolated socket directory."""
+    uid = os.getuid()
+    socket_dir = os.path.join(tempfile.gettempdir(), f"velo-{uid}")
+    
+    if not os.path.exists(socket_dir):
+        os.makedirs(socket_dir, mode=0o700, exist_ok=True)
+    
+    return socket_dir
+
+def get_versioned_socket_path() -> str:
+    """Get socket path with protocol version."""
+    return os.path.join(get_socket_dir(), f"zygote-v{PROTOCOL_VERSION}.sock")
 ```
 
-### 3. Integration Points
+### 3. Future Enhancement: Magic Handshake (v2)
+
+For PROTOCOL_VERSION = 0x02, add magic bytes:
+
+```rust
+/// Protocol v2 handshake
+const MAGIC: &[u8; 4] = b"VELO";
+
+fn write_handshake(stream: &mut UnixStream) -> Result<()> {
+    stream.write_all(MAGIC)?;
+    stream.write_all(&[PROTOCOL_VERSION])?;
+    Ok(())
+}
+
+fn verify_handshake(stream: &mut UnixStream) -> Result<u8> {
+    let mut magic = [0u8; 4];
+    stream.read_exact(&mut magic)?;
+    if &magic != MAGIC {
+        return Err(ZygoteError::ProtocolError("Invalid magic".into()));
+    }
+    let mut version = [0u8; 1];
+    stream.read_exact(&mut version)?;
+    Ok(version[0])
+}
+```
+
+---
+
+## Integration Points
 
 | File | Change |
 |------|--------|
-| `src/zygote/ipc.rs` | `default_socket_path()` includes version |
-| `src/zygote/mod.rs` | Call `cleanup_stale_sockets()` on start |
-| `velo_zygote/main.py` | Match socket naming pattern |
+| `src/zygote/ipc.rs` | `get_socket_dir()`, `default_socket_path()`, `is_socket_alive()`, `cleanup_stale_sockets()` |
+| `src/zygote/mod.rs` | Call `cleanup_stale_sockets()` in `ZygoteLauncher::start()` |
+| `velo_zygote/main.py` | `get_socket_dir()`, `get_versioned_socket_path()` |
+| `ZygoteServer.__init__` | Use `get_versioned_socket_path()` instead of `--socket` arg |
 
 ---
 
@@ -116,31 +212,45 @@ def get_versioned_socket_path():
 
 | ID | Test | Expected |
 |----|------|----------|
-| DEF-61-004-T1 | Build old version, start Zygote, build new version, run --zygote | No timeout, new Zygote starts |
-| DEF-61-004-T2 | Check socket path format | Contains `-v1` suffix |
-| DEF-61-004-T3 | Stale socket cleanup | Old sockets removed on start |
+| DEF-61-004-T1 | Build old version, start Zygote, upgrade, run --zygote | Old socket detected as stale, cleaned, new Zygote starts |
+| DEF-61-004-T2 | Check socket path format | Contains `/velo-{UID}/zygote-v1.sock` |
+| DEF-61-004-T3 | Stale socket cleanup with running Zygote | Warns but doesn't delete running socket |
+| DEF-61-004-T4 | Socket directory permissions | 0700 (user only) |
+| DEF-61-004-T5 | Multi-user system isolation | Each user has separate directory |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Socket path includes protocol version
-- [ ] AC-2: Old sockets cleaned on Zygote start
-- [ ] AC-3: Benchmark passes without manual restart
-- [ ] AC-4: No regression in existing tests
+- [ ] AC-1: Socket path includes protocol version (`zygote-v1.sock`)
+- [ ] AC-2: Socket directory is user-isolated (`velo-{UID}/`)
+- [ ] AC-3: Connection test before deleting stale sockets
+- [ ] AC-4: Socket directory created with 0700 permissions
+- [ ] AC-5: Benchmark passes without manual restart
+- [ ] AC-6: No regression in existing tests
 
 ---
 
-## Work Estimate
+## Work Estimate (Updated)
 
 | Task | Hours |
 |------|-------|
-| Implement Rust changes | 0.5h |
-| Implement Python changes | 0.5h |
-| Add cleanup logic | 1h |
-| Testing | 1h |
-| **Total** | **3h** |
+| Implement `get_socket_dir()` (Rust + Python) | 1h |
+| Implement `is_socket_alive()` | 0.5h |
+| Implement `cleanup_stale_sockets()` | 1h |
+| Update `ZygoteLauncher::start()` | 0.5h |
+| Testing (T1-T5) | 1.5h |
+| **Total** | **4.5h** |
 
 ---
 
-**Architect Sign-off**: Ready for Developer
+## Future Work (v0.7.0)
+
+- [ ] Magic Handshake (PROTOCOL_VERSION = 0x02)
+- [ ] XDG_RUNTIME_DIR support on Linux
+- [ ] Socket file lock (flock) for atomic startup
+
+---
+
+**Architect Sign-off**: ✅ Expert-reviewed, Ready for Developer
+**Review Date**: 2026-01-04
