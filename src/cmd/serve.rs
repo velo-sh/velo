@@ -32,6 +32,25 @@ fn parse_workers(s: &str) -> Result<u32, String> {
     }
 }
 
+/// Custom parser for port argument with clear error messages
+fn parse_port(s: &str) -> Result<u16, String> {
+    match s.parse::<i64>() {
+        Ok(n) if n < 1 => Err(format!(
+            "invalid port '{}': must be between 1 and 65535",
+            s
+        )),
+        Ok(n) if n > 65535 => Err(format!(
+            "invalid port '{}': must be between 1 and 65535",
+            s
+        )),
+        Ok(n) => Ok(n as u16),
+        Err(_) => Err(format!(
+            "invalid port '{}': must be a valid number",
+            s
+        )),
+    }
+}
+
 /// Serve a Python ASGI/WSGI application
 #[derive(Parser, Debug)]
 #[command(name = "serve", about = "Serve a Python ASGI/WSGI application")]
@@ -45,7 +64,7 @@ pub struct ServeCmd {
     pub host: String,
 
     /// Bind port
-    #[arg(long, default_value_t = 8000, value_parser = clap::value_parser!(u16).range(1..))]
+    #[arg(long, default_value_t = 8000, value_parser = parse_port)]
     pub port: u16,
 
     /// Shorthand for --host and --port (e.g., 0.0.0.0:8080)
