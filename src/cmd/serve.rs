@@ -1,10 +1,10 @@
 //! Handle 'velo serve' command
 
 use anyhow::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::python;
-use crate::serve::{self, ServeArgs};
+use crate::serve::{self, LogFormat, ServeArgs};
 
 /// Handle 'velo serve' command
 pub fn cmd_serve(args: &[String]) -> Result<()> {
@@ -47,6 +47,24 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
                     std::process::exit(1);
                 });
             }
+            // --bind is shorthand for --host:--port (e.g., --bind 0.0.0.0:8080)
+            "--bind" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --bind requires a value (e.g., 0.0.0.0:8080)");
+                    std::process::exit(1);
+                }
+                if let Some((host, port)) = args[i].rsplit_once(':') {
+                    serve_args.host = host.to_string();
+                    serve_args.port = port.parse().unwrap_or_else(|_| {
+                        eprintln!("Error: invalid port in bind address '{}'", args[i]);
+                        std::process::exit(1);
+                    });
+                } else {
+                    eprintln!("Error: --bind requires HOST:PORT format (e.g., 0.0.0.0:8080)");
+                    std::process::exit(1);
+                }
+            }
             "--workers" => {
                 i += 1;
                 if i >= args.len() {
@@ -58,14 +76,63 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
                     std::process::exit(1);
                 });
             }
+            "--timeout" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --timeout requires a value (seconds)");
+                    std::process::exit(1);
+                }
+                serve_args.timeout = args[i].parse().unwrap_or_else(|_| {
+                    eprintln!("Error: invalid timeout '{}'", args[i]);
+                    std::process::exit(1);
+                });
+            }
+            "--health-bind" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --health-bind requires a value (e.g., 0.0.0.0:8081)");
+                    std::process::exit(1);
+                }
+                serve_args.health_bind = Some(args[i].clone());
+            }
+            "--pid-file" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --pid-file requires a path");
+                    std::process::exit(1);
+                }
+                serve_args.pid_file = Some(PathBuf::from(&args[i]));
+            }
+            "--log-format" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("Error: --log-format requires a value (text or json)");
+                    std::process::exit(1);
+                }
+                serve_args.log_format = match args[i].as_str() {
+                    "text" => LogFormat::Text,
+                    "json" => LogFormat::Json,
+                    other => {
+                        eprintln!(
+                            "Error: unknown log format '{}'. Use 'text' or 'json'",
+                            other
+                        );
+                        std::process::exit(1);
+                    }
+                };
+            }
             "--reload" => {
                 serve_args.reload = true;
+            }
+            "--prod" => {
+                serve_args.prod = true;
             }
             "--no-zygote" => {
                 serve_args.use_zygote = false;
             }
             arg if arg.starts_with('-') => {
-                eprintln!("Error: unknown option '{}'", arg);
+                // Suggest similar flags using strsim
+                suggest_similar_flag(arg);
                 std::process::exit(1);
             }
             _ => {
@@ -76,6 +143,13 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
         }
         i += 1;
     }
+
+    // Apply prod mode settings (disables reload, auto workers)
+    serve_args.apply_prod_mode();
+
+    // SEC-P0-001: Validate app target for shell injection (ADR D1)
+    // Fail-fast: reject malicious input before ANY subprocess work
+    validate_app_target(&serve_args.app)?;
 
     // Validate app format
     if !serve_args.app.contains(':') {
@@ -96,6 +170,62 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// SEC-P0-001: Validate app target for shell injection prevention (ADR D1)
+///
+/// Rejects shell metacharacters that could enable command injection.
+/// Must be called at CLI layer before any subprocess work.
+fn validate_app_target(app: &str) -> Result<()> {
+    const FORBIDDEN: &[char] = &[
+        '|', '&', ';', '$', '`', '\\', '"', '\'', '<', '>', '\n', '\r', '\0',
+    ];
+
+    if app.chars().any(|c| FORBIDDEN.contains(&c)) {
+        use crate::serve::ServeError;
+        let err = ServeError::ShellMetacharacters {
+            app: app.to_string(),
+        };
+        eprintln!("{}", err.format_source_pointed());
+        std::process::exit(err.exit_code());
+    }
+
+    Ok(())
+}
+
+/// Suggest similar flags for typos (D11, RFC §4.12.2)
+fn suggest_similar_flag(unknown: &str) {
+    use strsim::jaro_winkler;
+
+    const VALID_FLAGS: &[&str] = &[
+        "--host",
+        "--port",
+        "--bind",
+        "--workers",
+        "--timeout",
+        "--health-bind",
+        "--pid-file",
+        "--log-format",
+        "--reload",
+        "--prod",
+        "--no-zygote",
+        "--help",
+    ];
+
+    let unknown_lower = unknown.to_lowercase();
+    let mut best_match: Option<(&str, f64)> = None;
+
+    for flag in VALID_FLAGS {
+        let score = jaro_winkler(&unknown_lower, flag);
+        if score > 0.8 && (best_match.is_none() || score > best_match.unwrap().1) {
+            best_match = Some((flag, score));
+        }
+    }
+
+    eprintln!("Error: unknown option '{}'", unknown);
+    if let Some((suggestion, _)) = best_match {
+        eprintln!("       Did you mean '{}'?", suggestion);
+    }
+}
+
 /// Print help for serve command
 fn print_serve_help() {
     eprintln!(
@@ -108,19 +238,27 @@ ARGUMENTS:
     <app>    Application path (e.g., 'main:app', 'myapp.main:create_app()')
 
 OPTIONS:
-    --host <HOST>    Bind host (default: 127.0.0.1)
-    --port <PORT>    Bind port (default: 8000)
-    --workers <N>    Number of workers (default: 1)
-    --reload         Enable hot reload
-    --no-zygote      Disable Zygote pre-warming
-    -h, --help       Print this help
+    --host <HOST>         Bind host (default: 127.0.0.1)
+    --port <PORT>         Bind port (default: 8000)
+    --bind <HOST:PORT>    Shorthand for --host and --port
+    --workers <N>         Number of workers (default: 1, auto in --prod)
+    --timeout <SECS>      Graceful shutdown timeout (default: 30)
+    --health-bind <ADDR>  Health check endpoint (e.g., 0.0.0.0:8081)
+    --pid-file <PATH>     Write PID file for process management
+    --log-format <FMT>    Output format: text (default) or json
+    --reload              Enable hot reload (disabled in --prod)
+    --prod                Production mode (no reload, auto workers)
+    --no-zygote           Disable Zygote pre-warming
+    -h, --help            Print this help
 
 EXAMPLES:
     velo serve main:app
-    velo serve main:app --port 9000 --reload
-    velo serve main:app --workers 4 --no-zygote
+    velo serve main:app --bind 0.0.0.0:8080 --reload
+    velo serve main:app --prod --health-bind 0.0.0.0:8081
+    velo serve main:app --workers 4 --timeout 60
 
 NOTE:
-    Requires uvicorn to be installed. Run: uv add uvicorn"
+    Requires uvicorn (ASGI) or gunicorn (WSGI) to be installed.
+    Run: uv add uvicorn"
     );
 }
