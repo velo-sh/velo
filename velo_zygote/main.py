@@ -5,22 +5,32 @@ Velo Zygote Python Module (Refactored Phase 6.2)
 This module implements the Zygote process (Python side) using an Object-Oriented architecture.
 It eliminates global mutable state and encapsulates process management.
 
+Protocol: MessagePack with length prefix
+  - 4-byte little-endian length header
+  - MessagePack payload
+
 Architecture:
   ZygoteServer: Main service responding to socket commands.
   WorkerManager: Manages child process lifecycle and reaping.
   ForkHandler: Handles the complexity of forking and environment setup.
 """
 
-import json
 import os
 import signal
 import socket
+import struct
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
+
+try:
+    import msgpack
+except ImportError:
+    print("Error: msgpack not installed. Run: pip install msgpack", file=sys.stderr)
+    sys.exit(1)
 
 
 # Sensitive paths that should never be executed (SEC-P3-001)
@@ -411,15 +421,111 @@ class ZygoteServer:
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
 
     def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
-        data = b""
-        while b"\n" not in data:
-            chunk = conn.recv(1024)
-            if not chunk: return None
-            data += chunk
-        return json.loads(data.split(b'\n')[0])
+        """Receive MessagePack message with length prefix."""
+        try:
+            # Read 4-byte length prefix
+            len_data = conn.recv(4)
+            if len(len_data) < 4:
+                return None
+            msg_len = struct.unpack('<I', len_data)[0]
+            
+            # Security: Max message size 1MB
+            if msg_len > 1024 * 1024:
+                LogUtils.log(f"Message too large: {msg_len} bytes")
+                return None
+            
+            # Read payload
+            data = b""
+            while len(data) < msg_len:
+                chunk = conn.recv(min(4096, msg_len - len(data)))
+                if not chunk:
+                    return None
+                data += chunk
+            
+            # Unpack with rmp_serde compatibility
+            raw_result = msgpack.unpackb(data, raw=False)
+            LogUtils.debug_log(f"Raw msgpack recv: {repr(raw_result)}")
+            return self._smart_unpack(raw_result)
+        except Exception as e:
+            LogUtils.debug_log(f"Recv error: {e}")
+            return None
+
+    def _smart_unpack(self, result: Any) -> Dict:
+        """Normalize rmp_serde output to dict format.
+        
+        rmp_serde serializes internally tagged enums as flat tuples:
+        - ['Ready'] (unit variant)
+        - ['Fork', script_path, args, async_mode, ...] (struct variant as tuple)
+        - {'type': 'Ready'} (dict - already correct format)
+        """
+        # If already a dict with type, return as-is
+        if isinstance(result, dict):
+            return result
+        
+        # If it's a list/tuple from rmp_serde
+        if isinstance(result, (list, tuple)) and len(result) >= 1:
+            type_name = str(result[0])
+            
+            # Unit variant: ['Ready'], ['Shutdown'], ['Status'], ['Ack']
+            if len(result) == 1:
+                return {"type": type_name}
+            
+            # Fork variant has 11 positional fields (after type name):
+            # script_path, args, async_mode, stdout_path, stderr_path, 
+            # exit_code_path, fast_mode, bundle_path, project_root, max_bundle_size
+            if type_name == "Fork" and len(result) >= 2:
+                return {
+                    "type": "Fork",
+                    "script_path": result[1] if len(result) > 1 else "",
+                    "args": result[2] if len(result) > 2 else [],
+                    "async_mode": result[3] if len(result) > 3 else False,
+                    "stdout_path": result[4] if len(result) > 4 else None,
+                    "stderr_path": result[5] if len(result) > 5 else None,
+                    "exit_code_path": result[6] if len(result) > 6 else None,
+                    "fast_mode": result[7] if len(result) > 7 else False,
+                    "bundle_path": result[8] if len(result) > 8 else None,
+                    "project_root": result[9] if len(result) > 9 else None,
+                    "max_bundle_size": result[10] if len(result) > 10 else None,
+                }
+            
+            # Forked response: ['Forked', worker_pid, exit_code]
+            if type_name == "Forked" and len(result) >= 2:
+                return {
+                    "type": "Forked",
+                    "worker_pid": result[1] if len(result) > 1 else 0,
+                    "exit_code": result[2] if len(result) > 2 else None,
+                }
+            
+            # Status response: ['Status', pid, preload]  
+            if type_name == "Status" and len(result) >= 2:
+                return {
+                    "type": "Status",
+                    "pid": result[1] if len(result) > 1 else 0,
+                    "preload": result[2] if len(result) > 2 else [],
+                }
+            
+            # Error response: ['Error', message]
+            if type_name == "Error" and len(result) >= 2:
+                return {
+                    "type": "Error",
+                    "message": str(result[1]) if len(result) > 1 else "",
+                }
+            
+            # Fallback for unknown variants with fields
+            return {"type": type_name}
+        
+        # If it's a string, treat as type name
+        if isinstance(result, str):
+            return {"type": result}
+        
+        # Fallback: wrap in dict
+        return {"type": str(result)}
 
     def _send_response(self, conn: socket.socket, resp: Dict):
-        conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+        """Send MessagePack message with length prefix."""
+        payload = msgpack.packb(resp, use_bin_type=True)
+        header = struct.pack('<I', len(payload))
+        conn.sendall(header + payload)
 
     def _cleanup(self, sock: socket.socket):
         LogUtils.log("Cleaning up...")
