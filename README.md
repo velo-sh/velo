@@ -43,9 +43,11 @@ cargo build --release
 # Run a Python script (uses .venv/bin/python automatically)
 ./target/release/velo run your_script.py
 
-# First run: captures paths, slight overhead
-# Second run: uses cache, faster than CPython
+# 🌐 NEW! Serve a web app (zero-config)
+./target/release/velo serve   # Auto-detects FastAPI/Django/Flask
 ```
+
+First run captures paths with slight overhead. Second run uses cache, faster than CPython.
 
 ## Benchmark Results
 
