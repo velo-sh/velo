@@ -13,6 +13,8 @@
 | **Understand testing methodology** | [tiered-testing-guide.md](./tiered-testing-guide.md) |
 | **Check/create defect reports** | [defects/](./defects/) |
 | **Run benchmarks** | [../../benchmarks/](../../benchmarks/) |
+| **Explore all knowledge assets** | [KNOWLEDGE_TREASURY.md](./KNOWLEDGE_TREASURY.md) |
+
 
 ---
 
