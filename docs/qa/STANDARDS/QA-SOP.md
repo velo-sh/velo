@@ -103,9 +103,9 @@ Phase Start → Form Working Group → Assign Roles → Kick-off Meeting
 ```
 
 **Communication Channels:**
-- **docs/qa/phase-X-reviews/** - Review documents
-- **docs/qa/defects/** - Defect reports (DEF-XX-XXX)
-- **docs/qa/arch/** - Architecture decision requests (ARCH-XX-XXX)
+- **docs/qa/PHASES/phase-X/reviews/** - Review documents
+- **docs/qa/DEFECTS/** - Defect reports (DEF-XX-XXX)
+- **docs/qa/ARCHIVE/arch/** - Architecture decision requests (ARCH-XX-XXX)
 
 ---
 
@@ -295,9 +295,9 @@ Examples:
 
 1. **Agent submits findings to:**
    ```
-   docs/qa/phase-X-reviews/AGENT-A-FINDINGS.md
-   docs/qa/phase-X-reviews/AGENT-B-FINDINGS.md
-   docs/qa/phase-X-reviews/AGENT-C-FINDINGS.md
+   docs/qa/PHASES/phase-X/reviews/AGENT-A-FINDINGS.md
+   docs/qa/PHASES/phase-X/reviews/AGENT-B-FINDINGS.md
+   docs/qa/PHASES/phase-X/reviews/AGENT-C-FINDINGS.md
    ```
 
 2. **Finding format:**
@@ -332,7 +332,7 @@ Agent C reviews → Agent A's findings
 QA Leader performs final gap analysis:
 
 ```
-docs/qa/phase-X-reviews/LEADER-GAP-ANALYSIS.md
+docs/qa/PHASES/phase-X/reviews/LEADER-GAP-ANALYSIS.md
 ```
 
 **Leader responsibilities:**
@@ -370,8 +370,8 @@ docs/qa/phase-X-reviews/LEADER-GAP-ANALYSIS.md
 
 2. **Expert submits findings:**
    ```
-   docs/qa/phase-X-reviews/EXPERT-PYTHON-CORE.md
-   docs/qa/phase-X-reviews/EXPERT-PERFORMANCE.md
+   docs/qa/PHASES/phase-X/reviews/EXPERT-PYTHON-CORE.md
+   docs/qa/PHASES/phase-X/reviews/EXPERT-PERFORMANCE.md
    ```
 
 3. **Finding classification:**
@@ -386,7 +386,7 @@ docs/qa/phase-X-reviews/LEADER-GAP-ANALYSIS.md
 
 1. **Create ARCH document:**
    ```
-   docs/qa/arch/ARCH-60-001-Design-Decisions.md
+   docs/qa/ARCHIVE/arch/ARCH-60-001-Design-Decisions.md
    ```
 
 2. **Report to Architect immediately**
@@ -489,7 +489,7 @@ Submit this checklist with PR.
 ### 8.1 Defect Report Format
 
 ```
-docs/qa/defects/DEF-60-XXX-Short-Name.md
+docs/qa/DEFECTS/DEF-60-XXX-Short-Name.md
 ```
 
 ```markdown
@@ -529,7 +529,7 @@ What actually happens (include error messages).
 Maintain consolidated defect tracking:
 
 ```
-docs/qa/defects/PHASE_X_MASTER_DEFECTS.md
+docs/qa/DEFECTS/PHASE_X_MASTER_DEFECTS.md
 ```
 
 ```markdown
@@ -590,7 +590,7 @@ docs/qa/defects/PHASE_X_MASTER_DEFECTS.md
 **After completing QA, create a walkthrough document:**
 
 ```
-docs/qa/phase-X-walkthrough.md
+docs/qa/PHASES/phase-X/walkthrough.md
 ```
 
 **Contents:**
@@ -841,7 +841,6 @@ For quick local verification, use the tiered test scripts:
 ║                                                                        ║
 ║  PERFORMANCE BENCHMARKS:                                              ║
 ║  ┌────────────────────────────────────────────────────────────────┐  ║
-║  │ cd benchmarks                                                   │  ║
 ║  │ python3 benchmark_velo_vs_cpython.py --scenario all            │  ║
 ║  │ python3 benchmark_framework_scale.py --all                     │  ║
 ║  └────────────────────────────────────────────────────────────────┘  ║
@@ -857,8 +856,8 @@ For quick local verification, use the tiered test scripts:
 ║  KEY FILES:                                                           ║
 ║    tests/qa/conftest.py          - Test fixtures                     ║
 ║    tests/qa/test_e2e_golden_path.py - E2E tests (MUST PASS)          ║
-║    docs/qa/defects/              - Defect reports                    ║
-║    benchmarks/                   - Performance benchmarks             ║
+║    docs/qa/DEFECTS/              - Defect reports                    ║
+║    benchmark_*.py                - Performance benchmarks             ║
 ║                                                                        ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
@@ -969,9 +968,7 @@ def test_SEC_XXX_attack_name(isolated_env):
 ### 14.1 Benchmark Suite Structure
 
 ```
-benchmarks/
-├── README.md                      # Overview & quick start
-├── BENCHMARK_GUIDE.md             # Step-by-step user guide
+/ (Root)
 ├── benchmark_framework_scale.py   # L1-L5 scaling tests
 ├── benchmark_velo_vs_cpython.py   # Head-to-head comparison
 ├── benchmark_enterprise.py        # Production-scale stress tests

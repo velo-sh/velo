@@ -12,7 +12,7 @@ This document indexes all knowledge assets discovered across the project history
 | Source | Files | Lines | Status |
 |:---|:---:|:---:|:---:|
 | **Knowledge Base** | 2 KIs | 70,000+ | ✅ Institutionalized |
-| **QA Documentation** | 33+ | 75,000+ | ✅ Indexed in README.md |
+| **QA Documentation** | 33+ | 75,000+ | ✅ Indexed in [../README.md](../README.md) |
 | **Project Standards** | 4 | 680+ | ✅ Active |
 | **Agent Protocol** | 2 | 45,000+ | ✅ Master Governance |
 
@@ -73,7 +73,7 @@ This document indexes all knowledge assets discovered across the project history
 
 ## 🟢 TIER 3: Project Standards
 
-### Located in: `docs/`
+### Located in: `../../`
 
 | Document | Lines | Key Content |
 |:---|:---:|:---|
@@ -166,7 +166,7 @@ This document indexes all knowledge assets discovered across the project history
 1. Read `protocol.md` Sections §1, §2, §5, §14 (Core methodology)
 2. Read `DEFINITION_OF_DONE.md` (Quality gates)
 3. Read `TEST_ARCHITECTURE.md` (Test isolation)
-4. Read `docs/qa/README.md` (QA library index)
+4. Read `../README.md` (QA library index)
 
 ### For Starting New Work
 1. Review relevant Section from `protocol.md`
@@ -174,7 +174,7 @@ This document indexes all knowledge assets discovered across the project history
 3. Reference case studies if similar situation
 
 ### For QA Work
-1. Use `docs/qa/QA-SOP.md` as primary guide
+1. Use `./QA-SOP.md` as primary guide
 2. Reference `quality_assurance_master.md` for deep knowledge
 3. Apply 4-Agent pattern for critical features
 
