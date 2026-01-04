@@ -23,6 +23,8 @@ pub struct AnalyzeArgs {
     pub fix: bool,
     /// Threshold in ms for "slow" imports (default: 100)
     pub slow_threshold_ms: u64,
+    /// Show import graph and savings report (D9, RFC §5.4)
+    pub graph: bool,
 }
 
 impl Default for AnalyzeArgs {
@@ -33,6 +35,7 @@ impl Default for AnalyzeArgs {
             suggest_preload: false,
             fix: false,
             slow_threshold_ms: 100,
+            graph: false,
         }
     }
 }
@@ -221,6 +224,11 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     // Display results
     display_analysis(&profile_data, effective_threshold);
 
+    // Show savings report if --graph requested (D9, RFC §5.4)
+    if parsed.graph {
+        display_savings_report(&profile_data);
+    }
+
     // Show suggestions if requested
     if parsed.suggest_preload {
         display_preload_suggestions(&profile_data, effective_threshold, existing_config.as_ref());
@@ -297,6 +305,9 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
                     .parse()
                     .with_context(|| "Invalid --slow-threshold-ms value")?;
             }
+            "--graph" => {
+                parsed.graph = true;
+            }
             "-h" | "--help" => {
                 print_analyze_help();
                 std::process::exit(0);
@@ -328,6 +339,7 @@ ARGUMENTS:
 OPTIONS:
     --slow-threshold-ms <MS>  Threshold for 'slow' imports (default: 100)
     --suggest-preload         Show preload suggestions for slow imports
+    --graph                   Show startup savings report (stat() elimination)
     --fix                     Auto-update pyproject.toml with preload config
     --output, -o <FILE>       Save JSON report to file
     -h, --help                Print help
@@ -335,6 +347,7 @@ OPTIONS:
 EXAMPLES:
     velo analyze                    # Analyze with auto-detected entry point
     velo analyze main.py            # Analyze specific file
+    velo analyze --graph            # Show savings from Velo optimization
     velo analyze --slow-threshold-ms 50  # Custom threshold
     velo analyze --fix              # Update pyproject.toml automatically
 
@@ -595,6 +608,91 @@ fn display_preload_suggestions(
             colors::RESET
         );
     }
+}
+
+/// Display startup savings report (D9, RFC §5.4)
+///
+/// Shows estimated savings from Velo's optimization compared to traditional Python.
+fn display_savings_report(profile: &ProfileData) {
+    let module_count = profile.import_times.len();
+
+    // Traditional Python: approximately 4 stat() calls per module
+    // (check .py, .pyc, package __init__.py, etc.)
+    let traditional_stats = module_count * 4;
+
+    // Velo: 0 stat() calls with bundled imports (mmap-based)
+    let velo_stats = 0;
+
+    // Estimated time per stat() call: ~0.3ms on typical SSD
+    // This is conservative; NFS/network drives can be 10x slower
+    let time_per_stat_ms = 0.33;
+    let estimated_savings_ms = (traditional_stats as f64) * time_per_stat_ms;
+
+    // Calculate percentage of import time that could be saved
+    let import_overhead_pct = if profile.total_import_time_ms > 0.0 {
+        (estimated_savings_ms / profile.total_import_time_ms * 100.0).min(100.0)
+    } else {
+        0.0
+    };
+
+    println!();
+    println!(
+        "{}┌─────────────────────────────────────────────────────────────┐{}",
+        colors::BOLD,
+        colors::RESET
+    );
+    println!(
+        "{}│                  Startup Savings Report                     │{}",
+        colors::BOLD,
+        colors::RESET
+    );
+    println!(
+        "{}├─────────────────────────────────────────────────────────────┤{}",
+        colors::BOLD,
+        colors::RESET
+    );
+    println!(
+        "│ {}Modules analyzed:{}          {:>6}                           │",
+        colors::CYAN,
+        colors::RESET,
+        module_count
+    );
+    println!(
+        "│ Traditional Python:   {:>6} stat() syscalls                 │",
+        traditional_stats
+    );
+    println!(
+        "│ {}Velo optimized:{}       {:>6} stat() syscalls                 │",
+        colors::GREEN,
+        colors::RESET,
+        velo_stats
+    );
+    println!(
+        "{}├─────────────────────────────────────────────────────────────┤{}",
+        colors::BOLD,
+        colors::RESET
+    );
+    println!(
+        "│ {}Estimated time saved:{}    ~{:.0}ms ({:.0}% of import overhead)  │",
+        colors::GREEN,
+        colors::RESET,
+        estimated_savings_ms,
+        import_overhead_pct
+    );
+    println!(
+        "{}└─────────────────────────────────────────────────────────────┘{}",
+        colors::BOLD,
+        colors::RESET
+    );
+
+    // Additional context
+    println!();
+    println!(
+        "{}💡 Tip:{} Use 'velo bundle' to create an optimized bundle, then",
+        colors::CYAN,
+        colors::RESET
+    );
+    println!("       'velo run --fast' to skip filesystem checks entirely.");
 }
 
 /// Save JSON report to file

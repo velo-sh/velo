@@ -1,6 +1,7 @@
 #!/bin/sh
 # Pre-commit hook for Velo
 # Run format, lint, and test checks before commit
+# IMPORTANT: These commands MUST match CI (.github/workflows/ci.yml)
 
 set -e
 
@@ -10,13 +11,13 @@ cargo fmt --check || {
     exit 1
 }
 
-echo "🔍 Running cargo clippy..."
-cargo clippy -- -D warnings || {
+echo "🔍 Running cargo clippy (same as CI: --all-targets --all-features)..."
+cargo clippy --all-targets --all-features -- -D warnings || {
     echo "❌ Clippy check failed. Fix the warnings above."
     exit 1
 }
 
-echo "🔍 Running cargo test (lib only)..."
+echo "🔍 Running cargo test (lib only for speed)..."
 cargo test --lib || {
     echo "❌ Tests failed. Fix the tests above."
     exit 1

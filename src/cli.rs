@@ -66,28 +66,49 @@ pub fn run() -> Result<()> {
         std::process::exit(0);
     }
 
-    match args[1].as_str() {
+    let result = match args[1].as_str() {
         "-h" | "--help" => {
             print!("{}", USAGE);
-            std::process::exit(0);
+            return Ok(());
         }
         "-V" | "--version" => {
             println!("velo {}", env!("CARGO_PKG_VERSION"));
-            std::process::exit(0);
+            return Ok(());
         }
-        "run" => cmd::cmd_run(&args)?,
-        "serve" => cmd::cmd_serve(&args)?,
-        "analyze" => cmd::cmd_analyze(&args)?,
-        "bench" => cmd::cmd_bench(&args)?,
-        "bundle" => cmd::cmd_bundle(&args)?,
-        "info" => cmd::cmd_info()?,
-        "zygote" => cmd::cmd_zygote(&args)?,
-        "graph" => cmd::cmd_graph(&args)?,
+        "run" => cmd::cmd_run(&args),
+        "serve" => cmd::cmd_serve(&args),
+        "analyze" => cmd::cmd_analyze(&args),
+        "bench" => cmd::cmd_bench(&args),
+        "bundle" => cmd::cmd_bundle(&args),
+        "info" => cmd::cmd_info(),
+        "zygote" => cmd::cmd_zygote(&args),
+        "graph" => cmd::cmd_graph(&args),
         cmd => {
             eprintln!("Error: unknown command '{}'", cmd);
             eprintln!("{}", USAGE);
             std::process::exit(1);
         }
+    };
+
+    // Centralized error handling (P0 refactor)
+    if let Err(e) = result {
+        // DEF-61-002: Check if this is a clap help/version request (exit code 0)
+        if let Some(clap_err) = e.downcast_ref::<clap::Error>() {
+            // Clap handles printing for DisplayHelp and DisplayVersion
+            clap_err.print().ok();
+            match clap_err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                    std::process::exit(0);
+                }
+                _ => {
+                    std::process::exit(2); // Clap usage errors
+                }
+            }
+        }
+
+        // Format error with "Error:" prefix for consistency
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 
     Ok(())

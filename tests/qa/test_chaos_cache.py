@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Velo QA: Cache Chaos Tests (CHAOS-xxx)
 ======================================

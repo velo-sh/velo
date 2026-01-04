@@ -1,37 +1,61 @@
 //! Handle 'velo zygote' command and subcommands
+//!
+//! Uses clap for argument parsing with derive macros.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
+use clap::{Parser, Subcommand};
 use std::path::Path;
 
 use crate::python;
 use crate::zygote::{self, ZygoteLauncher};
 
-/// Handle 'velo zygote' command
+/// Zygote daemon management
+#[derive(Parser, Debug)]
+#[command(name = "zygote", about = "Manage Zygote pre-warming daemon")]
+pub struct ZygoteCmd {
+    #[command(subcommand)]
+    pub command: ZygoteSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ZygoteSubcommand {
+    /// Start Zygote daemon
+    Start {
+        /// Comma-separated list of modules to preload
+        #[arg(long)]
+        preload: Option<String>,
+    },
+    /// Stop Zygote daemon
+    Stop,
+    /// Show Zygote status
+    Status,
+    /// Generate preload config from profile data
+    AutoConfig,
+}
+
+/// Handle 'velo zygote' command (entry point from cli.rs)
 pub fn cmd_zygote(args: &[String]) -> Result<()> {
-    if args.len() < 3 {
-        eprintln!("Usage: velo zygote <start|stop|status>");
-        std::process::exit(1);
-    }
+    // Parse with clap - skip "velo" prefix
+    let cmd = ZygoteCmd::try_parse_from(&args[1..])?;
 
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
-    match args[2].as_str() {
-        "start" => cmd_zygote_start(&project_dir, args)?,
-        "stop" => cmd_zygote_stop(),
-        "status" => cmd_zygote_status(),
-        "auto-config" => cmd_zygote_auto_config()?,
-        subcmd => {
-            eprintln!("Error: unknown zygote subcommand '{}'", subcmd);
-            eprintln!("Usage: velo zygote <start|stop|status|auto-config>");
-            std::process::exit(1);
+    match cmd.command {
+        ZygoteSubcommand::Start { preload } => cmd_zygote_start(&project_dir, preload),
+        ZygoteSubcommand::Stop => {
+            cmd_zygote_stop();
+            Ok(())
         }
+        ZygoteSubcommand::Status => {
+            cmd_zygote_status();
+            Ok(())
+        }
+        ZygoteSubcommand::AutoConfig => cmd_zygote_auto_config(),
     }
-
-    Ok(())
 }
 
 #[cfg(unix)]
-fn cmd_zygote_start(project_dir: &Path, args: &[String]) -> Result<()> {
+fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<()> {
     let python_path = python::detect_python(project_dir)?;
     let socket_path = zygote::ipc::default_socket_path();
 
@@ -42,11 +66,10 @@ fn cmd_zygote_start(project_dir: &Path, args: &[String]) -> Result<()> {
         let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
 
         // Parse --preload if provided
-        let preload: Vec<&str> = if args.len() > 4 && args[3] == "--preload" {
-            args[4].split(',').collect()
-        } else {
-            vec![]
-        };
+        let preload: Vec<&str> = preload_arg
+            .as_ref()
+            .map(|s| s.split(',').collect())
+            .unwrap_or_default();
 
         println!("🚀 Starting Zygote daemon...");
         match launcher.start(&preload) {
@@ -57,8 +80,7 @@ fn cmd_zygote_start(project_dir: &Path, args: &[String]) -> Result<()> {
                 std::mem::forget(launcher);
             }
             Err(e) => {
-                eprintln!("❌ Failed to start Zygote: {}", e);
-                std::process::exit(1);
+                bail!("Failed to start Zygote: {}", e);
             }
         }
     }
@@ -66,9 +88,8 @@ fn cmd_zygote_start(project_dir: &Path, args: &[String]) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn cmd_zygote_start(_project_dir: &Path, _args: &[String]) -> Result<()> {
-    eprintln!("❌ Zygote not supported on this platform");
-    std::process::exit(1);
+fn cmd_zygote_start(_project_dir: &Path, _preload_arg: Option<String>) -> Result<()> {
+    bail!("Zygote not supported on this platform");
 }
 
 #[cfg(unix)]
@@ -124,13 +145,12 @@ fn cmd_zygote_auto_config() -> Result<()> {
     let profile_path = std::env::temp_dir().join("velo_profile/profile.json");
 
     if !profile_path.exists() {
-        eprintln!("❌ No profile data found.");
-        eprintln!();
-        eprintln!("To generate profile data, run:");
-        eprintln!("  velo run --profile your_script.py");
-        eprintln!();
-        eprintln!("Then run auto-config again.");
-        std::process::exit(1);
+        bail!(
+            "No profile data found.\n\n\
+             To generate profile data, run:\n  \
+             velo run --profile your_script.py\n\n\
+             Then run auto-config again."
+        );
     }
 
     let config = ZygoteConfig::from_profile_file(&profile_path)?;
@@ -168,4 +188,56 @@ fn cmd_zygote_auto_config() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_start_subcommand() {
+        let cmd = ZygoteCmd::try_parse_from(["zygote", "start"]).unwrap();
+        match cmd.command {
+            ZygoteSubcommand::Start { preload } => {
+                assert!(preload.is_none());
+            }
+            _ => panic!("Expected Start subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_start_with_preload() {
+        let cmd =
+            ZygoteCmd::try_parse_from(["zygote", "start", "--preload", "fastapi,uvicorn"]).unwrap();
+        match cmd.command {
+            ZygoteSubcommand::Start { preload } => {
+                assert_eq!(preload.unwrap(), "fastapi,uvicorn");
+            }
+            _ => panic!("Expected Start subcommand"),
+        }
+    }
+
+    #[test]
+    fn test_parse_stop_subcommand() {
+        let cmd = ZygoteCmd::try_parse_from(["zygote", "stop"]).unwrap();
+        assert!(matches!(cmd.command, ZygoteSubcommand::Stop));
+    }
+
+    #[test]
+    fn test_parse_status_subcommand() {
+        let cmd = ZygoteCmd::try_parse_from(["zygote", "status"]).unwrap();
+        assert!(matches!(cmd.command, ZygoteSubcommand::Status));
+    }
+
+    #[test]
+    fn test_parse_auto_config_subcommand() {
+        let cmd = ZygoteCmd::try_parse_from(["zygote", "auto-config"]).unwrap();
+        assert!(matches!(cmd.command, ZygoteSubcommand::AutoConfig));
+    }
+
+    #[test]
+    fn test_missing_subcommand_error() {
+        let result = ZygoteCmd::try_parse_from(["zygote"]);
+        assert!(result.is_err());
+    }
 }

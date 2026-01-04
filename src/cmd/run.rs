@@ -1,6 +1,9 @@
 //! Handle 'velo run' command
+//!
+//! Uses clap for argument parsing with derive macros.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
+use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
@@ -9,69 +12,69 @@ use crate::python_info::{PythonInfo, PythonVersion};
 use crate::zygote::ZygoteLauncher;
 use crate::{python, runner};
 
-/// Handle 'velo run' command
-#[allow(clippy::collapsible_if)]
-pub fn cmd_run(args: &[String]) -> Result<()> {
-    if args.len() < 3 {
-        eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] <script.py>");
-        std::process::exit(1);
-    }
+/// Run a Python script
+#[derive(Parser, Debug)]
+#[command(name = "run", about = "Run a Python script")]
+pub struct RunCmd {
+    /// Python script to run
+    #[arg(required = true)]
+    pub script: String,
 
-    // Parse flags
-    let mut zygote_enabled = false;
-    let mut async_enabled = false;
-    let mut profile_enabled = false;
-    let mut fast_enabled = false;
-    let mut script_arg_idx = 2;
+    /// Use Zygote for fast startup (auto-starts if needed)
+    #[arg(long)]
+    pub zygote: bool,
 
-    for (i, arg) in args.iter().enumerate().skip(2) {
-        match arg.as_str() {
-            "--zygote" => {
-                zygote_enabled = true;
-                script_arg_idx = i + 1;
-            }
-            "--async" => {
-                async_enabled = true;
-                zygote_enabled = true;
-                script_arg_idx = i + 1;
-            }
-            "--profile" => {
-                profile_enabled = true;
-                script_arg_idx = i + 1;
-            }
-            "--fast" => {
-                fast_enabled = true;
-                script_arg_idx = i + 1;
-            }
-            a if a.starts_with('-') => {
-                eprintln!("Error: unknown option '{}'", a);
-                std::process::exit(1);
-            }
-            _ => {
-                script_arg_idx = i;
-                break;
-            }
+    /// Run script asynchronously in background (implies --zygote)
+    #[arg(long = "async")]
+    pub async_mode: bool,
+
+    /// Show detailed startup timing breakdown
+    #[arg(long)]
+    pub profile: bool,
+
+    /// Use fast loader with bundle acceleration
+    #[arg(long)]
+    pub fast: bool,
+}
+
+impl RunCmd {
+    /// Validate arguments
+    pub fn validate(&self) -> Result<()> {
+        // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
+        if self.async_mode && self.profile {
+            bail!(
+                "--async and --profile are mutually exclusive\n\
+                 Profiling requires synchronous execution to capture full trace."
+            );
         }
+        Ok(())
     }
 
-    if script_arg_idx >= args.len() {
-        eprintln!("Error: missing script path");
-        eprintln!("Usage: velo run [--zygote] [--profile] [--fast] [--async] <script.py>");
-        std::process::exit(1);
+    /// Check if Zygote should be enabled (explicitly or via --async)
+    pub fn zygote_enabled(&self) -> bool {
+        self.zygote || self.async_mode
     }
+}
 
-    // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
-    if async_enabled && profile_enabled {
-        eprintln!("Error: --async and --profile are mutually exclusive");
-        eprintln!("Profiling requires synchronous execution to capture full trace.");
-        std::process::exit(1);
-    }
+/// Handle 'velo run' command (entry point from cli.rs)
+pub fn cmd_run(args: &[String]) -> Result<()> {
+    // Parse with clap - skip "velo" prefix
+    let cmd = RunCmd::try_parse_from(&args[1..])?;
 
-    // Determine project directory by looking for pyproject.toml starting from script's parent
-    let script_path = Path::new(&args[script_arg_idx]);
+    // Validate
+    cmd.validate()?;
+
+    // Run the script
+    run_script_impl(&cmd)
+}
+
+/// Internal implementation of script running
+#[allow(clippy::collapsible_if)]
+fn run_script_impl(cmd: &RunCmd) -> Result<()> {
+    let script_path = Path::new(&cmd.script);
     let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
+    // Determine project directory by looking for pyproject.toml
     if let Some(parent) = script_path.parent() {
         let p = if parent.as_os_str().is_empty() {
             Path::new(".")
@@ -95,12 +98,12 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     let python_path = python::detect_python(&project_dir)?;
 
     // Zygote mode: use pre-warmed process
-    if zygote_enabled {
+    if cmd.zygote_enabled() {
         if let Some(()) = try_zygote_run(
             &python_path,
-            &args[script_arg_idx],
-            async_enabled,
-            fast_enabled,
+            &cmd.script,
+            cmd.async_mode,
+            cmd.fast,
             &project_dir,
             &config,
         )? {
@@ -113,18 +116,18 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     let (pythonpath, needs_capture) = python::setup_python_env(&project_dir, &python_path);
 
     // Fast mode: inject sitecustomize to activate bundle loader
-    if fast_enabled {
+    if cmd.fast {
         run_with_fast_loader(
             &python_path,
-            &args[script_arg_idx],
+            &cmd.script,
             &project_dir,
             pythonpath,
             config.max_bundle_size,
         )?;
-    } else if profile_enabled {
-        runner::run_script_with_profile(&python_path, &args[script_arg_idx], pythonpath)?;
+    } else if cmd.profile {
+        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath)?;
     } else {
-        runner::run_script(&python_path, &args[script_arg_idx], pythonpath)?;
+        runner::run_script(&python_path, &cmd.script, pythonpath)?;
     }
 
     // If we didn't have cache, capture sys.path for next time
@@ -492,6 +495,75 @@ mod tests {
     use std::fs::File;
     use tempfile::tempdir;
 
+    // ========================================================================
+    // RunCmd clap parsing tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_basic() {
+        let cmd = RunCmd::try_parse_from(["run", "script.py"]).unwrap();
+        assert_eq!(cmd.script, "script.py");
+        assert!(!cmd.zygote);
+        assert!(!cmd.async_mode);
+        assert!(!cmd.profile);
+        assert!(!cmd.fast);
+    }
+
+    #[test]
+    fn test_parse_with_zygote() {
+        let cmd = RunCmd::try_parse_from(["run", "--zygote", "script.py"]).unwrap();
+        assert!(cmd.zygote);
+        assert!(cmd.zygote_enabled());
+    }
+
+    #[test]
+    fn test_parse_with_async() {
+        let cmd = RunCmd::try_parse_from(["run", "--async", "script.py"]).unwrap();
+        assert!(cmd.async_mode);
+        assert!(cmd.zygote_enabled()); // --async implies zygote
+    }
+
+    #[test]
+    fn test_parse_with_profile() {
+        let cmd = RunCmd::try_parse_from(["run", "--profile", "script.py"]).unwrap();
+        assert!(cmd.profile);
+    }
+
+    #[test]
+    fn test_parse_with_fast() {
+        let cmd = RunCmd::try_parse_from(["run", "--fast", "script.py"]).unwrap();
+        assert!(cmd.fast);
+    }
+
+    #[test]
+    fn test_validate_async_profile_mutual_exclusion() {
+        let cmd = RunCmd::try_parse_from(["run", "--async", "--profile", "script.py"]).unwrap();
+        let result = cmd.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("mutually exclusive")
+        );
+    }
+
+    #[test]
+    fn test_missing_script_error() {
+        let result = RunCmd::try_parse_from(["run"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unknown_option_error() {
+        let result = RunCmd::try_parse_from(["run", "--unknown", "script.py"]);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Project directory detection test
+    // ========================================================================
+
     #[test]
     fn test_project_dir_detection_relative_path() -> Result<()> {
         let temp = tempdir()?;
@@ -505,7 +577,7 @@ mod tests {
         let parent = script_path.parent().unwrap();
         assert_eq!(parent.as_os_str(), "");
 
-        // The logic from cmd_run:
+        // The logic from run_script_impl:
         let p = if parent.as_os_str().is_empty() {
             Path::new(".")
         } else {
@@ -513,7 +585,6 @@ mod tests {
         };
 
         // Verify we can find pyproject.toml using this path
-        // (Simulating the check in cmd_run)
         let found = project_root.join(p).join("pyproject.toml").exists();
         assert!(
             found,

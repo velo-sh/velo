@@ -1,88 +1,128 @@
 //! Handle 'velo serve' command
+//!
+//! Uses clap for argument parsing with derive macros.
 
 use anyhow::Result;
-use std::path::Path;
+use clap::Parser;
+use std::path::{Path, PathBuf};
 
 use crate::python;
-use crate::serve::{self, ServeArgs};
+use crate::serve;
+use crate::serve::config::{LogFormat, ServeArgs};
 
-/// Handle 'velo serve' command
-pub fn cmd_serve(args: &[String]) -> Result<()> {
-    // Handle --help early
-    if args.len() >= 3 && (args[2] == "--help" || args[2] == "-h") {
-        print_serve_help();
-        std::process::exit(0);
-    }
+/// Serve a Python ASGI/WSGI application
+#[derive(Parser, Debug)]
+#[command(name = "serve", about = "Serve a Python ASGI/WSGI application")]
+pub struct ServeCmd {
+    /// Application path (e.g., 'main:app', 'myapp.main:create_app()')
+    #[arg(required = true)]
+    pub app: String,
 
-    if args.len() < 3 {
-        eprintln!("Error: missing app argument");
-        eprintln!("Usage: velo serve <app> [OPTIONS]");
-        eprintln!("Example: velo serve main:app --workers 4");
-        eprintln!("\nRun 'velo serve --help' for more information");
-        std::process::exit(1);
-    }
+    /// Bind host
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host: String,
 
-    // Parse arguments
-    let mut serve_args = ServeArgs::new(args[2].clone());
-    let mut i = 3;
+    /// Bind port
+    #[arg(long, default_value_t = 8000)]
+    pub port: u16,
 
-    while i < args.len() {
-        match args[i].as_str() {
-            "--host" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --host requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.host = args[i].clone();
+    /// Shorthand for --host and --port (e.g., 0.0.0.0:8080)
+    #[arg(long, value_name = "HOST:PORT")]
+    pub bind: Option<String>,
+
+    /// Number of workers (default: 1, auto in --prod)
+    #[arg(long, default_value_t = 1)]
+    pub workers: u32,
+
+    /// Graceful shutdown timeout in seconds
+    #[arg(long, default_value_t = 30)]
+    pub timeout: u64,
+
+    /// Health check endpoint (e.g., 0.0.0.0:8081)
+    #[arg(long, value_name = "ADDR")]
+    pub health_bind: Option<String>,
+
+    /// Write PID file for process management
+    #[arg(long, value_name = "PATH")]
+    pub pid_file: Option<PathBuf>,
+
+    /// Output format: text (default) or json
+    #[arg(long, value_name = "FMT", default_value = "text")]
+    pub log_format: String,
+
+    /// Enable hot reload (disabled in --prod)
+    #[arg(long)]
+    pub reload: bool,
+
+    /// Production mode (no reload, auto workers)
+    #[arg(long)]
+    pub prod: bool,
+
+    /// Disable Zygote pre-warming
+    #[arg(long)]
+    pub no_zygote: bool,
+}
+
+impl ServeCmd {
+    /// Convert clap args to ServeArgs
+    pub fn to_serve_args(&self) -> Result<ServeArgs> {
+        let mut args = ServeArgs::new(self.app.clone());
+
+        // Handle --bind shorthand
+        if let Some(ref bind) = self.bind {
+            if let Some((host, port)) = bind.rsplit_once(':') {
+                args.host = host.to_string();
+                args.port = port
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid port in bind address '{}'", bind))?;
+            } else {
+                anyhow::bail!("--bind requires HOST:PORT format (e.g., 0.0.0.0:8080)");
             }
-            "--port" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --port requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.port = args[i].parse().unwrap_or_else(|_| {
-                    eprintln!("Error: invalid port number '{}'", args[i]);
-                    std::process::exit(1);
-                });
-            }
-            "--workers" => {
-                i += 1;
-                if i >= args.len() {
-                    eprintln!("Error: --workers requires a value");
-                    std::process::exit(1);
-                }
-                serve_args.workers = args[i].parse().unwrap_or_else(|_| {
-                    eprintln!("Error: invalid worker count '{}'", args[i]);
-                    std::process::exit(1);
-                });
-            }
-            "--reload" => {
-                serve_args.reload = true;
-            }
-            "--no-zygote" => {
-                serve_args.use_zygote = false;
-            }
-            arg if arg.starts_with('-') => {
-                eprintln!("Error: unknown option '{}'", arg);
-                std::process::exit(1);
-            }
-            _ => {
-                // Unexpected positional argument
-                eprintln!("Error: unexpected argument '{}'", args[i]);
-                std::process::exit(1);
-            }
+        } else {
+            args.host = self.host.clone();
+            args.port = self.port;
         }
-        i += 1;
-    }
 
-    // Validate app format
-    if !serve_args.app.contains(':') {
-        eprintln!("Error: invalid app format '{}'", serve_args.app);
-        eprintln!("Expected 'module:app' (e.g., 'main:app')");
-        std::process::exit(1);
+        args.workers = self.workers;
+        args.timeout = self.timeout;
+        args.health_bind = self.health_bind.clone();
+        args.pid_file = self.pid_file.clone();
+        args.reload = self.reload;
+        args.prod = self.prod;
+        args.use_zygote = !self.no_zygote;
+
+        // Parse log format
+        args.log_format = match self.log_format.as_str() {
+            "text" => LogFormat::Text,
+            "json" => LogFormat::Json,
+            other => anyhow::bail!("unknown log format '{}'. Use 'text' or 'json'", other),
+        };
+
+        // Apply prod mode settings
+        args.apply_prod_mode();
+
+        // Validate (SEC-P0-001)
+        args.validate()?;
+
+        // Validate app format
+        if !args.app.contains(':') {
+            anyhow::bail!(
+                "invalid app format '{}'\nExpected 'module:app' (e.g., 'main:app')",
+                args.app
+            );
+        }
+
+        Ok(args)
     }
+}
+
+/// Handle 'velo serve' command (entry point from cli.rs)
+pub fn cmd_serve(args: &[String]) -> Result<()> {
+    // Parse with clap - skip "velo serve" prefix
+    let cmd = ServeCmd::try_parse_from(&args[1..])?;
+
+    // Convert to ServeArgs
+    let serve_args = cmd.to_serve_args()?;
 
     // Determine project directory
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
@@ -96,31 +136,68 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Print help for serve command
-fn print_serve_help() {
-    eprintln!(
-        "velo serve - Serve a Python ASGI/WSGI application
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-USAGE:
-    velo serve <app> [OPTIONS]
+    #[test]
+    fn test_parse_basic() {
+        let cmd = ServeCmd::try_parse_from(["serve", "main:app"]).unwrap();
+        assert_eq!(cmd.app, "main:app");
+        assert_eq!(cmd.host, "127.0.0.1");
+        assert_eq!(cmd.port, 8000);
+    }
 
-ARGUMENTS:
-    <app>    Application path (e.g., 'main:app', 'myapp.main:create_app()')
+    #[test]
+    fn test_parse_with_options() {
+        let cmd = ServeCmd::try_parse_from([
+            "serve",
+            "main:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "--workers",
+            "4",
+        ])
+        .unwrap();
+        assert_eq!(cmd.host, "0.0.0.0");
+        assert_eq!(cmd.port, 8080);
+        assert_eq!(cmd.workers, 4);
+    }
 
-OPTIONS:
-    --host <HOST>    Bind host (default: 127.0.0.1)
-    --port <PORT>    Bind port (default: 8000)
-    --workers <N>    Number of workers (default: 1)
-    --reload         Enable hot reload
-    --no-zygote      Disable Zygote pre-warming
-    -h, --help       Print this help
+    #[test]
+    fn test_parse_bind_shorthand() {
+        let cmd =
+            ServeCmd::try_parse_from(["serve", "main:app", "--bind", "0.0.0.0:9000"]).unwrap();
+        let args = cmd.to_serve_args().unwrap();
+        assert_eq!(args.host, "0.0.0.0");
+        assert_eq!(args.port, 9000);
+    }
 
-EXAMPLES:
-    velo serve main:app
-    velo serve main:app --port 9000 --reload
-    velo serve main:app --workers 4 --no-zygote
+    #[test]
+    fn test_parse_prod_mode() {
+        let cmd = ServeCmd::try_parse_from(["serve", "main:app", "--prod"]).unwrap();
+        assert!(cmd.prod);
+    }
 
-NOTE:
-    Requires uvicorn to be installed. Run: uv add uvicorn"
-    );
+    #[test]
+    fn test_parse_no_zygote() {
+        let cmd = ServeCmd::try_parse_from(["serve", "main:app", "--no-zygote"]).unwrap();
+        assert!(cmd.no_zygote);
+        let args = cmd.to_serve_args().unwrap();
+        assert!(!args.use_zygote);
+    }
+
+    #[test]
+    fn test_missing_app_error() {
+        let result = ServeCmd::try_parse_from(["serve"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unknown_option_error() {
+        let result = ServeCmd::try_parse_from(["serve", "main:app", "--unknown"]);
+        assert!(result.is_err());
+    }
 }
