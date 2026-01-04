@@ -40,6 +40,59 @@ CLI connects to old socket, sends MessagePack, Zygote can't parse → 30s timeou
 | IPC Protocol | ✅ OK + Enhance | Add Magic Handshake for v2 |
 | Process Lifecycle | ⚠️ Improve | Connection test before cleanup |
 | Security | ✅ OK | Verify socket permissions |
+| **Protocol Design** | ✅ A- | See detailed findings below |
+
+### Protocol Design Expert Review (2026-01-04)
+
+> **Reviewer**: Protocol Design Expert
+> **Rating**: A- (Excellent)
+> **Verdict**: Design approved with documentation enhancements
+
+#### Finding 1: `is_socket_alive()` Side Effect
+
+**Issue**: Connection test creates an actual connection. If socket is alive, server will `accept()` then see EOF.
+
+**Analysis**: Acceptable because probe happens during startup before Zygote is running. Used only in `cleanup_stale_sockets()`.
+
+**Action**: ⚠️ Document this side effect in function docstring.
+
+```rust
+/// Check if a socket is alive (responds to connection attempt)
+///
+/// **Side Effect**: This creates an actual connection to the socket.
+/// If the socket is alive, the server will accept() this probe connection,
+/// then immediately see EOF when we disconnect.
+///
+/// This is acceptable because:
+/// - Probe happens during startup before Zygote is running
+/// - Used only in `cleanup_stale_sockets()` to detect dead sockets
+```
+
+#### Finding 2: Version Coupling Semantics
+
+**Issue**: `PROTOCOL_VERSION` is used in both message frame AND socket path. This coupling is intentional but needs documentation.
+
+**Action**: ⚠️ Add explicit documentation:
+
+```rust
+/// Protocol version (ADV-1 + DEF-61-004)
+///
+/// Used in:
+/// - Message framing: [Length 4B LE] [Version 1B] [Payload MsgPack]
+/// - Socket path: velo-zygote-v{:02x}.sock
+///
+/// **Important**: Incrementing this value creates a new socket path.
+/// Old processes using the previous socket will not interfere.
+pub const PROTOCOL_VERSION: u8 = 0x01;
+```
+
+#### Finding 3: Constant Placement (Style)
+
+**Issue**: `PROTOCOL_VERSION` defined at line ~207 but `default_socket_path()` at line ~93.
+
+**Analysis**: Rust allows this (module-level visibility), but reduces readability.
+
+**Action**: ⚠️ Move `PROTOCOL_VERSION` to file top for better code organization.
 
 ---
 
