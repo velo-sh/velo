@@ -1,7 +1,7 @@
 # QA Standard Operating Procedure (SOP)
 
 > Derived from Phase 6.0 QA Working Group Experience
-> Version 1.0 | 2026-01-04
+> Version 2.0 | 2026-01-04
 
 ---
 
@@ -16,9 +16,16 @@
 7. [Phase 4: Verification & Developer Handoff](#7-phase-4-verification--developer-handoff)
 8. [Phase 5: Defect Management](#8-phase-5-defect-management)
 9. [Phase 6: Final Delivery & Sign-off](#9-phase-6-final-delivery--sign-off)
-10. [Appendix: Checklists & Templates](#10-appendix-checklists--templates)
+10. [CI/CD Integration](#10-cicd-integration)
+11. [Developer Quick Reference](#11-developer-quick-reference)
+12. [Test Coverage Matrix](#12-test-coverage-matrix)
+13. [Security Invariant Matrix](#13-security-invariant-matrix)
+14. [Performance & Benchmark Standards](#14-performance--benchmark-standards)
+15. [Knowledge Base Integration](#15-knowledge-base-integration)
+16. [Appendix: Checklists & Templates](#16-appendix-checklists--templates)
 
 ---
+
 
 ## 1. Overview
 
@@ -559,7 +566,353 @@ docs/qa/defects/PHASE_X_MASTER_DEFECTS.md
 
 ---
 
-## 10. Appendix: Checklists & Templates
+## 10. CI/CD Integration
+
+### 10.1 GitHub Actions Workflow
+
+**Every PR MUST run the following checks:**
+
+```yaml
+# .github/workflows/qa.yml
+name: QA Pipeline
+
+on:
+  pull_request:
+    branches: [main, phase-*]
+  push:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Rust Tests
+        run: cargo test --all
+      
+  qa-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run E2E Golden Path
+        run: |
+          cargo build --release
+          uv run pytest tests/qa/test_e2e_golden_path.py -v
+      
+  performance-benchmarks:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Run Benchmarks
+        run: |
+          cd benchmarks
+          python3 benchmark_framework_scale.py --all --output results.json
+      - name: Check Thresholds
+        run: python3 scripts/check_benchmark_thresholds.py results.json
+```
+
+### 10.2 Benchmark Threshold Enforcement
+
+**Create threshold checking script:**
+
+```python
+# scripts/check_benchmark_thresholds.py
+import json
+import sys
+
+THRESHOLDS = {
+    "L1": {"build_ms": 50, "load_ms": 500},
+    "L2": {"build_ms": 50, "load_ms": 500},
+    "L3": {"build_ms": 75, "load_ms": 600},
+    "L4": {"build_ms": 100, "load_ms": 700},
+    "L5": {"build_ms": 150, "load_ms": 800},
+}
+
+def check(results_file):
+    with open(results_file) as f:
+        data = json.load(f)
+    
+    failures = []
+    for r in data["results"]:
+        level = r["level"]
+        if level in THRESHOLDS:
+            if r["build_time_ms"] > THRESHOLDS[level]["build_ms"]:
+                failures.append(f"{r['framework']} {level}: build {r['build_time_ms']}ms > {THRESHOLDS[level]['build_ms']}ms")
+            if r["load_time_ms"] > THRESHOLDS[level]["load_ms"]:
+                failures.append(f"{r['framework']} {level}: load {r['load_time_ms']}ms > {THRESHOLDS[level]['load_ms']}ms")
+    
+    if failures:
+        print("❌ PERFORMANCE REGRESSION DETECTED:")
+        for f in failures:
+            print(f"  - {f}")
+        sys.exit(1)
+    else:
+        print("✅ All benchmarks within threshold")
+
+if __name__ == "__main__":
+    check(sys.argv[1])
+```
+
+### 10.3 Required CI Checks
+
+| Check | Trigger | Failure Policy |
+|:---|:---|:---|
+| `cargo test` | Every PR | BLOCK merge |
+| `cargo clippy` | Every PR | BLOCK merge |
+| `E2E Golden Path` | Every PR | BLOCK merge |
+| `Agent Tests` | Every PR | WARN (review required) |
+| `Performance Benchmarks` | Push to main | WARN + notify |
+
+---
+
+## 11. Developer Quick Reference
+
+### 11.1 One-Page Cheat Sheet
+
+```
+╔══════════════════════════════════════════════════════════════════════╗
+║                    DEVELOPER QUICK REFERENCE                          ║
+╠══════════════════════════════════════════════════════════════════════╣
+║                                                                        ║
+║  BEFORE SUBMITTING PR:                                                ║
+║  ┌────────────────────────────────────────────────────────────────┐  ║
+║  │ cargo test                              # All unit tests       │  ║
+║  │ cargo clippy -- -D warnings             # No warnings          │  ║
+║  │ cargo fmt --check                       # Code formatted       │  ║
+║  │ uv run pytest tests/qa/test_e2e_golden_path.py  # E2E pass    │  ║
+║  └────────────────────────────────────────────────────────────────┘  ║
+║                                                                        ║
+║  PERFORMANCE BENCHMARKS:                                              ║
+║  ┌────────────────────────────────────────────────────────────────┐  ║
+║  │ cd benchmarks                                                   │  ║
+║  │ python3 benchmark_velo_vs_cpython.py --scenario all            │  ║
+║  │ python3 benchmark_framework_scale.py --all                     │  ║
+║  └────────────────────────────────────────────────────────────────┘  ║
+║                                                                        ║
+║  DEFECT STATUS UPDATES:                                               ║
+║  ┌────────────────────────────────────────────────────────────────┐  ║
+║  │ After fixing a defect:                                          │  ║
+║  │ 1. Reference DEF-XX-XXX in commit message                      │  ║
+║  │ 2. Update defect status to FIXED in the .md file              │  ║
+║  │ 3. QA will verify and update to VERIFIED                      │  ║
+║  └────────────────────────────────────────────────────────────────┘  ║
+║                                                                        ║
+║  KEY FILES:                                                           ║
+║    tests/qa/conftest.py          - Test fixtures                     ║
+║    tests/qa/test_e2e_golden_path.py - E2E tests (MUST PASS)          ║
+║    docs/qa/defects/              - Defect reports                    ║
+║    benchmarks/                   - Performance benchmarks             ║
+║                                                                        ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+### 11.2 Common Developer Mistakes
+
+| Mistake | Solution |
+|:---|:---|
+| Skip E2E tests | ALWAYS run `test_e2e_golden_path.py` before PR |
+| Ignore clippy warnings | Fix ALL warnings, they often indicate bugs |
+| Don't reference defects | Include `Fixes DEF-XX-XXX` in commit message |
+| Assume QA will find problems | Run QA tests locally first |
+
+---
+
+## 12. Test Coverage Matrix
+
+### 12.1 RFC-to-Test Mapping
+
+**For each RFC, maintain a coverage matrix:**
+
+```markdown
+## RFC-0009: Static Import Graph - Coverage Matrix
+
+| Requirement | Section | Test ID | Status |
+|:---|:---:|:---|:---:|
+| MUST analyze import graph | 3.1 | test_L0_1_ast_dependency | ✅ |
+| MUST handle circular imports | 3.2 | test_L0_2_scc_cyclic_handle | ✅ |
+| MUST support hard/soft deps | 3.3 | test_L0_1_ast_dependency | ✅ |
+| SHOULD fallback for dynamic | 4.1 | test_L4_1_dynamic_import | ✅ |
+| MUST verify bundle hash | 5.1 | test_GOLD_002_rebuild | ✅ |
+| SHOULD report metrics | 5.3 | test_L5_metrics_json | ⚠️ XFAIL |
+
+**Coverage: 5/6 (83%)**
+```
+
+### 12.2 Framework Coverage
+
+| Framework | L1 | L2 | L3 | L4 | L5 | Coverage |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| FastAPI | ✅ | ✅ | ✅ | ✅ | ✅ | 100% |
+| Flask | ✅ | ✅ | ✅ | ✅ | ✅ | 100% |
+| Django | ✅ | ✅ | ✅ | ✅ | ✅ | 100% |
+
+### 12.3 Gap Tracking
+
+```markdown
+## Known Coverage Gaps
+
+| Gap | RFC Section | Reason | Priority |
+|:---|:---|:---|:---:|
+| Zygote + Fast Loader combo | 6.2 | Not yet implemented | P2 |
+| fallback_reasons in metrics | 5.3 | Not yet implemented | P3 |
+| Deep chain (100+) | 3.4 | DEF-60-008 open | P2 |
+```
+
+---
+
+## 13. Security Invariant Matrix
+
+### 13.1 Hardening Requirements (H-1 to H-10)
+
+**Every security invariant MUST have at least one test:**
+
+| ID | Invariant | Test | Status |
+|:---|:---|:---|:---:|
+| H-1 | Global BLAKE3 hash verification | test_GOLD_002_rebuild_idempotency | ✅ |
+| H-2 | Atomic flock reads | test_loader_atomic_read | ✅ |
+| H-3 | Keyed BLAKE3 env binding | test_env_hash_binding | ✅ |
+| H-4 | Marshal bomb protection | test_SEC_604_rkyv_bomb | ✅ |
+| H-5 | Path traversal prevention | test_SEC_602_symlink_escape | ✅ |
+| H-6 | Reserved name protection | test_SEC_603_reserved_name | ✅ |
+| H-7 | Bundle size limits | test_bundle_size_limit | ✅ |
+| H-8 | Version mismatch detection | test_version_mismatch | ✅ |
+| H-9 | ABI compatibility check | test_abi_fingerprint | ✅ |
+| H-10 | Recursion depth limit | test_structural_guard_recursion | ✅ |
+
+### 13.2 Security Test Requirements
+
+```python
+# Security tests MUST:
+# 1. Attempt the attack
+# 2. Verify the defense triggers
+# 3. Verify no data leakage
+
+def test_SEC_XXX_attack_name(isolated_env):
+    """SEC-XXX: Description of attack vector."""
+    env = isolated_env
+    
+    # 1. Setup malicious payload
+    env.create_malicious_file(...)
+    
+    # 2. Attempt attack
+    result = env.run_velo("run", "--fast", "malicious.py")
+    
+    # 3. Verify defense triggered
+    assert result.returncode != 0, "Attack should be blocked"
+    assert "security" in result.stderr.lower() or "denied" in result.stderr.lower()
+    
+    # 4. Verify no data leakage (if applicable)
+    assert "secret" not in result.stdout
+```
+
+---
+
+## 14. Performance & Benchmark Standards
+
+### 14.1 Benchmark Suite Structure
+
+```
+benchmarks/
+├── README.md                      # Overview & quick start
+├── BENCHMARK_GUIDE.md             # Step-by-step user guide
+├── benchmark_framework_scale.py   # L1-L5 scaling tests
+├── benchmark_velo_vs_cpython.py   # Head-to-head comparison
+├── benchmark_enterprise.py        # Production-scale stress tests
+└── benchmark_projects.py          # Real project benchmarks
+```
+
+### 14.2 Required Benchmarks
+
+| Benchmark | Frequency | Purpose |
+|:---|:---|:---|
+| Velo vs CPython | Every release | Marketing & speedup proof |
+| Framework Scale (L1-L5) | Every PR (optional) | Regression detection |
+| Enterprise | Weekly | Stress test validation |
+
+### 14.3 Baseline Thresholds
+
+```markdown
+## Performance Baselines (Phase 6.0)
+
+| Metric | L1-L2 | L3 | L4 | L5 |
+|:---|:---:|:---:|:---:|:---:|
+| Build Time | < 50ms | < 75ms | < 100ms | < 150ms |
+| Load Time | < 500ms | < 600ms | < 700ms | < 800ms |
+| Speedup vs CPython | > 1.5x | > 1.5x | > 1.5x | > 1.5x |
+```
+
+### 14.4 Zygote Mode Benchmarks
+
+**For maximum speedup claims, MUST run Zygote benchmarks:**
+
+```bash
+# Start Zygote daemon
+velo zygote start --preload fastapi,pydantic
+
+# Run benchmark
+python3 benchmark_projects.py --zygote --all
+
+# Expected results:
+# - Cold start: ~15ms (vs CPython ~600ms)
+# - Speedup: 40-60x
+```
+
+---
+
+## 15. Knowledge Base Integration
+
+### 15.1 What to Capture
+
+After each QA cycle, capture learnings:
+
+| Category | What to Document | Where |
+|:---|:---|:---|
+| **Patterns** | Common bug patterns | Knowledge Base |
+| **Gotchas** | Framework-specific issues | Knowledge Base |
+| **Workarounds** | Temporary solutions | Defect reports |
+| **Best Practices** | What worked well | This SOP |
+
+### 15.2 Knowledge Item Format
+
+```markdown
+# KI: [Title]
+
+**Category:** Bug Pattern / Best Practice / Framework Gotcha
+**Phase:** 6.0
+**Date:** YYYY-MM-DD
+
+## Summary
+Brief description of the learning.
+
+## Context
+When/where this applies.
+
+## Details
+Full explanation with examples.
+
+## References
+- DEF-60-XXX
+- RFC-0009 Section X.X
+```
+
+### 15.3 Retrospective Process
+
+After each phase completion:
+
+1. **Collect all learnings** from agents and leader
+2. **Categorize** by type (pattern, gotcha, best practice)
+3. **Distill** into Knowledge Items
+4. **Update SOP** if process improvements identified
+5. **Archive** in knowledge base for future reference
+
+---
+
+## 16. Appendix: Checklists & Templates
+
 
 ### 10.1 Quick Reference: QA Workflow
 
@@ -697,7 +1050,9 @@ Based on decision, QA will:
 | Version | Date | Author | Changes |
 |:---:|:---|:---|:---|
 | 1.0 | 2026-01-04 | QA Working Group | Initial version from Phase 6.0 retrospective |
+| 2.0 | 2026-01-04 | QA Leader | Added CI/CD, Developer Guide, Coverage Matrix, Security Matrix, Performance, Knowledge Base |
 
 ---
 
-**Velo QA Working Group** | SOP v1.0
+**Velo QA Working Group** | SOP v2.0
+
