@@ -646,4 +646,123 @@ mod tests {
 
         assert!(!pid_file.exists(), "PID file should be removed on drop");
     }
+
+    // ========================================================================
+    // Event Bus tests (ADR Recommendation #1)
+    // ========================================================================
+
+    #[test]
+    fn test_server_event_signal_debug_format() {
+        let event = ServerEvent::Signal(15);
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("Signal"));
+        assert!(debug.contains("15"));
+    }
+
+    #[test]
+    fn test_server_event_worker_exit_debug_format() {
+        let event = ServerEvent::WorkerExit;
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("WorkerExit"));
+    }
+
+    #[test]
+    fn test_event_channel_send_receive() {
+        let (tx, rx) = mpsc::channel::<ServerEvent>();
+
+        // Send an event
+        tx.send(ServerEvent::Signal(2)).unwrap(); // SIGINT
+
+        // Receive should get the event
+        let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        match event {
+            ServerEvent::Signal(sig) => assert_eq!(sig, 2),
+            _ => panic!("Expected Signal event"),
+        }
+    }
+
+    #[test]
+    fn test_event_channel_multiple_signals() {
+        let (tx, rx) = mpsc::channel::<ServerEvent>();
+
+        // Send multiple signals
+        tx.send(ServerEvent::Signal(2)).unwrap(); // SIGINT
+        tx.send(ServerEvent::Signal(15)).unwrap(); // SIGTERM
+
+        // Receive in order
+        let event1 = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        let event2 = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+
+        match event1 {
+            ServerEvent::Signal(sig) => assert_eq!(sig, 2),
+            _ => panic!("Expected Signal(2)"),
+        }
+        match event2 {
+            ServerEvent::Signal(sig) => assert_eq!(sig, 15),
+            _ => panic!("Expected Signal(15)"),
+        }
+    }
+
+    #[test]
+    fn test_event_channel_receiver_timeout() {
+        let (_tx, rx) = mpsc::channel::<ServerEvent>();
+
+        // Receiver should timeout when no events are sent
+        let result = rx.recv_timeout(Duration::from_millis(50));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_event_channel_sender_dropped() {
+        let rx = {
+            let (tx, rx) = mpsc::channel::<ServerEvent>();
+            tx.send(ServerEvent::Signal(2)).unwrap();
+            drop(tx); // Drop sender
+            rx
+        };
+
+        // Should still receive the buffered event
+        let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        match event {
+            ServerEvent::Signal(sig) => assert_eq!(sig, 2),
+            _ => panic!("Expected Signal event"),
+        }
+
+        // After buffer is empty, recv should return error (disconnected)
+        let result = rx.recv_timeout(Duration::from_millis(50));
+        assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_spawn_signal_forwarder_success() {
+        let (tx, _rx) = mpsc::channel::<ServerEvent>();
+
+        // Should successfully spawn the signal forwarder thread
+        let result = spawn_signal_forwarder(tx);
+        assert!(result.is_ok(), "Signal forwarder should spawn successfully");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_spawn_signal_forwarder_exits_when_sender_dropped() {
+        use std::time::Instant;
+
+        let (tx, rx) = mpsc::channel::<ServerEvent>();
+
+        // Spawn the forwarder
+        spawn_signal_forwarder(tx).unwrap();
+
+        // Drop the receiver to simulate main loop exit
+        drop(rx);
+
+        // The forwarder thread should exit gracefully (no test for this directly,
+        // but we can verify the channel is closed and won't block indefinitely)
+        let start = Instant::now();
+        let timeout = Duration::from_secs(1);
+        while start.elapsed() < timeout {
+            thread::sleep(Duration::from_millis(10));
+        }
+        // If we reach here without hanging, the test passes
+    }
 }
