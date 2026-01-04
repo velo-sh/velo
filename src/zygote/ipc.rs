@@ -98,36 +98,55 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
 /// Directory has 0700 permissions for security
+///
+/// # Red Line #1: Path Length Circuit Breaker
+/// Unix sockets have a 108-character path limit. We use 104 as the threshold
+/// to leave margin for the socket filename. If exceeded, fallback to /tmp.
 pub fn get_socket_dir() -> PathBuf {
+    /// Red Line #1: Path length limit with 4-byte margin
+    const SOCKET_PATH_LIMIT: usize = 104;
+
+    let uid = unsafe { libc::getuid() };
+
     // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
     if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
         let dir = PathBuf::from(xdg_dir).join("velo");
-        if ensure_socket_dir(&dir) {
+        let test_path = dir.join("velo-zygote-v01.sock");
+        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
             return dir;
         }
     }
 
     // 2. Try user-isolated temp directory
-    let uid = unsafe { libc::getuid() };
     let user_dir = std::env::temp_dir().join(format!("velo-{}", uid));
-    if ensure_socket_dir(&user_dir) {
-        // Check path length (Unix socket limit: 108 chars)
-        let test_path = user_dir.join("velo-zygote-v01.sock");
-        if test_path.to_string_lossy().len() < 108 {
-            return user_dir;
-        }
+    let test_path = user_dir.join("velo-zygote-v01.sock");
+    // Red Line #1: Check path length BEFORE ensuring directory
+    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
+        return user_dir;
     }
 
     // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
+    // Red Line #1: /tmp fallback when path too long
+    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
+        eprintln!(
+            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
+            SOCKET_PATH_LIMIT
+        );
+    }
     let fallback_dir = PathBuf::from("/tmp").join(format!("velo-{}", uid));
     let _ = ensure_socket_dir(&fallback_dir);
     fallback_dir
 }
 
 /// Ensure socket directory exists with proper permissions (0700)
+///
+/// # Red Line #2: Double Permission Verification
+/// After setting permissions, we MUST verify the mode is exactly 0700.
+/// If umask interferes and permissions are wrong, we log a warning.
 fn ensure_socket_dir(dir: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
+    // Create directory if needed
     if !dir.exists() && std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -136,13 +155,37 @@ fn ensure_socket_dir(dir: &Path) -> bool {
     if let Ok(metadata) = dir.metadata() {
         let mut perms = metadata.permissions();
         perms.set_mode(0o700);
-        let _ = std::fs::set_permissions(dir, perms);
+        if std::fs::set_permissions(dir, perms.clone()).is_err() {
+            return false;
+        }
+
+        // Red Line #2: Double verification - confirm mode is 0700
+        if let Ok(verify_meta) = dir.metadata() {
+            let mode = verify_meta.permissions().mode() & 0o777;
+            if mode != 0o700 {
+                eprintln!(
+                    "⚠️ SECURITY: Socket dir has insecure permissions: {:o} (expected 0700)",
+                    mode
+                );
+                // Continue but warn - umask may have interfered
+            }
+        }
     }
 
     true
 }
 
 /// Check if a socket is alive (responds to connection attempt)
+///
+/// # Side Effect (Red Line #4 Documentation)
+/// This function creates an actual TCP connection to the socket.
+/// If the socket is alive, the server will `accept()` this probe connection,
+/// then immediately see EOF when we disconnect.
+///
+/// This is acceptable because:
+/// - Probe happens during startup before Zygote is running
+/// - Used only in `cleanup_stale_sockets()` to detect dead sockets
+/// - Connection is immediately dropped after probe
 pub fn is_socket_alive(socket_path: &Path) -> bool {
     if !socket_path.exists() {
         return false;
@@ -156,6 +199,10 @@ pub fn is_socket_alive(socket_path: &Path) -> bool {
 ///
 /// DEF-61-004: On startup, remove sockets that are not alive
 /// This handles upgrade scenarios where old Zygote processes died
+///
+/// # Red Line #3: Atomic Cleanup Semantics
+/// - MUST ignore `NotFound` errors (prevents race conditions)
+/// - MUST alert on `PermissionDenied` (indicates misconfigured residual files)
 pub fn cleanup_stale_sockets() {
     let socket_dir = get_socket_dir();
 
@@ -173,7 +220,25 @@ pub fn cleanup_stale_sockets() {
                     && name.ends_with(".sock")
                     && !is_socket_alive(&path)
                 {
-                    let _ = std::fs::remove_file(&path);
+                    // Red Line #3: Atomic cleanup with proper error handling
+                    match std::fs::remove_file(&path) {
+                        Ok(_) => {
+                            eprintln!("🔄 Cleaned stale socket: {}", name);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            // Ignore - socket already removed (race condition)
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                            // Red Line #3: Alert on permission denied
+                            eprintln!(
+                                "⚠️ SECURITY: Cannot remove socket (permission denied): {}",
+                                name
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️ Failed to remove stale socket {}: {}", name, e);
+                        }
+                    }
                 }
             }
         }
@@ -200,8 +265,20 @@ pub fn cleanup_socket(socket_path: &Path) {
 // ============================================================================
 
 /// Protocol version (ADV-1 + DEF-61-004)
-/// Layout: [Length 4B LE] [Version 1B] [Payload MsgPack]
-/// Used in socket path: velo-zygote-v{:02x}.sock
+///
+/// # Red Line #5: Version Coupling Documentation
+/// This constant is used in TWO critical places:
+/// 1. **Message framing**: `[Length 4B LE] [Version 1B] [Payload MsgPack]`
+/// 2. **Socket path**: `velo-zygote-v{:02x}.sock`
+///
+/// # Important
+/// Incrementing this value creates a NEW socket path, providing automatic
+/// isolation from old Zygote processes. Old processes using the previous
+/// socket will not interfere with new processes.
+///
+/// # Version History
+/// - 0x00: JSON protocol (v0.6.1 and earlier)
+/// - 0x01: MessagePack protocol (v0.6.2+, DEF-61-004)
 pub const PROTOCOL_VERSION: u8 = 0x01;
 
 /// Write a MessagePack message with length prefix and version byte
