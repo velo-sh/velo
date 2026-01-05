@@ -321,11 +321,25 @@ class WorkerRegistry:
         def guardian():
             start_time = time.time()
             while True:
-                if os.getppid() != parent_pid: os._exit(1)
-                if ttl > 0 and (time.time() - start_time) > ttl: os._exit(1)
-                time.sleep(10)
+                if os.getppid() != parent_pid: 
+                    # Supervisor lost - terminate immediately
+                    os._exit(1)
+                if ttl > 0 and (time.time() - start_time) > ttl: 
+                    # TTL expired
+                    os._exit(1)
+                time.sleep(1) # Reduced to 1s for immediate response (H-11 compliance)
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
+
+    def kill_all(self):
+        """Emergency cleanup of all workers."""
+        with self.lock:
+            pids = list(self.workers.keys())
+        for pid in pids:
+            try: os.kill(pid, 9)
+            except: pass
+        with self.lock:
+            self.workers.clear()
 
     def reap_stale(self):
         """Cleanup logic for timed-out or missing workers."""
@@ -578,6 +592,11 @@ class ZygoteServer:
         """Start the Zygote server using asyncio."""
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
+            
+            # RAII Reaper Chain: Monitor our own parent (the supervisor)
+            # If the supervisor dies, we MUST die to prevent orphan leaks.
+            WorkerRegistry.start_guardian(os.getppid(), 0)
+            
             self._setup_signals()
             self._preload_modules()
             
@@ -652,7 +671,8 @@ class ZygoteServer:
             except (asyncio.TimeoutError, KeyboardInterrupt):
                 LogUtils.log("Zygote Idle Timeout.")
             finally:
-                self.worker_registry.reap_stale() # Final cleanup
+                LogUtils.log("Shutting down Zygote - Cleaning up workers.")
+                self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         transport = ZygoteTransport(reader, writer)
