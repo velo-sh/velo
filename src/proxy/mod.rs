@@ -8,10 +8,12 @@
 //! External HTTP → TCP Port → L7 Proxy → LoadBalancer → UDS Worker
 //! ```
 
+pub mod config;
 pub mod load_balancer;
 pub mod service;
 pub mod upstream;
 
+pub use config::ProxyConfig;
 pub use load_balancer::{ConnectionGuard, LoadBalancer, WorkerNode};
 pub use service::VeloProxyService;
-pub use upstream::{SocketTarget, UdsConnector, UdsTarget};
+pub use upstream::{SocketTarget, UdsConnector, UdsPoolConfig, UdsTarget};
