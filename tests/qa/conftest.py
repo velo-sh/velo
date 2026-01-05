@@ -140,3 +140,40 @@ def isolated_env(tmp_path):
     except:
         pass
 
+
+# =============================================================================
+# MEMORY HELPERS
+# =============================================================================
+
+def get_rss(pid: int) -> int:
+    """Get Resident Set Size (RSS) in bytes for a process.
+    
+    Returns 0 if process doesn't exist or error occurs.
+    """
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        return p.memory_info().rss
+    except Exception:
+        return 0
+
+
+def get_pss(pid: int) -> int:
+    """Get Proportional Set Size (PSS) in bytes for a process.
+    
+    PSS accounts for shared pages - more accurate for COW memory measurement.
+    Falls back to RSS if PSS not available (macOS).
+    Returns 0 if process doesn't exist or error occurs.
+    """
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        # PSS is only available on Linux via memory_full_info()
+        try:
+            return p.memory_full_info().pss
+        except AttributeError:
+            # macOS doesn't have PSS, fall back to RSS
+            return p.memory_info().rss
+    except Exception:
+        return 0
+

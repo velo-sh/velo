@@ -19,14 +19,8 @@ import sys
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = [
-    pytest.mark.xfail(
-        reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-        strict=True,
-    ),
-    pytest.mark.security,
-]
+# Mark all tests in this module as security tests
+pytestmark = pytest.mark.security
 
 
 class TestL4Security:

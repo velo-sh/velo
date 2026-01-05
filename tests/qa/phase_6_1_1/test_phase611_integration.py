@@ -16,15 +16,8 @@ import time
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-# ARCH Decision: docs/qa/ARCHIVE/arch/ARCH-611-001-implementation-pending.md
-pytestmark = [
-    pytest.mark.xfail(
-        reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-        strict=True,  # Fail if test unexpectedly passes
-    ),
-    pytest.mark.integration,
-]
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
 
 
 class TestPhase611Integration:

@@ -14,14 +14,8 @@ import time
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = [
-    pytest.mark.xfail(
-        reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-        strict=True,
-    ),
-    pytest.mark.stress,
-]
+# Mark all tests in this module as stress tests
+pytestmark = pytest.mark.stress
 
 
 class TestL3Stress:
@@ -125,7 +119,7 @@ class TestL3Stress:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(1)
-                s.connect(("127.0.0.1", 8000))
+                s.connect(("127.0.0.1", proc.port))
                 # Send incomplete HTTP request (no final \r\n\r\n)
                 s.send(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
                 slow_sockets.append(s)
@@ -171,7 +165,7 @@ class TestL3Stress:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(0.5)
-                s.connect(("127.0.0.1", 8000))
+                s.connect(("127.0.0.1", proc.port))
                 sockets.append(s)
             except Exception:
                 break
