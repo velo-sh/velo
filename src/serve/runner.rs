@@ -661,6 +661,10 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 Ok(ServerEvent::WorkerExit) => {
                     // Worker exited (only on Windows/non-Unix)
                 }
+                Ok(ServerEvent::Reload) => {
+                    // Hot reload request - not applicable in Zygote mode
+                    eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
+                }
                 Err(_) => break,
             }
         }
