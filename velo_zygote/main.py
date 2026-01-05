@@ -277,15 +277,60 @@ class CommandRouter:
             return func
         return decorator
 
-    async def dispatch(self, server: 'ZygoteServer', cmd: Dict) -> Dict:
-        cmd_type = cmd.get("type")
-        handler = self.handlers.get(cmd_type)
-        if not handler:
-            return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+    async def dispatch(self, server: 'ZygoteServer', cmd: Any) -> Dict:
+        """
+        Dispatch command to handler. 
+        Supports both Map-based (Dict) and Array-based (List) protocols.
+        """
         try:
+            if isinstance(cmd, dict):
+                cmd_type = cmd.get("type")
+            elif isinstance(cmd, (list, tuple)) and len(cmd) > 0:
+                cmd_type = cmd[0]
+                # Convert list to dict for handler compatibility
+                cmd = self._list_to_dict(cmd_type, cmd)
+            else:
+                return {"type": "Error", "message": f"Malformed command format: {type(cmd)}"}
+
+            handler = self.handlers.get(cmd_type)
+            if not handler:
+                return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+            
             return await handler(server, cmd)
         except Exception as e:
+            LogUtils.debug_log(f"Dispatch Error: {e}")
             return {"type": "Error", "message": f"Handler error: {e}"}
+
+    def _list_to_dict(self, cmd_type: str, cmd_list: List) -> Dict:
+        """Convert array-based protocol to map-based for internal handlers."""
+        if cmd_type == "Fork":
+            return {
+                "type": "Fork",
+                "script_path": cmd_list[1] if len(cmd_list) > 1 else "",
+                "args": cmd_list[2] if len(cmd_list) > 2 else [],
+                "async_mode": cmd_list[3] if len(cmd_list) > 3 else False,
+                "stdout_path": cmd_list[4] if len(cmd_list) > 4 else None,
+                "stderr_path": cmd_list[5] if len(cmd_list) > 5 else None,
+                "exit_code_path": cmd_list[6] if len(cmd_list) > 6 else None,
+                "fast_mode": cmd_list[7] if len(cmd_list) > 7 else False,
+                "bundle_path": cmd_list[8] if len(cmd_list) > 8 else None,
+                "project_root": cmd_list[9] if len(cmd_list) > 9 else None,
+                "max_bundle_size": cmd_list[10] if len(cmd_list) > 10 else None,
+            }
+        elif cmd_type in ("WaitWorker", "SignalWorker", "WorkerStatus"):
+            return {
+                "type": cmd_type,
+                "worker_pid": cmd_list[1] if len(cmd_list) > 1 else None,
+                "timeout_secs": cmd_list[2] if len(cmd_list) > 2 else None,
+                "signal": cmd_list[2] if cmd_type == "SignalWorker" and len(cmd_list) > 2 else 0,
+            }
+        elif cmd_type == "Handshake":
+            return {
+                "type": "Handshake",
+                "version": cmd_list[1] if len(cmd_list) > 1 else 0,
+                "capabilities": cmd_list[2] if len(cmd_list) > 2 else [],
+            }
+        return {"type": cmd_type}
 
 
 class WorkerRegistry:
@@ -523,11 +568,7 @@ class ForkHandler:
             try:
                 sys.stdout = open(stdout_path, "w")
             except OSError: pass
-        else:
-            try:
-                sys.stdout = open("/dev/tty", "w")
-            except OSError: pass
-
+        
         if stderr_path:
             try:
                 sys.stderr = open(stderr_path, "w")
@@ -614,7 +655,16 @@ class ZygoteServer:
             sys.exit(1)
 
     def _setup_signals(self):
-        signal.signal(signal.SIGCHLD, lambda s, f: asyncio.create_task(self._async_reap()))
+        loop = asyncio.get_event_loop()
+        def handle_chld():
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(self._async_reap()))
+        
+        try:
+            signal.signal(signal.SIGCHLD, lambda s, f: handle_chld())
+        except ValueError:
+            # Not in main thread, skip signal setup
+            pass
+            
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 

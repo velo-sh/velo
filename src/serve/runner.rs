@@ -452,7 +452,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
     // RAII Guard for Health Server (SEC-P0-004)
     // Shared container for LoadBalancer (populated later if in Zygote mode)
-    let lb_holder = Arc::new(std::sync::RwLock::new(None));
+    let lb_holder = Arc::new(std::sync::Mutex::new(None));
     let mut _health_server: Option<crate::serve::health::HealthServer> = None;
     let health_ready = Arc::new(AtomicBool::new(false));
     if let Some(ref bind) = args.health_bind {
@@ -611,10 +611,33 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 // RAII: Keep Zygote alive as long as this function runs
                 _zygote_guard = Some(launcher);
             }
-        } else {
-            logger.info("Using existing Zygote");
-            // Populate guard so Zygote mode is activated (Recommendation #3 Fix)
-            _zygote_guard = Some(ZygoteLauncher::new(socket_path));
+        } else if crate::zygote::ipc::is_socket_alive(&socket_path) {
+            logger.info("Using existing Zygote (Socket Found)");
+
+            // RFC-0011 Audit Remediation: Perform Deep Handshake to verify Zygote is active
+            // This prevents the "Shadow Trap" where a stale socket file leads to a silent fallback.
+            match crate::zygote::ipc::send_command(
+                &socket_path,
+                crate::zygote::ipc::ZygoteCommand::Handshake {
+                    version: crate::zygote::ipc::PROTOCOL_VERSION,
+                    capabilities: vec![],
+                },
+            ) {
+                Ok(crate::zygote::ipc::ZygoteResponse::Handshake { version, .. })
+                    if version == crate::zygote::ipc::PROTOCOL_VERSION =>
+                {
+                    logger.info(&format!("Existing Zygote verified (Protocol v{})", version));
+                    _zygote_guard = Some(ZygoteLauncher::new(socket_path));
+                }
+                Ok(resp) => {
+                    logger.warn(&format!("Existing Zygote invalid handshake: {:?}", resp));
+                    let _ = std::fs::remove_file(&socket_path);
+                }
+                Err(e) => {
+                    logger.warn(&format!("Existing Zygote not responding: {}", e));
+                    let _ = std::fs::remove_file(&socket_path);
+                }
+            }
         }
     }
 
@@ -651,7 +674,6 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
 
         eprintln!("✅ All workers ready");
-
         // =========================================================================
         // RFC-0011 Phase 2B: L7 Proxy Integration
         // =========================================================================
@@ -665,20 +687,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     .map(|p| p.to_string_lossy().to_string())
             })
             .collect();
-
         let lb = Arc::new(LoadBalancer::new(socket_paths));
-        lb.spawn_health_checks(Duration::from_secs(5));
-
         // 2. Update Health Check with LB reference (B2: Deep Health Check)
         {
-            if let Ok(mut guard) = lb_holder.write() {
+            if let Ok(mut guard) = lb_holder.lock() {
                 *guard = Some(lb.clone());
                 logger.debug("LoadBalancer attached to HealthServer");
             } else {
                 logger.warn("Failed to attach LoadBalancer to HealthServer (lock error)");
             }
         }
-
         // 3. Start Tokio Runtime for Hyper
         logger.info("Starting L7 Proxy...");
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -695,8 +713,10 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             .parse()
             .map_err(|e| anyhow::anyhow!("Invalid bind address {}: {}", addr, e))?;
 
-        // 5. Spawn Proxy Server in background
-        rt.spawn(async move {
+        // 5. Start Proxy Server
+        // RFC-0011 Phase 3C: We run the proxy in an async block to ensure the runtime stays alive
+        // and background health checks can continue.
+        let _proxy_handle = rt.spawn(async move {
             let listener = match tokio::net::TcpListener::bind(bind_addr).await {
                 Ok(l) => l,
                 Err(e) => {
@@ -705,20 +725,21 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 }
             };
 
+            // RFC-0011 Phase 3C: Active health checks MUST run inside runtime context
+            lb.clone().spawn_health_checks(Duration::from_secs(5));
+
             eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
 
             loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
                         let io = TokioIo::new(stream);
-                        let service = service.clone(); // VeloProxyService is Clone (Arc internally)
+                        let service = service.clone();
 
                         tokio::spawn(async move {
                             if let Err(err) =
                                 http1::Builder::new().serve_connection(io, service).await
                             {
-                                // Log connection error?
-                                // tracing::debug!("Error serving connection: {:?}", err);
                                 let _ = err;
                             }
                         });
