@@ -157,7 +157,14 @@ class PackageBenchmark:
             "status": "success"
         }
         
-        # Warmup for Zygote
+        # Stop any existing Zygote to ensure clean environment for this package
+        subprocess.run(
+            [str(VELO_BIN), "zygote", "stop"],
+            cwd=self.project_dir,
+            capture_output=True
+        )
+        
+        # Warmup for Zygote (auto-starts fresh Zygote for this project)
         if self.run_test("velo_zygote") is None:
             results["status"] = "warmup_failed"
             return results
