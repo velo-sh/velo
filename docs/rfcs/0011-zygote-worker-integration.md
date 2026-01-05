@@ -78,21 +78,21 @@ Process Tree (phase-6.1/serve-analyze):
 
 ## 3. Implementation Options
 
-### Option A: Replace uvicorn entirely (High effort)
+### Option A: Native ASGI Runtime (High effort)
 
 Velo implements HTTP server + ASGI protocol, workers fork from Zygote.
 
 **Pros**: Full control, maximum performance  
 **Cons**: Large scope, needs ASGI expertise
 
-### Option B: Zygote-aware uvicorn fork (Medium effort)
+### Option B: Upstream Integration (Medium effort)
 
 Modify uvicorn to use Zygote for worker spawning via custom reloader.
 
 **Pros**: Leverage existing uvicorn code  
 **Cons**: uvicorn internals are complex
 
-### Option C: Hybrid approach (Recommended)
+### Option C: Composition Architecture (Recommended)
 
 Velo manages worker pool, each worker runs uvicorn in single-worker mode.
 
