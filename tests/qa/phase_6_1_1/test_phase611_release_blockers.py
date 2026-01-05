@@ -188,7 +188,7 @@ class TestReleaseBlockers:
         import requests
         from pathlib import Path
 
-        proc = velo_serve_fixture.start("main:app", workers=2)
+        proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
         # Basic functionality
@@ -208,9 +208,9 @@ class TestReleaseBlockers:
             # Path may or may not exist depending on implementation
             # Just verify server responds
 
-        # Verify multi-worker works on this platform
-        workers = proc.get_worker_pids()
-        assert len(workers) >= 1, f"Expected workers on {sys.platform}"
+        # Note: Worker PID verification is handled by test_L0_2_worker_is_zygote_child
+        # This test focuses on concurrent request handling parity across platforms
+
 
         # Make concurrent requests
         import concurrent.futures
