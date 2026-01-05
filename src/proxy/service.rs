@@ -262,6 +262,8 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
             let target = SocketTarget::from(socket_path_str);
 
             // 3. Connect (manual handshake for Phase 2B)
+            // RFC-0011 Perf-001: Connection Pooling is deferred to Phase 3.
+            // Current implementation uses "Connection-per-Request" for strict isolation and simplicity.
             let io = connector
                 .call(target)
                 .await

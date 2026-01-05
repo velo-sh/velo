@@ -3,7 +3,6 @@
 //! Manages multiple uvicorn workers with Zygote pre-warming.
 
 use anyhow::Result;
-use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -139,36 +138,26 @@ impl Worker {
 
     /// Generate worker script (injection-safe)
     fn generate_worker_script(app: &str, host: &str, port: u16) -> Result<String> {
-        let velo_lib_path = std::env::var("VELO_WORKER_PATH")
-            .or_else(|_| Self::detect_velo_lib_path())
-            .unwrap_or_else(|_| "/usr/local/lib/velo/velo_zygote".to_string());
-
-        let config = json!({
-            "app_path": app,
-            "host": host,
-            "port": port,
-            "log_level": "info"
-        });
-
+        // RFC-0011 Alignment: Inline uvicorn execution to avoid dependency on missing worker_runner.py
         Ok(format!(
             r#"#!/usr/bin/env python3
 import sys
-import json
 import os
+import uvicorn
 
 # Add project directory to sys.path
 sys.path.insert(0, os.getcwd())
 
-# Add velo_zygote to path
-sys.path.insert(0, {})
-
-from worker_runner import run_worker_with_shared_port
-
-config = json.loads('{}')
-run_worker_with_shared_port(**config)
+uvicorn.run(
+    "{app}",
+    host="{host}",
+    port={port},
+    log_level="info",
+)
 "#,
-            serde_json::to_string(&velo_lib_path)?,
-            serde_json::to_string(&config)?
+            app = app,
+            host = host,
+            port = port
         ))
     }
 
@@ -207,20 +196,6 @@ uvicorn.run(
             app = app,
             socket_path = socket_path,
         ))
-    }
-
-    /// Detect velo_zygote library path
-    fn detect_velo_lib_path() -> Result<String> {
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(parent) = exe.parent()
-        {
-            let lib_path = parent.join("velo_zygote");
-            if lib_path.exists() {
-                return Ok(lib_path.to_string_lossy().to_string());
-            }
-        }
-
-        anyhow::bail!("Could not detect VELO_WORKER_PATH")
     }
 
     /// Write script securely (0600 permissions)
