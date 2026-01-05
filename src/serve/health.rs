@@ -4,7 +4,7 @@
 //! Uses `tiny_http` for minimal overhead.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 /// Health server configuration
@@ -24,7 +24,7 @@ pub struct HealthServer {
     ready: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
     #[allow(dead_code)]
-    lb: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+    lb: Arc<Mutex<Option<Arc<LoadBalancer>>>>,
 }
 
 impl HealthServer {
@@ -40,7 +40,7 @@ impl HealthServer {
     pub fn spawn(
         bind: &str,
         ready: Arc<AtomicBool>,
-        lb: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+        lb: Arc<Mutex<Option<Arc<LoadBalancer>>>>,
     ) -> Result<Self, HealthError> {
         let ready_clone = Arc::clone(&ready);
         let lb_clone = Arc::clone(&lb);
@@ -68,7 +68,7 @@ impl HealthServer {
     fn serve_loop(
         server: tiny_http::Server,
         ready: Arc<AtomicBool>,
-        lb_container: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+        lb_container: Arc<Mutex<Option<Arc<LoadBalancer>>>>,
     ) {
         for request in server.incoming_requests() {
             let (status, body) = Self::handle_request(request.url(), &ready, &lb_container);
@@ -92,14 +92,14 @@ impl HealthServer {
     fn handle_request(
         url: &str,
         ready: &Arc<AtomicBool>,
-        lb_container: &Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+        lb_container: &Arc<Mutex<Option<Arc<LoadBalancer>>>>,
     ) -> (u16, &'static str) {
         match url {
             "/healthz" => {
                 // RFC-0011 K8s Review: Deep Health Check
                 // Acquire read lock to check if LB exists
                 #[allow(clippy::collapsible_if)]
-                if let Ok(guard) = lb_container.read() {
+                if let Ok(guard) = lb_container.lock() {
                     if let Some(lb) = guard.as_ref() {
                         // If we have workers, at least one must be healthy
                         if lb.worker_count() > 0 && lb.healthy_worker_count() == 0 {
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_handle_healthz() {
         let ready = Arc::new(AtomicBool::new(false));
-        let lb = Arc::new(RwLock::new(None));
+        let lb = Arc::new(Mutex::new(None));
         let (status, body) = HealthServer::handle_request("/healthz", &ready, &lb);
         assert_eq!(status, 200);
         assert_eq!(body, "OK");
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_handle_readyz_not_ready() {
         let ready = Arc::new(AtomicBool::new(false));
-        let lb = Arc::new(RwLock::new(None));
+        let lb = Arc::new(Mutex::new(None));
         let (status, body) = HealthServer::handle_request("/readyz", &ready, &lb);
         assert_eq!(status, 503);
         assert_eq!(body, "NOT READY");
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn test_handle_readyz_ready() {
         let ready = Arc::new(AtomicBool::new(true));
-        let lb = Arc::new(RwLock::new(None));
+        let lb = Arc::new(Mutex::new(None));
         let (status, body) = HealthServer::handle_request("/readyz", &ready, &lb);
         assert_eq!(status, 200);
         assert_eq!(body, "OK");
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_handle_not_found() {
         let ready = Arc::new(AtomicBool::new(true));
-        let lb = Arc::new(RwLock::new(None));
+        let lb = Arc::new(Mutex::new(None));
         let (status, body) = HealthServer::handle_request("/unknown", &ready, &lb);
         assert_eq!(status, 404);
         assert_eq!(body, "Not Found");
@@ -196,7 +196,7 @@ mod tests {
     fn test_sec_p0_004_no_metadata() {
         // SEC-P0-004: Verify responses contain ONLY status, no metadata
         let ready = Arc::new(AtomicBool::new(true));
-        let lb = Arc::new(RwLock::new(None));
+        let lb = Arc::new(Mutex::new(None));
 
         // Check all endpoints return minimal responses
         let (_, body) = HealthServer::handle_request("/healthz", &ready, &lb);
