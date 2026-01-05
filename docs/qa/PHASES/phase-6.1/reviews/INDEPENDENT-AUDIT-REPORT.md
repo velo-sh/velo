@@ -68,27 +68,74 @@ The "Destroyer Suite" was deployed to probe for architectural weaknesses, but th
 *   **[FINDING]**: This confirms that the system is silently regressing to legacy uvicorn mode without alerting the user. The Zygote is non-functional, rendering the system "immune" to Zygote-specific attacks only because the entire feature is bypassed.
 *   **[BLOCKER]**: Signal Hurricane (`CHAOS-001`) crashed the server process immediately due to the broken `asyncio` reaper loop hitting the IPC handshake wall.
 
-## 5. Remediation Verification (Commit 790b208)
+## 5. Remediation Verification
 
-Following the initial rejection, the developer provided commit `790b208`. I have verified the following:
+### 5.1 Commit `790b208` (Initial Fix)
 
-### ✅ Remedied Items
-*   **IPC Protocol**: The `asyncio` handshake is fixed. `ZygoteStream::connect` now consistently verifies the "Ready" greeting.
-*   **Orphan Prevention**: The **Guardian Thread** (AUDIT-611-001) has been implemented in `velo_zygote/main.py`. Zygote now terminates if it detects it has been orphaned (PPID=1).
+Following the initial rejection, the developer provided commit `790b208`:
 
-### ❌ UNREMEDIATED / NEW DEFECTS
-*   **[ARCHITECTURAL DEBT] Missing Worker Self-Healing**: The Rust supervisor does NOT contain logic to replace reaped workers.
-*   **[STABILITY FAILURE] Ghost Server (CHAOS-001)**: Under a signal storm (`SIGCHLD`), all workers are reaped but NONE are replaced. The server remains "Ready" according to `/health` but fails all functional requests.
-*   **[SECURITY] Incomplete Shadow Trap (DEF-611-006)**: The re-attachment handshake only verifies PID if the current process spawned the Zygote. It does NOT verify "App-to-Zygote" affinity, allowing `velo app2` to silently re-attach to a Zygote pre-loaded with `app1`.
+**✅ Remedied**:
+- IPC Protocol: `asyncio` handshake fixed. `ZygoteStream::connect` verifies "Ready" greeting.
+- Orphan Prevention: Guardian Thread implemented in `velo_zygote/main.py`.
 
-## 6. Final Verdict: 🔴 REJECTED
+**❌ Unremediated**:
+- Missing Worker Self-Healing
+- App Affinity Handshake
 
-The implementation is **REJECTED**. While the developer fixed the "Fatal Collapse" of the IPC, the system remains fundamentally unstable and insecure in production-like conditions (signal noise, process re-attachment).
+### 5.2 Commit `65ee7de` (Second Fix)
 
-### Mandatory Remediation for Next Delivery:
-1.  **Implement Worker Respawning**: The Rust supervisor must detect worker exit and request a replacement from Zygote.
-2.  **App Affinity Handshake**: Zygote must store the name of the app it has pre-loaded and verify it against any re-attaching launchers.
+Developer provided: `feat(zygote): implement Worker Self-Healing and App Affinity`
+
+**Verification Results** (2026-01-05 22:57):
+
+| Test | Before | After | Status |
+|:---|:---:|:---:|:---:|
+| **WB-006 (Worker Respawn)** | ❌ FAIL | ✅ PASS | **FIXED** |
+| WB-002 (Zombie Accumulation) | ✅ PASS | ✅ PASS | STABLE |
+| WB-003 (EINTR Signal Storm) | ✅ PASS | ✅ PASS | STABLE |
+| WB-007 (Orphaned Zygote) | ✅ PASS | ✅ PASS | STABLE |
+| WB-008 (Connection Flood) | ✅ PASS | ✅ PASS | STABLE |
+| **WB-004 (App Affinity)** | ❌ FAIL | ❌ FAIL | **NOT FIXED** |
+| **WB-005 (Fork Bomb DoS)** | N/A | ❌ FAIL | **NEW DEFECT** |
+
+### 5.3 Outstanding Issues
+
+1. **[SECURITY] WB-004 Cross-App Affinity**: Handshake still lacks app name verification. Cross-app Zygote pollution remains possible.
+
+2. **[SECURITY] WB-005 Fork Bomb DoS**: Rapid Fork requests cause 100% error rate. No rate limiting or throttling in Zygote.
+
+---
+
+## 6. Final Verdict: � CONDITIONAL PASS
+
+The implementation has **PARTIALLY PASSED** the stability requirements but **FAILED** the security hardening requirements.
+
+### ✅ PASSED (Stability)
+- Worker Self-Healing (WB-006)
+- IPC Protocol Stability
+- Orphan Prevention (Guardian Thread)
+- Connection Flood Resilience (WB-008)
+
+### ❌ FAILED (Security)
+- App Affinity Verification (WB-004)
+- Fork Bomb Rate Limiting (WB-005)
+
+### Mandatory Remediation for Final Approval:
+1. **App Affinity**: Zygote must verify app name in handshake to prevent cross-app pollution.
+2. **Fork Rate Limiting**: Implement throttling to prevent DoS via rapid Fork requests.
+
+---
+
+### 📊 Full Suite Results
+
+```
+6 failed, 18 passed, 5 skipped, 34 xfailed (213.79s)
+```
+
+*Note: 4 of 6 failures are `XPASS(strict)` from outdated test markers that need updating.*
 
 ---
 
 **Auditor Signature**: 🪐 *QA-Antigravity (Prosecutor)*
+**Review Date**: 2026-01-05 22:57
+
