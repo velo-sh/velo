@@ -109,6 +109,15 @@ pub enum ZygoteResponse {
 /// DEF-61-004: Socket path includes protocol version for upgrade isolation
 /// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
 pub fn default_socket_path() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let mut bytes = vec![0u8];
+        bytes.extend_from_slice(format!("velo-zygote-v{:02x}", PROTOCOL_VERSION).as_bytes());
+        return PathBuf::from(std::ffi::OsString::from_vec(bytes));
+    }
+
+    #[cfg(not(target_os = "linux"))]
     get_socket_dir().join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
 }
 
@@ -205,6 +214,17 @@ fn ensure_socket_dir(dir: &Path) -> bool {
 /// - Used only in `cleanup_stale_sockets()` to detect dead sockets
 /// - Connection is immediately dropped after probe
 pub fn is_socket_alive(socket_path: &Path) -> bool {
+    // RFC-0011 D.1: Abstract sockets don't "exist" on filesystem
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = socket_path.as_os_str().as_bytes();
+        if !bytes.is_empty() && bytes[0] == 0 {
+            // Abstract socket, skip exists() check and use connect directly
+            return UnixStream::connect(socket_path).is_ok();
+        }
+    }
+
     if !socket_path.exists() {
         return false;
     }
@@ -273,6 +293,15 @@ pub fn create_listener(socket_path: &Path) -> Result<UnixListener> {
 
 /// Clean up the socket file
 pub fn cleanup_socket(socket_path: &Path) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = socket_path.as_os_str().as_bytes();
+        if !bytes.is_empty() && bytes[0] == 0 {
+            return; // Abstract socket, nothing to cleanup
+        }
+    }
+
     if socket_path.exists() {
         let _ = std::fs::remove_file(socket_path);
     }

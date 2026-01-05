@@ -21,8 +21,9 @@ pub mod cli;
 pub mod error;
 pub mod ipc;
 
+use crate::lifecycle::safety::set_cloexec_on_all_fds;
 use error::{Result, ZygoteError};
-use ipc::ZygoteResponse;
+use ipc::{ZygoteResponse, is_socket_alive};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -354,6 +355,10 @@ impl ZygoteLauncher {
     /// * `preload` - List of Python modules to pre-import
     #[cfg(unix)]
     pub fn start(&mut self, preload: &[&str]) -> Result<()> {
+        // RFC-0011 C.1: Active FD hygiene - close all non-inheritable FDs before fork
+        #[cfg(unix)]
+        let _ = set_cloexec_on_all_fds();
+
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         ipc::cleanup_stale_sockets();
 
@@ -375,9 +380,25 @@ impl ZygoteLauncher {
         // RFC-0011 HPC-001: Prevent OpenMP threat pool initialization in parent
         cmd.env("OMP_NUM_THREADS", "1");
 
-        cmd.arg(&zygote_module)
-            .arg("--socket")
-            .arg(&self.socket_path);
+        // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
+        let socket_arg = {
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                let bytes = self.socket_path.as_os_str().as_bytes();
+                if !bytes.is_empty() && bytes[0] == 0 {
+                    let mut s = String::from("@");
+                    s.push_str(&String::from_utf8_lossy(&bytes[1..]));
+                    s
+                } else {
+                    self.socket_path.to_string_lossy().to_string()
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            self.socket_path.to_string_lossy().to_string()
+        };
+
+        cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
         if !preload.is_empty() {
             cmd.arg("--preload");
@@ -434,7 +455,9 @@ impl ZygoteLauncher {
         let timeout_secs = get_socket_timeout_secs();
         let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
-        while !self.socket_path.exists() {
+
+        // RFC-0011 D.1: Use is_socket_alive instead of exists() to support abstract sockets
+        while !is_socket_alive(&self.socket_path) {
             // Check if process is still running (DEF-61-005)
             if let Some(ref mut child) = self.zygote_process {
                 match child.try_wait() {
