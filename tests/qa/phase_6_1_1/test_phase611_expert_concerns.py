@@ -21,14 +21,8 @@ import time
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = [
-    pytest.mark.xfail(
-        reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-        strict=True,
-    ),
-    pytest.mark.expert_review,
-]
+# Mark all tests in this module as expert review tests
+pytestmark = pytest.mark.expert_review
 
 
 class TestHPCConcerns:
@@ -59,7 +53,7 @@ class TestHPCConcerns:
         import requests
 
         for _ in range(10):
-            response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
             assert response.status_code == 200
 
     def test_HPC_2_cuda_context_detection(self, velo_serve_fixture):
@@ -102,7 +96,7 @@ class TestHPCConcerns:
 
         workers_seen = set()
         for _ in range(20):
-            r = requests.get("http://127.0.0.1:8000/whoami", timeout=5)
+            r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
             if r.status_code == 200:
                 workers_seen.add(r.json().get("pid"))
 
@@ -137,7 +131,7 @@ class TestNetworkConcerns:
         time.sleep(0.5)
         import requests
 
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         assert response.status_code == 200
 
     def test_NET_2_timeout_header(self, velo_serve_fixture):
@@ -170,7 +164,7 @@ class TestNetworkConcerns:
         # Server should still be up
         import requests
 
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         assert response.status_code == 200
 
     def test_NET_3_streaming_no_buffer(self, velo_serve_fixture):
@@ -190,7 +184,7 @@ class TestNetworkConcerns:
         # 100KB body
         large_body = "x" * 100000
         response = requests.post(
-            "http://127.0.0.1:8000/health",  # POST to health is likely 405
+            f"http://127.0.0.1:{proc.port}/health",  # POST to health is likely 405
             data=large_body,
             timeout=30,
         )
@@ -249,7 +243,7 @@ class TestK8sConcerns:
 
         def make_slow_request():
             try:
-                r = requests.get("http://127.0.0.1:8000/health", timeout=10)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
                 return r.status_code
             except Exception as e:
                 in_flight_errors.append(str(e))
@@ -292,7 +286,7 @@ class TestK8sConcerns:
         proc.wait_ready()
 
         # Health check should reflect worker status
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         assert response.status_code == 200
 
         # Kill one worker
@@ -305,7 +299,7 @@ class TestK8sConcerns:
 
         # Health check should still work (other worker)
         time.sleep(1)
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         # Depending on implementation, might be 200 or 503
         assert response.status_code in [200, 503]
 
@@ -329,7 +323,7 @@ class TestO11yConcerns:
         # Send request with traceparent
         traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
         response = requests.get(
-            "http://127.0.0.1:8000/headers",
+            f"http://127.0.0.1:{proc.port}/headers",
             headers={"traceparent": traceparent},
             timeout=5,
         )
@@ -356,7 +350,7 @@ class TestO11yConcerns:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get("http://127.0.0.1:8000/headers", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/headers", timeout=5)
         assert response.status_code == 200
 
         headers = response.json()
@@ -383,10 +377,10 @@ class TestO11yConcerns:
         # Make requests with various paths
         for i in range(10):
             try:
-                requests.get(f"http://127.0.0.1:8000/unique-path-{i}", timeout=2)
+                requests.get(f"http://127.0.0.1:{proc.port}/unique-path-{i}", timeout=2)
             except Exception:
                 pass
 
         # Server should still be healthy
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         assert response.status_code == 200
