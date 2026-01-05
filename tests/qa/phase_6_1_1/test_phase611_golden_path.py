@@ -81,6 +81,8 @@ class TestGoldenPathE2E:
         ┌─────────────────────────────────────────────────────────────┐
         │ 100 requests → Load Balancer → Must see >= 2 unique workers│
         └─────────────────────────────────────────────────────────────┘
+        
+        Uses /whoami endpoint which returns {"pid": <worker_pid>, "ppid": <parent_pid>}
         """
         proc = velo_serve_fixture.start("main:app", workers=4)
         proc.wait_ready()
@@ -88,35 +90,28 @@ class TestGoldenPathE2E:
         seen_workers = set()
         success_count = 0
         
-        for _ in range(100):
+        for i in range(100):
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/worker_id", timeout=5)
+                # Use /whoami endpoint which returns worker's PID
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
                 if r.status_code == 200:
                     success_count += 1
-                    # Try to extract worker PID from response
-                    try:
-                        data = r.json()
-                        if "pid" in data:
-                            seen_workers.add(data["pid"])
-                        elif "worker_id" in data:
-                            seen_workers.add(data["worker_id"])
-                    except Exception:
-                        pass  # Endpoint may not return JSON
+                    data = r.json()
+                    worker_pid = data.get("pid")
+                    if worker_pid:
+                        seen_workers.add(worker_pid)
             except requests.RequestException:
                 pass
+        
+        print(f"Success: {success_count}/100, Unique workers seen: {seen_workers}")
         
         # At least 95% success rate
         assert success_count >= 95, f"Only {success_count}/100 requests succeeded"
         
-        # At least 2 unique workers should be seen
-        # (If endpoint doesn't return worker info, check via process inspection)
-        if len(seen_workers) == 0:
-            # Fallback: verify multiple workers exist
-            workers = proc.get_worker_pids()
-            assert len(workers) >= 2, f"Only {len(workers)} workers running"
-        else:
-            assert len(seen_workers) >= 2, \
-                f"Load balancer only used {len(seen_workers)} worker(s), expected >= 2"
+        # At least 2 unique workers should be seen for proper load balancing
+        assert len(seen_workers) >= 2, \
+            f"Load balancer only used {len(seen_workers)} worker(s): {seen_workers}. " \
+            f"Expected >= 2 for proper distribution!"
 
     def test_GOLD_003_header_injection_flow(self, velo_serve_fixture):
         """GOLD-003: Verify headers flow correctly through proxy.
