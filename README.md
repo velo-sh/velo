@@ -137,6 +137,12 @@ uv run python -m pytest tests/qa/ -v
 
 # Benchmark against real projects (includes Zygote mode)
 python3 benchmark_projects.py --all -n 5
+
+# 🔬 Top 100 Package Baseline (RFC-0012)
+# Test compatibility and performance across the most popular PyPI packages
+python3 scripts/refresh_top100.py           # Update package list
+python3 scripts/benchmark_top100.py --limit 5  # Quick test (5 packages)
+python3 scripts/benchmark_top100.py         # Full test (100 packages, ~2 hours)
 ```
 
 ### Code Quality
