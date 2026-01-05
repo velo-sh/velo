@@ -1323,4 +1323,60 @@ mod tests {
         }
         // If we reach here without hanging, the test passes
     }
+
+    // =========================================================================
+    // DEF-611-RESPAWN: Worker Respawn Logic - DEFECT DOCUMENTATION TEST
+    // =========================================================================
+    //
+    // This test documents a known defect: the ServerEvent::WorkerExit handler
+    // at lines 775-777 is empty - when workers die, they are NOT respawned.
+    //
+    // The current implementation:
+    //   Ok(ServerEvent::WorkerExit) => {
+    //       // Worker exited (only on Windows/non-Unix)
+    //   }
+    //
+    // Expected behavior: When a worker exits unexpectedly, the supervisor should
+    // request a new worker fork from Zygote to maintain the desired worker count.
+    //
+    // This test is marked #[ignore] because it documents expected-but-missing
+    // functionality. It should be enabled and passing once the respawn logic
+    // is implemented.
+    // =========================================================================
+
+    #[test]
+    #[ignore = "DEF-611-RESPAWN: Worker respawn logic not yet implemented"]
+    fn test_worker_exit_triggers_respawn() {
+        // This test documents the expected behavior that is currently missing:
+        //
+        // 1. Start supervisor with N workers via Zygote
+        // 2. Kill one worker (SIGKILL)
+        // 3. Observe ServerEvent::WorkerExit received
+        // 4. EXPECTED: Supervisor requests new Fork from Zygote
+        // 5. EXPECTED: Worker count returns to N within timeout
+        //
+        // Current behavior: Worker count drops to N-1 and stays there (Ghost Server)
+
+        let (tx, rx) = mpsc::channel::<ServerEvent>();
+
+        // Simulate worker exit event
+        tx.send(ServerEvent::WorkerExit).unwrap();
+
+        let event = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+
+        match event {
+            ServerEvent::WorkerExit => {
+                // BUG: Current handler does nothing here!
+                // TODO: Implement respawn logic:
+                //   1. Count remaining workers
+                //   2. If count < desired, send Fork command to Zygote
+                //   3. Update worker registry
+                panic!(
+                    "DEF-611-RESPAWN: WorkerExit received but no respawn logic exists! \
+                     This causes 'Ghost Server' where proxy lives but workers are dead."
+                );
+            }
+            _ => panic!("Expected WorkerExit event"),
+        }
+    }
 }
