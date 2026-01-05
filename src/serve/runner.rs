@@ -674,6 +674,38 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
 
         eprintln!("✅ All workers ready");
+
+        // RFC-0011: K8s-style CrashLoopBackOff tracker per worker
+        // Prevents respawn storms with exponential backoff: 10s → 20s → 40s → ... → 300s (cap)
+        struct RespawnTracker {
+            backoff_secs: u64,
+            last_failure: Option<std::time::Instant>,
+        }
+        impl RespawnTracker {
+            fn new() -> Self {
+                Self {
+                    backoff_secs: 10,
+                    last_failure: None,
+                }
+            }
+            fn should_respawn(&self) -> bool {
+                match self.last_failure {
+                    None => true,
+                    Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
+                }
+            }
+            fn record_failure(&mut self) {
+                self.last_failure = Some(std::time::Instant::now());
+                self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
+            }
+            fn reset(&mut self) {
+                self.backoff_secs = 10;
+                self.last_failure = None;
+            }
+        }
+        let mut respawn_trackers: Vec<RespawnTracker> =
+            (0..workers.len()).map(|_| RespawnTracker::new()).collect();
+
         // =========================================================================
         // RFC-0011 Phase 2B: L7 Proxy Integration
         // =========================================================================
@@ -782,13 +814,31 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Periodic health check - respawn dead workers
+                    // Periodic health check - respawn dead workers with K8s CrashLoopBackOff
                     for (i, worker) in workers.iter_mut().enumerate() {
                         if !worker.is_alive() {
+                            let tracker = &mut respawn_trackers[i];
+
+                            // Check if we're still in backoff period
+                            if !tracker.should_respawn() {
+                                logger.debug(&format!(
+                                    "Worker {} in backoff ({}s remaining)",
+                                    i + 1,
+                                    tracker.backoff_secs.saturating_sub(
+                                        tracker
+                                            .last_failure
+                                            .map(|t| t.elapsed().as_secs())
+                                            .unwrap_or(0)
+                                    )
+                                ));
+                                continue;
+                            }
+
                             logger.warn(&format!(
-                                "Worker {} (PID: {}) died, respawning...",
+                                "Worker {} (PID: {}) died, respawning (backoff: {}s)...",
                                 i + 1,
-                                worker.pid()
+                                worker.pid(),
+                                tracker.backoff_secs
                             ));
 
                             // Respawn via Zygote
@@ -808,13 +858,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                         new_worker.pid()
                                     ));
                                     *worker = new_worker;
+                                    tracker.reset(); // Success - reset backoff
                                 }
                                 Err(e) => {
                                     logger.error(&format!(
-                                        "  ❌ Respawn failed for worker {}: {}",
+                                        "  ❌ Respawn failed for worker {}: {} (next retry in {}s)",
                                         i + 1,
-                                        e
+                                        e,
+                                        tracker.backoff_secs * 2
                                     ));
+                                    tracker.record_failure(); // Double backoff
                                 }
                             }
                         }
