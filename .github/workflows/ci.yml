@@ -141,7 +141,8 @@ jobs:
           components: clippy
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run Clippy (Single Source of Truth)
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
