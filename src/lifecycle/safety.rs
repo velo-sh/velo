@@ -174,6 +174,35 @@ pub fn generate_worker_socket_path(worker_id: u64) -> std::path::PathBuf {
     socket_dir.join(format!("worker-{}.sock", worker_id))
 }
 
+/// RFC-0011 D.1: Generate Abstract Namespace Socket name (Linux only).
+///
+/// Abstract Namespace Sockets have advantages over filesystem sockets:
+/// - No stale socket files after crash (kernel manages lifecycle)
+/// - No need for `unlink()` before binding
+/// - No filesystem permissions to manage
+///
+/// Returns `Some(name)` on Linux, `None` on other platforms.
+///
+/// # Format
+/// `\0velo-worker-{worker_id}` (leading null byte marks abstract namespace)
+#[cfg(target_os = "linux")]
+pub fn generate_abstract_socket_name(worker_id: u64) -> String {
+    format!("\0velo-worker-{}", worker_id)
+}
+
+/// On non-Linux, abstract namespace sockets are not supported.
+/// Returns None - caller should fall back to filesystem sockets.
+#[cfg(not(target_os = "linux"))]
+pub fn generate_abstract_socket_name(_worker_id: u64) -> Option<String> {
+    None
+}
+
+/// Check if the platform supports abstract namespace sockets.
+#[inline]
+pub fn supports_abstract_sockets() -> bool {
+    cfg!(target_os = "linux")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +283,37 @@ mod tests {
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
         assert!(flags >= 0, "fcntl failed");
         assert!(flags & libc::FD_CLOEXEC != 0, "FD_CLOEXEC should be set");
+    }
+
+    // =========================================================================
+    // RFC-0011 D.1: Abstract Namespace Socket Tests
+    // =========================================================================
+
+    #[test]
+    fn test_supports_abstract_sockets() {
+        // On macOS: should return false
+        // On Linux: should return true
+        let supported = supports_abstract_sockets();
+
+        #[cfg(target_os = "linux")]
+        assert!(supported, "Linux should support abstract sockets");
+
+        #[cfg(not(target_os = "linux"))]
+        assert!(!supported, "Non-Linux should not support abstract sockets");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_generate_abstract_socket_name_linux() {
+        let name = generate_abstract_socket_name(42);
+        assert!(name.starts_with('\0'), "Should start with null byte");
+        assert!(name.contains("velo-worker-42"));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn test_generate_abstract_socket_name_non_linux() {
+        let result = generate_abstract_socket_name(42);
+        assert!(result.is_none(), "Non-Linux should return None");
     }
 }
