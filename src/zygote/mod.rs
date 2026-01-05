@@ -324,6 +324,11 @@ impl ZygoteLauncher {
         }
     }
 
+    /// Get the PID of the running Zygote process
+    pub fn pid(&self) -> Option<u32> {
+        self.zygote_pid
+    }
+
     /// Set the Python interpreter path
     pub fn with_python(mut self, python: PathBuf) -> Self {
         self.python_path = Some(python);
