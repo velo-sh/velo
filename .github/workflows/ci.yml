@@ -13,14 +13,50 @@ env:
   UV_VERSION: "0.5"
 
 jobs:
-  build:
-    name: Build & Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11", "3.12"]
+  changes:
+    name: Check for Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      loader: ${{ steps.filter.outputs.loader }}
+      zygote: ${{ steps.filter.outputs.zygote }}
+      serve: ${{ steps.filter.outputs.serve }}
+      analyze: ${{ steps.filter.outputs.analyze }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src/**/*.rs'
+              - 'Cargo.*'
+            loader:
+              - 'src/loader/**/*.rs'
+              - 'python/velo_loader.py'
+              - 'tests/qa/test_phase5_loader.py'
+              - 'tests/qa/phase5/**'
+            zygote:
+              - 'src/zygote/**/*.rs'
+              - 'velo_zygote/**'
+              - 'tests/qa/test_phase3_*.py'
+            serve:
+              - 'src/serve/**/*.rs'
+              - 'tests/qa/test_phase3_5_*.py'
+              - 'scripts/qa-fast.sh'
+            analyze:
+              - 'src/cmd/analyze.rs'
+              - 'src/cmd/agent.rs'
+              - 'tests/qa/test_phase4_*.py'
+            workflow:
+              - '.github/workflows/ci.yml'
 
+  build:
+    name: Build (Ubuntu / 3.11)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -29,21 +65,24 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          version: ${{ env.UV_VERSION }}
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Create venv and install deps
-        run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv sync --extra dev
+          python-version: '3.11'
+          uv-version: ${{ env.UV_VERSION }}
 
       - name: Build
         run: cargo build --release
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: velo-binary-ubuntu
+          path: target/release/velo
+          if-no-files-found: error
 
       - name: Run tests
         run: uv run run_tests.py
@@ -53,8 +92,45 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
+  build-matrix:
+    name: Build Matrix (${{ matrix.os }} / ${{ matrix.python-version }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+        exclude:
+          - os: ubuntu-latest
+            python-version: "3.11"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-version: ${{ env.UV_VERSION }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests
+        run: uv run run_tests.py
+
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,10 +139,14 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: clippy
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +155,8 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
 
   # ============================================
@@ -84,27 +166,17 @@ jobs:
   qa-zygote-core:
     name: "QA: Zygote Core E2E"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Test: E2E Real User Environment"
         run: uv run python -m pytest tests/qa/test_phase3_e2e_real_env.py -v --tb=short
@@ -112,27 +184,17 @@ jobs:
   qa-zygote-security:
     name: "QA: Zygote Security Scan"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Test: IPC Security (path traversal, injection, DoS)"
         run: uv run python -m pytest tests/qa/test_phase3_security.py -v --tb=short
@@ -140,27 +202,17 @@ jobs:
   qa-zygote-deployment:
     name: "QA: Zygote Deployment Scenarios"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Test: Deployment Structures (pip, brew, cargo install)"
         run: uv run python -m pytest tests/qa/test_phase3_deployment.py -v --tb=short
@@ -168,29 +220,19 @@ jobs:
   qa-zygote-stress:
     name: "QA: Zygote Stress & Attack"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: (needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true')
     # Allow failures - stress tests may be flaky
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Test: Weird Environments (paths, permissions, signals)"
         run: uv run python -m pytest tests/qa/test_phase3_weird_env.py -v --tb=short
@@ -205,27 +247,17 @@ jobs:
   qa-serve-smoke:
     name: "QA 3.5: Smoke (Tier 0)"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Tier 0: Smoke Tests (~3s)"
         run: ./scripts/qa-fast.sh 0
@@ -233,27 +265,17 @@ jobs:
   qa-serve-fast:
     name: "QA 3.5: Fast (Tier 1)"
     runs-on: ubuntu-latest
-    needs: qa-serve-smoke
+    needs: [qa-serve-smoke, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Tier 1: Fast Tests (~15s)"
         run: ./scripts/qa-fast.sh 1
@@ -261,27 +283,17 @@ jobs:
   qa-serve-standard:
     name: "QA 3.5: Standard (Tier 2)"
     runs-on: ubuntu-latest
-    needs: qa-serve-fast
+    needs: [qa-serve-fast, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Tier 2: Standard Tests (~7min)"
         run: ./scripts/qa-fast.sh 2
@@ -289,30 +301,19 @@ jobs:
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
-    needs: qa-serve-standard
+    needs: [qa-serve-standard, changes]
     # Only run on main branch - heavy tests are optional
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true')
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Tier 3: Heavy/Brutal Tests (~5min)"
         run: ./scripts/qa-fast.sh 3
@@ -324,27 +325,17 @@ jobs:
   qa-fast-loader-smoke:
     name: "QA 5.0: Smoke (L0)"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "L0: Smoke Tests (~3s)"
         run: uv run pytest tests/qa/phase5/test_l0_smoke.py -v --tb=short -m smoke
@@ -352,27 +343,17 @@ jobs:
   qa-fast-loader-standard:
     name: "QA 5.0: Standard (L1-L3)"
     runs-on: ubuntu-latest
-    needs: qa-fast-loader-smoke
+    needs: [qa-fast-loader-smoke, changes]
+    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "L1-L3: Happy Path + Sad Path + Config (~30s)"
         run: |
@@ -387,27 +368,17 @@ jobs:
   qa-fast-loader-security:
     name: "QA 5.0: Security (L4)"
     runs-on: ubuntu-latest
-    needs: qa-fast-loader-standard
+    needs: [qa-fast-loader-standard, changes]
+    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "L4: Security Tests (RFC-0006 §3)"
         run: uv run pytest tests/qa/phase5/test_l4_security.py -v --tb=short -m security
@@ -415,28 +386,18 @@ jobs:
   qa-fast-loader-chaos:
     name: "QA 5.0: Chaos (L5)"
     runs-on: ubuntu-latest
-    needs: qa-fast-loader-security
+    needs: [qa-fast-loader-security, changes]
+    if: (needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true')
     continue-on-error: true  # L5 chaos tests may be flaky
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "L5: Chaos/Edge Tests (stress testing)"
         run: uv run pytest tests/qa/phase5/test_l5_chaos.py -v --tb=short -m edge
@@ -449,27 +410,17 @@ jobs:
   qa-phase61-security-hardened:
     name: "QA 6.1: Security Hardened (RFC-0010)"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Security: Command Injection, Path Traversal, Env Sanitization"
         run: uv run pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short
@@ -477,27 +428,17 @@ jobs:
   qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
-    needs: qa-phase61-security-hardened
+    needs: [qa-phase61-security-hardened, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Stability: RAII Cleanup, Signal Forwarding, Debouncer"
         run: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
@@ -505,28 +446,18 @@ jobs:
   qa-phase61-dx-performance:
     name: "QA 6.1: DX & Performance"
     runs-on: ubuntu-latest
-    needs: qa-phase61-stability-hardened
+    needs: [qa-phase61-stability-hardened, changes]
+    if: (needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true')
     continue-on-error: true  # Performance tests may be flaky
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "DX: Error Messages, Typo Hints, Framework Detection"
         run: uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
@@ -541,27 +472,17 @@ jobs:
   qa-analyze-core:
     name: "QA 4.0: Analyze Core"
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    if: needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Phase 4.0: Core + Agent Tests"
         run: |
@@ -571,27 +492,17 @@ jobs:
   qa-analyze-integration:
     name: "QA 4.0: Integration (SLOW)"
     runs-on: ubuntu-latest
-    needs: qa-analyze-core
+    needs: [qa-analyze-core, changes]
+    if: needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true'
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Phase 4.0: Integration Tests (Real Projects)"
         run: |
@@ -601,27 +512,17 @@ jobs:
   qa-benchmark:
     name: "QA: Benchmark"
     runs-on: ubuntu-latest
-    needs: qa-analyze-integration
+    needs: [qa-analyze-integration, changes]
+    if: (needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true')
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
-        uses: dtolnay/rust-toolchain@master
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: ${{ env.UV_VERSION }}
-      
-      - name: Setup Python environment
-        run: |
-          uv venv --python 3.11
-          uv sync --extra dev
-      
-      - name: Build release binary
-        run: cargo build --release
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
       
       - name: "Benchmark: Performance Validation"
         run: |
@@ -630,6 +531,8 @@ jobs:
 
   coverage:
     name: Code Coverage
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
