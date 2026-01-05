@@ -140,7 +140,83 @@ Velo Supervisor
 
 ---
 
+## 6A. Core Design Constraints (Blocking)
+
+> **Source**: [RFC Review Board Decision](./0011-reviews/0011-review-board-decision.md)  
+> **Status**: MUST implement before merge
+
+### 6A.1 FD Hygiene Contract
+
+FD inheritance is NOT "possible problem" — it is "certain accident".
+
+| Phase | Responsibility |
+|-------|----------------|
+| **Pre-Fork** | Supervisor marks ONLY inheritable FDs (stdin/stdout/stderr, UDS) |
+| **Post-Fork** | Worker executes FD whitelist closure |
+
+```rust
+// Pre-fork: Mark all non-essential FDs as CLOEXEC
+for fd in open_fds().filter(|f| !INHERITABLE_WHITELIST.contains(f)) {
+    unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC); }
+}
+```
+
+### 6A.2 Signal State Reset Contract
+
+Python signal state MUST be treated as "dirty state" after Zygote.
+
+```python
+def post_fork_reinit():
+    import signal
+    # Reset all handlers to default
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    # Reset wakeup FD (uvloop/asyncio pollution)
+    try:
+        signal.set_wakeup_fd(-1)
+    except ValueError:
+        pass
+```
+
+### 6A.3 Hop-by-Hop Header Stripping (Mandatory)
+
+L7 Proxy MUST strip these headers before forwarding:
+
+```rust
+const HOP_BY_HOP: &[&str] = &[
+    "connection", "keep-alive", "te",
+    "transfer-encoding", "upgrade", "proxy-connection"
+];
+```
+
+### 6A.4 ASGI Proxy Headers (Non-Configurable)
+
+This is NOT optional — `scope["client"]` loss is behavior-breaking.
+
+| Requirement | Value |
+|-------------|-------|
+| Rust Proxy | MUST inject `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Port` |
+| Uvicorn Config | `proxy_headers=True` (FORCED, not configurable) |
+| Default | `forwarded_allow_ips="*"` |
+
+### 6A.5 `scope["client"]` Recovery Path
+
+```python
+# FastAPI/Starlette: request.client.host MUST NOT be None
+# Recovery via X-Forwarded-For:
+async def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+```
+
+---
+
 ## 7. Open Questions
+
+
 
 1. **gunicorn compatibility**: Apply same pattern?
 2. **--workers auto-scaling**: Use CPU count or memory-based?
@@ -683,9 +759,11 @@ def post_fork_reinit():
 > - [O11y Review](./0011-reviews/0011-o11y-review.md)
 > - [HPC Review](./0011-reviews/0011-hpc-review.md)
 > - [Network Review](./0011-reviews/0011-network-review.md)
-> - [**Master Architecture Review**](./0011-reviews/0011-master-review.md) ⭐
+> - [Master Architecture Review](./0011-reviews/0011-master-review.md)
+> - [**RFC Review Board Decision**](./0011-reviews/0011-review-board-decision.md) ⭐
 
 ---
 
-**RFC-0011 Status**: ✅ **READY FOR IMPLEMENTATION**
+**RFC-0011 Status**: ✅ **CONDITIONALLY APPROVED** (5 Blocking Items in §6A)
+
 
