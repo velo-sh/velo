@@ -317,11 +317,22 @@ def get_ppid(pid: int) -> int:
 SAMPLE_APP_CODE = '''
 """Sample FastAPI app for RFC-0011 QA tests."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel
 import os
 import signal
+import asyncio
 
 app = FastAPI()
+
+# Track concurrent requests for testing
+_concurrent_counter = 0
+_max_concurrent = 0
+
+
+class EchoBody(BaseModel):
+    message: str
+    number: int = 0
 
 
 @app.get("/")
@@ -341,7 +352,6 @@ async def ping():
 
 @app.get("/slow")
 async def slow(seconds: int = 1):
-    import asyncio
     await asyncio.sleep(seconds)
     return {"slept": seconds}
 
@@ -380,4 +390,76 @@ async def debug_signals():
         except Exception as e:
             handlers[sig_name] = f"error: {e}"
     return handlers
+
+
+# ============================================================================
+# Additional endpoints for E2E demon-catching tests
+# ============================================================================
+
+@app.post("/echo")
+async def echo_body(body: EchoBody):
+    """Echo back POST body - tests request body handling through proxy."""
+    return {
+        "received_message": body.message,
+        "received_number": body.number,
+        "worker_pid": os.getpid(),
+    }
+
+
+@app.get("/error/{code}")
+async def trigger_error(code: int):
+    """Simulate error responses - tests error handling through proxy."""
+    if code == 500:
+        raise HTTPException(status_code=500, detail="Simulated server error")
+    elif code == 404:
+        raise HTTPException(status_code=404, detail="Simulated not found")
+    elif code == 503:
+        raise HTTPException(status_code=503, detail="Simulated service unavailable")
+    else:
+        raise HTTPException(status_code=code, detail=f"Simulated error {code}")
+
+
+@app.get("/large")
+async def large_response(size_kb: int = 100):
+    """Return large response body - tests buffering through proxy."""
+    # Generate ~size_kb KB of data
+    data = "x" * (size_kb * 1024)
+    return {"size_kb": size_kb, "data": data}
+
+
+@app.get("/concurrent")
+async def track_concurrent():
+    """Track concurrent requests - tests async handling."""
+    global _concurrent_counter, _max_concurrent
+    _concurrent_counter += 1
+    if _concurrent_counter > _max_concurrent:
+        _max_concurrent = _concurrent_counter
+    
+    current = _concurrent_counter
+    max_seen = _max_concurrent
+    
+    # Simulate some work
+    await asyncio.sleep(0.1)
+    
+    _concurrent_counter -= 1
+    
+    return {
+        "concurrent_at_entry": current,
+        "max_concurrent_seen": max_seen,
+        "worker_pid": os.getpid(),
+    }
+
+
+@app.get("/scope")
+async def show_scope(request: Request):
+    """Show ASGI scope details - debug endpoint for protocol verification."""
+    return {
+        "type": request.scope.get("type"),
+        "path": request.scope.get("path"),
+        "method": request.scope.get("method"),
+        "client": list(request.scope.get("client")) if request.scope.get("client") else None,
+        "server": list(request.scope.get("server")) if request.scope.get("server") else None,
+        "headers_count": len(request.scope.get("headers", [])),
+    }
 '''
+
