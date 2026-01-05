@@ -803,17 +803,26 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
     if server.app_name and client_app and client_app != server.app_name:
         return {"type": "Error", "message": f"App affinity mismatch: expected {server.app_name}, got {client_app}"}
     
-    capabilities = ["map-protocol", "async-reaper", "resource-guard", "hook-reinit"]
+    # P3: Structured capabilities (backwards compatible - also keep list format)
+    capabilities_dict = {
+        "protocol": "map",
+        "preload": server.preload_state.lower(),
+        "features": ["async-reaper", "resource-guard", "hook-reinit", "rate-limit", "shadow-preload"],
+    }
     if server.app_name:
-        capabilities.append(f"app:{server.app_name}")
+        capabilities_dict["app"] = server.app_name
     
-    # Shadow Preloading: Report current preload state
-    capabilities.append(f"preload:{server.preload_state.lower()}")
+    # Legacy list format for backwards compatibility
+    capabilities_list = ["map-protocol", "async-reaper", "resource-guard", "hook-reinit"]
+    if server.app_name:
+        capabilities_list.append(f"app:{server.app_name}")
+    capabilities_list.append(f"preload:{server.preload_state.lower()}")
     
     return {
         "type": "Handshake",
         "version": server_version,
-        "capabilities": capabilities
+        "capabilities": capabilities_list,  # Legacy format
+        "caps": capabilities_dict,  # P3: Structured format
     }
 
 @router.handler("Fork")

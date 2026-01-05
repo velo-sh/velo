@@ -53,18 +53,18 @@ def send_handshake(socket_path: str) -> dict:
         
         # Read Ready
         length_bytes = s.recv(4)
-        length = int.from_bytes(length_bytes, 'big')
+        length = int.from_bytes(length_bytes, 'little')  # P1 FIX: Match Rust little-endian
         data = s.recv(length)
         ready = msgpack.unpackb(data, raw=False)
         
         # Send Handshake
         handshake = {"type": "Handshake", "version": 0x01, "capabilities": []}
         packed = msgpack.packb(handshake)
-        s.sendall(len(packed).to_bytes(4, 'big') + packed)
+        s.sendall(len(packed).to_bytes(4, 'little') + packed)  # P1 FIX: Match Rust little-endian
         
         # Read response
         length_bytes = s.recv(4)
-        length = int.from_bytes(length_bytes, 'big')
+        length = int.from_bytes(length_bytes, 'little')  # P1 FIX: Match Rust little-endian
         data = s.recv(length)
         response = msgpack.unpackb(data, raw=False)
         
