@@ -18,14 +18,8 @@ import time
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = [
-    pytest.mark.xfail(
-        reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-        strict=True,
-    ),
-    pytest.mark.performance,
-]
+# Mark all tests in this module as performance tests
+pytestmark = pytest.mark.performance
 
 
 class TestL5Performance:
@@ -88,13 +82,13 @@ class TestL5Performance:
 
         # Warm up
         for _ in range(10):
-            requests.get("http://127.0.0.1:8000/ping")
+            requests.get(f"http://127.0.0.1:{proc.port}/ping")
 
         # Measure latencies
         latencies = []
         for _ in range(100):
             start = time.perf_counter()
-            response = requests.get("http://127.0.0.1:8000/ping")
+            response = requests.get(f"http://127.0.0.1:{proc.port}/ping")
             latency = time.perf_counter() - start
             if response.status_code == 200:
                 latencies.append(latency)

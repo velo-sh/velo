@@ -12,11 +12,6 @@ Following QA SOP v2.2.
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = pytest.mark.xfail(
-    reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-    strict=True  # Fail if test unexpectedly passes,
-)
 
 
 class TestL1Features:
@@ -61,7 +56,7 @@ class TestL1Features:
         # Track which PIDs respond
         pids_seen = set()
         for _ in range(100):
-            response = requests.get("http://127.0.0.1:8000/whoami")
+            response = requests.get(f"http://127.0.0.1:{proc.port}/whoami")
             assert response.status_code == 200
             data = response.json()
             pids_seen.add(data["pid"])
@@ -100,7 +95,7 @@ class TestL1Features:
 
         # Either way, server should respond
         import requests
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
     def test_L1_4_x_forwarded_for_injection(self, velo_serve_fixture):
@@ -119,7 +114,7 @@ class TestL1Features:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get("http://127.0.0.1:8000/headers")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/headers")
         assert response.status_code == 200
 
         headers = response.json()
@@ -145,7 +140,7 @@ class TestL1Features:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get("http://127.0.0.1:8000/client-ip")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/client-ip")
         assert response.status_code == 200
 
         data = response.json()

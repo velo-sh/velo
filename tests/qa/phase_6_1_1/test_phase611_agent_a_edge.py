@@ -17,11 +17,6 @@ from pathlib import Path
 
 import pytest
 
-# Mark all tests in this module as xfail until RFC-0011 is implemented
-pytestmark = pytest.mark.xfail(
-    reason="RFC-0011 L7 Proxy not yet implemented (ARCH-611-001)",
-    strict=True  # Fail if test unexpectedly passes,
-)
 
 
 class TestL2EdgeCases:
@@ -57,7 +52,7 @@ class TestL2EdgeCases:
 
         # Verify server still responds
         import requests
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
     def test_EDGE_602_stale_socket_cleanup(self, velo_serve_fixture, tmp_path):
@@ -85,7 +80,7 @@ class TestL2EdgeCases:
         proc.wait_ready()
 
         # Verify server responds
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
         # Cleanup
@@ -134,7 +129,7 @@ class TestL2EdgeCases:
 
         # Either socket dir exists or server responds (implementation may vary)
         import requests
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
     def test_EDGE_604_zero_workers_error(self, velo_serve_fixture):
@@ -180,7 +175,7 @@ class TestL2EdgeCases:
         assert len(workers) >= 50, f"Expected ~100 workers, got {len(workers)}"
 
         # Verify server responds
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
         # Check memory efficiency

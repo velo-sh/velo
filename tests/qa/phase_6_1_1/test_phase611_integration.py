@@ -56,7 +56,7 @@ class TestPhase611Integration:
 
         # Serve requests
         for _ in range(10):
-            response = requests.get("http://127.0.0.1:8000/health")
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health")
             assert response.status_code == 200
 
         # Graceful shutdown
@@ -90,7 +90,7 @@ class TestPhase611Integration:
         def load_generator():
             while continue_load:
                 try:
-                    r = requests.get("http://127.0.0.1:8000/health", timeout=5)
+                    r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
                     if r.status_code != 200:
                         errors.append(f"Status {r.status_code}")
                 except Exception as e:
@@ -146,7 +146,7 @@ class TestPhase611Integration:
 
         # Send with hop-by-hop headers
         response = requests.get(
-            "http://127.0.0.1:8000/headers",
+            f"http://127.0.0.1:{proc.port}/headers",
             headers={
                 "X-Custom-Header": "test-value",
                 "Connection": "keep-alive",
@@ -168,7 +168,7 @@ class TestPhase611Integration:
         # Server may re-add Connection for response, but original value should be stripped
 
         # Verify client info
-        response = requests.get("http://127.0.0.1:8000/client-ip")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/client-ip")
         data = response.json()
         assert data.get("client_host") or data.get("x_forwarded_for"), "Client info lost"
 
@@ -200,7 +200,7 @@ class TestPhase611Integration:
         worker_responses = set()
         for _ in range(20):
             try:
-                r = requests.get("http://127.0.0.1:8000/whoami", timeout=5)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
                 if r.status_code == 200:
                     worker_responses.add(r.json().get("pid"))
             except Exception:
@@ -246,7 +246,7 @@ class TestPhase611Integration:
 
         # Either way, server works
         import requests
-        response = requests.get("http://127.0.0.1:8000/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
     def test_INT_5_performance_baseline(self, velo_serve_fixture):
@@ -274,7 +274,7 @@ class TestPhase611Integration:
         latencies = []
         for _ in range(100):
             start = time.perf_counter()
-            response = requests.get("http://127.0.0.1:8000/ping")
+            response = requests.get(f"http://127.0.0.1:{proc.port}/ping")
             latency = time.perf_counter() - start
             if response.status_code == 200:
                 latencies.append(latency)

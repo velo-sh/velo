@@ -95,7 +95,7 @@ class TestL4Security:
         proc = velo_serve_fixture.start("main:app", workers=1, zygote=True)
         proc.wait_ready()
 
-        response = requests.get("http://127.0.0.1:8000/debug/signals")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/debug/signals")
         assert response.status_code == 200
 
         signals = response.json()
@@ -167,7 +167,7 @@ class TestL4Security:
 
         # Send request with hop-by-hop headers
         response = requests.get(
-            "http://127.0.0.1:8000/headers",
+            f"http://127.0.0.1:{proc.port}/headers",
             headers={
                 "Connection": "keep-alive, transfer-encoding",
                 "Keep-Alive": "timeout=5",

@@ -47,7 +47,7 @@ class TestL3Stress:
 
         def make_request():
             try:
-                r = requests.get("http://127.0.0.1:8000/health", timeout=10)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
                 return r.status_code
             except Exception as e:
                 return str(e)
@@ -88,7 +88,7 @@ class TestL3Stress:
         # Send 10000 requests
         for i in range(10000):
             try:
-                requests.get("http://127.0.0.1:8000/ping", timeout=5)
+                requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=5)
             except Exception:
                 pass
             if i % 1000 == 0:
@@ -137,7 +137,7 @@ class TestL3Stress:
 
         # Verify server still responds to valid requests
         try:
-            response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
             assert response.status_code == 200, "Server blocked by slowloris"
         finally:
             # Cleanup slow connections
@@ -189,5 +189,5 @@ class TestL3Stress:
         time.sleep(1)
 
         # Verify recovery
-        response = requests.get("http://127.0.0.1:8000/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
         assert response.status_code == 200, "Server did not recover"
