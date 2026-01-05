@@ -350,6 +350,179 @@ class TestGoldenPathE2E:
         
         assert success_rate >= 99, f"Success rate {success_rate:.1f}% below 99% threshold"
 
+    def test_GOLD_008_zygote_mode_verification_via_whoami(self, velo_serve_fixture):
+        """GOLD-008: Verify we're ACTUALLY running in Zygote mode, not fallback.
+        
+        Critical Path:
+        ┌─────────────────────────────────────────────────────────────┐
+        │ /whoami → Worker PID/PPID → PPID must equal Zygote PID     │
+        └─────────────────────────────────────────────────────────────┘
+        
+        This is THE definitive test that proves Zygote is working:
+        - Worker's PPID (from inside the process via /whoami) must match Zygote PID
+        - If they don't match, we're in fallback uvicorn mode
+        """
+        proc = velo_serve_fixture.start("main:app", workers=2)
+        proc.wait_ready()
+        
+        # Get Zygote PID from process inspection
+        zygote_pid = proc.zygote_pid
+        if zygote_pid is None:
+            pytest.fail("GOLD-008: Zygote process not found - FALLBACK MODE DETECTED!")
+        
+        # Get worker's view of its own PPID via HTTP
+        response = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=10)
+        assert response.status_code == 200, f"whoami endpoint failed: {response.status_code}"
+        
+        data = response.json()
+        worker_pid = data.get("pid")
+        worker_ppid = data.get("ppid")
+        
+        print(f"Worker reports: PID={worker_pid}, PPID={worker_ppid}")
+        print(f"Expected Zygote PID: {zygote_pid}")
+        
+        # THE KEY ASSERTION: Worker's parent must be Zygote
+        assert worker_ppid == zygote_pid, \
+            f"ZYGOTE MODE FAILURE: Worker's PPID ({worker_ppid}) != Zygote PID ({zygote_pid}). " \
+            f"This proves we're in FALLBACK MODE, not Zygote mode!"
+
+    def test_GOLD_009_hello_fastapi_complete_response(self, velo_serve_fixture):
+        """GOLD-009: Verify complete FastAPI response through entire stack.
+        
+        Critical Path:
+        ┌─────────────────────────────────────────────────────────────┐
+        │ Client → Proxy → Worker → FastAPI → JSON Response → Client │
+        └─────────────────────────────────────────────────────────────┘
+        
+        Validates:
+        - FastAPI app is correctly loaded
+        - All endpoints respond correctly
+        - JSON serialization works end-to-end
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        # Test root endpoint
+        r1 = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=10)
+        assert r1.status_code == 200, f"Root endpoint failed: {r1.status_code}"
+        assert r1.json() == {"status": "ok"}, f"Unexpected root response: {r1.json()}"
+        
+        # Test health endpoint
+        r2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
+        assert r2.status_code == 200
+        assert r2.json() == {"healthy": True}
+        
+        # Test ping-pong
+        r3 = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=10)
+        assert r3.status_code == 200
+        assert r3.json() == {"ping": "pong"}, f"Ping-pong failed: {r3.json()}"
+        
+        # Test slow endpoint (async works)
+        r4 = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=1", timeout=10)
+        assert r4.status_code == 200
+        assert r4.json() == {"slept": 1}
+        
+        print("✅ All FastAPI endpoints working correctly!")
+
+    def test_GOLD_010_zygote_socket_existence(self, velo_serve_fixture):
+        """GOLD-010: Verify Zygote UDS socket exists and is accessible.
+        
+        This proves the IPC channel between Rust supervisor and Python Zygote
+        is correctly established.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        socket_path = proc.get_socket_path()
+        
+        if socket_path is None:
+            # Try to find socket via process inspection
+            zygote_pid = proc.zygote_pid
+            if zygote_pid is None:
+                pytest.fail("GOLD-010: Neither Zygote process nor socket found - FALLBACK MODE!")
+            else:
+                pytest.fail(f"GOLD-010: Zygote PID={zygote_pid} found but socket path unknown")
+        
+        from pathlib import Path
+        sock_path = Path(socket_path)
+        
+        # Verify socket file exists
+        assert sock_path.exists(), f"Zygote socket not found at {socket_path}"
+        
+        # Verify it's a socket (not a regular file)
+        import stat
+        mode = sock_path.stat().st_mode
+        assert stat.S_ISSOCK(mode), f"{socket_path} is not a socket"
+        
+        print(f"✅ Zygote socket exists at: {socket_path}")
+
+    def test_GOLD_011_zygote_vs_fallback_detection(self, velo_serve_fixture):
+        """GOLD-011: Comprehensive Zygote vs Fallback mode detection.
+        
+        If ANY of these conditions is false, we're in fallback mode:
+        1. Zygote PID is detected
+        2. Zygote socket exists
+        3. Workers are children of Zygote (not Rust supervisor)
+        4. Worker's /whoami PPID matches Zygote PID
+        """
+        proc = velo_serve_fixture.start("main:app", workers=2)
+        proc.wait_ready()
+        
+        mode_evidence = {
+            "zygote_pid_detected": False,
+            "socket_exists": False,
+            "workers_are_zygote_children": False,
+            "whoami_confirms_zygote": False,
+        }
+        
+        # Check 1: Zygote PID
+        zygote_pid = proc.zygote_pid
+        mode_evidence["zygote_pid_detected"] = zygote_pid is not None
+        
+        # Check 2: Socket exists
+        socket_path = proc.get_socket_path()
+        if socket_path:
+            from pathlib import Path
+            mode_evidence["socket_exists"] = Path(socket_path).exists()
+        
+        # Check 3: Worker parent check
+        if zygote_pid:
+            workers = proc.get_worker_pids()
+            if workers:
+                try:
+                    first_worker = psutil.Process(workers[0])
+                    mode_evidence["workers_are_zygote_children"] = (first_worker.ppid() == zygote_pid)
+                except psutil.NoSuchProcess:
+                    pass
+        
+        # Check 4: /whoami endpoint confirmation
+        if zygote_pid:
+            try:
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
+                if r.status_code == 200:
+                    data = r.json()
+                    mode_evidence["whoami_confirms_zygote"] = (data.get("ppid") == zygote_pid)
+            except Exception:
+                pass
+        
+        # Print diagnostic
+        print("\n╔════════════════════════════════════════╗")
+        print("║   ZYGOTE MODE DETECTION RESULTS        ║")
+        print("╠════════════════════════════════════════╣")
+        for key, value in mode_evidence.items():
+            status = "✅" if value else "❌"
+            print(f"║ {status} {key}: {value}")
+        print("╚════════════════════════════════════════╝")
+        
+        # Determine overall mode
+        is_zygote_mode = all(mode_evidence.values())
+        
+        if is_zygote_mode:
+            print("\n🎉 CONFIRMED: Running in ZYGOTE MODE!")
+        else:
+            failed_checks = [k for k, v in mode_evidence.items() if not v]
+            pytest.fail(f"FALLBACK MODE DETECTED! Failed checks: {failed_checks}")
+
 
 class TestGoldenPathSecurity:
     """Security-focused E2E tests."""
