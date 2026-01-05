@@ -601,7 +601,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
-            if let Err(e) = launcher.start(&preload_modules) {
+            if let Err(e) = launcher.start(&preload_modules, Some(&args.app)) {
                 logger.warn(&format!("Zygote pre-warm failed: {}", e));
                 if args.log_format == LogFormat::Text {
                     eprintln!("   Continuing without Zygote optimization");

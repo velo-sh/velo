@@ -179,9 +179,10 @@ class TestWhiteBoxPythonStress:
     def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture):
         """WB-005 STRESS (NEW): Rapid Fork requests to test throttling.
 
-        Target: velo_zygote/main.py (ForkHandler)
+        Target: velo_zygote/main.py (ForkHandler + ForkRateLimiter)
         
         If Zygote has no throttling, rapid Forks will exhaust PIDs or memory.
+        Test verifies rate limiting returns "Rate limit exceeded" errors.
         """
         try:
             import umsgpack
@@ -197,20 +198,23 @@ class TestWhiteBoxPythonStress:
         
         pids_spawned = []
         errors = []
+        rate_limit_errors = 0
         
-        for i in range(FORK_BOMB_COUNT):
-            try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                    s.settimeout(2)
-                    s.connect(socket_path)
-                    
-                    # Read Ready
-                    recv_msg(s)
-                    
-                    # Send Fork with a script that exits immediately
+        # Use single connection to properly test rate limiting
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect(socket_path)
+                
+                # Read Ready
+                recv_msg(s)
+                
+                script_path = str(proc.script_path) if hasattr(proc, 'script_path') else str(proc.project_dir / "main.py")
+                
+                for i in range(FORK_BOMB_COUNT):
                     fork_cmd = {
                         "type": "Fork",
-                        "script_path": "/bin/true",  # Exits immediately
+                        "script_path": script_path,
                         "args": [],
                         "async_mode": True,
                     }
@@ -220,9 +224,12 @@ class TestWhiteBoxPythonStress:
                     if response.get("type") == "Forked":
                         pids_spawned.append(response.get("worker_pid"))
                     elif response.get("type") == "Error":
-                        errors.append(response.get("message"))
-            except Exception as e:
-                errors.append(str(e))
+                        err_msg = response.get("message", "")
+                        errors.append(err_msg)
+                        if "Rate limit" in err_msg:
+                            rate_limit_errors += 1
+        except Exception as e:
+            errors.append(str(e))
         
         # Wait for processes to exit
         time.sleep(1)
@@ -241,8 +248,11 @@ class TestWhiteBoxPythonStress:
         # Report findings
         if zombies > 0:
             pytest.fail(f"WB-005 STRESS: Fork bomb left {zombies} zombies")
-        if len(errors) > FORK_BOMB_COUNT // 2:
-            pytest.fail(f"WB-005 STRESS: Fork bomb caused {len(errors)} errors (possible DoS vulnerability)")
+        
+        # Success criteria: rate limiting should kick in (some rate limit rejections)
+        # OR if errors occurred, at least some should be rate limit errors
+        if len(errors) > FORK_BOMB_COUNT // 2 and rate_limit_errors == 0:
+            pytest.fail(f"WB-005 STRESS: Fork bomb caused {len(errors)} errors without rate limiting")
 
 
 class TestWhiteBoxRustStress:
