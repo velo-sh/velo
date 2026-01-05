@@ -32,12 +32,24 @@ def _velo_timed_import(name, *args, **kwargs):
 
 builtins.__import__ = _velo_timed_import
 
-import atexit
-@atexit.register
 def _velo_write_profile():
     output_path = os.environ.get('VELO_PROFILE_OUTPUT', '/tmp/velo_profile.json')
-    with open(output_path, 'w') as f:
-        json.dump(_velo_import_times, f)
+    try:
+        with open(output_path, 'w') as f:
+            json.dump(_velo_import_times, f)
+    except:
+        pass  # Best effort - don't fail on profile write error
+
+# Register for normal exit
+import atexit
+atexit.register(_velo_write_profile)
+
+# Also register for unhandled exceptions (ensures profile is written on crash)
+_velo_original_excepthook = sys.excepthook
+def _velo_excepthook(exc_type, exc_value, exc_tb):
+    _velo_write_profile()
+    _velo_original_excepthook(exc_type, exc_value, exc_tb)
+sys.excepthook = _velo_excepthook
 "#;
 
 /// Parsed profile data from a profiled run.

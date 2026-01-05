@@ -1,31 +1,20 @@
-# Agent B Findings (Stability)
+# Agent B Findings: Stability & Platform Review (Phase 6.1)
 
-**Phase**: 6.1
-**Agent**: Agent B (Stability)
-**Date**: 2026-01-04
-
----
-
-## Finding: STAB-61-001
-
-**Severity:** P3
-**Category:** Test Issue
-**Description:** `test_l2_raii_orphan_check` tests RAII pattern via simulation, not actual subprocess.
-**Evidence:** Test uses mock pattern, not real `velo serve` process.
-**Recommendation:** Upgrade to E2E test when binary is available.
-**Status:** **DEFERRED TO E2E PHASE**
+**Agent**: Agent B (Stability Specialist)
+**Focus**: Subprocess Management, Signal Flow, IPC Deadlocks
 
 ---
 
-## Finding: STAB-61-002
+## 1. Compliance Audit
+- [x] **RS-P0-003**: RAII child cleanup is correctly mapped to `T-STAB-RS-003`.
+- [x] **MAC-P0-002**: macOS signal reset is correctly prioritized.
+- [/] **B-STAB-6.1-001**: **CRITICAL P1 GAP**. The current Rust runner design (§5.1.3) uses synchronous `cmd.status()` or `cmd.wait()`. If the child process (uvicorn/gunicorn) fills its stdout/stderr pipe, the child will block forever while the parent (Rust) waits for the child to exit. This is a classic **Subprocess Pipe Deadlock**.
 
-**Severity:** P3
-**Category:** Enhancement
-**Description:** `test_l2_zombie_prevention_signal_reset` verifies signal reset logic via unit test only.
-**Evidence:** N/A
-**Recommendation:** Add stress test with 100+ rapid restarts.
-**Status:** **ENHANCEMENT (P3)**
+## 2. Risk Assessment
+| Rank | ID | Description | Recommended Mitigation |
+|:---|:---|:---|:---|
+| **P1** | B-STAB-6.1-001 | Subprocess Pipe Deadlock | MUST use async I/O or a dedicated thread to drain child pipes. |
+| **P2** | B-STAB-6.1-002 | Signal-Reload Race | Signal received during a reload might be lost or double-handled. |
 
----
-
-**Agent B Summary**: 0 P0/P1 issues. 2 P3 enhancements deferred.
+## 3. Verdict
+**Status**: 🔴 **REJECTED**. P1 risk identified. Test suites MUST include a "Pipe Saturation" stress test.

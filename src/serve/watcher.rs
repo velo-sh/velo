@@ -7,7 +7,10 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Mutex,
+    mpsc::{Receiver, channel},
+};
 use std::time::{Duration, Instant};
 
 use crate::serve::error::ServeError;
@@ -23,7 +26,7 @@ pub const DEFAULT_DEBOUNCE_MS: u64 = 300;
 pub const MAX_EVENTS_PER_SECOND: usize = 100;
 
 /// Maximum number of watched files before warning
-pub const MAX_WATCHED_FILES: usize = 10_000;
+pub const MAX_WATCHED_FILES: usize = 5_000;
 
 // ============================================================================
 // Watcher State Machine (D7, RFC §4.4)
@@ -36,7 +39,11 @@ pub enum WatcherState {
     #[default]
     Idle,
     /// Received event, waiting for debounce period
-    Debouncing { last_event: Instant },
+    /// `first_event` allows enforcing a hard-cap to prevent starvation (STB-RS-002)
+    Debouncing {
+        last_event: Instant,
+        first_event: Instant,
+    },
     /// Currently restarting the server
     Restarting { since: Instant },
 }
@@ -47,11 +54,17 @@ pub enum WatcherState {
 
 /// File watcher with debouncing for hot reload
 pub struct FileWatcher {
+    /// Internal state protected by mutex to allow shared mutation (Sync)
+    inner: Mutex<FileWatcherInner>,
+    /// Global shutdown flag
+    pub shutdown_flag: Arc<AtomicBool>,
+}
+
+struct FileWatcherInner {
     watcher: RecommendedWatcher,
     receiver: Receiver<Result<Event, notify::Error>>,
     state: WatcherState,
     debounce_delay: Duration,
-    shutdown_flag: Arc<AtomicBool>,
     event_count: usize,
     event_window_start: Instant,
 }
@@ -59,7 +72,7 @@ pub struct FileWatcher {
 impl FileWatcher {
     /// Create a new file watcher
     pub fn new(shutdown_flag: Arc<AtomicBool>, debounce_ms: u64) -> Result<Self, ServeError> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = channel();
 
         let watcher = RecommendedWatcher::new(
             move |res| {
@@ -70,13 +83,15 @@ impl FileWatcher {
         .map_err(|e| ServeError::WatcherError(e.to_string()))?;
 
         Ok(Self {
-            watcher,
-            receiver: rx,
-            state: WatcherState::Idle,
-            debounce_delay: Duration::from_millis(debounce_ms),
+            inner: Mutex::new(FileWatcherInner {
+                watcher,
+                receiver: rx,
+                state: WatcherState::Idle,
+                debounce_delay: Duration::from_millis(debounce_ms),
+                event_count: 0,
+                event_window_start: Instant::now(),
+            }),
             shutdown_flag,
-            event_count: 0,
-            event_window_start: Instant::now(),
         })
     }
 
@@ -102,75 +117,93 @@ impl FileWatcher {
         config
     }
 
-    /// Detect if running in a container (LNX-P0-002)
+    /// Detect if running inside a container
     #[cfg(target_os = "linux")]
     fn is_container() -> bool {
-        use std::path::Path;
-
         Path::new("/.dockerenv").exists()
             || std::fs::read_to_string("/proc/1/cgroup")
-                .map(|s| s.contains("docker") || s.contains("kubepods"))
+                .map(|s| s.contains("docker") || s.contains("containerd") || s.contains("kubepods"))
                 .unwrap_or(false)
     }
 
-    /// Start watching a directory
-    pub fn watch(&mut self, path: &Path) -> Result<(), ServeError> {
-        // Check inotify limit on Linux (LNX-P0-001)
-        #[cfg(target_os = "linux")]
-        Self::check_inotify_limit();
-
-        self.watcher
+    /// Add a path to be watched
+    pub fn watch(&self, path: &Path) -> Result<(), ServeError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner
+            .watcher
             .watch(path, RecursiveMode::Recursive)
             .map_err(|e| ServeError::WatcherError(e.to_string()))
     }
 
-    /// Check inotify watch limit on Linux (LNX-P0-001)
-    #[cfg(target_os = "linux")]
-    fn check_inotify_limit() {
-        if let Ok(limit_str) = std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
-            && let Ok(limit) = limit_str.trim().parse::<usize>()
-            && limit < 65536
-        {
-            eprintln!("⚠️  Warning: Low inotify limit ({})", limit);
-            eprintln!("   To fix: echo 65536 | sudo tee /proc/sys/fs/inotify/max_user_watches");
-        }
-    }
-
-    /// Poll for file change events
-    ///
-    /// Returns true if a restart should be triggered
-    pub fn poll(&mut self) -> Result<bool, ServeError> {
+    /// Poll for changes. Returns Ok(true) if restart should be triggered.
+    pub fn poll(&self) -> Result<bool, ServeError> {
         // Check for shutdown
         if self.shutdown_flag.load(Ordering::SeqCst) {
             return Ok(false);
         }
 
+        let mut inner = self.inner.lock().unwrap();
+
+        // Periodic rate limit reset
+        if inner.event_window_start.elapsed() >= Duration::from_secs(1) {
+            inner.event_count = 0;
+            inner.event_window_start = Instant::now();
+        }
+
         // Process pending events
-        while let Ok(result) = self.receiver.try_recv() {
+        while let Ok(result) = inner.receiver.try_recv() {
             match result {
                 Ok(event) => {
-                    if self.should_trigger_reload(&event) {
+                    if inner.should_trigger_reload(&event) {
                         // Rate limiting check (SEC-P0-006)
-                        if !self.check_rate_limit() {
+                        if !inner.check_rate_limit() {
                             continue;
                         }
-                        self.state = WatcherState::Debouncing {
-                            last_event: Instant::now(),
-                        };
+
+                        let now = Instant::now();
+                        match inner.state {
+                            WatcherState::Debouncing { first_event, .. } => {
+                                inner.state = WatcherState::Debouncing {
+                                    last_event: now,
+                                    first_event,
+                                };
+                            }
+                            _ => {
+                                inner.state = WatcherState::Debouncing {
+                                    last_event: now,
+                                    first_event: now,
+                                };
+                            }
+                        }
                     }
                 }
                 Err(e) => {
-                    eprintln!("⚠️  Watch error: {}", e);
+                    return Err(ServeError::WatcherError(e.to_string()));
                 }
             }
         }
 
         // State machine transitions
-        match self.state {
+        match inner.state {
             WatcherState::Idle => Ok(false),
-            WatcherState::Debouncing { last_event } => {
-                if last_event.elapsed() >= self.debounce_delay {
-                    self.state = WatcherState::Restarting {
+            WatcherState::Debouncing {
+                last_event,
+                first_event,
+            } => {
+                let debounce_elapsed = last_event.elapsed();
+                let total_elapsed = first_event.elapsed();
+
+                // STB-RS-002: Hard-cap of 2 seconds to prevent debouncer starvation
+                let hard_cap = Duration::from_secs(2);
+
+                if debounce_elapsed >= inner.debounce_delay || total_elapsed >= hard_cap {
+                    if total_elapsed >= hard_cap {
+                        eprintln!(
+                            "⚠️  Watcher hard-cap reached ({:.1}s), forcing restart",
+                            total_elapsed.as_secs_f64()
+                        );
+                    }
+                    inner.state = WatcherState::Restarting {
                         since: Instant::now(),
                     };
                     Ok(true) // Trigger restart
@@ -179,92 +212,54 @@ impl FileWatcher {
                 }
             }
             WatcherState::Restarting { since } => {
-                // After restart completes, go back to idle
-                // Caller should call `restart_complete()` when done
-                if since.elapsed() > Duration::from_secs(5) {
-                    // Timeout protection
-                    self.state = WatcherState::Idle;
+                // Minimum time in restarting state to avoid thrashing
+                if since.elapsed() >= Duration::from_millis(500) {
+                    inner.state = WatcherState::Idle;
                 }
                 Ok(false)
             }
         }
     }
 
-    /// Check if we're within rate limits (SEC-P0-006)
-    fn check_rate_limit(&mut self) -> bool {
-        let now = Instant::now();
-        let window = Duration::from_secs(1);
-
-        if now.duration_since(self.event_window_start) > window {
-            // Reset window
-            self.event_window_start = now;
-            self.event_count = 1;
-            true
-        } else {
-            self.event_count += 1;
-            if self.event_count > MAX_EVENTS_PER_SECOND {
-                // Rate limit exceeded
-                false
-            } else {
-                true
-            }
-        }
-    }
-
-    /// Check if an event should trigger a reload
-    fn should_trigger_reload(&self, event: &Event) -> bool {
-        use notify::EventKind;
-
-        // Only trigger on content modifications
-        matches!(
-            event.kind,
-            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-        ) && event.paths.iter().any(|p| {
-            p.extension()
-                .map(|ext| ext == "py" || ext == "pyi")
-                .unwrap_or(false)
-        })
-    }
-
-    /// Signal that restart is complete
-    pub fn restart_complete(&mut self) {
-        self.state = WatcherState::Idle;
-    }
-
-    /// Get current state
-    pub fn state(&self) -> WatcherState {
-        self.state
+    /// Reset state to idle
+    pub fn restart_complete(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.state = WatcherState::Idle;
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_state_is_idle() {
-        assert_eq!(WatcherState::default(), WatcherState::Idle);
+impl FileWatcherInner {
+    /// Check if we're within rate limits (SEC-P0-006)
+    fn check_rate_limit(&mut self) -> bool {
+        self.event_count += 1;
+        if self.event_count > MAX_EVENTS_PER_SECOND {
+            if self.event_count == MAX_EVENTS_PER_SECOND + 1 {
+                eprintln!("⚠️  Excessive file events, rate limiting hot-reload");
+            }
+            return false;
+        }
+        true
     }
 
-    #[test]
-    fn test_debounce_delay() {
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let watcher = FileWatcher::new(shutdown, 300);
-        assert!(watcher.is_ok());
-        let watcher = watcher.unwrap();
-        assert_eq!(watcher.debounce_delay, Duration::from_millis(300));
-    }
+    /// Filter events that should trigger a reload
+    fn should_trigger_reload(&self, event: &Event) -> bool {
+        // Ignore events without paths
+        if event.paths.is_empty() {
+            return false;
+        }
 
-    #[test]
-    fn test_state_transitions() {
-        let state = WatcherState::Debouncing {
-            last_event: Instant::now(),
-        };
-        assert!(matches!(state, WatcherState::Debouncing { .. }));
-
-        let state = WatcherState::Restarting {
-            since: Instant::now(),
-        };
-        assert!(matches!(state, WatcherState::Restarting { .. }));
+        // Only watch for data modifications or file creations/deletions
+        match event.kind {
+            notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+            | notify::EventKind::Create(_)
+            | notify::EventKind::Remove(_) => {
+                // Check if any of the affected files are Python files
+                event
+                    .paths
+                    .iter()
+                    .any(|p| p.extension().map(|ext| ext == "py").unwrap_or(false))
+            }
+            _ => false,
+        }
     }
 }

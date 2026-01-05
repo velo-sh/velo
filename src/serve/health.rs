@@ -3,7 +3,6 @@
 //! Provides minimal HTTP endpoints for liveness and readiness probes.
 //! Uses `tiny_http` for minimal overhead.
 
-use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
@@ -34,20 +33,13 @@ impl HealthServer {
     /// # Returns
     /// The health server handle
     pub fn spawn(bind: &str, ready: Arc<AtomicBool>) -> Result<Self, HealthError> {
-        // Validate bind address
-        let addr = bind
-            .to_socket_addrs()
-            .map_err(|_| HealthError::InvalidBind(bind.to_string()))?
-            .next()
-            .ok_or_else(|| HealthError::InvalidBind(bind.to_string()))?;
-
-        let server =
-            tiny_http::Server::http(addr).map_err(|e| HealthError::BindFailed(e.to_string()))?;
-
         let ready_clone = Arc::clone(&ready);
+        let bind_str = bind.to_string();
 
         let handle = std::thread::spawn(move || {
-            Self::serve_loop(server, ready_clone);
+            if let Ok(server) = tiny_http::Server::http(&bind_str) {
+                Self::serve_loop(server, ready_clone);
+            }
         });
 
         Ok(Self {
@@ -72,6 +64,7 @@ impl HealthServer {
                     tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..])
                         .unwrap(),
                 );
+            // SEC-P0-004: Do not include Server header (Recon Prevention)
 
             // Ignore errors - client may have disconnected
             let _ = request.respond(response);

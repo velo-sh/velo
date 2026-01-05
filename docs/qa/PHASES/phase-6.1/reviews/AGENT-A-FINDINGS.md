@@ -1,35 +1,20 @@
-# Agent A Findings (Edge & Compliance)
+# Agent A Findings: DX/Edge Review (Phase 6.1)
 
-**Phase**: 6.1
-**Agent**: Agent A (Edge)
-**Date**: 2026-01-04
-
----
-
-## Finding: EDGE-61-001
-
-**Severity:** P1
-**Category:** Bug
-**Description:** `detect_app.py` did not recognize Django apps using `get_wsgi_application()` factory function.
-**Evidence:** 
-```bash
-uv run pytest tests/qa/test_detect_app_compliance.py -v
-# test_django_application FAILED (KeyError: 'app')
-```
-**Recommendation:** Add `get_wsgi_application` and `get_asgi_application` to `FRAMEWORK_PATTERNS`.
-**Status:** **FIXED & VERIFIED** (DEF-61-001)
+**Agent**: Agent A (Edge & DX Specialist)
+**Focus**: CLI UX, App Detection, Debouncer Integrity
 
 ---
 
-## Finding: EDGE-61-002
+## 1. Compliance Audit
+- [x] **DX-P0-001**: Source-pointing errors are handled by dedicated test cases.
+- [x] **DX-P1-002**: Venv detection hierarchy is mapped.
+- [ ] **A-EDGE-6.1-001**: **Gap Identified**. The current debouncer logic (§4.4) lacks a "hard-restart" boundary. If file events are continuous every 250ms, the server will NEVER restart (Starvation).
 
-**Severity:** P3
-**Category:** Enhancement
-**Description:** Consider adding support for Quart (async Flask) framework detection.
-**Evidence:** N/A
-**Recommendation:** Add `("Quart", "Quart")` to FRAMEWORK_PATTERNS (already present).
-**Status:** **NO ACTION REQUIRED**
+## 2. Risk Assessment
+| Rank | ID | Description | Recommended Mitigation |
+|:---|:---|:---|:---|
+| **P2** | A-EDGE-6.1-001 | Debouncer Starvation | Add a `MAX_DEBOUNCE_TIME` (e.g. 2s) to force restart. |
+| **P3** | A-EDGE-6.1-002 | AST Detection Scalability | AST scan might be slow on huge `__init__.py`. |
 
----
-
-**Agent A Summary**: 1 P1 found and fixed. No outstanding issues.
+## 3. Verdict
+**Status**: 🟡 CONDITIONAL APPROVAL. Requires a test case for debouncer starvation.
