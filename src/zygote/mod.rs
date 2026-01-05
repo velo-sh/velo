@@ -415,24 +415,36 @@ impl ZygoteLauncher {
         let start = std::time::Instant::now();
         while !self.socket_path.exists() {
             // Check if process is still running (DEF-61-005)
-            if let Some(ref mut child) = self.zygote_process
-                && let Ok(Some(status)) = child.try_wait()
-            {
-                return Err(ZygoteError::StartFailed(format!(
-                    "Zygote process exited prematurely with status: {}. Check log at: {}",
-                    status,
-                    get_log_path().display()
-                )));
+            if let Some(ref mut child) = self.zygote_process {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        return Err(ZygoteError::StartFailed(format!(
+                            "Zygote process exited prematurely with status: {}. Check log at: {}",
+                            status,
+                            get_log_path().display()
+                        )));
+                    }
+                    Ok(None) => {
+                        // Still running, wait more
+                    }
+                    Err(e) => {
+                        return Err(ZygoteError::StartFailed(format!(
+                            "Error checking Zygote status: {}",
+                            e
+                        )));
+                    }
+                }
             }
 
             if start.elapsed() > timeout {
-                self.stop()?;
+                let _ = self.stop();
                 return Err(ZygoteError::StartFailed(format!(
-                    "Timeout waiting for Zygote socket after {}s",
-                    timeout_secs
+                    "Timeout waiting for Zygote socket after {}s. Check log at: {}",
+                    timeout_secs,
+                    get_log_path().display()
                 )));
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(100));
         }
 
         Ok(())
