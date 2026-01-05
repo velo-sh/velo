@@ -503,7 +503,13 @@ class ZygoteServer:
     """Main Zygote Service."""
 
     def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600):
-        self.socket_path = socket_path
+        # RFC-0011 D.1: Support abstract sockets (@ -> \0)
+        self.is_abstract = socket_path.startswith('@')
+        if self.is_abstract:
+            self.socket_path = '\0' + socket_path[1:]
+        else:
+            self.socket_path = socket_path
+            
         self.idle_timeout = idle_timeout
         self.worker_manager = WorkerManager(worker_ttl)
         self.preload = preload or []
@@ -516,6 +522,11 @@ class ZygoteServer:
             LogUtils.log(f"Starting Async ZygoteServer (PID: {os.getpid()})")
             self._setup_signals()
             self._preload_modules()
+            
+            # RFC-0011 6A.3: Check if preloaded libraries initialized CUDA
+            if check_cuda_initialized():
+                LogUtils.log("CRITICAL: CUDA initialized in Zygote after preload! This will cause deadlocks after fork.")
+                sys.exit(1)
             
             # Architect Recommendation: Command Dispatcher mapping
             self._command_handlers = {
@@ -550,11 +561,13 @@ class ZygoteServer:
                 LogUtils.log(f"Warning: Failed to pre-load {module}: {e}")
 
     async def _run_loop(self):
-        path = Path(self.socket_path)
-        if path.exists():
-            if self._is_socket_in_use():
-                raise RuntimeError(f"Socket {self.socket_path} in use")
-            path.unlink()
+        # RFC-0011 D.1: Filesystem cleanup only for non-abstract sockets
+        if not self.is_abstract:
+            path = Path(self.socket_path)
+            if path.exists():
+                if self._is_socket_in_use():
+                    raise RuntimeError(f"Socket {self.socket_path} in use")
+                path.unlink()
             
         server = await asyncio.start_unix_server(
             self._handle_client, 
@@ -629,6 +642,9 @@ class ZygoteServer:
         return {"type": "Ack"}
 
     def _is_socket_in_use(self) -> bool:
+        if not self.is_abstract and not Path(self.socket_path).exists():
+            return False
+            
         try:
             test = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             test.settimeout(0.5)
