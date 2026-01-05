@@ -676,6 +676,57 @@ class TestGoldenPathDemonCatching:
         # Allow 1% tolerance for JSON overhead
         assert abs(received_size - expected_size) < expected_size * 0.01, \
             f"Response truncated or corrupted: {received_size} vs {expected_size}"
+        assert abs(received_size - expected_size) < expected_size * 0.01, \
+            f"Response truncated or corrupted: {received_size} vs {expected_size}"
+
+    def test_GOLD_017_timeout_enforcement(self, velo_serve_fixture):
+        """GOLD-017: Proxy enforces timeouts on slow workers.
+        
+        Demon: Slow requests hang forever (DoS risk).
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        t0 = time.time()
+        response = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=5)
+        duration = time.time() - t0
+        
+        assert response.status_code == 200
+        assert duration >= 2.0, "Request returned too fast!"
+        
+        print(f"✅ Slow request handled correctly in {duration:.2f}s")
+        
+    def test_GOLD_018_chunked_request_handling(self, velo_serve_fixture):
+        """GOLD-018: Proxy handles chunked transfer encoding correctly.
+        
+        Demon: Proxy fails to handle streaming/chunked uploads.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        def generate_chunks():
+            # Send valid JSON split across chunks
+            yield b'{"message": '
+            yield b'"chunked_world", '
+            yield b'"number": 99}'
+        
+        # We use /echo endpoint which reads body
+        # requests library automatically uses chunked encoding for generators
+        response = requests.post(
+            f"http://127.0.0.1:{proc.port}/echo",
+            data=generate_chunks(),
+            timeout=10
+        )
+        
+        assert response.status_code == 200, f"Chunked upload failed: {response.status_code}"
+        
+        data = response.json()
+        assert data["received_message"] == "chunked_world", \
+            f"Message corrupted during reassembly: {data}"
+        assert data["received_number"] == 99, \
+            f"Number corrupted during reassembly: {data}"
+            
+        print("✅ Chunked request correctly reassembled and handled by application")
 
 
 class TestGoldenPathSecurity:
