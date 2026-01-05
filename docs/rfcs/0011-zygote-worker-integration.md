@@ -108,6 +108,20 @@ Velo Supervisor
 
 ---
 
+### 3.1 Decision
+
+**Selected: Option C - Composition Architecture**
+
+Rationale:
+- Lowest implementation risk
+- Leverages mature uvicorn ASGI implementation
+- Achieves Zygote COW benefit without ecosystem disruption
+- Clear upgrade path to Option A in future phases
+
+Option A and B remain documented for future reference.
+
+---
+
 ## 4. Acceptance Criteria
 
 - [x] Workers forked from Zygote (verified via process tree)
