@@ -176,6 +176,13 @@ impl Worker {
         }
     }
 
+    /// Fast check if worker process exists (no IPC overhead)
+    /// Used for health monitoring in the signal loop
+    pub fn is_alive(&self) -> bool {
+        // Safety: kill with signal 0 checks process existence without sending signal
+        unsafe { libc::kill(self.pid as i32, 0) == 0 }
+    }
+
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
         let _ = ipc::send_command(
             &self.zygote_socket,
