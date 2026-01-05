@@ -13,33 +13,31 @@ use colored::Colorize;
 
 /// Custom parser for workers argument with clear error messages
 fn parse_workers(s: &str) -> Result<u32, String> {
-    match s.parse::<i64>() {
-        Ok(n) if n < 0 => Err(format!(
-            "invalid worker count '{}': must be a positive number (at least 1)",
-            s
-        )),
-        Ok(0) => Err("invalid worker count '0': must be at least 1".to_string()),
-        Ok(n) if n > u32::MAX as i64 => Err(format!(
+    let n = s
+        .parse::<i64>()
+        .map_err(|_| format!("invalid worker count '{}': must be a valid number", s))?;
+    if n < 1 {
+        return Err(format!("invalid worker count '{}': must be at least 1", s));
+    }
+    if n > u32::MAX as i64 {
+        return Err(format!(
             "invalid worker count '{}': exceeds maximum value {}",
             s,
             u32::MAX
-        )),
-        Ok(n) => Ok(n as u32),
-        Err(_) => Err(format!(
-            "invalid worker count '{}': must be a valid number",
-            s
-        )),
+        ));
     }
+    Ok(n as u32)
 }
 
 /// Custom parser for port argument with clear error messages
 fn parse_port(s: &str) -> Result<u16, String> {
-    match s.parse::<i64>() {
-        Ok(n) if n < 1 => Err(format!("invalid port '{}': must be between 1 and 65535", s)),
-        Ok(n) if n > 65535 => Err(format!("invalid port '{}': must be between 1 and 65535", s)),
-        Ok(n) => Ok(n as u16),
-        Err(_) => Err(format!("invalid port '{}': must be a valid number", s)),
+    let n = s
+        .parse::<i64>()
+        .map_err(|_| format!("invalid port '{}': must be a valid number", s))?;
+    if !(1..=65535).contains(&n) {
+        return Err(format!("invalid port '{}': must be between 1 and 65535", s));
     }
+    Ok(n as u16)
 }
 
 /// Serve a Python ASGI/WSGI application
