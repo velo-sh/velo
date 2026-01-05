@@ -17,12 +17,13 @@ use thiserror::Error;
 
 /// Headers that MUST be stripped before forwarding (RFC 2616, Section 13.5.1).
 ///
-/// RFC-0011 C.4: These hop-by-hop headers could cause request smuggling if forwarded.
+/// RFC-0011 C.4 & 6A.3: These hop-by-hop headers could cause request smuggling if forwarded.
 const HOP_BY_HOP_HEADERS: &[&str] = &[
     "connection",
     "keep-alive",
     "proxy-authenticate",
     "proxy-authorization",
+    "proxy-connection", // RFC-0011 6A.3
     "te",
     "trailer",
     "transfer-encoding",
