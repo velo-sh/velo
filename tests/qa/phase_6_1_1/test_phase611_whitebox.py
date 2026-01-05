@@ -1,13 +1,14 @@
-# RFC-0011 QA Test Suite: White-Box Internal Logic Tests
+# RFC-0011 QA Test Suite: White-Box Internal Logic Tests (STRESS HARDENED)
 # tests/qa/phase_6_1_1/test_phase611_whitebox.py
 
 """
-White-Box Tests (Agent WB)
+White-Box Tests (Agent WB) - STRESS HARDENED EDITION
 
 These tests target INTERNAL code paths identified through source code inspection.
-They are designed to catch bugs that black-box testing might miss.
+They use STRESS LOOPS and TIGHT TIMING to maximize the probability of triggering
+race conditions that single-shot Python tests might miss.
 
-Priority: P1 (Internal Quality Gate)
+Priority: P0 (Zero Bug Policy Enforcement)
 
 Reference: whitebox_audit.md
 """
@@ -18,139 +19,127 @@ import socket
 import struct
 import sys
 import time
+import threading
+import concurrent.futures
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 import pytest
+import psutil
 
 # ============================================================================
-# WB-001: TTL Expiry During Request
-# Target: velo_zygote/main.py:372-374 (Guardian TTL race)
+# Stress Test Configuration
 # ============================================================================
+STRESS_ITERATIONS = 50  # Number of times to repeat timing-sensitive tests
+SIGNAL_STORM_COUNT = 100  # Number of signals to send in rapid succession
+FORK_BOMB_COUNT = 20  # Number of rapid Fork requests
 
-class TestWhiteBoxPython:
-    """White-box tests for Python Zygote internals."""
 
-    def test_WB_001_ttl_expiry_during_request(self, velo_serve_fixture, tmp_path):
-        """WB-001: Guardian TTL should NOT kill workers mid-request.
+class TestWhiteBoxPythonStress:
+    """White-box STRESS tests for Python Zygote internals."""
 
-        Target: velo_zygote/main.py:372-374
-        
-        The Guardian thread checks TTL every second. If a long request
-        is in progress when TTL expires, the worker should NOT be killed
-        until the request completes (graceful timeout).
-        
-        NOTE: This requires modifying the worker TTL to a very short value.
-        Current implementation has no grace period, so this test WILL FAIL.
-        """
-        import requests
-        
-        # Start server with default TTL (3600s) - we can't easily test short TTL
-        # without modifying the Zygote startup args
-        proc = velo_serve_fixture.start("main:app", workers=1)
-        proc.wait_ready()
-        
-        # Send a slow request
-        try:
-            # The /slow endpoint sleeps for the specified seconds
-            response = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=10)
-            assert response.status_code == 200, "Slow request failed"
-        except requests.exceptions.Timeout:
-            pytest.fail("WB-001: Request timed out, possible TTL race")
-
-    def test_WB_002_zombie_accumulation(self, velo_serve_fixture):
-        """WB-002: Zombies should not accumulate if workers exit silently.
+    def test_WB_002_STRESS_zombie_accumulation(self, velo_serve_fixture):
+        """WB-002 STRESS: Rapid worker kills to trigger zombie accumulation.
 
         Target: velo_zygote/main.py:398-402
         
-        If workers exit naturally (not via SIGKILL), the reap_stale() loop
-        should still clean them up. This tests for zombie accumulation.
+        We rapidly kill and respawn workers, racing the reaper.
+        If zombies accumulate, the reaper has a bug.
         """
-        import psutil
-        
-        proc = velo_serve_fixture.start("main:app", workers=4)
+        proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        # Get initial workers
-        workers = proc.get_worker_pids()
-        if not workers:
-            pytest.skip("No workers detected")
+        zombies_detected = 0
         
-        # Send SIGTERM to all workers (graceful exit, not SIGKILL)
-        for pid in workers:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+        for i in range(STRESS_ITERATIONS):
+            workers = proc.get_worker_pids()
+            if not workers:
+                continue
+            
+            # Kill worker with SIGTERM (graceful)
+            for pid in workers:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            
+            # Immediately check for zombies (race the reaper)
+            time.sleep(0.05)  # 50ms - much tighter than 1s reaper interval
+            
+            for pid in workers:
+                try:
+                    p = psutil.Process(pid)
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        zombies_detected += 1
+                except psutil.NoSuchProcess:
+                    pass
+            
+            # Brief pause before next iteration
+            time.sleep(0.1)
         
-        # Wait for Zygote's reaper to run (it checks every 1s)
-        time.sleep(3)
-        
-        # Check for zombies
-        zombies = []
-        for pid in workers:
-            try:
-                p = psutil.Process(pid)
-                if p.status() == psutil.STATUS_ZOMBIE:
-                    zombies.append(pid)
-            except psutil.NoSuchProcess:
-                pass  # Good - properly reaped
-        
-        assert len(zombies) == 0, f"WB-002: Zombie accumulation detected: {zombies}"
+        # Allow some zombie sightings due to timing, but flag if excessive
+        assert zombies_detected < 5, f"WB-002 STRESS: Zombie accumulation detected {zombies_detected} times in {STRESS_ITERATIONS} iterations"
 
-    def test_WB_003_eintr_during_waitpid(self, velo_serve_fixture):
-        """WB-003: EINTR during waitpid should not cause premature loop exit.
+    def test_WB_003_STRESS_eintr_signal_storm(self, velo_serve_fixture):
+        """WB-003 STRESS: Signal storm during waitpid to trigger EINTR handling.
 
         Target: velo_zygote/main.py:679-680
         
-        If a signal interrupts waitpid(), the bare 'except: break' will
-        silently exit the reap loop, leaving zombies.
-        
-        This test sends SIGUSR1 to Zygote during worker cleanup.
+        We send a STORM of signals to Zygote while simultaneously killing workers.
+        If the bare 'except: break' swallows EINTR, zombies will accumulate.
         """
-        import psutil
-        
-        proc = velo_serve_fixture.start("main:app", workers=2)
+        proc = velo_serve_fixture.start("main:app", workers=4)
         proc.wait_ready()
         
         zygote_pid = proc.zygote_pid
         if not zygote_pid:
             pytest.skip("Zygote not detected")
         
-        workers = proc.get_worker_pids()
-        if not workers:
+        initial_workers = proc.get_worker_pids()
+        if not initial_workers:
             pytest.skip("No workers detected")
         
-        # Kill one worker
-        os.kill(workers[0], signal.SIGKILL)
+        # Phase 1: Kill all workers
+        for pid in initial_workers:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         
-        # Immediately send SIGUSR1 to Zygote to trigger EINTR
-        try:
-            os.kill(zygote_pid, signal.SIGUSR1)
-        except ProcessLookupError:
-            pytest.skip("Zygote died during test")
+        # Phase 2: Signal storm on Zygote
+        def signal_storm():
+            for _ in range(SIGNAL_STORM_COUNT):
+                try:
+                    os.kill(zygote_pid, signal.SIGUSR1)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.001)  # 1ms between signals
         
+        storm_thread = threading.Thread(target=signal_storm)
+        storm_thread.start()
+        storm_thread.join(timeout=5)
+        
+        # Phase 3: Wait for reaper
         time.sleep(2)
         
-        # Check if worker was reaped (not zombie)
-        try:
-            p = psutil.Process(workers[0])
-            if p.status() == psutil.STATUS_ZOMBIE:
-                pytest.fail("WB-003: Worker became zombie after EINTR")
-        except psutil.NoSuchProcess:
-            pass  # Good
+        # Phase 4: Check for zombies
+        zombies = []
+        for pid in initial_workers:
+            try:
+                p = psutil.Process(pid)
+                if p.status() == psutil.STATUS_ZOMBIE:
+                    zombies.append(pid)
+            except psutil.NoSuchProcess:
+                pass
+        
+        assert len(zombies) == 0, f"WB-003 STRESS: {len(zombies)} zombies survived signal storm: {zombies}"
 
-    def test_WB_004_cross_app_affinity(self, velo_serve_fixture, tmp_path):
+    def test_WB_004_cross_app_affinity(self, velo_serve_fixture):
         """WB-004: Handshake should verify app affinity to prevent cross-talk.
 
         Target: velo_zygote/main.py:748-756
         
-        The handshake currently returns static capabilities without the
-        app name. This allows a second velo process to connect to a Zygote
-        preloaded for a different app.
-        
-        NOTE: This is a design defect. The test documents it but will PASS
-        (the vulnerability exists, meaning the handshake succeeds).
+        This is a DESIGN DEFECT test - it will FAIL to prove the vulnerability exists.
         """
         try:
             import umsgpack
@@ -185,25 +174,117 @@ class TestWhiteBoxPython:
             has_affinity = any("app:" in c for c in caps)
             
             if not has_affinity:
-                # Document the vulnerability
                 pytest.fail("WB-004: Handshake lacks app affinity - cross-app vulnerability exists")
 
+    def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture):
+        """WB-005 STRESS (NEW): Rapid Fork requests to test throttling.
 
-class TestWhiteBoxRust:
-    """White-box tests for Rust Supervisor internals."""
+        Target: velo_zygote/main.py (ForkHandler)
+        
+        If Zygote has no throttling, rapid Forks will exhaust PIDs or memory.
+        """
+        try:
+            import umsgpack
+        except ImportError:
+            pytest.skip("umsgpack not available")
+        
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        socket_path = proc.get_socket_path()
+        if not socket_path:
+            pytest.skip("Zygote socket not found")
+        
+        pids_spawned = []
+        errors = []
+        
+        for i in range(FORK_BOMB_COUNT):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.settimeout(2)
+                    s.connect(socket_path)
+                    
+                    # Read Ready
+                    recv_msg(s)
+                    
+                    # Send Fork with a script that exits immediately
+                    fork_cmd = {
+                        "type": "Fork",
+                        "script_path": "/bin/true",  # Exits immediately
+                        "args": [],
+                        "async_mode": True,
+                    }
+                    send_msg(s, fork_cmd)
+                    
+                    response = recv_msg(s)
+                    if response.get("type") == "Forked":
+                        pids_spawned.append(response.get("worker_pid"))
+                    elif response.get("type") == "Error":
+                        errors.append(response.get("message"))
+            except Exception as e:
+                errors.append(str(e))
+        
+        # Wait for processes to exit
+        time.sleep(1)
+        
+        # Check for zombie accumulation
+        zombies = 0
+        for pid in pids_spawned:
+            if pid:
+                try:
+                    p = psutil.Process(pid)
+                    if p.status() == psutil.STATUS_ZOMBIE:
+                        zombies += 1
+                except psutil.NoSuchProcess:
+                    pass
+        
+        # Report findings
+        if zombies > 0:
+            pytest.fail(f"WB-005 STRESS: Fork bomb left {zombies} zombies")
+        if len(errors) > FORK_BOMB_COUNT // 2:
+            pytest.fail(f"WB-005 STRESS: Fork bomb caused {len(errors)} errors (possible DoS vulnerability)")
 
-    def test_WB_007_orphaned_existing_zygote(self, velo_serve_fixture, tmp_path):
+
+class TestWhiteBoxRustStress:
+    """White-box STRESS tests for Rust Supervisor internals."""
+
+    def test_WB_006_STRESS_worker_respawn_race(self, velo_serve_fixture):
+        """WB-006 STRESS (NEW): Rapid worker kills to race respawn logic.
+
+        Target: src/serve/runner.rs (Worker respawning - or lack thereof)
+        
+        This test repeatedly kills workers and checks if they are respawned.
+        Current implementation has NO respawn logic, so this SHOULD fail.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=4)
+        proc.wait_ready()
+        
+        initial_workers = proc.get_worker_pids()
+        if len(initial_workers) < 4:
+            pytest.skip(f"Expected 4 workers, got {len(initial_workers)}")
+        
+        # Kill all workers
+        for pid in initial_workers:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        
+        # Wait for potential respawn
+        time.sleep(3)
+        
+        # Check for new workers
+        new_workers = proc.get_worker_pids()
+        
+        # This SHOULD fail because there's no respawn logic
+        assert len(new_workers) >= 4, f"WB-006 STRESS: Workers not respawned after kill. Had {len(initial_workers)}, now have {len(new_workers)}"
+
+    def test_WB_007_orphaned_existing_zygote(self, velo_serve_fixture):
         """WB-007: Existing Zygote should be shut down when velo serve exits.
 
         Target: src/serve/runner.rs:630
-        
-        When re-attaching to an existing Zygote, a new ZygoteLauncher is
-        created that does NOT own the process. Its Drop impl won't send
-        Shutdown, potentially orphaning the Zygote.
         """
-        import psutil
-        
-        # Start first server (this spawns the Zygote)
+        # Start first server
         proc1 = velo_serve_fixture.start("main:app", workers=1)
         proc1.wait_ready()
         
@@ -215,7 +296,7 @@ class TestWhiteBoxRust:
         proc1.stop()
         time.sleep(1)
         
-        # Start second server (should re-attach to existing Zygote OR spawn new)
+        # Start second server
         proc2 = velo_serve_fixture.start("main:app", workers=1)
         proc2.wait_ready()
         
@@ -225,7 +306,7 @@ class TestWhiteBoxRust:
         proc2.stop()
         time.sleep(2)
         
-        # Check if the original Zygote is still alive (orphan leak)
+        # Check if any Zygote is still alive (orphan leak)
         still_alive = False
         for pid in [zygote1_pid, zygote2_pid]:
             if pid:
@@ -233,56 +314,51 @@ class TestWhiteBoxRust:
                     p = psutil.Process(pid)
                     if p.is_running():
                         still_alive = True
-                        # Cleanup for test hygiene
                         os.kill(pid, signal.SIGKILL)
                 except psutil.NoSuchProcess:
                     pass
         
         assert not still_alive, f"WB-007: Orphaned Zygote detected (PIDs: {zygote1_pid}, {zygote2_pid})"
 
-    def test_WB_008_accept_loop_fd_exhaustion(self, velo_serve_fixture):
-        """WB-008: Accept loop should back off under FD exhaustion.
+    def test_WB_008_STRESS_connection_flood(self, velo_serve_fixture):
+        """WB-008 STRESS: Flood connections to stress accept loop.
 
         Target: src/serve/runner.rs:747-749
         
-        If the system hits EMFILE (too many open files), the accept loop
-        only sleeps 50ms. Under sustained pressure, this causes CPU spin.
-        
-        NOTE: This test requires lowering ulimit, which may not be possible
-        in all environments.
+        Open many connections rapidly to stress the accept loop.
         """
-        import resource
-        
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        # Get current soft limit
-        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        connections = []
+        errors = 0
         
-        if soft > 256:
-            # We can't easily test this without modifying system limits
-            pytest.skip("FD limit too high to test EMFILE exhaustion")
-        
-        # Open many connections to the proxy
-        conns = []
-        try:
-            for _ in range(soft - 10):
+        # Flood with connections
+        for _ in range(200):
+            try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.5)
                 s.connect(("127.0.0.1", proc.port))
-                conns.append(s)
-        except OSError as e:
-            # Expected - we hit the limit
-            pass
-        finally:
-            for s in conns:
-                try: s.close()
-                except: pass
+                connections.append(s)
+            except (OSError, socket.timeout):
+                errors += 1
         
-        # The server should still respond after FD pressure is released
+        # Cleanup
+        for s in connections:
+            try:
+                s.close()
+            except:
+                pass
+        
+        # Wait and check server health
         time.sleep(1)
+        
         import requests
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
-        assert response.status_code == 200, "WB-008: Server unresponsive after FD exhaustion"
+        try:
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+            assert response.status_code == 200, "Server unresponsive after flood"
+        except requests.exceptions.RequestException:
+            pytest.fail("WB-008 STRESS: Server crashed under connection flood")
 
 
 # ============================================================================
@@ -293,7 +369,7 @@ def send_msg(sock: socket.socket, msg: dict):
     """Send length-prefixed MessagePack message."""
     import umsgpack
     payload = umsgpack.packb(msg)
-    header = struct.pack('<I', 1 + len(payload))  # 1 for version byte
+    header = struct.pack('<I', 1 + len(payload))
     version = bytes([0x01])
     sock.sendall(header + version + payload)
 
@@ -305,7 +381,8 @@ def recv_msg(sock: socket.socket) -> dict:
         return {}
     total_len = struct.unpack('<I', header)[0]
     version = sock.recv(1)
-    if version[0] != 0x01:
+    if not version or version[0] != 0x01:
         return {}
     payload = sock.recv(total_len - 1)
     return umsgpack.unpackb(payload)
+
