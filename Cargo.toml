@@ -3,8 +3,21 @@ name = "velo"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-
 description = "The high-performance runtime for the AI era."
+
+[lints.rust]
+unsafe_code = "allow" # Required for Unix signals and UDS integration
+unused_imports = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+# RFC-0010: Core SSoT requirement
+collapsible_if = "deny"
+# Temporarily allow these to stabilize the transition to SSoT
+uninlined_format_args = "allow"
+needless_pass_by_value = "allow"
+multiple_crate_versions = "allow"
+almost_swapped = "deny" # Just an example of a good catch-all
 
 [[bin]]
 name = "velo"
