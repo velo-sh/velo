@@ -68,12 +68,26 @@ The "Destroyer Suite" was deployed to probe for architectural weaknesses, but th
 *   **[FINDING]**: This confirms that the system is silently regressing to legacy uvicorn mode without alerting the user. The Zygote is non-functional, rendering the system "immune" to Zygote-specific attacks only because the entire feature is bypassed.
 *   **[BLOCKER]**: Signal Hurricane (`CHAOS-001`) crashed the server process immediately due to the broken `asyncio` reaper loop hitting the IPC handshake wall.
 
-## 5. Remediation Plan
+## 5. Remediation Verification (Commit 790b208)
 
-1.  **REJECT** the current Dev baseline.
-2.  **MANDATE** the implementation of the Guardian Thread in `velo_zygote/main.py`.
-3.  **FIX** the `_zygote_guard` population logic in `src/serve/runner.rs`.
-4.  **RE-AUDIT** once the developer addresses these architectural flaws.
+Following the initial rejection, the developer provided commit `790b208`. I have verified the following:
+
+### ✅ Remedied Items
+*   **IPC Protocol**: The `asyncio` handshake is fixed. `ZygoteStream::connect` now consistently verifies the "Ready" greeting.
+*   **Orphan Prevention**: The **Guardian Thread** (AUDIT-611-001) has been implemented in `velo_zygote/main.py`. Zygote now terminates if it detects it has been orphaned (PPID=1).
+
+### ❌ UNREMEDIATED / NEW DEFECTS
+*   **[ARCHITECTURAL DEBT] Missing Worker Self-Healing**: The Rust supervisor does NOT contain logic to replace reaped workers.
+*   **[STABILITY FAILURE] Ghost Server (CHAOS-001)**: Under a signal storm (`SIGCHLD`), all workers are reaped but NONE are replaced. The server remains "Ready" according to `/health` but fails all functional requests.
+*   **[SECURITY] Incomplete Shadow Trap (DEF-611-006)**: The re-attachment handshake only verifies PID if the current process spawned the Zygote. It does NOT verify "App-to-Zygote" affinity, allowing `velo app2` to silently re-attach to a Zygote pre-loaded with `app1`.
+
+## 6. Final Verdict: 🔴 REJECTED
+
+The implementation is **REJECTED**. While the developer fixed the "Fatal Collapse" of the IPC, the system remains fundamentally unstable and insecure in production-like conditions (signal noise, process re-attachment).
+
+### Mandatory Remediation for Next Delivery:
+1.  **Implement Worker Respawning**: The Rust supervisor must detect worker exit and request a replacement from Zygote.
+2.  **App Affinity Handshake**: Zygote must store the name of the app it has pre-loaded and verify it against any re-attaching launchers.
 
 ---
 

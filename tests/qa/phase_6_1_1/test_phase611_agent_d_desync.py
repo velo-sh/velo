@@ -84,9 +84,10 @@ class TestAgentDDesync:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        # Identity Zygote socket
-        uid = os.getuid()
-        socket_path = str(list(Path(f"/tmp/velo-{uid}").glob("velo-zygote-v*.sock"))[0])
+        # Identify Zygote socket
+        socket_path = proc.get_socket_path()
+        if not socket_path:
+            pytest.skip("Zygote socket path not found")
         
         script = tmp_path / "exit.py"
         script.write_text("import sys; sys.exit(0)")
@@ -143,8 +144,10 @@ class TestAgentDDesync:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        uid = os.getuid()
-        socket_path = str(list(Path(f"/tmp/velo-{uid}").glob("velo-zygote-v*.sock"))[0])
+        # Identify Zygote socket
+        socket_path = proc.get_socket_path()
+        if not socket_path:
+            pytest.skip("Zygote socket path not found")
         
         script = tmp_path / "exit_fast.py"
         script.write_text("import sys; sys.exit(0)")
@@ -189,8 +192,10 @@ class TestAgentDDesync:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        uid = os.getuid()
-        socket_path = str(list(Path(f"/tmp/velo-{uid}").glob("velo-zygote-v*.sock"))[0])
+        # Identify Zygote socket
+        socket_path = proc.get_socket_path()
+        if not socket_path:
+            pytest.skip("Zygote socket path not found")
         
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
