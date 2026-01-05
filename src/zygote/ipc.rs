@@ -68,6 +68,11 @@ pub enum ZygoteCommand {
     SignalWorker { worker_pid: u32, signal: i32 },
     /// Query worker status
     WorkerStatus { worker_pid: u32 },
+    /// Capability handshake
+    Handshake {
+        version: u8,
+        capabilities: Vec<String>,
+    },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -102,6 +107,11 @@ pub enum ZygoteResponse {
     },
     /// An error occurred
     Error { message: String },
+    /// Handshake response
+    Handshake {
+        version: u8,
+        capabilities: Vec<String>,
+    },
 }
 
 /// Get the default socket path for Zygote IPC
@@ -330,7 +340,12 @@ pub const PROTOCOL_VERSION: u8 = 0x01;
 
 /// Write a MessagePack message with length prefix and version byte
 fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
-    let payload = rmp_serde::to_vec(msg).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let mut buf = Vec::new();
+    let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
+    msg.serialize(&mut ser)
+        .map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    let payload = buf;
 
     // Security: Check message size
     if payload.len() > MAX_MESSAGE_SIZE {
@@ -428,9 +443,33 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     Ok(msg)
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
+/// High-level wrapper for Zygote IPC connection
+pub struct ZygoteStream {
+    stream: UnixStream,
+}
+
+impl ZygoteStream {
+    /// Connect to Zygote and verify the initial "Ready" greeting
+    pub fn connect(socket_path: &Path) -> Result<Self> {
+        let mut stream = UnixStream::connect(socket_path)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        // 1. Receive mandatory "Ready" greeting
+        let ready: ZygoteResponse = read_message(&mut stream)?;
+        match ready {
+            ZygoteResponse::Ready => Ok(Self { stream }),
+            _ => Err(ZygoteError::ProtocolError(
+                "Connection greeting failed - expected Ready".to_string(),
+            )),
+        }
+    }
+
+    /// Send a command and wait for the response
+    pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
+        write_message(&mut self.stream, cmd)?;
+        read_message(&mut self.stream)
+    }
+}
 
 /// Accept a command from a client connection
 pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteCommand)> {
@@ -450,23 +489,8 @@ pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Resul
 
 /// Connect to the Zygote and send a command, returning the response
 pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<ZygoteResponse> {
-    let mut stream = UnixStream::connect(socket_path)
-        .map_err(|e| ZygoteError::ConnectionFailed(e.to_string()))?;
-
-    // First, receive READY response from Zygote
-    let ready_response: ZygoteResponse = read_message(&mut stream)?;
-
-    if !matches!(ready_response, ZygoteResponse::Ready) {
-        return Err(ZygoteError::ProtocolError(
-            "Expected READY response from Zygote".to_string(),
-        ));
-    }
-
-    // Send command
-    write_message(&mut stream, &command)?;
-
-    // Read response to command
-    read_message(&mut stream)
+    let mut stream = ZygoteStream::connect(socket_path)?;
+    stream.send_command(&command)
 }
 
 #[cfg(test)]

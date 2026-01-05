@@ -1922,6 +1922,7 @@ dependencies = [
  "hyper-util",
  "ignore",
  "libc",
+ "log",
  "notify",
  "pin-project-lite",
  "regex",
