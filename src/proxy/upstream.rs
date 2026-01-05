@@ -29,6 +29,52 @@ use tower_service::Service;
 /// 256KB reduces context switches for local IPC.
 pub const RECOMMENDED_UDS_BUFFER_SIZE: usize = 256 * 1024; // 256KB
 
+/// RFC-0011 D.2: Connection pool configuration for UDS.
+///
+/// Default Hyper config is tuned for WAN, not local UDS.
+/// These settings are optimized for local IPC performance.
+#[derive(Debug, Clone)]
+pub struct UdsPoolConfig {
+    /// Idle connection timeout in seconds (RFC recommends 30s+ for UDS)
+    pub pool_idle_timeout_secs: u64,
+
+    /// Max idle connections per worker socket (1 is optimal for UDS)
+    pub pool_max_idle_per_host: usize,
+
+    /// Socket buffer size in bytes (RFC recommends 256KB)
+    pub socket_buffer_size: usize,
+}
+
+impl Default for UdsPoolConfig {
+    fn default() -> Self {
+        Self {
+            pool_idle_timeout_secs: 30, // RFC D.2 recommendation
+            pool_max_idle_per_host: 1,  // RFC D.2: 1 per worker socket
+            socket_buffer_size: RECOMMENDED_UDS_BUFFER_SIZE,
+        }
+    }
+}
+
+impl UdsPoolConfig {
+    /// Create a new config with custom values.
+    pub fn new(idle_timeout: u64, max_idle: usize, buffer_size: usize) -> Self {
+        Self {
+            pool_idle_timeout_secs: idle_timeout,
+            pool_max_idle_per_host: max_idle,
+            socket_buffer_size: buffer_size,
+        }
+    }
+
+    /// Create a high-performance config for local IPC.
+    pub fn high_performance() -> Self {
+        Self {
+            pool_idle_timeout_secs: 60,
+            pool_max_idle_per_host: 2,
+            socket_buffer_size: 512 * 1024, // 512KB for very high throughput
+        }
+    }
+}
+
 /// Connection target for Unix Domain Sockets.
 ///
 /// Instead of encoding socket path in URI, we pass it directly.
