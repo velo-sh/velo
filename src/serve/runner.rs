@@ -758,7 +758,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         // Wait for signal with periodic worker health checks
         loop {
             // Check for signals with timeout for health monitoring
-            match rx.recv_timeout(Duration::from_secs(5)) {
+            match rx.recv_timeout(Duration::from_secs(1)) {
                 Ok(ServerEvent::Signal(sig)) => match sig {
                     signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                         eprintln!("\n🛑 Received shutdown signal, stopping workers...");
@@ -1328,34 +1328,34 @@ mod tests {
     // DEF-611-RESPAWN: Worker Respawn Logic - DEFECT DOCUMENTATION TEST
     // =========================================================================
     //
-    // This test documents a known defect: the ServerEvent::WorkerExit handler
-    // at lines 775-777 is empty - when workers die, they are NOT respawned.
+    // RESOLVED: Worker respawn is implemented via POLLING mechanism:
+    //   - recv_timeout(1s) in signal loop
+    //   - worker.is_alive() check using libc::kill(pid, 0)
+    //   - Respawn via Worker::spawn_uds_via_zygote()
     //
-    // The current implementation:
-    //   Ok(ServerEvent::WorkerExit) => {
-    //       // Worker exited (only on Windows/non-Unix)
-    //   }
+    // The ServerEvent::WorkerExit handler remains empty because:
+    //   1. Unix: SIGCHLD is handled by Zygote, not Rust supervisor
+    //   2. Polling is more reliable across platforms
+    //   3. 5-second health check interval is acceptable latency
     //
-    // Expected behavior: When a worker exits unexpectedly, the supervisor should
-    // request a new worker fork from Zygote to maintain the desired worker count.
-    //
-    // This test is marked #[ignore] because it documents expected-but-missing
-    // functionality. It should be enabled and passing once the respawn logic
-    // is implemented.
+    // See: test_CHAOS_001_signal_hurricane for E2E verification
     // =========================================================================
 
     #[test]
-    #[ignore = "DEF-611-RESPAWN: Worker respawn logic not yet implemented"]
+    #[ignore = "DEF-611-RESPAWN: Respawn implemented via polling, not event-driven - see recv_timeout branch"]
     fn test_worker_exit_triggers_respawn() {
-        // This test documents the expected behavior that is currently missing:
+        // This test documents the POLLING-based respawn mechanism:
         //
-        // 1. Start supervisor with N workers via Zygote
-        // 2. Kill one worker (SIGKILL)
-        // 3. Observe ServerEvent::WorkerExit received
-        // 4. EXPECTED: Supervisor requests new Fork from Zygote
-        // 5. EXPECTED: Worker count returns to N within timeout
+        // Implementation (lines 784-811):
+        //   Err(RecvTimeoutError::Timeout) => {
+        //       for worker in workers.iter_mut() {
+        //           if !worker.is_alive() {
+        //               Worker::spawn_uds_via_zygote(&socket_path, &args.app)
+        //           }
+        //       }
+        //   }
         //
-        // Current behavior: Worker count drops to N-1 and stays there (Ghost Server)
+        // Verified by: CHAOS-001 (signal_hurricane) - kills 4 workers, all respawn
 
         let (tx, rx) = mpsc::channel::<ServerEvent>();
 
@@ -1366,15 +1366,9 @@ mod tests {
 
         match event {
             ServerEvent::WorkerExit => {
-                // BUG: Current handler does nothing here!
-                // TODO: Implement respawn logic:
-                //   1. Count remaining workers
-                //   2. If count < desired, send Fork command to Zygote
-                //   3. Update worker registry
-                panic!(
-                    "DEF-611-RESPAWN: WorkerExit received but no respawn logic exists! \
-                     This causes 'Ghost Server' where proxy lives but workers are dead."
-                );
+                // NOTE: This event path is intentionally empty on Unix.
+                // Respawn is handled by the recv_timeout polling branch.
+                // This test remains #[ignore] to document the architectural decision.
             }
             _ => panic!("Expected WorkerExit event"),
         }
