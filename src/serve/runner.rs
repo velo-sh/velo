@@ -574,7 +574,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         _watcher = Some(watcher);
     }
 
-    // RAII Guard for Zygote (Recommendation #3)
+    // RAII Guard for Zygote (Audit Remediation)
     // Needs to stay alive for the duration of the server
     #[allow(unused_mut)]
     let mut _zygote_guard: Option<crate::zygote::ZygoteLauncher> = None;
@@ -609,11 +609,12 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             } else {
                 logger.info("Zygote ready");
                 // RAII: Keep Zygote alive as long as this function runs
-                // When this function returns/unwinds, _zygote_guard will drop and kill the Zygote
                 _zygote_guard = Some(launcher);
             }
         } else {
             logger.info("Using existing Zygote");
+            // Populate guard so Zygote mode is activated (Recommendation #3 Fix)
+            _zygote_guard = Some(ZygoteLauncher::new(socket_path));
         }
     }
 
