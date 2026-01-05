@@ -9,24 +9,32 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+use tokio::net::UnixStream;
 
 /// Represents a single worker node in the load balancer.
 #[derive(Debug)]
 pub struct WorkerNode {
     /// Path to the worker's Unix socket.
     pub socket_path: String,
+    /// Unique worker ID for connection pooling authority.
+    pub worker_id: u64,
     /// Number of active connections to this worker.
     active_connections: AtomicUsize,
+    /// Consecutive failures for circuit breaker.
+    consecutive_failures: AtomicUsize,
     /// Whether this worker is healthy.
     healthy: std::sync::atomic::AtomicBool,
 }
 
 impl WorkerNode {
     /// Create a new worker node.
-    pub fn new(socket_path: String) -> Self {
+    pub fn new(socket_path: String, worker_id: u64) -> Self {
         Self {
             socket_path,
+            worker_id,
             active_connections: AtomicUsize::new(0),
+            consecutive_failures: AtomicUsize::new(0),
             healthy: std::sync::atomic::AtomicBool::new(true),
         }
     }
@@ -64,6 +72,21 @@ impl WorkerNode {
     /// Mark this worker as healthy.
     pub fn mark_healthy(&self) {
         self.healthy.store(true, Ordering::Relaxed);
+        self.consecutive_failures.store(0, Ordering::Relaxed);
+    }
+
+    /// Record a failure for circuit breaking.
+    pub fn record_failure(&self) {
+        let failures = self.consecutive_failures.fetch_add(1, Ordering::Relaxed) + 1;
+        // RFC-0011 Phase 3C: Circuit Breaker Threshold
+        if failures >= 5 {
+            self.mark_unhealthy();
+        }
+    }
+
+    /// Record a success to reset circuit breaker.
+    pub fn record_success(&self) {
+        self.consecutive_failures.store(0, Ordering::Relaxed);
     }
 }
 
@@ -85,6 +108,26 @@ impl ConnectionGuard {
     pub fn socket_path(&self) -> &str {
         &self.worker.socket_path
     }
+
+    /// Get the worker ID.
+    pub fn worker_id(&self) -> u64 {
+        self.worker.worker_id
+    }
+
+    /// Generate unique URI authority for this worker.
+    pub fn authority(&self) -> String {
+        format!("worker-{}@velo", self.worker.worker_id)
+    }
+
+    /// Record a successful request.
+    pub fn record_success(&self) {
+        self.worker.record_success();
+    }
+
+    /// Record a failed request.
+    pub fn record_failure(&self) {
+        self.worker.record_failure();
+    }
 }
 
 impl Drop for ConnectionGuard {
@@ -103,10 +146,12 @@ pub struct LoadBalancer {
 
 impl LoadBalancer {
     /// Create a new load balancer with the given workers.
+    /// IDs are assigned sequentially starting from 0.
     pub fn new(socket_paths: Vec<String>) -> Self {
         let workers = socket_paths
             .into_iter()
-            .map(|path| Arc::new(WorkerNode::new(path)))
+            .enumerate()
+            .map(|(id, path)| Arc::new(WorkerNode::new(path, id as u64)))
             .collect();
         Self { workers }
     }
@@ -148,8 +193,17 @@ impl LoadBalancer {
     }
 
     /// Add a new worker to the load balancer.
-    pub fn add_worker(&mut self, socket_path: String) {
-        self.workers.push(Arc::new(WorkerNode::new(socket_path)));
+    pub fn add_worker(&mut self, socket_path: String, worker_id: u64) {
+        self.workers
+            .push(Arc::new(WorkerNode::new(socket_path, worker_id)));
+    }
+
+    /// Find a worker by ID.
+    pub fn find_by_id(&self, worker_id: u64) -> Option<Arc<WorkerNode>> {
+        self.workers
+            .iter()
+            .find(|w| w.worker_id == worker_id)
+            .cloned()
     }
 
     /// Remove a worker from the load balancer.
@@ -165,14 +219,11 @@ impl LoadBalancer {
     /// Graceful shutdown - wait for all connections to drain.
     ///
     /// RFC-0011: Ensures in-flight requests complete before shutdown.
-    pub async fn graceful_shutdown(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Result<(), &'static str> {
+    pub async fn graceful_shutdown(&self, timeout: Duration) -> Result<(), &'static str> {
         use std::time::Instant;
 
         let deadline = Instant::now() + timeout;
-        let poll_interval = std::time::Duration::from_millis(10);
+        let poll_interval = Duration::from_millis(10);
 
         loop {
             if self.total_active_connections() == 0 {
@@ -186,6 +237,36 @@ impl LoadBalancer {
             tokio::time::sleep(poll_interval).await;
         }
     }
+
+    /// Spawn a background task to actively probe worker health (RFC-0011 C.3).
+    ///
+    /// Decouples health checks from request handling.
+    pub fn spawn_health_checks(&self, interval: Duration) {
+        let workers = self.workers.clone();
+        tokio::spawn(async move {
+            loop {
+                for worker in &workers {
+                    // Active probing: try to connect to the Unix socket
+                    match UnixStream::connect(&worker.socket_path).await {
+                        Ok(_) => {
+                            // If it was unhealthy, mark it healthy again
+                            if !worker.is_healthy() {
+                                worker.mark_healthy();
+                            } else {
+                                // Reset consecutive failures on success
+                                worker.record_success();
+                            }
+                        }
+                        Err(_) => {
+                            // Record failure (may trigger circuit breaker)
+                            worker.record_failure();
+                        }
+                    }
+                }
+                tokio::time::sleep(interval).await;
+            }
+        });
+    }
 }
 
 #[cfg(test)]
@@ -194,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_worker_node_connection_tracking() {
-        let node = WorkerNode::new("/tmp/test.sock".to_string());
+        let node = WorkerNode::new("/tmp/test.sock".to_string(), 1);
         assert_eq!(node.active_connections(), 0);
 
         node.increment();
@@ -212,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_connection_guard_raii() {
-        let node = Arc::new(WorkerNode::new("/tmp/test.sock".to_string()));
+        let node = Arc::new(WorkerNode::new("/tmp/test.sock".to_string(), 1));
         assert_eq!(node.active_connections(), 0);
 
         {
@@ -296,10 +377,10 @@ mod tests {
         let mut lb = LoadBalancer::new(vec![]);
         assert_eq!(lb.worker_count(), 0);
 
-        lb.add_worker("/tmp/w1.sock".to_string());
+        lb.add_worker("/tmp/w1.sock".to_string(), 1);
         assert_eq!(lb.worker_count(), 1);
 
-        lb.add_worker("/tmp/w2.sock".to_string());
+        lb.add_worker("/tmp/w2.sock".to_string(), 2);
         assert_eq!(lb.worker_count(), 2);
 
         // New worker should be selectable

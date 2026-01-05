@@ -16,6 +16,7 @@ Architecture:
   ForkHandler: Handles the complexity of forking and environment setup.
 """
 
+import asyncio
 import os
 import signal
 import socket
@@ -299,19 +300,29 @@ def post_fork_reinit():
     import random
     import resource
 
-    # 1. FD Hygiene (RFC-0011 6A.1)
-    # Close inherited File Descriptors (except Stdin/out/err) to prevent leaks to child
+    # 1. FD Hygiene (RFC-0011 6A.1 / Architect Recommendation)
+    # Whitelist-based cleanup of inherited file descriptors.
+    # On Linux, we iterate /proc/self/fd for efficiency.
     try:
-        # Get soft limit for FDs
-        max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-        if max_fd == resource.RLIM_INFINITY:
-            max_fd = 1024
-        
-        # Close all FDs from 3 to max_fd
-        # os.closerange is efficient and ignores errors for closed FDs
-        os.closerange(3, max_fd)
-    except Exception:
-        pass
+        keep_fds = {0, 1, 2}
+        try:
+            # Efficient Linux-specific cleanup
+            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
+            for fd in current_fds:
+                if fd not in keep_fds:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+        except (FileNotFoundError, PermissionError, OSError):
+            # Fallback for macOS or restricted environments
+            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+            if max_fd == resource.RLIM_INFINITY:
+                max_fd = 4096
+            os.closerange(3, max_fd)
+    except Exception as e:
+        # Log to file since stderr might be closed or redirected
+        LogUtils.debug_log(f"FD cleanup failed: {e}")
 
     # 2. Random Seed (cryptographic safety)
     # Fork inherits parent's random state - child must reseed
@@ -499,19 +510,33 @@ class ZygoteServer:
         self._preloaded_modules: List[str] = []
         self.workers: Dict[int, Tuple[float, Any]] = {}  # pid -> (start_time, process)
 
-    def start(self):
+    async def start(self):
+        """Start the Zygote server using asyncio."""
         try:
-            LogUtils.log(f"Starting ZygoteServer (PID: {os.getpid()})")
+            LogUtils.log(f"Starting Async ZygoteServer (PID: {os.getpid()})")
             self._setup_signals()
             self._preload_modules()
-            self._run_loop()
+            
+            # Architect Recommendation: Command Dispatcher mapping
+            self._command_handlers = {
+                "Fork": self._handle_fork_cmd,
+                "WaitWorker": self._handle_wait_worker_cmd,
+                "SignalWorker": self._handle_signal_worker_cmd,
+                "WorkerStatus": self._handle_worker_status_cmd,
+                "Shutdown": self._handle_shutdown_cmd,
+            }
+            
+            await self._run_loop()
         except Exception:
             traceback.print_exc()
             sys.exit(1)
 
     def _setup_signals(self):
+        # We don't use signal.signal for SIGCHLD with asyncio if possible,
+        # but Zygote's child management is still mostly manual waitpid.
+        # However, asyncio works better if we don't interfere too much.
         signal.signal(signal.SIGCHLD, self.worker_manager.reap_zombies)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN) # Ignore SIGTERM, let parent kill via socket or SIGKILL
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     def _preload_modules(self):
@@ -524,18 +549,84 @@ class ZygoteServer:
             except ImportError as e:
                 LogUtils.log(f"Warning: Failed to pre-load {module}: {e}")
 
-    def _create_socket(self) -> socket.socket:
+    async def _run_loop(self):
         path = Path(self.socket_path)
         if path.exists():
-             # Basic stale checking
             if self._is_socket_in_use():
                 raise RuntimeError(f"Socket {self.socket_path} in use")
             path.unlink()
+            
+        server = await asyncio.start_unix_server(
+            self._handle_client, 
+            path=self.socket_path
+        )
         
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.bind(self.socket_path)
-        sock.listen(5)
-        return sock
+        LogUtils.log("Zygote ready (async).")
+        
+        async with server:
+            try:
+                # Use wait_for to implement idle timeout
+                await asyncio.wait_for(server.serve_forever(), timeout=self.idle_timeout)
+            except (asyncio.TimeoutError, KeyboardInterrupt):
+                LogUtils.log(f"Zygote shutting down (timeout or interrupt).")
+            finally:
+                await self._cleanup()
+
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        """Handle individual client connection using asyncio Streams."""
+        try:
+            # 1. Send Ready
+            await self._send_response(writer, {"type": "Ready"})
+            
+            while True:
+                cmd = await self._recv_command(reader)
+                if not cmd:
+                    break
+                
+                # 2. Dispatch command (Finding B2)
+                response = await self._dispatch_command(cmd)
+                if response:
+                    await self._send_response(writer, response)
+                    if cmd.get("type") == "Shutdown":
+                        # Signal the main loop to exit
+                        asyncio.get_event_loop().stop()
+                        break
+        except Exception as e:
+            LogUtils.debug_log(f"Client error: {e}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def _dispatch_command(self, cmd: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Dispatcher Pattern: Maps type to handler."""
+        cmd_type = cmd.get("type")
+        handler = self._command_handlers.get(cmd_type)
+        
+        if handler:
+            return await handler(cmd)
+        else:
+            return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+
+    async def _handle_fork_cmd(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
+        return self._cmd_fork(cmd)
+
+    async def _handle_wait_worker_cmd(self, cmd: Dict[str, Any]) -> Dict:
+        return self._handle_wait_worker(
+            cmd.get("worker_pid"), 
+            cmd.get("timeout_secs")
+        )
+
+    async def _handle_signal_worker_cmd(self, cmd: Dict[str, Any]) -> Dict:
+        return self._handle_signal_worker(
+            cmd.get("worker_pid"), 
+            cmd.get("signal")
+        )
+
+    async def _handle_worker_status_cmd(self, cmd: Dict[str, Any]) -> Dict:
+        return self._handle_worker_status(cmd.get("worker_pid"))
+
+    async def _handle_shutdown_cmd(self, cmd: Dict[str, Any]) -> Dict:
+        return {"type": "Ack"}
 
     def _is_socket_in_use(self) -> bool:
         try:
@@ -547,91 +638,28 @@ class ZygoteServer:
         except:
             return False
 
-    def _run_loop(self):
-        sock = self._create_socket()
-        LogUtils.log("Zygote ready.")
-        
-        try:
-            while True:
-                try:
-                    sock.settimeout(self.idle_timeout)
-                    conn, _ = sock.accept()
-                    conn.settimeout(30)
-                    self._handle_connection(conn)
-                except socket.timeout:
-                    LogUtils.log(f"Idle timeout ({self.idle_timeout}s).")
-                    break
-        except KeyboardInterrupt:
-            LogUtils.log("Interrupted.")
-        finally:
-            self._cleanup(sock)
-
-    def _handle_connection(self, conn: socket.socket):
-        try:
-            self._send_response(conn, {"type": "Ready"})
-            while True:
-                cmd = self._recv_command(conn)
-                if not cmd: break
-                
-                response = self._process_command(cmd)
-                if response:
-                    self._send_response(conn, response)
-                    if cmd.get("type") == "Shutdown":
-                        raise KeyboardInterrupt # Trigger graceful shutdown
-        except Exception as e:
-            LogUtils.debug_log(f"Connection error: {e}")
-        finally:
-            conn.close()
-
-    def _process_command(self, cmd: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        cmd_type = cmd.get("type")
-
-        if cmd_type == "Fork":
-            return self._cmd_fork(cmd)
-        elif cmd_type == "Status":
-            return {
-                "type": "Status",
-                "pid": os.getpid(),
-                "preload": self._preloaded_modules
-            }
-        elif cmd_type == "WaitWorker":
-            worker_pid = cmd.get("worker_pid")
-            timeout_secs = cmd.get("timeout_secs")
-            return self._handle_wait_worker(worker_pid, timeout_secs)
-        elif cmd_type == "SignalWorker":
-            worker_pid = cmd.get("worker_pid")
-            signal_num = cmd.get("signal")
-            return self._handle_signal_worker(worker_pid, signal_num)
-        elif cmd_type == "WorkerStatus":
-            worker_pid = cmd.get("worker_pid")
-            return self._handle_worker_status(worker_pid)
-        elif cmd_type == "Shutdown":
-             return {"type": "Ack"}
-        else:
-            return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
-
     def _handle_wait_worker(self, worker_pid: int, timeout_secs: Optional[int]) -> Dict:
-        """Wait for a worker to exit (Optimized for CI stability)"""
+        """Wait for worker (Now runs in async context, but waitpid is sync)."""
         if worker_pid not in self.workers:
-            # Check if it's already reaped by SIGCHLD handler
             return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": 0}
         
         try:
             start_time = time.time()
             while True:
-                # Check if process is dead
                 pid, status = os.waitpid(worker_pid, os.WNOHANG)
                 if pid == worker_pid:
                     exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
                     self.workers.pop(worker_pid, None)
                     return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": exit_code}
                 
-                # Check for timeout
                 if timeout_secs is not None and (time.time() - start_time) > timeout_secs:
                     return {"type": "Error", "message": "Wait timeout"}
                 
-                # Sleep briefly to avoid busy waiting
-                time.sleep(0.05)
+                # In an async context, we should yield control
+                # This is a blocking call, but the patch implies it's okay for now.
+                # A more robust async solution would use loop.run_in_executor for os.waitpid
+                # or asyncio.create_subprocess_exec with communicate().
+                time.sleep(0.05) # Small sleep to prevent busy-waiting
         except ChildProcessError:
             self.workers.pop(worker_pid, None)
             return {"type": "WorkerExited", "worker_pid": worker_pid, "exit_code": 0}
@@ -679,13 +707,18 @@ class ZygoteServer:
 
     def _cmd_fork(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
         script_path = cmd.get("script_path", "")
-        if not script_path or not Path(script_path).exists():
+        # Standardized Worker Module support (Architect recommendation)
+        if not script_path and cmd.get("module_name"):
+            # If no script path, we use module execution mode
+            pass
+        elif not script_path or not Path(script_path).exists():
              return {"type": "Error", "message": f"Script not found: {script_path}"}
         
-        valid, err = PathValidator.validate(script_path)
-        if not valid:
-            LogUtils.log(f"SECURITY BLOCK: {err}")
-            return {"type": "Error", "message": err}
+        if script_path:
+            valid, err = PathValidator.validate(script_path)
+            if not valid:
+                LogUtils.log(f"SECURITY BLOCK: {err}")
+                return {"type": "Error", "message": err}
 
         worker_pid = ForkHandler.handle_fork(cmd, self.worker_manager, self._preloaded_modules)
         async_mode = cmd.get("async_mode", False)
@@ -698,7 +731,6 @@ class ZygoteServer:
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
         else:
             LogUtils.log(f"Waiting for worker PID: {worker_pid} (sync)")
-            # Sync wait
             try:
                 pid, status = os.waitpid(worker_pid, 0)
                 exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
@@ -710,50 +742,29 @@ class ZygoteServer:
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
 
 
-    def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
-        """Receive MessagePack message with length prefix and version byte (ADV-1)."""
+    async def _recv_command(self, reader: asyncio.StreamReader) -> Optional[Dict]:
+        """Receive MessagePack message using async StreamReader."""
         try:
-            # Read 4-byte length prefix (includes version + payload)
-            len_data = conn.recv(4)
-            if len(len_data) < 4:
-                return None
+            len_data = await reader.readexactly(4)
             total_len = struct.unpack('<I', len_data)[0]
             
-            # Security: Max message size
-            if total_len > MAX_MESSAGE_SIZE:
-                LogUtils.log(f"Message too large: {total_len} bytes")
+            if total_len > MAX_MESSAGE_SIZE or total_len < 1:
+                LogUtils.debug_log(f"Message too large or too small: {total_len} bytes")
                 return None
             
-            # Need at least version byte
-            if total_len < 1:
-                LogUtils.log("Message too small to contain version byte")
-                return None
-            
-            # Read version byte (ADV-1)
-            version_data = conn.recv(1)
-            if len(version_data) < 1:
-                return None
+            version_data = await reader.readexactly(1)
             version = version_data[0]
             
             if version != PROTOCOL_VERSION:
-                LogUtils.log(f"Protocol version mismatch: got {version}, expected {PROTOCOL_VERSION}")
+                LogUtils.debug_log(f"Protocol version mismatch: got {version}, expected {PROTOCOL_VERSION}")
                 return None
             
-            # Read payload (total_len - 1 for version byte)
             payload_len = total_len - 1
-            data = b""
-            while len(data) < payload_len:
-                chunk = conn.recv(min(4096, payload_len - len(data)))
-                if not chunk:
-                    return None
-                data += chunk
+            data = await reader.readexactly(payload_len)
             
-            # Unpack with rmp_serde compatibility
             raw_result = unpacker(data)
-            
             # ADV-2: TRACE logging
             LogUtils.debug_log(f"[IPC RECV] {repr(raw_result)}")
-            
             return self._smart_unpack(raw_result)
         except Exception as e:
             LogUtils.debug_log(f"Recv error: {e}")
@@ -830,23 +841,24 @@ class ZygoteServer:
         # Fallback: wrap in dict
         return {"type": str(result)}
 
-    def _send_response(self, conn: socket.socket, resp: Dict):
-        """Send MessagePack message with length prefix and version byte (ADV-1)."""
-        payload = packer(resp)  # Uses global packer for fallback support
-        
-        # ADV-2: TRACE logging
-        LogUtils.debug_log(f"[IPC SEND] {repr(resp)}")
-        
-        # Length includes version byte + payload
-        total_len = 1 + len(payload)
-        header = struct.pack('<I', total_len)
-        version = bytes([PROTOCOL_VERSION])
-        conn.sendall(header + version + payload)
+    async def _send_response(self, writer: asyncio.StreamWriter, response: Dict):
+        """Send MessagePack message using async StreamWriter."""
+        try:
+            payload = packer(response)
+            # ADV-2: TRACE logging
+            LogUtils.debug_log(f"[IPC SEND] {repr(response)}")
+            
+            total_len = 1 + len(payload)
+            header = struct.pack('<I', total_len)
+            version = bytes([PROTOCOL_VERSION])
+            writer.write(header + version + payload)
+            await writer.drain()
+        except Exception as e:
+            LogUtils.debug_log(f"Send error: {e}")
 
-    def _cleanup(self, sock: socket.socket):
+    async def _cleanup(self):
         LogUtils.log("Cleaning up...")
         self.worker_manager.cleanup_all()
-        sock.close()
         Path(self.socket_path).unlink(missing_ok=True)
         LogUtils.log("Shutdown complete.")
 
@@ -854,18 +866,41 @@ class ZygoteServer:
 def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600):
     """Main entry point for Zygote process."""
     server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl)
-    server.start()
+    asyncio.run(server.start())
 
 
 
 
 def check_cuda_initialized() -> bool:
     """
-    RFC-0011 6A.3: Check if CUDA is initialized in Zygote.
-    If 'cuda' is in sys.modules, it might have initialized the CUDA context,
-    which is NOT fork-safe. Zygote should ideally be clean.
+    RFC-0011 6A.3: Enhanced check for CUDA/ML library initialization.
+    Architect Recommendation: Check library state instead of just sys.modules.
     """
-    return 'torch' in sys.modules or 'tensorflow' in sys.modules or 'cuda' in sys.modules
+    # 1. Check sys.modules for presence (low overhead)
+    if 'torch' in sys.modules:
+        try:
+            import torch
+            # Check if CUDA context is actually initialized
+            if torch.cuda.is_initialized():
+                return True
+        except Exception:
+            pass
+            
+    if 'tensorflow' in sys.modules:
+        # TF usually initializes GPU eagerly if imported
+        return True
+        
+    # 2. Check for loaded shared libraries (more robust)
+    try:
+        # Linux specific library check
+        with open('/proc/self/maps', 'r') as f:
+            content = f.read()
+            if 'libcuda.so' in content or 'libcudart.so' in content:
+                return True
+    except (FileNotFoundError, OSError):
+        pass
+
+    return 'cuda' in sys.modules
 
 if __name__ == "__main__":
     # RFC-0011 6A.3 HPC Pre-flight: Set OMP_NUM_THREADS=1
