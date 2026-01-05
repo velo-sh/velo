@@ -518,6 +518,165 @@ class TestGoldenPathE2E:
             failed_checks = [k for k, v in mode_evidence.items() if not v]
             pytest.fail(f"FALLBACK MODE DETECTED! Failed checks: {failed_checks}")
 
+class TestGoldenPathDemonCatching:
+    """E2E tests designed to catch hidden bugs ("demons") in the request path."""
+
+    def test_GOLD_012_post_body_through_proxy(self, velo_serve_fixture):
+        """GOLD-012: POST request body flows correctly through L7 Proxy.
+        
+        Demon: Request body corruption or loss through proxy.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        test_body = {"message": "Hello from QA!", "number": 42}
+        
+        response = requests.post(
+            f"http://127.0.0.1:{proc.port}/echo",
+            json=test_body,
+            timeout=10
+        )
+        
+        assert response.status_code == 200, f"POST failed: {response.status_code}"
+        
+        data = response.json()
+        assert data["received_message"] == "Hello from QA!", \
+            f"Message corrupted: {data}"
+        assert data["received_number"] == 42, \
+            f"Number corrupted: {data}"
+        
+        print(f"✅ POST body correctly echoed by worker {data.get('worker_pid')}")
+
+    def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture):
+        """GOLD-013: ASGI scope["client"] is correctly populated.
+        
+        Demon: Proxy strips client IP, leaving scope["client"] as None or wrong.
+        RFC-0011 requires: scope["client"] should have real client info.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        # Get scope details
+        response = requests.get(f"http://127.0.0.1:{proc.port}/scope", timeout=10)
+        assert response.status_code == 200
+        
+        scope = response.json()
+        print(f"ASGI Scope: {scope}")
+        
+        # scope["client"] should be populated
+        assert scope.get("client") is not None, \
+            "ASGI scope['client'] is None - proxy didn't preserve client info!"
+        
+        # Client should be a [host, port] pair
+        client = scope["client"]
+        assert len(client) == 2, f"Invalid client format: {client}"
+        
+        # Get detailed client-ip info
+        response2 = requests.get(f"http://127.0.0.1:{proc.port}/client-ip", timeout=10)
+        client_info = response2.json()
+        print(f"Client IP info: {client_info}")
+        
+        # client_host should have something (either 127.0.0.1 or from X-Forwarded-For)
+        assert client_info.get("client_host"), \
+            "request.client.host is empty - client IP lost through proxy!"
+
+    def test_GOLD_014_async_concurrent_handling(self, velo_serve_fixture):
+        """GOLD-014: Async requests are handled concurrently, not sequentially.
+        
+        Demon: Event loop blocking causes sequential request handling.
+        """
+        import concurrent.futures
+        
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        # Send 10 concurrent requests to /concurrent endpoint
+        # Each takes ~0.1s, so if truly concurrent, total time < 0.5s
+        # If sequential, total time would be ~1.0s
+        
+        start_time = time.time()
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [
+                pool.submit(
+                    lambda: requests.get(
+                        f"http://127.0.0.1:{proc.port}/concurrent",
+                        timeout=10
+                    )
+                )
+                for _ in range(10)
+            ]
+            responses = [f.result() for f in futures]
+        
+        elapsed = time.time() - start_time
+        
+        # Check responses
+        max_concurrent_seen = max(
+            r.json().get("max_concurrent_seen", 0)
+            for r in responses if r.status_code == 200
+        )
+        
+        print(f"Elapsed: {elapsed:.2f}s, Max concurrent: {max_concurrent_seen}")
+        
+        # If truly concurrent, we should see > 1 concurrent requests
+        # (May not always reach 10 due to timing, but should be > 1)
+        assert max_concurrent_seen > 1, \
+            f"Only {max_concurrent_seen} concurrent requests seen - async may be blocked!"
+        
+        # Total time should be much less than 10 * 0.1s = 1.0s
+        assert elapsed < 0.8, \
+            f"Took {elapsed:.2f}s for 10 concurrent requests - possible sequential processing!"
+
+    def test_GOLD_015_error_response_flow(self, velo_serve_fixture):
+        """GOLD-015: Error responses flow correctly through proxy.
+        
+        Demon: Proxy swallows error details or returns wrong status codes.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        # Test 404
+        r404 = requests.get(f"http://127.0.0.1:{proc.port}/error/404", timeout=10)
+        assert r404.status_code == 404, f"Expected 404, got {r404.status_code}"
+        assert "not found" in r404.text.lower(), "404 message lost"
+        
+        # Test 500
+        r500 = requests.get(f"http://127.0.0.1:{proc.port}/error/500", timeout=10)
+        assert r500.status_code == 500, f"Expected 500, got {r500.status_code}"
+        assert "server error" in r500.text.lower(), "500 message lost"
+        
+        # Test 503
+        r503 = requests.get(f"http://127.0.0.1:{proc.port}/error/503", timeout=10)
+        assert r503.status_code == 503, f"Expected 503, got {r503.status_code}"
+        
+        print("✅ All error codes correctly flow through proxy")
+
+    def test_GOLD_016_large_response_buffering(self, velo_serve_fixture):
+        """GOLD-016: Large responses are buffered correctly.
+        
+        Demon: Proxy corrupts or truncates large responses.
+        """
+        proc = velo_serve_fixture.start("main:app", workers=1)
+        proc.wait_ready()
+        
+        # Request 100KB response
+        response = requests.get(
+            f"http://127.0.0.1:{proc.port}/large?size_kb=100",
+            timeout=30
+        )
+        
+        assert response.status_code == 200, f"Large response failed: {response.status_code}"
+        
+        data = response.json()
+        received_size = len(data.get("data", ""))
+        expected_size = 100 * 1024
+        
+        print(f"Expected: {expected_size} bytes, Received: {received_size} bytes")
+        
+        # Allow 1% tolerance for JSON overhead
+        assert abs(received_size - expected_size) < expected_size * 0.01, \
+            f"Response truncated or corrupted: {received_size} vs {expected_size}"
+
 
 class TestGoldenPathSecurity:
     """Security-focused E2E tests."""
