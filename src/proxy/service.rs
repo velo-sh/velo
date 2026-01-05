@@ -91,6 +91,9 @@ impl VeloProxyService {
             HeaderValue::from_str(socket_path).unwrap_or_else(|_| HeaderValue::from_static("")),
         );
 
+        // 5. RFC-0011 O11y Review: Inject X-Request-ID for correlation
+        let _request_id = Self::inject_request_id(&mut req);
+
         Ok((guard, req))
     }
 
@@ -162,10 +165,56 @@ impl VeloProxyService {
         }
     }
 
+    /// RFC-0011 O11y Review: Inject X-Request-ID for request correlation.
+    ///
+    /// If the request already has X-Request-ID, preserve it.
+    /// Otherwise, generate a new UUID.
+    ///
+    /// Returns the request ID (for logging).
+    pub fn inject_request_id<B>(req: &mut Request<B>) -> String {
+        let headers = req.headers_mut();
+
+        // Check if already present (from upstream proxy like nginx)
+        if let Some(existing) = headers.get("x-request-id")
+            && let Ok(id) = existing.to_str()
+        {
+            return id.to_string();
+        }
+
+        // Generate new UUID using thread-local random
+        let request_id = generate_request_id();
+        if let Ok(value) = HeaderValue::from_str(&request_id) {
+            headers.insert("x-request-id", value);
+        }
+
+        request_id
+    }
+
     /// Get the load balancer reference.
     pub fn load_balancer(&self) -> &LoadBalancer {
         &self.lb
     }
+}
+
+/// Generate a request ID using timestamp and counter.
+///
+/// Format: 16 hex characters for request tracing
+fn generate_request_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    // Mix timestamp + counter for uniqueness
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_micros() as u64)
+        .unwrap_or(0);
+
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let hash = timestamp ^ (count << 48);
+
+    format!("{:016x}", hash)
 }
 
 #[cfg(test)]
