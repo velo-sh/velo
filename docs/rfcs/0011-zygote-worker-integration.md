@@ -212,9 +212,47 @@ async def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 ```
 
+### 6A.6 Supplemental Recommendations (Non-Blocking)
+
+> These items improve implementation quality and should be addressed during development.
+
+| Recommendation | Description | Owner |
+|----------------|-------------|-------|
+| **post_fork Execution Order** | Random Seed → SSL Context → Signal Handlers → OMP threads | Dev |
+| **Platform Annotations** | Clear comments for Linux vs macOS conditional branches | Dev |
+| **E2E Integration Test** | Nginx → Velo → Uvicorn full-chain verification | QA |
+| **Header Normalization Tests** | L7 Proxy headers must parse identically to uvicorn | Dev+QA |
+
+
+```python
+# post_fork_reinit - Recommended Execution Order
+def post_fork_reinit():
+    # 1. Random Seed (cryptographic safety)
+    import random
+    random.seed()
+    
+    # 2. SSL Context (regenerate if needed)
+    import ssl
+    ssl._create_default_https_context = ssl.create_default_context
+    
+    # 3. Signal Handlers (reset to default)
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        signal.set_wakeup_fd(-1)
+    except ValueError:
+        pass
+    
+    # 4. OpenMP/BLAS threads (restore for workers)
+    import os
+    os.environ['OMP_NUM_THREADS'] = str(os.cpu_count() or 4)
+```
+
 ---
 
 ## 7. Open Questions
+
 
 
 
