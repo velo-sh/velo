@@ -7,16 +7,27 @@
 //! Since hyper's URI parsing doesn't support `unix://` scheme natively,
 //! we store the socket path separately and use the connector to establish
 //! connections based on that path.
+//!
+//! ## Buffer Tuning (RFC-0011 D.3)
+//!
+//! For high-throughput local IPC, socket buffers should be sized appropriately.
+//! Default system buffers (often 64KB) can cause excess context switches.
+//! We recommend 256KB for UDS connections.
 
 use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::io;
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::net::UnixStream;
 use tower_service::Service;
+
+/// RFC-0011 D.3: Recommended buffer size for high-throughput UDS connections.
+/// 256KB reduces context switches for local IPC.
+pub const RECOMMENDED_UDS_BUFFER_SIZE: usize = 256 * 1024; // 256KB
 
 /// Connection target for Unix Domain Sockets.
 ///
@@ -67,6 +78,95 @@ impl UdsConnector {
     pub fn socket_path(&self) -> Option<&PathBuf> {
         self.target.as_ref().map(|arc| arc.as_ref())
     }
+}
+
+/// RFC-0011 D.3: Set socket buffer sizes for high-throughput UDS.
+///
+/// For local IPC, larger buffers reduce context switches and improve throughput.
+/// This function sets both send and receive buffers to the specified size.
+///
+/// # Arguments
+/// * `stream` - Unix stream (must implement AsRawFd)
+/// * `buffer_size` - Buffer size in bytes (recommend `RECOMMENDED_UDS_BUFFER_SIZE`)
+///
+/// # Errors
+/// Returns io::Error if setsockopt fails (rare on Unix systems).
+#[cfg(unix)]
+pub fn set_socket_buffer_sizes<S: AsRawFd>(stream: &S, buffer_size: usize) -> io::Result<()> {
+    let fd = stream.as_raw_fd();
+    let size = buffer_size as libc::c_int;
+
+    // Set send buffer (SO_SNDBUF)
+    let result = unsafe {
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_SNDBUF,
+            &size as *const libc::c_int as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    // Set receive buffer (SO_RCVBUF)
+    let result = unsafe {
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_RCVBUF,
+            &size as *const libc::c_int as *const libc::c_void,
+            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(())
+}
+
+/// RFC-0011 D.3: Get current socket buffer sizes.
+///
+/// Returns (send_buffer, recv_buffer) in bytes.
+#[cfg(unix)]
+pub fn get_socket_buffer_sizes<S: AsRawFd>(stream: &S) -> io::Result<(usize, usize)> {
+    let fd = stream.as_raw_fd();
+    let mut size: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+
+    // Get send buffer size
+    let result = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_SNDBUF,
+            &mut size as *mut libc::c_int as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let send_buf = size as usize;
+
+    // Get receive buffer size
+    let result = unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_RCVBUF,
+            &mut size as *mut libc::c_int as *mut libc::c_void,
+            &mut len,
+        )
+    };
+    if result < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let recv_buf = size as usize;
+
+    Ok((send_buf, recv_buf))
 }
 
 /// Error type for UDS connector operations.
@@ -213,5 +313,50 @@ mod tests {
 
         let result = connector.call(target).await;
         assert!(result.is_err(), "Should fail on nonexistent socket");
+    }
+
+    // =========================================================================
+    // RFC-0011 D.3: Buffer Tuning Tests
+    // =========================================================================
+
+    #[test]
+    fn test_recommended_buffer_size_constant() {
+        // Verify the constant matches RFC recommendation (256KB)
+        assert_eq!(RECOMMENDED_UDS_BUFFER_SIZE, 256 * 1024);
+        assert_eq!(RECOMMENDED_UDS_BUFFER_SIZE, 262144);
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_socket_buffer_sizes() {
+        use std::os::unix::net::UnixListener;
+        use tempfile::TempDir;
+
+        // Create temp socket
+        let temp_dir = TempDir::new().unwrap();
+        let socket_path = temp_dir.path().join("buffer-test.sock");
+        let _listener = UnixListener::bind(&socket_path).unwrap();
+
+        // Connect
+        let stream = tokio::net::UnixStream::connect(&socket_path).await.unwrap();
+
+        // Set buffer sizes to 128KB
+        let target_size = 128 * 1024;
+        let result = set_socket_buffer_sizes(&stream, target_size);
+        assert!(result.is_ok(), "Should set buffer sizes: {:?}", result);
+
+        // Get and verify (kernel may double the value, so just check it's larger)
+        let (send_buf, recv_buf) = get_socket_buffer_sizes(&stream).unwrap();
+        assert!(
+            send_buf >= target_size,
+            "Send buffer should be at least {}: got {}",
+            target_size,
+            send_buf
+        );
+        assert!(
+            recv_buf >= target_size,
+            "Recv buffer should be at least {}: got {}",
+            target_size,
+            recv_buf
+        );
     }
 }
