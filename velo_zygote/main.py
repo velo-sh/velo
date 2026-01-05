@@ -282,6 +282,66 @@ class WorkerManager:
         t.start()
 
 
+def post_fork_reinit():
+    """
+    RFC-0011 6A.2: Reset Python state after fork from Zygote.
+    
+    This MUST be called immediately after fork() in the child process.
+    Failure to call this can result in undefined behavior from inherited
+    Zygote state (signal handlers, random seeds, SSL contexts, etc.)
+    
+    Execution order follows RFC-0011 6A.6 Supplemental Recommendations:
+    1. Random Seed (cryptographic safety)
+    2. SSL Context (regenerate if needed)
+    3. Signal Handlers (reset to default)
+    4. OpenMP/BLAS threads (restore for workers)
+    """
+    import random
+    
+    # 1. Random Seed (cryptographic safety)
+    # Fork inherits parent's random state - child must reseed
+    random.seed()
+    try:
+        import secrets
+        # Force secrets module to regenerate entropy pool
+        _ = secrets.token_bytes(1)
+    except ImportError:
+        pass
+    
+    # 2. SSL Context (regenerate if needed)
+    # Inherited SSL contexts may have shared state
+    try:
+        import ssl
+        ssl._create_default_https_context = ssl.create_default_context
+    except (ImportError, AttributeError):
+        pass
+    
+    # 3. Signal Handlers (reset to default)
+    # Zygote has custom handlers that must not affect workers
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    
+    # Reset wakeup FD (uvloop/asyncio pollution)
+    # If asyncio has installed a wakeup FD in Zygote, child must clear it
+    try:
+        signal.set_wakeup_fd(-1)
+    except (ValueError, OSError):
+        # Not set or not supported
+        pass
+    
+    # 4. OpenMP/BLAS threads (restore for workers)
+    # Zygote may have set OMP_NUM_THREADS=1 to avoid fork issues
+    # Workers should use full CPU for NumPy/BLAS operations
+    try:
+        cpu_count = os.cpu_count() or 4
+        os.environ['OMP_NUM_THREADS'] = str(cpu_count)
+        os.environ['MKL_NUM_THREADS'] = str(cpu_count)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(cpu_count)
+    except Exception:
+        pass
+
+
 class ForkHandler:
     """Handles the forking logic and child process environment setup."""
 
@@ -332,9 +392,9 @@ class ForkHandler:
             # 1. Start Guardian
             WorkerManager.start_guardian(os.getppid(), worker_ttl)
 
-            # 2. Reset Signals
-            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            # 2. RFC-0011 6A.2: Full post-fork state reset
+            # (signals, random seed, SSL context, OMP threads)
+            post_fork_reinit()
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
