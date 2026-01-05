@@ -23,6 +23,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0007](./0007-benchmarking-infrastructure.md) | Performance Tracking | ✅ Implemented | v0.5.0 |
 | [0008](./0008-phase-5.1-zygote-optimization.md) | Phase 5.1 Zygote 10ms | ✅ Accepted | v0.5.1 |
 | [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Implemented | v0.6.1 |
+| [0011](./0011-zygote-worker-integration.md) | Phase 6.1.1 Zygote Worker Integration | ✅ Approved | v0.6.2 |
 
 ## Architecture Decision Records (ADRs)
 
