@@ -1,0 +1,8 @@
+[meta]
+category = "library"
+description = "Requests: HTTP for Humans"
+
+[test]
+entry_point = "hello.py"
+expected_output = "Requests version: .*\\d+\\.\\d+\\.\\d+.*"
+timeout = 30

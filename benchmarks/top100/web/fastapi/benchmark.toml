@@ -1,0 +1,8 @@
+[meta]
+category = "web"
+description = "FastAPI framework"
+
+[test]
+entry_point = "hello.py"
+expected_output = "FastAPI app created: .*\\d+\\.\\d+\\.\\d+.*"
+timeout = 30

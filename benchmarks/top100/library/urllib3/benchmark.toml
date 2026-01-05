@@ -1,0 +1,8 @@
+[meta]
+category = "library"
+description = "Urllib3: HTTP library with thread-safe connection pooling"
+
+[test]
+entry_point = "hello.py"
+expected_output = "Urllib3 PoolManager created. Version: .*\\d+\\.\\d+\\.\\d+.*"
+timeout = 30
