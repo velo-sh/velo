@@ -248,3 +248,198 @@ sock.bind((host, port))  # Binds to TCP port
 
 - Requires Rust HTTP frontend (A.4 evolution path)
 - Or: Use `SO_REUSEPORT` with localhost-only binding (mitigation)
+
+---
+
+## Appendix B: L7 Proxy + UDS Architecture (2026-01-05)
+
+> **Status**: APPROVED FOR IMPLEMENTATION  
+> **Author**: Architect (ID-LOCK-001)
+
+### B.1 Key Architecture Change Visualization
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Velo Supervisor                                  │
+│                  (Process Manager + Application Gateway)                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│    External HTTP Request                                                 │
+│           ↓                                                              │
+│    ┌─────────────────┐                                                   │
+│    │ TCP Port :8000  │ ← External clients connect here                   │
+│    └────────┬────────┘                                                   │
+│             ↓                                                            │
+│    ┌─────────────────┐                                                   │
+│    │   L7 HTTP Proxy │ ← Rust (hyper + tokio)                           │
+│    │   Load Balancer │   - Least Connections                            │
+│    │   X-Forwarded-* │   - Health checks                                │
+│    └────────┬────────┘                                                   │
+│             ↓                                                            │
+│    ┌─────────────────────────────────────────────────┐                   │
+│    │           Unix Domain Sockets (UDS)             │                   │
+│    │ /tmp/velo-worker-1.sock  /tmp/velo-worker-N.sock│                   │
+│    └─────────┬────────────────────────┬──────────────┘                   │
+│              ↓                        ↓                                  │
+│    ┌──────────────────┐    ┌──────────────────┐                          │
+│    │ Worker 1 (uvicorn│    │ Worker N (uvicorn│                          │
+│    │ --uds mode)      │    │ --uds mode)      │                          │
+│    │ Forked from      │    │ Forked from      │                          │
+│    │ Zygote           │    │ Zygote           │                          │
+│    └──────────────────┘    └──────────────────┘                          │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Velo's Dual Identity**:
+- **Process Manager (Supervisor)**: Zygote fork, worker lifecycle, health monitoring
+- **Application Gateway (L7 Proxy)**: HTTP routing, load balancing, header injection
+
+---
+
+### B.2 Core Implementation Prototypes
+
+#### B.2.1 `src/proxy/upstream.rs` (UDS Connector)
+
+```rust
+use hyper::Uri;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::net::UnixStream;
+use tower::Service;
+use std::future::Future;
+
+/// Custom Connector allowing Hyper to connect to Unix Domain Sockets
+#[derive(Clone)]
+pub struct UdsConnector;
+
+impl Service<Uri> for UdsConnector {
+    type Response = UnixStream;
+    type Error = std::io::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        // Parse socket path from URI (e.g., unix:///tmp/velo-worker-1.sock)
+        let path = uri.path().to_string(); 
+        
+        Box::pin(async move {
+            UnixStream::connect(path).await
+        })
+    }
+}
+```
+
+#### B.2.2 `src/proxy/load_balancer.rs` (Least Connections)
+
+```rust
+use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
+struct WorkerNode {
+    socket_path: String,
+    active_connections: AtomicUsize,
+}
+
+pub struct LoadBalancer {
+    workers: Vec<Arc<WorkerNode>>,
+}
+
+impl LoadBalancer {
+    /// RFC 2.3: Least Connections strategy
+    pub fn select_worker(&self) -> Option<String> {
+        self.workers.iter()
+            .min_by_key(|w| w.active_connections.load(Ordering::Relaxed))
+            .map(|w| {
+                // Increment (RAII guard handles decrement)
+                w.active_connections.fetch_add(1, Ordering::Relaxed);
+                w.socket_path.clone()
+            })
+    }
+}
+```
+
+#### B.2.3 `src/proxy/service.rs` (The L7 Proxy)
+
+```rust
+use hyper::{Request, Response, body::Incoming};
+use hyper::service::Service;
+use std::future::Future;
+use std::pin::Pin;
+
+pub struct VeloProxyService {
+    lb: Arc<LoadBalancer>,
+    client: Client<UdsConnector, Incoming>,
+}
+
+impl Service<Request<Incoming>> for VeloProxyService {
+    type Response = Response<Incoming>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&mut self, mut req: Request<Incoming>) -> Self::Future {
+        let lb = self.lb.clone();
+        let client = self.client.clone();
+
+        Box::pin(async move {
+            // 1. Load Balance
+            let socket_path = lb.select_worker().expect("No workers available");
+            
+            // 2. Rewrite URI for UDS
+            let new_uri = format!("unix://{}", socket_path).parse().unwrap();
+            *req.uri_mut() = new_uri;
+
+            // 3. Inject RFC headers (X-Forwarded-For etc.)
+            req.headers_mut().insert("X-Velo-Worker", socket_path.parse().unwrap());
+
+            // 4. Forward Request (L7 Proxy)
+            client.request(req).await
+        })
+    }
+}
+```
+
+#### B.2.4 `src/lifecycle/safety.rs` (Socket Hygiene)
+
+```rust
+use std::path::Path;
+use tokio::fs;
+
+/// RFC Appendix B.3: Socket Hygiene
+/// Clean stale socket files before binding
+pub async fn unlink_socket_if_exists(path: &Path) -> std::io::Result<()> {
+    if path.exists() {
+        let metadata = fs::metadata(path).await?;
+        use std::os::unix::fs::MetadataExt;
+        if metadata.mode() & 0o170000 == 0o140000 { // S_IFSOCK
+            fs::remove_file(path).await?;
+            println!("🧹 Cleaned up stale socket: {:?}", path);
+        } else {
+            eprintln!("⚠️ Warning: {:?} exists but is not a socket!", path);
+        }
+    }
+    Ok(())
+}
+```
+
+---
+
+### B.3 Implementation Roadmap
+
+| Track | Component | Owner | Status |
+|-------|-----------|-------|--------|
+| **Rust** | `src/proxy/upstream.rs` (UDS Connector) | Developer | TODO |
+| **Rust** | `src/proxy/load_balancer.rs` | Developer | TODO |
+| **Rust** | `src/proxy/service.rs` (L7 Proxy) | Developer | TODO |
+| **Rust** | `src/lifecycle/safety.rs` (Socket hygiene) | Developer | TODO |
+| **Rust** | Integration into `velo-supervisor` | Developer | TODO |
+| **Python** | `post_fork` hook implementation | Developer | TODO |
+
+### B.4 Key Engineering Challenges
+
+1. **Hyper + UDS**: Hyper doesn't natively support UDS targets; custom `Service<Uri>` required
+2. **Connection Tracking**: RAII guard pattern for accurate connection counting
+3. **Graceful Shutdown**: Drain connections before worker termination
+4. **Header Preservation**: Proper X-Forwarded-* injection for ASGI apps
