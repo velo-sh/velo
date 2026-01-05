@@ -141,6 +141,43 @@ run_worker_with_shared_port(**config)
         ))
     }
 
+    /// Generate UDS worker script (RFC-0011: uses Unix socket instead of TCP port)
+    ///
+    /// This script runs uvicorn with:
+    /// - `--uds {socket_path}` instead of `--port`
+    /// - `--proxy-headers` to enable X-Forwarded-* support
+    pub fn generate_uds_worker_script(app: &str, socket_path: &str) -> Result<String> {
+        // Security validation
+        Self::validate_app_path(app)?;
+
+        Ok(format!(
+            r#"#!/usr/bin/env python3
+"""
+Velo UDS Worker Script (RFC-0011)
+Runs uvicorn with Unix Domain Socket for Zygote worker integration.
+"""
+import sys
+import os
+
+# Add project directory to sys.path
+sys.path.insert(0, os.getcwd())
+
+import uvicorn
+
+# RFC-0011: UDS mode with proxy headers
+uvicorn.run(
+    "{app}",
+    uds="{socket_path}",
+    proxy_headers=True,
+    forwarded_allow_ips="*",
+    log_level="info",
+)
+"#,
+            app = app,
+            socket_path = socket_path,
+        ))
+    }
+
     /// Detect velo_zygote library path
     fn detect_velo_lib_path() -> Result<String> {
         if let Ok(exe) = std::env::current_exe()
@@ -296,5 +333,47 @@ mod tests {
         let path1 = Worker::create_temp_script_path(0).unwrap();
         let path2 = Worker::create_temp_script_path(1).unwrap();
         assert_ne!(path1, path2);
+    }
+
+    // =========================================================================
+    // TDD Cycle 2.1: UDS Worker Script Generation
+    // =========================================================================
+
+    /// 🔴 RED: Test that UDS worker script uses --uds flag instead of --port
+    #[test]
+    fn test_generate_uds_worker_script_has_uds_flag() {
+        let socket_path = "/tmp/velo-worker-1.sock";
+        let script = Worker::generate_uds_worker_script("main:app", socket_path).unwrap();
+
+        // Must contain --uds flag
+        assert!(
+            script.contains("--uds") || script.contains("uds="),
+            "UDS script must use --uds flag, got: {}",
+            script
+        );
+
+        // Must contain the socket path
+        assert!(
+            script.contains(socket_path),
+            "UDS script must contain socket path"
+        );
+
+        // Must NOT contain --port (we're using UDS, not TCP)
+        assert!(
+            !script.contains("--port") && !script.contains("\"port\""),
+            "UDS script must NOT use --port"
+        );
+    }
+
+    /// 🔴 RED: Test that UDS worker script enables proxy headers
+    #[test]
+    fn test_generate_uds_worker_script_has_proxy_headers() {
+        let script = Worker::generate_uds_worker_script("main:app", "/tmp/w.sock").unwrap();
+
+        // RFC-0011 C.3: Must enable proxy_headers for X-Forwarded-* support
+        assert!(
+            script.contains("proxy_headers") || script.contains("--proxy-headers"),
+            "UDS script must enable proxy_headers"
+        );
     }
 }
