@@ -872,6 +872,15 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                             }
                         }
                     }
+
+                    // P2: Zygote deep probe - verify Zygote is still responding
+                    if let Err(e) = crate::zygote::ipc::send_command(
+                        &socket_path,
+                        crate::zygote::ipc::ZygoteCommand::Status,
+                    ) {
+                        logger.warn(&format!("Zygote health check failed: {}", e));
+                        // Zygote is dead - could restart here, but for now just log
+                    }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
