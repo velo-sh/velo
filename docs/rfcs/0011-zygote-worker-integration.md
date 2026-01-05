@@ -226,7 +226,50 @@ async def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 ```
 
+### 6A.7 Per-Worker Client Architecture (Critical)
+
+> **Issue**: Hyper connection pooling routes all requests on a pooled connection to the same Worker, breaking load balancing.
+
+| Design Assumption | Hyper Default Behavior |
+|-------------------|------------------------|
+| `select_worker()` per request | `select_worker()` per connection |
+| Requests distributed evenly | All requests route to first Worker |
+
+**Solution**: Per-Worker Client Pattern
+
+```rust
+struct L7Proxy {
+    worker_clients: Vec<WorkerClient>,  // One client per worker
+    load_balancer: LeastConnections,
+}
+
+struct WorkerClient {
+    client: Client<UdsConnector>,
+    active_requests: AtomicUsize,
+}
+
+impl tower::Service<Request> for L7Proxy {
+    async fn call(&mut self, req: Request) -> Response {
+        // Select worker PER REQUEST
+        let idx = self.load_balancer.select_and_increment();
+        let result = self.worker_clients[idx].client.request(req).await;
+        self.load_balancer.decrement(idx);
+        result
+    }
+}
+```
+
+**Key Configuration**:
+```rust
+let client = Client::builder()
+    .pool_max_idle_per_host(1)  // Minimal pooling per worker
+    .build(connector);
+```
+
+---
+
 ### 6A.6 Supplemental Recommendations (Non-Blocking)
+
 
 > These items improve implementation quality and should be addressed during development.
 
