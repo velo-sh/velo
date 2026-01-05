@@ -30,3 +30,5 @@ velo_zygote/velo_zygote
 test_large_bundle/
 *.veloc
 build/
+.venv/
+benchmarks/top100_v2_results.json

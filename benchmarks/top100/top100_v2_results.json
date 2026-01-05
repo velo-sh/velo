@@ -1,0 +1,61 @@
+{
+  "system": {
+    "os": "Darwin",
+    "release": "22.3.0",
+    "machine": "arm64",
+    "processor": "arm",
+    "date": "2026-01-05 16:17:14"
+  },
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "results": [
+    {
+      "package": "black",
+      "category": "cli",
+      "cpython": 77.25101400000038,
+      "velo_cold": 90.2836390000002,
+      "velo_zygote": 71.22930566666685,
+      "cpython_stdev": 10.016545058290786,
+      "status": "PASS"
+    },
+    {
+      "package": "requests",
+      "category": "library",
+      "cpython": 185.25072199999985,
+      "velo_cold": 77.54122266666623,
+      "velo_zygote": 54.96248599999968,
+      "cpython_stdev": 162.29294415551504,
+      "status": "PASS"
+    },
+    {
+      "package": "urllib3",
+      "category": "library",
+      "cpython": 44.95311100000047,
+      "velo_cold": 63.4668473333336,
+      "velo_zygote": 67.69863866666685,
+      "cpython_stdev": 0.23343516897906003,
+      "status": "PASS"
+    },
+    {
+      "package": "numpy",
+      "category": "ml",
+      "cpython": 67.00159733333422,
+      "velo_cold": 74.11869433333369,
+      "velo_zygote": 66.36862466666689,
+      "cpython_stdev": 6.161049136516628,
+      "status": "PASS"
+    },
+    {
+      "package": "fastapi",
+      "category": "web",
+      "cpython": 196.52868000000012,
+      "velo_cold": 170.6740696666671,
+      "velo_zygote": 148.89793066666593,
+      "cpython_stdev": 42.94171116650101,
+      "status": "PASS"
+    }
+  ]
+}
