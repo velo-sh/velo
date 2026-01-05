@@ -443,3 +443,100 @@ pub async fn unlink_socket_if_exists(path: &Path) -> std::io::Result<()> {
 2. **Connection Tracking**: RAII guard pattern for accurate connection counting
 3. **Graceful Shutdown**: Drain connections before worker termination
 4. **Header Preservation**: Proper X-Forwarded-* injection for ASGI apps
+
+---
+
+## Appendix C: Independent Technical Review (2026-01-05)
+
+> **Verdict**: CONDITIONAL PASS — Risk Manageable, Protocol Details Required  
+> **Reviewers**: Python Core, OS/Kernel, Framework Compatibility, Security Experts
+
+---
+
+### C.1 🐍 Python Core & Runtime Review
+
+#### ⚠️ Risk 1: File Descriptor (FD) Leakage
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| Child inherits parent's FDs (TCP Listener, logs, DB connections) | Worker may accept external connections; port release failure | **Set `FD_CLOEXEC`** on all non-essential FDs before fork |
+
+#### ⚠️ Risk 2: Signal Handling Race
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| Python signals only on main thread; uvloop may have preset masks | Residual Zygote signal state | **Reset signal handlers** in `post_fork` hook (SIGINT, SIGTERM) |
+
+---
+
+### C.2 🐧 OS & Kernel Review
+
+#### 🟢 Advantage: No Thundering Herd
+
+Rust Load Balancer explicitly selects `connect("/tmp/w1.sock")`, eliminating thundering herd problem entirely. Kernel wakes only the selected worker.
+
+#### ⚠️ Performance Trap: Static Files
+
+| Mode | Path | Zero-Copy? |
+|------|------|------------|
+| TCP (uvicorn direct) | Disk → Kernel → TCP | ✅ `sendfile` |
+| L7 Proxy (UDS) | Disk → Python → UDS → Rust → TCP | ❌ Multiple copies |
+
+**Recommendation**: Rust should directly serve `/static` (future optimization).
+
+#### 🔧 Tuning Recommendation
+
+Set `SO_SNDBUF` and `SO_RCVBUF` to 2MB+ on UDS connections to reduce context switches.
+
+---
+
+### C.3 🌐 ASGI & Framework Review
+
+#### ❌ Critical: `client` Field Lost
+
+| Framework | Affected | Consequence |
+|-----------|----------|-------------|
+| Django | `request.META['REMOTE_ADDR']` = None | IP-based rate limiting fails |
+| FastAPI | `request.client.host` = None | Client identification impossible |
+
+**Mandatory Fix**:
+1. **Rust Proxy**: Inject `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Port`
+2. **Uvicorn**: Force `--proxy-headers` or `forwarded_allow_ips='*'`
+
+#### ⚠️ Path Routing (`root_path`)
+
+If Velo is behind Nginx (Nginx → Velo → Uvicorn), ensure `root_path` propagates correctly for FastAPI Swagger UI URLs.
+
+---
+
+### C.4 🔒 Security Review
+
+#### ⚠️ HTTP Desync (Request Smuggling)
+
+| Parser | Risk |
+|--------|------|
+| Rust (Hyper) - Frontend | Strict parsing (good) |
+| Python (h11) - Backend | Different interpretation possible |
+
+**Mitigation**: Normalize request headers; remove Hop-by-Hop headers (`Connection`, `Keep-Alive`, `Te`, `Transfer-Encoding`).
+
+#### ⚠️ UDS Permission Escape
+
+**Current**: `/tmp/velo-{UID}/` with `0700` permissions.
+
+**Enhancement Options**:
+- Linux: Use Abstract Namespace Sockets (`@velo-worker-1`) — no filesystem permissions needed
+- Linux: Use `memfd_create` (anonymous memory file)
+
+---
+
+### C.5 📋 Action Items (Prioritized)
+
+| Priority | Domain | Action | Status |
+|----------|--------|--------|--------|
+| 🔴 High | Rust/OS | Set `FD_CLOEXEC` on all FDs before fork | TODO |
+| 🔴 High | Rust/HTTP | Implement `X-Forwarded-For/Proto/Port` injection | TODO |
+| 🔴 High | Python/ASGI | Force Uvicorn `proxy_headers=True` | TODO |
+| 🟡 Medium | Rust/OS | Investigate Abstract Namespace Sockets (`@velo...`) | TODO |
+| 🟡 Medium | Security | Strip Hop-by-Hop headers before forwarding | TODO |
+| 🔵 Low | Perf | Rust direct static file serving (`/static`) bypass | FUTURE |
