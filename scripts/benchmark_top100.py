@@ -32,6 +32,16 @@ FAILURES_LOG = BENCHMARKS_DIR / "top100_failures.log"
 TIMEOUT_SECS = 30
 ITERATIONS = 3
 
+# Special cases: package name -> import name
+IMPORT_NAME_OVERRIDES = {
+    "pyyaml": "yaml",
+    "grpcio-status": "grpc_status",  # Fixed: grpc_status not grpcio_status
+    "python-dateutil": "dateutil",
+    "pillow": "PIL",
+    "protobuf": "google.protobuf",
+    "attrs": "attr",
+}
+
 
 class PackageBenchmark:
     """Manages benchmarking for a single package."""
@@ -76,8 +86,11 @@ class PackageBenchmark:
                 return False
             
             # Create test script
-            # Normalize package name for import (e.g., typing-extensions -> typing_extensions)
-            import_name = self.package_name.replace("-", "_")
+            # Use override if exists, otherwise normalize package name
+            import_name = IMPORT_NAME_OVERRIDES.get(
+                self.package_name,
+                self.package_name.replace("-", "_")
+            )
             self.test_script.write_text(
                 f'import {import_name}\n'
                 f'print("IMPORT_SUCCESS")\n'
