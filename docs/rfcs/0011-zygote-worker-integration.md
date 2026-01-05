@@ -203,3 +203,48 @@ Rust HTTP Server (hyper/axum)
 ```
 
 This eliminates per-worker HTTP overhead while maintaining Zygote benefits.
+
+---
+
+### A.5 Architecture Issue: TCP vs IPC Inconsistency
+
+> **Severity**: Medium  
+> **Status**: OPEN  
+> **Found**: 2026-01-05
+
+#### Problem
+
+Current implementation uses **TCP (AF_INET)** for worker communication, but Zygote itself uses **Unix Domain Socket (IPC)**:
+
+| Component | Current | Expected |
+|-----------|---------|----------|
+| Zygote ↔ Rust | Unix Domain Socket (`AF_UNIX`) | ✅ Correct |
+| Worker ↔ Client | TCP (`AF_INET`) + `SO_REUSEPORT` | ❌ Inconsistent |
+
+#### Evidence
+
+`velo_zygote/worker_runner.py` lines 41-44:
+```python
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # TCP!
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+sock.bind((host, port))  # Binds to TCP port
+```
+
+#### Impact
+
+| Aspect | TCP (Current) | Unix Socket (Recommended) |
+|--------|---------------|---------------------------|
+| Port management | N ports for N workers | File path, no port conflicts |
+| Security | Port exposed to network | File permissions only |
+| Performance | TCP stack overhead | Lower latency |
+| Architecture | Inconsistent with Zygote IPC | Consistent |
+
+#### Recommendation
+
+1. **Short-term**: Document as known limitation
+2. **Long-term**: Migrate to Unix Domain Socket with Rust proxy
+
+#### Dependencies
+
+- Requires Rust HTTP frontend (A.4 evolution path)
+- Or: Use `SO_REUSEPORT` with localhost-only binding (mitigation)
