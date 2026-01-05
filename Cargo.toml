@@ -30,6 +30,7 @@ hostname = "0.4"
 rustpython-parser = "0.4"
 rustpython-ast = "0.4"
 ignore = "0.4"
+log = "0.4"
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching

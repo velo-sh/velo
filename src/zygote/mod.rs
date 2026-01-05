@@ -21,6 +21,8 @@ pub mod cli;
 pub mod error;
 pub mod ipc;
 
+extern crate log;
+
 use crate::lifecycle::safety::set_cloexec_on_all_fds;
 use error::{Result, ZygoteError};
 use ipc::{ZygoteResponse, is_socket_alive};
@@ -489,6 +491,54 @@ impl ZygoteLauncher {
                 )));
             }
             std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // Layer 3: Deep Liveness Probe & Handshake (RFC-0011 architectural requirement)
+        log::info!("Zygote socket detected. Performing deep probe...");
+
+        // 1. Connect and verify Ready greeting (handled by ZygoteStream::connect)
+        let mut zygote_stream = ipc::ZygoteStream::connect(&self.socket_path)?;
+
+        // 2. Perform Handshake
+        log::debug!("Performing protocol handshake...");
+        let handshake_cmd = ipc::ZygoteCommand::Handshake {
+            version: ipc::PROTOCOL_VERSION,
+            capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
+        };
+        let response = zygote_stream.send_command(&handshake_cmd)?;
+
+        if let ipc::ZygoteResponse::Handshake {
+            version,
+            capabilities,
+        } = response
+        {
+            log::info!(
+                "Handshake successful (v{}, caps: {:?})",
+                version,
+                capabilities
+            );
+        } else {
+            return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
+        }
+
+        // 3. Deep Probe: Status check
+        log::debug!("Sending deep liveness probe (Status)...");
+        let status_cmd = ipc::ZygoteCommand::Status;
+        let response = zygote_stream.send_command(&status_cmd)?;
+
+        if let ipc::ZygoteResponse::Status { pid, .. } = response {
+            if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
+                return Err(ZygoteError::StartFailed(format!(
+                    "Deep probe PID mismatch: got {}, expected {} (Shadow Trap detected!)",
+                    pid,
+                    self.zygote_pid.unwrap()
+                )));
+            }
+            log::info!("Zygote deep probe successful (PID: {}).", pid);
+        } else {
+            return Err(ZygoteError::StartFailed(
+                "Deep probe failed: invalid response".to_string(),
+            ));
         }
 
         Ok(())
