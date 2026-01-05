@@ -628,9 +628,18 @@ class ZygoteServer:
         self.memory_limit_mb = 1024 # 1GB default limit for Zygote process
         self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup
         self.fork_rate_limiter = ForkRateLimiter()  # RFC-0011 WB-005: DoS protection
+        
+        # Shadow Preloading: State machine for async preload
+        self.preload_state: str = "STARTING"  # STARTING → LOADING → READY
+        self.preload_complete = asyncio.Event()  # Signaled when preload finishes
+        self.fork_queue: asyncio.Queue = asyncio.Queue()  # Queue for Fork requests during LOADING
 
     async def start(self):
-        """Start the Zygote server using asyncio."""
+        """Start the Zygote server using asyncio with Shadow Preloading.
+        
+        Shadow Preloading: Socket opens immediately, preloading happens async.
+        This minimizes time-to-ready for the Rust supervisor.
+        """
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
             
@@ -639,20 +648,60 @@ class ZygoteServer:
             WorkerRegistry.start_guardian(os.getppid(), 0)
             
             self._setup_signals()
-            self._preload_modules()
             
-            if check_cuda_initialized():
-                LogUtils.log("CRITICAL: CUDA initialized in Zygote! Shutting down.")
-                sys.exit(1)
+            # Shadow Preloading: Open socket FIRST, preload ASYNC
+            self.preload_state = "LOADING"
+            
+            # Start async preload task (non-blocking)
+            asyncio.create_task(self._async_preload())
             
             # Start background tasks
             asyncio.create_task(self._resource_guard())
             
+            # Start socket listener immediately (before preload completes)
             await self._run_loop()
         except Exception as e:
             LogUtils.debug_log(f"Server Startup Error: {e}")
             traceback.print_exc()
             sys.exit(1)
+
+    async def _async_preload(self):
+        """Async preloading of modules - runs in background."""
+        try:
+            # Run blocking preload in executor to not block event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._preload_modules)
+            
+            # Check CUDA after preload
+            if check_cuda_initialized():
+                LogUtils.log("CRITICAL: CUDA initialized in Zygote! Shutting down.")
+                sys.exit(1)
+            
+            self.preload_state = "READY"
+            self.preload_complete.set()
+            LogUtils.log(f"Shadow Preloading complete. State: READY")
+            
+            # Process any queued Fork requests
+            await self._process_fork_queue()
+        except Exception as e:
+            LogUtils.debug_log(f"Preload Error: {e}")
+            self.preload_state = "READY"  # Still mark ready to avoid deadlock
+            self.preload_complete.set()
+
+    async def _process_fork_queue(self):
+        """Process Fork requests that were queued during LOADING state."""
+        while not self.fork_queue.empty():
+            try:
+                cmd, response_future = await asyncio.wait_for(
+                    self.fork_queue.get(), timeout=0.1
+                )
+                # Re-dispatch the Fork command now that preload is complete
+                response = await handle_fork(self, cmd)
+                response_future.set_result(response)
+            except asyncio.TimeoutError:
+                break
+            except Exception as e:
+                LogUtils.debug_log(f"Fork queue processing error: {e}")
 
     def _setup_signals(self):
         loop = asyncio.get_event_loop()
@@ -758,6 +807,9 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
     if server.app_name:
         capabilities.append(f"app:{server.app_name}")
     
+    # Shadow Preloading: Report current preload state
+    capabilities.append(f"preload:{server.preload_state.lower()}")
+    
     return {
         "type": "Handshake",
         "version": server_version,
@@ -766,6 +818,14 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
 
 @router.handler("Fork")
 async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
+    # Shadow Preloading: Wait for preload to complete if still loading
+    if server.preload_state == "LOADING":
+        try:
+            # Wait up to 30s for preload to complete
+            await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            return {"type": "Error", "message": "Preload timeout: modules still loading after 30s"}
+    
     # RFC-0011 WB-005: Rate limiting to prevent Fork Bomb DoS
     if not server.fork_rate_limiter.acquire():
         return {"type": "Error", "message": "Rate limit exceeded: too many Fork requests"}
