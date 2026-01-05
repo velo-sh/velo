@@ -315,6 +315,54 @@ class TestRegression:
             # Original config should still be there
             assert "custom_setting" in after or "keep_me" in after
 
+    def test_b4_3_virtualenv_priority_regression(self):
+        """B4-3: Project .venv used even when VIRTUAL_ENV env var is set.
+        
+        Regression test for CI failure where VIRTUAL_ENV points to runner's
+        global venv (without project deps like pandas). Velo should prefer
+        the project's .venv which has the actual dependencies.
+        
+        BUG: Before fix, detect_python checked VIRTUAL_ENV first, causing
+        velo analyze to use the wrong Python interpreter in CI.
+        FIX: detect_python now checks project .venv BEFORE VIRTUAL_ENV.
+        """
+        with StableProject() as p:
+            p.set_pyproject(deps=["requests"])
+            p.set_file("main.py", "import requests\nprint('ok')")
+            p.sync()
+            
+            # Create a fake "runner venv" that DOESN'T have requests
+            fake_runner_venv = Path(tempfile.mkdtemp(prefix="fake_runner_venv_"))
+            try:
+                # Create minimal venv structure with python symlink
+                fake_bin = fake_runner_venv / "bin"
+                fake_bin.mkdir()
+                # Find system python to symlink
+                import sys
+                system_python = Path(sys.executable)
+                (fake_bin / "python").symlink_to(system_python)
+                
+                # Run velo analyze with VIRTUAL_ENV pointing to fake runner venv
+                # (simulating CI environment)
+                env = os.environ.copy()
+                env["VIRTUAL_ENV"] = str(fake_runner_venv)
+                
+                result = subprocess.run(
+                    [self.velo if hasattr(self, 'velo') else get_velo_binary(), 
+                     "analyze", "main.py"],
+                    cwd=p.path, capture_output=True, text=True, timeout=60,
+                    env=env
+                )
+                
+                # Should still work - uses project .venv, not fake runner venv
+                assert result.returncode == 0, f"Failed: {result.stderr}"
+                output_lower = result.stdout.lower()
+                # requests should appear in import analysis
+                assert "requests" in output_lower, \
+                    f"Expected 'requests' in output, got: {result.stdout}"
+            finally:
+                shutil.rmtree(fake_runner_venv, ignore_errors=True)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
