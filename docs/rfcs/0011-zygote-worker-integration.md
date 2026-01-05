@@ -157,3 +157,49 @@ Velo Supervisor
 ---
 
 **RFC Record**: Implemented on 2026-01-04
+
+---
+
+## Appendix A: Architectural Review (2026-01-05)
+
+> **Reviewer**: Architect (ID-LOCK-001)
+
+### A.1 Potential Optimizations
+
+| Area | Current | Suggested Optimization |
+|------|---------|------------------------|
+| **Per-worker overhead** | Each worker runs full uvicorn (event loop + HTTP parsing) | Consider Rust HTTP frontend (hyper/axum) + Python ASGI backend |
+| **Port management** | N TCP ports for N workers | Use Unix Domain Sockets to simplify |
+| **Inter-worker state** | No shared state mechanism | Add shared memory metrics (Prometheus-style) |
+
+### A.2 Answers to Open Questions (Section 7)
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| gunicorn compatibility | Low priority | Same pattern applies, but uvicorn is primary target |
+| --workers auto-scaling | Default to CPU count | Memory-based scaling as optional advanced feature |
+| Worker restart strategy | **Rolling** | Zero-downtime restarts, one worker at a time |
+
+### A.3 Missing Architectural Components
+
+Future phases should address:
+
+1. **Worker Health Check Details**: Specific endpoints, intervals, failure thresholds
+2. **Graceful Shutdown Coordination**: Integration with RFC-0010 ShutdownCoordinator
+3. **Worker Crash Recovery**: Max restarts, backoff strategy, circuit breaker
+4. **Observability**: Worker metrics, request latency histograms, memory usage
+
+### A.4 Future Architecture (Option A Evolution Path)
+
+If performance requirements increase, consider evolving to:
+
+```text
+Rust HTTP Server (hyper/axum)
+├── Accept all HTTP connections
+├── Load balance across workers (round-robin / least-connections)
+└── Workers 1-N (ASGI only, no HTTP parsing)
+    ├── Forked from Zygote
+    └── Communicate via Unix socket / shared memory
+```
+
+This eliminates per-worker HTTP overhead while maintaining Zygote benefits.
