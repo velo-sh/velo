@@ -6,6 +6,7 @@
 //! - Help and version display
 
 use anyhow::Result;
+use colored::Colorize;
 
 use crate::cmd;
 
@@ -57,6 +58,23 @@ OPTIONS:
     -V, --version  Print version
 ";
 
+fn suggest_command(target: &str) -> Option<&'static str> {
+    const COMMANDS: &[&str] = &[
+        "run", "serve", "analyze", "bench", "bundle", "info", "zygote", "graph",
+    ];
+    let mut best_match = None;
+    let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
+
+    for &cmd in COMMANDS {
+        let dist = strsim::levenshtein(target, cmd);
+        if dist > 0 && dist <= min_dist {
+            min_dist = dist;
+            best_match = Some(cmd);
+        }
+    }
+    best_match
+}
+
 /// Main entry point for CLI
 pub fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -84,30 +102,42 @@ pub fn run() -> Result<()> {
         "zygote" => cmd::cmd_zygote(&args),
         "graph" => cmd::cmd_graph(&args),
         cmd => {
-            eprintln!("Error: unknown command '{}'", cmd);
-            eprintln!("{}", USAGE);
+            eprintln!("{}: unknown command '{}'", "error".red().bold(), cmd);
+            if let Some(suggestion) = suggest_command(cmd) {
+                eprintln!(
+                    "   {} did you mean '{}'?",
+                    "tip:".yellow(),
+                    suggestion.cyan()
+                );
+            }
+            eprintln!("\n{}", USAGE);
             std::process::exit(1);
         }
     };
 
     // Centralized error handling (P0 refactor)
     if let Err(e) = result {
-        // DEF-61-002: Check if this is a clap help/version request (exit code 0)
+        // Handle clap errors
         if let Some(clap_err) = e.downcast_ref::<clap::Error>() {
-            // Clap handles printing for DisplayHelp and DisplayVersion
             clap_err.print().ok();
             match clap_err.kind() {
                 clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
                     std::process::exit(0);
                 }
                 _ => {
-                    std::process::exit(2); // Clap usage errors
+                    std::process::exit(2);
                 }
             }
         }
 
-        // Format error with "Error:" prefix for consistency
-        eprintln!("Error: {}", e);
+        // Handle ServeError with rich formatting
+        if let Some(serve_err) = e.downcast_ref::<crate::serve::error::ServeError>() {
+            eprintln!("{}", serve_err.format_source_pointed());
+            std::process::exit(serve_err.exit_code());
+        }
+
+        // Generic error format
+        eprintln!("{}: {}", "error".red().bold(), e);
         std::process::exit(1);
     }
 

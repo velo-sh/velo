@@ -44,26 +44,78 @@ impl Default for AnalyzeArgs {
 /// DEF-4.0-002: Reject special paths like /dev/null
 /// DEF-4.0-003: Reject paths with null bytes
 fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
+    // DEF-4.0-001: Check for empty path
+    if path.is_empty() {
+        anyhow::bail!("{} is empty", arg_name);
+    }
+
     // DEF-4.0-003: Check for null bytes
     if path.contains('\0') {
         anyhow::bail!("{} contains invalid null byte: {:?}", arg_name, path);
     }
 
-    // DEF-4.0-002: Check for special device paths
-    let path_buf = PathBuf::from(path);
-    let path_str = path_buf.to_string_lossy();
-
-    // Block device paths on Unix
-    if path_str.starts_with("/dev/") {
-        anyhow::bail!("{} cannot be a device path: {}", arg_name, path_str);
+    // DEF-4.0-002: Reject device paths
+    if path.starts_with("/dev/") {
+        anyhow::bail!(
+            "{} access denied: device path not allowed: {}",
+            arg_name,
+            path
+        );
     }
 
-    // Block empty paths
-    if path.is_empty() {
-        anyhow::bail!("{} cannot be empty", arg_name);
+    // SEC-P0-002: Path Traversal Protection
+    // Ensure the path is within the project root for BOTH absolute AND relative paths
+    let path_buf = PathBuf::from(path);
+    let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+    let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
+
+    // Convert relative path to absolute by joining with project root
+    let full_path = if path_buf.is_absolute() {
+        path_buf.clone()
+    } else {
+        project_root.join(&path_buf)
+    };
+
+    // If the path exists, canonicalize it to resolve symlinks and '..'
+    if full_path.exists() {
+        let canonical_path = full_path
+            .canonicalize()
+            .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+
+        if !canonical_path.starts_with(&canonical_root) {
+            anyhow::bail!(
+                "{} access denied: path traversal detected (resolves outside project root)",
+                arg_name
+            );
+        }
+    } else {
+        // For non-existent paths, check for obvious traversal patterns
+        // This catches ../../etc/passwd even if the file doesn't exist locally
+        let normalized = normalize_path_components(&full_path);
+        if !normalized.starts_with(&canonical_root) {
+            anyhow::bail!(
+                "{} access denied: path traversal detected (would resolve outside project root)",
+                arg_name
+            );
+        }
     }
 
     Ok(path_buf)
+}
+
+/// Normalize path by resolving .. and . components without requiring the path to exist
+fn normalize_path_components(path: &Path) -> PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                components.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => components.push(c),
+        }
+    }
+    components.iter().collect()
 }
 
 /// Configuration from pyproject.toml [tool.velo] section
@@ -390,9 +442,20 @@ fn run_with_profile(python_path: &Path, script: &Path, project_dir: &Path) -> Re
     // Build PYTHONPATH with sitecustomize directory first
     let pythonpath = temp_dir.path().to_string_lossy().to_string();
 
-    // Run script with profiling enabled
+    // Create a wrapper script that imports sitecustomize before running the user script
+    // Python doesn't auto-load sitecustomize.py from PYTHONPATH - only from site-packages
+    // IMPORTANT: atexit handlers don't fire during exec(), so we explicitly call
+    // _velo_write_profile() after the script runs to ensure profile data is written.
+    let wrapper = format!(
+        r#"import sys; sys.path.insert(0, "{}"); import sitecustomize; exec(open("{}").read()); sitecustomize._velo_write_profile()"#,
+        &pythonpath,
+        script.to_string_lossy()
+    );
+
+    // Run wrapper with profiling enabled
     let output = Command::new(python_path)
-        .arg(script)
+        .arg("-c")
+        .arg(&wrapper)
         .current_dir(project_dir)
         .env("PYTHONPATH", &pythonpath)
         .env(
@@ -947,5 +1010,21 @@ slow_threshold_ms = 75
         let result = validate_path("main.py", "file");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), PathBuf::from("main.py"));
+    }
+
+    #[test]
+    fn test_validate_path_relative_traversal() {
+        // SEC-P0-002: Relative path traversal should be rejected
+        let result = validate_path("../../etc/passwd", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
+    }
+
+    #[test]
+    fn test_validate_path_relative_traversal_nested() {
+        // SEC-P0-002: Nested relative path traversal should be rejected
+        let result = validate_path("subdir/../../../etc/passwd", "file");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal"));
     }
 }

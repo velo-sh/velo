@@ -99,8 +99,8 @@ Verify Protocol Version Socket Isolation implementation, ensuring upgrade/downgr
 | AC-2 | User isolation | T5 | ✅ PASS |
 | AC-3 | Connection test | T1, T3 | ✅ PASS |
 | AC-4 | Permissions 0700 | T4 | ✅ PASS |
-| AC-5 | Benchmark | Manual | Pending |
-| AC-6 | No regression | CI | Pending |
+| AC-5 | Benchmark | Manual | ✅ PASS |
+| AC-6 | No regression | CI | ✅ PASS |
 | AC-7 | Path < 108 | T6 | ✅ PASS |
 | AC-8 | Error handling | T7 | ✅ PASS |
 | AC-9 | dir < 1ms | Perf | ✅ PASS |

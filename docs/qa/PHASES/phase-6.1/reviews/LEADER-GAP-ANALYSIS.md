@@ -1,57 +1,25 @@
-# QA Leader Gap Analysis
+# Leader Gap Analysis: Design Review (Phase 6.1)
 
-**Phase**: 6.1
-**Leader**: QA Working Group
-**Date**: 2026-01-04
-
----
-
-## 1. Findings Consolidation
-
-| Agent | P0 | P1 | P2 | P3 | Status |
-|:---|:---:|:---:|:---:|:---:|:---|
-| Agent A (Edge) | 0 | 1 | 0 | 1 | P1 FIXED |
-| Agent B (Stability) | 0 | 0 | 0 | 2 | Deferred |
-| Agent C (Security) | 0 | 2 | 1 | 0 | 2 PASSED, 1 Skipped |
-| **Total** | **0** | **3** | **1** | **3** | **GREEN** |
-
-## 2. Cross-Review Verification
-
-| Review | Findings Reproducible? | Severity Accurate? | Notes |
-|:---|:---:|:---:|:---|
-| A → B | ✅ | ✅ | Stability tests are simulation-based |
-| B → C | ✅ | ✅ | Security invariants verified |
-| C → A | ✅ | ✅ | Django fix verified |
-
-## 3. Architecture Alignment
-
-- **RFC-0010**: All P0 requirements mapped to tests.
-- **Security Invariants**: SEC-P0-001, SEC-P0-003 verified.
-- **No Architecture Issues**: No ARCH-6.1-XXX documents required.
-
-## 4. Gap Identification
-
-| Gap | Severity | Action |
-|:---|:---:|:---|
-| E2E watcher DoS test skipped | P2 | Defer to E2E phase |
-| Stress test for signal handling | P3 | Enhancement |
-
-## 5. External Expert Audit Decision
-
-**Per SOP §6.1, External Experts are required when:**
-- ❌ P0 security vulnerability discovered → **NO**
-- ❌ Architecture design unclear/ambiguous → **NO**
-- ❌ Performance regression > 2x baseline → **NO**
-- ❌ Cross-cutting concern affects multiple components → **NO**
-- ❌ Python internals behavior unclear → **NO**
-
-**Decision**: **EXTERNAL EXPERT AUDIT NOT REQUIRED**
+**Agent**: QA Leader
+**Status**: 🔴 **REJECTED (Design Remediation Required)**
 
 ---
 
-## 6. QA Leader Verdict
+## 1. Executive Summary
+The Phase 6.1 test design and architectural record have been audited by 4 independent Agents. While most requirements are mapped, a **Critical P1 Architectural Blocker** has been identified regarding Subprocess I/O.
 
-> All P0/P1 issues resolved. No architecture concerns. Security invariants verified.
-> Phase 6.1 is ready for **Final Sign-off**.
+## 2. Consolidated Gaps
+| Rank | Agent | ID | Description | Remediation Mandate |
+|:---|:---|:---|:---|:---|
+| **P1** | B | B-STAB-6.1-001 | **Subprocess Pipe Deadlock** | Parent MUST drain pipes asynchronously. |
+| **P2** | A | A-EDGE-6.1-001 | **Debouncer Starvation** | Add `MAX_DEBOUNCE_TIME` to the state machine. |
+| **P2** | D | D-CHAO-6.1-002 | **Zombie Accumulation** | Explicit `SIGCHLD` handler or `waitpid` loop. |
+| **P2** | C | C-SEC-6.1-001 | **Health Reconnaissance** | Minimal response MUST NOT disclose version/headers. |
 
-**Proceed to SOP Phase 6 (Final Delivery).**
+## 3. Mandatory Remediation Actions
+1.  **Harden Test Suite**: Add `test_stab_deadlock_pipe_saturation` to the Stability suite (Already implemented in Phase 1 re-work).
+2.  **Architectural Update**: Formalize the use of a "draining thread" in the Rust runner to prevent deadlocks.
+3.  **Security Update**: Specify strict header filtering for the health server.
+
+## 4. Final Verdict
+The design is **REJECTED** until the P1 Pipe Deadlock risk is formally addressed in the architectural alignment record and verified via the "Hardened Stability Suite".

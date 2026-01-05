@@ -533,6 +533,24 @@ Before submitting for QA:
 Submit this checklist with PR.
 ```
 
+### 7.5 Zygote Performance Verification (P0 Requirement)
+
+**Any Zygote-related changes MUST verify performance:**
+
+```bash
+# Run Zygote startup benchmark
+./scripts/benchmark_startup.sh
+
+# Expected: Speedup > 1.0x (warm start FASTER than cold start)
+# BLOCKER if: Speedup = 0.0x (indicates IPC failure/timeout)
+```
+
+**Acceptance Criteria:**
+- [ ] Warm start time < Cold start time
+- [ ] Speedup ratio > 1.0x
+- [ ] No "Falling back to normal mode" warnings
+- [ ] No 30s timeout (indicates IPC protocol mismatch)
+
 ---
 
 ## 8. Phase 5: Defect Management

@@ -12,18 +12,127 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::serve::config::ServeArgs;
+use crate::serve::config::{LogFormat, ServeArgs};
 use crate::serve::error::ServeError;
 use crate::serve::framework::{detect_framework, get_preload_modules};
 use crate::zygote::ZygoteLauncher;
 
 // ============================================================================
-// Security helpers (ADR D3, D4)
+// Logging & Security helpers (ADR D3, D4, D5)
 // ============================================================================
+
+/// Structured logger for serve command (ADR D5)
+struct ServeLogger {
+    format: LogFormat,
+    verbose_level: u8,
+}
+
+impl ServeLogger {
+    fn new(format: LogFormat, verbose_level: u8) -> Self {
+        Self {
+            format,
+            verbose_level,
+        }
+    }
+
+    fn info(&self, msg: &str) {
+        self.log("info", msg, None);
+    }
+
+    fn info_with(&self, msg: &str, detail: &str) {
+        if self.verbose_level >= 1 {
+            self.log("info", msg, Some(detail));
+        } else {
+            self.log("info", msg, None);
+        }
+    }
+
+    fn verbose(&self, msg: &str) {
+        if self.verbose_level >= 1 {
+            self.log("info", msg, None);
+        }
+    }
+
+    fn warn(&self, msg: &str) {
+        self.log("warn", msg, None);
+    }
+
+    fn error(&self, msg: &str) {
+        self.log("error", msg, None);
+    }
+
+    fn debug(&self, msg: &str) {
+        if self.verbose_level >= 2 {
+            self.log("debug", msg, None);
+        }
+    }
+
+    fn trace(&self, msg: &str) {
+        if self.verbose_level >= 3 {
+            self.log("trace", msg, None);
+        }
+    }
+
+    fn log(&self, level: &str, msg: &str, detail: Option<&str>) {
+        self.log_with_timing(level, msg, detail, None);
+    }
+
+    fn log_with_timing(
+        &self,
+        level: &str,
+        msg: &str,
+        detail: Option<&str>,
+        timing_ms: Option<u128>,
+    ) {
+        match self.format {
+            LogFormat::Json => {
+                let timestamp =
+                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+                let mut json = serde_json::json!({
+                    "timestamp": timestamp,
+                    "level": level,
+                    "msg": msg,
+                });
+
+                if let Some(t) = timing_ms {
+                    json["timing_ms"] = serde_json::json!(t);
+                }
+                if let Some(d) = detail {
+                    json["detail"] = serde_json::json!(d);
+                }
+
+                eprintln!("{}", json);
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
+            }
+            LogFormat::Text => {
+                use colored::Colorize;
+                let level_colored = match level {
+                    "info" => "info".blue().bold(),
+                    "warn" => "warn".yellow().bold(),
+                    "error" => "error".red().bold(),
+                    _ => level.normal(),
+                };
+                let mut base = if let Some(d) = detail {
+                    format!("{}: {} {}", level_colored, msg, d)
+                } else {
+                    format!("{}: {}", level_colored, msg)
+                };
+                if let Some(t) = timing_ms {
+                    base.push_str(&format!(" ({:.1}ms)", t as f64));
+                }
+                eprintln!("{}", base);
+            }
+        }
+    }
+}
 
 /// SEC-P0-005: Remove dangerous environment variables before subprocess spawn (ADR D3)
 ///
@@ -43,16 +152,15 @@ fn sanitize_subprocess_env(cmd: &mut Command) {
     }
 }
 
-/// MAC-P0-002: Reset signal handlers in child process (ADR D4)
-///
-/// Prevents zombie workers when uvicorn/gunicorn forks workers.
-#[cfg(target_os = "macos")]
-fn apply_macos_signal_reset(cmd: &mut Command) {
+#[cfg(unix)]
+fn apply_process_group(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
-
     unsafe {
         cmd.pre_exec(|| {
-            // Reset SIGINT/SIGTERM to default in child
+            // Become a process group leader (STB-RS-003)
+            libc::setpgid(0, 0);
+
+            // Reset SIGINT/SIGTERM to default in child (MAC-P0-002)
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             Ok(())
@@ -80,14 +188,22 @@ impl ManagedChild {
     /// * `cmd` - Command to spawn
     /// * `pid_file` - Optional PID file path to create
     pub fn spawn(mut cmd: Command, pid_file: Option<PathBuf>) -> Result<Self, ServeError> {
-        let child = cmd.spawn().map_err(|e| ServeError::ServerStartFailed {
+        #[cfg(unix)]
+        apply_process_group(&mut cmd);
+
+        let mut child = cmd.spawn().map_err(|e| ServeError::ServerStartFailed {
             reason: e.to_string(),
             exit_code: 1,
         })?;
 
         // Write PID file if requested (SEC-P0-003: use O_EXCL)
-        if let Some(ref path) = pid_file {
-            Self::write_pid_file_safe(path, child.id())?;
+        if let Some(ref path) = pid_file
+            && let Err(e) = Self::write_pid_file_safe(path, child.id())
+        {
+            // CRITICAL: Kill the already-spawned child to prevent orphan
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(e);
         }
 
         Ok(Self { child, pid_file })
@@ -156,13 +272,16 @@ impl ManagedChild {
 
     /// Send SIGTERM to the child process (graceful shutdown).
     #[cfg(unix)]
-    pub fn terminate(&self) -> Result<(), ServeError> {
-        // Send SIGTERM
+    pub fn terminate(&mut self) -> Result<(), ServeError> {
         let pid = self.child.id() as i32;
+        // Send SIGTERM to the entire process group (negative PID)
         unsafe {
-            libc::kill(pid, libc::SIGTERM);
+            if libc::kill(-pid, libc::SIGTERM) == 0 {
+                return Ok(());
+            }
         }
-        Ok(())
+        // Fallback to killing just the child if process group kill fails
+        self.child.kill().map_err(ServeError::SignalError)
     }
 
     #[cfg(not(unix))]
@@ -172,10 +291,17 @@ impl ManagedChild {
 
     /// Force kill the child process.
     pub fn kill(&mut self) -> Result<(), ServeError> {
-        self.child.kill().map_err(ServeError::SignalError)?;
-        // Reap to prevent zombie
-        let _ = self.child.wait();
-        Ok(())
+        #[cfg(unix)]
+        {
+            let pid = self.child.id() as i32;
+            // Send SIGKILL to the entire process group (negative PID)
+            unsafe {
+                if libc::kill(-pid, libc::SIGKILL) == 0 {
+                    return Ok(());
+                }
+            }
+        }
+        self.child.kill().map_err(ServeError::SignalError)
     }
 
     /// Get the child's PID.
@@ -186,14 +312,58 @@ impl ManagedChild {
 
 impl Drop for ManagedChild {
     fn drop(&mut self) {
-        // Ensure child is killed and reaped on panic or normal exit
-        let _ = self.child.kill();
+        // STB-RS-003: Kill entire process group (PGID = child PID since child is group leader)
+        // This ensures uvicorn workers and other grandchildren are also terminated
+        #[cfg(unix)]
+        {
+            let pgid = self.child.id() as i32;
+            // Send SIGKILL to the entire process group (negative PID)
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        }
+
+        // Fallback for non-Unix or if process group kill failed
+        #[cfg(not(unix))]
+        {
+            let _ = self.child.kill();
+        }
+
+        // Wait for child to be reaped (prevents zombies)
         let _ = self.child.wait();
 
         // Cleanup PID file
         if let Some(ref path) = self.pid_file {
             let _ = std::fs::remove_file(path);
         }
+    }
+}
+
+// ============================================================================
+// Shutdown Management (SEC-P0-001)
+// ============================================================================
+
+/// Coordinator for graceful shutdown.
+pub struct ShutdownCoordinator {
+    /// Atomic flag set to true when shutdown is requested.
+    pub flag: Arc<AtomicBool>,
+}
+
+impl ShutdownCoordinator {
+    /// Create a new shutdown coordinator.
+    pub fn new() -> Result<Self, std::io::Error> {
+        let flag = Arc::new(AtomicBool::new(false));
+        Ok(Self { flag })
+    }
+
+    /// Request shutdown.
+    pub fn request_shutdown(&self) {
+        self.flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Check if shutdown was requested.
+    pub fn is_shutting_down(&self) -> bool {
+        self.flag.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -206,6 +376,8 @@ impl Drop for ManagedChild {
 pub enum ServerEvent {
     /// Signal received (SIGINT, SIGTERM, SIGCHLD)
     Signal(i32),
+    /// Hot reload requested
+    Reload,
     /// Worker thread exit (only used on Windows/non-Unix)
     #[allow(dead_code)]
     WorkerExit,
@@ -262,40 +434,134 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
 #[cfg(unix)]
 pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
+    use std::time::Instant;
+
+    // MANDATE R5: Capture the absolute start including early validation
+    let start_time = Instant::now();
 
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
 
+    // Step 4: Setup Logger
+    let logger = ServeLogger::new(args.log_format, args.verbose);
+
+    // RAII Guard for Health Server (SEC-P0-004)
+    let mut _health_server: Option<crate::serve::health::HealthServer> = None;
+    let health_ready = Arc::new(AtomicBool::new(false));
+    if let Some(ref bind) = args.health_bind {
+        match crate::serve::health::HealthServer::spawn(bind, Arc::clone(&health_ready)) {
+            Ok(server) => {
+                logger.info(&format!("Health server listening on {}", bind));
+                _health_server = Some(server);
+            }
+            Err(e) => {
+                logger.error(&format!("Failed to start health server: {}", e));
+            }
+        }
+    }
+
+    // Step 1.1: Scaling Warning (R4)
+    let file_count = count_python_files(project_dir);
+    if file_count > 5000 {
+        logger.warn(&format!("Large number of files detected ({})", file_count));
+        logger.warn("help: Watching many files may impact performance.");
+    }
+
     // Step 2: Detect framework FIRST (shows user Velo understands their project)
     let framework = detect_framework(module, project_dir);
     let preload_modules = get_preload_modules(framework);
+
+    // Step 3: Handle Django settings inference (R2)
+    if framework == crate::serve::framework::Framework::Django
+        && std::env::var("DJANGO_SETTINGS_MODULE").is_err()
+    {
+        if let Some(settings) = crate::serve::framework::detect_django_settings(project_dir) {
+            logger.info(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
+            unsafe {
+                std::env::set_var("DJANGO_SETTINGS_MODULE", &settings);
+            }
+        } else {
+            logger.warn("Django detected but DJANGO_SETTINGS_MODULE is not set.");
+            logger.warn("help: High-performance preloading may be impaired.");
+        }
+    }
 
     // Step 3: Select server based on framework (D4)
     let server = get_server_type(framework);
 
     // Show framework detection result
     if framework != crate::serve::framework::Framework::Unknown {
-        eprintln!(
-            "🔍 Detected: {} → {} (auto-preload: {})",
-            framework,
-            server,
-            preload_modules.join(", ")
+        logger.info_with(
+            &format!("Detected: {} → {}", framework, server),
+            &format!("(auto-preload: {})", preload_modules.join(", ")),
         );
+    } else {
+        logger.trace("Framework: Unknown (auto-detection missed)");
     }
 
     // Step 4: Check server is installed
+    logger.debug(&format!("Checking if {} is installed...", server));
     if !check_server_installed(server, python_path) {
-        eprintln!("❌ Missing dependency: {}", server);
+        logger.error(&format!("Missing dependency: {}", server));
         eprintln!();
         eprintln!("{} is required to run {} applications.", server, framework);
         eprintln!("To fix:");
         eprintln!("    {}", server.install_hint());
-        std::process::exit(1);
+        return Err(anyhow::anyhow!("Missing dependency: {}", server));
     }
 
-    // Step 5: Setup Event Bus (Recommendation #1)
+    // Shutdown Coordinator (SEC-P0-001)
+    let shutdown_coordinator =
+        crate::serve::runner::ShutdownCoordinator::new().map_err(ServeError::SignalError)?;
+
+    // Step 5:    // Event Bus (Recommendation #1)
     let (tx, rx) = mpsc::channel();
+
+    // Signal Forwarder
+    #[cfg(unix)]
     spawn_signal_forwarder(tx.clone())?;
+
+    // Hot Reload Watcher (D6, D7)
+    let mut _watcher: Option<Arc<crate::serve::watcher::FileWatcher>> = None;
+    if args.reload {
+        let watcher = crate::serve::watcher::FileWatcher::new(
+            shutdown_coordinator.flag.clone(),
+            crate::serve::watcher::DEFAULT_DEBOUNCE_MS,
+        )?;
+        watcher.watch(project_dir)?;
+        let watcher = Arc::new(watcher);
+
+        // Spawn a thread to poll the watcher and bridge events to the bus
+        let tx_clone = tx.clone();
+        let watcher_clone = Arc::clone(&watcher);
+        thread::spawn(move || {
+            loop {
+                match watcher_clone.poll() {
+                    Ok(true) => {
+                        if tx_clone.send(ServerEvent::Reload).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(false) => {
+                        // Sleep briefly to avoid busy wait
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Watcher error: {}", e);
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+                if watcher_clone
+                    .shutdown_flag
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    break;
+                }
+            }
+        });
+
+        _watcher = Some(watcher);
+    }
 
     // RAII Guard for Zygote (Recommendation #3)
     // Needs to stay alive for the duration of the server
@@ -303,14 +569,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let mut _zygote_guard: Option<crate::zygote::ZygoteLauncher> = None;
 
     // Step 6: Start server
-    eprintln!("🚀 Starting server...");
-    eprintln!("   App:       {}", args.app);
-    eprintln!("   Server:    {}", server);
-    eprintln!("   Bind:      {}:{}", args.host, args.port);
-    eprintln!("   Workers:   {}", args.workers);
-    eprintln!("   Timeout:   {}s", args.timeout);
-    if args.reload {
-        eprintln!("   Reload:    enabled");
+    logger.info("Starting server...");
+    if args.log_format == LogFormat::Text {
+        eprintln!("   App:       {}", args.app);
+        eprintln!("   Server:    {}", server);
+        eprintln!("   Bind:      {}:{}", args.host, args.port);
+        eprintln!("   Workers:   {}", args.workers);
+        eprintln!("   Timeout:   {}s", args.timeout);
+        if args.reload {
+            eprintln!("   Reload:    enabled");
+        }
     }
 
     // Start Zygote if enabled and we have preload modules
@@ -318,25 +586,28 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
-            eprintln!("⚡ Pre-warming Zygote with {} modules...", framework);
+            logger.info(&format!("Pre-warming Zygote with {} modules...", framework));
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
             if let Err(e) = launcher.start(&preload_modules) {
-                eprintln!("⚠️  Zygote pre-warm failed: {}", e);
-                eprintln!("   Continuing without Zygote optimization");
+                logger.warn(&format!("Zygote pre-warm failed: {}", e));
+                if args.log_format == LogFormat::Text {
+                    eprintln!("   Continuing without Zygote optimization");
+                }
             } else {
-                eprintln!("✅ Zygote ready");
+                logger.info("Zygote ready");
                 // RAII: Keep Zygote alive as long as this function runs
                 // When this function returns/unwinds, _zygote_guard will drop and kill the Zygote
                 _zygote_guard = Some(launcher);
             }
         } else {
-            eprintln!("⚡ Using existing Zygote");
+            logger.info("Using existing Zygote");
         }
     }
 
     // Build server command based on server type
+    logger.debug(&format!("Building command for {}...", server));
     let mut cmd = Command::new(python_path);
     cmd.arg("-m").arg(server.module_name());
 
@@ -374,118 +645,183 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // SEC-P0-005: Remove dangerous environment variables (ADR D3)
     sanitize_subprocess_env(&mut cmd);
 
-    // MAC-P0-002: Reset signal handlers in child (ADR D4)
-    #[cfg(target_os = "macos")]
-    apply_macos_signal_reset(&mut cmd);
+    // MAC-P0-002: Reset signal handlers in child (ADR D4) and STB-RS-003: Process Group
+    // Handled inside ManagedChild::spawn now, but we keep this as a note
+    // Actually, we should remove this call site as it's now handled by ManagedChild::spawn
 
     // Set working directory and inherit stdio
+    logger.verbose(&format!("Current directory: {:?}", project_dir));
     cmd.current_dir(project_dir)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    eprintln!();
+    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+    let ready_ms = start_time.elapsed().as_millis();
+    logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
+
+    if args.dry_run {
+        logger.info(&format!(
+            "Dry run: Command would be: {:?} {:?}",
+            cmd.get_program(),
+            cmd.get_args()
+                .map(|v| v.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        return Ok(());
+    }
+
+    if args.log_format == LogFormat::Text {
+        eprintln!("   App:       {}", args.app);
+        eprintln!("   Server:    {}", server);
+        eprintln!("   Bind:      {}:{}", args.host, args.port);
+        eprintln!("   Workers:   {}", args.workers);
+        eprintln!("   Timeout:   {}s", args.timeout);
+        if args.reload {
+            eprintln!("   Reload:    enabled");
+        }
+    }
 
     // Spawn with ManagedChild for RAII cleanup (D2)
-    let mut child = ManagedChild::spawn(cmd, args.pid_file.clone())
-        .map_err(|e| anyhow::anyhow!("Failed to start server: {}", e))?;
+    let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
 
-    eprintln!("✅ Server started (PID: {})", child.id());
+    if let Ok(ref mut child) = child_result {
+        logger.info(&format!("Server started (PID: {})", child.id()));
+        health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // CN-P0-001: Spawn health server if --health-bind is set (ADR D2)
-    let _health_server = if let Some(ref health_bind) = args.health_bind {
-        use crate::serve::health::HealthServer;
+        // Main loop: Wait for Events (Zero Busy Wait)
+        loop {
+            // Block until event received
+            match rx.recv() {
+                Ok(ServerEvent::Signal(sig)) => {
+                    match sig {
+                        signal_hook::consts::SIGCHLD => {
+                            // Optimistic: Child might have exited
+                            match child.wait_timeout(Duration::from_millis(0)) {
+                                Ok(Some(status)) => {
+                                    if !status.success() {
+                                        let code = status.code().unwrap_or(1);
+                                        if code == 1 {
+                                            eprintln!();
+                                            eprintln!(
+                                                "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+                                            );
+                                        }
 
-        // Initially not ready, will be set after first successful response
-        let ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                                        // If reload is NOT enabled, exit immediately on failure
+                                        if !args.reload {
+                                            return Err(anyhow::anyhow!(
+                                                "Server exited with code {}",
+                                                code
+                                            ));
+                                        }
 
-        match HealthServer::spawn(health_bind, std::sync::Arc::clone(&ready)) {
-            Ok(server) => {
-                eprintln!("🏥 Health server: http://{}/healthz", health_bind);
-                // Mark as ready (in real impl, we'd wait for first HTTP response)
-                ready.store(true, std::sync::atomic::Ordering::SeqCst);
-                Some(server)
-            }
-            Err(e) => {
-                eprintln!("⚠️  Failed to start health server: {}", e);
-                None
+                                        // Reload IS enabled: wait for file changes to trigger restart
+                                        logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
+                                        health_ready
+                                            .store(false, std::sync::atomic::Ordering::SeqCst);
+                                        continue;
+                                    }
+                                    return Ok(());
+                                }
+                                Ok(None) => continue,
+                                Err(e) => {
+                                    return Err(anyhow::anyhow!("Error waiting for server: {}", e));
+                                }
+                            }
+                        }
+
+                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                            eprintln!();
+                            logger
+                                .info("Shutdown signal received, waiting for graceful shutdown...");
+
+                            if let Err(e) = child.terminate() {
+                                logger.warn(&format!("Failed to send SIGTERM: {}", e));
+                            }
+
+                            // Wait with timeout
+                            match child.wait_timeout(Duration::from_secs(args.timeout)) {
+                                Ok(Some(_)) => {
+                                    logger.info("Server stopped gracefully");
+                                    return Ok(());
+                                }
+                                Ok(None) => {
+                                    logger.warn("Shutdown timeout expired, force killing...");
+                                    let _ = child.kill();
+                                    return Ok(());
+                                }
+                                Err(e) => anyhow::bail!("Error during shutdown: {}", e),
+                            }
+                        }
+                        _ => {
+                            // CN-P0-002: Forward other signals to child group
+                            let pid = child.id() as i32;
+                            unsafe {
+                                libc::kill(-pid, sig);
+                            }
+                        }
+                    }
+                }
+                Ok(ServerEvent::Reload) => {
+                    logger.info("Changes detected, restarting server...");
+                    if let Ok(ref mut child) = child_result {
+                        let _ = child.kill();
+                    }
+                    // Break loop to trigger fresh spawn in the caller
+                    return Ok(());
+                }
+                Err(_) => break, // Bus disconnected
+                _ => {}
             }
         }
-    } else {
-        None
-    };
+    } else if let Err(e) = child_result {
+        logger.error(&format!("Failed to start server: {}", e));
+        // Return error immediately - no reason to wait for signals on startup failure
+        return Err(anyhow::anyhow!("Server failed to start: {}", e));
+    }
 
-    // Main loop: Wait for Events (Zero Busy Wait)
-    loop {
-        // Block until event received
-        match rx.recv() {
-            Ok(ServerEvent::Signal(sig)) => {
-                match sig {
-                    signal_hook::consts::SIGCHLD => {
-                        // Optimistic: Child might have exited
-                        // Only try_wait() on SIGCHLD to avoid polling
-                        match child.wait_timeout(Duration::from_millis(0)) {
-                            Ok(Some(status)) => {
-                                if !status.success() {
-                                    let code = status.code().unwrap_or(1);
-                                    if code == 1 {
-                                        eprintln!();
-                                        eprintln!(
-                                            "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
-                                        );
-                                    }
-                                    std::process::exit(code);
-                                }
-                                return Ok(());
-                            }
-                            Ok(None) => {
-                                // False alarm, child still running (or another child)
-                                continue;
-                            }
-                            Err(e) => anyhow::bail!("Error waiting for server: {}", e),
-                        }
+    Ok(())
+}
+
+/// Helper to count Python files for scaling warnings (R4)
+fn count_python_files(path: &Path) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_dir() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    // MANDATE R4: Ignore all common venv names and the current VIRTUAL_ENV
+                    let venv_env = std::env::var("VIRTUAL_ENV").unwrap_or_default();
+                    let is_active_venv =
+                        !venv_env.is_empty() && entry.path().to_string_lossy().contains(&venv_env);
+
+                    if name_str != ".git"
+                        && name_str != "__pycache__"
+                        && name_str != ".venv"
+                        && name_str != "venv"
+                        && name_str != ".env"
+                        && name_str != "env"
+                        && !is_active_venv
+                    {
+                        count += count_python_files(&entry.path());
                     }
-                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                        eprintln!();
-                        eprintln!("🛑 Shutdown signal received, waiting for graceful shutdown...");
-
-                        if let Err(e) = child.terminate() {
-                            eprintln!("⚠️  Failed to send SIGTERM: {}", e);
-                        }
-
-                        // Wait for graceful shutdown with timeout
-                        let timeout = Duration::from_secs(args.timeout);
-                        match child.wait_timeout(timeout) {
-                            Ok(Some(_)) => {
-                                eprintln!("✅ Server shut down gracefully");
-                                return Ok(());
-                            }
-                            Ok(None) => {
-                                eprintln!(
-                                    "⚠️  Graceful shutdown timed out after {}s, force killing...",
-                                    args.timeout
-                                );
-                                if let Err(e) = child.kill() {
-                                    eprintln!("❌ Failed to kill server: {}", e);
-                                }
-                                return Ok(());
-                            }
-                            Err(e) => anyhow::bail!("Error waiting for shutdown: {}", e),
-                        }
+                } else {
+                    let path = entry.path();
+                    if path
+                        .extension()
+                        .is_some_and(|ext| ext == "py" || ext == "pyi")
+                    {
+                        count += 1;
                     }
-                    _ => {}
                 }
-            }
-            Ok(ServerEvent::WorkerExit) => {
-                // Not used in Unix path currently, but handle for future
-                return Ok(());
-            }
-            Err(_) => {
-                // Channel closed, unexpected
-                anyhow::bail!("Event bus closed unexpectedly");
             }
         }
     }
+    count
 }
 
 #[cfg(not(unix))]

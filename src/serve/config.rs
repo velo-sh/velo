@@ -45,6 +45,10 @@ pub struct ServeArgs {
     pub log_format: LogFormat,
     /// Production mode (no reload, auto workers)
     pub prod: bool,
+    /// Dry run mode (log command and exit)
+    pub dry_run: bool,
+    /// Verbosity level (0-3)
+    pub verbose: u8,
 }
 
 impl Default for ServeArgs {
@@ -61,6 +65,8 @@ impl Default for ServeArgs {
             pid_file: None,
             log_format: LogFormat::Text,
             prod: false,
+            dry_run: false,
+            verbose: 0,
         }
     }
 }
@@ -100,9 +106,18 @@ impl ServeArgs {
         }
     }
 
-    /// Validate configuration including security checks (SEC-P0-001)
+    /// Validate all arguments for security and correctness
     pub fn validate(&self) -> Result<()> {
-        self.validate_app_target()
+        self.validate_app_target()?;
+
+        // SEC-P0-002: Revalidate PID file path if provided
+        if let Some(ref path) = self.pid_file {
+            let project_dir =
+                std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
+            validate_scan_path(path, &project_dir)?;
+        }
+
+        Ok(())
     }
 
     /// SEC-P0-001: Validate app target for shell injection prevention
@@ -117,21 +132,17 @@ impl ServeArgs {
             ];
 
             if self.app.chars().any(|c| FORBIDDEN.contains(&c)) {
-                let err = ServeError::ShellMetacharacters {
+                return Err(ServeError::ShellMetacharacters {
                     app: self.app.clone(),
-                };
-                eprintln!("{}", err.format_source_pointed());
-                // We use generic error in validate, CLI can choose to exit
-                return Err(err.into());
+                }
+                .into());
             }
 
             // Generic invalid format error
-            let msg = format!(
-                "Invalid app format '{}'. Expected 'module:app' (e.g., 'main:app')",
-                self.app
-            );
-            eprintln!("Error: {}", msg); // Keep stderr for UX
-            anyhow::bail!(msg);
+            return Err(ServeError::InvalidAppFormat {
+                app: self.app.clone(),
+            }
+            .into());
         }
 
         Ok(())
@@ -139,10 +150,28 @@ impl ServeArgs {
 }
 
 /// SEC-P0-002: Path Traversal Protection (RFC §4.10.2)
-#[allow(dead_code)]
 pub fn validate_scan_path(path: &Path, project_dir: &Path) -> Result<PathBuf> {
-    let canonical = path
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_dir.join(path)
+    };
+
+    let canonical = absolute
         .canonicalize()
+        .or_else(|_| {
+            // If file doesn't exist, validate parent directory
+            if let Some(parent) = absolute.parent() {
+                parent
+                    .canonicalize()
+                    .map(|p| p.join(absolute.file_name().unwrap_or_default()))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid path",
+                ))
+            }
+        })
         .map_err(|e| anyhow::anyhow!("Invalid path: {}", e))?;
     let project = project_dir
         .canonicalize()

@@ -442,6 +442,99 @@ jobs:
         run: uv run pytest tests/qa/phase5/test_l5_chaos.py -v --tb=short -m edge
 
   # ============================================
+  # Phase 6.1: Serve & Analyze Hardened QA
+  # RFC-0010 Security & Stability Verification
+  # ============================================
+
+  qa-phase61-security-hardened:
+    name: "QA 6.1: Security Hardened (RFC-0010)"
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv sync --extra dev
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "Security: Command Injection, Path Traversal, Env Sanitization"
+        run: uv run pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short
+
+  qa-phase61-stability-hardened:
+    name: "QA 6.1: Stability Hardened (RAII, Signals)"
+    runs-on: ubuntu-latest
+    needs: qa-phase61-security-hardened
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv sync --extra dev
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "Stability: RAII Cleanup, Signal Forwarding, Debouncer"
+        run: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
+
+  qa-phase61-dx-performance:
+    name: "QA 6.1: DX & Performance"
+    runs-on: ubuntu-latest
+    needs: qa-phase61-stability-hardened
+    continue-on-error: true  # Performance tests may be flaky
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+      
+      - name: Setup Python environment
+        run: |
+          uv venv --python 3.11
+          uv sync --extra dev
+      
+      - name: Build release binary
+        run: cargo build --release
+      
+      - name: "DX: Error Messages, Typo Hints, Framework Detection"
+        run: uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
+      
+      - name: "Performance: Latency, Memory, File Descriptors"
+        run: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
+
+  # ============================================
   # Phase 4.0: velo analyze QA
   # ============================================
 

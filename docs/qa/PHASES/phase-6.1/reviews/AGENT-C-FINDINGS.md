@@ -1,53 +1,20 @@
-# Agent C Findings (Security)
+# Agent C Findings: Security Red-Line Audit (Phase 6.1)
 
-**Phase**: 6.1
-**Agent**: Agent C (Security)
-**Date**: 2026-01-04
-
----
-
-## Finding: SEC-61-001
-
-**Severity:** P2
-**Category:** Test Issue
-**Description:** `test_sec_p0_006_watcher_rate_limit_dos` is skipped due to missing `velo serve` binary.
-**Evidence:**
-```python
-self.skipTest("Requires functional `velo serve` process")
-```
-**Recommendation:** Enable test in E2E phase when binary is available.
-**Status:** **SKIPPED (E2E SCOPE)**
+**Agent**: Agent C (Security Specialist)
+**Focus**: Command Injection, Path Traversal, Information Disclosure
 
 ---
 
-## Finding: SEC-61-002
+## 1. Compliance Audit
+- [x] **SEC-P0-001**: Command injection regex is enforced in `check_app_target`.
+- [x] **SEC-P0-002**: Path traversal protection is audited (MUST be rooted).
+- [ ] **SEC-P0-004**: **Gap Identified**. The health server requirement (§4.10.4) is vague on "minimal". If the health server returns Velo version or internal paths, it facilitates reconnaissance.
 
-**Severity:** P1
-**Category:** Verified
-**Description:** SEC-P0-001 (Command Injection) validation logic verified in `src/serve/config.rs`.
-**Evidence:**
-```bash
-cargo test serve::config
-# test_validate_app_target_valid ... ok
-# test_validate_app_target_invalid ... ok
-```
-**Recommendation:** None.
-**Status:** **PASSED**
+## 2. Risk Assessment
+| Rank | ID | Description | Recommended Mitigation |
+|:---|:---|:---|:---|
+| **P2** | C-SEC-6.1-001 | Health Reconnaissance | Health endpoints MUST return 200/500 only, with NO headers disclosing server identity. |
+| **P3** | C-SEC-6.1-002 | PID File Race | TOCTOU race on PID file creation if not using `O_EXCL`. |
 
----
-
-## Finding: SEC-61-003
-
-**Severity:** P1
-**Category:** Verified
-**Description:** SEC-P0-003 (PID File TOCTOU) verified via `test_sec_p0_003_pid_file_race_toctou`.
-**Evidence:**
-```bash
-uv run pytest tests/qa/test_phase6_1_security.py -v
-# test_sec_p0_003_pid_file_race_toctou PASSED
-```
-**Status:** **PASSED**
-
----
-
-**Agent C Summary**: 0 P0/P1 open. 1 P2 skipped (E2E scope). Security invariants VERIFIED.
+## 3. Verdict
+**Status**: 🟡 CONDITIONAL APPROVAL. Requires explicit security headers check in tests.
