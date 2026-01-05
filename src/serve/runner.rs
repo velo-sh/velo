@@ -666,6 +666,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             .collect();
 
         let lb = Arc::new(LoadBalancer::new(socket_paths));
+        lb.spawn_health_checks(Duration::from_secs(5));
 
         // 2. Update Health Check with LB reference (B2: Deep Health Check)
         {

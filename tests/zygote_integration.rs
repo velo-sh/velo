@@ -127,11 +127,22 @@ with open('{}', 'w') as f:
         let lb = Arc::new(LoadBalancer::new(vec![worker_socket_path]));
         let _service = VeloProxyService::new(lb);
 
-        // 3. Send Request
-        let _req = Request::builder()
+        // 3. Test prepare_request (Generic over body type)
+        let req = Request::builder()
             .uri("http://localhost/test")
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
             .unwrap();
+
+        let (guard, proxy_req) = _service.prepare_request(req, None).unwrap();
+
+        // Verify headers were injected
+        assert!(proxy_req.headers().contains_key("x-request-id"));
+        assert!(proxy_req.headers().contains_key("traceparent"));
+
+        // Verify authority generation for connection pooling
+        let authority = guard.authority();
+        assert!(authority.starts_with("worker-"));
+        assert!(authority.ends_with("@velo"));
     }
 
     /// TEST-002: Abstract/UDS Socket Support

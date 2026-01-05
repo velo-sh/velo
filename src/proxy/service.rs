@@ -8,17 +8,20 @@
 //! - Injects X-Forwarded-* headers (RFC C.3)
 //! - Strips hop-by-hop headers (RFC C.4)
 
-use crate::proxy::UdsConnector;
 use crate::proxy::load_balancer::{ConnectionGuard, LoadBalancer};
-use crate::proxy::upstream::SocketTarget;
-use http::{HeaderMap, HeaderValue, Request, header};
-use hyper::Response;
+use http::{HeaderMap, HeaderValue, Request, header, uri::PathAndQuery};
 use hyper::body::Incoming;
+use hyper::{Response, Uri};
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
+use tokio::net::UnixStream;
 use tower_service::Service as TowerService;
 
 /// Headers that MUST be stripped before forwarding (RFC 2616, Section 13.5.1).
@@ -53,17 +56,143 @@ pub enum ProxyError {
 }
 
 /// L7 Proxy Service for routing HTTP requests to UDS workers.
-///
-/// RFC-0011 B.2.3: Implements load balancing and header injection.
 #[derive(Clone)]
 pub struct VeloProxyService {
     lb: Arc<LoadBalancer>,
+    client: Client<UdsResolver, Incoming>,
+}
+
+#[derive(Clone)]
+pub struct UdsResolver {
+    lb: Arc<LoadBalancer>,
+}
+
+pin_project_lite::pin_project! {
+    /// Wrapper for UDS stream to implement hyper_util's Connection trait (orphan rule bypass).
+    pub struct PooledUdsStream {
+        #[pin]
+        inner: TokioIo<UnixStream>,
+    }
+}
+
+impl TowerService<Uri> for UdsResolver {
+    type Response = PooledUdsStream;
+    type Error = ProxyError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        let lb = self.lb.clone();
+        Box::pin(async move {
+            let authority = uri.authority().map(|a| a.as_str()).unwrap_or("");
+
+            // RFC-0011 Master Review: unique authority "worker-{id}@velo" ensures pooling.
+            if let Some(id_str) = authority
+                .strip_prefix("worker-")
+                .and_then(|s| s.strip_suffix("@velo"))
+            {
+                let id: u64 = id_str
+                    .parse()
+                    .map_err(|_| ProxyError::Connection("Invalid worker ID".into()))?;
+                let worker = lb
+                    .find_by_id(id)
+                    .ok_or(ProxyError::Connection(format!("Worker {} not found", id)))?;
+
+                let stream = UnixStream::connect(&worker.socket_path)
+                    .await
+                    .map_err(|e| {
+                        ProxyError::Connection(format!(
+                            "UDS connect failed to {}: {}",
+                            worker.socket_path, e
+                        ))
+                    })?;
+
+                Ok(PooledUdsStream {
+                    inner: TokioIo::new(stream),
+                })
+            } else {
+                Err(ProxyError::Connection(format!(
+                    "Invalid authority for UDS proxy: {}",
+                    authority
+                )))
+            }
+        })
+    }
+}
+
+// RFC-0011: Implement required traits for PooledUdsStream to work with Hyper Client
+
+impl hyper::rt::Read for PooledUdsStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        self.project().inner.poll_read(cx, buf)
+    }
+}
+
+impl hyper::rt::Write for PooledUdsStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        self.project().inner.poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        self.project().inner.poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        self.project().inner.poll_shutdown(cx)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        self.project().inner.poll_write_vectored(cx, bufs)
+    }
+}
+
+impl hyper_util::client::legacy::connect::Connection for PooledUdsStream {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
+        hyper_util::client::legacy::connect::Connected::new()
+    }
 }
 
 impl VeloProxyService {
     /// Create a new proxy service with the given load balancer.
     pub fn new(lb: Arc<LoadBalancer>) -> Self {
-        Self { lb }
+        let resolver = UdsResolver { lb: lb.clone() };
+
+        // RFC-0011 Perf-001: Connection Pooling
+        // hyper-util Client supports connection pooling by authority.
+        let client = Client::builder(TokioExecutor::new())
+            .pool_idle_timeout(Duration::from_secs(30))
+            .pool_max_idle_per_host(2)
+            .build(resolver);
+
+        Self { lb, client }
     }
 
     /// Prepare a request for forwarding to a worker.
@@ -74,11 +203,11 @@ impl VeloProxyService {
     /// 3. X-Forwarded-* header injection (RFC C.3)
     ///
     /// Returns the connection guard (for tracking) and the modified request.
-    pub fn prepare_request(
+    pub fn prepare_request<B>(
         &self,
-        mut req: Request<Incoming>,
+        mut req: Request<B>,
         client_addr: Option<SocketAddr>,
-    ) -> Result<(ConnectionGuard, Request<Incoming>), ProxyError> {
+    ) -> Result<(ConnectionGuard, Request<B>), ProxyError> {
         // 1. Select worker via load balancer
         let guard = self
             .lb
@@ -254,40 +383,38 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
 
         Box::pin(async move {
             // 1. Prepare Request (Balancing & Headers)
-            let (guard, proxy_req) = service.prepare_request(req, None)?;
+            let (guard, mut proxy_req) = service.prepare_request(req, None)?;
 
-            // 2. Connect to local UDS worker
-            let socket_path_str = guard.socket_path();
-            let mut connector = UdsConnector::new();
-            let target = SocketTarget::from(socket_path_str);
+            // 2. Map request to unique authority for connection pooling (RFC-0011 Perf-001)
+            let authority = guard.authority();
+            let uri = Uri::builder()
+                .scheme("http")
+                .authority(authority)
+                .path_and_query(
+                    proxy_req
+                        .uri()
+                        .path_and_query()
+                        .cloned()
+                        .unwrap_or(PathAndQuery::from_static("/")),
+                )
+                .build()
+                .map_err(ProxyError::RequestBuild)?;
 
-            // 3. Connect (manual handshake for Phase 2B)
-            // RFC-0011 Perf-001: Connection Pooling is deferred to Phase 3.
-            // Current implementation uses "Connection-per-Request" for strict isolation and simplicity.
-            let io = connector
-                .call(target)
-                .await
-                .map_err(|e| ProxyError::Connection(e.to_string()))?;
+            *proxy_req.uri_mut() = uri;
 
-            // 4. Send Request via Hyper
-            let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
-                .await
-                .map_err(|e| ProxyError::Connection(e.to_string()))?;
+            // 3. Send Request via Pooled Client
+            let response: Result<Response<Incoming>, _> = service.client.request(proxy_req).await;
 
-            // Spawn connection driver
-            tokio::spawn(async move {
-                if let Err(e) = conn.await {
-                    let _ = e;
+            match response {
+                Ok(res) => {
+                    guard.record_success();
+                    Ok(res)
                 }
-            });
-
-            // 5. Send Request
-            let response = sender
-                .send_request(proxy_req)
-                .await
-                .map_err(|e| ProxyError::Forward(e.to_string()))?;
-
-            Ok(response)
+                Err(e) => {
+                    guard.record_failure();
+                    Err(ProxyError::Forward(e.to_string()))
+                }
+            }
         })
     }
 }

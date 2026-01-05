@@ -158,13 +158,26 @@ fn find_zygote_module() -> Result<PathBuf> {
         "Could not find velo_zygote/main.py. Searched:\n\
          - VELO_ZYGOTE_PATH env var\n\
          - Compiled path: {}\n\
-         - Relative to executable\n\
-         - ~/.local/share/velo/\n\
-         - /usr/local/share/velo/\n\
-         - Current directory\n\
+         - Executable relative paths\n\
+         - User/System share locations\n\
+         - CWD\n\
          Set VELO_ZYGOTE_PATH to override.",
-        env!("CARGO_MANIFEST_DIR")
+        manifest_path.display()
     )))
+}
+
+/// Find the standardized worker launcher script path
+pub fn find_worker_launcher() -> Result<PathBuf> {
+    let zygote_main = find_zygote_module()?;
+    let launcher = zygote_main.parent().unwrap().join("worker_launcher.py");
+    if launcher.exists() {
+        Ok(launcher)
+    } else {
+        Err(ZygoteError::StartFailed(format!(
+            "worker_launcher.py not found in {}",
+            zygote_main.parent().unwrap().display()
+        )))
+    }
 }
 
 /// Handle to a spawned worker process
