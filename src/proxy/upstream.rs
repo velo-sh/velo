@@ -238,26 +238,64 @@ impl Future for UdsConnectFuture {
     }
 }
 
-/// A simple target type that just holds the socket path.
-/// This is used as the request type for the Service trait.
+/// RFC-0011 Master Review: Worker target with unique URI authority.
+///
+/// **Red Line**: Hyper connection pool routes by URI authority.
+/// Without unique authority per worker, requests route to WRONG worker.
+///
+/// Each SocketTarget has a worker_id that generates unique authority:
+/// `worker-{id}@velo`
 #[derive(Clone, Debug)]
-pub struct SocketTarget(pub PathBuf);
+pub struct SocketTarget {
+    /// Path to the Unix socket
+    pub socket_path: PathBuf,
+    /// Worker ID for unique URI authority
+    pub worker_id: u64,
+}
+
+impl SocketTarget {
+    /// Create a new socket target with worker ID.
+    pub fn new<P: Into<PathBuf>>(path: P, worker_id: u64) -> Self {
+        Self {
+            socket_path: path.into(),
+            worker_id,
+        }
+    }
+
+    /// Generate unique URI authority for Hyper connection pooling.
+    ///
+    /// Format: `worker-{id}@velo`
+    ///
+    /// This ensures each worker gets its own connection pool entry.
+    pub fn authority(&self) -> String {
+        format!("worker-{}@velo", self.worker_id)
+    }
+}
 
 impl From<PathBuf> for SocketTarget {
     fn from(path: PathBuf) -> Self {
-        Self(path)
+        Self {
+            socket_path: path,
+            worker_id: 0, // Default for compatibility
+        }
     }
 }
 
 impl From<String> for SocketTarget {
     fn from(path: String) -> Self {
-        Self(PathBuf::from(path))
+        Self {
+            socket_path: PathBuf::from(path),
+            worker_id: 0,
+        }
     }
 }
 
 impl From<&str> for SocketTarget {
     fn from(path: &str) -> Self {
-        Self(PathBuf::from(path))
+        Self {
+            socket_path: PathBuf::from(path),
+            worker_id: 0,
+        }
     }
 }
 
@@ -271,7 +309,7 @@ impl Service<SocketTarget> for UdsConnector {
     }
 
     fn call(&mut self, target: SocketTarget) -> Self::Future {
-        let path = target.0;
+        let path = target.socket_path;
 
         UdsConnectFuture {
             inner: Box::pin(async move {
@@ -295,13 +333,41 @@ mod tests {
     #[test]
     fn test_socket_target_from_pathbuf() {
         let target: SocketTarget = PathBuf::from("/tmp/test.sock").into();
-        assert_eq!(target.0, PathBuf::from("/tmp/test.sock"));
+        assert_eq!(target.socket_path, PathBuf::from("/tmp/test.sock"));
+        assert_eq!(target.worker_id, 0); // Default
     }
 
     #[test]
     fn test_socket_target_from_string() {
         let target: SocketTarget = "/tmp/test.sock".into();
-        assert_eq!(target.0, PathBuf::from("/tmp/test.sock"));
+        assert_eq!(target.socket_path, PathBuf::from("/tmp/test.sock"));
+        assert_eq!(target.worker_id, 0);
+    }
+
+    // =========================================================================
+    // RFC-0011 Master Review: Unique URI Authority Tests
+    // =========================================================================
+
+    #[test]
+    fn test_socket_target_new_with_worker_id() {
+        let target = SocketTarget::new("/tmp/worker-42.sock", 42);
+        assert_eq!(target.socket_path, PathBuf::from("/tmp/worker-42.sock"));
+        assert_eq!(target.worker_id, 42);
+    }
+
+    #[test]
+    fn test_socket_target_authority_unique_per_worker() {
+        let target1 = SocketTarget::new("/tmp/w1.sock", 1);
+        let target2 = SocketTarget::new("/tmp/w2.sock", 2);
+        let target3 = SocketTarget::new("/tmp/w3.sock", 3);
+
+        assert_eq!(target1.authority(), "worker-1@velo");
+        assert_eq!(target2.authority(), "worker-2@velo");
+        assert_eq!(target3.authority(), "worker-3@velo");
+
+        // Authorities must be unique
+        assert_ne!(target1.authority(), target2.authority());
+        assert_ne!(target2.authority(), target3.authority());
     }
 
     #[test]
