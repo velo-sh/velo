@@ -5,6 +5,7 @@
 pub mod safety;
 
 pub use safety::{
-    ensure_socket_directory, generate_worker_socket_path, set_cloexec, set_cloexec_on_all_fds,
-    unlink_socket_if_exists, unlink_socket_if_exists_sync,
+    ensure_socket_directory, generate_abstract_socket_name, generate_worker_socket_path,
+    set_cloexec, set_cloexec_on_all_fds, supports_abstract_sockets, unlink_socket_if_exists,
+    unlink_socket_if_exists_sync,
 };
