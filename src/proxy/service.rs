@@ -8,12 +8,18 @@
 //! - Injects X-Forwarded-* headers (RFC C.3)
 //! - Strips hop-by-hop headers (RFC C.4)
 
+use crate::proxy::UdsConnector;
 use crate::proxy::load_balancer::{ConnectionGuard, LoadBalancer};
+use crate::proxy::upstream::SocketTarget;
 use http::{HeaderMap, HeaderValue, Request, header};
+use hyper::Response;
 use hyper::body::Incoming;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
+use tower_service::Service as TowerService;
 
 /// Headers that MUST be stripped before forwarding (RFC 2616, Section 13.5.1).
 ///
@@ -49,6 +55,7 @@ pub enum ProxyError {
 /// L7 Proxy Service for routing HTTP requests to UDS workers.
 ///
 /// RFC-0011 B.2.3: Implements load balancing and header injection.
+#[derive(Clone)]
 pub struct VeloProxyService {
     lb: Arc<LoadBalancer>,
 }
@@ -193,6 +200,52 @@ impl VeloProxyService {
     /// Get the load balancer reference.
     pub fn load_balancer(&self) -> &LoadBalancer {
         &self.lb
+    }
+}
+
+impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
+    type Response = Response<Incoming>;
+    type Error = ProxyError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        let service = self.clone();
+
+        Box::pin(async move {
+            // 1. Prepare Request (Balancing & Headers)
+            let (guard, proxy_req) = service.prepare_request(req, None)?;
+
+            // 2. Connect to local UDS worker
+            let socket_path_str = guard.socket_path();
+            let mut connector = UdsConnector::new();
+            let target = SocketTarget::from(socket_path_str);
+
+            // 3. Connect (manual handshake for Phase 2B)
+            let io = connector
+                .call(target)
+                .await
+                .map_err(|e| ProxyError::Connection(e.to_string()))?;
+
+            // 4. Send Request via Hyper
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+                .await
+                .map_err(|e| ProxyError::Connection(e.to_string()))?;
+
+            // Spawn connection driver
+            tokio::spawn(async move {
+                if let Err(e) = conn.await {
+                    let _ = e;
+                }
+            });
+
+            // 5. Send Request
+            let response = sender
+                .send_request(proxy_req)
+                .await
+                .map_err(|e| ProxyError::Forward(e.to_string()))?;
+
+            Ok(response)
+        })
     }
 }
 

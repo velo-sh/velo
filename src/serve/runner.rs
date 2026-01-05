@@ -23,6 +23,11 @@ use crate::serve::error::ServeError;
 use crate::serve::framework::{detect_framework, get_preload_modules};
 use crate::zygote::ZygoteLauncher;
 
+// Proxy integration (RFC-0011 Phase 2)
+use crate::proxy::{LoadBalancer, VeloProxyService};
+use hyper::server::conn::http1;
+use hyper_util::rt::TokioIo;
+
 // ============================================================================
 // Logging & Security helpers (ADR D3, D4, D5)
 // ============================================================================
@@ -446,10 +451,16 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     let logger = ServeLogger::new(args.log_format, args.verbose);
 
     // RAII Guard for Health Server (SEC-P0-004)
+    // Shared container for LoadBalancer (populated later if in Zygote mode)
+    let lb_holder = Arc::new(std::sync::RwLock::new(None));
     let mut _health_server: Option<crate::serve::health::HealthServer> = None;
     let health_ready = Arc::new(AtomicBool::new(false));
     if let Some(ref bind) = args.health_bind {
-        match crate::serve::health::HealthServer::spawn(bind, Arc::clone(&health_ready)) {
+        match crate::serve::health::HealthServer::spawn(
+            bind,
+            Arc::clone(&health_ready),
+            Arc::clone(&lb_holder),
+        ) {
             Ok(server) => {
                 logger.info(&format!("Health server listening on {}", bind));
                 _health_server = Some(server);
@@ -621,7 +632,8 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
         // Spawn N workers
         for i in 0..args.workers {
-            match Worker::spawn_via_zygote(&socket_path, &args.app, &args.host, args.port) {
+            // SWITCH TO UDS mode (RFC-0011)
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -638,6 +650,85 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
 
         eprintln!("✅ All workers ready");
+
+        // =========================================================================
+        // RFC-0011 Phase 2B: L7 Proxy Integration
+        // =========================================================================
+
+        // 1. Create LoadBalancer
+        let socket_paths: Vec<String> = workers
+            .iter()
+            .filter_map(|w| {
+                w.socket_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+            })
+            .collect();
+
+        let lb = Arc::new(LoadBalancer::new(socket_paths));
+
+        // 2. Update Health Check with LB reference (B2: Deep Health Check)
+        {
+            if let Ok(mut guard) = lb_holder.write() {
+                *guard = Some(lb.clone());
+                logger.debug("LoadBalancer attached to HealthServer");
+            } else {
+                logger.warn("Failed to attach LoadBalancer to HealthServer (lock error)");
+            }
+        }
+
+        // 3. Start Tokio Runtime for Hyper
+        logger.info("Starting L7 Proxy...");
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to create Tokio runtime: {}", e))?;
+
+        // 4. Create Proxy Service components
+        // VeloProxyService takes Arc<LoadBalancer> and implements hyper::service::Service
+        let service = VeloProxyService::new(lb.clone());
+
+        let addr = format!("{}:{}", args.host, args.port);
+        let bind_addr: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid bind address {}: {}", addr, e))?;
+
+        // 5. Spawn Proxy Server in background
+        rt.spawn(async move {
+            let listener = match tokio::net::TcpListener::bind(bind_addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("❌ Proxy failed to bind {}: {}", bind_addr, e);
+                    return;
+                }
+            };
+
+            eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
+
+            loop {
+                match listener.accept().await {
+                    Ok((stream, _)) => {
+                        let io = TokioIo::new(stream);
+                        let service = service.clone(); // VeloProxyService is Clone (Arc internally)
+
+                        tokio::spawn(async move {
+                            if let Err(err) =
+                                http1::Builder::new().serve_connection(io, service).await
+                            {
+                                // Log connection error?
+                                // tracing::debug!("Error serving connection: {:?}", err);
+                                let _ = err;
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️ Proxy accept error: {}", e);
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                }
+            }
+        });
+
         eprintln!();
 
         // Wait for signal

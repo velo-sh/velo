@@ -3,8 +3,8 @@
 //! Provides minimal HTTP endpoints for liveness and readiness probes.
 //! Uses `tiny_http` for minimal overhead.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 
 /// Health server configuration
@@ -13,14 +13,18 @@ pub struct HealthConfig {
     pub bind: String,
 }
 
+use crate::proxy::LoadBalancer;
+
 /// Minimal health check server.
 ///
 /// Exposes:
-/// - `GET /healthz` → 200 OK (liveness)
+/// - `GET /healthz` → 200 OK (liveness). Checks worker health if LB provided.
 /// - `GET /readyz` → 200 OK when ready, 503 NOT READY otherwise
 pub struct HealthServer {
     ready: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
+    #[allow(dead_code)]
+    lb: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
 }
 
 impl HealthServer {
@@ -29,22 +33,29 @@ impl HealthServer {
     /// # Arguments
     /// * `bind` - Address to bind (e.g., "0.0.0.0:8081")
     /// * `ready` - Shared flag indicating readiness
+    /// * `lb` - Shared container for LoadBalancer (populated later in Zygote mode)
     ///
     /// # Returns
     /// The health server handle
-    pub fn spawn(bind: &str, ready: Arc<AtomicBool>) -> Result<Self, HealthError> {
+    pub fn spawn(
+        bind: &str,
+        ready: Arc<AtomicBool>,
+        lb: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+    ) -> Result<Self, HealthError> {
         let ready_clone = Arc::clone(&ready);
+        let lb_clone = Arc::clone(&lb);
         let bind_str = bind.to_string();
 
         let handle = std::thread::spawn(move || {
             if let Ok(server) = tiny_http::Server::http(&bind_str) {
-                Self::serve_loop(server, ready_clone);
+                Self::serve_loop(server, ready_clone, lb_clone);
             }
         });
 
         Ok(Self {
             ready,
             handle: Some(handle),
+            lb,
         })
     }
 
@@ -54,9 +65,13 @@ impl HealthServer {
     }
 
     /// Main server loop.
-    fn serve_loop(server: tiny_http::Server, ready: Arc<AtomicBool>) {
+    fn serve_loop(
+        server: tiny_http::Server,
+        ready: Arc<AtomicBool>,
+        lb_container: Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+    ) {
         for request in server.incoming_requests() {
-            let (status, body) = Self::handle_request(request.url(), &ready);
+            let (status, body) = Self::handle_request(request.url(), &ready, &lb_container);
 
             let response = tiny_http::Response::from_string(body)
                 .with_status_code(status)
@@ -74,9 +89,27 @@ impl HealthServer {
     /// Handle a single request.
     ///
     /// SEC-P0-004: Return ONLY status, no metadata (version, PID, uptime, app info).
-    fn handle_request(url: &str, ready: &Arc<AtomicBool>) -> (u16, &'static str) {
+    fn handle_request(
+        url: &str,
+        ready: &Arc<AtomicBool>,
+        lb_container: &Arc<RwLock<Option<Arc<LoadBalancer>>>>,
+    ) -> (u16, &'static str) {
         match url {
-            "/healthz" => (200, "OK"),
+            "/healthz" => {
+                // RFC-0011 K8s Review: Deep Health Check
+                // Acquire read lock to check if LB exists
+                #[allow(clippy::collapsible_if)]
+                if let Ok(guard) = lb_container.read() {
+                    if let Some(lb) = guard.as_ref() {
+                        // If we have workers, at least one must be healthy
+                        if lb.worker_count() > 0 && lb.healthy_worker_count() == 0 {
+                            // All workers unhealthy -> Liveness probe should fail to restart pod
+                            return (503, "NO HEALTHY WORKERS");
+                        }
+                    }
+                }
+                (200, "OK")
+            }
             "/readyz" => {
                 if ready.load(Ordering::SeqCst) {
                     (200, "OK")
@@ -126,7 +159,8 @@ mod tests {
     #[test]
     fn test_handle_healthz() {
         let ready = Arc::new(AtomicBool::new(false));
-        let (status, body) = HealthServer::handle_request("/healthz", &ready);
+        let lb = Arc::new(RwLock::new(None));
+        let (status, body) = HealthServer::handle_request("/healthz", &ready, &lb);
         assert_eq!(status, 200);
         assert_eq!(body, "OK");
     }
@@ -134,7 +168,8 @@ mod tests {
     #[test]
     fn test_handle_readyz_not_ready() {
         let ready = Arc::new(AtomicBool::new(false));
-        let (status, body) = HealthServer::handle_request("/readyz", &ready);
+        let lb = Arc::new(RwLock::new(None));
+        let (status, body) = HealthServer::handle_request("/readyz", &ready, &lb);
         assert_eq!(status, 503);
         assert_eq!(body, "NOT READY");
     }
@@ -142,7 +177,8 @@ mod tests {
     #[test]
     fn test_handle_readyz_ready() {
         let ready = Arc::new(AtomicBool::new(true));
-        let (status, body) = HealthServer::handle_request("/readyz", &ready);
+        let lb = Arc::new(RwLock::new(None));
+        let (status, body) = HealthServer::handle_request("/readyz", &ready, &lb);
         assert_eq!(status, 200);
         assert_eq!(body, "OK");
     }
@@ -150,7 +186,8 @@ mod tests {
     #[test]
     fn test_handle_not_found() {
         let ready = Arc::new(AtomicBool::new(true));
-        let (status, body) = HealthServer::handle_request("/unknown", &ready);
+        let lb = Arc::new(RwLock::new(None));
+        let (status, body) = HealthServer::handle_request("/unknown", &ready, &lb);
         assert_eq!(status, 404);
         assert_eq!(body, "Not Found");
     }
@@ -159,18 +196,19 @@ mod tests {
     fn test_sec_p0_004_no_metadata() {
         // SEC-P0-004: Verify responses contain ONLY status, no metadata
         let ready = Arc::new(AtomicBool::new(true));
+        let lb = Arc::new(RwLock::new(None));
 
         // Check all endpoints return minimal responses
-        let (_, body) = HealthServer::handle_request("/healthz", &ready);
+        let (_, body) = HealthServer::handle_request("/healthz", &ready, &lb);
         assert_eq!(body, "OK", "healthz should return minimal 'OK'");
 
-        let (_, body) = HealthServer::handle_request("/readyz", &ready);
+        let (_, body) = HealthServer::handle_request("/readyz", &ready, &lb);
         assert_eq!(body, "OK", "readyz should return minimal 'OK'");
 
         // Ensure no version/PID/uptime info is leaked
         let responses = ["/healthz", "/readyz"];
         for url in responses {
-            let (_, body) = HealthServer::handle_request(url, &ready);
+            let (_, body) = HealthServer::handle_request(url, &ready, &lb);
             assert!(!body.contains("version"), "Should not contain version info");
             assert!(!body.contains("pid"), "Should not contain PID");
             assert!(!body.contains("uptime"), "Should not contain uptime");
