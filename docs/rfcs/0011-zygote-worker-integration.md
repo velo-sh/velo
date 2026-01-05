@@ -540,3 +540,152 @@ If Velo is behind Nginx (Nginx → Velo → Uvicorn), ensure `root_path` propaga
 | 🟡 Medium | Rust/OS | Investigate Abstract Namespace Sockets (`@velo...`) | TODO |
 | 🟡 Medium | Security | Strip Hop-by-Hop headers before forwarding | TODO |
 | 🔵 Low | Perf | Rust direct static file serving (`/static`) bypass | FUTURE |
+
+---
+
+**Technical Review Committee Sign-off**: ✅ APPROVED with Conditions
+
+---
+
+## Appendix D: Rust & HPC Expert Review
+
+> **Reviewer**: Tokio Core Contributor / Systems Engineer  
+> **Focus**: Memory allocation, syscall overhead, socket lifecycle management
+
+### D.1 🦀 Linux Abstract Namespace Sockets (STRONGLY RECOMMENDED)
+
+> **Status**: UPGRADE from "Investigate" to "IMPLEMENT" (Linux only)
+
+**Pain Points with Filesystem Sockets**:
+- Process crash → stale socket file → `EADDRINUSE` on restart
+- Requires explicit `unlink()` logic
+- Complex permission management (`chmod`/`chown`)
+
+**Solution**: Abstract Namespace Sockets
+
+```rust
+#[cfg(target_os = "linux")]
+fn get_socket_addr(worker_id: u32) -> String {
+    format!("\x00velo-worker-{}", worker_id)  // Leading null byte
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_socket_addr(worker_id: u32) -> String {
+    format!("/tmp/velo-{}/worker-{}.sock", uid, worker_id)  // macOS fallback
+}
+```
+
+### D.2 🔗 Hyper Client Connection Pooling
+
+**Issue**: Default Hyper config is tuned for WAN, not local UDS.
+
+| Setting | Default | UDS Optimized |
+|---------|---------|---------------|
+| `pool_idle_timeout` | 90s | 30s+ |
+| `pool_max_idle_per_host` | ? | 1 |
+
+**Critical**: Ensure unique URI authority per worker to prevent connection misrouting.
+
+### D.3 📊 Buffer Sizing
+
+For high-throughput local IPC, set `SO_RCVBUF` and `SO_SNDBUF` to 256KB.
+
+---
+
+## Appendix E: QA Review & Final Checklist
+
+> **Full QA Review**: [0011-reviews/0011-qa-review.md](./0011-reviews/0011-qa-review.md)
+
+### Final Implementation Checklist
+
+#### Rust Proxy (Core)
+- [ ] Implement Hyper Service
+- [ ] Implement UdsConnector (with Linux Abstract Socket branch)
+- [ ] Implement LeastConnections Load Balancer
+- [ ] Implement Buffer Tuning (SO_SNDBUF = 256KB)
+
+#### Worker Management
+- [ ] Set FD_CLOEXEC before Command::spawn
+- [ ] Adapt Uvicorn args: Linux (`@...`) vs macOS (`/tmp/...`)
+
+#### Python Zygote
+- [ ] Implement post_fork hook (reset Signals, Random Seed, SSL)
+
+#### Testing (QA)
+- [ ] Configure Linux CI Pipeline
+- [ ] Write "Header Fidelity" integration test
+
+---
+
+## ⚠️ Implementation Critical Path
+
+> **READ THIS BEFORE CODING** - These are blockers from expert reviews
+
+### 🔴 Must-Do Items (Implementation Blockers)
+
+| Source | Critical Item | Consequence if Ignored |
+|--------|---------------|------------------------|
+| **Python Expert** | `FD_CLOEXEC` on ALL inherited FDs | Worker crash → Port NEVER released (disaster) |
+| **Python Expert** | Signal state full reset in `post_fork` | uvloop pollution → Undefined behavior |
+| **Rust Expert** | Unique URI authority per worker | Connection routes to WRONG worker (fatal) |
+| **Security Expert** | Remove `Connection`, `Transfer-Encoding` headers | Request Smuggling (CL.TE/TE.CL) |
+
+### 🟡 Strategic Reminder
+
+> **Velo is now a RUNTIME, not a runner.**
+> - Need SemVer + deprecation policy
+> - CLI project → Runtime project mindset shift
+
+### Code Patterns
+
+```rust
+// ✅ FD_CLOEXEC (Rust side)
+unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC); }
+
+// ✅ Unique URI authority
+let uri = format!("unix://worker-{}@velo/api", worker_id);
+
+// ✅ Strip hop-by-hop headers
+for header in ["connection", "transfer-encoding", "te", "keep-alive"] {
+    headers.remove(header);
+}
+```
+
+```python
+# ✅ Signal reset (Python side)
+import signal
+def post_fork_reinit():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+```
+
+---
+
+## Final Sign-off Summary
+
+| Expert | Status |
+|--------|--------|
+| Architect | ✅ APPROVED |
+| Python Core | ✅ APPROVED |
+| OS/Kernel | ✅ APPROVED |
+| Security | ✅ APPROVED |
+| ASGI/Framework | ✅ APPROVED |
+| Rust/HPC | ✅ APPROVED |
+| QA | ✅ APPROVED |
+| Cloud Native / K8s | ✅ APPROVED |
+| Observability / O11y | ✅ APPROVED |
+| Scientific Python / HPC | ✅ APPROVED |
+| Network SRE | ✅ APPROVED |
+
+> **Additional Reviews** (in `0011-reviews/` directory):
+> - [QA Review](./0011-reviews/0011-qa-review.md)
+> - [K8s Review](./0011-reviews/0011-k8s-review.md)
+> - [O11y Review](./0011-reviews/0011-o11y-review.md)
+> - [HPC Review](./0011-reviews/0011-hpc-review.md)
+> - [Network Review](./0011-reviews/0011-network-review.md)
+> - [**Master Architecture Review**](./0011-reviews/0011-master-review.md) ⭐
+
+---
+
+**RFC-0011 Status**: ✅ **READY FOR IMPLEMENTATION**
+
