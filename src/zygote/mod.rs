@@ -355,8 +355,9 @@ impl ZygoteLauncher {
     ///
     /// # Arguments
     /// * `preload` - List of Python modules to pre-import
+    /// * `app_name` - Optional app name for affinity verification (WB-004)
     #[cfg(unix)]
-    pub fn start(&mut self, preload: &[&str]) -> Result<()> {
+    pub fn start(&mut self, preload: &[&str], app_name: Option<&str>) -> Result<()> {
         // RFC-0011 C.1: Active FD hygiene - close all non-inheritable FDs before fork
         #[cfg(unix)]
         let _ = set_cloexec_on_all_fds();
@@ -407,6 +408,11 @@ impl ZygoteLauncher {
             for module in preload {
                 cmd.arg(module);
             }
+        }
+
+        // RFC-0011 WB-004: Pass app name for affinity verification
+        if let Some(app) = app_name {
+            cmd.arg("--app").arg(app);
         }
 
         // Detach from parent process group so Zygote survives CLI exit
@@ -545,7 +551,7 @@ impl ZygoteLauncher {
     }
 
     #[cfg(not(unix))]
-    pub fn start(&mut self, _preload: &[&str]) -> Result<()> {
+    pub fn start(&mut self, _preload: &[&str], _app_name: Option<&str>) -> Result<()> {
         Err(ZygoteError::NotSupported)
     }
 

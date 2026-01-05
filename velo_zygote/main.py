@@ -173,6 +173,37 @@ _BLOCKED_PATHS = [
 ]
 
 
+class ForkRateLimiter:
+    """RFC-0011 WB-005: Token bucket rate limiter for Fork DoS protection.
+    
+    Prevents rapid Fork requests that could exhaust PIDs or memory.
+    Default: 10 tokens, refill 1 token/100ms (max 10 forks/sec burst).
+    """
+    
+    def __init__(self, max_tokens: int = 10, refill_interval_ms: int = 100):
+        self.max_tokens = max_tokens
+        self.tokens = max_tokens
+        self.refill_interval = refill_interval_ms / 1000.0  # Convert to seconds
+        self.last_refill = time.time()
+        self._lock = threading.Lock()
+    
+    def acquire(self) -> bool:
+        """Try to acquire a token. Returns True if allowed, False if rate limited."""
+        with self._lock:
+            now = time.time()
+            # Refill tokens based on elapsed time
+            elapsed = now - self.last_refill
+            new_tokens = int(elapsed / self.refill_interval)
+            if new_tokens > 0:
+                self.tokens = min(self.max_tokens, self.tokens + new_tokens)
+                self.last_refill = now
+            
+            if self.tokens > 0:
+                self.tokens -= 1
+                return True
+            return False
+
+
 class LogUtils:
     """Utilities for safe logging in a daemonized process."""
     
@@ -582,7 +613,7 @@ router = CommandRouter()
 class ZygoteServer:
     """Layer 2: App Layer - Orchestrates the Zygote service."""
 
-    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600):
+    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
         # RFC-0011 D.1: Support abstract sockets (@ -> \0)
         self.is_abstract = socket_path.startswith('@')
         if self.is_abstract:
@@ -595,7 +626,8 @@ class ZygoteServer:
         self.preload = preload or []
         self._preloaded_modules: List[str] = []
         self.memory_limit_mb = 1024 # 1GB default limit for Zygote process
-        self.app_name: Optional[str] = None  # RFC-0011: App affinity tracking
+        self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup
+        self.fork_rate_limiter = ForkRateLimiter()  # RFC-0011 WB-005: DoS protection
 
     async def start(self):
         """Start the Zygote server using asyncio."""
@@ -734,6 +766,10 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
 
 @router.handler("Fork")
 async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
+    # RFC-0011 WB-005: Rate limiting to prevent Fork Bomb DoS
+    if not server.fork_rate_limiter.acquire():
+        return {"type": "Error", "message": "Rate limit exceeded: too many Fork requests"}
+    
     script_path = cmd.get("script_path", "")
     if not script_path or not Path(script_path).exists():
         return {"type": "Error", "message": f"Script not found: {script_path}"}
@@ -816,9 +852,9 @@ async def handle_zy_status(server: ZygoteServer, cmd: Dict) -> Dict:
     }
 
 
-def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600):
+def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
     """Main entry point for Zygote process."""
-    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl)
+    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl, app_name)
     asyncio.run(server.start())
 
 
@@ -846,6 +882,7 @@ if __name__ == "__main__":
     parser.add_argument("--preload", nargs="*", default=[])
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--worker-ttl", type=int, default=3600)
+    parser.add_argument("--app", help="App name for affinity verification")
     args = parser.parse_args()
     
-    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl)
+    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl, args.app)
