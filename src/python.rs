@@ -14,16 +14,17 @@ use crate::cache::EnvCache;
 
 /// Detect the project's Python interpreter.
 /// Priority:
-/// 1. VIRTUAL_ENV environment variable (activated venv)
-/// 2. .venv/bin/python (local uv/virtualenv)
+/// 1. .venv/bin/python (local uv/virtualenv) - MUST BE FIRST for CI compatibility
+///    In CI, VIRTUAL_ENV may be set to the runner's venv which lacks project deps
+/// 2. VIRTUAL_ENV environment variable (activated venv)
 /// 3. VELO_PYTHON environment variable
 /// 4. System python3
 pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
-    // 1. Check VIRTUAL_ENV env var
-    if let Ok(venv) = std::env::var("VIRTUAL_ENV")
-        && !venv.trim().is_empty()
-    {
-        let path = PathBuf::from(venv);
+    // 1. Check for project-local venv names FIRST (critical for CI)
+    // In CI environments, VIRTUAL_ENV may be set to the runner's venv,
+    // not the project's venv that contains the actual dependencies.
+    for name in [".venv", "venv", ".env", "env"] {
+        let path = project_dir.join(name);
         let python = if cfg!(windows) {
             path.join("Scripts/python.exe")
         } else {
@@ -34,9 +35,11 @@ pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
         }
     }
 
-    // 2. Check for common venv names
-    for name in [".venv", "venv", ".env", "env"] {
-        let path = project_dir.join(name);
+    // 2. Check VIRTUAL_ENV env var (only if project venv not found)
+    if let Ok(venv) = std::env::var("VIRTUAL_ENV")
+        && !venv.trim().is_empty()
+    {
+        let path = PathBuf::from(venv);
         let python = if cfg!(windows) {
             path.join("Scripts/python.exe")
         } else {
