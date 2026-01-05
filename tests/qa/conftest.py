@@ -33,8 +33,10 @@ def cleanup_zygote_between_modules():
     # Clean before module runs
     subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
     
-    # Clean socket files
-    sock_path = Path(tempfile.gettempdir()) / "velo-zygote.sock"
+    import os
+    uid = os.getuid()
+    sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+    sock_path = sock_dir / "velo-zygote-v01.sock"
     if sock_path.exists():
         try:
             sock_path.unlink()

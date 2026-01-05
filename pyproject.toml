@@ -32,4 +32,13 @@ markers = [
     "chaos: marks tests as resource-heavy chaos tests",
     "brutal: marks tests as brutal stress tests",
     "order: execution order for test hierarchy",
+    "smoke: Tier 0 smoke tests",
+    "security: Tier 1 security tests",
+    "edge: Tier 2 edge case tests",
+    "stability: Tier 2 stability tests",
+    "desync: Tier 3 desynchronization tests",
+    "perf: Tier 3 performance tests",
+    "release_blocker: Critical release blocker tests (MANDATORY)",
+    "expert_review: Tests covering specific expert panel concerns",
+    "integration: Tier 2 integration-level tests",
 ]
