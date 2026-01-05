@@ -444,8 +444,10 @@ fn run_with_profile(python_path: &Path, script: &Path, project_dir: &Path) -> Re
 
     // Create a wrapper script that imports sitecustomize before running the user script
     // Python doesn't auto-load sitecustomize.py from PYTHONPATH - only from site-packages
+    // IMPORTANT: atexit handlers don't fire during exec(), so we explicitly call
+    // _velo_write_profile() after the script runs to ensure profile data is written.
     let wrapper = format!(
-        r#"import sys; sys.path.insert(0, "{}"); import sitecustomize; exec(open("{}").read())"#,
+        r#"import sys; sys.path.insert(0, "{}"); import sitecustomize; exec(open("{}").read()); sitecustomize._velo_write_profile()"#,
         &pythonpath,
         script.to_string_lossy()
     );
