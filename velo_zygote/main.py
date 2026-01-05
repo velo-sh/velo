@@ -595,6 +595,7 @@ class ZygoteServer:
         self.preload = preload or []
         self._preloaded_modules: List[str] = []
         self.memory_limit_mb = 1024 # 1GB default limit for Zygote process
+        self.app_name: Optional[str] = None  # RFC-0011: App affinity tracking
 
     async def start(self):
         """Start the Zygote server using asyncio."""
@@ -715,7 +716,16 @@ class ZygoteServer:
 async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
     """Protocol Handshake and Capability alignment."""
     server_version = PROTOCOL_VERSION
+    client_app = cmd.get("app_name")
+    
+    # RFC-0011 WB-004: Verify app affinity
+    if server.app_name and client_app and client_app != server.app_name:
+        return {"type": "Error", "message": f"App affinity mismatch: expected {server.app_name}, got {client_app}"}
+    
     capabilities = ["map-protocol", "async-reaper", "resource-guard", "hook-reinit"]
+    if server.app_name:
+        capabilities.append(f"app:{server.app_name}")
+    
     return {
         "type": "Handshake",
         "version": server_version,
@@ -731,6 +741,10 @@ async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
     valid, err = PathValidator.validate(script_path)
     if not valid:
         return {"type": "Error", "message": err}
+
+    # RFC-0011 WB-004: Store app name for affinity verification
+    if not server.app_name:
+        server.app_name = Path(script_path).name
 
     worker_pid = ForkHandler.handle_fork(cmd, server.worker_registry, server._preloaded_modules)
     

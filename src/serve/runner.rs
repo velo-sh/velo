@@ -716,6 +716,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         // 5. Start Proxy Server
         // RFC-0011 Phase 3C: We run the proxy in an async block to ensure the runtime stays alive
         // and background health checks can continue.
+        let lb_for_proxy = lb.clone(); // Clone for async spawn
         let _proxy_handle = rt.spawn(async move {
             let listener = match tokio::net::TcpListener::bind(bind_addr).await {
                 Ok(l) => l,
@@ -726,7 +727,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             };
 
             // RFC-0011 Phase 3C: Active health checks MUST run inside runtime context
-            lb.clone().spawn_health_checks(Duration::from_secs(5));
+            lb_for_proxy
+                .clone()
+                .spawn_health_checks(Duration::from_secs(5));
 
             eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
 
@@ -752,11 +755,10 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             }
         });
 
-        eprintln!();
-
-        // Wait for signal
+        // Wait for signal with periodic worker health checks
         loop {
-            match rx.recv() {
+            // Check for signals with timeout for health monitoring
+            match rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(ServerEvent::Signal(sig)) => match sig {
                     signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                         eprintln!("\n🛑 Received shutdown signal, stopping workers...");
@@ -773,13 +775,52 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     _ => {}
                 },
                 Ok(ServerEvent::WorkerExit) => {
-                    // Worker exited (only on Windows/non-Unix)
+                    // Worker exited - check which ones and respawn
+                    logger.warn("Worker exit event received, checking workers...");
                 }
                 Ok(ServerEvent::Reload) => {
-                    // Hot reload request - not applicable in Zygote mode
                     eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
                 }
-                Err(_) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Periodic health check - respawn dead workers
+                    for (i, worker) in workers.iter_mut().enumerate() {
+                        if !worker.is_alive() {
+                            logger.warn(&format!(
+                                "Worker {} (PID: {}) died, respawning...",
+                                i + 1,
+                                worker.pid()
+                            ));
+
+                            // Respawn via Zygote
+                            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+                                Ok(new_worker) => {
+                                    // Update LoadBalancer with new socket
+                                    if let Some(ref old_path) = worker.socket_path {
+                                        lb.remove_backend(&old_path.to_string_lossy());
+                                    }
+                                    if let Some(ref new_path) = new_worker.socket_path {
+                                        lb.add_backend(&new_path.to_string_lossy());
+                                    }
+
+                                    logger.info(&format!(
+                                        "  ✅ Respawned worker {} (new PID: {})",
+                                        i + 1,
+                                        new_worker.pid()
+                                    ));
+                                    *worker = new_worker;
+                                }
+                                Err(e) => {
+                                    logger.error(&format!(
+                                        "  ❌ Respawn failed for worker {}: {}",
+                                        i + 1,
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
 

@@ -216,6 +216,20 @@ impl LoadBalancer {
         self.workers.iter().map(|w| w.active_connections()).sum()
     }
 
+    /// Add a backend by socket path (mark as healthy if exists, or log if not found)
+    pub fn add_backend(&self, socket_path: &str) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+            worker.mark_healthy();
+        }
+    }
+
+    /// Remove a backend by socket path (mark as unhealthy)
+    pub fn remove_backend(&self, socket_path: &str) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+            worker.mark_unhealthy();
+        }
+    }
+
     /// Graceful shutdown - wait for all connections to drain.
     ///
     /// RFC-0011: Ensures in-flight requests complete before shutdown.
