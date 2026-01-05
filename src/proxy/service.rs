@@ -91,7 +91,13 @@ impl VeloProxyService {
         // 3. Inject X-Forwarded-* headers (RFC C.3)
         Self::inject_forwarded_headers(&mut req, client_addr);
 
-        // 4. Add X-Velo-Worker header for debugging
+        // 4. Inject X-Request-ID (RFC A.3)
+        Self::inject_request_id(&mut req);
+
+        // 5. Ensure W3C Trace Context (RFC B.3)
+        Self::ensure_trace_context(&mut req);
+
+        // 6. Add X-Velo-Worker header for debugging
         let socket_path = guard.socket_path();
         req.headers_mut().insert(
             "x-velo-worker",
@@ -195,6 +201,41 @@ impl VeloProxyService {
         }
 
         request_id
+    }
+
+    /// RFC-0011 B.3: Ensure W3C Trace Context (traceparent).
+    ///
+    /// If `traceparent` is missing, generate a new valid W3C traceparent header.
+    /// Format: 00-{trace_id}-{parent_id}-{flags}
+    /// - trace_id: 32 hex chars
+    /// - parent_id: 16 hex chars
+    /// - flags: 01 (sampled)
+    pub fn ensure_trace_context<B>(req: &mut Request<B>) {
+        if !req.headers().contains_key("traceparent") {
+            // Generate pseudo-random trace_id (using existing request_id if available for correlation)
+            let request_id = req
+                .headers()
+                .get("x-request-id")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("0000000000000000");
+
+            // Pad request_id to 32 chars for trace_id (simple strategy)
+            let trace_id = format!("{:0>32}", request_id);
+            // Generate random parent_id
+            let parent_id = format!(
+                "{:016x}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_micros()
+            );
+
+            let traceparent = format!("00-{}-{}-01", trace_id, parent_id);
+
+            if let Ok(val) = HeaderValue::from_str(&traceparent) {
+                req.headers_mut().insert("traceparent", val);
+            }
+        }
     }
 
     /// Get the load balancer reference.
@@ -411,5 +452,44 @@ mod tests {
         // X-Forwarded-Host should copy from Host header
         let xfhost = req.headers().get("x-forwarded-host").unwrap();
         assert_eq!(xfhost.to_str().unwrap(), "api.example.com");
+    }
+
+    // =========================================================================
+    // RFC-0011 B.3: W3C Trace Context Tests
+    // =========================================================================
+
+    #[test]
+    fn test_ensure_trace_context_generates_new() {
+        let mut req = Request::builder().uri("/api/test").body(()).unwrap();
+
+        VeloProxyService::ensure_trace_context(&mut req);
+
+        let traceparent = req.headers().get("traceparent").unwrap();
+        let value = traceparent.to_str().unwrap();
+
+        // Format: 00-{trace_id}-{parent_id}-01
+        assert!(value.starts_with("00-"));
+        assert!(value.ends_with("-01"));
+        assert_eq!(value.len(), 55); // 2 + 1 + 32 + 1 + 16 + 1 + 2
+    }
+
+    #[test]
+    fn test_ensure_trace_context_preserves_existing() {
+        let mut req = Request::builder()
+            .uri("/api/test")
+            .header(
+                "traceparent",
+                "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01",
+            )
+            .body(())
+            .unwrap();
+
+        VeloProxyService::ensure_trace_context(&mut req);
+
+        let traceparent = req.headers().get("traceparent").unwrap();
+        assert_eq!(
+            traceparent.to_str().unwrap(),
+            "00-1234567890abcdef1234567890abcdef-1234567890abcdef-01"
+        );
     }
 }

@@ -843,7 +843,21 @@ def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, w
 
 
 
+
+def check_cuda_initialized() -> bool:
+    """
+    RFC-0011 6A.3: Check if CUDA is initialized in Zygote.
+    If 'cuda' is in sys.modules, it might have initialized the CUDA context,
+    which is NOT fork-safe. Zygote should ideally be clean.
+    """
+    return 'torch' in sys.modules or 'tensorflow' in sys.modules or 'cuda' in sys.modules
+
 if __name__ == "__main__":
+    # RFC-0011 6A.3 HPC Pre-flight: Set OMP_NUM_THREADS=1
+    # Prevents OpenMP from initializing thread pool in Zygote parent, which hangs on fork.
+    # Workers verify this and restore it in post_fork_reinit.
+    os.environ['OMP_NUM_THREADS'] = '1'
+
     import argparse
     
     parser = argparse.ArgumentParser(description="Velo Zygote Process")
@@ -853,4 +867,10 @@ if __name__ == "__main__":
     parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL in seconds (default: 3600)")
     
     args = parser.parse_args()
+
+    # RFC-0011 6A.3: Warn if CUDA might be initialized by preloads
+    if check_cuda_initialized():
+        print("[velo-zygote] ⚠️  WARNING: CUDA/Torch/TensorFlow modules detected in Zygote start.", file=sys.stderr)
+        print("[velo-zygote]    This is unsafe for forking. Ensure these are NOT imported before Zygote loop.", file=sys.stderr)
+
     zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl)
