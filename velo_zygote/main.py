@@ -297,8 +297,23 @@ def post_fork_reinit():
     4. OpenMP/BLAS threads (restore for workers)
     """
     import random
-    
-    # 1. Random Seed (cryptographic safety)
+    import resource
+
+    # 1. FD Hygiene (RFC-0011 6A.1)
+    # Close inherited File Descriptors (except Stdin/out/err) to prevent leaks to child
+    try:
+        # Get soft limit for FDs
+        max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        if max_fd == resource.RLIM_INFINITY:
+            max_fd = 1024
+        
+        # Close all FDs from 3 to max_fd
+        # os.closerange is efficient and ignores errors for closed FDs
+        os.closerange(3, max_fd)
+    except Exception:
+        pass
+
+    # 2. Random Seed (cryptographic safety)
     # Fork inherits parent's random state - child must reseed
     random.seed()
     try:

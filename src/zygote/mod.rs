@@ -359,6 +359,9 @@ impl ZygoteLauncher {
 
         // Build command
         let mut cmd = Command::new(&python);
+        // RFC-0011 HPC-001: Prevent OpenMP threat pool initialization in parent
+        cmd.env("OMP_NUM_THREADS", "1");
+
         cmd.arg(&zygote_module)
             .arg("--socket")
             .arg(&self.socket_path);
