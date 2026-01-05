@@ -75,67 +75,86 @@ class VeloServeProcess:
     def _detect_zygote_pid(self) -> None:
         """Detect Zygote supervisor process PID.
         
-        The true Zygote supervisor is the one whose parent is NOT a zygote process.
-        Workers forked from Zygote inherit the same command line.
+        The Zygote supervisor is usually a descendant of the Rust supervisor process (self.pid),
+        but may be detached (setsid) or already running if using an existing Zygote.
         """
-        all_zygotes = []
-        
-        # 1. Collect all processes that look like zygotes
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                name = (proc.info['name'] or "").lower()
-                cmdline = " ".join(proc.info['cmdline'] or []).lower()
-                if "zygote" in name or "zygote" in cmdline:
-                    if "pytest" in cmdline: continue
-                    all_zygotes.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        
-        if not all_zygotes:
-            return
+        # 1. Search descendants of our supervisor
+        try:
+            supervisor = psutil.Process(self.pid)
+            children = supervisor.children(recursive=True)
+            for child in children:
+                try:
+                    cmdline = " ".join(child.cmdline()).lower()
+                    if "velo_zygote/main.py" in cmdline or "zygote" in child.name().lower():
+                        if "pytest" in cmdline: continue
+                        self.zygote_pid = child.pid
+                        return
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
-        # 2. Find the supervisor (the one whose parent is not in all_zygotes)
-        zygote_pids = {p.pid for p in all_zygotes}
-        for proc in all_zygotes:
+        # 2. Global search (handling detached or existing Zygote)
+        # Filter by current user and cmdline containing this repo's path
+        current_uid = os.getuid()
+        for proc in psutil.process_iter(['pid', 'uids', 'cmdline', 'name']):
             try:
-                ppid = proc.ppid()
-                if ppid not in zygote_pids:
-                    # This is likely the supervisor
-                    self.zygote_pid = proc.pid
+                # Check user ownership
+                uids = proc.info.get('uids')
+                if uids and uids.real != current_uid:
+                    continue
+                
+                cmdline = " ".join(proc.info.get('cmdline') or []).lower()
+                if "velo_zygote/main.py" in cmdline or "zygote" in (proc.info.get('name') or "").lower():
+                    if "pytest" in cmdline: continue
+                    # Only match if it's pointing to the RIGHT main.py or if it's the only one
+                    self.zygote_pid = proc.info['pid']
                     return
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        
-        # Fallback: lowest PID
-        if all_zygotes:
-            self.zygote_pid = min(p.pid for p in all_zygotes)
 
     def get_worker_pids(self) -> List[int]:
         """Get list of worker PIDs.
         
         Workers are forked from the Zygote, so they are children of the Zygote PID.
+        Includes a short retry loop to account for fork latency.
         """
-        if not self.zygote_pid:
-            self._detect_zygote_pid()
+        for _ in range(10):
+            if not self.zygote_pid:
+                self._detect_zygote_pid()
+            
+            if self.zygote_pid:
+                try:
+                    zygote_proc = psutil.Process(self.zygote_pid)
+                    workers = [child.pid for child in zygote_proc.children(recursive=False)]
+                    if workers:
+                        return workers
+                except psutil.NoSuchProcess:
+                    self.zygote_pid = None
+            
+            time.sleep(0.2)
         
-        if not self.zygote_pid:
-            return []
-
-        try:
-            zygote_proc = psutil.Process(self.zygote_pid)
-            workers = []
-            # Workers are immediate children of Zygote
-            for child in zygote_proc.children(recursive=False):
-                # Only include workers that haven't transitioned to uvicorn/etc if needed,
-                # but currently they keep the Zygote cmdline.
-                workers.append(child.pid)
-            return workers
-        except psutil.NoSuchProcess:
-            return []
+        return []
 
     def get_metrics(self) -> dict:
         """Get server metrics (placeholder for future implementation)."""
         return {"worker_requests": {}}
+
+    def get_socket_path(self) -> Optional[str]:
+        """Find the Zygote socket path by inspecting Zygote command line."""
+        if not self.zygote_pid:
+            self._detect_zygote_pid()
+        
+        if self.zygote_pid:
+            try:
+                proc = psutil.Process(self.zygote_pid)
+                cmdline = proc.cmdline()
+                for i, arg in enumerate(cmdline):
+                    if arg == "--socket" and i + 1 < len(cmdline):
+                        return cmdline[i + 1]
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        return None
 
     def stop(self, timeout: float = 5.0) -> None:
         """Stop the server gracefully."""

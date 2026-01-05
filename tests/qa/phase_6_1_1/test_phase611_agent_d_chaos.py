@@ -112,13 +112,9 @@ class TestAgentDChaos:
         proc.wait_ready()
         
         # Find Zygote socket
-        uid = os.getuid()
-        socket_dir = Path(f"/tmp/velo-{uid}")
-        sockets = list(socket_dir.glob("velo-zygote-v*.sock"))
-        if not sockets:
-            pytest.skip("Zygote socket not found in /tmp")
-            
-        socket_path = str(sockets[0])
+        socket_path = proc.get_socket_path()
+        if not socket_path:
+            pytest.skip("Zygote socket path not found")
         
         # --- Attack 1: Huge length prefix ---
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
@@ -183,12 +179,9 @@ class TestAgentDChaos:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
         
-        uid = os.getuid()
-        socket_dir = Path(f"/tmp/velo-{uid}")
-        sockets = list(socket_dir.glob("velo-zygote-v*.sock"))
-        if not sockets:
+        socket_path = proc.get_socket_path()
+        if not socket_path:
             pytest.skip("Zygote socket not found")
-        socket_path = str(sockets[0])
         
         # Open many connections
         conns = []
