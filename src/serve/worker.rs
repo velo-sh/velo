@@ -19,10 +19,12 @@ pub struct Worker {
     started_at: Instant,
     zygote_socket: PathBuf,
     script_path: Option<PathBuf>,
+    /// UDS socket path (RFC-0011 Phase 2)
+    pub socket_path: Option<PathBuf>,
 }
 
 impl Worker {
-    /// Spawn worker via Zygote fork
+    /// Spawn worker via Zygote fork (Legacy TCP Mode)
     pub fn spawn_via_zygote(
         zygote_socket: &Path,
         app: &str,
@@ -51,6 +53,35 @@ impl Worker {
             started_at: Instant::now(),
             zygote_socket: zygote_socket.to_path_buf(),
             script_path: Some(script_path),
+            socket_path: None,
+        })
+    }
+
+    /// Spawn worker via Zygote using Unix Domain Sockets (RFC-0011 Phase 2)
+    pub fn spawn_uds_via_zygote(zygote_socket: &Path, app: &str) -> Result<Self> {
+        Self::validate_app_path(app)?;
+
+        let worker_id = WORKER_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let script_path = Self::create_temp_script_path(worker_id)?;
+
+        // Generate unique UDS path
+        let temp_dir = script_path.parent().unwrap();
+        let socket_path = temp_dir.join(format!("velo-worker-{}.sock", worker_id));
+        let socket_path_str = socket_path.to_string_lossy().to_string();
+
+        // Use UDS script generator
+        let script_content = Self::generate_uds_worker_script(app, &socket_path_str)?;
+
+        Self::write_script_securely(&script_path, &script_content)?;
+        let worker_pid = Self::fork_via_zygote(zygote_socket, &script_path)?;
+
+        Ok(Worker {
+            pid: worker_pid,
+            port: 0, // Unused in UDS mode
+            started_at: Instant::now(),
+            zygote_socket: zygote_socket.to_path_buf(),
+            script_path: Some(script_path),
+            socket_path: Some(socket_path),
         })
     }
 
