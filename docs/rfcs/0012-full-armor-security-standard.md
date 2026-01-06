@@ -42,10 +42,10 @@ Workers MUST NOT be starved of essentials, but dangerous vectors MUST be severed
 ### 3.2 Dynamic Path Isolation
 Use **Canonical Workspace Scoping** instead of hardcoded filesystem blocks.
 - Every read/write must be within `realpath(PROJECT_ROOT)`.
-- Explicit permissions for `/tmp/velo-<workspace-hash>/`.
+- Explicit permissions for `/tmp/velo-`workspace-hash`/`.
 
 ### 3.3 Unique Zygote Identity (Anti-Hijack)
-- **Linux**: Mandatory use of **Abstract Namespace Sockets** (`@velo-zygote-<hash>`).
+- **Linux**: Mandatory use of **Abstract Namespace Sockets** (`@velo-zygote-`hash``).
 - **macOS (Atomic Permissions)**:
     - Use `umask(077)` **before** calling `mkdtemp` and `bind`.
     - Ensure the randomized temporary directory and the socket itself are created with atomic restricted permissions (700/600).
@@ -100,7 +100,7 @@ Velo adopts the **"Fail-Fast, Fail-Closed"** iron rule for security:
 The "Surgical Shielding" model is designed for universal enforcement while leveraging platform-specific features:
 
 ### 5.1 Linux (The Hardened Standard)
-- **Abstract Sockets**: For Linux, we will evaluate moving Zygote sockets from `/tmp` to **Abstract Namespace Sockets** (`@velo-zygote-<hash>`). These do not leave files on disk and are automatically cleaned up.
+- **Abstract Sockets**: For Linux, we will evaluate moving Zygote sockets from `/tmp` to **Abstract Namespace Sockets** (`@velo-zygote-`hash``). These do not leave files on disk and are automatically cleaned up.
 - **Procfs Protection**: The sandbox must specifically allow read access to `/proc/self/` for Python's own introspection while blocking access to `/proc/` root to prevent process-tree discovery.
 
 ### 5.2 macOS (FSEvents & Lifecycle)
@@ -130,57 +130,7 @@ Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of
 
 This RFC establishes a **4-Layer Defense Model** that secures the runtime from the kernel up to the verification layer.
 
-```mermaid
-graph TD
-    subgraph Layer4 [Layer 4 The Prosecutor Testing Regime]
-        Test[Zero Mock Executioner Suite]
-        Attack[Red Team Exploits]
-        FailClosed[Fail Fast Certification]
-        Test -->|Injects Toxins| Runtime
-        Attack -->|Probes| Runtime
-    end
-
-    subgraph Layer3 [Layer 3 Runtime and Language Security]
-        Runtime[Velo Python Runtime]
-        StaticGraph[Static Graph Analysis]
-        Scrub[Surgical Env Scrubbing]
-        
-        StaticGraph -->|Locks Dependencies| Runtime
-        Scrub -->|Cleans Variables| Runtime
-    end
-
-    subgraph Layer2 [Layer 2 Process Isolation Zygote Gap]
-        ZygoteA[Zygote A Project X]
-        ZygoteB[Zygote B Project Y]
-        WorkerA1[Worker A1]
-        WorkerB1[Worker B1]
-        
-        Runtime -- Spawns --> ZygoteA
-        Runtime -- Spawns --> ZygoteB
-        ZygoteA -- Fork --> WorkerA1
-        ZygoteB -- Fork --> WorkerB1
-        
-        style ZygoteA fill:#e1f5fe,stroke:#01579b
-        style ZygoteB fill:#ffebee,stroke:#b71c1c
-        
-        WorkerA1 -.-> |No Shared Mem| WorkerB1
-        WorkerA1 -.-> |No Socket Access| WorkerB1
-    end
-
-    subgraph Layer1 [Layer 1 System Hardening Tactical Armor]
-        Kernel[OS Kernel Hardware]
-        CapStd[Capability Based IO cap std]
-        Hygiene[Atomic Sockets FD Hygiene]
-        
-        WorkerA1 -->|Checked Access| CapStd
-        WorkerB1 -->|Checked Access| CapStd
-        CapStd -->|Verified Handle| Kernel
-        Hygiene -->|Clean State| Kernel
-    end
-
-    classDef shield fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    class Kernel,CapStd,Hygiene shield
-```
+See the full architecture diagram here: **[The Velo Fortress Diagram](../security/velo_fortress_diagram.md)**
 
 ---
 
