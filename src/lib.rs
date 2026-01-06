@@ -18,4 +18,5 @@ pub mod python;
 pub mod python_info;
 pub mod runner;
 pub mod serve;
+pub mod shm; // RFC-0015: Memory Gravity
 pub mod zygote;
