@@ -99,6 +99,8 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
             proc.kill()
 
 @pytest.mark.tier4
+@pytest.mark.heavy
+@pytest.mark.timeout(300)
 def test_CHAOS_623_socket_exhaustion(isolated_env):
     """Saturate the Zygote with concurrent connections."""
     env = isolated_env
