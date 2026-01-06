@@ -168,6 +168,11 @@ cargo fmt && cargo clippy -- -D warnings
 - **Packages**: Full PyPI compatibility (NumPy, Pandas, FastAPI, Django, etc.)
 - **Environment**: Works with `uv`-managed virtual environments
 
+### 🏛️ Engineering Governance (TITANIUM)
+- [SOP-001: Master Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md)
+- [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md)
+- [SOP-003: Knowledge Treasury](./docs/architecture/SOP-003-knowledge-treasury.md)
+
 ## Roadmap
 
 - [x] Phase 1: Environment fingerprinting & path caching

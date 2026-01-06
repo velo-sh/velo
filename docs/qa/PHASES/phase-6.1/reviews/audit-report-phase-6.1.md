@@ -6,4 +6,4 @@
 
 **Current Activity**: Returning to **SOP Phase 0 (Pre-Work)** and **Phase 1 (Test Design)**.
 
-Please refer to the [new implementation plan](file:///Users/gjwang/.gemini/antigravity/brain/f77e7247-998f-4f7c-bd22-77f8a89c5b5c/implementation_plan.md) for the correct QA strategy.
+Please refer to the implementation plan for the correct QA strategy.

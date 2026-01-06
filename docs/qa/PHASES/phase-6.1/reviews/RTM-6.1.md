@@ -2,7 +2,7 @@
 
 **Status**: 🟢 DESIGN READY
 **Leader**: Velo QA Working Group
-**Reference**: [ARCH-ALIGNMENT-6.1.md](file:///Users/gjwang/eclipse-workspace/rust_source/velo_qa/docs/qa/PHASES/phase-6.1/reviews/ARCH-ALIGNMENT-6.1.md)
+**Reference**: [ARCH-ALIGNMENT-6.1.md](ARCH-ALIGNMENT-6.1.md)
 
 ---
 
