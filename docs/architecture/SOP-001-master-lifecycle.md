@@ -24,8 +24,13 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ### 2.1 RFC Process (Design)
 *   **Mandatory**: Every major feature (>1 week) requires an RFC.
-*   **Expert Review**: Must include explicit "Security" and "Performance" sections.
-*   **P0 Identification**: The Architect MUST extract "P0 Requirements" (Blockers) from the Whitebox Audit and RFC before coding begins.
+*   **The Council of Five**: Design MUST be reviewed by the following domain personas (simulated or real):
+    1.  **Security Engineer**: "How do I break this?" (Attack Surface)
+    2.  **Network Engineer**: "What if the socket is busy/stale?" (Protocols)
+    3.  **HPC Engineer**: "Is this <50ms?" (Performance)
+    4.  **K8s Operator**: "Does this work in a container?" (Deployment)
+    5.  **O11y Expert**: "Where are the logs?" (Observability)
+*   **P0 Identification**: The Architect MUST extract "P0 Requirements" (Blockers) from the Council's review before coding begins.
     *   *Example*: "Socket paths must include User ID."
 
 ### 2.2 Task Breakdown
@@ -36,6 +41,11 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 ---
 
 ## 3. Phase II: Implementation (The Build)
+
+### 3.0 The Amendment Protocol (Tactical Armor)
+*   **Agile Hardening**: If the Developer encounters a block, they must propose a "Tactical Amendment."
+*   **Example**: "Strict Blacklist failed (suffocation). Switching to Surgical Whitelist."
+*   **Approval**: Amendments require sign-off from the relevant Expert (e.g., Security for `env` handling).
 
 ### 3.1 Security Standard: "Surgical Shielding" (RFC-0012)
 *   **Whitelist Only**: Never use blacklists (e.g., `env_remove`). Use `EnvironmentShield::new().apply()`.
