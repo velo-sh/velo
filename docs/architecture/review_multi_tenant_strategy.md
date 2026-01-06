@@ -3,7 +3,7 @@
 > **Document ID**: REV-0015-MT (Multi-Tenant Strategy)
 > **Author**: System Architect / HFT Reviewer
 > **Date**: 2026-01-07
-> **Status**: TITANIUM GUIDANCE (Authoritative)
+> **Status**: TITANIUM GUIDANCE (Authoritative / Hostile Hardened)
 
 ---
 
@@ -12,9 +12,10 @@
 This review addresses the critical architectural question: **"Can Memory Gravity achieve zero-copy sharing across multi-tenant boundaries?"**
 
 **The Conclusion**:
-1.  **NO**. Pure zero-copy (FD passing) across tenants is effectively impossible on Linux without violating security boundaries.
+1.  **NO**. Pure zero-copy (FD passing) across tenants is **STRUCTURALLY IMPOSSIBLE** on Linux without violating capability isolation.
+    - *Any scheme that relies on shared kernel address space (including containers, namespaces, or SELinux-constrained processes) cannot provide cross-tenant zero-copy without collapsing capability isolation. This is a structural property of Linux, not an implementation choice.*
 2.  **BUT**, a highly efficient **"Layered Broker Model"** (v1.x) exists, which is the theoretical optimum for secure multi-tenancy.
-3.  **Velo v0.7.0** MUST remain strictly **Tenant-Scoped** (Mode 1).
+3.  **Velo v0.7.0** MUST remain strictly **Tenant-Scoped** (Mode 1), rebranding Memory Gravity from "sharing tech" to "**Trust-Domain-Local Execution Fabric**".
 
 ---
 
@@ -26,11 +27,8 @@ It is impossible to satisfy these three conditions simultaneously on standard Li
 3.  **Capability Isolation**: FD access does not leak privileges.
 
 **Why FD Passing is a Dead End**:
-Linux FDs are "Capability Tokens". Once an FD enters a tenant's process (even if sealed/RO):
-- `dup(fd)` cannot be prevented.
-- Passing to same-uid processes cannot be prevented.
-- `/proc/<pid>/fd` enumeration cannot be blocked.
-- `ptrace` allows extracting the FD.
+FD is an unforgeable reference to a kernel object whose lifetime and reachability are **not namespace-contained**.
+- **The Axiom**: Linux does not support revocable or attenuable capabilities. Therefore, any FD passed into an untrusted security domain must be treated as a **permanent privilege grant** to that domain.
 
 **Result**: You cannot use an FD as a secure isolation boundary within a shared kernel.
 
@@ -42,17 +40,16 @@ Linux FDs are "Capability Tokens". Once an FD enters a tenant's process (even if
 *The only configuration for v0.7.0 release.*
 
 - **Model**: One Tenant = One Host + One SHM.
-- **Sharing**: Strictly **intra-tenant only**.
+- **Definition**: Memory Gravity is NOT a global pooling tech. It is a **Trust-Domain-Local Execution Fabric**.
+- **Analogy**: Like JVM Heap or GPU Context Memory, but for Python processes in the same trust domain.
 - **Security**: Relies on standard Linux user/container isolation.
-- **Pros**: Zero-copy, native performance, simple security model.
-- **Cons**: Memory saving is per-tenant, not global.
 
 ### Mode 2: The Broker Model (Velo v1.x Target)
 *The theoretical optimum for secure multi-tenancy.*
 
 **Architecture**:
 ```
-[ Weight Broker (Privileged) ]
+[ Weight Broker (Privileged Materializer) ]
       |
       | (One-time Copy on Admission)
       v
@@ -60,9 +57,9 @@ Linux FDs are "Capability Tokens". Once an FD enters a tenant's process (even if
 ```
 
 **Key Mechanics**:
-1.  **Layer 0 (Global)**: Broker holds the "Canonical Weights" (Physical Memory).
+1.  **Layer 0 (Global)**: Broker acts as a **One-Way Materializer**, not a shared memory provider. The canonical weights are never mapped or shared.
 2.  **Layer 1 (Admission)**: When Tenant A requests a model, Broker performs a **Single `memcpy`** into Tenant A's private SHM.
-3.  **Layer 2 (Inference)**: Tenant A's workers attache to Tenant A's SHM (Memory Gravity).
+3.  **Layer 2 (Inference)**: Tenant A's workers attach to Tenant A's SHM (Memory Gravity).
 
 **Why this is optimal**:
 - **Security**: Tenants never touch the global Broker memory/FDs.
@@ -81,13 +78,13 @@ Linux FDs are "Capability Tokens". Once an FD enters a tenant's process (even if
 ### 🚀 Velo v1.x (Future)
 - **Scope**: Multi-Tenant Broker.
 - **Feature**: "Copy-on-Admission" architecture.
-- **Optimization**: NUMA-aware copy pipelines, Delta Model sharing.
+- **Red Line**: Any attempt to reintroduce cross-tenant shared mappings (including COW tricks, KSM, or page deduplication) is considered a violation of the security model and out of scope for Velo.
 
 ---
 
 ## 5. Final Verdict
 
-> "You have pushed the system to the boundary of OS design. Continuing to pursue 'Cross-Tenant Zero-Copy' is a fallacy. The Broker Model is the correct next step."
+> "This RFC correctly identifies the point at which system design must yield to operating system reality. Any design that claims otherwise is either insecure or dishonest."
 
 **Approved Strategy**:
 1. Lock v0.7.0 to **Tenant-Scoped Mode**.
