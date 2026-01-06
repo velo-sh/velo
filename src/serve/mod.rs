@@ -24,4 +24,4 @@ pub use framework::{
 };
 pub use health::{HealthError, HealthServer};
 pub use runner::{ManagedChild, run_server};
-pub use worker::WorkerPool;
+// pub use worker::WorkerPool;  // TODO: Re-implement with Zygote integration

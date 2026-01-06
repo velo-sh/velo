@@ -60,7 +60,15 @@ pub enum ServeError {
     #[error("Failed to detect virtual environment")]
     VenvNotFound,
 
-    /// Framework detection failed
+    /// Invalid worker count
+    #[error("Invalid worker count: {count}. Must be at least 1.")]
+    InvalidWorkerCount { count: u32 },
+
+    /// Invalid port number
+    #[error("Invalid port: {port}. Must be between 1 and 65535.")]
+    InvalidPort { port: u16 },
+
+    /// Unknown framework, cannot auto-select server
     #[error("Unknown framework, cannot auto-select server")]
     UnknownFramework,
 }
@@ -88,6 +96,8 @@ impl ServeError {
             Self::AppNotDetected { .. } => 1,
             Self::VenvNotFound => 1,
             Self::UnknownFramework => 1,
+            Self::InvalidWorkerCount { .. } => 1,
+            Self::InvalidPort { .. } => 1,
         }
     }
 

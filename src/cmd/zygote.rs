@@ -72,7 +72,7 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
             .unwrap_or_default();
 
         println!("🚀 Starting Zygote daemon...");
-        match launcher.start(&preload) {
+        match launcher.start(&preload, None) {
             Ok(()) => {
                 println!("✅ Zygote started");
                 println!("   Socket: {}", socket_path.display());

@@ -13,6 +13,7 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
+use blake3;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -58,6 +59,21 @@ pub enum ZygoteCommand {
     Shutdown,
     /// Query Zygote status
     Status,
+    /// Wait for a worker to exit
+    WaitWorker {
+        worker_pid: u32,
+        #[serde(default)]
+        timeout_secs: Option<u64>,
+    },
+    /// Send signal to a worker
+    SignalWorker { worker_pid: u32, signal: i32 },
+    /// Query worker status
+    WorkerStatus { worker_pid: u32 },
+    /// Capability handshake
+    Handshake {
+        version: u8,
+        capabilities: Vec<String>,
+    },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -82,8 +98,21 @@ pub enum ZygoteResponse {
         #[serde(default)]
         exit_code: Option<i32>,
     },
+    /// Worker exited with code
+    WorkerExited { worker_pid: u32, exit_code: i32 },
+    /// Worker status info
+    WorkerInfo {
+        worker_pid: u32,
+        is_running: bool,
+        uptime_secs: u64,
+    },
     /// An error occurred
     Error { message: String },
+    /// Handshake response
+    Handshake {
+        version: u8,
+        capabilities: Vec<String>,
+    },
 }
 
 /// Get the default socket path for Zygote IPC
@@ -91,6 +120,20 @@ pub enum ZygoteResponse {
 /// DEF-61-004: Socket path includes protocol version for upgrade isolation
 /// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
 pub fn default_socket_path() -> PathBuf {
+    // Audit Remediation: Prioritize explicit socket path from environment (conftest.py support)
+    if let Ok(path) = std::env::var("VELO_ZYGOTE_SOCKET") {
+        return PathBuf::from(path);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let mut bytes = vec![0u8];
+        bytes.extend_from_slice(format!("velo-zygote-v{:02x}", PROTOCOL_VERSION).as_bytes());
+        return PathBuf::from(std::ffi::OsString::from_vec(bytes));
+    }
+
+    #[cfg(not(target_os = "linux"))]
     get_socket_dir().join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
 }
 
@@ -105,8 +148,17 @@ pub fn default_socket_path() -> PathBuf {
 pub fn get_socket_dir() -> PathBuf {
     /// Red Line #1: Path length limit with 4-byte margin
     const SOCKET_PATH_LIMIT: usize = 104;
-
     let uid = unsafe { libc::getuid() };
+
+    // RFC §3.3: Use project-specific randomized identity for isolation
+    let project_hash = if let Ok(cwd) = std::env::current_dir() {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(cwd.to_string_lossy().as_bytes());
+        let hash = hasher.finalize().to_hex()[..8].to_string();
+        format!("-{}", hash)
+    } else {
+        "".to_string()
+    };
 
     // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
     if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
@@ -117,9 +169,11 @@ pub fn get_socket_dir() -> PathBuf {
         }
     }
 
-    // 2. Try user-isolated temp directory
-    let user_dir = std::env::temp_dir().join(format!("velo-{}", uid));
+    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
+    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
+    let user_dir = std::env::temp_dir().join(&dir_name);
     let test_path = user_dir.join("velo-zygote-v01.sock");
+
     // Red Line #1: Check path length BEFORE ensuring directory
     if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
         return user_dir;
@@ -133,7 +187,7 @@ pub fn get_socket_dir() -> PathBuf {
             SOCKET_PATH_LIMIT
         );
     }
-    let fallback_dir = PathBuf::from("/tmp").join(format!("velo-{}", uid));
+    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
     let _ = ensure_socket_dir(&fallback_dir);
     fallback_dir
 }
@@ -146,12 +200,17 @@ pub fn get_socket_dir() -> PathBuf {
 fn ensure_socket_dir(dir: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
-    // Create directory if needed
-    if !dir.exists() && std::fs::create_dir_all(dir).is_err() {
-        return false;
+    // Create directory if needed with strict umask (RFC §3.3)
+    if !dir.exists() {
+        let old_mask = unsafe { libc::umask(0o077) };
+        let res = std::fs::create_dir_all(dir);
+        unsafe { libc::umask(old_mask) };
+        if res.is_err() {
+            return false;
+        }
     }
 
-    // Set 0700 permissions (owner only)
+    // Set 0700 permissions (owner only) - redundant but safe (Red Line #2)
     if let Ok(metadata) = dir.metadata() {
         let mut perms = metadata.permissions();
         perms.set_mode(0o700);
@@ -187,6 +246,17 @@ fn ensure_socket_dir(dir: &Path) -> bool {
 /// - Used only in `cleanup_stale_sockets()` to detect dead sockets
 /// - Connection is immediately dropped after probe
 pub fn is_socket_alive(socket_path: &Path) -> bool {
+    // RFC-0011 D.1: Abstract sockets don't "exist" on filesystem
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = socket_path.as_os_str().as_bytes();
+        if !bytes.is_empty() && bytes[0] == 0 {
+            // Abstract socket, skip exists() check and use connect directly
+            return UnixStream::connect(socket_path).is_ok();
+        }
+    }
+
     if !socket_path.exists() {
         return false;
     }
@@ -255,6 +325,15 @@ pub fn create_listener(socket_path: &Path) -> Result<UnixListener> {
 
 /// Clean up the socket file
 pub fn cleanup_socket(socket_path: &Path) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = socket_path.as_os_str().as_bytes();
+        if !bytes.is_empty() && bytes[0] == 0 {
+            return; // Abstract socket, nothing to cleanup
+        }
+    }
+
     if socket_path.exists() {
         let _ = std::fs::remove_file(socket_path);
     }
@@ -283,7 +362,12 @@ pub const PROTOCOL_VERSION: u8 = 0x01;
 
 /// Write a MessagePack message with length prefix and version byte
 fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
-    let payload = rmp_serde::to_vec(msg).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let mut buf = Vec::new();
+    let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
+    msg.serialize(&mut ser)
+        .map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+
+    let payload = buf;
 
     // Security: Check message size
     if payload.len() > MAX_MESSAGE_SIZE {
@@ -381,9 +465,33 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     Ok(msg)
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
+/// High-level wrapper for Zygote IPC connection
+pub struct ZygoteStream {
+    stream: UnixStream,
+}
+
+impl ZygoteStream {
+    /// Connect to Zygote and verify the initial "Ready" greeting
+    pub fn connect(socket_path: &Path) -> Result<Self> {
+        let mut stream = UnixStream::connect(socket_path)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        // 1. Receive mandatory "Ready" greeting
+        let ready: ZygoteResponse = read_message(&mut stream)?;
+        match ready {
+            ZygoteResponse::Ready => Ok(Self { stream }),
+            _ => Err(ZygoteError::ProtocolError(
+                "Connection greeting failed - expected Ready".to_string(),
+            )),
+        }
+    }
+
+    /// Send a command and wait for the response
+    pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
+        write_message(&mut self.stream, cmd)?;
+        read_message(&mut self.stream)
+    }
+}
 
 /// Accept a command from a client connection
 pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteCommand)> {
@@ -403,23 +511,8 @@ pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Resul
 
 /// Connect to the Zygote and send a command, returning the response
 pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<ZygoteResponse> {
-    let mut stream = UnixStream::connect(socket_path)
-        .map_err(|e| ZygoteError::ConnectionFailed(e.to_string()))?;
-
-    // First, receive READY response from Zygote
-    let ready_response: ZygoteResponse = read_message(&mut stream)?;
-
-    if !matches!(ready_response, ZygoteResponse::Ready) {
-        return Err(ZygoteError::ProtocolError(
-            "Expected READY response from Zygote".to_string(),
-        ));
-    }
-
-    // Send command
-    write_message(&mut stream, &command)?;
-
-    // Read response to command
-    read_message(&mut stream)
+    let mut stream = ZygoteStream::connect(socket_path)?;
+    stream.send_command(&command)
 }
 
 #[cfg(test)]

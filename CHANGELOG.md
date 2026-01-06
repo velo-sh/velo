@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-01-06
+
+### Added
+
+- **Zygote Worker Integration (RFC-0011)**: L7 Proxy + COW-shared workers
+  - Composition Architecture: Velo orchestrates worker lifecycle, uvicorn handles ASGI
+  - Worker cold start reduced from ~200ms to ~10ms via Zygote fork
+  - Memory sharing via COW (Copy-on-Write) optimization
+  - Least-Connections load balancer with atomic counters
+  - Abstract Namespace Sockets on Linux (`@velo-worker-N`)
+
+### Changed
+
+- Rust L7 Proxy replaces direct TCP for worker communication
+- UDS (Unix Domain Sockets) for all worker IPC
+
+### Security
+
+- FD Hygiene: `FD_CLOEXEC` on all non-essential file descriptors before fork
+- Signal State Reset: Full `post_fork` cleanup to prevent uvloop pollution
+- Hop-by-Hop Header Stripping: `Connection`, `Transfer-Encoding`, `Te`, `Keep-Alive`
+- Mandatory proxy headers: `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Port`
+
 ## [0.6.1] - 2026-01-04
 
 ### Added
