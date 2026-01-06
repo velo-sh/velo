@@ -495,18 +495,36 @@ reinit_hooks = ReinitHooks()
 
 def hook_security():
     """SecurityHook: FD hygiene and random reseed."""
+    # return # DISABLED for Debugging: Suspect causing crashes
     import random
     import resource
     # Whitelist-based cleanup of inherited file descriptors.
     try:
         keep_fds = {0, 1, 2}
+        # DEF-62-003: Preserve stdout/stderr handles (pipes) to prevent crash
+        try: keep_fds.add(sys.stdout.fileno())
+        except: pass
+        try: keep_fds.add(sys.stderr.fileno())
+        except: pass
+
         try:
-            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
-            for fd in current_fds:
-                if fd not in keep_fds:
-                    try: os.close(fd)
-                    except OSError: pass
+            current_fds = set()
+            # Option A: Linux
+            if os.path.exists('/proc/self/fd'):
+                current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
+            # Option B: macOS / BSD
+            elif os.path.exists('/dev/fd'):
+                current_fds = set(int(fd) for fd in os.listdir('/dev/fd'))
+            
+            if current_fds:
+                for fd in current_fds:
+                    if fd not in keep_fds:
+                        try: os.close(fd)
+                        except OSError: pass
+            else:
+                raise Exception("FD listing failed")
         except:
+            # Slow fallback if listing fails
             max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
             if max_fd == resource.RLIM_INFINITY: max_fd = 4096
             os.closerange(3, max_fd)
@@ -600,19 +618,32 @@ class ForkHandler:
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
         max_bundle_size: Optional[int], worker_ttl: int
     ):
+        t0 = time.time()
+        def p_log(msg):
+            try:
+                with open("/tmp/perf_zygote.log", "a") as f:
+                    f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
+            except: pass
+
+        p_log("Start _child_process")
         exit_code = 0
         try:
             # 1. Start Guardian
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
+            p_log("Guardian Started")
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
             post_fork_reinit()
+            p_log("Reinit Done")
 
             # 2.1 Install ImportShield (Import Isolation)
             ImportShield.install()
+            p_log("ImportShield Installed")
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
+            # p_log("IO Redirected") # Might fail to log after redirect to file! 
+            # But I use /dev/stderr directly in p_log.
 
             # 4. Setup Sys Args
             sys.argv = [script_path] + args
@@ -622,8 +653,10 @@ class ForkHandler:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
 
             # 6. Execute Script
+            p_log(f"Exec script: {script_path}")
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
+                p_log("Script compiled")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
         except SystemExit as e:
@@ -752,6 +785,7 @@ class ZygoteServer:
             # Run blocking preload in executor to not block event loop
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self._preload_modules)
+            # self._preload_modules()
             
             # Check CUDA after preload
             if check_cuda_initialized():

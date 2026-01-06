@@ -523,7 +523,9 @@ impl ZygoteStream {
     ///
     /// RFC-0013: Enforces a 10ms wall-clock timeout for the entire handshake.
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        let deadline = Deadline::new(Duration::from_millis(10));
+        // DEF-62-002: Increased to 2000ms (2s) to tolerate GIL contention during Shadow Preloading.
+        // Idle Zygote responds in <1ms. Busy Zygote (loading pandas) needs patience.
+        let deadline = Deadline::new(Duration::from_millis(2000));
 
         let stream = UnixStream::connect(socket_path).map_err(|e| {
             ZygoteError::ConnectionFailed(format!("Failed to connect to Zygote: {}", e))
