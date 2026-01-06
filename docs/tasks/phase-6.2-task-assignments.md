@@ -27,12 +27,11 @@
 
 ### Task 4: Environment Provenance Guard (SEC-ENV-001) [MANDATORY]
 - **File**: `src/serve/runner.rs`
-- **Action**: Validate whitelisted variables (`PATH`, `PYTHONPATH`).
-- **Logic**: Every path entry must be canonicalized and checked against `PROJECT_ROOT` or trusted system prefixes. Reject startup if a mismatch is found.
+- **Action**: Implement auditing of whitelisted variable values.
+- **Constraint**: Ensure `PATH` and `PYTHONPATH` entries are canonicalized and reside within `PROJECT_ROOT` or trusted system/venv prefixes.
 
 ### Task 5: FD Hygiene & Escape Protection (SEC-FS-002) [MANDATORY]
 - **File**: `src/serve/runner.rs`
-- **Action**: Implement `close_fds_on_exec`. Ensure workers start with exactly 3 FDs (0, 1, 2).
 - **Prohibition**: Block access to `/proc/self/fd/`.
 
 ### Task 6: Zygote Peer Authentication (SEC-ZYG-003) [MANDATORY]
@@ -57,4 +56,7 @@
 
 - [ ] All "Three Sins" from the Whitebox Audit are addressed.
 - [ ] No regression in functional suite (Zygote workers start).
-- [ ] Security Expert recommendations (O_EXCL, Canonicalization) fully integrated.
+- [ ] Environment provenance validated for whitelisted variables.
+- [ ] FD hygiene enforced (only stdio inherited).
+- [ ] Peer authentication verified (challenge-response handshake).
+- [ ] Fail-Closed policy confirmed in all error paths.
