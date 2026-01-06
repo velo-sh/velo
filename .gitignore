@@ -31,4 +31,4 @@ test_large_bundle/
 *.veloc
 build/
 .venv/
-benchmarks/top100_v2_results.json
+benchmarks/top100/top100_v2_results.json
