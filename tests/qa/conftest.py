@@ -30,8 +30,8 @@ def cleanup_zygote_between_modules():
     """
     import tempfile
     
-    # Clean before module runs
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+    # Safe cleanup: rely on socket unlinking and test-local teardown.
+    # Avoiding pkill -f to prevent killing IDE language servers (User Rule).
     
     import os
     uid = os.getuid()
@@ -100,7 +100,7 @@ def isolated_env(tmp_path):
             )
             # Install blake3 for hash verification and uvicorn for server testing
             subprocess.run(
-                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn"],
+                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn", "fastapi"],
                 cwd=self.path, capture_output=True
             )
             # Create empty uv.lock so velo detects it as a project
