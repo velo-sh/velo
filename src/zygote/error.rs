@@ -22,6 +22,8 @@ pub enum ZygoteError {
     StartFailed(String),
     /// Zygote not supported on this platform
     NotSupported,
+    /// RFC-0012: Security invariant violation (Sandbox Breach / Untrusted Path)
+    SecurityViolation(String),
 }
 
 impl fmt::Display for ZygoteError {
@@ -34,6 +36,7 @@ impl fmt::Display for ZygoteError {
             ZygoteError::NotRunning => write!(f, "Zygote is not running"),
             ZygoteError::StartFailed(msg) => write!(f, "Failed to start Zygote: {}", msg),
             ZygoteError::NotSupported => write!(f, "Zygote is not supported on this platform"),
+            ZygoteError::SecurityViolation(msg) => write!(f, "🚨 SECURITY VIOLATION: {}", msg),
         }
     }
 }

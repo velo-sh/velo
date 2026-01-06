@@ -7,6 +7,7 @@ import socket
 import signal
 import hashlib
 import glob
+import tempfile
 
 # Path to the compiled binary - adjusted to be relative to project root or absolute
 # For CI/Local, we assume it's in target/debug/velo
@@ -34,9 +35,13 @@ class TestSecurityShieldIntegration:
         malicious_env["PATH"] = f"{toxic_path}:" + malicious_env.get("PATH", "")
         
         # 2. Run Velo to probe its own environment
-        # Command: velo run -c "import os; print(os.environ['PATH'])"
+        # Command: velo run probe.py
+        probe_file = os.path.join(toxic_path, "probe.py")
+        with open(probe_file, "w") as f:
+            f.write("import os; print(os.environ['PATH'])")
+            
         result = subprocess.run(
-            [VELO_BIN, "run", "-c", "import os; print(os.environ['PATH'])"],
+            [VELO_BIN, "run", probe_file],
             env=malicious_env,
             capture_output=True,
             text=True
@@ -48,7 +53,6 @@ class TestSecurityShieldIntegration:
         assert toxic_path not in result.stdout, \
             f"SECURITY FAILURE: Malicious PATH '{toxic_path}' was not scrubbed by EnvironmentProvenanceGuard!"
 
-    @pytest.mark.skipif(sys.platform != "linux", reason="FD probes via /proc require Linux")
     @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
     def test_sec_shield_004_fd_leakage_real(self):
         """
@@ -62,25 +66,43 @@ class TestSecurityShieldIntegration:
         # Ensuring we have a high FD to test the hygiene loop
         assert sensitive_fd > 2
         
-        # 2. Spawn Velo and probe /proc/self/fd
-        probe_script = "import os; print(list(os.listdir('/proc/self/fd')))"
+        # 2. Spawn Velo and probe FDs (/proc/self/fd on Linux, /dev/fd on macOS)
+        fd_path = '/proc/self/fd' if sys.platform == 'linux' else '/dev/fd'
+        probe_script_content = f"import os; print(list(os.listdir('{fd_path}')))"
         
-        result = subprocess.run(
-            [VELO_BIN, "run", "-c", probe_script],
-            capture_output=True,
-            text=True,
-            # Pass the FD to the OS spawn, but Velo's runner.rs should close it manually if not in whitelist
-            pass_fds=[sensitive_fd] 
-        )
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp_script:
+            tmp_script.write(probe_script_content)
+            tmp_script_path = tmp_script.name
+
+        try:
+            result = subprocess.run(
+                [VELO_BIN, "run", tmp_script_path],
+                capture_output=True,
+                text=True,
+                # Pass the FD to the OS spawn, but Velo's runner.rs should close it manually if not in whitelist
+                pass_fds=[sensitive_fd] 
+            )
+        finally:
+            if os.path.exists(tmp_script_path):
+                os.remove(tmp_script_path)
         
         sensitive_file.close()
         
         # 3. Verification
         # The list of FDs should only contain 0, 1, 2, and perhaps the pipe used for communication
         # It MUST NOT contain our sensitive_fd
-        worker_fds = result.stdout.strip()
-        assert str(sensitive_fd) not in worker_fds, \
-            f"SECURITY FAILURE: Sensitive FD {sensitive_fd} leaked into the worker process! FDs detected: {worker_fds}"
+        worker_fds_raw = result.stdout.strip()
+        # Find the list in the output (in case there are warnings/logs)
+        import re
+        match = re.search(r'\[(.*?)\]', worker_fds_raw)
+        if match:
+            worker_fds = [f.strip(" '\"") for f in match.group(1).split(',')]
+            assert str(sensitive_fd) not in worker_fds, \
+                f"SECURITY FAILURE: Sensitive FD {sensitive_fd} leaked into the worker process! FDs detected: {worker_fds}"
+        else:
+            # Fallback for unexpected format, but alert if sensitive_fd is in the list-like part
+            assert f"'{sensitive_fd}'" not in worker_fds_raw and f'"{sensitive_fd}"' not in worker_fds_raw, \
+                f"SECURITY FAILURE: Sensitive FD {sensitive_fd} suspected in worker output: {worker_fds_raw}"
 
     @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
     def test_sec_shield_003_zygote_isolation_real(self, tmp_path):
@@ -108,10 +130,10 @@ class TestSecurityShieldIntegration:
                     assert "@velo-zygote-" in unix_sockets or "velo-zygote-" in unix_sockets, \
                         "SECURITY FAILURE: Abstract Zygote socket not detected in /proc/net/unix"
             else:
-                # macOS check: Look for the mkdtemp'd path
-                # Pattern: /tmp/velo-secure-*/zygote.sock
-                matches = glob.glob("/tmp/velo-secure-*/zygote-*.sock") + \
-                          glob.glob(os.path.join(os.environ.get("TMPDIR", "/tmp"), "velo-secure-*/zygote-*.sock"))
+                # macOS check: Look for the secure randomized path
+                # Pattern: /tmp/velo-secure-*/velo-zygote-v*.sock
+                matches = glob.glob("/tmp/velo-secure-*/velo-zygote-v*.sock") + \
+                          glob.glob(os.path.join(os.environ.get("TMPDIR", "/tmp"), "velo-secure-*/velo-zygote-v*.sock"))
                 assert len(matches) > 0, "SECURITY FAILURE: Atomic randomized Zygote socket not found on macOS"
                 
         finally:
@@ -127,8 +149,12 @@ class TestSecurityShieldIntegration:
         toxin_env["LD_LIBRARY_PATH"] = "/tmp/evil_libs"
         toxin_env["PYTHONHOME"] = "/tmp/evil_python"
         
+        probe_file = os.path.join(tempfile.gettempdir(), "probe_toxin.py")
+        with open(probe_file, "w") as f:
+            f.write("import os; print(os.environ.get('LD_LIBRARY_PATH', 'CLEAN')); print(os.environ.get('PYTHONHOME', 'CLEAN'))")
+            
         result = subprocess.run(
-            [VELO_BIN, "run", "-c", "import os; print(os.environ.get('LD_LIBRARY_PATH', 'CLEAN')); print(os.environ.get('PYTHONHOME', 'CLEAN'))"],
+            [VELO_BIN, "run", probe_file],
             env=toxin_env,
             capture_output=True,
             text=True
