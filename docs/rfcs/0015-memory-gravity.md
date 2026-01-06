@@ -439,7 +439,7 @@ def velo_doctor_check(tensor, mmap_base, expected_offset):
 - **Scenario**: Host unmaps -> Worker executes pending instruction -> Transient Page Fault / SIGSEGV. (e.g. speculative load, prefetch, vector pipeline)
 - **Advisory (Future H-31)**: Host MUST provide execution quiescence barrier (wait for workers to ack "idle") before final unmap.
 - **v0.7.0 Mitigation**: Rely on 100ms grace period + Host Death (fail-fast).
-- **Engineering Reality**: **This is not a correctness bug but a consequence of weak execution quiescence guarantees in general-purpose OS kernels.** H-31 is a hard requirement for v1.0.
+- **Engineering Reality**: **This is not a correctness bug but a consequence of weak execution quiescence guarantees in general-purpose OS kernels.** H-31 is a hard requirement for v1.0. See [Deep Dive: H-31 Analysis](../architecture/research_h31_execution_barrier.md).
 
 ### 2. ABI Freeze Contract (H-32 Candidate)
 **Risk**: PyTorch `frombuffer` is allowed to panic or copy on non-standard strides/dtypes.
