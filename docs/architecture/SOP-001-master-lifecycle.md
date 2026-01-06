@@ -7,11 +7,13 @@
 
 ---
 
-## 1. Philosophy: "The Velo Way"
-Velo architecture is not just about code; it is about **Governance, Security, and verifiable Performance**.
-1.  **Governance is Code**: Roles (AGENTS.md) and Tasks (task.md) are immutable contracts.
-2.  **Security is Surgical**: We do not "remove features" for security; we **shield** them (`EnvironmentShield`).
-3.  **Verification is Hostile**: The QA process ("The Prosecutor") assumes the code is broken, insecure, and slow until proven otherwise via **Zero-Mock** binary testing.
+## 1. Philosophy: "The Velo Way" (TITANIUM Standard)
+Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of reliability and security.
+
+1.  **Governance is Law**: Roles (AGENTS.md) and SOPs are immutable contracts, not suggestions.
+2.  **Security is Structural**: We do not "patch" security; we **architect** it (Surgical Shielding).
+3.  **Verification is Hostile**: The "Prosecutor Method" assumes failure until proven succesful by **Zero-Mock** binary execution.
+4.  **Invariants are Absolute**: Performance and Security thresholds are **P0 Blockers**. No "Tactical" waivers.
 
 ---
 
@@ -56,16 +58,17 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ## 3. Phase II: Implementation (The Build)
 
-### 3.0 The Amendment Protocol (Tactical Armor)
-*   **Agile Hardening**: If the Developer encounters a block, they must propose a "Tactical Amendment."
-*   **Example**: "Strict Blacklist failed (suffocation). Switching to Surgical Whitelist."
-*   **Approval**: Amendments require sign-off from the relevant Expert (e.g., Security for `env` handling).
+### 3.0 The Titanium Variance Protocol (No Compromise)
+*   **Immutable Basis**: Security and Performance invariants (RFC-0010/0012) are **IMMUTABLE**.
+*   **The Variance Path**: If an invariant physically prevents core functionality, a **Titanium Variance** may be requested.
+*   **Scrutiny Level**: Variances require **UNANIMOUS** sign-off from the Grand Council (Tier 1 & Tier 2).
+*   **Record**: Every variance must be permanently recorded as an ADR (Architecture Decision Record).
 
-### 3.1 Security Standard: "Surgical Shielding" (RFC-0012)
-*   **Whitelist Only**: Never use blacklists (e.g., `env_remove`). Use `EnvironmentShield::new().apply()`.
+### 3.1 Security Standard: "Surgical Shielding" (RFC-0012, TITANIUM)
+*   **Whitelist Only**: The `EnvironmentShield` is the only allowed sanitation mechanism.
 *   **Hygiene**:
-    *   **FDs**: Close all FDs > 2 in child processes (`close_range`).
-    *   **Signals**: Reset signal masks before `exec`.
+    *   **FDs**: `close_range` is mandatory on Linux. 
+    *   **Signals**: Signal masks must be religiously reset.
 *   **Isolation**:
     *   **Sockets**: Must utilize `project_hash` + `uid` to prevent cross-workspace collisions.
     *   **Paths**: Use `O_PATH` and `fstat` (Inode verification) to prevent TOCTOU attacks.
