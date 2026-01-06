@@ -19,7 +19,7 @@ The QA Mission for ARCH-0013 has concluded with a **REJECTION** of delivery `f69
 | **SO_PEERCRED Identity** | ❌ **FAILED** | `SEC-621`: **Security Fraud**. Missing implementation. |
 | **Concurrency Scaling (20+)** | ❌ **FAILED** | `STAB-622`: Deadlocks under pressure. |
 | **Protocol Robustness** | ❌ **FAILED** | `CHAOS-621`: `BrokenPipeError` under flood. |
-| **FD Hygiene** | ✅ **PASSED** | `SEC-623`: Verified post-reinit. |
+| **Backlog Scaling** | ❌ **FAILED** | `CHAOS-623`: **DEADLOCK**. Stalled for 600s+. |
 | **Startup Latency (<50ms)** | ❌ **FAILED** | Stalled by regression. |
 
 ## 3. Critical Defects (Phase 5)
@@ -40,9 +40,9 @@ The QA Mission for ARCH-0013 has concluded with a **REJECTION** of delivery `f69
 - **Status**: **OPEN**
 - **Description**: Zygote fails to scale under simultaneous fork requests.
 
-### [DEF-62-005] P0: Socket Exhaustion
-- **Status**: **OPEN**
-- **Description**: Zygote hangs when subjected to connection pressure.
+### [DEF-62-005] P0: Socket Exhaustion (Deadlock)
+- **Status**: **CONFIRMED**
+- **Description**: Zygote enters a non-responsive state when concurrent connections exceed backlog depth (~20). Evidence from 600s+ timeout stall in `test_CHAOS_623`.
 
 ---
 ## Final Verdict
