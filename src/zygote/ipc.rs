@@ -131,7 +131,7 @@ pub fn default_socket_path() -> PathBuf {
         use std::os::unix::ffi::OsStringExt;
         let mut bytes = vec![0u8];
         bytes.extend_from_slice(format!("velo-zygote-v{:02x}", PROTOCOL_VERSION).as_bytes());
-        return PathBuf::from(std::ffi::OsString::from_vec(bytes));
+        PathBuf::from(std::ffi::OsString::from_vec(bytes))
     }
 
     #[cfg(not(target_os = "linux"))]
