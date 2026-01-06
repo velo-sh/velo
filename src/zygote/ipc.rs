@@ -531,11 +531,11 @@ impl ZygoteStream {
             ZygoteError::ConnectionFailed(format!("Failed to connect to Zygote: {}", e))
         })?;
 
-        let mut zygote_stream = Self { stream, deadline };
-
         // 0. Verify server identity (RFC §3.7 Mutual Auth)
         #[cfg(target_os = "linux")]
         verify_peer_credentials(&stream)?;
+
+        let mut zygote_stream = Self { stream, deadline };
 
         // 1. Receive mandatory "Ready" greeting
         let ready: ZygoteResponse =
