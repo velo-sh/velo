@@ -19,6 +19,9 @@ This RFC proposes **Memory Gravity**, an infrastructure where the Velo Host (Rus
 
 **Philosophy**: Model weights are treated as **kernel-level resources**, not Python objects. This is analogous to Chrome V8 Snapshots, JVM CDS, and Meta FBGEMM shared weights.
 
+> **The User-Space Limit Theorem**:  
+> *"A user-space system cannot implement a stronger isolation or capability model than the kernel it runs on. Any claim to the contrary is either based on removing kernel authority (VM/TEE) or on restricting the execution model to a non-general-purpose sandbox."*
+
 ## 2. Motivation
 
 ### 2.1 The Problem: The Memory Wall
