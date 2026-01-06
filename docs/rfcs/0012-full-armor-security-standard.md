@@ -1,8 +1,9 @@
 # RFC-0012: The 'Full Armor' Security Standard (Surgical Shielding)
 
-> **Status**: DRAFT  
-> **Author**: Architect (ID-LOCK-001)  
-> **Created**: 2026-01-06  
+> **Status**: APPROVED  
+> **Revision**: 0.6.3 (Certified)  
+> **Author**: Velo Architect / Security Committee  
+> **Date**: 2026-01-06  
 > **Target Version**: v0.6.2  
 > **Branch**: `phase-6.2/security-hardening`  
 > **Parent Documents**: RFC-0010, RFC-0011
