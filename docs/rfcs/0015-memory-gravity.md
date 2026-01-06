@@ -19,6 +19,8 @@ This RFC proposes **Memory Gravity**, an infrastructure where the Velo Host (Rus
 
 **Philosophy**: Model weights are treated as **kernel-level resources**, not Python objects. This is analogous to Chrome V8 Snapshots, JVM CDS, and Meta FBGEMM shared weights.
 
+> **Definition**: **Memory Gravity is NOT a memory sharing feature; it is a trust-domain–local execution fabric.** Any deployment that violates this assumption is out of scope by design.
+
 > **The User-Space Limit Theorem**:  
 > *"A user-space system cannot implement a stronger isolation or capability model than the kernel it runs on. Any claim to the contrary is either based on removing kernel authority (VM/TEE) or on restricting the execution model to a non-general-purpose sandbox."*
 
@@ -127,6 +129,7 @@ For models > available RAM:
    - MUST NOT be enabled by default in multi-tenant clusters.
    - MUST have runtime kill-switch (`VELO_DISABLE_HUGEPAGES=1`).
    - Fallback order: `HUGETLB` -> `MADV_HUGEPAGE` (THP) -> standard pages
+   - **Strict Mode**: If `VELO_STRICT_NUMA=1`, hugepage allocation verification MUST fail-fast if crossing NUMA nodes.
 
 9. **H-21: Liveness Guard (REVISED)**:
    - Rust MUST broadcast `SHM_EXPIRE` before unmapping.
@@ -175,11 +178,10 @@ For models > available RAM:
     **Security Boundary**: 
     - Mode 1 (v0.7.0): Single-Tenant / Tenant-Scoped Gravity. One Tenant = One Host + SHM.
     - Mode 2 (Future): Shared-Weight Broker (Privileged).
-
-      - Separate uid, OR
-      - Container/namespace isolation
     
-    **Security Boundary**: "If you can attach one worker, you can attach the entire model" is **acceptable in single-tenant** but **NOT acceptable in multi-tenant cloud**.
+    **Brand Risk**: While `ctypes` writing to read-only memory is "user responsibility", unsuspecting users damaging shared memory is a **Product Liability**.
+    - **Active Defense**: Velo Wrappers MUST monkey-patch `.data_ptr()` to warn/error.
+    - **Zero Tolerance**: If a worker triggers a write check (e.g. `mincore` dirty bit), the Host SHOULD SIGKILL the worker to protect the fabric.
 
 ### Runtime Revertability (Final Safety Valve)
 12. **H-28: Runtime Revertability (CRITICAL)**:
@@ -204,7 +206,7 @@ For models > available RAM:
     - If JSON header is 1023 bytes, first tensor starts at offset 1031 (8 + 1023).
     - This is NOT 64-byte (AVX-512) or even 16-byte aligned.
     - **Consequence**: PyTorch/NumPy will **silently trigger memory copy** to ensure SIMD safety!
-
+    
     ```mermaid
     graph LR
         subgraph "Scenario A: Standard Safetensors (BAD)"
@@ -374,6 +376,8 @@ fn write_aligned_safetensors(metadata: &Metadata, tensors: &[Tensor]) {
 1. Query `libnuma` or `/sys/devices/system/node/` at startup.
 2. If `num_nodes > 1`: Default to **Strict Mode**.
    - Refuse to launch workers unless they can be pinned to same node as SHM.
+   - **FAIL FAST**: `multi-socket + HugeTLB + no NUMA pinning = REFUSE TO START`.
+   - Do not allow silent tail latency poison.
 3. Log `WARN` if OS scheduler moves worker to different node.
    - Monitor `/proc/<pid>/status -> Cpus_allowed_list`.
 
@@ -432,9 +436,10 @@ def velo_doctor_check(tensor, mmap_base, expected_offset):
 
 ### 1. In-Flight Execution Barrier (H-31 Candidate)
 **Risk**: `munmap` on Host is not synchronized with Worker's CPU pipeline or remote kernels.
-- **Scenario**: Host unmaps -> Worker executes pending instruction -> Transient Page Fault / SIGSEGV.
+- **Scenario**: Host unmaps -> Worker executes pending instruction -> Transient Page Fault / SIGSEGV. (e.g. speculative load, prefetch, vector pipeline)
 - **Advisory (Future H-31)**: Host MUST provide execution quiescence barrier (wait for workers to ack "idle") before final unmap.
 - **v0.7.0 Mitigation**: Rely on 100ms grace period + Host Death (fail-fast).
+- **Engineering Reality**: **This is not a correctness bug but a consequence of weak execution quiescence guarantees in general-purpose OS kernels.** H-31 is a hard requirement for v1.0.
 
 ### 2. ABI Freeze Contract (H-32 Candidate)
 **Risk**: PyTorch `frombuffer` is allowed to panic or copy on non-standard strides/dtypes.
