@@ -24,7 +24,11 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0008](./0008-phase-5.1-zygote-optimization.md) | Phase 5.1 Zygote 10ms | ✅ Accepted | v0.5.1 |
 | [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Approved | v0.6.1 |
 | [0011](./0011-zygote-worker-integration.md) | Phase 6.1.1 Zygote Worker Integration | ✅ Approved | v0.6.2 |
-| [0012](./0012-full-armor-security-standard.md) | 'Full Armor' Security Standard | 🛠️ In Review | v0.6.2 |
+| [0012](./0012-full-armor-security-standard.md) | 'Full Armor' Security Standard | ✅ Audited | v0.6.2 |
+
+## Quality Assurance Reports
+
+- **[PHASE_6_2_DESIGN_AUDIT](./docs/qa/audit_reports/PHASE_6_2_DESIGN_AUDIT.md)**: 16-Dimension Multi-Persona Review.
 
 ## Architecture Decision Records (ADRs)
 
