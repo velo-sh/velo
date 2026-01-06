@@ -18,8 +18,8 @@ graph TD
     end
 
     subgraph "Layer 2: Process Isolation (Zygote Gap)"
-        ZygoteA[Zygote A (Project X)]
-        ZygoteB[Zygote B (Project Y)]
+        ZygoteA["Zygote A (Project X)"]
+        ZygoteB["Zygote B (Project Y)"]
         WorkerA1[Worker A1]
         WorkerB1[Worker B1]
         
@@ -36,9 +36,9 @@ graph TD
     end
 
     subgraph "Layer 1: System Hardening (Tactical Armor)"
-        Kernel[OS Kernel / Hardware]
-        CapStd[Capability Based IO (cap-std)]
-        Hygiene[Atomic Sockets & FD Hygiene]
+        Kernel["OS Kernel / Hardware"]
+        CapStd["Capability Based IO (cap-std)"]
+        Hygiene["Atomic Sockets & FD Hygiene"]
         
         WorkerA1 -->|Checked Access| CapStd
         WorkerB1 -->|Checked Access| CapStd
