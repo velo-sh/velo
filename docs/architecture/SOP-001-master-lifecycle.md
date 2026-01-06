@@ -14,9 +14,10 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
 2.  **Security is Structural**: We do not "patch" security; we **architect** it (Surgical Shielding).
 3.  **Verification is Hostile**: The "Prosecutor Method" assumes failure until proven succesful by **Zero-Mock** binary execution.
 4.  **Invariants are Absolute**: Performance and Security thresholds are **P0 Blockers**. No "Tactical" waivers.
-5.  **Separation of Powers (Iron Rule)**: The **Architect** governs; the **Developer** implements.
-    *   ❌ **The Architect MUST NOT** write production code (`src/*.rs`, `*.py`).
-    *   ✅ **The Architect MUST** only write Governance (`docs/`), Contracts (`rfcs/`), and Tests (`tests/`).
+6.  **Identity Immutability (Iron Rule)**: The AI Agent's role is **LOCKED** upon mission start.
+    *   ❌ **NO HANDOVERS**: Switching roles (e.g., Architect -> Developer) is strictly **PROHIBITED**.
+    *   ❌ **NO AUTO-TRANSITION**: Self-authorized role changes are a critical governance breach.
+    *   🏛️ **STAY IN LANE**: The Architect stays the Architect. If the code cannot be written by the Architect, the Architect must stop at the design gate.
 
 ---
 
