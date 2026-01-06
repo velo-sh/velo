@@ -44,6 +44,8 @@ jobs:
             serve:
               - 'src/serve/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
+              - 'tests/qa/phase_6_1_1/**'
+              - 'tests/security/**'
               - 'scripts/qa-fast.sh'
             analyze:
               - 'src/cmd/analyze.rs'
@@ -465,6 +467,110 @@ jobs:
       
       - name: "Performance: Latency, Memory, File Descriptors"
         run: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
+
+  qa-phase62-prosecutor:
+    name: "QA 6.2: Prosecutor Suite (RFC-0012)"
+    runs-on: ubuntu-latest
+    needs: [qa-phase61-security-hardened, changes]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+      
+      - name: "Prosecutor: Collision (Sin 3) & Hygiene (Sin 1)"
+        # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
+        run: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
+
+  qa-phase611-core:
+    name: "QA 6.1.1: Core Integration"
+    runs-on: ubuntu-latest
+    needs: [qa-phase62-prosecutor]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+      - name: "Run Core Tests"
+        run: |
+          uv run pytest \
+            tests/qa/phase_6_1_1/test_phase611_smoke.py \
+            tests/qa/phase_6_1_1/test_phase611_golden_path.py \
+            tests/qa/phase_6_1_1/test_phase611_features.py \
+            tests/qa/phase_6_1_1/test_phase611_integration.py \
+            tests/qa/phase_6_1_1/test_isolation.py \
+            -v --tb=short
+
+  qa-phase611-agents:
+    name: "QA 6.1.1: Multi-Agent Simulation"
+    runs-on: ubuntu-latest
+    needs: [qa-phase611-core]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+      - name: "Run Agent Tests (A/B/C/D)"
+        run: |
+          uv run pytest \
+            tests/qa/phase_6_1_1/test_phase611_agent_*.py \
+            -v --tb=short
+
+  qa-phase611-specialized:
+    name: "QA 6.1.1: Specialized & Expert"
+    runs-on: ubuntu-latest
+    needs: [qa-phase611-core]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+      - name: "Run Expert/Blocker/Whitebox Tests"
+        run: |
+          uv run pytest \
+            tests/qa/phase_6_1_1/test_phase611_expert_concerns.py \
+            tests/qa/phase_6_1_1/test_phase611_release_blockers.py \
+            tests/qa/phase_6_1_1/test_phase611_whitebox.py \
+            tests/qa/phase_6_1_1/test_security_hardened.py \
+            -v --tb=short
+
+  qa-phase611-perf:
+    name: "QA 6.1.1: Performance Baselines"
+    runs-on: ubuntu-latest
+    needs: [qa-phase611-core]
+    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+      - name: "Run Performance Tests"
+        run: |
+          uv run pytest \
+            tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
+            tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
+            -v --tb=short
 
   # ============================================
   # Phase 4.0: velo analyze QA
