@@ -421,7 +421,46 @@ def velo_doctor_check(tensor, mmap_base, expected_offset):
 
 ---
 
+---
+
+## Appendix C: Day 2 Survival Guide (Critical Gaps)
+
+> **Status**: APPROVED ADVISORY. These are known risks in scale/production environments that must be mitigated by operational policy or future features.
+
+### 1. In-Flight Execution Barrier (H-31 Candidate)
+**Risk**: `munmap` on Host is not synchronized with Worker's CPU pipeline or remote kernels.
+- **Scenario**: Host unmaps -> Worker executes pending instruction -> Transient Page Fault / SIGSEGV.
+- **Advisory (Future H-31)**: Host MUST provide execution quiescence barrier (wait for workers to ack "idle") before final unmap.
+- **v0.7.0 Mitigation**: Rely on 100ms grace period + Host Death (fail-fast).
+
+### 2. ABI Freeze Contract (H-32 Candidate)
+**Risk**: PyTorch `frombuffer` is allowed to panic or copy on non-standard strides/dtypes.
+- **Advisory (Future H-32)**: Only contiguous, standard-stride tensors are supported. Any view/transpose MUST trigger copy.
+- **v0.7.0 Mitigation**: Zero-copy guarantee applies ONLY to base storage.
+
+### 3. NUMA × HugePage Coherency (H-33 Candidate)
+**Risk**: Dual socket + HugeTLB pool exhaustion on local node -> Linux allocates Remote HugePage -> Silent Performance Killer.
+- **Advisory (Future H-33)**: Allocation MUST succeed on SAME NUMA node or fallback to standard pages. Silent cross-node HugePage allocation is FORBIDDEN.
+- **v0.7.0 Mitigation**: Strict monitoring of `numa_miss` metrics.
+
+### 4. Host Rolling Update (Explicit Non-Goal)
+**Risk**: Confusion about "Hot Upgrade".
+- **Decision**: v0.7.0 does **NOT** support live host upgrade.
+- **Semantic**: Host restart is equivalent to full tenant restart.
+- **Strategy**: Drain -> Terminate -> Replace.
+
+### 5. macOS Semantic Divergence
+**Risk**: Developers assuming macOS behavior = Production behavior.
+- **Clarification**: macOS is **Semantic Divergence Mode**.
+  - NO sealing.
+  - NO security guarantees.
+  - NO performance equivalence.
+  - **For functional testing ONLY.**
+
+---
+
 **RFC-0015 Status: MERGED**
 
 *This is no longer just an RFC. It is a Specification.*
+
 
