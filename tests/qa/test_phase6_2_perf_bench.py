@@ -18,6 +18,7 @@ def measure_startup(velo_cmd: list, env_vars: dict) -> float:
     return (time.perf_counter() - start) * 1000 # ms
 
 @pytest.mark.tier5
+@pytest.mark.heavy
 def test_PERF_621_kinetic_speedup(isolated_env):
     """Verify >10x speedup over Cold Start."""
     env = isolated_env
@@ -67,6 +68,7 @@ def test_PERF_621_kinetic_speedup(isolated_env):
         proc.terminate()
 
 @pytest.mark.tier5
+@pytest.mark.heavy
 def test_PERF_622_spawn_scalability(isolated_env):
     """Measure latency degradation across many sequential spawns."""
     env = isolated_env
