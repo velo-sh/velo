@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "flake8"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["flake8"]
+timeout = 30

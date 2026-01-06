@@ -1,0 +1,9 @@
+[meta]
+category = "ml"
+description = "NumPy: The fundamental package for scientific computing with Python"
+
+[test]
+entry_point = "hello.py"
+expected_output = "NumPy initialized: .*\\.\\s+Version: .*\\d+\\.\\d+\\.\\d+.*"
+preload_modules = ["numpy"]
+timeout = 30

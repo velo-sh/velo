@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "distlib"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["distlib", "distlib.database", "distlib.version", "distlib.markers"]
+timeout = 30

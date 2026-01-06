@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "python-dateutil"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["dateutil"]
+timeout = 30

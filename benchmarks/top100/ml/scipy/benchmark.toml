@@ -1,0 +1,10 @@
+
+[meta]
+category = "ml"
+package = "scipy"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["scipy", "scipy.special", "scipy.linalg", "scipy.optimize", "numpy"]
+timeout = 30

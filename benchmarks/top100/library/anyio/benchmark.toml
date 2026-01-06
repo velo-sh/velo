@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "anyio"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["anyio"]
+timeout = 30
