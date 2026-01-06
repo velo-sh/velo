@@ -30,11 +30,13 @@ def cleanup_zygote_between_modules():
     """
     import tempfile
     
-    # Clean before module runs
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+    # Safe cleanup: rely on socket unlinking and test-local teardown.
+    # Avoiding pkill -f to prevent killing IDE language servers (User Rule).
     
-    # Clean socket files
-    sock_path = Path(tempfile.gettempdir()) / "velo-zygote.sock"
+    import os
+    uid = os.getuid()
+    sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+    sock_path = sock_dir / "velo-zygote-v01.sock"
     if sock_path.exists():
         try:
             sock_path.unlink()
@@ -98,7 +100,7 @@ def isolated_env(tmp_path):
             )
             # Install blake3 for hash verification and uvicorn for server testing
             subprocess.run(
-                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn"],
+                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn", "fastapi"],
                 cwd=self.path, capture_output=True
             )
             # Create empty uv.lock so velo detects it as a project
@@ -137,4 +139,41 @@ def isolated_env(tmp_path):
         shutil.rmtree(tmp_path)
     except:
         pass
+
+
+# =============================================================================
+# MEMORY HELPERS
+# =============================================================================
+
+def get_rss(pid: int) -> int:
+    """Get Resident Set Size (RSS) in bytes for a process.
+    
+    Returns 0 if process doesn't exist or error occurs.
+    """
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        return p.memory_info().rss
+    except Exception:
+        return 0
+
+
+def get_pss(pid: int) -> int:
+    """Get Proportional Set Size (PSS) in bytes for a process.
+    
+    PSS accounts for shared pages - more accurate for COW memory measurement.
+    Falls back to RSS if PSS not available (macOS).
+    Returns 0 if process doesn't exist or error occurs.
+    """
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        # PSS is only available on Linux via memory_full_info()
+        try:
+            return p.memory_full_info().pss
+        except AttributeError:
+            # macOS doesn't have PSS, fall back to RSS
+            return p.memory_info().rss
+    except Exception:
+        return 0
 

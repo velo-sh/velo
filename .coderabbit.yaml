@@ -29,6 +29,10 @@ reviews:
 knowledge_base:
   opt_out: false
 
-# Enable conversational replies in PR threads
+# RAG / Knowledge Base: Allows AI to understand the whole codebase
+knowledge_base:
+  opt_out: false
+
+# Chat features allowed in PR comments
 chat:
   auto_reply: true

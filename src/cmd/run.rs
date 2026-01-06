@@ -175,7 +175,7 @@ fn try_zygote_run(
             eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
         }
 
-        if let Err(e) = launcher.start(&preload) {
+        if let Err(e) = launcher.start(&preload, None) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
@@ -244,7 +244,7 @@ fn try_zygote_run(
                     eprintln!("🔄 Stale socket detected, restarting Zygote...");
                     zygote::ipc::cleanup_socket(&socket_path);
 
-                    if let Ok(()) = launcher.start(&[]) {
+                    if let Ok(()) = launcher.start(&[], None) {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn

@@ -11,7 +11,7 @@ cargo fmt --check || {
     exit 1
 }
 
-echo "🔍 Running cargo clippy (same as CI: --all-targets --all-features)..."
+echo "🔍 Running cargo clippy (Single Source of Truth: Cargo.toml)..."
 cargo clippy --all-targets --all-features -- -D warnings || {
     echo "❌ Clippy check failed. Fix the warnings above."
     exit 1

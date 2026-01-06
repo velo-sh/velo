@@ -68,10 +68,10 @@ Velo's .venv ≠ User Project's .venv
 ```
 
 > [!WARNING]
-> **SECURITY REDLINE**: Velo blocks loading from insecure paths (e.g., `/tmp`, `/var/tmp`, `/dev/shm`). Do NOT use default `tempfile::TemporaryDirectory()` or `tempdir()` for bundle loading tests. Always use project-local paths (e.g., via `.tempdir_in(std::env::current_dir()?)`).
+> **SECURITY REDLINE**: Velo blocks loading from `/tmp`. Do NOT use default `tempfile::TemporaryDirectory()` for bundle loading tests. Use project-local paths instead.
 
 > [!IMPORTANT]
-> **STYLE POLICY**: AI Agents must ensure `cargo fmt --all` is run before commit. It is highly recommended to run `scripts/setup-dev.sh` once to automate this via pre-commit hooks.
+> **STYLE POLICY**: AI Agents must manually run `cargo fmt --all` before any commit to ensure CI compliance.
 
 | Test Type | Environment |
 |-----------|-------------|
