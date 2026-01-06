@@ -23,7 +23,7 @@ pub mod ipc;
 
 extern crate log;
 
-use crate::lifecycle::safety::set_cloexec_on_all_fds;
+use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use error::{Result, ZygoteError};
 use ipc::{ZygoteResponse, is_socket_alive};
 use std::fs::{self, OpenOptions};
@@ -358,10 +358,6 @@ impl ZygoteLauncher {
     /// * `app_name` - Optional app name for affinity verification (WB-004)
     #[cfg(unix)]
     pub fn start(&mut self, preload: &[&str], app_name: Option<&str>) -> Result<()> {
-        // RFC-0011 C.1: Active FD hygiene - close all non-inheritable FDs before fork
-        #[cfg(unix)]
-        let _ = set_cloexec_on_all_fds();
-
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         ipc::cleanup_stale_sockets();
 
@@ -375,8 +371,9 @@ impl ZygoteLauncher {
             PathBuf::from("python3")
         });
 
-        // DEBUG: See which python we are using
-        eprintln!("DEBUG: Zygote starting with Python: {:?}", python);
+        // RFC-0011: Standardized socket path
+        let socket_path = crate::zygote::ipc::default_socket_path();
+        log::info!("🚀 Zygote using socket: {}", socket_path.display());
 
         // Find zygote module
         let zygote_module = find_zygote_module()?;
@@ -385,30 +382,11 @@ impl ZygoteLauncher {
         let mut cmd = Command::new(&python);
         cmd.env_clear();
 
-        // 1. Essential OS environment (pass-through)
-        for var in &[
-            "PATH",
-            "HOME",
-            "USER",
-            "TMPDIR",
-            "XDG_RUNTIME_DIR",
-            "SHELL",
-            "PYTHONPATH",
-            "VIRTUAL_ENV",
-            "CONDA_PREFIX",
-            "LANG",
-            "LC_ALL",
-            "LC_CTYPE",
-            "__CF_USER_TEXT_ENCODING",
-            "MallocNanoZone",
-            "XPC_FLAGS",
-            "XPC_SERVICE_NAME",
-            "TERM_PROGRAM",
-        ] {
-            if let Ok(val) = std::env::var(var) {
-                cmd.env(var, val);
-            }
-        }
+        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        let shield = EnvironmentShield::new();
+        shield
+            .apply(&mut cmd)
+            .map_err(ZygoteError::SecurityViolation)?;
 
         // 2. High-Performance Isolation (RFC-0011 HPC-001)
         cmd.env("OMP_NUM_THREADS", "1");
@@ -418,11 +396,13 @@ impl ZygoteLauncher {
         cmd.env("NUMEXPR_NUM_THREADS", "1");
 
         // 3. MacOS/Python Specific Isolation
-        // Prevent Python from creating .pyc files in the user environment if not desired
         cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-        // Force UTF-8 for predictable byte-oriented IPC
+        cmd.env("PYTHONUNBUFFERED", "1"); // RFC §3.1
         cmd.env("PYTHONIOENCODING", "utf-8");
         cmd.env("PYTHONUTF8", "1");
+
+        // RFC-0012 §3.6: FD & Signal Hygiene
+        apply_standard_hygiene(&mut cmd);
 
         // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
         let socket_arg = {
@@ -849,5 +829,17 @@ mod tests {
     fn test_get_log_path() {
         let path = get_log_path();
         assert!(path.to_string_lossy().contains("zygote.log"));
+    }
+
+    #[test]
+    fn test_environment_shield_basic() {
+        let shield = EnvironmentShield::new();
+        // /usr/bin should be trusted
+        assert!(shield.validate_path_variable("/usr/bin").is_ok());
+
+        // RFC §3.5: /tmp should be scrubbed out (filtered) from PATH
+        let res = shield.validate_path_variable("/tmp");
+        assert!(res.is_ok());
+        assert!(res.unwrap().is_empty());
     }
 }

@@ -13,6 +13,7 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
+use blake3;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -147,8 +148,17 @@ pub fn default_socket_path() -> PathBuf {
 pub fn get_socket_dir() -> PathBuf {
     /// Red Line #1: Path length limit with 4-byte margin
     const SOCKET_PATH_LIMIT: usize = 104;
-
     let uid = unsafe { libc::getuid() };
+
+    // RFC §3.3: Use project-specific randomized identity for isolation
+    let project_hash = if let Ok(cwd) = std::env::current_dir() {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(cwd.to_string_lossy().as_bytes());
+        let hash = hasher.finalize().to_hex()[..8].to_string();
+        format!("-{}", hash)
+    } else {
+        "".to_string()
+    };
 
     // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
     if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
@@ -159,9 +169,11 @@ pub fn get_socket_dir() -> PathBuf {
         }
     }
 
-    // 2. Try user-isolated temp directory
-    let user_dir = std::env::temp_dir().join(format!("velo-{}", uid));
+    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
+    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
+    let user_dir = std::env::temp_dir().join(&dir_name);
     let test_path = user_dir.join("velo-zygote-v01.sock");
+
     // Red Line #1: Check path length BEFORE ensuring directory
     if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
         return user_dir;
@@ -175,7 +187,7 @@ pub fn get_socket_dir() -> PathBuf {
             SOCKET_PATH_LIMIT
         );
     }
-    let fallback_dir = PathBuf::from("/tmp").join(format!("velo-{}", uid));
+    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
     let _ = ensure_socket_dir(&fallback_dir);
     fallback_dir
 }
@@ -188,12 +200,17 @@ pub fn get_socket_dir() -> PathBuf {
 fn ensure_socket_dir(dir: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
-    // Create directory if needed
-    if !dir.exists() && std::fs::create_dir_all(dir).is_err() {
-        return false;
+    // Create directory if needed with strict umask (RFC §3.3)
+    if !dir.exists() {
+        let old_mask = unsafe { libc::umask(0o077) };
+        let res = std::fs::create_dir_all(dir);
+        unsafe { libc::umask(old_mask) };
+        if res.is_err() {
+            return false;
+        }
     }
 
-    // Set 0700 permissions (owner only)
+    // Set 0700 permissions (owner only) - redundant but safe (Red Line #2)
     if let Ok(metadata) = dir.metadata() {
         let mut perms = metadata.permissions();
         perms.set_mode(0o700);

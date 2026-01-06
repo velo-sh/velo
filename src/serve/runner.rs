@@ -18,6 +18,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::lifecycle::apply_standard_hygiene;
 use crate::serve::config::{LogFormat, ServeArgs};
 use crate::serve::error::ServeError;
 use crate::serve::framework::{detect_framework, get_preload_modules};
@@ -164,13 +165,11 @@ fn apply_process_group(cmd: &mut Command) {
         cmd.pre_exec(|| {
             // Become a process group leader (STB-RS-003)
             libc::setpgid(0, 0);
-
-            // Reset SIGINT/SIGTERM to default in child (MAC-P0-002)
-            libc::signal(libc::SIGINT, libc::SIG_DFL);
-            libc::signal(libc::SIGTERM, libc::SIG_DFL);
             Ok(())
         });
     }
+    // RFC-0012 §3.6: Standard FD & Signal Hygiene
+    apply_standard_hygiene(cmd);
 }
 
 // ============================================================================
@@ -654,7 +653,8 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
 
         use crate::serve::worker::Worker;
-        let socket_path = crate::zygote::ipc::default_socket_path();
+        use crate::zygote::ipc::default_socket_path;
+        let socket_path = default_socket_path();
         let mut workers = Vec::new();
 
         // Spawn N workers

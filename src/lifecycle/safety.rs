@@ -8,7 +8,8 @@
 //! - Async-safe using tokio::fs
 //! - Logs operations for debugging
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tokio::fs;
 
 /// Clean up a stale socket file if it exists.
@@ -202,6 +203,224 @@ pub fn generate_abstract_socket_name(_worker_id: u64) -> Option<String> {
 pub fn supports_abstract_sockets() -> bool {
     cfg!(target_os = "linux")
 }
+
+// =========================================================================
+// RFC-0012: Environment Shield (Surgical Sanitization)
+// =========================================================================
+
+/// Result type for security operations
+pub type SecurityResult<T> = std::result::Result<T, String>;
+
+/// RFC-0012: Environment Shield (Surgical Sanitization)
+///
+/// Prevents "Environment Starvation" while blocking "Dangerous Toxins".
+pub struct EnvironmentShield {
+    trusted_prefixes: Vec<PathBuf>,
+}
+
+impl Default for EnvironmentShield {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EnvironmentShield {
+    pub fn new() -> Self {
+        let mut trusted = Vec::new();
+
+        // 1. Project Root (Highest priority)
+        if let Ok(cwd) = std::env::current_dir() {
+            trusted.push(cwd);
+        }
+
+        // 2. Velo Executable Directory (Essential for child spawns)
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            trusted.push(parent.to_path_buf());
+        }
+
+        // 3. Standard System Prefixes (RFC §3.5)
+        for p in &[
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/opt/homebrew",
+            "/opt/local",
+        ] {
+            trusted.push(PathBuf::from(p));
+        }
+
+        // 4. User Home Directory (RFC §3.5: User-trusted space)
+        if let Ok(home) = std::env::var("HOME") {
+            trusted.push(PathBuf::from(home));
+        }
+
+        // 5. Active VirtualEnv
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            trusted.push(PathBuf::from(venv));
+        }
+        if let Ok(conda) = std::env::var("CONDA_PREFIX") {
+            trusted.push(PathBuf::from(conda));
+        }
+
+        Self {
+            trusted_prefixes: trusted
+                .into_iter()
+                .filter_map(|p| p.canonicalize().ok())
+                .collect(),
+        }
+    }
+
+    /// Apply surgical whitelist and provenance guard to a Command
+    pub fn apply(&self, cmd: &mut Command) -> SecurityResult<()> {
+        cmd.env_clear();
+
+        // RFC §3.1: Mandatory Whitelist
+        const WHITELIST: &[&str] = &[
+            "PATH",
+            "HOME",
+            "USER",
+            "TMPDIR",
+            "XDG_RUNTIME_DIR",
+            "SHELL",
+            "VIRTUAL_ENV",
+            "CONDA_PREFIX",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "TZ",
+            // macOS Essentials
+            "__CF_USER_TEXT_ENCODING",
+            "MallocNanoZone",
+            "XPC_FLAGS",
+            "XPC_SERVICE_NAME",
+            "TERM_PROGRAM",
+            "TERM",
+        ];
+
+        for var in WHITELIST {
+            if let Ok(val) = std::env::var(var) {
+                // Special handling for PATH (Provenance Guard §3.5)
+                if *var == "PATH" {
+                    let cleaned = self.validate_path_variable(&val)?;
+                    cmd.env(var, cleaned);
+                } else {
+                    cmd.env(var, val);
+                }
+            }
+        }
+
+        // RFC §4.0: PYTHONPATH is blacklisted by default unless surgically verified
+        if let Ok(val) = std::env::var("PYTHONPATH")
+            && let Ok(cleaned) = self.validate_path_variable(&val)
+            && !cleaned.is_empty()
+        {
+            cmd.env("PYTHONPATH", cleaned);
+        }
+
+        // 2. High-Performance Isolation (RFC-0011 HPC-001)
+        cmd.env("OMP_NUM_THREADS", "1");
+        cmd.env("MKL_NUM_THREADS", "1");
+        cmd.env("OPENBLAS_NUM_THREADS", "1");
+        cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+        cmd.env("NUMEXPR_NUM_THREADS", "1");
+
+        // 3. Python Specific Isolation
+        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+        cmd.env("PYTHONUNBUFFERED", "1");
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
+
+        Ok(())
+    }
+
+    /// RFC §3.5: Environment Provenance Guard
+    /// Validates that every entry in a path-like variable points to a trusted location.
+    pub fn validate_path_variable(&self, value: &str) -> SecurityResult<String> {
+        let mut valid_entries = Vec::new();
+        let sep = if cfg!(windows) { ';' } else { ':' };
+
+        for entry in value.split(sep) {
+            if entry.is_empty() {
+                continue;
+            }
+
+            let path = PathBuf::from(entry);
+
+            // Fail-Fast: Canonicalization must succeed for trust verification
+            // If it fails, it's likely a non-existent directory which is harmless to skip
+            let canonical = match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => {
+                    eprintln!("⚠️ Warning: Skipping invalid path entry: {:?}", entry);
+                    continue;
+                }
+            };
+
+            // Check if entry is within trusted prefixes
+            if self.is_trusted(&canonical) {
+                valid_entries.push(entry.to_string());
+            } else {
+                eprintln!("🚨 Security: Scrubbing untrusted path entry: {:?}", entry);
+            }
+        }
+
+        Ok(valid_entries.join(&sep.to_string()))
+    }
+
+    fn is_trusted(&self, path: &Path) -> bool {
+        self.trusted_prefixes
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+    }
+}
+
+/// RFC-0012 §3.6: Apply standard FD and Signal hygiene to a Command.
+///
+/// Ensures:
+/// 1. Signal mask is reset (no inherited blocked signals)
+/// 2. SIGINT/SIGTERM are reset to default
+/// 3. All FDs > 2 are closed (prevents leaks)
+#[cfg(unix)]
+pub fn apply_standard_hygiene(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        cmd.pre_exec(|| {
+            // 1. Reset Signal Mask (SEC-FS-002)
+            let mut mask: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut mask);
+            libc::pthread_sigmask(libc::SIG_SETMASK, &mask, std::ptr::null_mut());
+
+            // 2. Reset SIGINT/SIGTERM to default (MAC-P0-002)
+            libc::signal(libc::SIGINT, libc::SIG_DFL);
+            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+
+            // 3. FD Purge (SEC-FS-002)
+            let mut rl = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl);
+            let max_fd = if rl.rlim_cur > 0 {
+                rl.rlim_cur as i32
+            } else {
+                1024
+            };
+
+            for fd in 3..max_fd {
+                libc::close(fd);
+            }
+
+            Ok(())
+        });
+    }
+}
+
+/// No-op on non-Unix platforms
+#[cfg(not(unix))]
+pub fn apply_standard_hygiene(_cmd: &mut Command) {}
 
 #[cfg(test)]
 mod tests {
