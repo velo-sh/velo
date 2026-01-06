@@ -6,4 +6,5 @@ description = "Black: The Uncompromising Code Formatter"
 entry_point = "hello.py"
 # args = ["--version"]  <-- Removed, handled in wrapper due to Velo limitation
 expected_output = "black, .*\\d+\\.\\d+\\.\\d+.*"
+preload_modules = ["black"]
 timeout = 30

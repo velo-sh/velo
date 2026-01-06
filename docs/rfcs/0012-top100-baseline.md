@@ -88,34 +88,35 @@ expected_output = ".*\\d+\\.\\d+\\.\\d+.*" # Regex for validation
 timeout = 30
 ```
 
-### 3.5 Measurement & Metrics
-The runner will produce a JSON report containing:
-- **Environment**: OS (uname), CPU Model, Load Avg.
-- **Project**: Name & Version.
-- **Metrics**: 
-    - **Cold Start (ms)**: Primary fairness baseline (Velo vs CPython).
-    - **Warm Start (ms)**: Velo Zygote capability feature (Not for direct comparison).
-    - **StdDev**: Stability target (<5% aspirational, warning only).
-- **Status**: Pass/Fail (based on exit code AND expected_output match).
+### 3.5 Measurement & Metrics (Multi-Level Matrix)
+The runner will now measure and report **4 distinct levels** of optimization to showcase the Velo value add:
+
+| Level | Name | Config | Mechanism | Target vs CPython |
+|---|---|---|---|---|
+| **L1** | **CPython** | N/A | Standard Interpreter | Baseline (1.0x) |
+| **L2** | **Velo Zero** | `--zygote` | Hot Process, Cold Import | ~1.2x - 3.0x |
+| **L3** | **Bundle** | `--zygote --fast` | Hot Process, Single-File IO | IO Dependent |
+| **L4** | **Instant** | `--zygote --fast` + `preload` | **Mem-resident Modules** | **10x - 50x+** |
+
+**Metric Collection**:
+- Runner must automatically:
+    1.  **L3 Setup**: Run `bundle_builder.py` to generate `.veloc`.
+    2.  **L4 Setup**: Inject `preload` config into temporary `pyproject.toml`.
+- **Validation**: Pass/Fail checked at highest level (L4). Lower levels just report times.
 
 ## 4. Implementation Plan
 
-### Phase 1: Prototype (Representative Subset)
-Implement manually curated "Hello World" for top 5 projects covering all categories:
-1.  **requests** (Library)
-2.  **fastapi** (Web)
-3.  **black** (CLI)
-4.  **numpy** (ML/Data) - *With torch.empty(1) equivalent*
-5.  **urllib3** (Library)
+### Phase 1: Prototype (Top 5) [COMPLETED]
+- Verified Basic Zygote (L2) works.
+- Identified L3/L4 gaps (Bundle Hash, Preload Config).
 
-### Phase 2: Tooling
-Develop `benchmarks/top100/_runner/main.py`:
-- **Auto-Cleanup**: Default to `true`.
-- **Logic**: Read TOML, setup env, run test, match regex, cleanup.
-- **Zygote Isolation**: Ensure zygote restart between tests.
+### Phase 1.5: Multi-Level Runner Upgrade [ACTIVE]
+- **Runner**: Refactor `main.py` to support the 4-level loop.
+- **Tooling**: Integreate `bundle_builder.py` directly into runner.
+- **Config**: Add `preload_modules` list to `benchmark.toml`.
 
-### Phase 3: Expansion
-Expand to full Top 100 list using the "Additive" strategy.
+### Phase 2: Expansion (Top 20)
+- Apply new runner to Top 20 packages.
 
 ## 5. Success Criteria
 - **Quality**: Each benchmark represents idiomatic usage.

@@ -5,4 +5,5 @@ description = "Requests: HTTP for Humans"
 [test]
 entry_point = "hello.py"
 expected_output = "Requests version: .*\\d+\\.\\d+\\.\\d+.*"
+preload_modules = ["requests", "urllib3", "idna", "certifi", "charset_normalizer"]
 timeout = 30

@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "charset-normalizer"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["charset_normalizer", "charset_normalizer.api", "charset_normalizer.cd"]
+timeout = 30
