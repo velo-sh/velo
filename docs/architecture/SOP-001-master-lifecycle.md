@@ -38,6 +38,12 @@ Velo architecture is not just about code; it is about **Governance, Security, an
         3.  **Network SRE**: Protocols (TCP/UDS), Headers.
         4.  **Cloud Native**: K8s probes, Container signals.
         5.  **Observability**: Logging standards, Tracing.
+    *   **Tier 4 (Specialized Audits)**:
+        1.  **Cryptography**: Hashing (BLAKE3), Key Derivation, Signatures.
+        2.  **Data Structures**: Big-O analysis, Graph algorithms.
+        3.  **Accessibility (A11y)**: Color blindness (NO_COLOR), Screen readers.
+        4.  **Open Source (OSS)**: License compliance, Community standards.
+        5.  **Documentation**: Learning curves, Voice & Tone.
 *   **P0 Identification**: The Architect MUST extract "P0 Requirements" from these reviews.
     *   *Example*: "Socket paths must include User ID."
 
