@@ -479,11 +479,14 @@ def hook_security():
             os.closerange(3, max_fd)
     except: pass
 
-    random.seed()
+    # RFC-0013 P0-2: Taint Re-Randomization Contract
     try:
         import secrets
-        secrets.token_bytes(1)
-    except: pass
+        random.seed(secrets.token_bytes(32))
+        os.urandom(1) # Force kernel entropy refill
+    except:
+        # Fallback to basic seed if secrets fails
+        random.seed()
     
     try:
         import ssl
