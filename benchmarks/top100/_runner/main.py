@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Velo Top 100 Benchmark Runner (RFC-0012 v2)
+Velo Top 100 Benchmark Runner (RFC-0013 v2)
 
 Executes benchmarks defined in benchmarks/top100/<category>/<package>/benchmark.toml
 """
