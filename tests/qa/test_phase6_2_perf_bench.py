@@ -3,13 +3,16 @@ import time
 import pytest
 import subprocess
 from pathlib import Path
+import random
 
 # TITANIUM Grade: L5 Performance Benchmarks
 # Based on QA-SOP §14 (Performance & Benchmark Standards)
 
 import signal
 
-def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> tuple[float, float]:
+from typing import Tuple
+
+def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> Tuple[float, float]:
     start = time.perf_counter()
     proc = subprocess.Popen(
         velo_cmd,
@@ -61,8 +64,9 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     
     # 1. Measure Cold Start (Real Execution, pays import cost)
     # Cold start doesn't have architecture phase log
+    port_cold = random.randint(30000, 39999)
     _, cold_latency = measure_startup_phases(
-        [env.velo, "serve", "main:app", "--no-zygote"],
+        [env.velo, "serve", "main:app", "--no-zygote", "--port", str(port_cold)],
         os.environ.copy(),
         cwd=str(app_dir)
     )
@@ -86,9 +90,10 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     
     assert socket_path.exists(), "Zygote failed to start"
     
+    port_kinetic = random.randint(40000, 49999)
     try:
         arch_latency, kinetic_latency = measure_startup_phases(
-            [env.velo, "serve", "main:app"],
+            [env.velo, "serve", "main:app", "--port", str(port_kinetic)],
             cmd_env,
             cwd=str(app_dir)
         )
