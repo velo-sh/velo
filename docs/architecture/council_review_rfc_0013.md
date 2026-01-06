@@ -36,10 +36,10 @@
 
 ## 3. The Verdict
 
-**🟢 CONDITIONAL APPROVAL**
+**✅ APPROVED**
 
-The design is sound, but requires 2 minor amendments before Coding:
-1.  **Ops**: Store profile in `.velo/kinetic_profile.json`.
-2.  **Sec**: Define macOS Peer Credential mechanism.
+The amendments (profile location and macOS peer verification) have been codified in **RFC-0013 v1.1**.
+1.  **Ops**: Profile stored in `.velo/kinetic_profile.json` (§4.1).
+2.  **Sec**: macOS Peer Credential mechanism defined (§5.1).
 
-**Proceed to Implementation?**: **YES**, but include these fixes in the code.
+**Proceed to Implementation?**: **YES**. Mission is GO.
