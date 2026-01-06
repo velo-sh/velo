@@ -1,6 +1,6 @@
 ```mermaid
 graph TD
-    subgraph Layer4 [Layer 4 The Prosecutor Testing Regime]
+    subgraph "Layer 4: The Prosecutor Testing Regime"
         Test[Zero Mock Executioner Suite]
         Attack[Red Team Exploits]
         FailClosed[Fail Fast Certification]
@@ -8,7 +8,7 @@ graph TD
         Attack -->|Probes| Runtime
     end
 
-    subgraph Layer3 [Layer 3 Runtime and Language Security]
+    subgraph "Layer 3: Runtime & Language Security"
         Runtime[Velo Python Runtime]
         StaticGraph[Static Graph Analysis]
         Scrub[Surgical Env Scrubbing]
@@ -17,9 +17,9 @@ graph TD
         Scrub -->|Cleans Variables| Runtime
     end
 
-    subgraph Layer2 [Layer 2 Process Isolation Zygote Gap]
-        ZygoteA[Zygote A Project X]
-        ZygoteB[Zygote B Project Y]
+    subgraph "Layer 2: Process Isolation (Zygote Gap)"
+        ZygoteA[Zygote A (Project X)]
+        ZygoteB[Zygote B (Project Y)]
         WorkerA1[Worker A1]
         WorkerB1[Worker B1]
         
@@ -35,10 +35,10 @@ graph TD
         WorkerA1 -.-> |No Socket Access| WorkerB1
     end
 
-    subgraph Layer1 [Layer 1 System Hardening Tactical Armor]
-        Kernel[OS Kernel Hardware]
-        CapStd[Capability Based IO cap std]
-        Hygiene[Atomic Sockets FD Hygiene]
+    subgraph "Layer 1: System Hardening (Tactical Armor)"
+        Kernel[OS Kernel / Hardware]
+        CapStd[Capability Based IO (cap-std)]
+        Hygiene[Atomic Sockets & FD Hygiene]
         
         WorkerA1 -->|Checked Access| CapStd
         WorkerB1 -->|Checked Access| CapStd
