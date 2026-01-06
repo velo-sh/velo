@@ -8,7 +8,14 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
 import arch_guard
 
-VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../target/debug/velo"))
+# Robust binary path resolution
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+VELO_BIN = os.path.join(PROJECT_ROOT, "target/debug/velo")
+
+# Ensure we aren't getting confused by symlinks or relative path madness
+if not os.path.exists(VELO_BIN):
+    # Fallback for when running from root
+    VELO_BIN = os.path.abspath("target/debug/velo")
 
 @pytest.fixture
 def workspace_a(tmp_path):
