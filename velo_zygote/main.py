@@ -18,6 +18,8 @@ Architecture:
 
 import asyncio
 import os
+import sys
+
 import signal
 import socket
 import struct
