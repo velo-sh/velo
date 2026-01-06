@@ -1,72 +1,72 @@
-# SOP-002: 复杂任务执行协议 (The Mission Protocol)
+# SOP-002: Mission Protocol (The Velo Methodology)
 
-> **级别**: TITANIUM (钛金级)
-> **适用范围**: 架构部处理的所有 L3+ 级复杂任务 (Complex Missions)
-> **核心哲学**: "我们不止交付结果，我们交付通往结果的必经之路。"
-
----
-
-## 1. 第一阶段：法医级勘察 (Forensic Immersion)
-
-**原则**: "不要相信用户的记忆，只相信代码的证据。" (Don't trust memory; verify code.)
-
-在开始任何复杂任务之前，必须执行“白盒审计”：
-1.  **历史回溯 (Chronological Deep Dive)**:
-    *   读取 `git log` 和文件变更历史。
-    *   **关键动作**: 寻找那些被“遗忘”的提交者和评审记录 (如 `RFC-0011` 中的 15 位专家)。
-2.  **现场还原 (Scene Reconstruction)**:
-    *   不仅仅是阅读代码，而是要*运行*它。
-    *   **关键动作**: 建立 `Whitebox Audit` 文档，记录现状与预期的差异。
-3.  **资产盘点 (Asset Inventory)**:
-    *   检查现有文档 (`docs/`) 与实际代码的差距。
-    *   **关键动作**: 识别“隐形资产”（如实际上存在但未被记录的加密审计流程）。
+> **Level**: TITANIUM
+> **Scope**: All L3+ Complex Missions handled by the Architecture Department
+> **Core Philosophy**: "We don't just deliver results; we deliver the path to the result."
 
 ---
 
-## 2. 第二阶段：众议院集结 (The Council Assembly)
+## 1. Phase I: Forensic Immersion
 
-**原则**: "一个人的智慧是脆弱的，二十人的视角是反脆弱的。"
+**Principle**: "Don't trust memory; verify code."
 
-不要试图独自解决复杂问题，必须召集(模拟)专家委员会：
-1.  **角色识别 (Persona Excavation)**:
-    *   根据任务属性，从 [Personas Catalog](./expert_review_personas_catalog.md) 中选取该任务所需的专家。
-    *   *案例*: 发现 performance 任务不仅需要 HPC 专家，还需要 Accessibility 专家 (NO_COLOR)。
-2.  **多视角对抗 (Adversarial Review)**:
-    *   **Security**: "我怎么攻破它？"
-    *   **Ops**: "凌晨3点炸了怎么办？"
-    *   **Legal**: "这合规吗？"
-3.  **全员共识 (Unanimous Consent)**:
-    *   复杂决策必须获得所有相关专家的“有条件通过”。
-
----
-
-## 3. 第三阶段：检察官验证 (The Prosecutor's Trial)
-
-**原则**: "默认有罪 (Buggy) 推定，直到零 Mock 证明清白。"
-
-验证过程必须带有敌意：
-1.  **零 Mock 原则 (Zero-Mock)**:
-    *   禁止在核心路径使用 Mock。必须在真实二进制 (`target/release`) 和真实内核上运行。
-2.  **甚至更严 (Titanium Variance)**:
-    *   如果现有标准不够严（如 500ms 重启），应当场升级标准（<50ms），而不是降低标准以通过测试。
-3.  **证据留存 (Audit Report)**:
-    *   必须生成不可篡改的审计报告 (Audit Report)，作为任务结束的唯一凭证。
+Before starting any complex mission, a "Whitebox Audit" must be performed:
+1.  **Chronological Deep Dive**:
+    *   Read `git log` and file history.
+    *   **Action**: Uncover "forgotten" committers and review records (e.g., the 15 experts in `RFC-0011`).
+2.  **Scene Reconstruction**:
+    *   Don't just read the code; *run* it.
+    *   **Action**: Create a `Whitebox Audit` document recording the gap between reality and expectation.
+3.  **Asset Inventory**:
+    *   Check existing `docs/` against actual code.
+    *   **Action**: Identify "Invisible Assets" (e.g., encryption audits that exist but aren't documented).
 
 ---
 
-## 4. 第四阶段：钛金级固化 (Titanium Crystallization)
+## 2. Phase II: The Council Assembly
 
-**原则**: "如果不写进 SOP，这事就没发生过。"
+**Principle**: "Individual intelligence is fragile; collective perspective is antifragile."
 
-任务的终点不是代码 Merge，而是知识的晶体化：
-1.  **标准升级 (Standard Elevation)**:
-    *   将本次任务中发现的“最佳实践”直接写入 `SOP-001` 或 `AGENTS.md`。
-    *   *案例*: 将 "Council of 5" 升级为 "Grand Council of 20"。
-2.  **物理实例化 (Physical Materialization)**:
-    *   文档不能只停留在口头或临时文件。必须在 `docs/` 目录下建立永久文件。
-    *   *案例*: 创建 `expert_review_personas_catalog.md`。
-3.  **知识库同步 (KI Sync)**:
-    *   更新 Agent 的长期记忆 (Knowledge Items)，确保下一次任务站在巨人的肩膀上。
+Do not solve complex problems alone. Assemble the (simulated) Expert Council:
+1.  **Persona Excavation**:
+    *   Select required experts from the [Personas Catalog](./expert_review_personas_catalog.md) based on mission attributes.
+    *   *Case Study*: A performance task requires not just HPC experts, but also Accessibility experts (NO_COLOR).
+2.  **Adversarial Review**:
+    *   **Security**: "How do I break this?"
+    *   **Ops**: "What happens when this explodes at 3 AM?"
+    *   **Legal**: "Is this compliant?"
+3.  **Unanimous Consent**:
+    *   Complex decisions require "Conditional Approval" from ALL relevant experts.
+
+---
+
+## 3. Phase III: The Prosecutor's Trial
+
+**Principle**: "Presumed Guilty (Buggy) until Proven Innocent via Zero-Mock."
+
+Verification must be hostile:
+1.  **Zero-Mock Rule**:
+    *   No mocks allowed in the critical path. Must run on the real binary (`target/release`) and real kernel.
+2.  **Titanium Variance**:
+    *   If the standard isn't strict enough (e.g., 500ms restart), raise the bar immediately (<50ms). Never lower it.
+3.  **Audit Report**:
+    *   A tamper-proof Audit Report must be generated as the only valid proof of completion.
+
+---
+
+## 4. Phase IV: Titanium Crystallization
+
+**Principle**: "If it's not in the SOP, it didn't happen."
+
+The mission doesn't end with a Merge; it ends with Crystalization:
+1.  **Standard Elevation**:
+    *   Promote "Best Practices" discovered during the mission directly into `SOP-001` or `AGENTS.md`.
+    *   *Case Study*: Elevating "Council of 5" to "Grand Council of 20".
+2.  **Physical Materialization**:
+    *   Documentation cannot be oral or ephemeral. It must physically exist in `docs/`.
+    *   *Case Study*: Creating `expert_review_personas_catalog.md`.
+3.  **Knowledge Base Sync (KI Sync)**:
+    *   Update Agent Long-Term Memory (Knowledge Items) to ensure the next mission starts on the shoulders of giants.
 
 ---
 
