@@ -9,7 +9,7 @@
 
 The QA Mission for ARCH-0013 has entered **Round 2** of verification (`b9e51d5`). 
 - **Major Wins**: P0 Security (SO_PEERCRED) and Handshake Timeout issues are **FIXED**.
-- **Remaining Risks**: Protocol robustness under flood (`CHAOS-621`) remains a failure point.
+- **Remaining Risks**: Protocol robustness under flood (`CHAOS-621`) and Socket Exhaustion (`CHAOS-623` stalled for 23m) remain failure points.
 
 ## 2. Requirement Verification (P0)
 
@@ -21,8 +21,8 @@ The QA Mission for ARCH-0013 has entered **Round 2** of verification (`b9e51d5`)
 | **SO_PEERCRED Identity** | ❌ FAILED | ✅ **PASSED** | **FIXED** (Zero-Mock Verified) |
 | **Concurrency Scaling (20+)** | ❌ FAILED | ✅ **PASSED** | FIXED (Asyncio Future) |
 | **Protocol Robustness** | ❌ FAILED | ❌ **FAILED** | `CHAOS-621`: Still BrokenPipe |
-| **Backlog Scaling** | ❌ FAILED | ⏳ **PENDING** | `CHAOS-623`: Analyzing |
-| **Startup Latency (<50ms)** | ❌ FAILED | ⏳ **PENDING** | Benchmarks Running |
+| **Backlog Scaling** | ❌ FAILED | ❌ **FAILED** | `CHAOS-623`: **STALLED** for 23m. |
+| **Startup Latency (<50ms)** | ❌ FAILED | ⏳ **BLOCKED** | Benchmarks pre-empted by stall. |
 
 ## 3. Critical Defects (Phase 5)
 
