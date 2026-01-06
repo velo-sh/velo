@@ -1,11 +1,11 @@
 {
   "contracts": {},
   "tests": {
-    "tests/qa/phase_6_1_1/test_sin_of_collision.py": {
+    "tests/qa/test_kinetic_fallback.py": {
       "coverage": false,
       "isolated": false,
-      "results": "s.",
-      "sha1": "7d4b55639ff36f2f546bb46a84a970e369b27317",
+      "results": "F",
+      "sha1": "697701674bbddc1926bba38f2dcfc6f0a363a4f8",
       "txhash": []
     }
   },

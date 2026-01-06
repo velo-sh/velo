@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Maximum message size (1MB) - prevents DoS via oversized messages
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
@@ -472,14 +473,27 @@ pub struct ZygoteStream {
 
 impl ZygoteStream {
     /// Connect to Zygote and verify the initial "Ready" greeting
+    ///
+    /// RFC-0013: Enforces a 10ms wall-clock timeout for the entire handshake.
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        let mut stream = UnixStream::connect(socket_path)
+        let stream = UnixStream::connect(socket_path)
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
+        // Set strict 10ms timeout for the Kinetic handshake budget
+        let timeout = Duration::from_millis(10);
+        stream
+            .set_read_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        stream
+            .set_write_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        let mut zygote_stream = Self { stream };
+
         // 1. Receive mandatory "Ready" greeting
-        let ready: ZygoteResponse = read_message(&mut stream)?;
+        let ready: ZygoteResponse = read_message(&mut zygote_stream.stream)?;
         match ready {
-            ZygoteResponse::Ready => Ok(Self { stream }),
+            ZygoteResponse::Ready => Ok(zygote_stream),
             _ => Err(ZygoteError::ProtocolError(
                 "Connection greeting failed - expected Ready".to_string(),
             )),
