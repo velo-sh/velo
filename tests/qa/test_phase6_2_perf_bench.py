@@ -7,11 +7,12 @@ from pathlib import Path
 # TITANIUM Grade: L5 Performance Benchmarks
 # Based on QA-SOP §14 (Performance & Benchmark Standards)
 
-def measure_startup(velo_cmd: list, env_vars: dict) -> float:
+def measure_startup(velo_cmd: list, env_vars: dict, cwd: str = None) -> float:
     start = time.perf_counter()
     subprocess.run(
         velo_cmd,
         env=env_vars,
+        cwd=cwd,
         capture_output=True,
         check=True
     )
@@ -25,21 +26,23 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     socket_path = Path("/tmp") / f"perf_zygote_speedup_{os.getpid()}.sock"
     app_dir = env.path / "app"
     app_dir.mkdir()
-    (app_dir / "main.py").write_text("import time; print('Ready')")
+    (app_dir / "main.py").write_text("import fastapi; app = fastapi.FastAPI()")
+    (app_dir / "pyproject.toml").write_text('[project]\nname = "perf-app"\nversion = "0.1.0"\ndependencies = ["fastapi", "pandas"]')
     (app_dir / "uv.lock").write_text("{}") # Ensure it's treated as a project
     
     # 1. Measure Cold Start
-    # Use str(app_dir) and absolute path to velo
     cold_latency = measure_startup(
-        [env.velo, "serve", "--app", str(app_dir), "--dry-run"],
-        os.environ.copy()
+        [env.velo, "serve", "main:app", "--dry-run"],
+        os.environ.copy(),
+        cwd=str(app_dir)
     )
     
     # 2. Start Zygote and Measure Kinetic
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+    # Preload all FastAPI core modules + pandas
     proc = subprocess.Popen(
-        [env.velo, "zygote", "start", "--preload", "pandas"],
+        [env.velo, "zygote", "start", "--preload", "pandas,fastapi,pydantic,starlette"],
         env=cmd_env,
         cwd=app_dir
     )
@@ -54,7 +57,8 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     try:
         kinetic_latency = measure_startup(
             [env.velo, "serve", "main:app", "--dry-run"],
-            cmd_env
+            cmd_env,
+            cwd=str(app_dir)
         )
         
         speedup = cold_latency / kinetic_latency
@@ -86,11 +90,18 @@ def test_PERF_622_spawn_scalability(isolated_env):
         time.sleep(0.1)
     
     latencies = []
+    app_dir = env.path / "app"
+    if not app_dir.exists():
+        app_dir.mkdir()
+    (app_dir / "main.py").write_text("import fastapi; app = fastapi.FastAPI()")
+    (app_dir / "pyproject.toml").write_text('[project]\nname = "scale-app"\nversion = "0.1.0"\ndependencies = ["fastapi"]')
+    
     try:
         for _ in range(20):
             lat = measure_startup(
                 [env.velo, "serve", "main:app", "--dry-run"],
-                cmd_env
+                cmd_env,
+                cwd=str(app_dir)
             )
             latencies.append(lat)
         

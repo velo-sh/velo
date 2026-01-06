@@ -299,16 +299,32 @@ class ZygoteTransport:
             len_data = await self.reader.readexactly(4)
             total_len = struct.unpack('<I', len_data)[0]
             
+            # RFC-0013: Harden against malformed/oversized payloads (DoS protection)
             if total_len > MAX_MESSAGE_SIZE or total_len < 1:
+                LogUtils.log(f"🚨 Security: Rejecting oversized payload ({total_len} bytes)")
                 return None
             
             version_data = await self.reader.readexactly(1)
             if version_data[0] != PROTOCOL_VERSION:
+                LogUtils.log(f"🚨 Security: Protocol version mismatch (have 0x{version_data[0]:02x}, want 0x{PROTOCOL_VERSION:02x})")
                 return None
             
             payload_len = total_len - 1
             data = await self.reader.readexactly(payload_len)
-            return unpacker(data)
+            
+            try:
+                msg = unpacker(data)
+                # Basic schema validation (must be a dict)
+                if not isinstance(msg, dict):
+                    LogUtils.log(f"🚨 Security: Rejecting non-dict payload")
+                    return None
+                return msg
+            except Exception as e:
+                LogUtils.log(f"🚨 Security: Malformed MessagePack payload: {e}")
+                return None
+                
+        except asyncio.IncompleteReadError:
+            return None
         except Exception as e:
             LogUtils.debug_log(f"Transport Recv Error: {e}")
             return None
@@ -414,24 +430,20 @@ class WorkerRegistry:
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
 
-    def kill_all(self):
-        """Emergency cleanup of all workers."""
-        with self.lock:
-            pids = list(self.workers.keys())
-        for pid in pids:
-            try: os.kill(pid, 9)
-            except: pass
-        with self.lock:
-            self.workers.clear()
-
-    def reap_stale(self):
-        """Cleanup logic for timed-out or missing workers."""
+    def reap_stale(self) -> List[int]:
+        """Cleanup logic for timed-out or missing workers. Returns list of reaped PIDs."""
         now = time.time()
         to_remove = []
         with self.lock:
             for pid, (start_time, _) in self.workers.items():
                 if now - start_time > self.worker_ttl:
                     to_remove.append(pid)
+        
+        for pid in to_remove:
+            try: os.kill(pid, 9)
+            except: pass
+            self.remove(pid)
+        return to_remove
         
         for pid in to_remove:
             LogUtils.log(f"Reaping stale worker: {pid}")
@@ -545,13 +557,6 @@ class ForkHandler:
         bundle_path = cmd.get("bundle_path")
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
-
-        # DEBUG: Write before fork
-        try:
-            with open("/tmp/worker_fork_debug.log", "a") as f:
-                f.write(f"[FORK DEBUG] About to fork, parent pid={os.getpid()}\n")
-                f.flush()
-        except: pass
 
         pid = os.fork()
 
@@ -681,6 +686,9 @@ class ZygoteServer:
         self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup
         self.fork_rate_limiter = ForkRateLimiter()  # RFC-0011 WB-005: DoS protection
         
+        # [DEF-62-004] Pending sync forks (pid -> Future)
+        self.pending_forks: Dict[int, asyncio.Future] = {}
+        
         # Shadow Preloading: State machine for async preload
         self.preload_state: str = "STARTING"  # STARTING → LOADING → READY
         self.preload_complete = asyncio.Event()  # Signaled when preload finishes
@@ -771,14 +779,35 @@ class ZygoteServer:
 
     async def _async_reap(self):
         """Async-safe zombie reaping."""
-        self.worker_registry.reap_stale()
+        # Reap stale workers (TTL expired)
+        reaped_pids = self.worker_registry.reap_stale()
+        for pid in reaped_pids:
+            if pid in self.pending_forks:
+                fut = self.pending_forks.pop(pid)
+                if not fut.done():
+                    fut.set_result(0xDEAD) # Signal stale
+                    
         while True:
             try:
+                # Use WNOHANG to check for any exited children
                 pid, status = os.waitpid(-1, os.WNOHANG)
                 if pid <= 0: break
+                
+                # Resolve exit code
+                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+                
+                # Update registry
                 self.worker_registry.remove(pid)
+                
+                # Resolve any pending sync fork [DEF-62-004]
+                if pid in self.pending_forks:
+                    fut = self.pending_forks.pop(pid)
+                    if not fut.done():
+                        fut.set_result(exit_code)
             except ChildProcessError: break
-            except: break
+            except Exception as e:
+                LogUtils.debug_log(f"Reap Error: {e}")
+                break
 
     def _preload_modules(self):
         for module in self.preload:
@@ -826,6 +855,14 @@ class ZygoteServer:
                 self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        sock = writer.get_extra_info('socket')
+        
+        # [DEF-62-001] Peer Identity Verification (SO_PEERCRED / LOCAL_PEERCRED)
+        if not self._verify_peer(sock):
+            LogUtils.log("🚨 Security: Unauthorized connection attempt (UID mismatch). Dropping.")
+            writer.close()
+            return
+
         transport = ZygoteTransport(reader, writer)
         try:
             # 1. Send Ready
@@ -843,6 +880,40 @@ class ZygoteServer:
                         break
         finally:
             await transport.close()
+
+    def _verify_peer(self, sock: socket.socket) -> bool:
+        """Verify that the connecting peer has the same UID as the Zygote.
+        
+        Implements Cross-Account Isolation (RFC-0012 §3.1).
+        """
+        try:
+            my_uid = os.getuid()
+            
+            if sys.platform == "linux":
+                # Option A: Linux SO_PEERCRED (struct ucred)
+                # struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+                SO_PEERCRED = 17 
+                creds = sock.getsockopt(socket.SOL_SOCKET, SO_PEERCRED, struct.calcsize('3i'))
+                _, peer_uid, _ = struct.unpack('3i', creds)
+                return peer_uid == my_uid
+            
+            elif sys.platform == "darwin":
+                # Option B: macOS LOCAL_PEERCRED (struct xucred)
+                # struct xucred { u_int cr_version; uid_t cr_uid; ... }
+                SOL_LOCAL = 0
+                LOCAL_PEERCRED = 0x001
+                # xucred is larger, but we only need the second field (uid_t)
+                creds = sock.getsockopt(SOL_LOCAL, LOCAL_PEERCRED, 128)
+                # xucred starts with version (u_int=I), then uid (uid_t=I) at offset 4
+                _, peer_uid = struct.unpack('II', creds[:8])
+                return peer_uid == my_uid
+            
+            # Fallback for other platforms: allow for now but log warning
+            LogUtils.log(f"Warning: Peer verification not implemented for {sys.platform}")
+            return True
+        except Exception as e:
+            LogUtils.debug_log(f"Peer Verification Error: {e}")
+            return False
 
 
 @router.handler("Handshake")
@@ -879,13 +950,6 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
 
 @router.handler("Fork")
 async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
-    # DEBUG: Log entry to handle_fork
-    try:
-        with open("/tmp/worker_fork_debug.log", "a") as f:
-            f.write(f"[ASYNC HANDLE_FORK] Entry, cmd={cmd}\n")
-            f.flush()
-    except: pass
-    
     # Shadow Preloading: Wait for preload to complete if still loading
     if server.preload_state == "LOADING":
         try:
@@ -915,14 +979,21 @@ async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
     if cmd.get("async_mode"):
         return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
     else:
-        # Sync mode: Wait for exit
+        # Sync mode: Non-blocking wait using asyncio.Future [DEF-62-004]
         try:
-            pid, status = os.waitpid(worker_pid, 0)
-            exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
-            server.worker_registry.remove(worker_pid)
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            server.pending_forks[worker_pid] = future
+            
+            # Use wait_for to prevent infinite hang if reaper fails (30s budget)
+            exit_code = await asyncio.wait_for(future, timeout=30.0)
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
-        except ChildProcessError:
-            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": 0}
+        except asyncio.TimeoutError:
+            server.pending_forks.pop(worker_pid, None)
+            return {"type": "Error", "message": "Fork wait timeout (30s exceeded)"}
+        except Exception as e:
+            server.pending_forks.pop(worker_pid, None)
+            return {"type": "Error", "message": f"Fork wait failure: {e}"}
 
 @router.handler("WaitWorker")
 async def handle_wait_worker(server: ZygoteServer, cmd: Dict) -> Dict:

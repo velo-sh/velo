@@ -8,6 +8,20 @@
       "sha1": "697701674bbddc1926bba38f2dcfc6f0a363a4f8",
       "txhash": []
     },
+    "tests/qa/test_kinetic_security.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": ".",
+      "sha1": "461f68b772ec9751ee3b74c7c527d35037d8d869",
+      "txhash": []
+    },
+    "tests/qa/test_kinetic_timeout.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "..",
+      "sha1": "1b4cfc8b7e6aa9fb9828fec197a65efd4a081fcc",
+      "txhash": []
+    },
     "tests/qa/test_phase6_2_agent_a_edge.py": {
       "coverage": false,
       "isolated": false,
@@ -27,6 +41,13 @@
       "isolated": false,
       "results": "F..",
       "sha1": "fe736b4b0354e57d36273b99733c4b377113e5e9",
+      "txhash": []
+    },
+    "tests/qa/test_phase6_2_perf_bench.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "F",
+      "sha1": "f4d21e7c63ca58976c23f2c582c66dbb4ffa0cfe",
       "txhash": []
     }
   },
