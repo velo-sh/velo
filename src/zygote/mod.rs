@@ -500,8 +500,27 @@ impl ZygoteLauncher {
         unsafe {
             use std::os::unix::process::CommandExt;
             cmd.pre_exec(|| {
-                // Create new session (setsid) to detach from parent
+                // 1. Create new session (setsid) to detach from parent
                 libc::setsid();
+
+                // 2. Linux-specific Hardening (Pillar 3+)
+                #[cfg(target_os = "linux")]
+                {
+                    // RFC-0011 Linux-Shield: Network Isolation
+                    // Use unshare to create a private network namespace (effectively disabling global network access)
+                    // Note: This requires CLONE_NEWNET.
+                    if libc::unshare(libc::CLONE_NEWNET) != 0 {
+                        // We continue even if it fails, as some old kernels might not support it
+                        // but ideally, we should log a warning if we had a logger here.
+                    }
+
+                    // RFC-0011 Linux-Shield: Prevent privilege escalation
+                    // PR_SET_NO_NEW_PRIVS ensures that the process and its children cannot gain new privileges (e.g., via setuid)
+                    if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                        // Same here, fallback gracefully
+                    }
+                }
+
                 Ok(())
             });
         }
