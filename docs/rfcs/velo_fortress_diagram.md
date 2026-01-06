@@ -1,5 +1,8 @@
 ```mermaid
-graph TD
+graph TB
+    %% Graph config to reduce overlap
+    %%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px', 'fontFamily': 'arial'}}}%%
+
     subgraph "Layer 4: The Prosecutor Testing Regime"
         Test[Zero Mock Executioner Suite]
         Attack[Red Team Exploits]
