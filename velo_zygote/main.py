@@ -25,6 +25,8 @@ import sys
 import threading
 import time
 import traceback
+import importlib.abc
+import importlib.util
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
 
@@ -41,6 +43,38 @@ MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Red Line #1: Path length limit with 4-byte margin from 108 Unix limit
 SOCKET_PATH_LIMIT = 104
+
+
+class ImportShield(importlib.abc.MetaPathFinder):
+    """
+    RFC-0011 §6.2.1: Import Isolation Layer (ImportShield)
+    
+    Prevents the user application from importing or shadowing internal 
+    framework modules (e.g., velo_zygote.*).
+    """
+    def find_spec(self, fullname, path, target=None):
+        # 1. Block internal framework access from child process
+        if fullname.startswith("velo_zygote"):
+            # We allow the launcher to import us once, but once the app is loading,
+            # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
+            raise ImportError(f"Unauthorized access to internal framework module: {fullname}")
+        
+        # 2. Shadowing Protection: main.py
+        # This finder is installed at the top of sys.meta_path.
+        # If it returns None, Python falls back to standard finders (PathFinder).
+        return None
+
+    @staticmethod
+    def install():
+        """Install the shield at the front of sys.meta_path."""
+        if not any(isinstance(f, ImportShield) for f in sys.meta_path):
+            sys.meta_path.insert(0, ImportShield())
+            
+            # Centralized Path Sanitization (RFC-0011 6A.1)
+            # Prevent shadowing of user modules by framework modules.
+            framework_dir = os.path.dirname(os.path.abspath(__file__))
+            if framework_dir in sys.path:
+                sys.path.remove(framework_dir)
 
 def get_socket_dir() -> Path:
     """Get the user-isolated socket directory.
@@ -542,6 +576,9 @@ class ForkHandler:
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
             post_fork_reinit()
+
+            # 2.1 Install ImportShield (Import Isolation)
+            ImportShield.install()
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
