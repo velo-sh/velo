@@ -124,7 +124,67 @@ Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of
 
 ---
 
-## 7. Glossary
+## 7. The Velo Fortress (Security Architecture)
+
+> "Defense in Depth is not a feature; it is the architecture itself."
+
+This RFC establishes a **4-Layer Defense Model** that secures the runtime from the kernel up to the verification layer.
+
+```mermaid
+graph TD
+    subgraph Layer4 [Layer 4 The Prosecutor Testing Regime]
+        Test[Zero Mock Executioner Suite]
+        Attack[Red Team Exploits]
+        FailClosed[Fail Fast Certification]
+        Test -->|Injects Toxins| Runtime
+        Attack -->|Probes| Runtime
+    end
+
+    subgraph Layer3 [Layer 3 Runtime and Language Security]
+        Runtime[Velo Python Runtime]
+        StaticGraph[Static Graph Analysis]
+        Scrub[Surgical Env Scrubbing]
+        
+        StaticGraph -->|Locks Dependencies| Runtime
+        Scrub -->|Cleans Variables| Runtime
+    end
+
+    subgraph Layer2 [Layer 2 Process Isolation Zygote Gap]
+        ZygoteA[Zygote A Project X]
+        ZygoteB[Zygote B Project Y]
+        WorkerA1[Worker A1]
+        WorkerB1[Worker B1]
+        
+        Runtime -- Spawns --> ZygoteA
+        Runtime -- Spawns --> ZygoteB
+        ZygoteA -- Fork --> WorkerA1
+        ZygoteB -- Fork --> WorkerB1
+        
+        style ZygoteA fill:#e1f5fe,stroke:#01579b
+        style ZygoteB fill:#ffebee,stroke:#b71c1c
+        
+        WorkerA1 -.-> |No Shared Mem| WorkerB1
+        WorkerA1 -.-> |No Socket Access| WorkerB1
+    end
+
+    subgraph Layer1 [Layer 1 System Hardening Tactical Armor]
+        Kernel[OS Kernel Hardware]
+        CapStd[Capability Based IO cap std]
+        Hygiene[Atomic Sockets FD Hygiene]
+        
+        WorkerA1 -->|Checked Access| CapStd
+        WorkerB1 -->|Checked Access| CapStd
+        CapStd -->|Verified Handle| Kernel
+        Hygiene -->|Clean State| Kernel
+    end
+
+    classDef shield fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    class Kernel,CapStd,Hygiene shield
+```
+
+---
+
+## 8. Glossary
 - **TOCTOU**: Time-of-Check to Time-of-Use. A race condition vulnerability.
 - **Surgical Scrubbing**: The process of specifically removing dangerous environment variables while preserving functional ones.
 - **Abstract Namespace**: A Linux-specific feature for Unix Domain Sockets that exists independently of the filesystem.
@@ -132,7 +192,7 @@ Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of
 
 ---
 
-## 8. References
+## 9. References
 - **[RFC-0011: Zygote Worker Integration](0011-zygote-worker-integration.md)**
 - **[Rust nix crate](https://github.com/nix-rust/nix)**: Library for OS-specific Unix primitives.
 - **[Rust cap-std crate](https://github.com/bytecodealliance/cap-std)**: Capability-based version of the Rust standard library.
@@ -141,7 +201,7 @@ Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of
 
 ---
 
-## 9. Verification Plan (The "Executioner" Suite)
+## 10. Verification Plan (The "Executioner" Suite)
 
 We will implement `test_sec_shield.py` to target the specific failure modes:
 
