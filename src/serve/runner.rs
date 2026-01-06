@@ -642,7 +642,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     }
 
     // NEW: Multi-worker Zygote mode (use our Worker implementation)
-    if args.workers > 1
+    if args.workers >= 1
         && args.use_zygote
         && !preload_modules.is_empty()
         && _zygote_guard.is_some()
