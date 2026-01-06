@@ -1,3 +1,10 @@
+# Velo Fortress Security Diagram
+
+<!--
+This diagram visualizes the 4-Layer Defense in Depth model.
+If it does not render, please ensure your viewer supports Mermaid.js.
+-->
+
 ```mermaid
 graph TD
     subgraph Layer4 [Layer 4 The Prosecutor Testing Regime]
