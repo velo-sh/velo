@@ -55,7 +55,25 @@ Zygote sockets must be uniquely keyed to the project to prevent "Ghost Zygote" h
 
 ---
 
-## 4. Verification Plan (The "Executioner" Suite)
+## 5. Cross-Platform Security Invariants
+
+The "Surgical Shielding" model is designed for universal enforcement while leveraging platform-specific features:
+
+### 5.1 Linux (The Hardened Standard)
+- **Abstract Sockets**: For Linux, we will evaluate moving Zygote sockets from `/tmp` to **Abstract Namespace Sockets** (`@velo-zygote-<hash>`). These do not leave files on disk and are automatically cleaned up.
+- **Procfs Protection**: The sandbox must specifically allow read access to `/proc/self/` for Python's own introspection while blocking access to `/proc/` root to prevent process-tree discovery.
+
+### 5.2 macOS (FSEvents & Lifecycle)
+- **FSEvents Scoping**: File watching (`notify`) must be restricted to the canonicalized workspace to avoid over-privileged system-wide monitoring.
+- **Sandbox Compliance**: Design must be compatible with future macOS App Sandbox requirements if Velo is distributed via official channels.
+
+### 5.3 Windows (UNC & Path Extremes)
+- **UNC Path Handling**: On Windows, `canonicalize()` often adds the `\\?\` prefix. The `PathShield` must handle these prefixes correctly to prevent comparison failures.
+- **Path Length**: Windows MAX_PATH limits must be handled; the shield must ensure that long-path support is active so attackers cannot hide files in deep, un-shielded subdirectories.
+
+---
+
+## 6. Verification Plan (The "Executioner" Suite)
 
 We will implement `test_sec_shield.py` to target the specific failure modes:
 
