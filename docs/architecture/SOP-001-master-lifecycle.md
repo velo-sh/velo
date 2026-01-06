@@ -62,6 +62,14 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
 *   **Granularity**: 1 Task = 1 PR or 1 Verifiable Unit.
 *   **Traceability**: Every Task ID must map back to an RFC requirement.
 
+### 2.3 Delegation & Role Handover (Iron Rule)
+*   **Authority**: The Architect (ID-LOCK-001) is the SOLE authority for assigning implementation and verification tasks.
+*   **Methodology**:
+    1.  **Handover Record**: The Architect must draft a `handover_<role>_phase_<id>.md` document.
+    2.  **Explicit Context**: Handover must include [RFC Link], [P0 Requirements List], and [Verification Criteria].
+    3.  **Acceptance**: The target role (Dev/QA) must acknowledge the handover by reporting "Mission Received".
+*   **Continuous Governance**: The Architect MUST NOT perform the implementation but MUST perform "Surveillance Audits" on the Developer's work-in-progress to ensure RFC compliance.
+
 ---
 
 ## 3. Phase II: Implementation (The Build)
