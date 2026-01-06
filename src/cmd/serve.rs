@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use crate::python;
 use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
-use colored::Colorize;
 
 /// Custom parser for workers argument with clear error messages
 fn parse_workers(s: &str) -> Result<u32, String> {
@@ -220,6 +219,7 @@ fn discover_app(python_path: &Path, project_dir: &Path) -> Result<String> {
     Ok(format!("{}:{}", apps[0].module, apps[0].app))
 }
 
+#[allow(dead_code)]
 fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<String> {
     let script_path = find_python_helper(project_dir, "detect_app.py")?;
     let output = std::process::Command::new(python_path)
@@ -271,18 +271,10 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
             Err(e) => return Err(e),
         }
     } else {
-        // If app is provided, check if it matches candidates, if not suggest
-        if let Some(suggestion) = cmd
-            .app
-            .as_ref()
-            .and_then(|app_str| suggest_app(app_str, &python_path, &project_dir))
-        {
-            eprintln!(
-                "   {} a similar app exists: {}",
-                "tip:".yellow(),
-                suggestion.cyan()
-            );
-        }
+        // PERF-FIX: Do not run suggest_app on every startup!
+        // It spawns a python process (~100ms overhead) just to check for typos.
+        // This defeats the purpose of Kinetic Protocol.
+        // Future improvement: Move this to error handling path if server fails.
     }
 
     // Convert to ServeArgs
