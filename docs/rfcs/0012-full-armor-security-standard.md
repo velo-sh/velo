@@ -130,7 +130,7 @@ Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of
 
 This RFC establishes a **4-Layer Defense Model** that secures the runtime from the kernel up to the verification layer.
 
-See the full architecture diagram here: **[The Velo Fortress Diagram](../security/velo_fortress_diagram.md)**
+See the full architecture diagram here: **[The Velo Fortress Diagram](velo_fortress_diagram.md)**
 
 ---
 
