@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "platformdirs"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["platformdirs"]
+timeout = 30

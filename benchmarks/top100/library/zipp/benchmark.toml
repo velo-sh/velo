@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "zipp"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["zipp"]
+timeout = 30

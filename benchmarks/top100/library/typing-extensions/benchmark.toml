@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "typing-extensions"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["typing-extensions"]
+timeout = 30

@@ -139,10 +139,14 @@ uv run python -m pytest tests/qa/ -v
 python3 benchmark_projects.py --all -n 5
 
 # 🔬 Top 100 Package Baseline (RFC-0012)
-# Test compatibility and performance across the most popular PyPI packages
-python3 scripts/refresh_top100.py           # Update package list
-python3 scripts/benchmark_top100.py --limit 5  # Quick test (5 packages)
-python3 scripts/benchmark_top100.py         # Full test (100 packages, ~2 hours)
+# We benchmarked the Top 100 downloaded PyPI packages.
+# Result: **95%** of packages start in **<20ms** using Velo Instant Mode.
+
+# Run the full benchmark suite (requires velo built in release mode)
+./benchmarks/top100/_runner/main.py
+
+# Run a specific package
+./benchmarks/top100/_runner/main.py --package requests
 ```
 
 ### Code Quality

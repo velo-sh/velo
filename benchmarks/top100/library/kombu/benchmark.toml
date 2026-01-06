@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "kombu"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["kombu"]
+timeout = 30

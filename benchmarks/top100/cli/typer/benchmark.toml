@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "typer"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["typer"]
+timeout = 30

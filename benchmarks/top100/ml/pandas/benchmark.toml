@@ -1,0 +1,10 @@
+
+[meta]
+category = "ml"
+package = "pandas"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["pandas"]
+timeout = 30

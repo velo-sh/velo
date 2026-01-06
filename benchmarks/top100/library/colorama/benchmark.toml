@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "colorama"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["colorama"]
+timeout = 30

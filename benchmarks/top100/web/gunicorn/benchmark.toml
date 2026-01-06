@@ -1,0 +1,10 @@
+
+[meta]
+category = "web"
+package = "gunicorn"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["gunicorn"]
+timeout = 30
