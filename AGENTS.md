@@ -224,6 +224,11 @@ I will review/implement with [ROLE]'s perspective.
 - [Platform Specialist](./docs/agents/specialists/platform_specialist.md)
 - [Performance Engineer](./docs/agents/specialists/performance_specialist.md)
 
+### 🚀 Activated Skills (Slash Commands)
+- `/start-mission`: [SOP-002 Mission Protocol](./.agent/workflows/start-mission.md)
+- `/ask-council`: [SOP-001 Expert Review](./.agent/workflows/ask-council.md)
+- `/audit-security`: [TITANIUM Security Scan](./.agent/workflows/audit-security.md)
+
 ### Project Standards
 - [STANDARDS.md](./docs/STANDARDS.md) - Naming conventions
 - [TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) - Test isolation
