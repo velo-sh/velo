@@ -214,6 +214,16 @@ I will review/implement with [ROLE]'s perspective.
 - [QA Engineer](./docs/agents/qa-engineer.md)
 - [DevOps Engineer](./docs/agents/devops-engineer.md)
 
+### The Trinity (QA Core)
+- [Agent A: Core Verifier](./docs/agents/trinity/agent_a_core.md)
+- [Agent B: Edge Walker](./docs/agents/trinity/agent_b_edge.md)
+- [Agent C: Security Prosecutor](./docs/agents/trinity/agent_c_security.md)
+
+### Specialists (The Grand Council)
+- [Security Specialist](./docs/agents/specialists/security_specialist.md)
+- [Platform Specialist](./docs/agents/specialists/platform_specialist.md)
+- [Performance Engineer](./docs/agents/specialists/performance_specialist.md)
+
 ### Project Standards
 - [STANDARDS.md](./docs/STANDARDS.md) - Naming conventions
 - [TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) - Test isolation
