@@ -53,6 +53,33 @@ Zygote sockets must be uniquely keyed to the project to prevent "Ghost Zygote" h
 - **Canonicalization**: All path checks (whitelist/blacklist) MUST use `fs::canonicalize` before comparison to prevent symlink-based escape.
 - **Root Enforcement**: Every subprocess read/write must remain within the canonical project root.
 
+### 3.5 Environment Provenance Rule (SEC-ENV-001)
+- **Value Validation**: Whitelisted variables (`PATH`, `PYTHONPATH`) must have their values validated. 
+- **Constraint**: Every entry in `PATH` or `PYTHONPATH` must be canonicalized and verified to reside inside either:
+    1. The **Project Root** (canonicalized).
+    2. The **Active Virtual Environment** (canonicalized).
+    3. Approved system interpreter directories (e.g., `/usr/bin/python`).
+- **Fail-Closed**: Any unverified entry results in immediate worker rejection.
+
+### 3.6 FD Hygiene & Escape Protection (SEC-FS-002)
+- **FD Closure**: Before `exec()`, the worker MUST close all inherited file descriptors except `stdin`, `stdout`, and `stderr`.
+- **Procfs Restriction**: Access to `/proc/self/fd/` is strictly prohibited to prevent reverse-path resolution attacks.
+- **Openat Safety**: The sandbox must wrap `openat()` (or equivalent Rust crates) to ensure the `dirfd` is also validated against the `PROJECT_ROOT`.
+
+### 3.7 Zygote Peer Authentication (SEC-ZYG-003)
+- **Mechanism**:
+    - **Linux**: Use `SO_PEERCRED` to verify that the connector's `uid` matches the Zygote owner.
+    - **Cross-Platform**: Implement a **Challenge-Response Handshake**. Zygote sends a random `nonce`; Caller must respond with `HMAC(nonce, PROJECT_SECRET)`.
+- **Identity**: Ensures that even if the socket is accessible, only authorized processes can trigger a `fork()`.
+
+---
+
+## 4. Failure Strategy: Fail-Closed
+RFC-0012 mandates a **Fail-Closed** policy:
+- If `PathShield` panics or detects a violation -> **Kill Worker**.
+- If Environment validation fails -> **Block Startup**.
+- If Peer Authentication fails -> **Reject Connection**.
+
 ---
 
 ## 5. Cross-Platform Security Invariants
