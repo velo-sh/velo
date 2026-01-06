@@ -16,9 +16,9 @@
 
 ### Task 2: Randomized/Abstract Zygote Socket (P0)
 - **Action**: 
-    - Linux: Use **Abstract Namespace** (@velo-zygote-...).
-    - macOS: Use `mkdtemp` (perm 700) and pass path via environment/pipe.
-- **Crate**: Use `nix` for socket options.
+    - Linux: Abstract Namespace (@velo-zygote-...).
+    - macOS: `umask(077)` + `mkdtemp`. Ensure atomic restricted permissions.
+- **Crate**: Use `nix`.
 
 ### Task 3: Capability-Based Path Shield (P1)
 - **Crate**: Implement via `cap-std`.
@@ -26,12 +26,15 @@
 
 ### Task 4: Environment Provenance Guard (SEC-ENV-001) [MANDATORY]
 - **File**: `src/serve/runner.rs`
-- **Action**: Implement auditing of whitelisted variable values.
-- **Constraint**: Ensure `PATH` and `PYTHONPATH` entries are canonicalized and reside within `PROJECT_ROOT` or trusted system/venv prefixes.
+- **Behavior**: **Fail-Fast**. If any `PATH` entry cannot be canonicalized (cyclic symlink, etc.), **Abort Startup**.
+- **Performance**: Audit and cache results at startup; do not re-scan in high-frequency loops.
 
-### Task 5: FD Hygiene & Escape Protection (SEC-FS-002) [MANDATORY]
+### Task 5: FD & Signal Hygiene (SEC-FS-002) [MANDATORY]
 - **File**: `src/serve/runner.rs`
-- **Prohibition**: Block access to `/proc/self/fd/`.
+- **Action**: 
+    - Linux: Use `close_range(3, ~0, CLOEXEC)`.
+    - Fallback: Use `getrlimit` to find max FD for loop.
+    - **Signal Mask**: Reset (unblock) all signals in `pre_exec`.
 
 ### Task 6: Zygote Peer Authentication (SEC-ZYG-003) [MANDATORY]
 - **File**: `src/zygote/ipc.rs`

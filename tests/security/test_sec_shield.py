@@ -70,10 +70,27 @@ class TestSecurityShield:
 
     def test_sec_shield_005_env_provenance_validation(self):
         """
-        SEC-SHIELD-005: Verify PATH/PYTHONPATH value provenance.
-        Must reject values pointing outside the project root or trusted prefixes.
+        # Integration Test Mandate:
+        # 1. Parent process opens 100 dummy files.
+        # 2. Worker is spawned.
+        # 3. Worker checks /proc/self/fd/ (on Linux).
+        # 4. Assert count == 4 (stdin, stdout, stderr, zygote_sock).
+        pass
+
+    def test_sec_shield_005_env_provenance_fail_fast(self):
         """
-        # Test: Inject /tmp into PATH, verify worker startup is blocked
+        SEC-SHIELD-005: Verify Fail-Fast behavior for path resolution errors.
+        Must abort startup if a cyclic symlink or invalid path is detected in whitelisted vars.
+        """
+        # Test: Create a cyclic symlink, add to PATH, assert Velo startup fails (exit code != 0).
+        pass
+
+    def test_sec_shield_007_signal_responsiveness(self):
+        """
+        SEC-SHIELD-007: Verify Signal Mask Hygiene.
+        Workers must inherit default signal mask to remain terminable.
+        """
+        # Test: Parent blocks SIGTERM, spawn worker, verify worker still responds to SIGTERM.
         pass
 
     def test_sec_shield_006_peer_authentication(self):

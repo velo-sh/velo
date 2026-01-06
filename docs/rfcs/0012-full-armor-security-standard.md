@@ -44,11 +44,11 @@ Use **Canonical Workspace Scoping** instead of hardcoded filesystem blocks.
 - Explicit permissions for `/tmp/velo-<workspace-hash>/`.
 
 ### 3.3 Unique Zygote Identity (Anti-Hijack)
-To prevent DoS or hijacking via predictable socket paths:
-- **Linux**: Mandatory use of **Abstract Namespace Sockets** (`@velo-zygote-<hash>`). No FS footprint.
-- **General (macOS/BSD)**: Use `mkdtemp` to create a randomized temporary directory with `700` permissions. Place socket within: `/tmp/velo-<random>/zygote.sock`.
+- **Linux**: Mandatory use of **Abstract Namespace Sockets** (`@velo-zygote-<hash>`).
+- **macOS (Atomic Permissions)**:
+    - Use `umask(077)` **before** calling `mkdtemp` and `bind`.
+    - Ensure the randomized temporary directory and the socket itself are created with atomic restricted permissions (700/600).
 - **Windows**: Use **Named Pipes** with strict Security Descriptors.
-- **Path Passing**: The server MUST pass the final socket path to the worker via a secure channel (Environment or Pipe), NOT rely on deterministic calculation.
 
 ### 3.4 Path Sanitization (TOCTOU Resistance)
 To prevent Time-of-Check to Time-of-Use attacks:
@@ -57,7 +57,10 @@ To prevent Time-of-Check to Time-of-Use attacks:
     1. Open the file/directory.
     2. Call `fstat` on the resulting FD.
     3. Verify `st_dev` and `st_ino` (Device/Inode) are descendants of the cached, verified `PROJECT_ROOT`.
-- **Performance**: Cache the `PROJECT_ROOT` canonical path and device ID at startup. Avoid redundant `canonicalize` syscalls in high-frequency paths.
+- **Performance & Cache**: 
+    - Cache the `PROJECT_ROOT` canonical path and device ID at startup.
+    - **Proactive Validation**: Canonicalize and validate `PATH`/`PYTHONPATH` entries **once** at startup.
+    - **Fail-Fast**: If `fs::canonicalize` fails (e.g., cyclic symlink or permission error) during startup validation, Velo MUST **Abort Startup** immediately, not ignore the entry.
 
 ### 3.5 Environment Provenance Guard (SEC-ENV-001)
 - **Value Origin Validation**: It is not enough to whitelist `PATH`. The contents must be audited.
@@ -66,11 +69,14 @@ To prevent Time-of-Check to Time-of-Use attacks:
     - Entries are only allowed if they reside within `realpath(PROJECT_ROOT)`, the active `VIRTUAL_ENV`, or a set of hardcoded trusted system prefixes (e.g., `/usr/bin`, `/bin`).
 - **Fail-Closed**: Any out-of-bounds entry will trigger an immediate startup block.
 
-### 3.6 File Descriptor (FD) Hygiene (SEC-FS-002)
-- **FD Purge**: Before the worker executes (`execve`), all file descriptors except `0 (stdin)`, `1 (stdout)`, and `2 (stderr)` must be explicitly closed.
+### 3.6 File Descriptor (FD) & Signal Hygiene (SEC-FS-002)
+- **FD Purge (Performance Optimized)**:
+    - **Linux (5.9+)**: Mandatory use of `close_range(3, ~0, CloseRange::CLOEXEC)`.
+    - **Fallback**: Read `RLIMIT_NOFILE` to determine the actual upper bound; loop and close 3..MAX. **Never** use a hardcoded 4096 limit.
 - **Escape Blocking**:
-    - Explicitly block lookups for `/proc/self/fd/` and similar pseudo-filesystems that allow path-string bypass.
-    - Ensure `openat` and `dirfd` based calls are scoped to the Project Root using the `PathShield` utility.
+    - Explicitly block lookups for `/proc/self/fd/` and similar pseudo-filesystems.
+- **Signal Mask Reset**:
+    - In `pre_exec`, the global signal mask MUST be reset (unblocked) to ensure Workers respond correctly to `SIGTERM`/`SIGKILL`.
 
 ### 3.7 Zygote Peer Authentication (Kernel-Enforced)
 Prefer OS-level verification over application-layer HMAC where available.
