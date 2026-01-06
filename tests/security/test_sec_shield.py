@@ -1,142 +1,139 @@
 import os
+import sys
 import subprocess
 import pytest
+import time
+import socket
+import signal
 import hashlib
-from pathlib import Path
+import glob
 
-class TestSecurityShield:
+# Path to the compiled binary - adjusted to be relative to project root or absolute
+# For CI/Local, we assume it's in target/debug/velo
+VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../target/debug/velo"))
+
+class TestSecurityShieldIntegration:
     """
-    SEC-SHIELD: The Executioner Suite.
-    Designed to detect 'Security Suffocation' and 'Over-restriction' in Velo.
+    The 'Real' Executioner Suite: Integration tests for RFC-0012.
+    No mocks. Directly attacks the compiled Rust binary to verify security invariants.
     """
 
-    def test_sec_shield_001_env_oxygen_level(self):
+    @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason=f"Velo binary not found at {VELO_BIN}. Run 'cargo build' first.")
+    def test_sec_shield_005_env_provenance_enforcement(self):
         """
-        Verify that the worker has enough 'oxygen' (environment variables) to survive.
-        And verify that 'toxins' like LD_LIBRARY_PATH are blocked.
+        SEC-SHIELD-005: Attack Test - Inject malicious PATH.
+        Velo must either block startup or surgically scrub the toxic entry.
         """
-        # Whitelist
-        required_vars = ["PATH", "VIRTUAL_ENV", "TZ"]
-        for var in required_vars:
-            assert var in os.environ, f"CRITICAL: {var} missing from environment."
+        # 1. Setup malicious environment
+        malicious_env = os.environ.copy()
+        # Inject a dangerous path that RFC-0012 must intercept
+        toxic_path = "/tmp/hackers_bin"
+        if not os.path.exists(toxic_path):
+            os.makedirs(toxic_path, exist_ok=True)
+            
+        malicious_env["PATH"] = f"{toxic_path}:" + malicious_env.get("PATH", "")
         
-        # Blacklist
-        forbidden_vars = ["LD_LIBRARY_PATH", "PYTHONHOME"]
-        for var in forbidden_vars:
-            assert var not in os.environ, f"SECURITY FAILURE: {var} leaked into worker environment."
+        # 2. Run Velo to probe its own environment
+        # Command: velo run -c "import os; print(os.environ['PATH'])"
+        result = subprocess.run(
+            [VELO_BIN, "run", "-c", "import os; print(os.environ['PATH'])"],
+            env=malicious_env,
+            capture_output=True,
+            text=True
+        )
 
-    def test_sec_shield_002_path_over_restriction(self, tmp_path):
+        # 3. Verification
+        # Success = Result exists but toxic path is GONE (Surgical Scrubbing mandated by RFC)
+        assert result.returncode == 0, f"Velo crashed or failed to start: {result.stderr}"
+        assert toxic_path not in result.stdout, \
+            f"SECURITY FAILURE: Malicious PATH '{toxic_path}' was not scrubbed by EnvironmentProvenanceGuard!"
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="FD probes via /proc require Linux")
+    @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
+    def test_sec_shield_004_fd_leakage_real(self):
         """
-        Verify that we can still read internal project modules while blocking system paths.
+        SEC-SHIELD-004: FD Leakage Test.
+        Verify that workers do NOT inherit sensitive parent FDs.
         """
-        project_dir = tmp_path / "my_project"
-        project_dir.mkdir()
-        (project_dir / "app.py").write_text("import local_mod")
-        (project_dir / "local_mod.py").write_text("x = 1")
+        # 1. Parent process opens a sensitive file
+        sensitive_file = open("Cargo.toml", "r")
+        sensitive_fd = sensitive_file.fileno()
         
-        # The 'Sin': If the shield is too tight, it might block local_mod.py
-        # because it's not on a 'known' whitelist.
-        assert (project_dir / "local_mod.py").exists()
-        # Mocking the lookup
-        allowed = True # This would be tested against the actual binary
-        assert allowed, "Surgical Shield failed: Local module blocked by over-restrictive path policy."
-
-    def test_sec_shield_003_zygote_isolation(self, tmp_path):
-        """
-        Verify that two different projects produce two different Zygote socket paths.
-        Prevents 'Ghost Zygote' hijacking or collision.
-        """
-        path1 = "/projects/a"
-        path2 = "/projects/b"
+        # Ensuring we have a high FD to test the hygiene loop
+        assert sensitive_fd > 2
         
-        def get_socket_path(project_path):
-            # Proposed logic: use a hash of the project path
-            h = hashlib.sha256(project_path.encode()).hexdigest()[:12]
-            return f"/tmp/velo-zygote-{h}.sock"
+        # 2. Spawn Velo and probe /proc/self/fd
+        probe_script = "import os; print(list(os.listdir('/proc/self/fd')))"
         
-        sock1 = get_socket_path(path1)
-        sock2 = get_socket_path(path2)
+        result = subprocess.run(
+            [VELO_BIN, "run", "-c", probe_script],
+            capture_output=True,
+            text=True,
+            # Pass the FD to the OS spawn, but Velo's runner.rs should close it manually if not in whitelist
+            pass_fds=[sensitive_fd] 
+        )
         
-        assert sock1 != sock2, "Collision detected: Multiple projects using the same Zygote socket."
-        assert "velo-zygote" in sock1
-
-    def test_sec_shield_004_fd_escape_protection(self):
-        """
-        SEC-SHIELD-004: Verify FD hygiene.
-        Workers must not have access to sensitive inherited file descriptors.
-        """
-        # Test: Open a sensitive file, spawn child, verify child cannot access via inherited FD
-        pass
-
-    def test_sec_shield_005_env_provenance_validation(self):
-        """
-        # Integration Test Mandate:
-        # 1. Parent process opens 100 dummy files.
-        # 2. Worker is spawned.
-        # 3. Worker checks /proc/self/fd/ (on Linux).
-        # 4. Assert count == 4 (stdin, stdout, stderr, zygote_sock).
-        pass
-
-    def test_sec_shield_005_env_provenance_fail_fast(self):
-        """
-        SEC-SHIELD-005: Verify Fail-Fast behavior for path resolution errors.
-        Must abort startup if a cyclic symlink or invalid path is detected in whitelisted vars.
-        """
-        # Test: Create a cyclic symlink, add to PATH, assert Velo startup fails (exit code != 0).
-        pass
-
-    def test_sec_shield_007_signal_responsiveness(self):
-        """
-        SEC-SHIELD-007: Verify Signal Mask Hygiene.
-        Workers must inherit default signal mask to remain terminable.
-        """
-        # Test: Parent blocks SIGTERM, spawn worker, verify worker still responds to SIGTERM.
-        pass
-
-    def test_sec_shield_006_peer_authentication(self):
-        """
-        SEC-SHIELD-006: Verify Zygote Peer Authentication.
-        Must reject connections that fail the HMAC/SO_PEERCRED check.
-        """
-        # Test: Attempt to connect to Zygote socket from an unauthorized PID
-        pass
-
-    def test_sec_shield_004_fd_escape_protection(self):
-        """
-        SEC-SHIELD-004: Verify FD hygiene.
-        Workers must not have access to sensitive inherited file descriptors.
-        """
-        # In a real test, we would probe /proc/self/fd
-        # If any FD > 2 (stdin/out/err) exists and points to /etc/shadow, it's a FAIL.
-        leaked_fds = [] # Mock result
-        assert len(leaked_fds) == 0, f"FD Leak detected: Worker inherited sensitive descriptors: {leaked_fds}"
-
-    def test_sec_shield_005_env_provenance_validation(self):
-        """
-        SEC-SHIELD-005: Verify PATH/PYTHONPATH value provenance.
-        Must reject values pointing outside the project root or trusted prefixes.
-        """
-        project_root = "/home/user/my_project"
-        malicious_path = "/tmp/evil:/usr/bin"
+        sensitive_file.close()
         
-        def validate_env_value(path_str, root):
-            entries = path_str.split(":")
-            for entry in entries:
-                if not (entry.startswith(root) or entry.startswith("/usr/bin")):
-                    return False
-            return True
+        # 3. Verification
+        # The list of FDs should only contain 0, 1, 2, and perhaps the pipe used for communication
+        # It MUST NOT contain our sensitive_fd
+        worker_fds = result.stdout.strip()
+        assert str(sensitive_fd) not in worker_fds, \
+            f"SECURITY FAILURE: Sensitive FD {sensitive_fd} leaked into the worker process! FDs detected: {worker_fds}"
 
-        assert validate_env_value(malicious_path, project_root) is False, "Provenance check failed: Allowed out-of-bounds PATH entry."
-
-    def test_sec_shield_006_peer_authentication(self):
+    @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
+    def test_sec_shield_003_zygote_isolation_real(self, tmp_path):
         """
-        SEC-SHIELD-006: Verify Zygote Peer Authentication.
-        Must reject connections that fail the HMAC handshake.
+        SEC-SHIELD-003: Zygote Isolation Verification.
+        Verify that Zygote uses either Abstract Namespace (Linux) or Atomic Temp Dirs (macOS).
         """
-        nonce = "random123"
-        correct_secret = "secret"
-        wrong_response = "wrong_hmac"
+        # 1. Start a Zygote server in the background
+        # We use a dummy project root to ensure hashing/naming works
+        proc = subprocess.Popen(
+            [VELO_BIN, "serve", "--zygote"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=tmp_path
+        )
         
-        # Identity Verification Logic
-        authenticated = False # Result of handshake
-        assert authenticated is False, "Authentication bypass: Zygote accepted connection without valid HMAC response."
+        try:
+            time.sleep(1.5) # Give it time to bind
+            
+            if sys.platform == "linux":
+                # Check /proc/net/unix for the abstract socket
+                with open("/proc/net/unix", "r") as f:
+                    unix_sockets = f.read()
+                    # Abstract sockets start with @ or are shown as @... or \0...
+                    assert "@velo-zygote-" in unix_sockets or "velo-zygote-" in unix_sockets, \
+                        "SECURITY FAILURE: Abstract Zygote socket not detected in /proc/net/unix"
+            else:
+                # macOS check: Look for the mkdtemp'd path
+                # Pattern: /tmp/velo-secure-*/zygote.sock
+                matches = glob.glob("/tmp/velo-secure-*/zygote-*.sock") + \
+                          glob.glob(os.path.join(os.environ.get("TMPDIR", "/tmp"), "velo-secure-*/zygote-*.sock"))
+                assert len(matches) > 0, "SECURITY FAILURE: Atomic randomized Zygote socket not found on macOS"
+                
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+    @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
+    def test_sec_shield_001_toxin_blocking(self):
+        """
+        SEC-SHIELD-001: Blocking toxins like LD_LIBRARY_PATH and PYTHONHOME.
+        """
+        toxin_env = os.environ.copy()
+        toxin_env["LD_LIBRARY_PATH"] = "/tmp/evil_libs"
+        toxin_env["PYTHONHOME"] = "/tmp/evil_python"
+        
+        result = subprocess.run(
+            [VELO_BIN, "run", "-c", "import os; print(os.environ.get('LD_LIBRARY_PATH', 'CLEAN')); print(os.environ.get('PYTHONHOME', 'CLEAN'))"],
+            env=toxin_env,
+            capture_output=True,
+            text=True
+        )
+        
+        assert "CLEAN" in result.stdout
+        assert "/tmp/evil_libs" not in result.stdout
+        assert "/tmp/evil_python" not in result.stdout
