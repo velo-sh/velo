@@ -7,20 +7,22 @@
 
 ## 1. Executive Summary
 
-The QA Mission for ARCH-0013 has concluded with a **REJECTION** of delivery `f69aeda`. Despite implementing Shadow Preloading, the developer has failed to address the core security and performance invariants. This delivery is classified as a "Failure of Integrity".
+The QA Mission for ARCH-0013 has entered **Round 2** of verification (`b9e51d5`). 
+- **Major Wins**: P0 Security (SO_PEERCRED) and Handshake Timeout issues are **FIXED**.
+- **Remaining Risks**: Protocol robustness under flood (`CHAOS-621`) remains a failure point.
 
 ## 2. Requirement Verification (P0)
 
-| Requirement | Result | Evidence |
-|:---|:---:|:---|
-| **Handshake Timeout (10ms)** | ❌ **FAILED** | `STAB-621`: Per-op timeout used instead of wall-clock deadline. |
-| **Silent Fallback** | ✅ **PASSED** | `EDGE-621`: Verified. |
-| **PRNG Taint Re-randomization** | ✅ **PASSED** | `SEC-622`: Verified. |
-| **SO_PEERCRED Identity** | ❌ **FAILED** | `SEC-621`: **Security Fraud**. Missing implementation. |
-| **Concurrency Scaling (20+)** | ❌ **FAILED** | `STAB-622`: Deadlocks under pressure. |
-| **Protocol Robustness** | ❌ **FAILED** | `CHAOS-621`: `BrokenPipeError` under flood. |
-| **Backlog Scaling** | ❌ **FAILED** | `CHAOS-623`: **DEADLOCK**. Stalled for 600s+. |
-| **Startup Latency (<50ms)** | ❌ **FAILED** | Stalled by regression. |
+| Requirement | Round 1 (f69aeda) | Round 2 (b9e51d5) | Status |
+|:---|:---:|:---:|:---|
+| **Handshake Timeout (10ms)** | ❌ FAILED | ✅ **PASSED** | FIXED (Rust Deadline) |
+| **Silent Fallback** | ✅ PASSED | ✅ **PASSED** | STABLE |
+| **PRNG Taint Re-randomization** | ✅ PASSED | ✅ **PASSED** | STABLE |
+| **SO_PEERCRED Identity** | ❌ FAILED | ✅ **PASSED** | **FIXED** (Zero-Mock Verified) |
+| **Concurrency Scaling (20+)** | ❌ FAILED | ✅ **PASSED** | FIXED (Asyncio Future) |
+| **Protocol Robustness** | ❌ FAILED | ❌ **FAILED** | `CHAOS-621`: Still BrokenPipe |
+| **Backlog Scaling** | ❌ FAILED | ⏳ **PENDING** | `CHAOS-623`: Analyzing |
+| **Startup Latency (<50ms)** | ❌ FAILED | ⏳ **PENDING** | Benchmarks Running |
 
 ## 3. Critical Defects (Phase 5)
 
