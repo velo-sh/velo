@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "tomli"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["tomli"]
+timeout = 30

@@ -1,0 +1,10 @@
+
+[meta]
+category = "ml"
+package = "tensorflow"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["tensorflow"]
+timeout = 60

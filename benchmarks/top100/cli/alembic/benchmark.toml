@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "alembic"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["alembic", "sqlalchemy", "mako"]
+timeout = 30

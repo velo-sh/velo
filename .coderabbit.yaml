@@ -1,51 +1,33 @@
-# .coderabbit.yaml
-version: "2"
-
-# Core review settings
 reviews:
-  profile: assertive        # Options: chill, assertive.
-  auto_review:
-    enabled: true           # Automatically review every new PR.
-    drafts: false           # Do not review PRs marked as Draft.
-  
-  # Crucial for Auto-Merge: This syncs AI approval as a GitHub Status Check
-  review_status: true       
-  
-  # High-level summary of the PR
-  high_level_summary: true
+  # Review tone / strictness
+  profile: assertive
 
-  # Path filters
-  path_filters:
-    - "!dist/**"
-    - "!**/node_modules/**"
-    - "!vendor/**"
-    - "!*.lock"
+  # Automatic reviews on PRs
+  auto_review:
+    enabled: true
+    drafts: false
+
+  # Sync review result as GitHub Status Check (required for auto-merge)
+  review_status: true
+
+  # Provide a high-level summary for each PR
+  high_level_summary: true
 
   # Finishing touches
   finishing_touches:
     docstrings:
       enabled: false
 
-  # Path-specific instructions
-  path_instructions:
-    - path: "*"
-      instructions: |
-        - Focus on code logic, security vulnerabilities, and performance bottlenecks.
-        - Categorize all findings into 'Critical', 'Major', 'Minor', or 'Nitpick'.
-        - **THRESHOLD FOR APPROVAL**: 
-          - You MUST provide an 'APPROVE' status if the only issues identified are 'Nitpick' or 'Minor'.
-          - You should ONLY block approval (keep the status as 'Reviewed' or 'Request Changes') if 'Major' or 'Critical' issues are found.
-        - If the changes are minor or purely documentation/styling, and the CI passes, favor approving the PR.
-        - For complex logic, be strict and ensure it doesn't break existing patterns found in the codebase.
-        - CRITICAL: DO NOT perform any automated actions, such as committing code or creating new branches.
-        - All suggestions must be provided strictly as comments for human review.
-
-  # Static analysis tools
+  # Static analysis integrations
   tools:
     ruff:
       enabled: true
     shellcheck:
       enabled: true
+
+# Allow CodeRabbit to index the repository for better context
+knowledge_base:
+  opt_out: false
 
 # RAG / Knowledge Base: Allows AI to understand the whole codebase
 knowledge_base:

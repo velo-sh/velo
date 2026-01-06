@@ -1,0 +1,10 @@
+
+[meta]
+category = "web"
+package = "aiohttp"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["aiohttp", "aiohttp.web", "yarl", "multidict", "frozenlist", "aiosignal"]
+timeout = 30
