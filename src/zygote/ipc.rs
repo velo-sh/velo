@@ -476,6 +476,10 @@ impl ZygoteStream {
         let mut stream = UnixStream::connect(socket_path)
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
+        // 0. Verify server identity (RFC §3.7 Mutual Auth)
+        #[cfg(target_os = "linux")]
+        verify_peer_credentials(&stream)?;
+
         // 1. Receive mandatory "Ready" greeting
         let ready: ZygoteResponse = read_message(&mut stream)?;
         match ready {
@@ -499,6 +503,10 @@ pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteComm
         .accept()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
+    // 0. Verify client identity (RFC §3.7)
+    #[cfg(target_os = "linux")]
+    verify_peer_credentials(&stream)?;
+
     let cmd: ZygoteCommand = read_message(&mut stream)?;
 
     Ok((stream, cmd))
@@ -513,6 +521,44 @@ pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Resul
 pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<ZygoteResponse> {
     let mut stream = ZygoteStream::connect(socket_path)?;
     stream.send_command(&command)
+}
+
+/// Verify that the peer is owned by the same user (RFC §3.7)
+///
+/// This is CRITICAL for Abstract Namespace Sockets which rely entirely
+/// on peer credentials for security, having no filesystem permissions.
+#[cfg(target_os = "linux")]
+fn verify_peer_credentials(stream: &UnixStream) -> Result<()> {
+    use std::os::unix::io::AsRawFd;
+
+    let fd = stream.as_raw_fd();
+    let ucred = unsafe {
+        let mut ucred: libc::ucred = std::mem::zeroed();
+        let mut len = std::mem::size_of::<libc::ucred>() as u32;
+        if libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            &mut ucred as *mut _ as *mut libc::c_void,
+            &mut len,
+        ) != 0
+        {
+            return Err(ZygoteError::SecurityViolation(
+                "Failed to get peer credentials".to_string(),
+            ));
+        }
+        ucred
+    };
+
+    let current_uid = unsafe { libc::getuid() };
+    if ucred.uid != current_uid {
+        return Err(ZygoteError::SecurityViolation(format!(
+            "Peer UID mismatch: expected {}, got {}",
+            current_uid, ucred.uid
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
