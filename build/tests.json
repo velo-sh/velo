@@ -1,5 +1,20 @@
 {
   "contracts": {},
-  "tests": {},
+  "tests": {
+    "tests/qa/phase_6_1_1/test_phase611_features.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "FFFFFF",
+      "sha1": "7e132923d217c05ef8b2481b6f05c4a5838c7c3f",
+      "txhash": []
+    },
+    "tests/qa/phase_6_1_1/test_security_hardened.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "FFF.",
+      "sha1": "e3043b66f08d0c64dde1c0bcc68d42a7738d5c7f",
+      "txhash": []
+    }
+  },
   "tx": {}
 }

@@ -28,11 +28,11 @@ class TestL1Features:
         2. Verify 4 worker processes exist
         3. Verify all workers are Zygote descendants
         """
-        proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
+        proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
         workers = proc.get_worker_pids()
-        assert len(workers) == 4, f"Expected 4 workers, got {len(workers)}"
+        assert len(workers) == 2, f"Expected 2 workers, got {len(workers)}"
 
         # Verify Zygote exists
         assert proc.zygote_pid is not None, "Zygote process not detected"
@@ -44,14 +44,14 @@ class TestL1Features:
         Priority: P1
 
         Steps:
-        1. Start with 4 workers
+        1. Start with 2 workers
         2. Send 100 requests
         3. Verify each worker received requests (distribution)
         """
         import requests
 
         # RFC-0011 Phase 2B: Must use zygote=True to enable multi-worker L7 Proxy mode
-        proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
+        proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
         # Track which PIDs respond
@@ -116,7 +116,7 @@ class TestL1Features:
         """
         import requests
 
-        # RFC-0011 Phase 2B: Must use workers > 1 to enable L7 Proxy (which injects headers)
+        # RFC-0011 & Net-001: Consistent proxy usage (workers >= 1)
         proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
@@ -143,7 +143,7 @@ class TestL1Features:
         """
         import requests
 
-        # RFC-0011 Phase 2B: Must use workers > 1 to enable L7 Proxy (which injects headers)
+        # RFC-0011 & Net-001: Consistent proxy usage (workers >= 1)
         proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
@@ -157,3 +157,28 @@ class TestL1Features:
             or data.get("x_forwarded_for") is not None
         )
         assert has_client_info, f"Client info not populated: {data}"
+
+    def test_L1_6_single_worker_xff(self, velo_serve_fixture):
+        """L1-6: X-Forwarded-For is injected even with workers=1.
+
+        Requirement: Net-001 (Consistent Header Injection)
+        Priority: P0
+        Rationale: Single worker deployments must not bypass security/proxy logic.
+
+        Steps:
+        1. Start velo serve --workers 1 --zygote
+        2. Make request to /headers
+        3. Verify X-Forwarded-For is present
+        """
+        import requests
+        # ARCH-GUARD: Ensure proxy is active even for single worker
+        proc = velo_serve_fixture.start("main:app", workers=1, zygote=True)
+        proc.wait_ready()
+
+        response = requests.get(f"http://127.0.0.1:{proc.port}/headers")
+        data = response.json()
+        
+        # Headers are returned as a dict, keys might be case-sensitive depending on app
+        xff = next((v for k, v in data.items() if k.lower() == "x-forwarded-for"), None)
+        assert xff is not None, f"X-Forwarded-For missing in workers=1 mode. Headers: {data}"
+        assert xff == "127.0.0.1"

@@ -641,7 +641,10 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
-    // NEW: Multi-worker Zygote mode (use our Worker implementation)
+    // RFC-0011 & Net-001: L7 Proxy activation
+    // We use >= 1 because even a single worker must go through the proxy to ensure
+    // consistent header injection (X-Forwarded-For) and Scope matching.
+    // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
     if args.workers >= 1
         && args.use_zygote
         && !preload_modules.is_empty()
