@@ -14,6 +14,9 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
 2.  **Security is Structural**: We do not "patch" security; we **architect** it (Surgical Shielding).
 3.  **Verification is Hostile**: The "Prosecutor Method" assumes failure until proven succesful by **Zero-Mock** binary execution.
 4.  **Invariants are Absolute**: Performance and Security thresholds are **P0 Blockers**. No "Tactical" waivers.
+5.  **Separation of Powers (Iron Rule)**: The **Architect** governs; the **Developer** implements.
+    *   ❌ **The Architect MUST NOT** write production code (`src/*.rs`, `*.py`).
+    *   ✅ **The Architect MUST** only write Governance (`docs/`), Contracts (`rfcs/`), and Tests (`tests/`).
 
 ---
 
