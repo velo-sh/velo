@@ -7,6 +7,27 @@
       "results": "F",
       "sha1": "697701674bbddc1926bba38f2dcfc6f0a363a4f8",
       "txhash": []
+    },
+    "tests/qa/test_phase6_2_agent_a_edge.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": ".",
+      "sha1": "960fda804e1839ed5e8ccce27818882eeeb424c4",
+      "txhash": []
+    },
+    "tests/qa/test_phase6_2_agent_b_stability.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "...",
+      "sha1": "061347f57b04156f294057d3d12c258b7e09f600",
+      "txhash": []
+    },
+    "tests/qa/test_phase6_2_agent_c_security.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "F..",
+      "sha1": "fe736b4b0354e57d36273b99733c4b377113e5e9",
+      "txhash": []
     }
   },
   "tx": {}
