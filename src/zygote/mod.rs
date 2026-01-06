@@ -375,6 +375,9 @@ impl ZygoteLauncher {
             PathBuf::from("python3")
         });
 
+        // DEBUG: See which python we are using
+        eprintln!("DEBUG: Zygote starting with Python: {:?}", python);
+
         // Find zygote module
         let zygote_module = find_zygote_module()?;
 
@@ -383,7 +386,25 @@ impl ZygoteLauncher {
         cmd.env_clear();
 
         // 1. Essential OS environment (pass-through)
-        for var in &["PATH", "HOME", "USER", "TMPDIR", "XDG_RUNTIME_DIR", "SHELL"] {
+        for var in &[
+            "PATH",
+            "HOME",
+            "USER",
+            "TMPDIR",
+            "XDG_RUNTIME_DIR",
+            "SHELL",
+            "PYTHONPATH",
+            "VIRTUAL_ENV",
+            "CONDA_PREFIX",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "__CF_USER_TEXT_ENCODING",
+            "MallocNanoZone",
+            "XPC_FLAGS",
+            "XPC_SERVICE_NAME",
+            "TERM_PROGRAM",
+        ] {
             if let Ok(val) = std::env::var(var) {
                 cmd.env(var, val);
             }
@@ -428,20 +449,17 @@ impl ZygoteLauncher {
             let profile = format!(
                 r#"(version 1)
 (allow default)
+(allow file-read*)
 (deny file-write*
     (subpath "/Users")
-    (subpath "/var")
-)
-(allow file-read*
-    (subpath "/usr/lib")
-    (subpath "/usr/bin")
-    (subpath "/System")
-    (subpath "{}")
+    (subpath "/Library")
+    (subpath "/etc")
 )
 (allow file-write*
     (subpath "/tmp")
     (subpath "/private/tmp")
     (subpath "/var/folders")
+    (subpath "{}")
     (subpath "{}")
 )
 "#,
@@ -450,8 +468,11 @@ impl ZygoteLauncher {
             );
 
             let mut sandbox_cmd = Command::new("sandbox-exec");
+            sandbox_cmd.arg("-p").arg(profile);
+
+            // Re-apply environment (Command::new doesn't inherit my modified cmd's env)
+            // Pillar 1: Env Isolation (re-apply to sandbox wrapper)
             sandbox_cmd.env_clear();
-            // Re-apply whitelist to the new command object
             for var in &[
                 "PATH",
                 "HOME",
@@ -459,24 +480,33 @@ impl ZygoteLauncher {
                 "TMPDIR",
                 "XDG_RUNTIME_DIR",
                 "SHELL",
+                "PYTHONPATH",
                 "VIRTUAL_ENV",
                 "CONDA_PREFIX",
+                "LANG",
+                "LC_ALL",
+                "LC_CTYPE",
+                "__CF_USER_TEXT_ENCODING",
+                "MallocNanoZone",
+                "XPC_FLAGS",
+                "XPC_SERVICE_NAME",
+                "TERM_PROGRAM",
             ] {
                 if let Ok(val) = std::env::var(var) {
                     sandbox_cmd.env(var, val);
                 }
             }
-            // Re-apply HPC and Python isolation
+            // HPC/OMP Thread pooling isolation
             sandbox_cmd.env("OMP_NUM_THREADS", "1");
             sandbox_cmd.env("MKL_NUM_THREADS", "1");
             sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
             sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
             sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
+
             sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
             sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
             sandbox_cmd.env("PYTHONUTF8", "1");
 
-            sandbox_cmd.arg("-p").arg(profile);
             sandbox_cmd.arg(&python);
             cmd = sandbox_cmd;
         }

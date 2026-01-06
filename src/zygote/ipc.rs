@@ -119,6 +119,11 @@ pub enum ZygoteResponse {
 /// DEF-61-004: Socket path includes protocol version for upgrade isolation
 /// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
 pub fn default_socket_path() -> PathBuf {
+    // Audit Remediation: Prioritize explicit socket path from environment (conftest.py support)
+    if let Ok(path) = std::env::var("VELO_ZYGOTE_SOCKET") {
+        return PathBuf::from(path);
+    }
+
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::ffi::OsStringExt;

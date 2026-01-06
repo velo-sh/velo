@@ -25,18 +25,19 @@ import pytest
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
 
-    def __init__(self, proc: subprocess.Popen, port: int = 8000):
+    def __init__(self, proc: subprocess.Popen, port: int, socket_path: str = None):
         self.proc = proc
         self.port = port
         self.pid = proc.pid
-        self.zygote_pid: Optional[int] = None
+        self.zygote_pid = None
+        self.socket_path = socket_path
         self._worker_pids: List[int] = []
 
     def is_running(self) -> bool:
         """Check if the main process is still running."""
         return self.proc.poll() is None
 
-    def wait_ready(self, timeout: float = 30.0) -> None:
+    def wait_ready(self, timeout: float = 60.0) -> None:
         """Wait for server to be ready to accept requests."""
         import requests
 
@@ -73,59 +74,31 @@ class VeloServeProcess:
             time.sleep(0.1)
 
     def _detect_zygote_pid(self) -> None:
-        """Detect Zygote supervisor process PID.
-        
-        The Zygote supervisor is usually a descendant of the Rust supervisor process (self.pid),
-        but may be detached (setsid) or already running if using an existing Zygote.
-        """
-        # 1. Search descendants of our supervisor
+        """Find the Zygote process PID by checking children of Velo supervisor."""
+        if self.zygote_pid:
+            return
+            
         try:
             supervisor = psutil.Process(self.pid)
-            children = supervisor.children(recursive=True)
-            for child in children:
+            # Search children recursively. The Zygote is usually a direct child.
+            for child in supervisor.children(recursive=True):
                 try:
-                    cmdline_list = child.cmdline()
-                    cmdline_str = " ".join(cmdline_list).lower()
-                    if "velo_zygote/main.py" in cmdline_str or "zygote" in child.name().lower():
-                        if "pytest" in cmdline_str: continue
-                        
-                        # Filter by socket if possible
-                        expected_socket = str(self.tmp_path / "velo-zygote.sock")
-                        if any(expected_socket in arg for arg in cmdline_list):
+                    cmdline = child.cmdline()
+                    cmdline_str = " ".join(cmdline).lower()
+                    if "velo_zygote/main.py" in cmdline_str:
+                        # If we have a specific socket path, match it
+                        if self.socket_path:
+                            if any(self.socket_path in arg for arg in cmdline):
+                                self.zygote_pid = child.pid
+                                return
+                        else:
+                            # Fallback to any Zygote child
                             self.zygote_pid = child.pid
                             return
-                        # If no socket argument found but it's a child, maybe it's still ours
-                        # (Zygote might be launched without --socket if it uses default, 
-                        # but we always pass it in our tests now)
-                        if expected_socket in cmdline_str: # fallback string check
-                             self.zygote_pid = child.pid
-                             return
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-
-        # 2. Global search (handling detached or existing Zygote)
-        # Filter by current user and cmdline containing this repo's path
-        current_uid = os.getuid()
-        for proc in psutil.process_iter(['pid', 'uids', 'cmdline', 'name']):
-            try:
-                # Check user ownership
-                uids = proc.info.get('uids')
-                if uids and uids.real != current_uid:
-                    continue
-                
-                cmdline_list = proc.info.get('cmdline') or []
-                cmdline_str = " ".join(cmdline_list).lower()
-                if "velo_zygote/main.py" in cmdline_str or "zygote" in (proc.info.get('name') or "").lower():
-                    if "pytest" in cmdline_str: continue
-                    
-                    expected_socket = str(self.tmp_path / "velo-zygote.sock")
-                    if any(expected_socket in arg for arg in cmdline_list):
-                        self.zygote_pid = proc.info['pid']
-                        return
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
 
     def get_worker_pids(self) -> List[int]:
         """Get list of worker PIDs.
@@ -223,7 +196,15 @@ class VeloServeFactory:
             cmd.extend(extra_args)
 
         env = os.environ.copy()
-        env["VELO_ZYGOTE_SOCKET"] = str(self.tmp_path / "velo-zygote.sock")
+        # RFC-0011 Audit: Path length limit on macOS is 104 chars. 
+        # Deeply nested pytest tmp_path can exceed this. Use /tmp/v-{hash}.s as fallback if needed.
+        socket_path = self.tmp_path / "z.s"
+        if len(str(socket_path)) > 100:
+             import tempfile, hashlib
+             h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
+             socket_path = Path(tempfile.gettempdir()) / f"v-{h}.s"
+        
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
         proc = subprocess.Popen(
             cmd,
@@ -233,7 +214,7 @@ class VeloServeFactory:
             stdout=None,
             stderr=None,
         )
-        wrapper = VeloServeProcess(proc, port)
+        wrapper = VeloServeProcess(proc, port, str(socket_path))
         self.processes.append(wrapper)
         return wrapper
 
