@@ -23,6 +23,7 @@ jobs:
       serve: ${{ steps.filter.outputs.serve }}
       analyze: ${{ steps.filter.outputs.analyze }}
       workflow: ${{ steps.filter.outputs.workflow }}
+      qa_infra: ${{ steps.filter.outputs.qa_infra }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -37,15 +38,22 @@ jobs:
               - 'python/velo_loader.py'
               - 'tests/qa/test_phase5_loader.py'
               - 'tests/qa/phase5/**'
+              - 'tests/qa/phase5_1/**'
+              - 'tests/qa/phase5_2/**'
             zygote:
               - 'src/zygote/**/*.rs'
               - 'velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
+              - 'tests/qa/test_phase3_zygote_lifecycle.py'
+              - 'tests/qa/test_phase3_harness.py'
             serve:
               - 'src/serve/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
               - 'tests/qa/phase_6_1_1/**'
+              - 'tests/qa/phase6_1/**'
               - 'tests/security/**'
+              - 'tests/qa/test_phase6_1_*.py'
+              - 'tests/qa/test_e2e_serve.py'
               - 'scripts/qa-fast.sh'
             analyze:
               - 'src/cmd/analyze.rs'
@@ -53,6 +61,12 @@ jobs:
               - 'tests/qa/test_phase4_*.py'
             workflow:
               - '.github/workflows/ci.yml'
+              - '.github/actions/setup-velo/**'
+            qa_infra:
+              - 'tests/qa/conftest.py'
+              - 'tests/qa/utils/**'
+              - 'tests/qa/conftest_markers.py'
+              - 'run_tests.py'
 
   build:
     name: Build (Ubuntu / 3.11)
@@ -170,7 +184,11 @@ jobs:
     name: "QA: Zygote Core E2E"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -188,7 +206,11 @@ jobs:
     name: "QA: Zygote Security Scan"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -206,7 +228,11 @@ jobs:
     name: "QA: Zygote Deployment Scenarios"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -224,7 +250,11 @@ jobs:
     name: "QA: Zygote Stress & Attack"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: (needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true')
+    if: |
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     # Allow failures - stress tests may be flaky
     continue-on-error: true
     steps:
@@ -251,7 +281,11 @@ jobs:
     name: "QA 3.5: Smoke (Tier 0)"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -269,7 +303,11 @@ jobs:
     name: "QA 3.5: Fast (Tier 1)"
     runs-on: ubuntu-latest
     needs: [qa-serve-smoke, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -287,7 +325,11 @@ jobs:
     name: "QA 3.5: Standard (Tier 2)"
     runs-on: ubuntu-latest
     needs: [qa-serve-fast, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -306,7 +348,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [qa-serve-standard, changes]
     # Only run on main branch - heavy tests are optional
-    if: github.ref == 'refs/heads/main' && (needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true')
+    if: |
+      github.ref == 'refs/heads/main' && (
+        needs.changes.outputs.serve == 'true' || 
+        needs.changes.outputs.rust == 'true' || 
+        needs.changes.outputs.workflow == 'true' || 
+        needs.changes.outputs.qa_infra == 'true'
+      )
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -329,7 +377,11 @@ jobs:
     name: "QA 5.0: Smoke (L0)"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -347,7 +399,11 @@ jobs:
     name: "QA 5.0: Standard (L1-L3)"
     runs-on: ubuntu-latest
     needs: [qa-fast-loader-smoke, changes]
-    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -372,7 +428,11 @@ jobs:
     name: "QA 5.0: Security (L4)"
     runs-on: ubuntu-latest
     needs: [qa-fast-loader-standard, changes]
-    if: needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -390,7 +450,11 @@ jobs:
     name: "QA 5.0: Chaos (L5)"
     runs-on: ubuntu-latest
     needs: [qa-fast-loader-security, changes]
-    if: (needs.changes.outputs.loader == 'true' || needs.changes.outputs.workflow == 'true')
+    if: |
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # L5 chaos tests may be flaky
     steps:
       - uses: actions/checkout@v4
@@ -414,7 +478,11 @@ jobs:
     name: "QA 6.1: Security Hardened (RFC-0010)"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -432,7 +500,11 @@ jobs:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
     needs: [qa-phase61-security-hardened, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -450,7 +522,11 @@ jobs:
     name: "QA 6.1: DX & Performance"
     runs-on: ubuntu-latest
     needs: [qa-phase61-stability-hardened, changes]
-    if: (needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true')
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # Performance tests may be flaky
     steps:
       - uses: actions/checkout@v4
@@ -472,7 +548,11 @@ jobs:
     name: "QA 6.2: Prosecutor Suite (RFC-0012)"
     runs-on: ubuntu-latest
     needs: [qa-phase61-security-hardened, changes]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -490,8 +570,12 @@ jobs:
   qa-phase611-core:
     name: "QA 6.1.1: Core Integration"
     runs-on: ubuntu-latest
-    needs: [qa-phase62-prosecutor]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    needs: [qa-phase62-prosecutor, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Setup Velo
@@ -513,8 +597,12 @@ jobs:
   qa-phase611-agents:
     name: "QA 6.1.1: Multi-Agent Simulation"
     runs-on: ubuntu-latest
-    needs: [qa-phase611-core]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    needs: [qa-phase611-core, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Setup Velo
@@ -532,8 +620,12 @@ jobs:
   qa-phase611-specialized:
     name: "QA 6.1.1: Specialized & Expert"
     runs-on: ubuntu-latest
-    needs: [qa-phase611-core]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    needs: [qa-phase611-core, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Setup Velo
@@ -554,8 +646,12 @@ jobs:
   qa-phase611-perf:
     name: "QA 6.1.1: Performance Baselines"
     runs-on: ubuntu-latest
-    needs: [qa-phase611-core]
-    if: needs.changes.outputs.serve == 'true' || needs.changes.outputs.workflow == 'true'
+    needs: [qa-phase611-core, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -580,7 +676,11 @@ jobs:
     name: "QA 4.0: Analyze Core"
     runs-on: ubuntu-latest
     needs: [build, changes]
-    if: needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.analyze == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -600,7 +700,11 @@ jobs:
     name: "QA 4.0: Integration (SLOW)"
     runs-on: ubuntu-latest
     needs: [qa-analyze-core, changes]
-    if: needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.analyze == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
@@ -620,7 +724,11 @@ jobs:
     name: "QA: Benchmark"
     runs-on: ubuntu-latest
     needs: [qa-analyze-integration, changes]
-    if: (needs.changes.outputs.analyze == 'true' || needs.changes.outputs.workflow == 'true')
+    if: |
+      needs.changes.outputs.analyze == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
       
