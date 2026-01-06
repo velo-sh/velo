@@ -77,13 +77,29 @@ As an AI Agent, please self-check the following high-frequency failure points be
 
 ### 1. The `/tmp` Trap (Insecure Path Block)
 - **Symptom**: Test fails with `LoaderError::InsecureLocation { path: "/tmp/..." }`.
-- **Root Cause**: Velo's security policy strictly forbids loading code from insecure paths like `/tmp`, `/var/tmp`, `/dev/shm` to prevent symlink attacks.
 - **Mitigation**: DO NOT use default `tempdir()`. Use `tempfile::Builder` and specify a path within the project root (e.g., `tempfile::Builder::new().tempdir_in(std::env::current_dir()?)`).
 
 ### 2. Formatting Failures (`cargo fmt`)
 AI tools often bypass local formatting. This is the #1 cause of CI failures.
 - **Solution**: Follow the rule in [Critical Rules](#must-do) below.
 - **TIP**: Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit.
+
+### 3. The `language_server` Crash (Dangerous Use of `pkill -f`)
+- **Symptom**: The Antigravity IDE crashes unexpectedly after running a kill command.
+- **Root Cause**: Using `pkill -f "substring"` (e.g., `pkill -f "velo"`) matches the entire command line. The IDE's language server processes often include the project path in their arguments, causing `pkill -f` to accidentally terminate the IDE itself.
+- **Correct Practices**:
+    - ✅ **Record PID at startup (Recommended)**:
+      ```bash
+      ./target/release/velo serve main:app &
+      VELO_PID=$!
+      # ... perform tasks ...
+      kill "$VELO_PID"
+      ```
+    - ✅ **Use Exact Pattern Matching**:
+      ```bash
+      # Match only the exact process name, not substrings in arguments
+      pkill "^velo$"
+      ```
 
 ---
 
@@ -178,7 +194,19 @@ I will review/implement with [ROLE]'s perspective.
 
 ---
 
- ## 🔗 Navigation
+## 🔗 Navigation
+
+> For governance rules and role transition policies, see [Universal Identity & Role Governance](#-universal-identity--role-governance) above.
+
+### ✅ Role Transitions & Governance Logs
+
+-[ID-LOCK-002] Phase 5.x Implementation Handover complete. Role: 💻 Developer.
+-Authorized by: gjwang (2026-01-03 13:30)
++[ID-LOCK-003] Phase 4 Stability Remediation. Role: 💻 Developer.
++Authorized by: gjwang (2026-01-03 14:15) via QA Leader directive.
++Objective: Fix H-4 (Marshal recursion bypass) and Zygote IPC sync (BUG-51-001).
+
+---
 
 ### Agent Roles
 - [Architect](./docs/agents/architect.md)

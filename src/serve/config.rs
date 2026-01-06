@@ -99,9 +99,15 @@ impl ServeArgs {
             self.reload = false;
             // Auto-set workers based on CPU count if not explicitly set
             if self.workers == 1 {
-                self.workers = std::thread::available_parallelism()
-                    .map(|p| p.get() as u32)
-                    .unwrap_or(4);
+                // RFC-0011 B1: Check K8s cgroup quota first to avoid throttling
+                if let Some(quota) = crate::hardware_k8s::get_cgroup_cpu_limit() {
+                    self.workers = quota;
+                } else {
+                    // Fallback to logical cores (physical machine or no quota)
+                    self.workers = std::thread::available_parallelism()
+                        .map(|p| p.get() as u32)
+                        .unwrap_or(4);
+                }
             }
         }
     }
@@ -117,6 +123,7 @@ impl ServeArgs {
             validate_scan_path(path, &project_dir)?;
         }
 
+        self.validate_ranges()?;
         Ok(())
     }
 
@@ -143,6 +150,22 @@ impl ServeArgs {
                 app: self.app.clone(),
             }
             .into());
+        }
+
+        Ok(())
+    }
+
+    /// Validate workers and port ranges
+    fn validate_ranges(&self) -> Result<()> {
+        if self.workers == 0 {
+            return Err(ServeError::InvalidWorkerCount {
+                count: self.workers,
+            }
+            .into());
+        }
+
+        if self.port == 0 {
+            return Err(ServeError::InvalidPort { port: self.port }.into());
         }
 
         Ok(())

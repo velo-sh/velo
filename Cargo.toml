@@ -3,8 +3,21 @@ name = "velo"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-
 description = "The high-performance runtime for the AI era."
+
+[lints.rust]
+unsafe_code = "allow" # Required for Unix signals and UDS integration
+unused_imports = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+# RFC-0010: Core SSoT requirement
+collapsible_if = "deny"
+# Temporarily allow these to stabilize the transition to SSoT
+uninlined_format_args = "allow"
+needless_pass_by_value = "allow"
+multiple_crate_versions = "allow"
+almost_swapped = "deny" # Just an example of a good catch-all
 
 [[bin]]
 name = "velo"
@@ -30,6 +43,7 @@ hostname = "0.4"
 rustpython-parser = "0.4"
 rustpython-ast = "0.4"
 ignore = "0.4"
+log = "0.4"
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching
@@ -40,6 +54,16 @@ strsim = "0.11"          # "Did you mean?" suggestions
 regex = "1.10"           # Strict security validation (SEC-P0-001)
 clap = { version = "4.5.54", features = ["derive"] }
 rmp-serde = "1.3"        # MessagePack for high-perf IPC
+
+# RFC-0011: L7 Proxy + UDS Worker architecture
+hyper = { version = "1.4", features = ["full", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["full", "tokio"] }
+tokio = { version = "1", features = ["full", "net"] }
+tower = "0.5"
+tower-service = "0.3"
+http = "1.1"
+http-body-util = "0.1"
+pin-project-lite = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

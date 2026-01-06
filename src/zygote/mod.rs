@@ -21,8 +21,11 @@ pub mod cli;
 pub mod error;
 pub mod ipc;
 
+extern crate log;
+
+use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use error::{Result, ZygoteError};
-use ipc::ZygoteResponse;
+use ipc::{ZygoteResponse, is_socket_alive};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -60,15 +63,6 @@ fn get_socket_timeout_secs() -> u64 {
 }
 
 /// Get the path to the Zygote log file
-///
-/// # Log File Behavior
-/// - **Location**: `~/.local/state/velo/zygote.log` (fallback: `$TMPDIR/velo-zygote.log`)
-/// - **Mode**: Append-only (no automatic rotation)
-/// - **Growth**: Log file will grow indefinitely until manually truncated or Zygote is restarted
-///
-/// # Note
-/// For long-running deployments, consider implementing log rotation externally (e.g., logrotate)
-/// or periodically clearing the file via `> ~/.local/state/velo/zygote.log`.
 pub fn get_log_path() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
         PathBuf::from(home).join(".local/state/velo/zygote.log")
@@ -167,13 +161,26 @@ fn find_zygote_module() -> Result<PathBuf> {
         "Could not find velo_zygote/main.py. Searched:\n\
          - VELO_ZYGOTE_PATH env var\n\
          - Compiled path: {}\n\
-         - Relative to executable\n\
-         - ~/.local/share/velo/\n\
-         - /usr/local/share/velo/\n\
-         - Current directory\n\
+         - Executable relative paths\n\
+         - User/System share locations\n\
+         - CWD\n\
          Set VELO_ZYGOTE_PATH to override.",
-        env!("CARGO_MANIFEST_DIR")
+        manifest_path.display()
     )))
+}
+
+/// Find the standardized worker launcher script path
+pub fn find_worker_launcher() -> Result<PathBuf> {
+    let zygote_main = find_zygote_module()?;
+    let launcher = zygote_main.parent().unwrap().join("worker_launcher.py");
+    if launcher.exists() {
+        Ok(launcher)
+    } else {
+        Err(ZygoteError::StartFailed(format!(
+            "worker_launcher.py not found in {}",
+            zygote_main.parent().unwrap().display()
+        )))
+    }
 }
 
 /// Handle to a spawned worker process
@@ -333,6 +340,11 @@ impl ZygoteLauncher {
         }
     }
 
+    /// Get the PID of the running Zygote process
+    pub fn pid(&self) -> Option<u32> {
+        self.zygote_pid
+    }
+
     /// Set the Python interpreter path
     pub fn with_python(mut self, python: PathBuf) -> Self {
         self.python_path = Some(python);
@@ -343,8 +355,9 @@ impl ZygoteLauncher {
     ///
     /// # Arguments
     /// * `preload` - List of Python modules to pre-import
+    /// * `app_name` - Optional app name for affinity verification (WB-004)
     #[cfg(unix)]
-    pub fn start(&mut self, preload: &[&str]) -> Result<()> {
+    pub fn start(&mut self, preload: &[&str], app_name: Option<&str>) -> Result<()> {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         ipc::cleanup_stale_sockets();
 
@@ -358,14 +371,127 @@ impl ZygoteLauncher {
             PathBuf::from("python3")
         });
 
+        // RFC-0011: Standardized socket path
+        let socket_path = crate::zygote::ipc::default_socket_path();
+        log::info!("🚀 Zygote using socket: {}", socket_path.display());
+
         // Find zygote module
         let zygote_module = find_zygote_module()?;
 
-        // Build command
+        // Build command with EnvShield (Pillar 1: Env Isolation)
         let mut cmd = Command::new(&python);
-        cmd.arg(&zygote_module)
-            .arg("--socket")
-            .arg(&self.socket_path);
+        cmd.env_clear();
+
+        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        let shield = EnvironmentShield::new();
+        shield
+            .apply(&mut cmd)
+            .map_err(ZygoteError::SecurityViolation)?;
+
+        // 2. High-Performance Isolation (RFC-0011 HPC-001)
+        cmd.env("OMP_NUM_THREADS", "1");
+        cmd.env("MKL_NUM_THREADS", "1");
+        cmd.env("OPENBLAS_NUM_THREADS", "1");
+        cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+        cmd.env("NUMEXPR_NUM_THREADS", "1");
+
+        // 3. MacOS/Python Specific Isolation
+        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+        cmd.env("PYTHONUNBUFFERED", "1"); // RFC §3.1
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
+
+        // RFC-0012 §3.6: FD & Signal Hygiene
+        apply_standard_hygiene(&mut cmd);
+
+        // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
+        let socket_arg = {
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                let bytes = self.socket_path.as_os_str().as_bytes();
+                if !bytes.is_empty() && bytes[0] == 0 {
+                    let mut s = String::from("@");
+                    s.push_str(&String::from_utf8_lossy(&bytes[1..]));
+                    s
+                } else {
+                    self.socket_path.to_string_lossy().to_string()
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            self.socket_path.to_string_lossy().to_string()
+        };
+
+        // Pillar 3: Sandbox Isolation (SandboxShield)
+        // On macOS, we use sandbox-exec (Seatbelt) to restrict the Zygote process.
+        #[cfg(target_os = "macos")]
+        {
+            let profile = format!(
+                r#"(version 1)
+(allow default)
+(allow file-read*)
+(deny file-write*
+    (subpath "/Users")
+    (subpath "/Library")
+    (subpath "/etc")
+)
+(allow file-write*
+    (subpath "/tmp")
+    (subpath "/private/tmp")
+    (subpath "/var/folders")
+    (subpath "{}")
+    (subpath "{}")
+)
+"#,
+                std::env::current_dir().unwrap_or_default().display(),
+                ipc::get_socket_dir().display()
+            );
+
+            let mut sandbox_cmd = Command::new("sandbox-exec");
+            sandbox_cmd.arg("-p").arg(profile);
+
+            // Re-apply environment (Command::new doesn't inherit my modified cmd's env)
+            // Pillar 1: Env Isolation (re-apply to sandbox wrapper)
+            sandbox_cmd.env_clear();
+            for var in &[
+                "PATH",
+                "HOME",
+                "USER",
+                "TMPDIR",
+                "XDG_RUNTIME_DIR",
+                "SHELL",
+                "PYTHONPATH",
+                "VIRTUAL_ENV",
+                "CONDA_PREFIX",
+                "LANG",
+                "LC_ALL",
+                "LC_CTYPE",
+                "__CF_USER_TEXT_ENCODING",
+                "MallocNanoZone",
+                "XPC_FLAGS",
+                "XPC_SERVICE_NAME",
+                "TERM_PROGRAM",
+            ] {
+                if let Ok(val) = std::env::var(var) {
+                    sandbox_cmd.env(var, val);
+                }
+            }
+            // HPC/OMP Thread pooling isolation
+            sandbox_cmd.env("OMP_NUM_THREADS", "1");
+            sandbox_cmd.env("MKL_NUM_THREADS", "1");
+            sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
+            sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+            sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
+
+            sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+            sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
+            sandbox_cmd.env("PYTHONUTF8", "1");
+
+            sandbox_cmd.arg(&python);
+            cmd = sandbox_cmd;
+        }
+
+        cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
         if !preload.is_empty() {
             cmd.arg("--preload");
@@ -374,13 +500,37 @@ impl ZygoteLauncher {
             }
         }
 
+        // RFC-0011 WB-004: Pass app name for affinity verification
+        if let Some(app) = app_name {
+            cmd.arg("--app").arg(app);
+        }
+
         // Detach from parent process group so Zygote survives CLI exit
         #[cfg(unix)]
         unsafe {
             use std::os::unix::process::CommandExt;
             cmd.pre_exec(|| {
-                // Create new session (setsid) to detach from parent
+                // 1. Create new session (setsid) to detach from parent
                 libc::setsid();
+
+                // 2. Linux-specific Hardening (Pillar 3+)
+                #[cfg(target_os = "linux")]
+                {
+                    // RFC-0011 Linux-Shield: Network Isolation
+                    // Use unshare to create a private network namespace (effectively disabling global network access)
+                    // Note: This requires CLONE_NEWNET.
+                    if libc::unshare(libc::CLONE_NEWNET) != 0 {
+                        // We continue even if it fails, as some old kernels might not support it
+                        // but ideally, we should log a warning if we had a logger here.
+                    }
+
+                    // RFC-0011 Linux-Shield: Prevent privilege escalation
+                    // PR_SET_NO_NEW_PRIVS ensures that the process and its children cannot gain new privileges (e.g., via setuid)
+                    if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                        // Same here, fallback gracefully
+                    }
+                }
+
                 Ok(())
             });
         }
@@ -388,16 +538,8 @@ impl ZygoteLauncher {
         // Setup logging
         let log_path = get_log_path();
         if let Some(parent) = log_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                ZygoteError::StartFailed(format!(
-                    "Failed to create log directory {}: {}",
-                    parent.display(),
-                    e
-                ))
-            })?;
+            let _ = fs::create_dir_all(parent);
         }
-
-        eprintln!("📝 Zygote logs: {}", log_path.display());
 
         let log_file = OpenOptions::new()
             .create(true)
@@ -430,22 +572,95 @@ impl ZygoteLauncher {
         let timeout_secs = get_socket_timeout_secs();
         let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
-        while !self.socket_path.exists() {
+
+        // RFC-0011 D.1: Use is_socket_alive instead of exists() to support abstract sockets
+        while !is_socket_alive(&self.socket_path) {
+            // Check if process is still running (DEF-61-005)
+            if let Some(ref mut child) = self.zygote_process {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        return Err(ZygoteError::StartFailed(format!(
+                            "Zygote process exited prematurely with status: {}. Check log at: {}",
+                            status,
+                            get_log_path().display()
+                        )));
+                    }
+                    Ok(None) => {
+                        // Still running, wait more
+                    }
+                    Err(e) => {
+                        return Err(ZygoteError::StartFailed(format!(
+                            "Error checking Zygote status: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+
             if start.elapsed() > timeout {
-                self.stop()?;
+                let _ = self.stop();
                 return Err(ZygoteError::StartFailed(format!(
-                    "Timeout waiting for Zygote socket after {}s",
-                    timeout_secs
+                    "Timeout waiting for Zygote socket after {}s. Check log at: {}",
+                    timeout_secs,
+                    get_log_path().display()
                 )));
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // Layer 3: Deep Liveness Probe & Handshake (RFC-0011 architectural requirement)
+        log::info!("Zygote socket detected. Performing deep probe...");
+
+        // 1. Connect and verify Ready greeting (handled by ZygoteStream::connect)
+        let mut zygote_stream = ipc::ZygoteStream::connect(&self.socket_path)?;
+
+        // 2. Perform Handshake
+        log::debug!("Performing protocol handshake...");
+        let handshake_cmd = ipc::ZygoteCommand::Handshake {
+            version: ipc::PROTOCOL_VERSION,
+            capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
+        };
+        let response = zygote_stream.send_command(&handshake_cmd)?;
+
+        if let ipc::ZygoteResponse::Handshake {
+            version,
+            capabilities,
+        } = response
+        {
+            log::info!(
+                "Handshake successful (v{}, caps: {:?})",
+                version,
+                capabilities
+            );
+        } else {
+            return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
+        }
+
+        // 3. Deep Probe: Status check
+        log::debug!("Sending deep liveness probe (Status)...");
+        let status_cmd = ipc::ZygoteCommand::Status;
+        let response = zygote_stream.send_command(&status_cmd)?;
+
+        if let ipc::ZygoteResponse::Status { pid, .. } = response {
+            if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
+                return Err(ZygoteError::StartFailed(format!(
+                    "Deep probe PID mismatch: got {}, expected {} (Shadow Trap detected!)",
+                    pid,
+                    self.zygote_pid.unwrap()
+                )));
+            }
+            log::info!("Zygote deep probe successful (PID: {}).", pid);
+        } else {
+            return Err(ZygoteError::StartFailed(
+                "Deep probe failed: invalid response".to_string(),
+            ));
         }
 
         Ok(())
     }
 
     #[cfg(not(unix))]
-    pub fn start(&mut self, _preload: &[&str]) -> Result<()> {
+    pub fn start(&mut self, _preload: &[&str], _app_name: Option<&str>) -> Result<()> {
         Err(ZygoteError::NotSupported)
     }
 
@@ -614,5 +829,17 @@ mod tests {
     fn test_get_log_path() {
         let path = get_log_path();
         assert!(path.to_string_lossy().contains("zygote.log"));
+    }
+
+    #[test]
+    fn test_environment_shield_basic() {
+        let shield = EnvironmentShield::new();
+        // /usr/bin should be trusted
+        assert!(shield.validate_path_variable("/usr/bin").is_ok());
+
+        // RFC §3.5: /tmp should be scrubbed out (filtered) from PATH
+        let res = shield.validate_path_variable("/tmp");
+        assert!(res.is_ok());
+        assert!(res.unwrap().is_empty());
     }
 }

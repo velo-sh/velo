@@ -11,6 +11,35 @@ use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
 use colored::Colorize;
 
+/// Custom parser for workers argument with clear error messages
+fn parse_workers(s: &str) -> Result<u32, String> {
+    let n = s
+        .parse::<i64>()
+        .map_err(|_| format!("invalid worker count '{}': must be a valid number", s))?;
+    if n < 1 {
+        return Err(format!("invalid worker count '{}': must be at least 1", s));
+    }
+    if n > u32::MAX as i64 {
+        return Err(format!(
+            "invalid worker count '{}': exceeds maximum value {}",
+            s,
+            u32::MAX
+        ));
+    }
+    Ok(n as u32)
+}
+
+/// Custom parser for port argument with clear error messages
+fn parse_port(s: &str) -> Result<u16, String> {
+    let n = s
+        .parse::<i64>()
+        .map_err(|_| format!("invalid port '{}': must be a valid number", s))?;
+    if !(1..=65535).contains(&n) {
+        return Err(format!("invalid port '{}': must be between 1 and 65535", s));
+    }
+    Ok(n as u16)
+}
+
 /// Serve a Python ASGI/WSGI application
 #[derive(Parser, Debug)]
 #[command(name = "serve", about = "Serve a Python ASGI/WSGI application")]
@@ -24,7 +53,7 @@ pub struct ServeCmd {
     pub host: String,
 
     /// Bind port
-    #[arg(long, default_value_t = 8000)]
+    #[arg(long, default_value_t = 8000, value_parser = parse_port)]
     pub port: u16,
 
     /// Shorthand for --host and --port (e.g., 0.0.0.0:8080)
@@ -32,7 +61,7 @@ pub struct ServeCmd {
     pub bind: Option<String>,
 
     /// Number of workers (default: 1, auto in --prod)
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1, value_parser = parse_workers, allow_hyphen_values = true)]
     pub workers: u32,
 
     /// Graceful shutdown timeout in seconds

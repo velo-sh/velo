@@ -16,7 +16,10 @@ Architecture:
   ForkHandler: Handles the complexity of forking and environment setup.
 """
 
+import asyncio
 import os
+import sys
+
 import signal
 import socket
 import struct
@@ -24,6 +27,8 @@ import sys
 import threading
 import time
 import traceback
+import importlib.abc
+import importlib.util
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
 
@@ -31,7 +36,7 @@ from typing import List, Optional, Set, Dict, Any, Tuple
 # Protocol Constants (ADV-1 + DEF-61-004)
 # ============================================================================
 PROTOCOL_VERSION = 0x01
-MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB security limit
+MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 # ============================================================================
@@ -40,6 +45,38 @@ MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB security limit
 
 # Red Line #1: Path length limit with 4-byte margin from 108 Unix limit
 SOCKET_PATH_LIMIT = 104
+
+
+class ImportShield(importlib.abc.MetaPathFinder):
+    """
+    RFC-0011 §6.2.1: Import Isolation Layer (ImportShield)
+    
+    Prevents the user application from importing or shadowing internal 
+    framework modules (e.g., velo_zygote.*).
+    """
+    def find_spec(self, fullname, path, target=None):
+        # 1. Block internal framework access from child process
+        if fullname.startswith("velo_zygote"):
+            # We allow the launcher to import us once, but once the app is loading,
+            # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
+            raise ImportError(f"Unauthorized access to internal framework module: {fullname}")
+        
+        # 2. Shadowing Protection: main.py
+        # This finder is installed at the top of sys.meta_path.
+        # If it returns None, Python falls back to standard finders (PathFinder).
+        return None
+
+    @staticmethod
+    def install():
+        """Install the shield at the front of sys.meta_path."""
+        if not any(isinstance(f, ImportShield) for f in sys.meta_path):
+            sys.meta_path.insert(0, ImportShield())
+            
+            # Centralized Path Sanitization (RFC-0011 6A.1)
+            # Prevent shadowing of user modules by framework modules.
+            framework_dir = os.path.dirname(os.path.abspath(__file__))
+            if framework_dir in sys.path:
+                sys.path.remove(framework_dir)
 
 def get_socket_dir() -> Path:
     """Get the user-isolated socket directory.
@@ -172,6 +209,37 @@ _BLOCKED_PATHS = [
 ]
 
 
+class ForkRateLimiter:
+    """RFC-0011 WB-005: Token bucket rate limiter for Fork DoS protection.
+    
+    Prevents rapid Fork requests that could exhaust PIDs or memory.
+    Default: 10 tokens, refill 1 token/100ms (max 10 forks/sec burst).
+    """
+    
+    def __init__(self, max_tokens: int = 10, refill_interval_ms: int = 100):
+        self.max_tokens = max_tokens
+        self.tokens = max_tokens
+        self.refill_interval = refill_interval_ms / 1000.0  # Convert to seconds
+        self.last_refill = time.time()
+        self._lock = threading.Lock()
+    
+    def acquire(self) -> bool:
+        """Try to acquire a token. Returns True if allowed, False if rate limited."""
+        with self._lock:
+            now = time.time()
+            # Refill tokens based on elapsed time
+            elapsed = now - self.last_refill
+            new_tokens = int(elapsed / self.refill_interval)
+            if new_tokens > 0:
+                self.tokens = min(self.max_tokens, self.tokens + new_tokens)
+                self.last_refill = now
+            
+            if self.tokens > 0:
+                self.tokens -= 1
+                return True
+            return False
+
+
 class LogUtils:
     """Utilities for safe logging in a daemonized process."""
     
@@ -217,69 +285,239 @@ class PathValidator:
             return False, f"Invalid script path: {e}"
 
 
-class WorkerManager:
-    """Manages child worker processes and reaping."""
+class ZygoteTransport:
+    """Layer 1: Transport Layer - Handles asyncio-based MessagePack IO."""
+    
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        self.reader = reader
+        self.writer = writer
+        self.peer_capabilities: List[str] = []
 
+    async def recv(self) -> Optional[Dict]:
+        """Receive length-prefixed MessagePack message."""
+        try:
+            len_data = await self.reader.readexactly(4)
+            total_len = struct.unpack('<I', len_data)[0]
+            
+            if total_len > MAX_MESSAGE_SIZE or total_len < 1:
+                return None
+            
+            version_data = await self.reader.readexactly(1)
+            if version_data[0] != PROTOCOL_VERSION:
+                return None
+            
+            payload_len = total_len - 1
+            data = await self.reader.readexactly(payload_len)
+            return unpacker(data)
+        except Exception as e:
+            LogUtils.debug_log(f"Transport Recv Error: {e}")
+            return None
+
+    async def send(self, msg: Dict):
+        """Send length-prefixed MessagePack message."""
+        try:
+            payload = packer(msg)
+            total_len = 1 + len(payload)
+            header = struct.pack('<I', total_len)
+            version = bytes([PROTOCOL_VERSION])
+            self.writer.write(header + version + payload)
+            await self.writer.drain()
+        except Exception as e:
+            LogUtils.debug_log(f"Transport Send Error: {e}")
+
+    async def close(self):
+        self.writer.close()
+        try:
+            await self.writer.wait_closed()
+        except: pass
+
+
+class CommandRouter:
+    """Layer 2: Control Plane - Decorator-based command dispatching."""
+    
+    def __init__(self):
+        self.handlers = {}
+
+    def handler(self, command_name: str):
+        def decorator(func):
+            self.handlers[command_name] = func
+            return func
+        return decorator
+
+    async def dispatch(self, server: 'ZygoteServer', cmd: Any) -> Dict:
+        """
+        Dispatch command to handler. 
+        Enforces pure Map-based (Dict) protocol for simplicity.
+        """
+        try:
+            if not isinstance(cmd, dict):
+                return {"type": "Error", "message": f"Malformed command format: {type(cmd)}, expected dict"}
+            
+            cmd_type = cmd.get("type")
+            if not cmd_type:
+                return {"type": "Error", "message": "Missing 'type' field in command"}
+
+            handler = self.handlers.get(cmd_type)
+            if not handler:
+                return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+            
+            return await handler(server, cmd)
+        except Exception as e:
+            LogUtils.debug_log(f"Dispatch Error: {e}")
+            return {"type": "Error", "message": f"Handler error: {e}"}
+
+
+class WorkerRegistry:
+    """Layer 3: State Management - Tracks worker lifecycle."""
+    
     def __init__(self, worker_ttl: int = 3600):
-        self._active_workers: Set[int] = set()
-        self._worker_ttl = worker_ttl
-        self._lock = threading.Lock()
+        self.workers: Dict[int, Tuple[float, Any]] = {} # pid -> (start_time, metadata)
+        self.worker_ttl = worker_ttl
+        self.lock = threading.Lock()
 
-    def add_worker(self, pid: int):
-        with self._lock:
-            self._active_workers.add(pid)
+    def add(self, pid: int, metadata: Any = None):
+        with self.lock:
+            self.workers[pid] = (time.time(), metadata)
 
-    def remove_worker(self, pid: int):
-        with self._lock:
-            self._active_workers.discard(pid)
+    def remove(self, pid: int):
+        with self.lock:
+            self.workers.pop(pid, None)
 
-    def reap_zombies(self, signum, frame):
-        """SIGCHLD handler to reap dead children."""
-        while True:
-            try:
-                pid, status = os.waitpid(-1, os.WNOHANG)
-                if pid == 0:
-                    break
-                self.remove_worker(pid)
-            except ChildProcessError:
-                break
+    def is_alive(self, pid: int) -> bool:
+        with self.lock:
+            return pid in self.workers
 
-    def cleanup_all(self):
-        """Kill all workers on shutdown."""
-        with self._lock:
-            pids = list(self._active_workers)
-        
-        for pid in pids:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        
-        time.sleep(0.1)
-        
-        for pid in pids:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        
-        with self._lock:
-            self._active_workers.clear()
+    def get_stats(self) -> Dict:
+        with self.lock:
+            return {
+                "count": len(self.workers),
+                "pids": list(self.workers.keys())
+            }
 
     @staticmethod
     def start_guardian(parent_pid: int, ttl: int):
-        """Child process guardian to prevent orphans (AUDIT-51-001)."""
+        """Guardian thread to prevent orphans."""
         def guardian():
             start_time = time.time()
+            print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
             while True:
-                if os.getppid() != parent_pid:
+                current_ppid = os.getppid()
+                if current_ppid != parent_pid: 
+                    # Supervisor lost - terminate immediately
+                    print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
                     os._exit(1)
-                if ttl > 0 and (time.time() - start_time) > ttl:
+                if ttl > 0 and (time.time() - start_time) > ttl: 
+                    # TTL expired
+                    print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
                     os._exit(1)
-                time.sleep(10)
-        
+                time.sleep(1) # Reduced to 1s for immediate response (H-11 compliance)
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
+
+    def kill_all(self):
+        """Emergency cleanup of all workers."""
+        with self.lock:
+            pids = list(self.workers.keys())
+        for pid in pids:
+            try: os.kill(pid, 9)
+            except: pass
+        with self.lock:
+            self.workers.clear()
+
+    def reap_stale(self):
+        """Cleanup logic for timed-out or missing workers."""
+        now = time.time()
+        to_remove = []
+        with self.lock:
+            for pid, (start_time, _) in self.workers.items():
+                if now - start_time > self.worker_ttl:
+                    to_remove.append(pid)
+        
+        for pid in to_remove:
+            LogUtils.log(f"Reaping stale worker: {pid}")
+            try:
+                os.kill(pid, 9)
+            except: pass
+            self.remove(pid)
+
+
+class ReinitHooks:
+    """Layer 3: Hook-based Re-initialization system."""
+    
+    def __init__(self):
+        self.hooks = []
+
+    def register(self, hook_func):
+        self.hooks.append(hook_func)
+
+    def run_all(self):
+        for hook in self.hooks:
+            try:
+                hook()
+            except Exception as e:
+                LogUtils.debug_log(f"Hook Error: {e}")
+
+# Global hooks registry
+reinit_hooks = ReinitHooks()
+
+def hook_security():
+    """SecurityHook: FD hygiene and random reseed."""
+    import random
+    import resource
+    # Whitelist-based cleanup of inherited file descriptors.
+    try:
+        keep_fds = {0, 1, 2}
+        try:
+            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
+            for fd in current_fds:
+                if fd not in keep_fds:
+                    try: os.close(fd)
+                    except OSError: pass
+        except:
+            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+            if max_fd == resource.RLIM_INFINITY: max_fd = 4096
+            os.closerange(3, max_fd)
+    except: pass
+
+    random.seed()
+    try:
+        import secrets
+        secrets.token_bytes(1)
+    except: pass
+    
+    try:
+        import ssl
+        ssl._create_default_https_context = ssl.create_default_context
+    except: pass
+    
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+    try: signal.set_wakeup_fd(-1)
+    except: pass
+
+def hook_computing():
+    """ComputingHook: OpenMP and CUDA reset."""
+    try:
+        cpu_count = os.cpu_count() or 4
+        os.environ['OMP_NUM_THREADS'] = str(cpu_count)
+        os.environ['MKL_NUM_THREADS'] = str(cpu_count)
+        os.environ['OPENBLAS_NUM_THREADS'] = str(cpu_count)
+    except: pass 
+
+def hook_telemetry():
+    """TelemetryHook: Reset spans/trace context."""
+    # Not yet implemented in legacy, added for future-proofing
+    pass
+
+reinit_hooks.register(hook_security)
+reinit_hooks.register(hook_computing)
+reinit_hooks.register(hook_telemetry)
+
+
+def post_fork_reinit():
+    """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
+    reinit_hooks.run_all()
 
 
 class ForkHandler:
@@ -288,7 +526,7 @@ class ForkHandler:
     @staticmethod
     def handle_fork(
         cmd: Dict[str, Any],
-        worker_manager: WorkerManager,
+        worker_registry: WorkerRegistry,
         preloaded_modules: List[str]
     ) -> int:
         """
@@ -305,19 +543,25 @@ class ForkHandler:
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
 
+        # DEBUG: Write before fork
+        try:
+            with open("/tmp/worker_fork_debug.log", "a") as f:
+                f.write(f"[FORK DEBUG] About to fork, parent pid={os.getpid()}\n")
+                f.flush()
+        except: pass
+
         pid = os.fork()
 
         if pid == 0:
-            # Child Process
             ForkHandler._child_process(
                 script_path, args, stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
-                worker_manager._worker_ttl
+                worker_registry.worker_ttl
             )
             return 0 # Should not be reached
         else:
             # Parent Process
-            worker_manager.add_worker(pid)
+            worker_registry.add(pid)
             return pid
 
     @staticmethod
@@ -330,11 +574,13 @@ class ForkHandler:
         exit_code = 0
         try:
             # 1. Start Guardian
-            WorkerManager.start_guardian(os.getppid(), worker_ttl)
+            WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
 
-            # 2. Reset Signals
-            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            # 2. RFC-0011 6A.2: Full post-fork state reset
+            post_fork_reinit()
+
+            # 2.1 Install ImportShield (Import Isolation)
+            ImportShield.install()
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
@@ -351,12 +597,13 @@ class ForkHandler:
                 code = compile(f.read(), script_path, "exec")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
-            exit_code = 0
-
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except Exception as e:
-            print(f"Error executing {script_path}: {e}", file=sys.stderr)
+        except Exception:
+            try:
+                import traceback
+                traceback.print_exc()
+            except: pass
             exit_code = 1
         finally:
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
@@ -368,11 +615,7 @@ class ForkHandler:
             try:
                 sys.stdout = open(stdout_path, "w")
             except OSError: pass
-        else:
-            try:
-                sys.stdout = open("/dev/tty", "w")
-            except OSError: pass
-
+        
         if stderr_path:
             try:
                 sys.stderr = open(stderr_path, "w")
@@ -413,30 +656,126 @@ class ForkHandler:
             except: pass
 
 
-class ZygoteServer:
-    """Main Zygote Service."""
+# Global router for Command Dispatch
+router = CommandRouter()
 
-    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600):
-        self.socket_path = socket_path
+class ZygoteServer:
+    """Layer 2: App Layer - Orchestrates the Zygote service."""
+
+    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
+        # RFC-0011 D.1: Support abstract sockets (@ -> \0)
+        self.is_abstract = socket_path.startswith('@')
+        if self.is_abstract:
+            self.socket_path = '\0' + socket_path[1:]
+        else:
+            self.socket_path = socket_path
+            
         self.idle_timeout = idle_timeout
-        self.worker_manager = WorkerManager(worker_ttl)
+        self.worker_registry = WorkerRegistry(worker_ttl)
         self.preload = preload or []
         self._preloaded_modules: List[str] = []
+        self.memory_limit_mb = 1024 # 1GB default limit for Zygote process
+        self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup
+        self.fork_rate_limiter = ForkRateLimiter()  # RFC-0011 WB-005: DoS protection
+        
+        # Shadow Preloading: State machine for async preload
+        self.preload_state: str = "STARTING"  # STARTING → LOADING → READY
+        self.preload_complete = asyncio.Event()  # Signaled when preload finishes
+        self.fork_queue: asyncio.Queue = asyncio.Queue()  # Queue for Fork requests during LOADING
 
-    def start(self):
+    async def start(self):
+        """Start the Zygote server using asyncio with Shadow Preloading.
+        
+        Shadow Preloading: Socket opens immediately, preloading happens async.
+        This minimizes time-to-ready for the Rust supervisor.
+        """
         try:
-            LogUtils.log(f"Starting ZygoteServer (PID: {os.getpid()})")
+            LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
+            
+            # RAII Reaper Chain: Monitor our own parent (the supervisor)
+            # If the supervisor dies, we MUST die to prevent orphan leaks.
+            WorkerRegistry.start_guardian(os.getppid(), 0)
+            
             self._setup_signals()
-            self._preload_modules()
-            self._run_loop()
-        except Exception:
+            
+            # Shadow Preloading: Open socket FIRST, preload ASYNC
+            self.preload_state = "LOADING"
+            
+            # Start async preload task (non-blocking)
+            asyncio.create_task(self._async_preload())
+            
+            # Start background tasks
+            asyncio.create_task(self._resource_guard())
+            
+            # Start socket listener immediately (before preload completes)
+            await self._run_loop()
+        except Exception as e:
+            LogUtils.debug_log(f"Server Startup Error: {e}")
             traceback.print_exc()
             sys.exit(1)
 
+    async def _async_preload(self):
+        """Async preloading of modules - runs in background."""
+        try:
+            # Run blocking preload in executor to not block event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._preload_modules)
+            
+            # Check CUDA after preload
+            if check_cuda_initialized():
+                LogUtils.log("CRITICAL: CUDA initialized in Zygote! Shutting down.")
+                sys.exit(1)
+            
+            self.preload_state = "READY"
+            self.preload_complete.set()
+            LogUtils.log(f"Shadow Preloading complete. State: READY")
+            
+            # Process any queued Fork requests
+            await self._process_fork_queue()
+        except Exception as e:
+            LogUtils.debug_log(f"Preload Error: {e}")
+            self.preload_state = "READY"  # Still mark ready to avoid deadlock
+            self.preload_complete.set()
+
+    async def _process_fork_queue(self):
+        """Process Fork requests that were queued during LOADING state."""
+        while not self.fork_queue.empty():
+            try:
+                cmd, response_future = await asyncio.wait_for(
+                    self.fork_queue.get(), timeout=0.1
+                )
+                # Re-dispatch the Fork command now that preload is complete
+                response = await handle_fork(self, cmd)
+                response_future.set_result(response)
+            except asyncio.TimeoutError:
+                break
+            except Exception as e:
+                LogUtils.debug_log(f"Fork queue processing error: {e}")
+
     def _setup_signals(self):
-        signal.signal(signal.SIGCHLD, self.worker_manager.reap_zombies)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN) # Ignore SIGTERM, let parent kill via socket or SIGKILL
+        loop = asyncio.get_event_loop()
+        def handle_chld():
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(self._async_reap()))
+        
+        try:
+            signal.signal(signal.SIGCHLD, lambda s, f: handle_chld())
+        except ValueError:
+            # Not in main thread, skip signal setup
+            pass
+            
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+
+    async def _async_reap(self):
+        """Async-safe zombie reaping."""
+        self.worker_registry.reap_stale()
+        while True:
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+                if pid <= 0: break
+                self.worker_registry.remove(pid)
+            except ChildProcessError: break
+            except: break
 
     def _preload_modules(self):
         for module in self.preload:
@@ -448,258 +787,227 @@ class ZygoteServer:
             except ImportError as e:
                 LogUtils.log(f"Warning: Failed to pre-load {module}: {e}")
 
-    def _create_socket(self) -> socket.socket:
-        path = Path(self.socket_path)
-        if path.exists():
-             # Basic stale checking
-            if self._is_socket_in_use():
-                raise RuntimeError(f"Socket {self.socket_path} in use")
-            path.unlink()
+    async def _resource_guard(self):
+        """Layer 3: Resource Quotas - Monitor memory usage."""
+        import resource
+        while True:
+            await asyncio.sleep(30)
+            try:
+                # Watch RSS (kilobytes)
+                usage_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                if sys.platform != 'darwin': usage_kb = usage_kb # Already KB on Linux
+                else: usage_kb = usage_kb // 1024 # B to KB on macOS
+                
+                usage_mb = usage_kb // 1024
+                if usage_mb > self.memory_limit_mb:
+                    LogUtils.log(f"Memory quota exceeded ({usage_mb}MB > {self.memory_limit_mb}MB). Requesting restart.")
+                    # In a production environment, this would signal the supervisor to restart.
+                    # For now, we allow the next IDLE timeout to handle it or shutdown.
+            except: pass
+
+    async def _run_loop(self):
+        if not self.is_abstract:
+            path = Path(self.socket_path)
+            if path.exists(): path.unlink()
+            
+        server = await asyncio.start_unix_server(self._handle_client, path=self.socket_path)
+        LogUtils.log("Zygote IPC Layer Ready.")
         
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.bind(self.socket_path)
-        sock.listen(5)
-        return sock
+        async with server:
+            try:
+                await asyncio.wait_for(server.serve_forever(), timeout=self.idle_timeout)
+            except (asyncio.TimeoutError, KeyboardInterrupt):
+                LogUtils.log("Zygote Idle Timeout.")
+            finally:
+                LogUtils.log("Shutting down Zygote - Cleaning up workers.")
+                self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
 
-    def _is_socket_in_use(self) -> bool:
+    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        transport = ZygoteTransport(reader, writer)
         try:
-            test = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            test.settimeout(0.5)
-            test.connect(self.socket_path)
-            test.close()
-            return True
-        except:
-            return False
-
-    def _run_loop(self):
-        sock = self._create_socket()
-        LogUtils.log("Zygote ready.")
-        
-        try:
+            # 1. Send Ready
+            await transport.send({"type": "Ready"})
+            
             while True:
-                try:
-                    sock.settimeout(self.idle_timeout)
-                    conn, _ = sock.accept()
-                    conn.settimeout(30)
-                    self._handle_connection(conn)
-                except socket.timeout:
-                    LogUtils.log(f"Idle timeout ({self.idle_timeout}s).")
-                    break
-        except KeyboardInterrupt:
-            LogUtils.log("Interrupted.")
-        finally:
-            self._cleanup(sock)
-
-    def _handle_connection(self, conn: socket.socket):
-        try:
-            self._send_response(conn, {"type": "Ready"})
-            while True:
-                cmd = self._recv_command(conn)
+                cmd = await transport.recv()
                 if not cmd: break
                 
-                response = self._process_command(cmd)
+                response = await router.dispatch(self, cmd)
                 if response:
-                    self._send_response(conn, response)
-                    if cmd.get("type") == "Shutdown":
-                        raise KeyboardInterrupt # Trigger graceful shutdown
-        except Exception as e:
-            LogUtils.debug_log(f"Connection error: {e}")
+                    await transport.send(response)
+                    if isinstance(cmd, dict) and cmd.get("type") == "Shutdown":
+                        asyncio.get_event_loop().stop()
+                        break
         finally:
-            conn.close()
+            await transport.close()
 
-    def _process_command(self, cmd: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        cmd_type = cmd.get("type")
 
-        if cmd_type == "Fork":
-            return self._cmd_fork(cmd)
-        elif cmd_type == "Status":
-            return {
-                "type": "Status",
-                "pid": os.getpid(),
-                "preload": self._preloaded_modules
-            }
-        elif cmd_type == "Shutdown":
-             return {"type": "Ack"}
-        else:
-            return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
+@router.handler("Handshake")
+async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
+    """Protocol Handshake and Capability alignment."""
+    server_version = PROTOCOL_VERSION
+    client_app = cmd.get("app_name")
+    
+    # RFC-0011 WB-004: Verify app affinity
+    if server.app_name and client_app and client_app != server.app_name:
+        return {"type": "Error", "message": f"App affinity mismatch: expected {server.app_name}, got {client_app}"}
+    
+    # P3: Structured capabilities (backwards compatible - also keep list format)
+    capabilities_dict = {
+        "protocol": "map",
+        "preload": server.preload_state.lower(),
+        "features": ["async-reaper", "resource-guard", "hook-reinit", "rate-limit", "shadow-preload"],
+    }
+    if server.app_name:
+        capabilities_dict["app"] = server.app_name
+    
+    # Legacy list format for backwards compatibility
+    capabilities_list = ["map-protocol", "async-reaper", "resource-guard", "hook-reinit"]
+    if server.app_name:
+        capabilities_list.append(f"app:{server.app_name}")
+    capabilities_list.append(f"preload:{server.preload_state.lower()}")
+    
+    return {
+        "type": "Handshake",
+        "version": server_version,
+        "capabilities": capabilities_list,  # Legacy format
+        "caps": capabilities_dict,  # P3: Structured format
+    }
 
-    def _cmd_fork(self, cmd: Dict[str, Any]) -> Dict[str, Any]:
-        script_path = cmd.get("script_path", "")
-        if not script_path or not Path(script_path).exists():
-             return {"type": "Error", "message": f"Script not found: {script_path}"}
-        
-        valid, err = PathValidator.validate(script_path)
-        if not valid:
-            LogUtils.log(f"SECURITY BLOCK: {err}")
-            return {"type": "Error", "message": err}
-
-        worker_pid = ForkHandler.handle_fork(cmd, self.worker_manager, self._preloaded_modules)
-        async_mode = cmd.get("async_mode", False)
-
-        if async_mode:
-            LogUtils.log(f"Forked worker PID: {worker_pid} (async)")
-            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
-        else:
-            LogUtils.log(f"Waiting for worker PID: {worker_pid} (sync)")
-            # Sync wait
-            try:
-                pid, status = os.waitpid(worker_pid, 0)
-                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
-                self.worker_manager.remove_worker(worker_pid)
-            except ChildProcessError:
-                exit_code = 0 
-            
-            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
-
-    def _recv_command(self, conn: socket.socket) -> Optional[Dict]:
-        """Receive MessagePack message with length prefix and version byte (ADV-1)."""
+@router.handler("Fork")
+async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
+    # DEBUG: Log entry to handle_fork
+    try:
+        with open("/tmp/worker_fork_debug.log", "a") as f:
+            f.write(f"[ASYNC HANDLE_FORK] Entry, cmd={cmd}\n")
+            f.flush()
+    except: pass
+    
+    # Shadow Preloading: Wait for preload to complete if still loading
+    if server.preload_state == "LOADING":
         try:
-            # Read 4-byte length prefix (includes version + payload)
-            len_data = conn.recv(4)
-            if len(len_data) < 4:
-                return None
-            total_len = struct.unpack('<I', len_data)[0]
-            
-            # Security: Max message size
-            if total_len > MAX_MESSAGE_SIZE:
-                LogUtils.log(f"Message too large: {total_len} bytes")
-                return None
-            
-            # Need at least version byte
-            if total_len < 1:
-                LogUtils.log("Message too small to contain version byte")
-                return None
-            
-            # Read version byte (ADV-1)
-            version_data = conn.recv(1)
-            if len(version_data) < 1:
-                return None
-            version = version_data[0]
-            
-            if version != PROTOCOL_VERSION:
-                LogUtils.log(f"Protocol version mismatch: got {version}, expected {PROTOCOL_VERSION}")
-                return None
-            
-            # Read payload (total_len - 1 for version byte)
-            payload_len = total_len - 1
-            data = b""
-            while len(data) < payload_len:
-                chunk = conn.recv(min(4096, payload_len - len(data)))
-                if not chunk:
-                    return None
-                data += chunk
-            
-            # Unpack with rmp_serde compatibility
-            raw_result = unpacker(data)
-            
-            # ADV-2: TRACE logging
-            LogUtils.debug_log(f"[IPC RECV] {repr(raw_result)}")
-            
-            return self._smart_unpack(raw_result)
-        except Exception as e:
-            LogUtils.debug_log(f"Recv error: {e}")
-            return None
+            # Wait up to 30s for preload to complete
+            await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            return {"type": "Error", "message": "Preload timeout: modules still loading after 30s"}
+    
+    # RFC-0011 WB-005: Rate limiting to prevent Fork Bomb DoS
+    if not server.fork_rate_limiter.acquire():
+        return {"type": "Error", "message": "Rate limit exceeded: too many Fork requests"}
+    
+    script_path = cmd.get("script_path", "")
+    if not script_path or not Path(script_path).exists():
+        return {"type": "Error", "message": f"Script not found: {script_path}"}
+    
+    valid, err = PathValidator.validate(script_path)
+    if not valid:
+        return {"type": "Error", "message": err}
 
-    def _smart_unpack(self, result: Any) -> Dict:
-        """Normalize rmp_serde output to dict format.
-        
-        rmp_serde serializes internally tagged enums as flat tuples:
-        - ['Ready'] (unit variant)
-        - ['Fork', script_path, args, async_mode, ...] (struct variant as tuple)
-        - {'type': 'Ready'} (dict - already correct format)
-        """
-        # If already a dict with type, return as-is
-        if isinstance(result, dict):
-            return result
-        
-        # If it's a list/tuple from rmp_serde
-        if isinstance(result, (list, tuple)) and len(result) >= 1:
-            type_name = str(result[0])
-            
-            # Unit variant: ['Ready'], ['Shutdown'], ['Status'], ['Ack']
-            if len(result) == 1:
-                return {"type": type_name}
-            
-            # Fork variant has 11 positional fields (after type name):
-            # script_path, args, async_mode, stdout_path, stderr_path, 
-            # exit_code_path, fast_mode, bundle_path, project_root, max_bundle_size
-            if type_name == "Fork" and len(result) >= 2:
-                return {
-                    "type": "Fork",
-                    "script_path": result[1] if len(result) > 1 else "",
-                    "args": result[2] if len(result) > 2 else [],
-                    "async_mode": result[3] if len(result) > 3 else False,
-                    "stdout_path": result[4] if len(result) > 4 else None,
-                    "stderr_path": result[5] if len(result) > 5 else None,
-                    "exit_code_path": result[6] if len(result) > 6 else None,
-                    "fast_mode": result[7] if len(result) > 7 else False,
-                    "bundle_path": result[8] if len(result) > 8 else None,
-                    "project_root": result[9] if len(result) > 9 else None,
-                    "max_bundle_size": result[10] if len(result) > 10 else None,
-                }
-            
-            # Forked response: ['Forked', worker_pid, exit_code]
-            if type_name == "Forked" and len(result) >= 2:
-                return {
-                    "type": "Forked",
-                    "worker_pid": result[1] if len(result) > 1 else 0,
-                    "exit_code": result[2] if len(result) > 2 else None,
-                }
-            
-            # Status response: ['Status', pid, preload]  
-            if type_name == "Status" and len(result) >= 2:
-                return {
-                    "type": "Status",
-                    "pid": result[1] if len(result) > 1 else 0,
-                    "preload": result[2] if len(result) > 2 else [],
-                }
-            
-            # Error response: ['Error', message]
-            if type_name == "Error" and len(result) >= 2:
-                return {
-                    "type": "Error",
-                    "message": str(result[1]) if len(result) > 1 else "",
-                }
-            
-            # Fallback for unknown variants with fields
-            return {"type": type_name}
-        
-        # If it's a string, treat as type name
-        if isinstance(result, str):
-            return {"type": result}
-        
-        # Fallback: wrap in dict
-        return {"type": str(result)}
+    # RFC-0011 WB-004: Store app name for affinity verification
+    if not server.app_name:
+        server.app_name = Path(script_path).name
 
-    def _send_response(self, conn: socket.socket, resp: Dict):
-        """Send MessagePack message with length prefix and version byte (ADV-1)."""
-        payload = packer(resp)  # Uses global packer for fallback support
-        
-        # ADV-2: TRACE logging
-        LogUtils.debug_log(f"[IPC SEND] {repr(resp)}")
-        
-        # Length includes version byte + payload
-        total_len = 1 + len(payload)
-        header = struct.pack('<I', total_len)
-        version = bytes([PROTOCOL_VERSION])
-        conn.sendall(header + version + payload)
+    worker_pid = ForkHandler.handle_fork(cmd, server.worker_registry, server._preloaded_modules)
+    
+    if cmd.get("async_mode"):
+        return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
+    else:
+        # Sync mode: Wait for exit
+        try:
+            pid, status = os.waitpid(worker_pid, 0)
+            exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+            server.worker_registry.remove(worker_pid)
+            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
+        except ChildProcessError:
+            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": 0}
 
-    def _cleanup(self, sock: socket.socket):
-        LogUtils.log("Cleaning up...")
-        self.worker_manager.cleanup_all()
-        sock.close()
-        Path(self.socket_path).unlink(missing_ok=True)
-        LogUtils.log("Shutdown complete.")
+@router.handler("WaitWorker")
+async def handle_wait_worker(server: ZygoteServer, cmd: Dict) -> Dict:
+    pid = cmd.get("worker_pid")
+    timeout = cmd.get("timeout_secs")
+    if not server.worker_registry.is_alive(pid):
+        return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0}
+    
+    try:
+        start_time = time.time()
+        while True:
+            w_pid, status = os.waitpid(pid, os.WNOHANG)
+            if w_pid == pid:
+                server.worker_registry.remove(pid)
+                return {"type": "WorkerExited", "worker_pid": pid, "exit_code": os.WEXITSTATUS(status)}
+            if timeout and (time.time() - start_time) > timeout:
+                return {"type": "Error", "message": "Wait timeout"}
+            await asyncio.sleep(0.05)
+    except ChildProcessError:
+        server.worker_registry.remove(pid)
+        return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0}
+
+@router.handler("SignalWorker")
+async def handle_signal(server: ZygoteServer, cmd: Dict) -> Dict:
+    pid, sig = cmd.get("worker_pid"), cmd.get("signal")
+    try:
+        os.kill(pid, sig)
+        return {"type": "Ack"}
+    except:
+        return {"type": "Error", "message": "Process not found"}
+
+@router.handler("WorkerStatus")
+async def handle_status(server: ZygoteServer, cmd: Dict) -> Dict:
+    pid = cmd.get("worker_pid")
+    alive = False
+    try:
+        os.kill(pid, 0)
+        alive = True
+    except:
+        server.worker_registry.remove(pid)
+    
+    return {"type": "WorkerInfo", "worker_pid": pid, "is_running": alive, "uptime_secs": 0}
+
+@router.handler("Shutdown")
+async def handle_shutdown(server: ZygoteServer, cmd: Dict) -> Dict:
+    LogUtils.log("Graceful Shutdown Initiated.")
+    return {"type": "Ack"}
+
+@router.handler("Status")
+async def handle_zy_status(server: ZygoteServer, cmd: Dict) -> Dict:
+    return {
+        "type": "Status",
+        "pid": os.getpid(),
+        "preload": server._preloaded_modules
+    }
+
+
+def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
+    """Main entry point for Zygote process."""
+    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl, app_name)
+    asyncio.run(server.start())
+
+
+def check_cuda_initialized() -> bool:
+    """RFC-0011 6A.3: Enhanced check for CUDA library footprint."""
+    if 'torch' in sys.modules:
+        import torch
+        if torch.cuda.is_initialized(): return True
+    if 'tensorflow' in sys.modules: return True
+    
+    try:
+        with open('/proc/self/maps', 'r') as f:
+            content = f.read()
+            if 'libcuda.so' in content or 'libcudart.so' in content: return True
+    except: pass
+    
+    return 'cuda' in sys.modules
 
 
 if __name__ == "__main__":
+    os.environ['OMP_NUM_THREADS'] = '1'
     import argparse
-    parser = argparse.ArgumentParser(description="Velo Zygote Process (Refactored)")
-    parser.add_argument("--socket", required=True, help="Unix socket path")
-    parser.add_argument("--preload", nargs="*", default=[], help="Modules to pre-import")
-    parser.add_argument("--timeout", type=int, default=300, help="Idle timeout")
-    parser.add_argument("--worker-ttl", type=int, default=3600, help="Worker TTL")
-    
+    parser = argparse.ArgumentParser(description="Velo Zygote Process")
+    parser.add_argument("--socket", required=True)
+    parser.add_argument("--preload", nargs="*", default=[])
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--worker-ttl", type=int, default=3600)
+    parser.add_argument("--app", help="App name for affinity verification")
     args = parser.parse_args()
-    server = ZygoteServer(args.socket, args.preload, args.timeout, args.worker_ttl)
-    server.start()
+    
+    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl, args.app)

@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
+use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use crate::profile;
 
 /// Run a Python script.
@@ -29,9 +30,19 @@ pub fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) 
         };
 
         // Run the script using user's Python
-        let status = Command::new(python)
-            .env("PYTHONPATH", &final_pythonpath)
-            .env("PYTHONUNBUFFERED", "1")
+        let mut cmd = Command::new(python);
+
+        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        let shield = EnvironmentShield::new();
+        shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
+
+        // Build final PYTHONPATH
+        cmd.env("PYTHONPATH", &final_pythonpath);
+
+        // RFC-0012 §3.6: FD & Signal Hygiene
+        apply_standard_hygiene(&mut cmd);
+
+        let status = cmd
             .arg(script_path)
             .status()
             .context("Failed to run Python")?;
@@ -94,11 +105,21 @@ pub fn run_script_with_profile(
         // Measure total time
         let start = std::time::Instant::now();
 
-        // Run the script using user's Python with profile output env var
-        let status = Command::new(python)
-            .env("PYTHONPATH", &final_pythonpath)
-            .env("PYTHONUNBUFFERED", "1")
-            .env("VELO_PROFILE_OUTPUT", &profile_output)
+        // Run the script using user's Python
+        let mut cmd = Command::new(python);
+
+        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        let shield = EnvironmentShield::new();
+        shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
+
+        // Build final PYTHONPATH and profile output
+        cmd.env("PYTHONPATH", &final_pythonpath)
+            .env("VELO_PROFILE_OUTPUT", &profile_output);
+
+        // RFC-0012 §3.6: FD & Signal Hygiene
+        apply_standard_hygiene(&mut cmd);
+
+        let status = cmd
             .arg(script_path)
             .status()
             .context("Failed to run Python")?;
