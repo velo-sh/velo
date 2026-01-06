@@ -1,12 +1,12 @@
 # RFC-0012: The 'Full Armor' Security Standard (Surgical Shielding)
 
 > **Status**: APPROVED  
-> **Revision**: 0.6.3 (Certified)  
+> **Revision**: 0.6.4 (Final Review)  
 > **Author**: Velo Architect / Security Committee  
 > **Date**: 2026-01-06  
 > **Target Version**: v0.6.2  
 > **Branch**: `phase-6.2/security-hardening`  
-> **Parent Documents**: RFC-0010, RFC-0011
+> **Parent Documents**: [RFC-0010](RFC-0010.md), [RFC-0011](RFC-0011.md)
 
 ---
 
@@ -113,7 +113,35 @@ The "Surgical Shielding" model is designed for universal enforcement while lever
 
 ---
 
-## 6. Verification Plan (The "Executioner" Suite)
+## 6. Rationale & Alternatives
+
+### 6.1 Why Capability-Based Security (cap-std)?
+Static path-string checks are vulnerable to **TOCTOU** (Time-of-Check to Time-of-Use) attacks where an attacker replaces a directory with a symlink between the check and the actual access. By using `cap-std`, Velo holds an inherited File Descriptor (Dir FD) to the project root. All subsequent operations are `openat`-style, which the kernel guarantees will remain within the boundary of that FD.
+
+### 6.2 Alternatives Considered
+- **seccomp-bpf (Linux only)**: Too complex for cross-platform maintenance and difficult to integrate with Python's dynamic syscall patterns.
+- **Docker/Podman**: Introduces unacceptable overhead and dependency requirements for a lightweight developer tool.
+
+---
+
+## 7. Glossary
+- **TOCTOU**: Time-of-Check to Time-of-Use. A race condition vulnerability.
+- **Surgical Scrubbing**: The process of specifically removing dangerous environment variables while preserving functional ones.
+- **Abstract Namespace**: A Linux-specific feature for Unix Domain Sockets that exists independently of the filesystem.
+- **FD Hygiene**: The practice of closing all non-essential file descriptors to prevent sensitive data leakage to child processes.
+
+---
+
+## 8. References
+- **[RFC-0011: Zygote Worker Integration](0011-zygote-worker-integration.md)**
+- **[Rust nix crate](https://github.com/nix-rust/nix)**: Library for OS-specific Unix primitives.
+- **[Rust cap-std crate](https://github.com/bytecodealliance/cap-std)**: Capability-based version of the Rust standard library.
+- **[Linux close_range(2)](https://man7.org/linux/man-pages/man2/close_range.2.html)**: Efficiently closing ranges of file descriptors.
+- **[POSIX umask(2)](https://man7.org/linux/man-pages/man2/umask.2.html)**: Atomic setting of file creation masks.
+
+---
+
+## 9. Verification Plan (The "Executioner" Suite)
 
 We will implement `test_sec_shield.py` to target the specific failure modes:
 
