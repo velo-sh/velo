@@ -51,6 +51,10 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
         5.  **Documentation**: Learning curves, Voice & Tone.
 *   **P0 Identification**: The Architect MUST extract "P0 Requirements" from these reviews.
     *   *Example*: "Socket paths must include User ID."
+*   **Voting Mechanism (Iron Rule)**:
+    *   **Quorum**: All experts relevant to the domain MUST be summoned.
+    *   **Unanimity**: RFC approval requires **Unanimous Consent** (Approved or Conditional Approval) from ALL summoned experts.
+    *   **Veto**: A single "Request Changes" from ANY summoned expert blocks the RFC.
 
 ### 2.2 Task Breakdown
 *   **Artifact**: `task.md` must be created immediately.
