@@ -17,10 +17,15 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ## 2. Phase I: Inception (The Contract)
 
+### 2.0 Whitebox Pre-Audit (Discovery)
+*   **Goal**: inspect existing code/infrastructure *before* designing new features.
+*   **Artifact**: `whitebox_audit.md`.
+*   **Action**: Identify existing vulnerabilities or performance bottlenecks that must be fixed.
+
 ### 2.1 RFC Process (Design)
 *   **Mandatory**: Every major feature (>1 week) requires an RFC.
 *   **Expert Review**: Must include explicit "Security" and "Performance" sections.
-*   **P0 Identification**: The Architect MUST extract "P0 Requirements" (Blockers) before coding begins.
+*   **P0 Identification**: The Architect MUST extract "P0 Requirements" (Blockers) from the Whitebox Audit and RFC before coding begins.
     *   *Example*: "Socket paths must include User ID."
 
 ### 2.2 Task Breakdown
@@ -80,7 +85,14 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ---
 
-## 6. Glossary & Assets
+## 6. Phase V: Knowledge Crystallization (The Legacy)
+*   **KI Updates**: Update system knowledge items (KIs) with new patterns or architectural decisions.
+*   **Assets**: Standardize success templates (like this SOP).
+*   **Anti-Patterns**: Document what *failed* to prevent recurrence (`docs/guides/*`).
+
+---
+
+## 7. Glossary & Assets
 *   **AGENTS.md**: Role definitions.
 *   **RFC-0012**: Full Armor Security Standard.
 *   **RFC-0010**: Performance Requirements.
