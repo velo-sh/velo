@@ -13,17 +13,17 @@ class TestSecurityShield:
     def test_sec_shield_001_env_oxygen_level(self):
         """
         Verify that the worker has enough 'oxygen' (environment variables) to survive.
-        Specifically checks for PATH and VIRTUAL_ENV which are critical for Python.
+        And verify that 'toxins' like LD_LIBRARY_PATH are blocked.
         """
-        # Simulate a Velo execution that would trigger the sandbox
-        # Here we just check if the current process (representing a forked worker)
-        # has been suffocated by a hypothetical env_clear()
-        
-        # Real test would run 'velo serve' and check the worker's environ
-        # For now, we define the requirement:
-        required_vars = ["PATH", "VIRTUAL_ENV"]
+        # Whitelist
+        required_vars = ["PATH", "VIRTUAL_ENV", "TZ"]
         for var in required_vars:
-            assert var in os.environ, f"CRITICAL: {var} missing from environment. Worker will suffocate."
+            assert var in os.environ, f"CRITICAL: {var} missing from environment."
+        
+        # Blacklist
+        forbidden_vars = ["LD_LIBRARY_PATH", "PYTHONHOME"]
+        for var in forbidden_vars:
+            assert var not in os.environ, f"SECURITY FAILURE: {var} leaked into worker environment."
 
     def test_sec_shield_002_path_over_restriction(self, tmp_path):
         """

@@ -11,19 +11,18 @@
 
 ### Task 1: Environment Surgical Refactor (P0)
 - **File**: `src/serve/runner.rs`
-- **Action**: Remove `env_clear()`. Use `env_remove()` for a targeted blacklist.
-- **Whitelist**: Ensure the following survive: `PATH`, `VIRTUAL_ENV`, `PYTHONUNBUFFERED`, `LANG`, `LC_ALL`, `TERM`.
-- **Constraint**: Strictly block `PYTHONPATH` and `LD_PRELOAD`.
+- **Whitelist**: Keep `PATH`, `VIRTUAL_ENV`, `PYTHONUNBUFFERED`, `LANG`, `LC_ALL`, `TERM`, `TZ`.
+- **Blacklist (CRITICAL)**: Block `PYTHONHOME`, `PYTHONPATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`.
 
-### Task 2: Unique Zygote Identity (P0)
-- **File**: `src/zygote/ipc.rs`
-- **Action**: Implement SHA256 hashing of the canonical project path for the Unix socket filename.
-- **Hardening (Expert)**: Use `O_EXCL` on bind and `chmod 600` on the socket file.
+### Task 2: Randomized/Abstract Zygote Socket (P0)
+- **Action**: 
+    - Linux: Use **Abstract Namespace** (@velo-zygote-...).
+    - macOS: Use `mkdtemp` (perm 700) and pass path via environment/pipe.
+- **Crate**: Use `nix` for socket options.
 
-### Task 3: Path Shield Implementation (P1)
-- **File**: `src/serve/sandbox.rs` [NEW]
-- **Action**: Implement a `validate_path(target, root)` utility that uses `fs::canonicalize` on both inputs to prevent symlink escape.
-- **Integration**: Apply this check to all file operations in the worker loop.
+### Task 3: Capability-Based Path Shield (P1)
+- **Crate**: Implement via `cap-std`.
+- **Action**: Use `cap_std::fs::Dir` for project root operations. Replace path strings with FD-based checks.
 
 ### Task 4: Environment Provenance Guard (SEC-ENV-001) [MANDATORY]
 - **File**: `src/serve/runner.rs`
@@ -37,8 +36,10 @@
 ### Task 6: Zygote Peer Authentication (SEC-ZYG-003) [MANDATORY]
 - **File**: `src/zygote/ipc.rs`
 - **Action**: 
-    - Linux: Implement `SO_PEERCRED` UID verification.
-    - Cross-Platform: Implement the **Nonce-HMAC Challenge Handshake** protocol.
+    - Linux: `SO_PEERCRED`.
+    - macOS: `getpeereid` / `LOCAL_PEERCRED`.
+    - Windows: Named Pipe Security Descriptors.
+- **Crate**: Use `nix`.
 
 ---
 
