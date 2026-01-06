@@ -50,19 +50,24 @@ class TestL1Features:
         """
         import requests
 
-        proc = velo_serve_fixture.start("main:app", workers=4)
+        # RFC-0011 Phase 2B: Must use zygote=True to enable multi-worker L7 Proxy mode
+        proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
         proc.wait_ready()
 
         # Track which PIDs respond
         pids_seen = set()
+        responses_seen = []
         for _ in range(100):
             response = requests.get(f"http://127.0.0.1:{proc.port}/whoami")
             assert response.status_code == 200
             data = response.json()
             pids_seen.add(data["pid"])
+            responses_seen.append(data["pid"])
 
         # Should see multiple workers responding
-        assert len(pids_seen) >= 2, f"Only {len(pids_seen)} worker(s) seen, expected distribution"
+        # print(f"DEBUG: PIDs seen: {pids_seen}")
+        # print(f"DEBUG: First 10 responses: {responses_seen[:10]}")
+        assert len(pids_seen) >= 2, f"Only {len(pids_seen)} worker(s) seen ({pids_seen}), expected distribution. Sequential trace: {responses_seen[:10]}..."
 
     def test_L1_3_uds_socket_created(self, velo_serve_fixture):
         """L1-3: UDS socket created and accessible.
@@ -111,7 +116,8 @@ class TestL1Features:
         """
         import requests
 
-        proc = velo_serve_fixture.start("main:app", workers=1)
+        # RFC-0011 Phase 2B: Must use workers > 1 to enable L7 Proxy (which injects headers)
+        proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
         response = requests.get(f"http://127.0.0.1:{proc.port}/headers")
@@ -137,7 +143,8 @@ class TestL1Features:
         """
         import requests
 
-        proc = velo_serve_fixture.start("main:app", workers=1)
+        # RFC-0011 Phase 2B: Must use workers > 1 to enable L7 Proxy (which injects headers)
+        proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
 
         response = requests.get(f"http://127.0.0.1:{proc.port}/client-ip")
