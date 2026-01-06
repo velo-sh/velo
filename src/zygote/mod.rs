@@ -378,10 +378,30 @@ impl ZygoteLauncher {
         // Find zygote module
         let zygote_module = find_zygote_module()?;
 
-        // Build command
+        // Build command with EnvShield (Pillar 1: Env Isolation)
         let mut cmd = Command::new(&python);
-        // RFC-0011 HPC-001: Prevent OpenMP threat pool initialization in parent
+        cmd.env_clear();
+
+        // 1. Essential OS environment (pass-through)
+        for var in &["PATH", "HOME", "USER", "TMPDIR", "XDG_RUNTIME_DIR", "SHELL"] {
+            if let Ok(val) = std::env::var(var) {
+                cmd.env(var, val);
+            }
+        }
+
+        // 2. High-Performance Isolation (RFC-0011 HPC-001)
         cmd.env("OMP_NUM_THREADS", "1");
+        cmd.env("MKL_NUM_THREADS", "1");
+        cmd.env("OPENBLAS_NUM_THREADS", "1");
+        cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+        cmd.env("NUMEXPR_NUM_THREADS", "1");
+
+        // 3. MacOS/Python Specific Isolation
+        // Prevent Python from creating .pyc files in the user environment if not desired
+        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+        // Force UTF-8 for predictable byte-oriented IPC
+        cmd.env("PYTHONIOENCODING", "utf-8");
+        cmd.env("PYTHONUTF8", "1");
 
         // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
         let socket_arg = {
@@ -400,6 +420,66 @@ impl ZygoteLauncher {
             #[cfg(not(target_os = "linux"))]
             self.socket_path.to_string_lossy().to_string()
         };
+
+        // Pillar 3: Sandbox Isolation (SandboxShield)
+        // On macOS, we use sandbox-exec (Seatbelt) to restrict the Zygote process.
+        #[cfg(target_os = "macos")]
+        {
+            let profile = format!(
+                r#"(version 1)
+(allow default)
+(deny file-write*
+    (subpath "/Users")
+    (subpath "/var")
+)
+(allow file-read*
+    (subpath "/usr/lib")
+    (subpath "/usr/bin")
+    (subpath "/System")
+    (subpath "{}")
+)
+(allow file-write*
+    (subpath "/tmp")
+    (subpath "/private/tmp")
+    (subpath "/var/folders")
+    (subpath "{}")
+)
+"#,
+                std::env::current_dir().unwrap_or_default().display(),
+                ipc::get_socket_dir().display()
+            );
+
+            let mut sandbox_cmd = Command::new("sandbox-exec");
+            sandbox_cmd.env_clear();
+            // Re-apply whitelist to the new command object
+            for var in &[
+                "PATH",
+                "HOME",
+                "USER",
+                "TMPDIR",
+                "XDG_RUNTIME_DIR",
+                "SHELL",
+                "VIRTUAL_ENV",
+                "CONDA_PREFIX",
+            ] {
+                if let Ok(val) = std::env::var(var) {
+                    sandbox_cmd.env(var, val);
+                }
+            }
+            // Re-apply HPC and Python isolation
+            sandbox_cmd.env("OMP_NUM_THREADS", "1");
+            sandbox_cmd.env("MKL_NUM_THREADS", "1");
+            sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
+            sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+            sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
+            sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+            sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
+            sandbox_cmd.env("PYTHONUTF8", "1");
+
+            sandbox_cmd.arg("-p").arg(profile);
+            sandbox_cmd.arg(&python);
+            cmd = sandbox_cmd;
+        }
 
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
