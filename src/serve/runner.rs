@@ -140,23 +140,7 @@ impl ServeLogger {
     }
 }
 
-/// SEC-P0-005: Remove dangerous environment variables before subprocess spawn (ADR D3)
-///
-/// Removes variables that could hijack Python execution or library loading.
-fn sanitize_subprocess_env(cmd: &mut Command) {
-    const DANGEROUS: &[&str] = &[
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "PYTHONSTARTUP",
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES", // macOS
-    ];
-
-    for var in DANGEROUS {
-        cmd.env_remove(var);
-    }
-}
+// function removed
 
 #[cfg(unix)]
 fn apply_process_group(cmd: &mut Command) {
@@ -931,8 +915,12 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
-    // SEC-P0-005: Remove dangerous environment variables (ADR D3)
-    sanitize_subprocess_env(&mut cmd);
+    // RFC-0012: Surgical Environment Management (Whitelist)
+    // Replaces SEC-P0-005 blacklist with robust provenance guard
+    let shield = crate::lifecycle::EnvironmentShield::new();
+    if let Err(e) = shield.apply(&mut cmd) {
+        logger.warn(&format!("Environment shield warning: {}", e));
+    }
 
     // MAC-P0-002: Reset signal handlers in child (ADR D4) and STB-RS-003: Process Group
     // Handled inside ManagedChild::spawn now, but we keep this as a note
