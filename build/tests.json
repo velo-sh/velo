@@ -43,11 +43,11 @@
       "sha1": "fe736b4b0354e57d36273b99733c4b377113e5e9",
       "txhash": []
     },
-    "tests/qa/test_phase6_2_perf_bench.py": {
+    "tests/qa/test_phase6_2_agent_d_destroyer.py": {
       "coverage": false,
       "isolated": false,
-      "results": "F",
-      "sha1": "f4d21e7c63ca58976c23f2c582c66dbb4ffa0cfe",
+      "results": "...",
+      "sha1": "99bfa51cc52bd82b110ccd09fceb5e162e09bfc7",
       "txhash": []
     }
   },

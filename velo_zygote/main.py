@@ -300,13 +300,16 @@ class ZygoteTransport:
             total_len = struct.unpack('<I', len_data)[0]
             
             # RFC-0013: Harden against malformed/oversized payloads (DoS protection)
-            if total_len > MAX_MESSAGE_SIZE or total_len < 1:
-                LogUtils.log(f"🚨 Security: Rejecting oversized payload ({total_len} bytes)")
+            if total_len > MAX_MESSAGE_SIZE:
+                LogUtils.log(f"⛔ Protocol Error: Client sent oversized payload ({total_len} bytes, max {MAX_MESSAGE_SIZE}). Connection dropped.")
+                return None
+            if total_len < 1:
+                LogUtils.log(f"⛔ Protocol Error: Client sent invalid length prefix ({total_len}). Connection dropped.")
                 return None
             
             version_data = await self.reader.readexactly(1)
             if version_data[0] != PROTOCOL_VERSION:
-                LogUtils.log(f"🚨 Security: Protocol version mismatch (have 0x{version_data[0]:02x}, want 0x{PROTOCOL_VERSION:02x})")
+                LogUtils.log(f"⛔ Protocol Error: Version mismatch. Client sent 0x{version_data[0]:02x}, expected 0x{PROTOCOL_VERSION:02x}. Is client outdated?")
                 return None
             
             payload_len = total_len - 1
@@ -316,17 +319,22 @@ class ZygoteTransport:
                 msg = unpacker(data)
                 # Basic schema validation (must be a dict)
                 if not isinstance(msg, dict):
-                    LogUtils.log(f"🚨 Security: Rejecting non-dict payload")
+                    LogUtils.log(f"⛔ Protocol Error: Payload is not a valid MessagePack dict. Got {type(msg).__name__}.")
                     return None
                 return msg
             except Exception as e:
-                LogUtils.log(f"🚨 Security: Malformed MessagePack payload: {e}")
+                LogUtils.log(f"⛔ Protocol Error: Failed to decode MessagePack payload. Data may be corrupted or not MessagePack format. ({e})")
                 return None
                 
         except asyncio.IncompleteReadError:
+            # Client closed connection before sending complete message
+            LogUtils.debug_log("Client disconnected mid-message (incomplete read).")
+            return None
+        except (BrokenPipeError, ConnectionResetError) as e:
+            LogUtils.debug_log(f"Client connection lost: {type(e).__name__}")
             return None
         except Exception as e:
-            LogUtils.debug_log(f"Transport Recv Error: {e}")
+            LogUtils.log(f"⚠️ Transport Error: Unexpected error during recv: {type(e).__name__}: {e}")
             return None
 
     async def send(self, msg: Dict):
@@ -338,8 +346,11 @@ class ZygoteTransport:
             version = bytes([PROTOCOL_VERSION])
             self.writer.write(header + version + payload)
             await self.writer.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected before we could send response - this is expected during floods
+            LogUtils.debug_log("Client disconnected before response could be sent.")
         except Exception as e:
-            LogUtils.debug_log(f"Transport Send Error: {e}")
+            LogUtils.log(f"⚠️ Transport Error: Failed to send response: {type(e).__name__}: {e}")
 
     async def close(self):
         self.writer.close()
@@ -440,17 +451,27 @@ class WorkerRegistry:
                     to_remove.append(pid)
         
         for pid in to_remove:
+            LogUtils.log(f"Reaping stale worker: {pid}")
             try: os.kill(pid, 9)
             except: pass
             self.remove(pid)
         return to_remove
+
+    def kill_all(self):
+        """Terminate all tracked workers. Called on shutdown."""
+        with self.lock:
+            pids = list(self.workers.keys())
         
-        for pid in to_remove:
-            LogUtils.log(f"Reaping stale worker: {pid}")
+        for pid in pids:
             try:
-                os.kill(pid, 9)
-            except: pass
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except Exception as e:
+                LogUtils.debug_log(f"Failed to kill worker {pid}: {e}")
             self.remove(pid)
+        
+        LogUtils.log(f"Killed {len(pids)} workers on shutdown.")
 
 
 class ReinitHooks:
@@ -848,8 +869,16 @@ class ZygoteServer:
         async with server:
             try:
                 await asyncio.wait_for(server.serve_forever(), timeout=self.idle_timeout)
-            except (asyncio.TimeoutError, KeyboardInterrupt):
-                LogUtils.log("Zygote Idle Timeout.")
+            except asyncio.TimeoutError:
+                LogUtils.log("Zygote Idle Timeout (no clients for 5 minutes). Shutting down.")
+            except KeyboardInterrupt:
+                LogUtils.log("Zygote received interrupt signal. Shutting down.")
+            except asyncio.CancelledError:
+                LogUtils.log("Zygote server cancelled. Shutting down.")
+            except Exception as e:
+                # CHAOS-621: Catch-all for unexpected errors - log clearly and continue
+                LogUtils.log(f"⚠️ Server Loop Error: {type(e).__name__}: {e}")
+                LogUtils.debug_log(f"Server loop exception: {e}")
             finally:
                 LogUtils.log("Shutting down Zygote - Cleaning up workers.")
                 self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
@@ -878,6 +907,12 @@ class ZygoteServer:
                     if isinstance(cmd, dict) and cmd.get("type") == "Shutdown":
                         asyncio.get_event_loop().stop()
                         break
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as e:
+            # [CHAOS-621] Client disconnected during flood - silently ignore
+            LogUtils.debug_log(f"Client disconnected: {type(e).__name__}")
+        except Exception as e:
+            # Catch-all for unexpected transport errors
+            LogUtils.debug_log(f"Client handler error: {e}")
         finally:
             await transport.close()
 
