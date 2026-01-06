@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// Maximum message size (1MB) - prevents DoS via oversized messages
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
@@ -360,8 +361,50 @@ pub fn cleanup_socket(socket_path: &Path) {
 /// - 0x01: MessagePack protocol (v0.6.2+, DEF-61-004)
 pub const PROTOCOL_VERSION: u8 = 0x01;
 
+/// Helper for enforcing a wall-clock deadline across multiple IPC operations
+struct Deadline {
+    end: Instant,
+}
+
+impl Deadline {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            end: Instant::now() + timeout,
+        }
+    }
+
+    fn remaining(&self) -> Result<Duration> {
+        let now = Instant::now();
+        if now >= self.end {
+            return Err(ZygoteError::ConnectionFailed(
+                "Kinetic handshake budget exceeded (10ms wall-clock deadline)".to_string(),
+            ));
+        }
+        Ok(self.end - now)
+    }
+
+    /// Apply remaining time as socket timeout
+    fn apply(&self, stream: &UnixStream) -> Result<()> {
+        let timeout = self.remaining()?;
+        stream
+            .set_read_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        stream
+            .set_write_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        Ok(())
+    }
+}
+
 /// Write a MessagePack message with length prefix and version byte
-fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+fn write_message<T: Serialize + std::fmt::Debug>(
+    stream: &mut UnixStream,
+    msg: &T,
+    deadline: Option<&Deadline>,
+) -> Result<()> {
+    if let Some(d) = deadline {
+        d.apply(stream)?;
+    }
     let mut buf = Vec::new();
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     msg.serialize(&mut ser)
@@ -409,7 +452,11 @@ fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &
 /// Read a MessagePack message with length prefix and version byte
 fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
+    deadline: Option<&Deadline>,
 ) -> Result<T> {
+    if let Some(d) = deadline {
+        d.apply(stream)?;
+    }
     // Read 4-byte length prefix (includes version + payload)
     let mut len_buf = [0u8; 4];
     stream
@@ -468,22 +515,31 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 /// High-level wrapper for Zygote IPC connection
 pub struct ZygoteStream {
     stream: UnixStream,
+    deadline: Deadline,
 }
 
 impl ZygoteStream {
     /// Connect to Zygote and verify the initial "Ready" greeting
+    ///
+    /// RFC-0013: Enforces a 10ms wall-clock timeout for the entire handshake.
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        let mut stream = UnixStream::connect(socket_path)
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        let deadline = Deadline::new(Duration::from_millis(10));
+
+        let stream = UnixStream::connect(socket_path).map_err(|e| {
+            ZygoteError::ConnectionFailed(format!("Failed to connect to Zygote: {}", e))
+        })?;
+
+        let mut zygote_stream = Self { stream, deadline };
 
         // 0. Verify server identity (RFC §3.7 Mutual Auth)
         #[cfg(target_os = "linux")]
         verify_peer_credentials(&stream)?;
 
         // 1. Receive mandatory "Ready" greeting
-        let ready: ZygoteResponse = read_message(&mut stream)?;
+        let ready: ZygoteResponse =
+            read_message(&mut zygote_stream.stream, Some(&zygote_stream.deadline))?;
         match ready {
-            ZygoteResponse::Ready => Ok(Self { stream }),
+            ZygoteResponse::Ready => Ok(zygote_stream),
             _ => Err(ZygoteError::ProtocolError(
                 "Connection greeting failed - expected Ready".to_string(),
             )),
@@ -492,8 +548,8 @@ impl ZygoteStream {
 
     /// Send a command and wait for the response
     pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
-        write_message(&mut self.stream, cmd)?;
-        read_message(&mut self.stream)
+        write_message(&mut self.stream, cmd, Some(&self.deadline))?;
+        read_message(&mut self.stream, Some(&self.deadline))
     }
 }
 
@@ -507,14 +563,14 @@ pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteComm
     #[cfg(target_os = "linux")]
     verify_peer_credentials(&stream)?;
 
-    let cmd: ZygoteCommand = read_message(&mut stream)?;
+    let cmd: ZygoteCommand = read_message(&mut stream, None)?;
 
     Ok((stream, cmd))
 }
 
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
-    write_message(stream, &response)
+    write_message(stream, &response, None)
 }
 
 /// Connect to the Zygote and send a command, returning the response
