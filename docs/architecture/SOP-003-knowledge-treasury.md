@@ -26,7 +26,7 @@ All assets MUST be categorized into one of the following Tiers:
 |:---|:---|:---|
 | [`rust_safety_standard.md`](../engineering/rust_safety_standard.md) | `unsafe` Policy & RAII Rules | Rust Core |
 | [`python_integration_standard.md`](../engineering/python_integration_standard.md) | ABI, GIL, & Signal Protocols | Python Core |
-| [`master_security_standard.md`](../../knowledge/velo_runtime/artifacts/security/master_security_standard.md) | Surgical Shielding & Invariants | Security Lead |
+| [`master_security_standard.md`](../security/master_security_standard.md) | Surgical Shielding & Invariants | Security Lead |
 
 ### 🏗️ Tier 3: Platform Architecture (The "Where")
 | Asset | Description | Guardian |
