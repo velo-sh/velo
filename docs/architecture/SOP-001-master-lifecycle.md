@@ -85,7 +85,20 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ---
 
-## 5. Phase IV: Closure (The Verdict)
+## 5. Phase IV: The Independent Review Board (The Jury)
+*   **Mandate**: A "Multi-Discipline Final Technical Assessment" must occur before release.
+*   **Composition**: 
+    1.  **Python Runtime**: CPython internals, GIL, Signals.
+    2.  **OS / Kernel**: Linux/macOS process model, FDs.
+    3.  **High-Perf Networking**: L7 Proxy, Request Smuggling.
+    4.  **ASGI / Frameworks**: Protocol Compliance.
+    5.  **Security Architect**: Permission Boundaries.
+    6.  **Infra / SRE**: Rolling restarts, Observability.
+*   **Verdict**: Unanimous "Conditional Approval" or "Rejection".
+
+---
+
+## 6. Phase V: Closure (The Verdict)
 
 ### 5.1 The Audit Report
 *   **Artifact**: `audit_report.md` generated at phase end.
@@ -103,14 +116,14 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ---
 
-## 6. Phase V: Knowledge Crystallization (The Legacy)
+## 7. Phase VI: Knowledge Crystallization (The Legacy)
 *   **KI Updates**: Update system knowledge items (KIs) with new patterns or architectural decisions.
 *   **Assets**: Standardize success templates (like this SOP).
 *   **Anti-Patterns**: Document what *failed* to prevent recurrence (`docs/guides/*`).
 
 ---
 
-## 7. Glossary & Assets
+## 8. Glossary & Assets
 *   **AGENTS.md**: Role definitions.
 *   **RFC-0012**: Full Armor Security Standard.
 *   **RFC-0010**: Performance Requirements.
