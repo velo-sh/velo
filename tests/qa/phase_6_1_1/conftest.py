@@ -84,11 +84,22 @@ class VeloServeProcess:
             children = supervisor.children(recursive=True)
             for child in children:
                 try:
-                    cmdline = " ".join(child.cmdline()).lower()
-                    if "velo_zygote/main.py" in cmdline or "zygote" in child.name().lower():
-                        if "pytest" in cmdline: continue
-                        self.zygote_pid = child.pid
-                        return
+                    cmdline_list = child.cmdline()
+                    cmdline_str = " ".join(cmdline_list).lower()
+                    if "velo_zygote/main.py" in cmdline_str or "zygote" in child.name().lower():
+                        if "pytest" in cmdline_str: continue
+                        
+                        # Filter by socket if possible
+                        expected_socket = str(self.tmp_path / "velo-zygote.sock")
+                        if any(expected_socket in arg for arg in cmdline_list):
+                            self.zygote_pid = child.pid
+                            return
+                        # If no socket argument found but it's a child, maybe it's still ours
+                        # (Zygote might be launched without --socket if it uses default, 
+                        # but we always pass it in our tests now)
+                        if expected_socket in cmdline_str: # fallback string check
+                             self.zygote_pid = child.pid
+                             return
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -104,12 +115,15 @@ class VeloServeProcess:
                 if uids and uids.real != current_uid:
                     continue
                 
-                cmdline = " ".join(proc.info.get('cmdline') or []).lower()
-                if "velo_zygote/main.py" in cmdline or "zygote" in (proc.info.get('name') or "").lower():
-                    if "pytest" in cmdline: continue
-                    # Only match if it's pointing to the RIGHT main.py or if it's the only one
-                    self.zygote_pid = proc.info['pid']
-                    return
+                cmdline_list = proc.info.get('cmdline') or []
+                cmdline_str = " ".join(cmdline_list).lower()
+                if "velo_zygote/main.py" in cmdline_str or "zygote" in (proc.info.get('name') or "").lower():
+                    if "pytest" in cmdline_str: continue
+                    
+                    expected_socket = str(self.tmp_path / "velo-zygote.sock")
+                    if any(expected_socket in arg for arg in cmdline_list):
+                        self.zygote_pid = proc.info['pid']
+                        return
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
@@ -208,9 +222,13 @@ class VeloServeFactory:
         if extra_args:
             cmd.extend(extra_args)
 
+        env = os.environ.copy()
+        env["VELO_ZYGOTE_SOCKET"] = str(self.tmp_path / "velo-zygote.sock")
+
         proc = subprocess.Popen(
             cmd,
             cwd=self.tmp_path,
+            env=env,
             # Use None to inherit from parent, so -s shows it
             stdout=None,
             stderr=None,
