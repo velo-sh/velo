@@ -9,20 +9,16 @@
 //! - Strips hop-by-hop headers (RFC C.4)
 
 use crate::proxy::load_balancer::{ConnectionGuard, LoadBalancer};
-use http::{HeaderMap, HeaderValue, Request, header, uri::PathAndQuery};
+use http::{HeaderMap, HeaderValue, Request, header};
+use hyper::Response;
 use hyper::body::Incoming;
-use hyper::{Response, Uri};
-use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
 use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 use thiserror::Error;
 use tokio::net::UnixStream;
-use tower_service::Service as TowerService;
 
 /// Headers that MUST be stripped before forwarding (RFC 2616, Section 13.5.1).
 ///
@@ -56,143 +52,20 @@ pub enum ProxyError {
 }
 
 /// L7 Proxy Service for routing HTTP requests to UDS workers.
+///
+/// RFC-0011 §6A.7: Uses Per-Worker Client architecture.
+/// Each worker has a dedicated client, load balancing happens per request.
 #[derive(Clone)]
 pub struct VeloProxyService {
     lb: Arc<LoadBalancer>,
-    client: Client<UdsResolver, Incoming>,
-}
-
-#[derive(Clone)]
-pub struct UdsResolver {
-    lb: Arc<LoadBalancer>,
-}
-
-pin_project_lite::pin_project! {
-    /// Wrapper for UDS stream to implement hyper_util's Connection trait (orphan rule bypass).
-    pub struct PooledUdsStream {
-        #[pin]
-        inner: TokioIo<UnixStream>,
-    }
-}
-
-impl TowerService<Uri> for UdsResolver {
-    type Response = PooledUdsStream;
-    type Error = ProxyError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, uri: Uri) -> Self::Future {
-        let lb = self.lb.clone();
-        Box::pin(async move {
-            let authority = uri.authority().map(|a| a.as_str()).unwrap_or("");
-
-            // RFC-0011 Master Review: unique authority "worker-{id}@velo" ensures pooling.
-            if let Some(id_str) = authority
-                .strip_prefix("worker-")
-                .and_then(|s| s.strip_suffix("@velo"))
-            {
-                let id: u64 = id_str
-                    .parse()
-                    .map_err(|_| ProxyError::Connection("Invalid worker ID".into()))?;
-                let worker = lb
-                    .find_by_id(id)
-                    .ok_or(ProxyError::Connection(format!("Worker {} not found", id)))?;
-
-                let stream = UnixStream::connect(&worker.socket_path)
-                    .await
-                    .map_err(|e| {
-                        ProxyError::Connection(format!(
-                            "UDS connect failed to {}: {}",
-                            worker.socket_path, e
-                        ))
-                    })?;
-
-                Ok(PooledUdsStream {
-                    inner: TokioIo::new(stream),
-                })
-            } else {
-                Err(ProxyError::Connection(format!(
-                    "Invalid authority for UDS proxy: {}",
-                    authority
-                )))
-            }
-        })
-    }
-}
-
-// RFC-0011: Implement required traits for PooledUdsStream to work with Hyper Client
-
-impl hyper::rt::Read for PooledUdsStream {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        self.project().inner.poll_read(cx, buf)
-    }
-}
-
-impl hyper::rt::Write for PooledUdsStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        self.project().inner.poll_write(cx, buf)
-    }
-
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        self.project().inner.poll_flush(cx)
-    }
-
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        self.project().inner.poll_shutdown(cx)
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        self.inner.is_write_vectored()
-    }
-
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        bufs: &[std::io::IoSlice<'_>],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        self.project().inner.poll_write_vectored(cx, bufs)
-    }
-}
-
-impl hyper_util::client::legacy::connect::Connection for PooledUdsStream {
-    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
-        hyper_util::client::legacy::connect::Connected::new()
-    }
 }
 
 impl VeloProxyService {
     /// Create a new proxy service with the given load balancer.
+    ///
+    /// RFC-0011 §6A.7: Creates Per-Worker Client architecture.
     pub fn new(lb: Arc<LoadBalancer>) -> Self {
-        let resolver = UdsResolver { lb: lb.clone() };
-
-        // RFC-0011 Perf-001: Connection Pooling
-        // hyper-util Client supports connection pooling by authority.
-        let client = Client::builder(TokioExecutor::new())
-            .pool_idle_timeout(Duration::from_secs(30))
-            .pool_max_idle_per_host(2)
-            .build(resolver);
-
-        Self { lb, client }
+        Self { lb }
     }
 
     /// Prepare a request for forwarding to a worker.
@@ -371,6 +244,91 @@ impl VeloProxyService {
     pub fn load_balancer(&self) -> &LoadBalancer {
         &self.lb
     }
+
+    /// Create a service instance bound to a specific client address.
+    ///
+    /// RFC-0011 BLOCK-004 Fix: This allows X-Forwarded-For injection with actual client IP.
+    pub fn with_client_addr(self, client_addr: SocketAddr) -> VeloProxyServiceWithAddr {
+        VeloProxyServiceWithAddr {
+            inner: self,
+            client_addr,
+        }
+    }
+}
+
+/// Wrapper service that carries the client's socket address for header injection.
+///
+/// This is necessary because `hyper::service::Service::call()` doesn't provide
+/// access to the underlying connection's peer address.
+#[derive(Clone)]
+pub struct VeloProxyServiceWithAddr {
+    inner: VeloProxyService,
+    client_addr: SocketAddr,
+}
+
+impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
+    type Response = Response<Incoming>;
+    type Error = ProxyError;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        let lb = self.inner.lb.clone();
+        let client_addr = self.client_addr;
+
+        Box::pin(async move {
+            // RFC-0011 §6A.7: Per-Worker Client - select worker PER REQUEST
+            let guard = lb.select_worker().ok_or(ProxyError::NoHealthyWorkers)?;
+
+            // Get the CURRENT socket path from guard (handles respawn)
+            let socket_path = guard.socket_path().to_string();
+            // Prepare request headers
+            let mut proxy_req = req;
+            VeloProxyService::strip_hop_by_hop_headers(proxy_req.headers_mut());
+            VeloProxyService::inject_forwarded_headers(&mut proxy_req, Some(client_addr));
+            VeloProxyService::inject_request_id(&mut proxy_req);
+            VeloProxyService::ensure_trace_context(&mut proxy_req);
+
+            // Add X-Velo-Worker header for debugging
+            proxy_req.headers_mut().insert(
+                "x-velo-worker",
+                HeaderValue::from_str(&socket_path)
+                    .unwrap_or_else(|_| HeaderValue::from_static("")),
+            );
+
+            // Connect directly to worker socket (no pre-created clients)
+            let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+                ProxyError::Connection(format!("UDS connect failed to {}: {}", socket_path, e))
+            })?;
+
+            let io = TokioIo::new(stream);
+
+            // HTTP/1.1 handshake
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+                .await
+                .map_err(|e| ProxyError::Connection(format!("HTTP handshake failed: {}", e)))?;
+
+            // Spawn connection driver
+            tokio::spawn(async move {
+                if let Err(_e) = conn.await {
+                    // Connection closed, this is normal
+                }
+            });
+
+            // Send request
+            let result = sender.send_request(proxy_req).await;
+
+            match result {
+                Ok(res) => {
+                    guard.record_success();
+                    Ok(res)
+                }
+                Err(e) => {
+                    guard.record_failure();
+                    Err(ProxyError::Forward(e.to_string()))
+                }
+            }
+        })
+    }
 }
 
 impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
@@ -379,33 +337,51 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
-        let service = self.clone();
+        let lb = self.lb.clone();
 
         Box::pin(async move {
-            // 1. Prepare Request (Balancing & Headers)
-            let (guard, mut proxy_req) = service.prepare_request(req, None)?;
+            // RFC-0011 §6A.7: Per-Worker Client - select worker PER REQUEST
+            let guard = lb.select_worker().ok_or(ProxyError::NoHealthyWorkers)?;
 
-            // 2. Map request to unique authority for connection pooling (RFC-0011 Perf-001)
-            let authority = guard.authority();
-            let uri = Uri::builder()
-                .scheme("http")
-                .authority(authority)
-                .path_and_query(
-                    proxy_req
-                        .uri()
-                        .path_and_query()
-                        .cloned()
-                        .unwrap_or(PathAndQuery::from_static("/")),
-                )
-                .build()
-                .map_err(ProxyError::RequestBuild)?;
+            // Get the CURRENT socket path from guard (handles respawn)
+            let socket_path = guard.socket_path().to_string();
 
-            *proxy_req.uri_mut() = uri;
+            // Prepare request headers
+            let mut proxy_req = req;
+            VeloProxyService::strip_hop_by_hop_headers(proxy_req.headers_mut());
+            VeloProxyService::inject_request_id(&mut proxy_req);
+            VeloProxyService::ensure_trace_context(&mut proxy_req);
 
-            // 3. Send Request via Pooled Client
-            let response: Result<Response<Incoming>, _> = service.client.request(proxy_req).await;
+            // Add X-Velo-Worker header for debugging
+            proxy_req.headers_mut().insert(
+                "x-velo-worker",
+                HeaderValue::from_str(&socket_path)
+                    .unwrap_or_else(|_| HeaderValue::from_static("")),
+            );
 
-            match response {
+            // Connect directly to worker socket (no pre-created clients)
+            let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
+                ProxyError::Connection(format!("UDS connect failed to {}: {}", socket_path, e))
+            })?;
+
+            let io = TokioIo::new(stream);
+
+            // HTTP/1.1 handshake
+            let (mut sender, conn) = hyper::client::conn::http1::handshake(io)
+                .await
+                .map_err(|e| ProxyError::Connection(format!("HTTP handshake failed: {}", e)))?;
+
+            // Spawn connection driver
+            tokio::spawn(async move {
+                if let Err(_e) = conn.await {
+                    // Connection closed, this is normal
+                }
+            });
+
+            // Send request
+            let result = sender.send_request(proxy_req).await;
+
+            match result {
                 Ok(res) => {
                     guard.record_success();
                     Ok(res)

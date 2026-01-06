@@ -16,8 +16,17 @@ def main():
     parser.add_argument("--port", type=int, help="TCP Port (if not using UDS)")
     parser.add_argument("--proxy-headers", action="store_true", help="Enable X-Forwarded-* headers")
     
+    # Parse args
     args = parser.parse_args()
     
+    # CRITICAL FIX: RFC-0011 6A.1
+    # Prevent shadowing of user's 'main' module by 'velo_zygote/main.py'.
+    # When running as a script, Python adds the script's directory to sys.path[0].
+    # We must remove it to allow importing user modules correctly.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir in sys.path:
+        sys.path.remove(script_dir)
+
     # Add current working directory to path for app imports
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())

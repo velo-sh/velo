@@ -363,12 +363,16 @@ class WorkerRegistry:
         """Guardian thread to prevent orphans."""
         def guardian():
             start_time = time.time()
+            print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
             while True:
-                if os.getppid() != parent_pid: 
+                current_ppid = os.getppid()
+                if current_ppid != parent_pid: 
                     # Supervisor lost - terminate immediately
+                    print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
                     os._exit(1)
                 if ttl > 0 and (time.time() - start_time) > ttl: 
                     # TTL expired
+                    print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
                     os._exit(1)
                 time.sleep(1) # Reduced to 1s for immediate response (H-11 compliance)
         t = threading.Thread(target=guardian, daemon=True)
@@ -503,10 +507,16 @@ class ForkHandler:
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
 
+        # DEBUG: Write before fork
+        try:
+            with open("/tmp/worker_fork_debug.log", "a") as f:
+                f.write(f"[FORK DEBUG] About to fork, parent pid={os.getpid()}\n")
+                f.flush()
+        except: pass
+
         pid = os.fork()
 
         if pid == 0:
-            # Child Process
             ForkHandler._child_process(
                 script_path, args, stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
@@ -531,7 +541,6 @@ class ForkHandler:
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
-            # (signals, random seed, SSL context, OMP threads)
             post_fork_reinit()
 
             # 3. I/O Redirection
@@ -549,12 +558,13 @@ class ForkHandler:
                 code = compile(f.read(), script_path, "exec")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
             
-            exit_code = 0
-
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except Exception as e:
-            print(f"Error executing {script_path}: {e}", file=sys.stderr)
+        except Exception:
+            try:
+                import traceback
+                traceback.print_exc()
+            except: pass
             exit_code = 1
         finally:
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
@@ -827,6 +837,13 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
 
 @router.handler("Fork")
 async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
+    # DEBUG: Log entry to handle_fork
+    try:
+        with open("/tmp/worker_fork_debug.log", "a") as f:
+            f.write(f"[ASYNC HANDLE_FORK] Entry, cmd={cmd}\n")
+            f.flush()
+    except: pass
+    
     # Shadow Preloading: Wait for preload to complete if still loading
     if server.preload_state == "LOADING":
         try:

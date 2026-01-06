@@ -767,13 +767,15 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
             loop {
                 match listener.accept().await {
-                    Ok((stream, _)) => {
+                    Ok((stream, peer_addr)) => {
                         let io = TokioIo::new(stream);
-                        let service = service.clone();
+                        // RFC-0011 BLOCK-004 Fix: Pass client address for X-Forwarded-For injection
+                        let service_with_addr = service.clone().with_client_addr(peer_addr);
 
                         tokio::spawn(async move {
-                            if let Err(err) =
-                                http1::Builder::new().serve_connection(io, service).await
+                            if let Err(err) = http1::Builder::new()
+                                .serve_connection(io, service_with_addr)
+                                .await
                             {
                                 let _ = err;
                             }

@@ -39,6 +39,11 @@ impl WorkerNode {
         }
     }
 
+    /// Get the worker ID.
+    pub fn id(&self) -> u64 {
+        self.worker_id
+    }
+
     /// Get the current number of active connections.
     pub fn active_connections(&self) -> usize {
         self.active_connections.load(Ordering::Relaxed)
@@ -138,10 +143,21 @@ impl Drop for ConnectionGuard {
 
 /// Load balancer for distributing requests across UDS workers.
 ///
-/// RFC-0011 B.2.2: Uses least-connections strategy.
-#[derive(Debug, Clone)]
+/// RFC-0011 B.2.2: Uses least-connections strategy with round-robin tie-breaker.
+#[derive(Debug)]
 pub struct LoadBalancer {
     workers: Vec<Arc<WorkerNode>>,
+    /// Round-robin counter for tie-breaking when connections are equal
+    round_robin_counter: AtomicUsize,
+}
+
+impl Clone for LoadBalancer {
+    fn clone(&self) -> Self {
+        Self {
+            workers: self.workers.clone(),
+            round_robin_counter: AtomicUsize::new(self.round_robin_counter.load(Ordering::Relaxed)),
+        }
+    }
 }
 
 impl LoadBalancer {
@@ -153,19 +169,44 @@ impl LoadBalancer {
             .enumerate()
             .map(|(id, path)| Arc::new(WorkerNode::new(path, id as u64)))
             .collect();
-        Self { workers }
+        Self {
+            workers,
+            round_robin_counter: AtomicUsize::new(0),
+        }
     }
 
-    /// Select a worker using least-connections strategy.
+    /// Select a worker using least-connections strategy with round-robin tie-breaker.
+    ///
+    /// RFC-0011 §6A.7: When connections are equal (common for quick requests),
+    /// use round-robin to ensure fair distribution across workers.
     ///
     /// Returns a ConnectionGuard that automatically tracks the connection.
     /// Returns None if no healthy workers are available.
     pub fn select_worker(&self) -> Option<ConnectionGuard> {
-        self.workers
+        let healthy: Vec<_> = self.workers.iter().filter(|w| w.is_healthy()).collect();
+
+        if healthy.is_empty() {
+            return None;
+        }
+
+        // Find minimum active connections
+        let min_connections = healthy
             .iter()
-            .filter(|w| w.is_healthy())
-            .min_by_key(|w| w.active_connections())
-            .map(|w| ConnectionGuard::new(Arc::clone(w)))
+            .map(|w| w.active_connections())
+            .min()
+            .unwrap_or(0);
+
+        // Get all workers with minimum connections (tie candidates)
+        let candidates: Vec<_> = healthy
+            .iter()
+            .filter(|w| w.active_connections() == min_connections)
+            .collect();
+
+        // Use round-robin to select among candidates with equal connections
+        let rr_index = self.round_robin_counter.fetch_add(1, Ordering::Relaxed);
+        let selected = candidates[rr_index % candidates.len()];
+
+        Some(ConnectionGuard::new(Arc::clone(selected)))
     }
 
     /// Get the number of workers.
@@ -196,6 +237,11 @@ impl LoadBalancer {
     pub fn add_worker(&mut self, socket_path: String, worker_id: u64) {
         self.workers
             .push(Arc::new(WorkerNode::new(socket_path, worker_id)));
+    }
+
+    /// RFC-0011 §6A.7: Iterate over all workers for Per-Worker Client creation.
+    pub fn workers_iter(&self) -> impl Iterator<Item = &WorkerNode> {
+        self.workers.iter().map(|w| w.as_ref())
     }
 
     /// Find a worker by ID.
