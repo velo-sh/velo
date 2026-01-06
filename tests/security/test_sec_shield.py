@@ -65,6 +65,30 @@ class TestSecurityShield:
         SEC-SHIELD-004: Verify FD hygiene.
         Workers must not have access to sensitive inherited file descriptors.
         """
+        # Test: Open a sensitive file, spawn child, verify child cannot access via inherited FD
+        pass
+
+    def test_sec_shield_005_env_provenance_validation(self):
+        """
+        SEC-SHIELD-005: Verify PATH/PYTHONPATH value provenance.
+        Must reject values pointing outside the project root or trusted prefixes.
+        """
+        # Test: Inject /tmp into PATH, verify worker startup is blocked
+        pass
+
+    def test_sec_shield_006_peer_authentication(self):
+        """
+        SEC-SHIELD-006: Verify Zygote Peer Authentication.
+        Must reject connections that fail the HMAC/SO_PEERCRED check.
+        """
+        # Test: Attempt to connect to Zygote socket from an unauthorized PID
+        pass
+
+    def test_sec_shield_004_fd_escape_protection(self):
+        """
+        SEC-SHIELD-004: Verify FD hygiene.
+        Workers must not have access to sensitive inherited file descriptors.
+        """
         # In a real test, we would probe /proc/self/fd
         # If any FD > 2 (stdin/out/err) exists and points to /etc/shadow, it's a FAIL.
         leaked_fds = [] # Mock result
