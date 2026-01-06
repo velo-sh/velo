@@ -1,6 +1,3 @@
-
-# The Velo Fortress (Security Architecture)
-
 ```mermaid
 graph TD
     subgraph Layer4 [Layer 4 The Prosecutor Testing Regime]
