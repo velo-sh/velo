@@ -24,13 +24,21 @@ Velo architecture is not just about code; it is about **Governance, Security, an
 
 ### 2.1 RFC Process (Design)
 *   **Mandatory**: Every major feature (>1 week) requires an RFC.
-*   **The Council of Five**: Design MUST be reviewed by the following domain personas (simulated or real):
-    1.  **Security Engineer**: "How do I break this?" (Attack Surface)
-    2.  **Network Engineer**: "What if the socket is busy/stale?" (Protocols)
-    3.  **HPC Engineer**: "Is this <50ms?" (Performance)
-    4.  **K8s Operator**: "Does this work in a container?" (Deployment)
-    5.  **O11y Expert**: "Where are the logs?" (Observability)
-*   **P0 Identification**: The Architect MUST extract "P0 Requirements" (Blockers) from the Council's review before coding begins.
+*   **The Grand Council (15-Persona Review)**:
+    *   **Tier 1 (Strategic)**: CTO (Risk), Senior PM (Reqs), Legal (Compliance), Architect (Lead).
+    *   **Tier 2 (Domain)**:
+        1.  **Security**: Attack Surface (Injection, Isolation).
+        2.  **Rust Core**: Systems safety (RAII, Threads).
+        3.  **Python Core**: Runtime internals (GIL, Signals, Imports).
+        4.  **HPC/SciPy**: Performance limits (<50ms).
+        5.  **Frameworks**: Django/FastAPI compatibility.
+    *   **Tier 3 (Platform & Ops)**:
+        1.  **macOS**: FSEvents, App Sandbox.
+        2.  **Linux**: inotify, cgroups, Abstract Sockets.
+        3.  **Network SRE**: Protocols (TCP/UDS), Headers.
+        4.  **Cloud Native**: K8s probes, Container signals.
+        5.  **Observability**: Logging standards, Tracing.
+*   **P0 Identification**: The Architect MUST extract "P0 Requirements" from these reviews.
     *   *Example*: "Socket paths must include User ID."
 
 ### 2.2 Task Breakdown
