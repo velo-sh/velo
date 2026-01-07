@@ -3,20 +3,24 @@ import os
 import signal
 import sys
 import time
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 import weakref
 from typing import Optional, List
 
 # H-17: Immutability Defense (Monkey-patching)
-_ORIG_DATA_PTR = torch.Tensor.data_ptr
+_ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None
 
 def _safe_data_ptr(self):
     """Safe data_ptr that warns on access to shared memory."""
-    # Logic to detect if tensor is from SHM (e.g. check bounds or metadata)
-    # For now, we strictly follow the invariant.
-    return _ORIG_DATA_PTR(self)
+    if _ORIG_DATA_PTR:
+        return _ORIG_DATA_PTR(self)
+    return None
 
-# torch.Tensor.data_ptr = _safe_data_ptr # Uncomment to enable active defense
+# if torch:
+#     torch.Tensor.data_ptr = _safe_data_ptr # Uncomment to enable active defense
 
 class SharedMemoryManager:
     """
@@ -32,23 +36,32 @@ class SharedMemoryManager:
         # RFC-0015 mentions "SHM_EXPIRE message".
         pass
 
-    def attach(self, fd: int, size: int) -> torch.Tensor:
+    def attach(self, fd: int, size: int) -> Optional[mmap.mmap]:
         """
         Attach to a shared memory segment via FD.
         H-17: Maps as PROT_READ (ReadOnly).
         """
-        # 1. Map PROT_READ
-        buf = mmap.mmap(fd, size, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ)
-        self._mappings.append(buf)
-        
-        # 2. Wrap as Tensor
-        # Using from_buffer logic
-        # Note: In real usage we need dtype/shape from somewhere (IPC or header)
-        # For this artifact, we assume bytes or flat float32
-        # Mocking shape for the handover: we just return the buffer wrapped
-        # But torch.from_buffer needs specific args.
-        # We'll return the buffer for now or a dummy tensor if needed.
-        return buf
+        try:
+            # 1. Map PROT_READ
+            buf = mmap.mmap(fd, size, flags=mmap.MAP_SHARED, prot=mmap.PROT_READ)
+            self._mappings.append(buf)
+            
+            # 2. Wrap as Tensor if torch is available
+            if torch:
+                try:
+                    # Create a tensor from the buffer (zero-copy)
+                    # We assume float32 for default demonstration, but real impl
+                    # would use metadata from the segment header.
+                    t = torch.frombuffer(buf, dtype=torch.uint8)
+                    self._tensor_refs.append(weakref.ref(t))
+                    return t
+                except Exception as e:
+                    print(f"[Memory] Warning: Could not wrap buffer as torch.Tensor: {e}", file=sys.stderr)
+            
+            return buf
+        except Exception as e:
+            print(f"[Memory] Error: Failed to attach SHM segment (fd={fd}, size={size}): {e}", file=sys.stderr)
+            return None
 
     def handle_expire(self):
         """
