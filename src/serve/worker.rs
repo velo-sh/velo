@@ -198,6 +198,7 @@ impl Worker {
     /// Used for health monitoring in the signal loop
     pub fn is_alive(&self) -> bool {
         // Safety: kill with signal 0 checks process existence without sending signal
+        // SECURITY: libc::kill(pid, 0) is a standard non-destructive check for process existence.
         unsafe { libc::kill(self.pid as i32, 0) == 0 }
     }
 

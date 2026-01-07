@@ -4,6 +4,7 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
 // Use alignment for verification (future H-29 integration)
 use crate::shm::alignment;
+use crate::zygote::error::ZygoteError;
 
 pub struct MemoryRegistry {
     strict_numa: bool,
@@ -172,7 +173,9 @@ impl MemoryRegistry {
         // H-26: Host Death - check PID namespace logic if needed here
 
         use std::ffi::CString;
-        let c_name = CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|e| {
+            ZygoteError::ProtocolError(format!("Invalid SHM name: {}", e))
+        })?;
 
         // MFD_CLOEXEC | MFD_ALLOW_SEALING
         let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
@@ -200,7 +203,9 @@ impl MemoryRegistry {
     #[cfg(target_os = "macos")]
     fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd> {
         use std::ffi::CString;
-        let c_name = CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|e| {
+            ZygoteError::ProtocolError(format!("Invalid SHM name: {}", e))
+        })?;
 
         let fd = unsafe {
             libc::shm_open(
