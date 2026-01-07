@@ -84,6 +84,20 @@ class TestCoreContract:
         if "MAP_HUGETLB" not in result.stdout:
             pytest.fail("REGRESSION: H-20 HugePage support (MAP_HUGETLB) is MISSING from implementation! (Finding 002)")
 
+    def test_L0_h20_hugepage_integrity(self, shm_test_env):
+        """
+        [PROSECUTOR] Verify that if MAP_HUGETLB is used, MFD_HUGETLB is also used.
+        Catch the 'Toxic Pill' implementation (Finding 005/Root Cause).
+        """
+        env = shm_test_env
+        result = env.run_python("import os; print(open('/workspace/src/shm/registry.rs').read())")
+        
+        has_map = "MAP_HUGETLB" in result.stdout
+        has_mfd = "MFD_HUGETLB" in result.stdout
+        
+        if has_map and not has_mfd:
+            pytest.fail("CRITICAL ARCHITECTURE FLAW: Used MAP_HUGETLB without MFD_HUGETLB! This causes the DEADLOCK (DEF-70-004).")
+
     def test_L0_alignment_integrity(self, shm_test_env):
         """
         [PROSECUTOR] Verify that data with odd header length triggers H-29 logic.

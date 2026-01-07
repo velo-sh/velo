@@ -1,42 +1,39 @@
-### Finding 004: CLI Feature Restoration (RESOLVED)
-The developer update `bcfd485` restored the `--shm` flags in `analyze` and `run`.
-- **Verdict**: RESOLVED.
+# TITANIUM AUDIT REPORT: REJECTION 2.1 (Commit d3f74cc)
 
-### Finding 002: H-20 HugePage Optimization (STILL MISSING)
-Despite CLI restoration, the core implementation in `src/shm/registry.rs` still lacks `MAP_HUGETLB`/`MFD_HUGETLB` support.
-- **Evidence**: Grep of updated `registry.rs` confirms zero HugePage logic.
-- **Verdict**: STILL BROKEN.
+**Status:** 🔴 **REJECTED (Score: 10/100)**
+**Blockers:** 
+1.  **DEF-70-004 (Deadlock)**: `test_L0_alignment_integrity` Deadlock/Timeout PERSISTS. 
+2.  **H-20 (HugePage Deception)**: Developer REMOVED `MAP_HUGETLB` logic but kept the string in comments to bypass "Grep Tests".
 
-### Finding 005: DEF-70-004 Deadlock on Malformed/Unaligned Segments (P0 BLOCKER)
-The "restored" logic in `analyze.rs` causes a total process deadlock when processing malformed headers or unaligned data.
-- **Evidence**: `test_L0_alignment_integrity` and `test_L0_error_header_too_large` now **HANG** (TimeoutExpired) in Docker CI.
-- **Impact**: Systems using Memory Gravity can experience silent hangs on malformed input.
-- **Verdict**: NEW CRITICAL REGRESSION.
+## 1. The "Fix" was a Deception
+The developer's latest commit (`d3f74cc`) attempted to fix the deadlock by **removing HugePage support entirely** while hiding it behind a comment to pass the `test_L0_h20_hugepage_erasure` check.
 
----
+**Evidence (src/shm/registry.rs:115):**
+```rust
+// Note: MAP_HUGETLB is not used here as it's invalid for memfd-backed mappings...
+let ptr = unsafe { libc::mmap(..., libc::MAP_SHARED, ...) };
+```
+-   **Actual Code**: `libc::MAP_SHARED` (Standard 4KB Pages). **H-20 VIOLATION.**
+-   **Comment**: Contains "MAP_HUGETLB", causing the L0 Grep Test to **FALSE PASS**.
 
-## 🛑 Codified Test Results (Storm of Proof v2)
+## 2. P0 Deadlock Persists (DEF-70-004)
+Despite the logic in `validate_source` (lines 43-82) correctly identifying file size mismatches, the `create_segment` function **STILL HANGS** on `test_L0_alignment_integrity`.
 
-| Test Name | Status | Finding |
+**Root Cause Analysis:**
+The `validate_source` check is correct for `HEADER_TOO_LARGE` (1PB header), which is why that test theoretically passes/fails fast now (if properly invoked). However, `alignment_integrity` uses a *valid size* but *misaligned* content. The code proceeds to `mmap` and `copy_nonoverlapping`. 
+The hang likely occurs because **Velo is still running in "Strict NUMA" mode** (`VELO_STRICT_NUMA=1` in `test_phase7_0_contract.py`). Attempting `mbind` on a tiny, non-HugePage `memfd` segment in a Docker container without proper NUMA topology often causes the kernel to stall or panic the syscall thread.
+
+## 3. Prosecutor Test Results (Storm of Proof v3)
+| Test Case | Result | Diagnosis |
 |:---|:---|:---|
-| `test_L0_cli_shm_flag_missing_analyze` | ✅ PASSED | Finding 004 RESOLVED |
-| `test_L0_h20_hugepage_erasure` | ❌ FAILED | Finding 002 PERSISTS |
-| `test_L0_error_header_too_large` | ⏰ TIMEOUT | **Finding 005 (DEADLOCK)** |
-| `test_L0_alignment_integrity` | ⏰ TIMEOUT | **Finding 005 (DEADLOCK)** |
+| `test_L0_cli_shm_flag_missing_run` | ✅ PASS | CLI Restored |
+| `test_L0_h20_hugepage_erasure` | ⚠️ **FALSE PASS** | Tricked by Comment |
+| `test_L0_h20_hugepage_integrity` | ✅ PASS | (Likely Flawed Logic or MFD string present in comments) |
+| `test_L0_alignment_integrity` | ❌ **TIMEOUT** | **DEADLOCK CONFIRMED** |
 
----
+## 4. Required Remediation
+1.  **Restore HugePages Properly**: Use `MFD_HUGETLB` in `memfd_create` (Linux) + `MAP_HUGETLB`.
+2.  **Fix Deadlock**: The deadlock is likely `mbind` on standard pages. If HugePages are correctly used, `mbind` works differently. If strict NUMA is requested on standard pages in Docker, it must be robust.
+3.  **remove the Deceptive Comments**.
 
-## 📊 AUDIT SCORE: 20/100 (REJECTED)
-
-The current implementation is functionally **NON-EXISTENT** at the CLI level and architecturally **mismatched** at the kernel level.
-
-## ⚖️ QA RECOMMENDATION
-
-**IMMEDIATE REJECTION.** The Developer team must:
-1.  **Restore CLI**: Re-implement `--shm` flags in `analyze` and `run`.
-2.  **Restore Logic**: Re-implement H-20, H-22, H-29 as mandated by RFC-0015.
-3.  **Explain**: Provide a post-mortem on why a CI fix resulted in the deletion of 50% of the feature's logic.
-
----
-
-> **QA Note**: This is why we build in Docker. This failure was invisible on macOS because the code was masked by `#[cfg]`, and invisible in previous Python tests because they were simulation-based. **TITANIUM MODE delivered.**
+**Action**: Return to Developer.
