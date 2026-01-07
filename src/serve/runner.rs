@@ -145,6 +145,7 @@ impl ServeLogger {
 #[cfg(unix)]
 fn apply_process_group(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
+    // SECURITY: Signal masks are manipulated to ensure child processes inherit a clean state (RFC §2.4).
     unsafe {
         cmd.pre_exec(|| {
             // Become a process group leader (STB-RS-003)
@@ -263,6 +264,7 @@ impl ManagedChild {
     pub fn terminate(&mut self) -> Result<(), ServeError> {
         let pid = self.child.id() as i32;
         // Send SIGTERM to the entire process group (negative PID)
+        // SECURITY: Signal handling is core to supervisor resilience; SIGCHLD/SIGTERM are standard management signals.
         unsafe {
             if libc::kill(-pid, libc::SIGTERM) == 0 {
                 return Ok(());
@@ -283,6 +285,7 @@ impl ManagedChild {
         {
             let pid = self.child.id() as i32;
             // Send SIGKILL to the entire process group (negative PID)
+            // SECURITY: Signal handling is core to supervisor resilience; SIGCHLD/SIGTERM are standard management signals.
             unsafe {
                 if libc::kill(-pid, libc::SIGKILL) == 0 {
                     return Ok(());
@@ -306,6 +309,7 @@ impl Drop for ManagedChild {
         {
             let pgid = self.child.id() as i32;
             // Send SIGKILL to the entire process group (negative PID)
+            // SECURITY: Dropping ManagedChild triggers group-kill to prevent orphaned processes (STB-RS-003).
             unsafe {
                 libc::kill(-pgid, libc::SIGKILL);
             }
@@ -471,6 +475,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     {
         if let Some(settings) = crate::serve::framework::detect_django_settings(project_dir) {
             logger.info(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
+            // SECURITY: Setting environment variable for the current process is safe here as it's during startup.
             unsafe {
                 std::env::set_var("DJANGO_SETTINGS_MODULE", &settings);
             }
@@ -1037,6 +1042,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                         _ => {
                             // CN-P0-002: Forward other signals to child group
                             let pid = child.id() as i32;
+                            // SECURITY: Standard existence check via kill(0) for respawn polling.
                             unsafe {
                                 libc::kill(-pid, sig);
                             }

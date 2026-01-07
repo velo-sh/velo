@@ -154,6 +154,7 @@ pub fn default_socket_path() -> PathBuf {
 pub fn get_socket_dir() -> PathBuf {
     /// Red Line #1: Path length limit with 4-byte margin
     const SOCKET_PATH_LIMIT: usize = 104;
+    // SECURITY: getuid() is a standard read-only syscall used for multi-tenant path isolation.
     let uid = unsafe { libc::getuid() };
 
     // RFC §3.3: Use project-specific randomized identity for isolation
@@ -208,8 +209,10 @@ fn ensure_socket_dir(dir: &Path) -> bool {
 
     // Create directory if needed with strict umask (RFC §3.3)
     if !dir.exists() {
+        // SECURITY: temporarily setting umask to 077 to ensure atomic private directory creation (RFC §3.3).
         let old_mask = unsafe { libc::umask(0o077) };
         let res = std::fs::create_dir_all(dir);
+        // SECURITY: restoring the original umask.
         unsafe { libc::umask(old_mask) };
         if res.is_err() {
             return false;
@@ -593,8 +596,8 @@ mod tests {
         };
 
         // Test MessagePack roundtrip
-        let bytes = rmp_serde::to_vec(&resp).unwrap();
-        let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).unwrap();
+        let bytes = rmp_serde::to_vec(&resp).expect("Serialization failed");
+        let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteResponse::Status { pid, preload } = decoded {
             assert_eq!(pid, 1234);
@@ -619,8 +622,8 @@ mod tests {
             max_bundle_size: None,
         };
 
-        let bytes = rmp_serde::to_vec(&cmd).unwrap();
-        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).unwrap();
+        let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
+        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteCommand::Fork {
             script_path,
@@ -650,8 +653,8 @@ mod tests {
             max_bundle_size: Some(1024 * 1024),
         };
 
-        let msgpack_bytes = rmp_serde::to_vec(&cmd).unwrap();
-        let json_bytes = serde_json::to_vec(&cmd).unwrap();
+        let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");
+        let json_bytes = serde_json::to_vec(&cmd).expect("JSON serialization failed");
 
         // MessagePack should be smaller
         assert!(

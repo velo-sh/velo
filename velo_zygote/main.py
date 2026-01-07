@@ -546,19 +546,27 @@ def hook_security():
     """SecurityHook: FD hygiene and random reseed."""
     import random
     import resource
-    # Whitelist-based cleanup of inherited file descriptors.
+    # Whitelist-based cleanup of inherited file descriptors. (RFC §2.4 Surgical Hygiene)
     try:
         keep_fds = {0, 1, 2}
         try:
+            # Linux: /proc/self/fd is efficient
             current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
             for fd in current_fds:
                 if fd not in keep_fds:
                     try: os.close(fd)
                     except OSError: pass
         except:
-            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-            if max_fd == resource.RLIM_INFINITY: max_fd = 4096
-            os.closerange(3, max_fd)
+            # Fallback for systems without /proc (macOS)
+            import resource
+            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+            if max_fd == resource.RLIM_INFINITY or max_fd > 4096: 
+                max_fd = 4096
+            
+            # loop through 3..4096 which is much safer than "max_fd" which could be 2^20
+            for fd in range(3, max_fd):
+                try: os.close(fd)
+                except OSError: pass
     except: pass
 
     random.seed()
