@@ -18,6 +18,10 @@ from pathlib import Path
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_MEDIUM
+
+
 
 def get_velo_binary():
     repo_root = Path(__file__).parent.parent.parent
@@ -59,7 +63,9 @@ class DeployEnv:
     def create_script(self, name, content):
         (self.project_dir / name).write_text(content)
     
-    def run(self, velo_path, args, timeout=30):
+    def run(self, velo_path, args, timeout=None):
+        if timeout is None:
+            timeout = T_MEDIUM  # CI-aware timeout
         result = subprocess.run(
             [velo_path] + args,
             cwd=self.project_dir,
