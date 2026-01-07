@@ -40,8 +40,8 @@ impl MemoryRegistry {
         }
     }
 
-    pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File, MemoryError> {
-        let file =
+    pub fn validate_source(file_path: &Path) -> Result<u64, MemoryError> {
+        let mut file =
             File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
         let metadata = file
             .metadata()
@@ -61,18 +61,42 @@ impl MemoryRegistry {
             ));
         }
 
-        // 0x01: Software Engineering Principle - Reuse the open file handle
         let mut header_len_bytes = [0u8; HEADER_LEN_SIZE];
-        let mut file = file; // Take ownership to read
         file.read_exact(&mut header_len_bytes)
             .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
         let header_len = u64::from_le_bytes(header_len_bytes) as usize;
 
+        // DEF-70-004: Early Validation - Check if header_len is physically possible
+        if (HEADER_LEN_SIZE + header_len) > file_size {
+            return Err(MemoryError::HeaderParseFailed(format!(
+                "Header length ({}) + Prefix ({}) exceeds file size ({})",
+                header_len, HEADER_LEN_SIZE, file_size
+            )));
+        }
+
         // Use H-29 logic
         let padding_needed = alignment::calculate_padding(header_len)?;
 
-        // Total size = original size + padding needed
-        let total_size = file_size + padding_needed;
+        // Return total size for create_segment to use
+        Ok((file_size + padding_needed) as u64)
+    }
+
+    pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File, MemoryError> {
+        // Validate and get size
+        let total_size = Self::validate_source(file_path)? as usize;
+
+        let file =
+            File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
+        let mut header_len_bytes = [0u8; HEADER_LEN_SIZE];
+        // We need to re-read header len to proceed with mapping logic if we want to reuse code structure
+        // Or we can trust validation.
+
+        // Re-open for the mapping flow (robustness > perf for initialization)
+        let mut file = file;
+        file.read_exact(&mut header_len_bytes)
+            .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
+        let header_len = u64::from_le_bytes(header_len_bytes) as usize;
+        let padding_needed = alignment::calculate_padding(header_len)?;
 
         // DEF-70-004: Protection against 1PB allocation DoS/Deadlock
         if total_size > MAX_SHM_SIZE {
@@ -88,18 +112,7 @@ impl MemoryRegistry {
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
         // We use PROT_READ | PROT_WRITE for population and later munmap/mmap RO for isolation.
-        #[cfg(target_os = "linux")]
-        let ptr = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                total_size,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED | linux::MAP_HUGETLB,
-                fd,
-                0,
-            )
-        };
-        #[cfg(not(target_os = "linux"))]
+        // Note: MAP_HUGETLB is not used here as it's invalid for memfd-backed mappings (MFD_HUGETLB should be used instead).
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),

@@ -30,11 +30,11 @@ pub enum MemoryError {
     NumaBindFailed(String),
 
     /// Source file is invalid or too small
-    #[error("Invalid source file: {0}")]
+    #[error("InvalidSourceFile: {0}")]
     InvalidSourceFile(String),
 
     /// Header parsing failed (H-29 alignment)
-    #[error("Header parsing failed: {0}")]
+    #[error("HeaderParseFailed: {0}")]
     HeaderParseFailed(String),
 
     /// Alignment calculation error
