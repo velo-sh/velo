@@ -1,39 +1,25 @@
-# TITANIUM AUDIT REPORT: REJECTION 2.1 (Commit d3f74cc)
+# TITANIUM AUDIT REPORT: REJECTION 2.2 (Commit 4186632)
 
-**Status:** 🔴 **REJECTED (Score: 10/100)**
+**Status:** 🔴 **REJECTED (Score: 60/100)**
 **Blockers:** 
-1.  **DEF-70-004 (Deadlock)**: `test_L0_alignment_integrity` Deadlock/Timeout PERSISTS. 
-2.  **H-20 (HugePage Deception)**: Developer REMOVED `MAP_HUGETLB` logic but kept the string in comments to bypass "Grep Tests".
+1.  **DEF-70-004 (Deadlock)**: `test_L0_alignment_integrity` Deadlock/Timeout PERSISTS.
 
-## 1. The "Fix" was a Deception
-The developer's latest commit (`d3f74cc`) attempted to fix the deadlock by **removing HugePage support entirely** while hiding it behind a comment to pass the `test_L0_h20_hugepage_erasure` check.
-
-**Evidence (src/shm/registry.rs:115):**
+## 1. H-20 Remediation Code Review
+The developer correctly implemented `MFD_HUGETLB` with a fallback mechanism in `registry.rs`:
 ```rust
-// Note: MAP_HUGETLB is not used here as it's invalid for memfd-backed mappings...
-let ptr = unsafe { libc::mmap(..., libc::MAP_SHARED, ...) };
+let mut fd = try_create(linux::MFD_HUGETLB);
+if fd < 0 { ... fd = try_create(0); }
 ```
--   **Actual Code**: `libc::MAP_SHARED` (Standard 4KB Pages). **H-20 VIOLATION.**
--   **Comment**: Contains "MAP_HUGETLB", causing the L0 Grep Test to **FALSE PASS**.
+This is technically correct for `memfd` backing. The removal of `MAP_HUGETLB` in `mmap` is also correct as the HugePage attribute is carried by the FD.
+**Finding 002 is considered RESOLVED physically, though Grep tests need update.**
 
 ## 2. P0 Deadlock Persists (DEF-70-004)
-Despite the logic in `validate_source` (lines 43-82) correctly identifying file size mismatches, the `create_segment` function **STILL HANGS** on `test_L0_alignment_integrity`.
+However, the **Deadlock** persists in `test_L0_alignment_integrity` (Docker Environment).
+**Diagnosis:**
+The fallback path uses standard 4KB pages. The `create_segment` logic then attempts `mbind` (via `libc::SYS_mbind`) because `VELO_STRICT_NUMA=1`.
+In the verified Docker container (`velo-ci-ubuntu` running on Mac/Linux host), strict `mbind` on standard pages appears to cause a kernel-thread hang or unrecoverable wait state.
 
-**Root Cause Analysis:**
-The `validate_source` check is correct for `HEADER_TOO_LARGE` (1PB header), which is why that test theoretically passes/fails fast now (if properly invoked). However, `alignment_integrity` uses a *valid size* but *misaligned* content. The code proceeds to `mmap` and `copy_nonoverlapping`. 
-The hang likely occurs because **Velo is still running in "Strict NUMA" mode** (`VELO_STRICT_NUMA=1` in `test_phase7_0_contract.py`). Attempting `mbind` on a tiny, non-HugePage `memfd` segment in a Docker container without proper NUMA topology often causes the kernel to stall or panic the syscall thread.
+**Required Fix:**
+The code must handle `mbind` failure or hangs more gracefully, OR `VELO_STRICT_NUMA` behavior needs a "Container Awareness" check (Architecture Guard), OR `mbind` should only be attempted if HugePages were actually successfully allocated (as `mbind` on standard pages is less critical/problematic).
 
-## 3. Prosecutor Test Results (Storm of Proof v3)
-| Test Case | Result | Diagnosis |
-|:---|:---|:---|
-| `test_L0_cli_shm_flag_missing_run` | ✅ PASS | CLI Restored |
-| `test_L0_h20_hugepage_erasure` | ⚠️ **FALSE PASS** | Tricked by Comment |
-| `test_L0_h20_hugepage_integrity` | ✅ PASS | (Likely Flawed Logic or MFD string present in comments) |
-| `test_L0_alignment_integrity` | ❌ **TIMEOUT** | **DEADLOCK CONFIRMED** |
-
-## 4. Required Remediation
-1.  **Restore HugePages Properly**: Use `MFD_HUGETLB` in `memfd_create` (Linux) + `MAP_HUGETLB`.
-2.  **Fix Deadlock**: The deadlock is likely `mbind` on standard pages. If HugePages are correctly used, `mbind` works differently. If strict NUMA is requested on standard pages in Docker, it must be robust.
-3.  **remove the Deceptive Comments**.
-
-**Action**: Return to Developer.
+**Action**: Return to Developer to fix the `mbind` hang on fallback path.
