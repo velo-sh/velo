@@ -162,99 +162,91 @@ def cleanup_zygote_between_modules():
          except: pass
 
 
+@pytest.fixture(scope="session")
+def velo_binary():
+    """Build and return path to Velo binary."""
+    # Build binary (fast in dev mode)
+    subprocess.run(["cargo", "build"], check=True)
+    
+    bin_path = Path("target/debug/velo").resolve()
+    if not bin_path.exists():
+        raise RuntimeError("Velo binary not found after build")
+    return str(bin_path)
+
 # =============================================================================
-# UNIFIED TEST ENVIRONMENT
+# HERMETIC TEST ENVIRONMENT (RFC-0012)
 # =============================================================================
-# Use this fixture to ensure consistent test environments between local and CI.
-# Every test using this fixture gets a fresh, isolated venv with NO extra deps.
+
+class VeloTestEnv:
+    """Hermetic test environment implementing RFC-0012.
+    
+    Prevents tests from touching host system paths (/tmp, /var/folders, ~/).
+    """
+    def __init__(self, root: Path, velo_binary: str):
+        self.root = root
+        self.velo = velo_binary
+        
+        # Directory structure via RFC-0012
+        self.tmp = root / "tmp"
+        self.home = root / "home"
+        self.xdg = root / "run"
+        self.venv = root / "venv"
+        
+        # Ensure directories exist
+        for d in [self.tmp, self.home, self.xdg]:
+            d.mkdir(parents=True, exist_ok=True)
+            
+        # The Hermetic Environment Dictionary
+        self.env = os.environ.copy()
+        self.env.update({
+            "TMPDIR": str(self.tmp),
+            "TEMP": str(self.tmp),
+            "HOME": str(self.home),
+            "XDG_RUNTIME_DIR": str(self.xdg),
+            # Force Velo to use our isolated socket path logic
+            "VELO_ZYGOTE_SOCKET": "", 
+            "VELO_TEST_MODE": "1"
+        })
+
+        # Backward compatibility
+        self.path = self.root
+
+    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+        """Run Velo binary in the hermetic environment."""
+        # Merge env
+        env = self.env.copy()
+        if "env" in kwargs:
+            env.update(kwargs.pop("env"))
+            
+        timeout = kwargs.pop("timeout", 30)
+        
+        return subprocess.run(
+            [self.velo] + list(args),
+            env=env,
+            cwd=kwargs.pop("cwd", self.root),
+            capture_output=kwargs.pop("capture_output", True),
+            text=kwargs.pop("text", True),
+            timeout=timeout,
+            **kwargs
+        )
+        
+    def create_app(self, name: str, code: str) -> Path:
+        """Create an app file in the root."""
+        p = self.root / name
+        p.write_text(code)
+        return p
+
 
 @pytest.fixture
-def isolated_env(tmp_path):
-    """Create an isolated test environment with clean venv.
-    
-    This fixture ensures:
-    - Fresh venv with NO extra dependencies (no uvicorn, no fastapi)
-    - Same behavior on local machine and CI
-    - Proper cleanup after test
-    
-    Usage:
-        def test_something(isolated_env):
-            env = isolated_env
-            # env.path - temp directory
-            # env.python - path to python in isolated venv
-            # env.velo - path to velo binary
-            # env.install("package") - install package in isolated venv
-            # env.create_app("main.py", code) - create app file
-    """
-    import shutil
-    
-    class IsolatedEnv:
-        def __init__(self, path: Path):
-            self.path = path
-            self.venv_path = path / ".venv"
-            self.python = self.venv_path / "bin" / "python"
-            
-            # Find velo binary
-            repo_root = Path(__file__).parent.parent.parent
-            release = repo_root / "target" / "release" / "velo"
-            debug = repo_root / "target" / "debug" / "velo"
-            self.velo = str(release) if release.exists() else str(debug)
-            
-        def setup(self):
-            """Create isolated venv."""
-            subprocess.run(
-                ["uv", "venv", "--seed", str(self.venv_path)],
-                cwd=self.path, check=True, capture_output=True
-            )
-            # Install blake3 for hash verification and uvicorn for server testing
-            subprocess.run(
-                ["uv", "pip", "install", "-q", "--python", str(self.python), "blake3", "uvicorn", "fastapi"],
-                cwd=self.path, capture_output=True
-            )
-            # Create empty uv.lock so velo detects it as a project
-            (self.path / "uv.lock").write_text("{}")
-            return self
+def velo_test_env(tmp_path, velo_binary):
+    """Fixture providing a hermetic VeloTestEnv."""
+    return VeloTestEnv(tmp_path, velo_binary)
 
-            
-        def install(self, *packages):
-            """Install packages in isolated venv."""
-            subprocess.run(
-                ["uv", "pip", "install", "-q", "--python", str(self.python)] + list(packages),
-                cwd=self.path, capture_output=True
-            )
-            
-            
-        def create_app(self, name: str, code: str):
-            """Create app file."""
-            (self.path / name).write_text(code)
-            
-        def next_port(self) -> int:
-            """Get a free port."""
-            import socket
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("", 0))
-                return s.getsockname()[1]
-            
-        def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
-            """Run velo command in isolated environment."""
-            timeout = kwargs.pop("timeout", 30)
-            return subprocess.run(
-                [self.velo] + list(args),
-                cwd=self.path,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                **kwargs
-            )
-    
-    env = IsolatedEnv(tmp_path).setup()
-    yield env
-    
-    # Cleanup
-    try:
-        shutil.rmtree(tmp_path)
-    except:
-        pass
+# Deprecated: alias for backward compatibility
+@pytest.fixture
+def isolated_env(velo_test_env):
+    """Legacy alias for velo_test_env (RFC-0012 Transition)."""
+    return velo_test_env
 
 
 # =============================================================================
@@ -292,4 +284,3 @@ def get_pss(pid: int) -> int:
             return p.memory_info().rss
     except Exception:
         return 0
-

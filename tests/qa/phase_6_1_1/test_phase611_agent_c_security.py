@@ -221,7 +221,7 @@ class TestL4Security:
         
         # Clean up any stale sockets first
         uid = os.getuid()
-        for p in tmp_dir.glob(f"velo-secure-{uid}*"):
+        for p in tmp_dir.glob(f"velo-{uid}"):
             try:
                 shutil.rmtree(p)
             except:
@@ -230,17 +230,24 @@ class TestL4Security:
         # Prepare environment
         env = os.environ.copy()
         env.pop("VELO_ZYGOTE_SOCKET", None)
+        env.pop("XDG_RUNTIME_DIR", None) # Ensure fallback to TMPDIR
         env["TMPDIR"] = str(tmp_dir)
 
         # Create a dummy app manually since isolated_env is just a path here
         app_code = "from fastapi import FastAPI\napp = FastAPI()"
-        (isolated_env / "main.py").write_text(app_code)
-        (isolated_env / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
+        (isolated_env.root / "main.py").write_text(app_code)
+        (isolated_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
+
+        # Find free port
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            port = s.getsockname()[1]
 
         # Start Velo manually
         proc = subprocess.Popen(
-            [velo_binary, "serve", "main:app", "--workers", "1"],
-            cwd=isolated_env,
+            [velo_binary, "serve", "main:app", "--workers", "1", "--port", str(port)],
+            cwd=isolated_env.root,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -259,11 +266,15 @@ class TestL4Security:
                     break
                 
                 # Check for socket directory existence
-                matches = list(tmp_dir.glob(f"velo-secure-{uid}*"))
+                # RFC-0012: Standardized naming "velo-{uid}" without project hash
+                matches = list(tmp_dir.glob(f"velo-{uid}"))
                 if matches:
-                    ready = True
-                    socket_dir = sorted(matches, key=lambda p: p.stat().st_mtime)[-1]
-                    break
+                    s_dir = sorted(matches, key=lambda p: p.stat().st_mtime)[-1]
+                    # Wait for socket file to appear (avoid race)
+                    if list(s_dir.glob("*.sock")):
+                        ready = True
+                        socket_dir = s_dir
+                        break
                 time.sleep(0.5)
 
             if not ready or not socket_dir:

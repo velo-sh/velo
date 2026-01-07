@@ -168,8 +168,9 @@ class VeloServeProcess:
 class VeloServeFactory:
     """Factory for creating VeloServeProcess instances."""
 
-    def __init__(self, tmp_path: Path, velo_binary: str):
-        self.tmp_path = tmp_path
+    def __init__(self, test_env, velo_binary: str):
+        self.test_env = test_env
+        self.tmp_path = test_env.root # Compatibility
         self.velo_binary = velo_binary
         self.processes: List[VeloServeProcess] = []
 
@@ -206,10 +207,22 @@ class VeloServeFactory:
         if extra_args:
             cmd.extend(extra_args)
 
-        env = os.environ.copy()
+        # RFC-0012: Use hermetic environment
+        env = self.test_env.env.copy()
+        
         # RFC-0011 Audit: Path length limit on macOS is 104 chars. 
         # Deeply nested pytest tmp_path can exceed this. Use /tmp/v-{hash}.s as fallback if needed.
-        socket_path = self.tmp_path / "z.s"
+        # But wait - VeloTestEnv sets env vars to controlled paths.
+        # We should respect that.
+        # However, for the socket path check, we still need to be careful.
+        
+        # If VELO_ZYGOTE_SOCKET is empty (default in VeloTestEnv), Velo will use XDG_RUNTIME_DIR or TMPDIR.
+        # XDG_RUNTIME_DIR is set to test_env.xdg
+        # So we can let Velo decide, OR we can set it explicitly to test_env.xdg / "z.s"
+        
+        socket_path = Path(env["XDG_RUNTIME_DIR"]) / "z.s"
+        
+        # Override if path is too long (rare in our controlled env, but possible)
         if len(str(socket_path)) > 100:
              import tempfile, hashlib
              h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
@@ -219,7 +232,7 @@ class VeloServeFactory:
 
         proc = subprocess.Popen(
             cmd,
-            cwd=self.tmp_path,
+            cwd=self.tmp_path, # Execute in test root
             env=env,
             # Use None to inherit from parent, so -s shows it
             stdout=None,
@@ -269,25 +282,22 @@ def velo_binary() -> str:
 
 
 @pytest.fixture
-def velo_serve_fixture(tmp_path: Path, velo_binary: str):
+def velo_serve_fixture(velo_test_env, velo_binary: str):
     """Fixture for starting velo serve processes."""
-    # Create sample app in tmp_path
-    app_file = tmp_path / "main.py"
+    # Create sample app in root
+    app_file = velo_test_env.root / "main.py"
     app_file.write_text(SAMPLE_APP_CODE)
 
     # Create pyproject.toml to enable framework detection (required for Zygote)
-    pyproject_file = tmp_path / "pyproject.toml"
+    pyproject_file = velo_test_env.root / "pyproject.toml"
     pyproject_file.write_text('[project]\ndependencies = ["fastapi"]')
 
-    factory = VeloServeFactory(tmp_path, velo_binary)
+    factory = VeloServeFactory(velo_test_env, velo_binary)
     yield factory
     factory.cleanup()
 
 
-@pytest.fixture
-def isolated_env(tmp_path: Path):
-    """Isolated environment for tests."""
-    return tmp_path
+
 
 
 # Helper functions
