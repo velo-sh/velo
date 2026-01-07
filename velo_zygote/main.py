@@ -39,10 +39,14 @@ from typing import List, Optional, Set, Dict, Any, Tuple
 try:
     from .protocol import ZygoteTransport, ProtocolError
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from .paths import VeloPaths
+    from .config import VeloConfig
 except (ImportError, ValueError):
     # Fallback when running main.py directly as a script
     from protocol import ZygoteTransport, ProtocolError
     from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from paths import VeloPaths
+    from config import VeloConfig
 
 
 class ImportShield(importlib.abc.MetaPathFinder):
@@ -78,12 +82,10 @@ class ImportShield(importlib.abc.MetaPathFinder):
 
 
 
+# LEGACY: Replaced by VeloPaths.zygote_socket()
 def get_versioned_socket_path() -> Path:
-    """Get the versioned socket path for this protocol version.
-    
-    DEF-61-004: Format: {socket_dir}/velo-zygote-v{PROTOCOL_VERSION:02x}.sock
-    """
-    return get_socket_dir() / f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
+    """Get the versioned socket path for this protocol version."""
+    return VeloPaths.zygote_socket()
 
 # ============================================================================
 # MessagePack Import with Pure Python Fallback (ADV-3)
@@ -146,8 +148,11 @@ _BLOCKED_PATHS = [
 ]
 
 # Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
-if os.environ.get("GITHUB_ACTIONS") != "true":
-    _BLOCKED_PATHS.append("/home")
+if VeloConfig().is_ci():
+    _BLOCKED_PATHS.remove("/home") if "/home" in _BLOCKED_PATHS else None
+else:
+    if "/home" not in _BLOCKED_PATHS:
+        _BLOCKED_PATHS.append("/home")
 
 
 class ForkRateLimiter:
@@ -167,10 +172,7 @@ class ForkRateLimiter:
         self.last_refill = time.time()
         self._lock = threading.Lock()
         # CI bypass: disable rate limiting in test environments
-        self._disabled = (
-            os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1" or
-            os.environ.get("GITHUB_ACTIONS") == "true"
-        )
+        self._disabled = VeloConfig().is_ci() or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
     
     def acquire(self) -> bool:
         """Try to acquire a token. Returns True if allowed, False if rate limited."""
@@ -208,7 +210,8 @@ class LogUtils:
     def debug_log(msg: str) -> None:
         """Write debug log to file for daemon mode debugging."""
         try:
-            with open("/tmp/velo-zygote-debug.log", "a") as f:
+            log_path = VeloPaths.zygote_log()
+            with open(log_path, "a") as f:
                 import datetime
                 f.write(f"{datetime.datetime.now()} - {msg}\n")
                 f.flush()
@@ -611,6 +614,17 @@ class ForkHandler:
                 str(Path(__file__).parent.parent / "python"),
                 str(Path(project_root) / "python") if project_root else None,
             ]
+            
+            # Use VeloPaths for project resolution if available
+            if project_root:
+                pyproj = VeloPaths.pyproject(Path(project_root))
+                if pyproj.exists():
+                    v_loader = VeloPaths.project_file(Path(project_root), "velo_loader.py")
+                    if v_loader.exists():
+                        loader_dir = str(v_loader.parent)
+                        if loader_dir not in sys.path:
+                            sys.path.insert(0, loader_dir)
+
             for loader_dir in possible_loader_dirs:
                 if loader_dir and loader_dir not in sys.path and Path(loader_dir).exists():
                     sys.path.insert(0, loader_dir)
@@ -644,7 +658,9 @@ router = CommandRouter()
 class ZygoteServer:
     """Layer 2: App Layer - Orchestrates the Zygote service."""
 
-    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
+    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = None, worker_ttl: int = None, app_name: str = None, monitor_parent: bool = True):
+        self.config = VeloConfig()
+        
         # RFC-0011 D.1: Support abstract sockets (@ -> \0)
         self.is_abstract = socket_path.startswith('@')
         if self.is_abstract:
@@ -652,13 +668,14 @@ class ZygoteServer:
         else:
             self.socket_path = socket_path
             
-        self.idle_timeout = idle_timeout
-        self.worker_registry = WorkerRegistry(worker_ttl)
-        self.preload = preload or []
+        self.idle_timeout = idle_timeout or self.config.graceful_shutdown_timeout
+        self.worker_registry = WorkerRegistry(worker_ttl or 3600)
+        self.preload = preload or self.config.preload
         self._preloaded_modules: List[str] = []
-        self.memory_limit_mb = 1024 # 1GB default limit for Zygote process
+        self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
         self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup
         self.fork_rate_limiter = ForkRateLimiter()  # RFC-0011 WB-005: DoS protection
+        self._monitor_parent = monitor_parent # Store for use in start()
         
         # [DEF-62-004] Pending sync forks (pid -> Future)
         self.pending_forks: Dict[int, asyncio.Future] = {}
@@ -677,8 +694,10 @@ class ZygoteServer:
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
             
-            # RAII Reaper Chain: Zygote process MUST monitor parent to prevent orphans (RFC-0012)
-            WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=True)
+            # RFC-0012: The Guardian monitors the parent process. 
+            # In daemon mode (--no-guardian), we disable parent monitoring.
+            monitor_parent = getattr(self, "_monitor_parent", True)
+            WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=monitor_parent)
             
             self._setup_signals()
             
@@ -1041,9 +1060,9 @@ async def handle_zy_status(server: ZygoteServer, cmd: Dict) -> Dict:
     }
 
 
-def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None):
+def zygote_main(socket_path: str, preload: List[str], idle_timeout: int = 300, worker_ttl: int = 3600, app_name: str = None, monitor_parent: bool = True):
     """Main entry point for Zygote process."""
-    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl, app_name)
+    server = ZygoteServer(socket_path, preload, idle_timeout, worker_ttl, app_name, monitor_parent)
     asyncio.run(server.start())
 
 
@@ -1080,7 +1099,8 @@ if __name__ == "__main__":
     parser.add_argument("--preload", nargs="*", default=[])
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--worker-ttl", type=int, default=3600)
+    parser.add_argument("--no-guardian", action="store_true", help="Disable parent process monitoring (daemon mode)")
     parser.add_argument("--app", help="App name for affinity verification")
     args = parser.parse_args()
     
-    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl, args.app)
+    zygote_main(args.socket, args.preload, args.timeout, args.worker_ttl, args.app, not args.no_guardian)

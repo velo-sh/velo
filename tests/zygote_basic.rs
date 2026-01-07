@@ -17,7 +17,7 @@ mod basic_tests {
         let mut launcher = ZygoteLauncher::new(socket_path.clone());
 
         // Start should succeed
-        let result = launcher.start(&[], None);
+        let result = launcher.start(&[], None, false);
         assert!(result.is_ok(), "Zygote should start successfully");
 
         // Zygote should be running
@@ -37,7 +37,7 @@ mod basic_tests {
         let socket_path = temp_dir.path().join("test-zygote-stop.sock");
 
         let mut launcher = ZygoteLauncher::new(socket_path.clone());
-        launcher.start(&[], None).unwrap();
+        launcher.start(&[], None, false).unwrap();
 
         // Stop should succeed
         let result = launcher.stop();
@@ -95,7 +95,7 @@ mod basic_tests {
         assert!(status.contains("not running") || status.contains("Not running"));
 
         // Status when running
-        launcher.start(&[], None).unwrap();
+        launcher.start(&[], None, false).unwrap();
         let status = launcher.status();
         assert!(status.contains("running") || status.contains("Running"));
         assert!(status.contains("PID") || status.contains("pid"));
@@ -129,7 +129,7 @@ mod spawn_tests {
         .unwrap();
 
         let mut launcher = ZygoteLauncher::new(socket_path);
-        launcher.start(&[], None).unwrap();
+        launcher.start(&[], None, false).unwrap();
 
         // Spawn worker
         let worker = launcher

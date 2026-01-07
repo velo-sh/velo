@@ -4,3 +4,22 @@
 protocol_version = 1
 socket_path_limit = 104
 max_message_size = 10485760
+
+# Files and Directories (Magic Strings)
+pyproject_toml = "pyproject.toml"
+uv_lock = "uv.lock"
+requirements_txt = "requirements.txt"
+site_customize = "sitecustomize.py"
+velo_loader = "velo_loader.py"
+velo_cache_dir = ".velo_cache"
+velo_profile_json = "velo_profile.json"
+
+# Timeouts (Seconds)
+socket_startup_timeout = 5
+worker_handshake_timeout = 10
+graceful_shutdown_timeout = 20
+default_slow_threshold_ms = 100
+
+# Network
+default_host = "127.0.0.1"
+default_port = 8000
