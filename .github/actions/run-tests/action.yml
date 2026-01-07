@@ -21,8 +21,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v4
-
     - name: Setup Velo
       uses: ./.github/actions/setup-velo
       with:

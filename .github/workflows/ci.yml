@@ -198,6 +198,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -213,6 +214,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -228,6 +230,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -245,6 +248,7 @@ jobs:
     # Allow failures - stress tests may be flaky
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -266,6 +270,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -281,6 +286,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -296,6 +302,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -315,6 +322,7 @@ jobs:
       )
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -334,6 +342,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -349,6 +358,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -371,6 +381,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -387,6 +398,7 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # L5 chaos tests may be flaky
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -408,6 +420,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -424,6 +437,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -441,6 +455,7 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # Performance tests may be flaky
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -459,6 +474,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -476,6 +492,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -499,6 +516,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -518,6 +536,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -541,6 +560,7 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -564,6 +584,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -581,6 +602,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
@@ -598,6 +620,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
