@@ -270,6 +270,23 @@ impl EnvironmentShield {
             trusted.push(PathBuf::from(conda));
         }
 
+        // 6. CI/CD Environment Awareness (First Principles: Trust the Environment)
+        // If we are running in GitHub Actions, we MUST trust the runner's toolchain.
+        if std::env::var("GITHUB_ACTIONS").is_ok() {
+            for p in &[
+                "/opt/pipx_bin",
+                "/snap/bin",
+                "/usr/local/bin",          // Often used in CI
+                "/home/runner/.local/bin", // Explicitly add specific user bin
+            ] {
+                trusted.push(PathBuf::from(p));
+            }
+            // Trust AGENT_TOOLSDIRECTORY if set
+            if let Ok(agent_tools) = std::env::var("AGENT_TOOLSDIRECTORY") {
+                trusted.push(PathBuf::from(agent_tools));
+            }
+        }
+
         Self {
             trusted_prefixes: trusted
                 .into_iter()
