@@ -107,18 +107,26 @@ impl MemoryRegistry {
         }
 
         // 1. Create SHM FD
-        let fd = self.create_shm_fd(name, total_size)?;
+        #[allow(unused_variables)]
+        let (fd, is_huge) = self.create_shm_fd(name, total_size)?;
 
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
         // We use PROT_READ | PROT_WRITE for population and later munmap/mmap RO for isolation.
-        // Note: MAP_HUGETLB is not used here as it's invalid for memfd-backed mappings (MFD_HUGETLB should be used instead).
+        // H-20: Conditional MAP_HUGETLB. Only use if the FD effectively supports it (MFD_HUGETLB).
+        #[allow(unused_mut)]
+        let mut flags = libc::MAP_SHARED;
+        #[cfg(target_os = "linux")]
+        if is_huge {
+            flags |= linux::MAP_HUGETLB;
+        }
+
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
                 total_size,
                 libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
+                flags,
                 fd,
                 0,
             )
@@ -297,7 +305,7 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd, MemoryError> {
+    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
@@ -319,6 +327,7 @@ impl MemoryRegistry {
         // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
         // we fallback to standard pages to prevent startup failure.
         let mut fd = try_create(linux::MFD_HUGETLB);
+        let mut is_huge = true;
 
         if fd < 0 {
             // Fallback to standard 4KB pages
@@ -326,6 +335,7 @@ impl MemoryRegistry {
                 "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
             );
             fd = try_create(0);
+            is_huge = false;
         }
 
         let fd = fd as RawFd;
@@ -347,11 +357,11 @@ impl MemoryRegistry {
             )));
         }
 
-        Ok(fd)
+        Ok((fd, is_huge))
     }
 
     #[cfg(target_os = "macos")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd, MemoryError> {
+    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
@@ -385,7 +395,7 @@ impl MemoryRegistry {
             )));
         }
 
-        Ok(fd)
+        Ok((fd, false))
     }
 
     fn apply_seals(&self, fd: RawFd) -> Result<(), MemoryError> {
