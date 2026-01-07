@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "rsa"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["rsa"]
+timeout = 30

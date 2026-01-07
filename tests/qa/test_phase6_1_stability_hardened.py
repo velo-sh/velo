@@ -10,13 +10,8 @@ from pathlib import Path
 # QA Agent B: Hardened Stability & Platform Parity
 # Requirements: RFC-0010 §4.1, §4.4, §4.6, §4.9
 
-def get_free_port():
-    """Get a free port by binding to port 0 and releasing."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
+# def get_free_port(): (Removed to prevent TOCTOU race)
+#     pass
 
 @pytest.mark.tier1
 class TestPhase61StabilityHardened:
@@ -29,7 +24,7 @@ class TestPhase61StabilityHardened:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
         
-        port = get_free_port()
+        port = 0  # Ephemeral
         
         # Start velo serve in a new process group
         proc = subprocess.Popen(
@@ -74,7 +69,7 @@ class TestPhase61StabilityHardened:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time\nprint(f'START_{time.time()}')")
         
-        port = get_free_port()
+        port = 0
         
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
@@ -115,7 +110,7 @@ class TestPhase61StabilityHardened:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time\nprint(f'START_{time.time()}')")
         
-        port = get_free_port()
+        port = 0
         
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
@@ -175,7 +170,7 @@ print("CHILD_READY")
 time.sleep(60)
 """)
         
-        port = get_free_port()
+        port = 0
         
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}"],
@@ -212,7 +207,9 @@ time.sleep(60)
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
         
-        port = get_free_port()
+        # Use ephemeral port (0) to avoid conflicts
+        # We don't need to connect, only verify lifecycle
+        port = 0
         
         # Start server in new session
         # Use --timeout 5 for fast graceful shutdown in tests
@@ -256,7 +253,7 @@ time.sleep(60)
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
-        port = get_free_port()
+        port = 0
         
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
@@ -406,7 +403,7 @@ class TestRegressionBugFixes:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
         
-        port = get_free_port()
+        port = 0
         
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],

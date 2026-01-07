@@ -76,5 +76,5 @@ nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS supp
 lto = "fat"           # Most aggressive LTO
 strip = "symbols"     # Strip all symbols
 codegen-units = 1     # Better optimization
-opt-level = "z"       # Optimize for size
+opt-level = 3         # Optimize for speed (was z)
 panic = "abort"       # Smaller panic handling

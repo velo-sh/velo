@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "s3transfer"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["s3transfer"]
+timeout = 30

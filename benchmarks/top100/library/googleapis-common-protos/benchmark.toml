@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "googleapis-common-protos"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["google.rpc"]
+timeout = 30
