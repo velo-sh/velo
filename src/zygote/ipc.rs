@@ -20,8 +20,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Maximum message size (1MB) - prevents DoS via oversized messages
-const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+pub use crate::common::constants::{MAX_MESSAGE_SIZE, PROTOCOL_VERSION};
 
 /// Commands sent from Launcher to Zygote
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,22 +238,7 @@ pub fn cleanup_socket(socket_path: &Path) {
 // MessagePack serialization helpers (length-prefix + version framing)
 // ============================================================================
 
-/// Protocol version (ADV-1 + DEF-61-004)
-///
-/// # Red Line #5: Version Coupling Documentation
-/// This constant is used in TWO critical places:
-/// 1. **Message framing**: `[Length 4B LE] [Version 1B] [Payload MsgPack]`
-/// 2. **Socket path**: `velo-zygote-v{:02x}.sock`
-///
-/// # Important
-/// Incrementing this value creates a NEW socket path, providing automatic
-/// isolation from old Zygote processes. Old processes using the previous
-/// socket will not interfere with new processes.
-///
-/// # Version History
-/// - 0x00: JSON protocol (v0.6.1 and earlier)
-/// - 0x01: MessagePack protocol (v0.6.2+, DEF-61-004)
-pub const PROTOCOL_VERSION: u8 = 0x01;
+// Protocol version (ADV-1 + DEF-61-004) - Now using SSOT from config/constants.toml
 
 /// Helper for enforcing a wall-clock deadline across multiple IPC operations
 struct Deadline {
@@ -384,7 +368,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     let version = version_buf[0];
     if version != PROTOCOL_VERSION {
         return Err(ZygoteError::ProtocolError(format!(
-            "Protocol version mismatch: got {}, expected {}",
+            "Protocol version mismatch: got 0x{:02x}, expected 0x{:02x}. Is one side outdated?",
             version, PROTOCOL_VERSION
         )));
     }
@@ -593,5 +577,39 @@ mod tests {
             msgpack_bytes.len(),
             json_bytes.len()
         );
+    }
+
+    #[test]
+    fn test_read_message_oversized() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let (mut reader, mut writer) = UnixStream::pair().unwrap();
+
+        // Send a message that claims to be huge
+        let huge_len = (MAX_MESSAGE_SIZE + 1) as u32;
+        writer.write_all(&huge_len.to_le_bytes()).unwrap();
+
+        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("Message too large"));
+    }
+
+    #[test]
+    fn test_read_message_version_mismatch() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let (mut reader, mut writer) = UnixStream::pair().unwrap();
+
+        let total_len = 1u32;
+        writer.write_all(&total_len.to_le_bytes()).unwrap();
+        writer.write_all(&[0xFF]).unwrap(); // Wrong version
+
+        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("Protocol version mismatch"));
     }
 }

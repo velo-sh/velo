@@ -3,3 +3,4 @@
 
 protocol_version = 1
 socket_path_limit = 104
+max_message_size = 10485760
