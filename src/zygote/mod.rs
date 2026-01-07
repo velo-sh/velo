@@ -36,8 +36,8 @@ use std::time::Duration;
 pub const WORKER_TIMEOUT_SECS: u64 = 30;
 
 /// Socket startup timeout in seconds
-/// CI environments may need a higher value
-pub const SOCKET_STARTUP_TIMEOUT_SECS: u64 = 10;
+/// CI environments may need a higher value (increased from 10 to 30 for GitHub Actions)
+pub const SOCKET_STARTUP_TIMEOUT_SECS: u64 = 30;
 
 /// Check if Zygote is supported on this platform
 #[cfg(unix)]
