@@ -439,7 +439,12 @@ pub enum ServerExit {
 /// * `python_path` - Path to Python interpreter
 /// * `project_dir` - Project directory
 #[cfg(unix)]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<ServerExit> {
+pub fn run_server(
+    args: &ServeArgs,
+    python_path: &Path,
+    project_dir: &Path,
+    config: &crate::config::VeloConfig,
+) -> Result<ServerExit> {
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
     use std::time::Instant;
 
@@ -611,7 +616,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
-            if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false) {
+            if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
                 logger.warn(&format!("Zygote pre-warm failed: {}", e));
                 if args.log_format == LogFormat::Text {
                     eprintln!("   Continuing without Zygote optimization");
@@ -995,7 +1000,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
 
     // RFC-0012: Surgical Environment Management (Whitelist)
     // Replaces SEC-P0-005 blacklist with robust provenance guard
-    let shield = crate::lifecycle::EnvironmentShield::new();
+    let shield = crate::lifecycle::EnvironmentShield::new(config);
     if let Err(e) = shield.apply(&mut cmd) {
         logger.warn(&format!("Environment shield warning: {}", e));
     }

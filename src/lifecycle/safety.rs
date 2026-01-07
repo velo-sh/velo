@@ -200,75 +200,27 @@ pub type SecurityResult<T> = std::result::Result<T, String>;
 /// Prevents "Environment Starvation" while blocking "Dangerous Toxins".
 pub struct EnvironmentShield {
     trusted_prefixes: Vec<PathBuf>,
+    env_whitelist: Vec<String>,
+    hpc_threads: usize,
 }
 
 impl Default for EnvironmentShield {
     fn default() -> Self {
-        Self::new()
+        use crate::config::VeloConfig;
+        Self::new(&VeloConfig::default())
     }
 }
 
 impl EnvironmentShield {
-    pub fn new() -> Self {
+    pub fn new(config: &crate::config::VeloConfig) -> Self {
         let mut trusted = Vec::new();
 
-        // 1. Project Root (Highest priority)
-        if let Ok(cwd) = std::env::current_dir() {
-            trusted.push(cwd);
-        }
-
-        // 2. Velo Executable Directory (Essential for child spawns)
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(parent) = exe.parent()
-        {
-            trusted.push(parent.to_path_buf());
-        }
-
-        // 3. Standard System Prefixes (RFC §3.5)
-        for p in &[
-            "/usr",
-            "/bin",
-            "/sbin",
-            "/lib",
-            "/opt/homebrew",
-            "/opt/local",
-            // GitHub Actions Tool Cache (Fix for CI Scrubbing)
-            "/opt/hostedtoolcache",
-        ] {
-            trusted.push(PathBuf::from(p));
-        }
-
-        // 3.5. System Temp Directory (Required for Pytest/Workers in /tmp)
-        // trusted.push(std::env::temp_dir());
-
-        // 4. User Home Directory (RFC §3.5: User-trusted space)
-        if let Ok(home) = std::env::var("HOME") {
-            trusted.push(PathBuf::from(home));
-        }
-
-        // 5. Active VirtualEnv
-        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-            trusted.push(PathBuf::from(venv));
-        }
-        if let Ok(conda) = std::env::var("CONDA_PREFIX") {
-            trusted.push(PathBuf::from(conda));
-        }
-
-        // 6. CI/CD Environment Awareness (First Principles: Trust the Environment)
-        // If we are running in GitHub Actions, we MUST trust the runner's toolchain.
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            for p in &[
-                "/opt/pipx_bin",
-                "/snap/bin",
-                "/usr/local/bin",          // Often used in CI
-                "/home/runner/.local/bin", // Explicitly add specific user bin
-            ] {
-                trusted.push(PathBuf::from(p));
-            }
-            // Trust AGENT_TOOLSDIRECTORY if set
-            if let Ok(agent_tools) = std::env::var("AGENT_TOOLSDIRECTORY") {
-                trusted.push(PathBuf::from(agent_tools));
-            }
+        // RFC-0012: Config-driven security boundary.
+        // We no longer "patch" paths in code. All trust must be declared in constants.toml
+        // or pyproject.toml using placeholders.
+        for prefix in &config.security_trusted_prefixes {
+            let expanded = Self::expand_placeholders(prefix);
+            trusted.push(PathBuf::from(expanded));
         }
 
         Self {
@@ -276,7 +228,52 @@ impl EnvironmentShield {
                 .into_iter()
                 .filter_map(|p| p.canonicalize().ok())
                 .collect(),
+            env_whitelist: config.security_env_whitelist.clone(),
+            hpc_threads: config.security_hpc_threads,
         }
+    }
+
+    /// Resolve placeholders in path strings
+    fn expand_placeholders(s: &str) -> String {
+        let mut result = s.to_string();
+
+        // ${CWD}: Current working directory
+        if result.contains("${CWD}")
+            && let Ok(cwd) = std::env::current_dir()
+        {
+            result = result.replace("${CWD}", &cwd.to_string_lossy());
+        }
+
+        // ${HOME}: User home directory
+        if result.contains("${HOME}")
+            && let Ok(home) = std::env::var("HOME")
+        {
+            result = result.replace("${HOME}", &home);
+        }
+
+        // ${EXE_DIR}: Directory containing the velo executable
+        if result.contains("${EXE_DIR}")
+            && let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            result = result.replace("${EXE_DIR}", &parent.to_string_lossy());
+        }
+
+        // ${VIRTUAL_ENV}: Active Python virtualenv
+        if result.contains("${VIRTUAL_ENV}")
+            && let Ok(venv) = std::env::var("VIRTUAL_ENV")
+        {
+            result = result.replace("${VIRTUAL_ENV}", &venv);
+        }
+
+        // ${CONDA_PREFIX}: Active Conda environment
+        if result.contains("${CONDA_PREFIX}")
+            && let Ok(conda) = std::env::var("CONDA_PREFIX")
+        {
+            result = result.replace("${CONDA_PREFIX}", &conda);
+        }
+
+        result
     }
 
     /// Apply surgical whitelist and provenance guard to a Command
@@ -284,32 +281,11 @@ impl EnvironmentShield {
         cmd.env_clear();
 
         // RFC §3.1: Mandatory Whitelist
-        const WHITELIST: &[&str] = &[
-            "PATH",
-            "HOME",
-            "USER",
-            "TMPDIR",
-            "XDG_RUNTIME_DIR",
-            "SHELL",
-            "VIRTUAL_ENV",
-            "CONDA_PREFIX",
-            "LANG",
-            "LC_ALL",
-            "LC_CTYPE",
-            "TZ",
-            // macOS Essentials
-            "__CF_USER_TEXT_ENCODING",
-            "MallocNanoZone",
-            "XPC_FLAGS",
-            "XPC_SERVICE_NAME",
-            "TERM_PROGRAM",
-            "TERM",
-        ];
 
-        for var in WHITELIST {
+        for var in &self.env_whitelist {
             if let Ok(val) = std::env::var(var) {
                 // Special handling for PATH (Provenance Guard §3.5)
-                if *var == "PATH" {
+                if var == "PATH" {
                     let cleaned = self.validate_path_variable(&val)?;
                     cmd.env(var, cleaned);
                 } else {
@@ -327,11 +303,12 @@ impl EnvironmentShield {
         }
 
         // 2. High-Performance Isolation (RFC-0011 HPC-001)
-        cmd.env("OMP_NUM_THREADS", "1");
-        cmd.env("MKL_NUM_THREADS", "1");
-        cmd.env("OPENBLAS_NUM_THREADS", "1");
-        cmd.env("VECLIB_MAXIMUM_THREADS", "1");
-        cmd.env("NUMEXPR_NUM_THREADS", "1");
+        let thread_val = self.hpc_threads.to_string();
+        cmd.env("OMP_NUM_THREADS", &thread_val);
+        cmd.env("MKL_NUM_THREADS", &thread_val);
+        cmd.env("OPENBLAS_NUM_THREADS", &thread_val);
+        cmd.env("VECLIB_MAXIMUM_THREADS", &thread_val);
+        cmd.env("NUMEXPR_NUM_THREADS", &thread_val);
 
         // 3. Python Specific Isolation
         cmd.env("PYTHONDONTWRITEBYTECODE", "1");
@@ -541,5 +518,51 @@ mod tests {
     fn test_generate_abstract_socket_name_non_linux() {
         let result = generate_abstract_socket_name(42);
         assert!(result.is_none(), "Non-Linux should return None");
+    }
+    #[test]
+    fn test_environment_shield_config_override() {
+        use crate::config::VeloConfig;
+
+        let config = VeloConfig {
+            security_env_whitelist: vec!["MY_VAR".to_string()],
+            ..VeloConfig::default()
+        };
+
+        let shield = EnvironmentShield::new(&config);
+
+        let mut cmd = std::process::Command::new("ls");
+        unsafe {
+            std::env::set_var("MY_VAR", "my_val");
+            std::env::set_var("OTHER_VAR", "other_val");
+        }
+
+        shield.apply(&mut cmd).unwrap();
+
+        // Verify only MY_VAR is present
+        let envs: Vec<_> = cmd.get_envs().collect();
+        let keys: Vec<String> = envs
+            .iter()
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+
+        assert!(keys.contains(&"MY_VAR".to_string()));
+        assert!(!keys.contains(&"OTHER_VAR".to_string()));
+
+        unsafe {
+            std::env::remove_var("MY_VAR");
+            std::env::remove_var("OTHER_VAR");
+        }
+    }
+
+    #[test]
+    fn test_variable_expansion() {
+        let expanded = EnvironmentShield::expand_placeholders("${CWD}");
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(expanded, cwd.to_string_lossy());
+
+        let expanded_home = EnvironmentShield::expand_placeholders("${HOME}");
+        if let Ok(home) = std::env::var("HOME") {
+            assert_eq!(expanded_home, home);
+        }
     }
 }

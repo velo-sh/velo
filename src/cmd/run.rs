@@ -125,11 +125,12 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             pythonpath,
             Some(config.max_bundle_size as u64),
+            &config,
         )?;
     } else if cmd.profile {
-        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
     } else {
-        runner::run_script(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script(&python_path, &cmd.script, pythonpath, &config)?;
     }
 
     // If we didn't have cache, capture sys.path for next time
@@ -177,7 +178,7 @@ fn try_zygote_run(
             eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
         }
 
-        if let Err(e) = launcher.start(&preload, None, false) {
+        if let Err(e) = launcher.start(&preload, None, false, &config) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
@@ -246,7 +247,7 @@ fn try_zygote_run(
                     eprintln!("🔄 Stale socket detected, restarting Zygote...");
                     zygote::ipc::cleanup_socket(&socket_path);
 
-                    if let Ok(()) = launcher.start(&[], None, false) {
+                    if let Ok(()) = launcher.start(&[], None, false, config) {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
@@ -377,6 +378,7 @@ fn run_with_fast_loader(
     project_dir: &Path,
     pythonpath: Option<String>,
     max_bundle_size: Option<u64>,
+    config: &VeloConfig,
 ) -> Result<()> {
     use std::io::Write;
 
@@ -388,7 +390,7 @@ fn run_with_fast_loader(
                 eprintln!("⚠️  No bundle found. Build one first:");
                 eprintln!("    python python/bundle_builder.py .");
                 eprintln!("   Falling back to normal mode...");
-                return runner::run_script(python_path, script_path, pythonpath);
+                return runner::run_script(python_path, script_path, pythonpath, config);
             }
         };
 
@@ -397,7 +399,7 @@ fn run_with_fast_loader(
         if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
             eprintln!("⚠️  Fast loader security check failed: {}", e);
             eprintln!("   Falling back to normal imports...");
-            return runner::run_script(python_path, script_path, pythonpath);
+            return runner::run_script(python_path, script_path, pythonpath, config);
         }
 
         eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
@@ -483,7 +485,7 @@ except Exception as e:
 
         // Run script with enhanced PYTHONPATH
         // Cleanup: temp_dir will be automatically deleted when goes out of scope
-        runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+        runner::run_script(python_path, script_path, Some(enhanced_pythonpath), config)
     })();
 
     // Always report metrics, even on error

@@ -19,17 +19,83 @@ pub struct VeloConfig {
     pub zygote_socket_timeout: u64,
     /// Threshold in ms for "slow" imports
     pub slow_threshold_ms: u64,
+    /// Trusted path prefixes for environment scrubbing
+    pub security_trusted_prefixes: Vec<String>,
+    /// Whitelisted environment variables
+    pub security_env_whitelist: Vec<String>,
+    /// Max threads for HPC libraries (OpenMP, MKL, etc)
+    pub security_hpc_threads: usize,
 }
 
 impl Default for VeloConfig {
     fn default() -> Self {
+        // VELO_ENV determines the security profile: dev (default), ci, prod
+        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+
+        // Detect OS at runtime
+        let os_name = match std::env::consts::OS {
+            "macos" => "macos",
+            "linux" => "linux",
+            _ => "linux", // Fallback to linux for other Unix
+        };
+
+        // Level 0: Global Base
+        let base_prefixes =
+            extract_default_str("security_base_trusted_prefixes").unwrap_or_default();
+        let base_envs = extract_default_str("security_base_env_whitelist").unwrap_or_default();
+
+        // Level 1: OS Base (merge with global base via ${BASE})
+        let os_base_prefix_key = format!("security_{}_base_trusted_prefixes", os_name);
+        let os_base_env_key = format!("security_{}_base_env_whitelist", os_name);
+
+        let os_base_prefixes = extract_default_str(&os_base_prefix_key)
+            .unwrap_or_default()
+            .replace("${BASE}", &base_prefixes);
+        let os_base_envs = extract_default_str(&os_base_env_key)
+            .unwrap_or_default()
+            .replace("${BASE}", &base_envs);
+
+        // Level 2: OS + Environment (merge with OS base via ${OS_BASE})
+        let final_prefix_key = format!("security_{}_{}_trusted_prefixes", os_name, env_mode);
+        let final_env_key = format!("security_{}_{}_env_whitelist", os_name, env_mode);
+
+        // Fallback to dev if profile not found
+        let fallback_prefix_key = format!("security_{}_dev_trusted_prefixes", os_name);
+        let fallback_env_key = format!("security_{}_dev_env_whitelist", os_name);
+
+        let raw_prefixes = extract_default_str(&final_prefix_key)
+            .or_else(|| extract_default_str(&fallback_prefix_key))
+            .unwrap_or_default()
+            .replace("${OS_BASE}", &os_base_prefixes);
+
+        let raw_envs = extract_default_str(&final_env_key)
+            .or_else(|| extract_default_str(&fallback_env_key))
+            .unwrap_or_default()
+            .replace("${OS_BASE}", &os_base_envs);
+
         Self {
             preload: Vec::new(),
             max_bundle_size: 1024 * 1024 * 1024, // 1GB default
             zygote_socket_timeout: extract_default_u64("socket_startup_timeout", 5),
             slow_threshold_ms: extract_default_u64("default_slow_threshold_ms", 100),
+            security_trusted_prefixes: Self::parse_string_array(&raw_prefixes),
+            security_env_whitelist: Self::parse_string_array(&raw_envs),
+            security_hpc_threads: extract_default_u64("security_hpc_threads", 1) as usize,
         }
     }
+}
+
+/// Extract a string default from the embedded TOML
+fn extract_default_str(key: &str) -> Option<String> {
+    for line in CONSTANTS_TOML.lines() {
+        let line = line.trim();
+        if line.starts_with(key)
+            && let Some((_, val)) = line.split_once('=')
+        {
+            return Some(val.trim().trim_matches('"').to_string());
+        }
+    }
+    None
 }
 
 /// Extract a u64 default from the embedded TOML
@@ -85,6 +151,18 @@ impl VeloConfig {
             .and_then(|v| v.parse::<u64>().ok())
         {
             self.slow_threshold_ms = ms;
+        }
+        if let Ok(val) = std::env::var("VELO_SECURITY_TRUSTED_PREFIXES") {
+            self.security_trusted_prefixes = Self::parse_string_array(&val);
+        }
+        if let Ok(val) = std::env::var("VELO_SECURITY_ENV_WHITELIST") {
+            self.security_env_whitelist = Self::parse_string_array(&val);
+        }
+        if let Some(n) = std::env::var("VELO_SECURITY_HPC_THREADS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            self.security_hpc_threads = n;
         }
     }
 
@@ -143,6 +221,27 @@ impl VeloConfig {
                             config.slow_threshold_ms = ms;
                         }
                     }
+                    "security_trusted_prefixes" => {
+                        if value.starts_with('[') {
+                            config.security_trusted_prefixes =
+                                Self::parse_string_array(&value[1..value.len() - 1]);
+                        } else {
+                            config.security_trusted_prefixes = Self::parse_string_array(value);
+                        }
+                    }
+                    "security_env_whitelist" => {
+                        if value.starts_with('[') {
+                            config.security_env_whitelist =
+                                Self::parse_string_array(&value[1..value.len() - 1]);
+                        } else {
+                            config.security_env_whitelist = Self::parse_string_array(value);
+                        }
+                    }
+                    "security_hpc_threads" => {
+                        if let Ok(n) = value.parse::<usize>() {
+                            config.security_hpc_threads = n;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -179,5 +278,57 @@ max_bundle_size = 512
         let config = VeloConfig::parse_toml(content).unwrap();
         assert_eq!(config.preload, vec!["fastapi", "pydantic"]);
         assert_eq!(config.max_bundle_size, 512 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_security_profile_selection() {
+        // Test PROD profile
+        unsafe {
+            std::env::set_var("VELO_ENV", "prod");
+        }
+        let config_prod = VeloConfig::default();
+        // Prod should only have base + OS_BASE + CWD
+        assert!(
+            config_prod
+                .security_trusted_prefixes
+                .contains(&"/usr".to_string())
+        );
+        // On macOS, ${OS_BASE} includes Homebrew. On Linux, it would not.
+        #[cfg(target_os = "macos")]
+        assert!(
+            config_prod
+                .security_trusted_prefixes
+                .contains(&"/opt/homebrew".to_string())
+        );
+        #[cfg(target_os = "linux")]
+        assert!(
+            !config_prod
+                .security_trusted_prefixes
+                .contains(&"/opt/homebrew".to_string())
+        );
+
+        // Test DEV profile
+        unsafe {
+            std::env::set_var("VELO_ENV", "dev");
+        }
+        let config_dev = VeloConfig::default();
+        // Dev should have ${HOME} placeholder (after expansion)
+        // Check for a known OS-specific path
+        #[cfg(target_os = "macos")]
+        assert!(
+            config_dev
+                .security_trusted_prefixes
+                .contains(&"/opt/homebrew".to_string())
+        );
+        #[cfg(target_os = "linux")]
+        assert!(
+            config_dev
+                .security_trusted_prefixes
+                .contains(&"/lib64".to_string())
+        );
+
+        unsafe {
+            std::env::remove_var("VELO_ENV");
+        }
     }
 }
