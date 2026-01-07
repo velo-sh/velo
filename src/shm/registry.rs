@@ -222,14 +222,15 @@ impl MemoryRegistry {
             }
         }
 
-        // 5. Apply Seals (Linux specific)
-        self.apply_seals(fd)?;
-
-        // 6. Unmap RW mapping and return FD
-        // SECURITY: Unmapping the RW pointer before returning. This ensures no accidental writes.
+        // 6. Unmap RW mapping (CRITICAL BARRIER)
+        // SECURITY: Unmapping the RW pointer before returning or sealing.
+        // On Linux, F_SEAL_WRITE requires no active writable mappings.
         unsafe {
             libc::munmap(ptr, total_size);
         }
+
+        // 5. Apply Seals (Linux specific)
+        self.apply_seals(fd)?;
 
         // Final verification map (RO) to ensure seal works and data is intact
         // SECURITY: Temporary RO mapping to verify integrity.
