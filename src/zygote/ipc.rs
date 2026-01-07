@@ -403,7 +403,9 @@ fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    // println!("[IPC SEND] {:?}", msg);
+    {
+        // println!("[IPC SEND] {:?}", msg);
+    }
 
     // Write 4-byte length prefix (little-endian) - includes version + payload
     let total_len = 1 + payload.len(); // version byte + payload
@@ -483,7 +485,10 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    // println!("[IPC RECV] {:?}", msg);
+    {
+        // println!("[IPC RECV] {:?}", msg);
+    }
+
     Ok(msg)
 }
 

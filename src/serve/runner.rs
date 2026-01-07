@@ -166,6 +166,7 @@ fn apply_process_group(cmd: &mut Command) {
 /// Also manages PID file cleanup.
 pub struct ManagedChild {
     child: Child,
+    pgid: Option<i32>,
     pid_file: Option<PathBuf>,
 }
 
@@ -194,7 +195,16 @@ impl ManagedChild {
             return Err(e);
         }
 
-        Ok(Self { child, pid_file })
+        #[cfg(unix)]
+        let pgid = Some(child.id() as i32);
+        #[cfg(not(unix))]
+        let pgid = None;
+
+        Ok(Self {
+            child,
+            pgid,
+            pid_file,
+        })
     }
 
     /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
@@ -261,10 +271,15 @@ impl ManagedChild {
     /// Send SIGTERM to the child process (graceful shutdown).
     #[cfg(unix)]
     pub fn terminate(&mut self) -> Result<(), ServeError> {
-        let pid = self.child.id() as i32;
+        let signal_pid = if let Some(pgid) = self.pgid {
+            -pgid
+        } else {
+            self.child.id() as i32
+        };
+
         // Send SIGTERM to the entire process group (negative PID)
         unsafe {
-            if libc::kill(-pid, libc::SIGTERM) == 0 {
+            if libc::kill(signal_pid, libc::SIGTERM) == 0 {
                 return Ok(());
             }
         }
@@ -281,10 +296,14 @@ impl ManagedChild {
     pub fn kill(&mut self) -> Result<(), ServeError> {
         #[cfg(unix)]
         {
-            let pid = self.child.id() as i32;
+            let signal_pid = if let Some(pgid) = self.pgid {
+                -pgid
+            } else {
+                self.child.id() as i32
+            };
             // Send SIGKILL to the entire process group (negative PID)
             unsafe {
-                if libc::kill(-pid, libc::SIGKILL) == 0 {
+                if libc::kill(signal_pid, libc::SIGKILL) == 0 {
                     return Ok(());
                 }
             }
@@ -304,10 +323,14 @@ impl Drop for ManagedChild {
         // This ensures uvicorn workers and other grandchildren are also terminated
         #[cfg(unix)]
         {
-            let pgid = self.child.id() as i32;
+            let signal_pid = if let Some(pgid) = self.pgid {
+                -pgid
+            } else {
+                self.child.id() as i32
+            };
             // Send SIGKILL to the entire process group (negative PID)
             unsafe {
-                libc::kill(-pgid, libc::SIGKILL);
+                libc::kill(signal_pid, libc::SIGKILL);
             }
         }
 
@@ -425,7 +448,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     use std::time::Instant;
 
     // MANDATE R5: Capture the absolute start including early validation
-    let start_time = Instant::now();
+    // start_time moved inside loop for correct reload timing
 
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
@@ -878,185 +901,212 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         return Ok(());
     }
 
-    // FALLBACK: Standard uvicorn/gunicorn mode
-    // Build server command based on server type
-    logger.debug(&format!("Building command for {}...", server));
-    let mut cmd = Command::new(python_path);
-    cmd.arg("-m").arg(server.module_name());
+    // STB-RS-005: Respawn Loop
+    // Logic: If reload is enabled, we loop here to respawn the server on change events.
+    loop {
+        let start_time = Instant::now();
 
-    match server {
-        Server::Uvicorn => {
-            cmd.arg(&args.app)
-                .arg("--host")
-                .arg(&args.host)
-                .arg("--port")
-                .arg(args.port.to_string());
+        // FALLBACK: Standard uvicorn/gunicorn mode
+        // Build server command based on server type
+        logger.debug(&format!("Building command for {}...", server));
+        let mut cmd = Command::new(python_path);
+        cmd.arg("-m").arg(server.module_name());
 
-            if args.workers > 1 {
-                cmd.arg("--workers").arg(args.workers.to_string());
+        match server {
+            Server::Uvicorn => {
+                cmd.arg(&args.app)
+                    .arg("--host")
+                    .arg(&args.host)
+                    .arg("--port")
+                    .arg(args.port.to_string());
+
+                if args.workers > 1 {
+                    cmd.arg("--workers").arg(args.workers.to_string());
+                }
+                if args.reload {
+                    cmd.arg("--reload");
+                }
+                // STB-RS-004: Ensure uvicorn exits quickly on SIGTERM to avoid supervisor hangs
+                cmd.arg("--timeout-graceful-shutdown").arg("1");
             }
+            Server::Gunicorn => {
+                // Gunicorn uses different arg format
+                cmd.arg("--bind")
+                    .arg(format!("{}:{}", args.host, args.port))
+                    .arg("--workers")
+                    .arg(args.workers.to_string())
+                    .arg("--timeout")
+                    .arg(args.timeout.to_string());
+
+                if args.reload {
+                    cmd.arg("--reload");
+                }
+                cmd.arg(&args.app);
+            }
+        }
+
+        // RFC-0012: Surgical Environment Management (Whitelist)
+        // Replaces SEC-P0-005 blacklist with robust provenance guard
+        let shield = crate::lifecycle::EnvironmentShield::new();
+        if let Err(e) = shield.apply(&mut cmd) {
+            logger.warn(&format!("Environment shield warning: {}", e));
+        }
+
+        // Set working directory and inherit stdio
+        logger.verbose(&format!("Current directory: {:?}", project_dir));
+        cmd.current_dir(project_dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+        let ready_ms = start_time.elapsed().as_millis();
+        logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
+
+        if args.dry_run {
+            logger.info(&format!(
+                "Dry run: Command would be: {:?} {:?}",
+                cmd.get_program(),
+                cmd.get_args()
+                    .map(|v| v.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+            return Ok(());
+        }
+
+        if args.log_format == LogFormat::Text {
+            eprintln!("   App:       {}", args.app);
+            eprintln!("   Server:    {}", server);
+            eprintln!("   Bind:      {}:{}", args.host, args.port);
+            eprintln!("   Workers:   {}", args.workers);
+            eprintln!("   Timeout:   {}s", args.timeout);
             if args.reload {
-                cmd.arg("--reload");
+                eprintln!("   Reload:    enabled");
             }
         }
-        Server::Gunicorn => {
-            // Gunicorn uses different arg format
-            cmd.arg("--bind")
-                .arg(format!("{}:{}", args.host, args.port))
-                .arg("--workers")
-                .arg(args.workers.to_string())
-                .arg("--timeout")
-                .arg(args.timeout.to_string());
 
-            if args.reload {
-                cmd.arg("--reload");
-            }
-            cmd.arg(&args.app);
-        }
-    }
+        // Spawn with ManagedChild for RAII cleanup (D2)
+        let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
 
-    // RFC-0012: Surgical Environment Management (Whitelist)
-    // Replaces SEC-P0-005 blacklist with robust provenance guard
-    let shield = crate::lifecycle::EnvironmentShield::new();
-    if let Err(e) = shield.apply(&mut cmd) {
-        logger.warn(&format!("Environment shield warning: {}", e));
-    }
+        if let Ok(ref mut child) = child_result {
+            logger.info(&format!("Server started (PID: {})", child.id()));
+            health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // MAC-P0-002: Reset signal handlers in child (ADR D4) and STB-RS-003: Process Group
-    // Handled inside ManagedChild::spawn now, but we keep this as a note
-    // Actually, we should remove this call site as it's now handled by ManagedChild::spawn
+            // Main loop: Wait for Events (Zero Busy Wait)
+            loop {
+                // Block until event received
+                match rx.recv() {
+                    Ok(ServerEvent::Signal(sig)) => {
+                        match sig {
+                            signal_hook::consts::SIGCHLD => {
+                                // Optimistic: Child might have exited
+                                match child.wait_timeout(Duration::from_millis(0)) {
+                                    Ok(Some(status)) => {
+                                        if !status.success() {
+                                            let code = status.code().unwrap_or(1);
+                                            if code == 1 {
+                                                eprintln!();
+                                                eprintln!(
+                                                    "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+                                                );
+                                            }
 
-    // Set working directory and inherit stdio
-    logger.verbose(&format!("Current directory: {:?}", project_dir));
-    cmd.current_dir(project_dir)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+                                            // If reload is NOT enabled, exit immediately on failure
+                                            if !args.reload {
+                                                return Err(anyhow::anyhow!(
+                                                    "Server exited with code {}",
+                                                    code
+                                                ));
+                                            }
 
-    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
-    let ready_ms = start_time.elapsed().as_millis();
-    logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
-
-    if args.dry_run {
-        logger.info(&format!(
-            "Dry run: Command would be: {:?} {:?}",
-            cmd.get_program(),
-            cmd.get_args()
-                .map(|v| v.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        ));
-        return Ok(());
-    }
-
-    if args.log_format == LogFormat::Text {
-        eprintln!("   App:       {}", args.app);
-        eprintln!("   Server:    {}", server);
-        eprintln!("   Bind:      {}:{}", args.host, args.port);
-        eprintln!("   Workers:   {}", args.workers);
-        eprintln!("   Timeout:   {}s", args.timeout);
-        if args.reload {
-            eprintln!("   Reload:    enabled");
-        }
-    }
-
-    // Spawn with ManagedChild for RAII cleanup (D2)
-    let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
-
-    if let Ok(ref mut child) = child_result {
-        logger.info(&format!("Server started (PID: {})", child.id()));
-        health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        // Main loop: Wait for Events (Zero Busy Wait)
-        loop {
-            // Block until event received
-            match rx.recv() {
-                Ok(ServerEvent::Signal(sig)) => {
-                    match sig {
-                        signal_hook::consts::SIGCHLD => {
-                            // Optimistic: Child might have exited
-                            match child.wait_timeout(Duration::from_millis(0)) {
-                                Ok(Some(status)) => {
-                                    if !status.success() {
-                                        let code = status.code().unwrap_or(1);
-                                        if code == 1 {
-                                            eprintln!();
-                                            eprintln!(
-                                                "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
-                                            );
+                                            // Reload IS enabled: wait for file changes to trigger restart
+                                            logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
+                                            health_ready
+                                                .store(false, std::sync::atomic::Ordering::SeqCst);
+                                            continue;
                                         }
-
-                                        // If reload is NOT enabled, exit immediately on failure
+                                        // Child exited successfully (code 0)
                                         if !args.reload {
-                                            return Err(anyhow::anyhow!(
-                                                "Server exited with code {}",
-                                                code
-                                            ));
+                                            // Normal exit
+                                            return Ok(());
+                                        } else {
+                                            // Unexpected exit in reload mode, wait for change
+                                            logger.warn("Server exited (0). Waiting for reload...");
+                                            health_ready
+                                                .store(false, std::sync::atomic::Ordering::SeqCst);
+                                            continue;
                                         }
-
-                                        // Reload IS enabled: wait for file changes to trigger restart
-                                        logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
-                                        health_ready
-                                            .store(false, std::sync::atomic::Ordering::SeqCst);
-                                        continue;
                                     }
-                                    return Ok(());
-                                }
-                                Ok(None) => continue,
-                                Err(e) => {
-                                    return Err(anyhow::anyhow!("Error waiting for server: {}", e));
+                                    Ok(None) => continue,
+                                    Err(e) => {
+                                        return Err(anyhow::anyhow!(
+                                            "Error waiting for server: {}",
+                                            e
+                                        ));
+                                    }
                                 }
                             }
-                        }
 
-                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                            eprintln!();
-                            logger
-                                .info("Shutdown signal received, waiting for graceful shutdown...");
+                            signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                                eprintln!();
+                                logger.info(
+                                    "Shutdown signal received, waiting for graceful shutdown...",
+                                );
 
-                            if let Err(e) = child.terminate() {
-                                logger.warn(&format!("Failed to send SIGTERM: {}", e));
-                            }
-
-                            // Wait with timeout
-                            match child.wait_timeout(Duration::from_secs(args.timeout)) {
-                                Ok(Some(_)) => {
-                                    logger.info("Server stopped gracefully");
-                                    return Ok(());
+                                if let Err(e) = child.terminate() {
+                                    logger.warn(&format!("Failed to send SIGTERM: {}", e));
                                 }
-                                Ok(None) => {
-                                    logger.warn("Shutdown timeout expired, force killing...");
-                                    let _ = child.kill();
-                                    return Ok(());
+
+                                // Wait with timeout
+                                match child.wait_timeout(Duration::from_secs(args.timeout)) {
+                                    Ok(Some(_)) => {
+                                        logger.info("Server stopped gracefully");
+                                        return Ok(());
+                                    }
+                                    Ok(None) => {
+                                        logger.warn("Shutdown timeout expired, force killing...");
+                                        let _ = child.kill();
+                                        return Ok(());
+                                    }
+                                    Err(e) => anyhow::bail!("Error during shutdown: {}", e),
                                 }
-                                Err(e) => anyhow::bail!("Error during shutdown: {}", e),
                             }
-                        }
-                        _ => {
-                            // CN-P0-002: Forward other signals to child group
-                            let pid = child.id() as i32;
-                            unsafe {
-                                libc::kill(-pid, sig);
+                            _ => {
+                                // CN-P0-002: Forward other signals to child group
+                                let pid = child.id() as i32;
+                                unsafe {
+                                    libc::kill(-pid, sig);
+                                }
                             }
                         }
                     }
-                }
-                Ok(ServerEvent::Reload) => {
-                    logger.info("Changes detected, restarting server...");
-                    if let Ok(ref mut child) = child_result {
-                        let _ = child.kill();
+                    Ok(ServerEvent::Reload) => {
+                        logger.info("Changes detected, restarting server...");
+                        if let Ok(ref mut child) = child_result {
+                            let _ = child.kill();
+                        }
+                        // Break inner loop to trigger fresh spawn in the caller
+                        break;
                     }
-                    // Break loop to trigger fresh spawn in the caller
-                    return Ok(());
+                    Err(_) => break, // Bus disconnected
+                    _ => {}
                 }
-                Err(_) => break, // Bus disconnected
-                _ => {}
             }
+        } else if let Err(e) = child_result {
+            // If start fails, checks args.reload to decide whether to retry or exit?
+            // Typically if specific config is bad, it won't fix itself?
+            // But maybe syntax error in app? The app is passed to python, so 'spawn' usually succeeds
+            // unless 'python' binary is missing.
+            // If spawn fails, it's critical.
+            logger.error(&format!("Failed to start server: {}", e));
+            return Err(anyhow::anyhow!("Server failed to start: {}", e));
         }
-    } else if let Err(e) = child_result {
-        logger.error(&format!("Failed to start server: {}", e));
-        // Return error immediately - no reason to wait for signals on startup failure
-        return Err(anyhow::anyhow!("Server failed to start: {}", e));
+
+        // If we broke out of the inner loop (Reload), valid if args.reload
+        if !args.reload {
+            break;
+        }
     }
 
     Ok(())
