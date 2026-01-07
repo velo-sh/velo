@@ -49,6 +49,7 @@ mod ipc_tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            env: Box::new(std::collections::HashMap::new()),
         };
         let serialized = rmp_serde::to_vec(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = rmp_serde::from_slice(&serialized).unwrap();
@@ -166,6 +167,7 @@ mod ipc_tests {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                env: Box::new(std::collections::HashMap::new()),
             },
         )
         .unwrap();

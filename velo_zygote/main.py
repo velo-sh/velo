@@ -20,6 +20,8 @@ import asyncio
 import os
 import sys
 
+
+
 import signal
 import socket
 import struct
@@ -31,6 +33,11 @@ import importlib.abc
 import importlib.util
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
+import random
+import resource
+import secrets
+import ssl
+import re
 
 # ============================================================================
 # Protocol Constants (ADV-1 + DEF-61-004)
@@ -402,9 +409,9 @@ class WorkerRegistry:
             print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
             while True:
                 current_ppid = os.getppid()
-                if current_ppid != parent_pid: 
-                    # Supervisor lost - terminate immediately
-                    print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
+                if current_ppid != parent_pid and current_ppid != 1: 
+                    # Supervisor lost (and not becoming a daemon) - terminate immediately
+                    print(f"[GUARDIAN] Parent lost: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
                     os._exit(1)
                 if ttl > 0 and (time.time() - start_time) > ttl: 
                     # TTL expired
@@ -453,40 +460,45 @@ class ReinitHooks:
     def run_all(self):
         for hook in self.hooks:
             try:
+                t0 = time.perf_counter()
                 hook()
+                t1 = time.perf_counter()
+                LogUtils.debug_log(f"Hook {hook.__name__}: {(t1-t0)*1000:.2f}ms")
             except Exception as e:
-                LogUtils.debug_log(f"Hook Error: {e}")
+                try: LogUtils.debug_log(f"Hook Error: {e}")
+                except: pass
 
 # Global hooks registry
 reinit_hooks = ReinitHooks()
 
 def hook_security():
     """SecurityHook: FD hygiene and random reseed."""
-    import random
-    import resource
-    # Whitelist-based cleanup of inherited file descriptors.
+    # Surgical FD cleanup using /dev/fd (macOS) or /proc/self/fd (Linux)
+    # This is significantly faster than os.closerange(3, 1M+)
     try:
         keep_fds = {0, 1, 2}
         try:
-            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
-            for fd in current_fds:
-                if fd not in keep_fds:
-                    try: os.close(fd)
-                    except OSError: pass
+            # Try to get list of open FDs surgically
+            fd_dir = '/dev/fd' if sys.platform == 'darwin' else '/proc/self/fd'
+            if os.path.exists(fd_dir):
+                current_fds = set(int(fd) for fd in os.listdir(fd_dir))
+                for fd in current_fds:
+                    if fd not in keep_fds:
+                        try: os.close(fd)
+                        except OSError: pass
+            else:
+                # Fallback to a much lower range than the 1M+ soft limit
+                os.closerange(3, 1024)
         except:
-            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-            if max_fd == resource.RLIM_INFINITY: max_fd = 4096
-            os.closerange(3, max_fd)
+            os.closerange(3, 1024)
     except: pass
 
     random.seed()
     try:
-        import secrets
         secrets.token_bytes(1)
     except: pass
     
     try:
-        import ssl
         ssl._create_default_https_context = ssl.create_default_context
     except: pass
     
@@ -554,7 +566,7 @@ class ForkHandler:
 
         if pid == 0:
             ForkHandler._child_process(
-                script_path, args, stdout_path, stderr_path, exit_code_path,
+                script_path, args, cmd.get("env", {}), stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
                 worker_registry.worker_ttl
             )
@@ -566,36 +578,65 @@ class ForkHandler:
 
     @staticmethod
     def _child_process(
-        script_path: str, args: List[str], stdout_path: Optional[str],
+        script_path: str, args: List[str], env: Dict[str, str], stdout_path: Optional[str],
         stderr_path: Optional[str], exit_code_path: Optional[str],
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
         max_bundle_size: Optional[int], worker_ttl: int
     ):
         exit_code = 0
         try:
-            # 1. Start Guardian
-            WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
+            ts = time.perf_counter()
+            # 0. Apply Environment Overrides from CLI
+            if env:
+                os.environ.update(env)
+                # RFC-0011: Synchronize sys.path with new PYTHONPATH
+                python_path = env.get("PYTHONPATH")
+                if python_path:
+                    for path_entry in reversed(python_path.split(os.pathsep)):
+                        if path_entry and path_entry not in sys.path:
+                            sys.path.insert(0, path_entry)
+            t_env = time.perf_counter()
+
+            # 1. Start Guardian (Reaper) - Disabling on macOS due to fork-safety issues (RFC-0014)
+            if sys.platform != 'darwin':
+                WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
+            t_guard = time.perf_counter()
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
             post_fork_reinit()
+            t_reinit = time.perf_counter()
 
             # 2.1 Install ImportShield (Import Isolation)
             ImportShield.install()
+            t_shield = time.perf_counter()
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
+            t_io = time.perf_counter()
 
             # 4. Setup Sys Args
             sys.argv = [script_path] + args
+            t_args = time.perf_counter()
 
             # 5. Fast Mode Activation
             if fast_mode and bundle_path:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
+            t_fast = time.perf_counter()
 
             # 6. Execute Script
             with open(script_path, "rb") as f:
-                code = compile(f.read(), script_path, "exec")
+                content = f.read()
+                code = compile(content, script_path, "exec")
+                t_compile = time.perf_counter()
                 exec(code, {"__name__": "__main__", "__file__": script_path})
+                t_exec = time.perf_counter()
+            
+            LogUtils.debug_log(f"Worker Timings (ms): total={ (t_exec-ts)*1000:.2f}, "
+                               f"env={ (t_env-ts)*1000:.2f}, guard={ (t_guard-t_env)*1000:.2f}, "
+                               f"reinit={ (t_reinit-t_guard)*1000:.2f}, shield={ (t_shield-t_reinit)*1000:.2f}, "
+                               f"io={ (t_io-t_shield)*1000:.2f}, args={ (t_args-t_io)*1000:.2f}, "
+                               f"fast={ (t_fast-t_args)*1000:.2f}, compile={ (t_compile-t_fast)*1000:.2f}, "
+                               f"exec={ (t_exec-t_compile)*1000:.2f}")
             
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
@@ -608,7 +649,7 @@ class ForkHandler:
         finally:
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
             os._exit(exit_code)
-
+            
     @staticmethod
     def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
         if stdout_path:
@@ -691,10 +732,6 @@ class ZygoteServer:
         """
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
-            
-            # RAII Reaper Chain: Monitor our own parent (the supervisor)
-            # If the supervisor dies, we MUST die to prevent orphan leaks.
-            WorkerRegistry.start_guardian(os.getppid(), 0)
             
             self._setup_signals()
             
@@ -973,7 +1010,8 @@ async def handle_zy_status(server: ZygoteServer, cmd: Dict) -> Dict:
     return {
         "type": "Status",
         "pid": os.getpid(),
-        "preload": server._preloaded_modules
+        "preload": server._preloaded_modules,
+        "state": server.preload_state
     }
 
 

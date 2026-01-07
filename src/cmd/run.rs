@@ -71,10 +71,11 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 /// Internal implementation of script running
 #[allow(clippy::collapsible_if)]
 fn run_script_impl(cmd: &RunCmd) -> Result<()> {
+    let _total_start = std::time::Instant::now();
     let script_path = Path::new(&cmd.script);
     let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
-    // Determine project directory by looking for pyproject.toml
+    // 1. Project discovery
     if let Some(parent) = script_path.parent() {
         let p = if parent.as_os_str().is_empty() {
             Path::new(".")
@@ -90,15 +91,30 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             }
         }
     }
+    let _discovery_time = _total_start.elapsed();
 
-    // Load config from discovered project root
+    // 2. Load config
+    let _config_start = std::time::Instant::now();
     let config = VeloConfig::from_path(&project_dir.join("pyproject.toml")).unwrap_or_default();
+    let _config_time = _config_start.elapsed();
 
-    // Detect user's Python
+    // 3. Detect Python
+    let _python_start = std::time::Instant::now();
     let python_path = python::detect_python(&project_dir)?;
+    let _python_time = _python_start.elapsed();
 
-    // Zygote mode: use pre-warmed process
+    if cmd.profile {
+        eprintln!(
+            "[VELO] Discovery: {:.1}ms, Config: {:.1}ms, Python Detect: {:.1}ms",
+            _discovery_time.as_secs_f64() * 1000.0,
+            _config_time.as_secs_f64() * 1000.0,
+            _python_time.as_secs_f64() * 1000.0
+        );
+    }
+
+    // 4. Zygote/Fast/Normal run
     if cmd.zygote_enabled() {
+        let _zygote_start = std::time::Instant::now();
         if let Some(()) = try_zygote_run(
             &python_path,
             &cmd.script,
@@ -107,9 +123,15 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             &config,
         )? {
+            if cmd.profile {
+                eprintln!(
+                    "[VELO] Zygote Total: {:.1}ms, Total E2E: {:.1}ms",
+                    _zygote_start.elapsed().as_secs_f64() * 1000.0,
+                    _total_start.elapsed().as_secs_f64() * 1000.0
+                );
+            }
             return Ok(());
         }
-        // Fallback to normal mode if Zygote fails
     }
 
     // Normal mode (or fallback)
@@ -187,6 +209,7 @@ fn try_zygote_run(
     };
 
     // Try to spawn via Zygote
+    // Try to spawn via Zygote
     if socket_path.exists() {
         let (bundle_path, max_size) = if fast_enabled {
             (
@@ -197,100 +220,66 @@ fn try_zygote_run(
             (None, None)
         };
 
-        match launcher.spawn_worker(
-            script,
-            &[],
-            async_enabled,
-            fast_enabled,
-            bundle_path,
-            Some(project_dir.to_path_buf()),
-            max_size,
-        ) {
-            Ok(worker) => {
-                if async_enabled {
-                    eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
-                    if let Some(stdout) = worker.stdout_path() {
-                        eprintln!("📝 Logs (stdout): {}", stdout.display());
-                    }
-                    if let Some(stderr) = worker.stderr_path() {
-                        eprintln!("📝 Logs (stderr): {}", stderr.display());
+        // RFC-0014: High-Reliability Spawn Loop (AUDIT-51-002)
+        let mut retries = 3;
+        let mut backoff_ms = 100;
+
+        while retries > 0 {
+            match launcher.spawn_worker(
+                script,
+                &[],
+                async_enabled,
+                fast_enabled,
+                bundle_path.clone(),
+                Some(project_dir.to_path_buf()),
+                max_size,
+            ) {
+                Ok(worker) => {
+                    if async_enabled {
+                        eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
+                        if let Some(stdout) = worker.stdout_path() {
+                            eprintln!("📝 Logs (stdout): {}", stdout.display());
+                        }
+                        if let Some(stderr) = worker.stderr_path() {
+                            eprintln!("📝 Logs (stderr): {}", stderr.display());
+                        }
+
+                        // Keep Zygote alive but exit CLI immediately
+                        if started_new {
+                            std::mem::forget(launcher);
+                        }
+                        std::process::exit(0);
                     }
 
-                    // Keep Zygote alive but exit CLI immediately
+                    // Wait for worker to complete and get exit code
+                    let exit_code = worker.wait().unwrap_or(1);
+
+                    // Keep Zygote alive if we started it (daemon mode)
                     if started_new {
                         std::mem::forget(launcher);
                     }
-                    std::process::exit(0);
+
+                    // Exit with worker's exit code
+                    std::process::exit(exit_code);
                 }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let is_transient = err_msg.contains("Connection refused")
+                        || err_msg.contains("Broken pipe")
+                        || err_msg.contains("connection error")
+                        || err_msg.contains("failed to fill whole buffer");
 
-                // Wait for worker to complete and get exit code
-                let exit_code = worker.wait().unwrap_or(1);
-
-                // Keep Zygote alive if we started it (daemon mode)
-                if started_new {
-                    std::mem::forget(launcher);
-                }
-
-                // Exit with worker's exit code (DEF-P3-013/014)
-                std::process::exit(exit_code);
-            }
-            Err(e) => {
-                // Check if this is a stale socket (connection refused)
-                let is_stale = e.to_string().contains("Connection refused")
-                    || e.to_string().contains("Connection failed");
-
-                if is_stale && !started_new {
-                    // Stale socket - remove and restart Zygote
-                    eprintln!("🔄 Stale socket detected, restarting Zygote...");
-                    zygote::ipc::cleanup_socket(&socket_path);
-
-                    if let Ok(()) = launcher.start(&[], None) {
-                        eprintln!("✅ Zygote ready");
-
-                        // Retry spawn
-                        let (bundle_path, max_size) = if fast_enabled {
-                            (
-                                find_bundle(project_dir, script_path),
-                                config.max_bundle_size,
-                            )
-                        } else {
-                            (None, None)
-                        };
-
-                        if let Ok(worker) = launcher.spawn_worker(
-                            script,
-                            &[],
-                            async_enabled,
-                            fast_enabled,
-                            bundle_path,
-                            Some(project_dir.to_path_buf()),
-                            max_size,
-                        ) {
-                            if async_enabled {
-                                eprintln!(
-                                    "⚡ Worker spawned in background (PID: {})",
-                                    worker.pid()
-                                );
-                                if let Some(stdout) = worker.stdout_path() {
-                                    eprintln!("📝 Logs (stdout): {}", stdout.display());
-                                }
-                                if let Some(stderr) = worker.stderr_path() {
-                                    eprintln!("📝 Logs (stderr): {}", stderr.display());
-                                }
-                                std::mem::forget(launcher);
-                                return Ok(Some(()));
-                            }
-
-                            eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
-                            let exit_code = worker.wait().unwrap_or(1);
-                            std::mem::forget(launcher);
-                            std::process::exit(exit_code);
-                        }
+                    if is_transient && retries > 1 {
+                        retries -= 1;
+                        std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                        backoff_ms *= 2;
+                        continue;
                     }
-                }
 
-                eprintln!("⚠️ Zygote spawn failed: {}", e);
-                eprintln!("   Falling back to normal mode");
+                    // Final fallback
+                    eprintln!("⚠️ Zygote spawn failed: {}", e);
+                    return Ok(None);
+                }
             }
         }
     }

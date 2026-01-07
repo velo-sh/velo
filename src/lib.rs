@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 //! Velo - The high-performance Python runtime for the AI era
 //!
 //! This library exposes internal modules for integration testing.
