@@ -212,3 +212,180 @@ class TestEnvironmentPollutionRegression:
         # The test primarily verifies no crash from architecture mismatch
         assert "incompatible architecture" not in result.stderr.lower()
         assert result.returncode == 0, f"velo failed: {result.stderr}"
+
+
+@pytest.mark.regression
+class TestUvEnvironmentEnforcement:
+    """
+    Strict enforcement tests for uv-managed environments.
+    
+    Policy: This project REQUIRES uv-managed Python environments.
+    System Python or other virtualenv tools are NOT supported.
+    """
+    
+    def test_reg_62_020_project_venv_is_uv_managed(self):
+        """
+        REG-62-020: Project .venv MUST be created by uv, not venv/virtualenv.
+        
+        Policy Enforcement:
+        - uv creates a pyvenv.cfg with 'uv = <version>' line
+        - Standard venv doesn't have this marker
+        - This test fails with clear error if wrong tool was used
+        """
+        project_root = Path(__file__).parent.parent.parent
+        pyvenv_cfg = project_root / ".venv" / "pyvenv.cfg"
+        
+        assert pyvenv_cfg.exists(), (
+            "❌ ENVIRONMENT ERROR: .venv/pyvenv.cfg not found.\n\n"
+            "This project requires a uv-managed Python environment.\n"
+            "Please run:\n"
+            "  uv venv\n"
+            "  uv sync\n"
+        )
+        
+        cfg_content = pyvenv_cfg.read_text()
+        
+        assert "uv = " in cfg_content or "uv=" in cfg_content, (
+            "❌ ENVIRONMENT ERROR: .venv was NOT created by uv!\n\n"
+            f"Found pyvenv.cfg content:\n{cfg_content[:500]}\n\n"
+            "This project REQUIRES uv-managed environments.\n"
+            "Please recreate with:\n"
+            "  rm -rf .venv\n"
+            "  uv venv\n"
+            "  uv sync\n"
+        )
+    
+    def test_reg_62_021_running_python_is_from_project_venv(self):
+        """
+        REG-62-021: The Python running tests MUST be from uv-managed environment.
+        
+        Policy Enforcement:
+        - sys.executable should be under project_root/.venv/ OR
+        - sys.executable should be under ~/.local/share/uv/python/ (uv run mode)
+        - If running with system Python, tests should fail immediately
+        """
+        project_root = Path(__file__).parent.parent.parent
+        venv_path = project_root / ".venv"
+        uv_python_path = Path.home() / ".local" / "share" / "uv" / "python"
+        
+        current_python = Path(sys.executable).resolve()
+        expected_venv = venv_path.resolve()
+        
+        # Check if current Python is under the project's .venv
+        in_project_venv = False
+        try:
+            current_python.relative_to(expected_venv)
+            in_project_venv = True
+        except ValueError:
+            pass
+        
+        # Check if current Python is under uv's managed Python directory (uv run mode)
+        in_uv_managed = False
+        try:
+            if uv_python_path.exists():
+                current_python.relative_to(uv_python_path)
+                in_uv_managed = True
+        except ValueError:
+            pass
+        
+        # Either is acceptable
+        is_uv_environment = in_project_venv or in_uv_managed
+        
+        assert is_uv_environment, (
+            f"❌ ENVIRONMENT ERROR: Tests are NOT running with uv-managed Python!\n\n"
+            f"Current Python: {current_python}\n"
+            f"Expected:\n"
+            f"  - Project venv: {expected_venv}/bin/python\n"
+            f"  - Or uv global:  {uv_python_path}/...\n\n"
+            "This project REQUIRES running tests with uv-managed environments.\n"
+            "Please run tests with:\n"
+            "  uv run pytest ...\n"
+            "Or activate the venv first:\n"
+            "  source .venv/bin/activate\n"
+            "  pytest ...\n"
+        )
+
+    
+    def test_reg_62_022_venv_python_matches_system_architecture(self):
+        """
+        REG-62-022: .venv Python architecture MUST match system architecture.
+        
+        Root Cause: Mixed arm64/x86_64 environments cause ImportError on
+        native extensions like pydantic.
+        
+        This test provides clear diagnosis when architecture mismatch occurs.
+        """
+        import platform
+        
+        project_root = Path(__file__).parent.parent.parent
+        venv_python = project_root / ".venv" / "bin" / "python"
+        
+        if not venv_python.exists():
+            pytest.skip("No .venv in project root")
+        
+        # Get venv Python's architecture
+        result = subprocess.run(
+            [str(venv_python), "-c", "import platform; print(platform.machine())"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        venv_arch = result.stdout.strip()
+        
+        # Get system architecture
+        system_arch = platform.machine()
+        
+        assert venv_arch == system_arch, (
+            f"❌ ARCHITECTURE MISMATCH ERROR!\n\n"
+            f"  .venv Python architecture: {venv_arch}\n"
+            f"  System architecture:        {system_arch}\n\n"
+            "This will cause 'incompatible architecture' ImportErrors.\n\n"
+            "Fix: Recreate venv with correct architecture:\n"
+            "  rm -rf .venv\n"
+            "  uv venv\n"
+            "  uv sync\n"
+        )
+    
+    def test_reg_62_023_no_system_python_in_path_precedence(self):
+        """
+        REG-62-023: System Python must NOT take precedence over .venv Python in PATH.
+        
+        When .venv is active, `which python` should return the venv Python,
+        not /usr/bin/python or /Library/Frameworks/Python.framework/...
+        """
+        project_root = Path(__file__).parent.parent.parent
+        venv_python = project_root / ".venv" / "bin" / "python"
+        
+        if not venv_python.exists():
+            pytest.skip("No .venv in project root")
+        
+        # Get which python is first in PATH
+        result = subprocess.run(
+            ["which", "python3"],
+            capture_output=True,
+            text=True,
+            env=os.environ
+        )
+        
+        which_python = result.stdout.strip()
+        
+        # System Python paths to reject when venv is active
+        system_paths = [
+            "/Library/Frameworks/Python.framework",
+            "/System/Library/Frameworks/Python.framework",
+            "/usr/bin/python",
+            "/usr/local/bin/python",  # Homebrew system-wide
+        ]
+        
+        for sys_path in system_paths:
+            if which_python.startswith(sys_path):
+                pytest.fail(
+                    f"❌ PATH PRECEDENCE ERROR!\n\n"
+                    f"  `which python3` returned: {which_python}\n"
+                    f"  Expected: {venv_python}\n\n"
+                    "System Python is taking precedence over project .venv.\n"
+                    "Ensure .venv/bin is at the FRONT of your PATH:\n"
+                    "  source .venv/bin/activate\n"
+                    "Or use uv run:\n"
+                    "  uv run pytest ...\n"
+                )
