@@ -86,17 +86,16 @@ class TestCoreContract:
 
     def test_L0_h20_hugepage_integrity(self, shm_test_env):
         """
-        [PROSECUTOR] Verify that if MAP_HUGETLB is used, MFD_HUGETLB is also used.
-        Catch the 'Toxic Pill' implementation (Finding 005/Root Cause).
+        [PROSECUTOR] Verify that MFD_HUGETLB is used for memfd creation.
+        H-20: HugePage Support.
         """
         env = shm_test_env
         result = env.run_python("import os; print(open('/workspace/src/shm/registry.rs').read())")
         
-        has_map = "MAP_HUGETLB" in result.stdout
         has_mfd = "MFD_HUGETLB" in result.stdout
         
-        if has_map and not has_mfd:
-            pytest.fail("CRITICAL ARCHITECTURE FLAW: Used MAP_HUGETLB without MFD_HUGETLB! This causes the DEADLOCK (DEF-70-004).")
+        if not has_mfd:
+            pytest.fail("REGRESSION: H-20 HugePage support (MFD_HUGETLB) is MISSING! This is a TITANIUM Requirement.")
 
     def test_L0_alignment_integrity(self, shm_test_env):
         """
