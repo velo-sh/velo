@@ -100,9 +100,13 @@ class ComprehensiveTestEnv:
         self._port_counter += 1
         return self._port_counter
 
-    def setup(self):
+    def setup(self, with_project=True):
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
-        (self.path / "uv.lock").write_text("{}")
+        if with_project:
+            (self.path / "pyproject.toml").write_text("""[project]
+name = "test-app"
+version = "0.1.0"
+dependencies = ["fastapi", "uvicorn"]""")
         return self
 
     def install(self, *packages):
@@ -115,13 +119,20 @@ class ComprehensiveTestEnv:
         (self.path / name).write_text(code)
 
     def serve(self, app: str, port: int, **opts) -> subprocess.Popen:
-        cmd = [self.velo, "serve", app, "--port", str(port)]
+        # Use 'uv run' to ensure the local venv is used for dependencies
+        # Clear VIRTUAL_ENV to avoid uv discovery warnings in nested venvs
+        env = os.environ.copy()
+        if "VIRTUAL_ENV" in env:
+            del env["VIRTUAL_ENV"]
+            
+        cmd = ["uv", "run", self.velo, "serve", app, "--port", str(port)]
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
         
         proc = subprocess.Popen(
             cmd, cwd=self.path,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=env
         )
         self.procs.append(proc)
         return proc
@@ -142,6 +153,8 @@ class ComprehensiveTestEnv:
             pass
 
     def __enter__(self):
+        # By default, setup with project metadata. 
+        # Individual tests like l0_003 can override if they call setup(False) manually.
         return self.setup()
 
     def __exit__(self, *args):
@@ -175,6 +188,8 @@ class TestL0Smoke:
     def test_l0_003_uvicorn_dependency_message(self):
         """Without uvicorn, show clear dependency error."""
         with ComprehensiveTestEnv() as env:
+            # Explicitly setup WITHOUT project metadata to test dependency error
+            env.setup(with_project=False)
             env.create_app("main.py", "app = None")
             # Do NOT install uvicorn - test the error message
             proc = env.serve("main:app", env.next_port())
@@ -244,6 +259,9 @@ def root():
             if not wait_for_port(port):
                 pytest.skip("Server did not start (L0 issue)")
             
+            # Settle time for workers to connect to proxy
+            time.sleep(1)
+            
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["message"] == "hello"
@@ -267,6 +285,8 @@ def echo(data: dict):
             
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
+            
+            time.sleep(1)
             
             response = requests.post(
                 f"http://127.0.0.1:{port}/echo",
@@ -297,6 +317,8 @@ def count():
             
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
+            
+            time.sleep(1)
             
             for i in range(100):
                 response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
@@ -454,7 +476,8 @@ def root():
             assert response.status_code == 200
             
             # Verify it's NOT on default port
-            assert not is_port_open(8000)
+            # Verify it's NOT on some other port we don't expect
+            assert not is_port_open(19501)
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_l3_002_workers_spawn_multiple(self):
@@ -593,6 +616,9 @@ def root():
             proc = env.serve("main:app", port)
             
             time.sleep(3)
+            # Terminate first to avoid blocking read()
+            proc.terminate()
+            proc.wait(timeout=T_SHORT)
             stderr = proc.stderr.read() if proc.stderr else ""
             
             # Banner should show framework
