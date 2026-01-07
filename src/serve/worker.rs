@@ -59,6 +59,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                env: Box::new(std::env::vars().collect()),
             },
         )?;
 
@@ -110,6 +111,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                env: Box::new(std::env::vars().collect()),
             },
         )?;
 

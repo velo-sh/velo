@@ -54,6 +54,9 @@ pub enum ZygoteCommand {
         /// Max bundle size limit
         #[serde(default)]
         max_bundle_size: Option<u64>,
+        /// Environment variables to inject into the worker
+        #[serde(default)]
+        env: Box<std::collections::HashMap<String, String>>,
     },
     /// Shutdown the Zygote process
     Shutdown,
@@ -90,6 +93,9 @@ pub enum ZygoteResponse {
         pid: u32,
         /// List of preloaded modules
         preload: Vec<String>,
+        /// Preload state (e.g., "READY", "LOADING")
+        #[serde(default)]
+        state: String,
     },
     /// A worker was successfully forked
     Forked {
@@ -150,14 +156,31 @@ pub fn get_socket_dir() -> PathBuf {
     const SOCKET_PATH_LIMIT: usize = 104;
     let uid = unsafe { libc::getuid() };
 
-    // RFC §3.3: Use project-specific randomized identity for isolation
-    let project_hash = if let Ok(cwd) = std::env::current_dir() {
+    // RFC §3.3: Use project-specific randomized identity for isolation.
+    // We use the project root (where pyproject.toml or .git is) instead of CWD
+    // to ensure consistency when running from subdirectories (e.g., benchmarks).
+    let project_root = {
+        let mut curr = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut root = curr.clone();
+        loop {
+            if curr.join("pyproject.toml").exists() || curr.join(".git").exists() {
+                root = curr;
+                break;
+            }
+            if let Some(parent) = curr.parent() {
+                curr = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+        root
+    };
+
+    let project_hash = {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(cwd.to_string_lossy().as_bytes());
+        hasher.update(project_root.to_string_lossy().as_bytes());
         let hash = hasher.finalize().to_hex()[..8].to_string();
         format!("-{}", hash)
-    } else {
-        "".to_string()
     };
 
     // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
@@ -570,15 +593,22 @@ mod tests {
         let resp = ZygoteResponse::Status {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
+            state: "READY".to_string(),
         };
 
         // Test MessagePack roundtrip
         let bytes = rmp_serde::to_vec(&resp).unwrap();
         let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).unwrap();
 
-        if let ZygoteResponse::Status { pid, preload } = decoded {
+        if let ZygoteResponse::Status {
+            pid,
+            preload,
+            state,
+        } = decoded
+        {
             assert_eq!(pid, 1234);
             assert_eq!(preload, vec!["numpy", "pandas"]);
+            assert_eq!(state, "READY");
         } else {
             panic!("Decoded wrong variant");
         }
@@ -597,6 +627,7 @@ mod tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            env: Box::new(std::collections::HashMap::new()),
         };
 
         let bytes = rmp_serde::to_vec(&cmd).unwrap();
@@ -628,6 +659,7 @@ mod tests {
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
             project_root: Some(PathBuf::from("/home/user/project")),
             max_bundle_size: Some(1024 * 1024),
+            env: Box::new(std::collections::HashMap::new()),
         };
 
         let msgpack_bytes = rmp_serde::to_vec(&cmd).unwrap();
