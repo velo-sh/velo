@@ -575,6 +575,14 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
+    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+    if args.dry_run {
+        let ready_ms = start_time.elapsed().as_millis();
+        logger.log_with_timing("info", "Server ready (Dry Run)", None, Some(ready_ms));
+        logger.info(&format!("App: {}", args.app));
+        return Ok(());
+    }
+
     // Start Zygote if enabled and we have preload modules
     if args.use_zygote && !preload_modules.is_empty() && crate::zygote::is_supported() {
         let socket_path = crate::zygote::ipc::default_socket_path();

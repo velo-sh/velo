@@ -12,9 +12,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Lock versions for consistency between local and CI
-  # Lock versions for consistency between local and CI
-  UV_VERSION: "0.5"
+  UV_VERSION: "0.5" # Centralized uv version
+  # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
+  VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+  VELO_ZYGOTE_WORKER_TIMEOUT: 60
+  VELO_MAX_BUNDLE_SIZE: 50
 
 jobs:
   changes:
@@ -63,6 +65,11 @@ jobs:
               - 'src/cmd/analyze.rs'
               - 'src/cmd/agent.rs'
               - 'tests/qa/test_phase4_*.py'
+            kinetic:
+              - 'src/zygote/**/*.rs'
+              - 'velo_zygote/**'
+              - 'src/serve/**/*.rs'
+              - 'tests/qa/test_phase6_2_*.py'
             workflow:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-velo/**'
@@ -569,6 +576,46 @@ jobs:
                tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
                tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
                -v --tb=short
+
+  # ============================================
+  # Phase 6.2: Kinetic Protocol (RFC-0013)
+  # Regression & Corruption Guardrails
+  # ============================================
+
+  qa-kinetic-regression-gate:
+    name: "QA 6.2: Kinetic Regression Gate"
+    runs-on: ${{ matrix.os }}
+    needs: [build, changes]
+    if: needs.changes.outputs.kinetic == 'true' || needs.changes.outputs.workflow == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          download-binary: true
+          uv-version: ${{ env.UV_VERSION }}
+          
+      - name: "Verification: Agent D CHAOS Suite (Detection Probe)"
+        run: |
+          # Use downloaded binary to ensure path alignment
+          export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          uv run pytest tests/qa/test_phase6_2_agent_d_destroyer.py -v --tb=short
+
+      - name: "Verification: Dry-Run Hang Probe"
+        run: |
+          export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          # Detect the specific regression we just fixed: dry-run hanging in Zygote mode
+          # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
+          timeout 10s velo serve --dry-run || {
+            echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
+            exit 1
+          }
 
   # ============================================
   # Phase 4.0: velo analyze QA
