@@ -134,11 +134,18 @@ def cleanup_zygote_between_modules():
     uid = os.getuid()
     sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
     sock_path = sock_dir / "velo-zygote-v01.sock"
+    import shutil
     if sock_path.exists():
         try:
             sock_path.unlink()
         except:
             pass
+    
+    # Also remove the directory to force fresh creation with correct permissions (0700)
+    if sock_dir.exists() and sock_dir.name.startswith("velo-"):
+         try:
+             shutil.rmtree(str(sock_dir))
+         except: pass
     
     yield
     
@@ -149,6 +156,10 @@ def cleanup_zygote_between_modules():
             sock_path.unlink()
         except:
             pass
+    if sock_dir.exists() and sock_dir.name.startswith("velo-"):
+         try:
+             shutil.rmtree(str(sock_dir))
+         except: pass
 
 
 # =============================================================================

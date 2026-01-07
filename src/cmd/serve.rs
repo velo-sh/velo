@@ -280,8 +280,15 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Convert to ServeArgs
     let serve_args = cmd.to_serve_args()?;
 
-    // Run the server
-    serve::run_server(&serve_args, &python_path, &project_dir)?;
+    // Run the server with reload loop (RFC-0010)
+    while let serve::runner::ServerExit::Reload =
+        serve::run_server(&serve_args, &python_path, &project_dir)?
+    {
+        // Determine restart behavior
+        // On reload, we loop and call run_server again.
+        // run_server will spawn a fresh uvicorn/zygote.
+        eprintln!("🔄 Restarting server...");
+    }
 
     Ok(())
 }

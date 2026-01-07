@@ -11,6 +11,9 @@ Following QA SOP v2.2.
 
 import pytest
 import sys
+import sys
+import time
+import socket
 from pathlib import Path
 
 # Import CI-aware timeout constants from parent conftest
