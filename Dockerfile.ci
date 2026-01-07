@@ -1,0 +1,70 @@
+# Velo Local CI Simulation
+# =========================
+# Simulates the GitHub Actions Ubuntu environment locally on macOS.
+#
+# Usage:
+#   docker build -t velo-ci-ubuntu -f Dockerfile.ci .
+#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu
+#
+# For interactive debugging:
+#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu bash
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies (matches ubuntu-latest on GitHub Actions)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (same as actions-rs/toolchain)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install uv (same as astral-sh/setup-uv)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install Python 3.11 via uv (same as CI)
+RUN uv python install 3.11
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command: run full CI check
+CMD ["bash", "-c", "\
+    echo '🚀 Velo Local CI Simulation (Ubuntu 22.04)' && \
+    echo '===========================================' && \
+    echo '' && \
+    echo '📋 Environment:' && \
+    uname -a && \
+    rustc --version && \
+    uv python list && \
+    echo '' && \
+    echo '🔧 Setting up project...' && \
+    uv venv --python 3.11 && \
+    uv sync --extra dev && \
+    echo '' && \
+    echo '🏗️ Building Rust...' && \
+    cargo build --release && \
+    echo '' && \
+    echo '🧪 Running Rust tests...' && \
+    cargo test --lib && \
+    echo '' && \
+    echo '🧹 Running Clippy...' && \
+    cargo clippy -- -D warnings && \
+    echo '' && \
+    echo '📝 Checking format...' && \
+    cargo fmt --check && \
+    echo '' && \
+    echo '🐍 Running Python tests...' && \
+    uv run pytest tests/qa/test_phase6_2_env_pollution.py -v && \
+    echo '' && \
+    echo '✅ All CI checks passed!' \
+"]
