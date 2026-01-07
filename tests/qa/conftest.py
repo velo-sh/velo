@@ -105,6 +105,16 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier3: Heavy tests (~5min) - chaos, stress tests")
     config.addinivalue_line("markers", "slow: Tests that install real packages (slow)")
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
+    
+    # "Do Not Disturb" Log Policy for CI
+    # In CI, we want to reduce noise unless a failure occurs.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Check if user explicitly requested verbose logging
+        if not os.environ.get("VELO_LOG_LEVEL"):
+            # Default to INFO in CI to suppress DEBUG chatter
+            config.option.log_cli_level = "INFO"
+            config.option.log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"
+            config.option.log_date_format = "%H:%M:%S"
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -200,9 +210,17 @@ def isolated_env(tmp_path):
                 cwd=self.path, capture_output=True
             )
             
+            
         def create_app(self, name: str, code: str):
             """Create app file."""
             (self.path / name).write_text(code)
+            
+        def next_port(self) -> int:
+            """Get a free port."""
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", 0))
+                return s.getsockname()[1]
             
         def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
             """Run velo command in isolated environment."""
