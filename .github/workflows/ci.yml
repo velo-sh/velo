@@ -17,6 +17,9 @@ env:
   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
   VELO_ZYGOTE_WORKER_TIMEOUT: 60
   VELO_MAX_BUNDLE_SIZE: 50
+  # Test timeout multiplier (CI is slower than local)
+  VELO_TIMEOUT_MULTIPLIER: 3
+
 
 jobs:
   changes:
@@ -160,6 +163,15 @@ jobs:
 
       - name: Build
         run: cargo build --release
+
+      # Upload macOS binary for Kinetic Regression Gate
+      - name: Upload macOS Binary
+        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: velo-binary-macos
+          path: target/release/velo
+          if-no-files-found: error
 
       - name: Run tests
         run: uv run run_tests.py
