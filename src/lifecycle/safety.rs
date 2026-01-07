@@ -338,6 +338,7 @@ impl EnvironmentShield {
         cmd.env("PYTHONUNBUFFERED", "1");
         cmd.env("PYTHONIOENCODING", "utf-8");
         cmd.env("PYTHONUTF8", "1");
+        cmd.env("PYTHONNOUSERSITE", "1");
 
         Ok(())
     }
