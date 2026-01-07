@@ -1,9 +1,8 @@
+use crate::shm::alignment;
+use crate::shm::error::MemoryError;
 use std::fs::File;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
-// Use alignment for verification (future H-29 integration)
-
-use crate::shm::error::MemoryError;
 
 pub struct MemoryRegistry {
     strict_numa: bool,
@@ -49,7 +48,30 @@ impl MemoryRegistry {
             ));
         }
 
-        let total_size = metadata.len() as usize;
+        let file_size = metadata.len() as usize;
+
+        if file_size < 8 {
+            return Err(MemoryError::InvalidSourceFile(
+                "File too small to be safetensors (H-29 check)".to_string(),
+            ));
+        }
+
+        // Only read the first 8 bytes for header length
+        let mut header_len_bytes = [0u8; 8];
+        {
+            use std::io::Read;
+            let mut f =
+                File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
+            f.read_exact(&mut header_len_bytes)
+                .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
+        }
+        let header_len = u64::from_le_bytes(header_len_bytes) as usize;
+
+        // Use H-29 logic
+        let padding_needed = alignment::calculate_padding(header_len)?;
+
+        // Total size = original size + padding needed
+        let total_size = file_size + padding_needed;
 
         // 1. Create SHM FD
         let fd = self.create_shm_fd(name, total_size)?;
@@ -141,8 +163,38 @@ impl MemoryRegistry {
 
             // Map the entire segment as writable for population
             // SECURITY: Copying from source-mmap to shm-mmap. Guaranteed disjoint memory regions.
+            // Bounds checked via header_len and file size.
             unsafe {
-                std::ptr::copy_nonoverlapping(src_ptr as *const u8, ptr as *mut u8, src_size);
+                let dst = ptr as *mut u8;
+                let src = src_ptr as *const u8;
+
+                let header_section_len = 8 + header_len;
+                if header_section_len > src_size {
+                    libc::munmap(src_ptr, src_size);
+                    libc::munmap(ptr, total_size);
+                    let _ = libc::close(fd);
+                    return Err(MemoryError::HeaderParseFailed(
+                        "Safetensors header_len > file size".to_string(),
+                    ));
+                }
+
+                // Copy [Len + Header]
+                std::ptr::copy_nonoverlapping(src, dst, header_section_len);
+
+                // Zero out padding (H-29 alignment)
+                if padding_needed > 0 {
+                    std::ptr::write_bytes(dst.add(header_section_len), 0, padding_needed);
+                }
+
+                // Copy [Data]
+                let data_len = src_size - header_section_len;
+                if data_len > 0 {
+                    std::ptr::copy_nonoverlapping(
+                        src.add(header_section_len),
+                        dst.add(header_section_len + padding_needed),
+                        data_len,
+                    );
+                }
             }
 
             // H-29 Alignment Check: Verify the target tensor alignment
