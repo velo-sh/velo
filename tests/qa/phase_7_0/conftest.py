@@ -166,6 +166,9 @@ def pytest_configure(config):
         "markers", "tier0: Tier 0 - Core Functionality (MUST PASS)"
     )
     config.addinivalue_line(
+        "markers", "tier1: Tier 1 - Core Benchmarks (Cold Start, Time to Token)"
+    )
+    config.addinivalue_line(
         "markers", "tier2: Tier 2 - Scalability & Stability"
     )
     config.addinivalue_line(
@@ -182,6 +185,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "linux_only: Tests that require Linux"
+    )
+    config.addinivalue_line(
+        "markers", "integration: Integration tests with velo binary"
     )
 
 
