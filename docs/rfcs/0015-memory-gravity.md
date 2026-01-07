@@ -471,4 +471,64 @@ def velo_doctor_check(tensor, mmap_base, expected_offset):
 
 *This is no longer just an RFC. It is a Specification.*
 
+---
+
+## Appendix D: Future Work (Post v0.7.0)
+
+### 1. Multi-FD Model Sharding (H-34 Candidate)
+
+**Problem**: Large models (70B+ parameters) may exceed 140GB, which cannot fit in a single shared memory segment on many systems.
+
+**Current Limitation**: 
+```rust
+// v0.7.0: Single FD only
+shm_size: Option<usize>
+```
+
+**Proposed Extension**:
+```rust
+// Future: Multi-FD support for sharded models
+shm_fds: Vec<RawFd>,
+shm_sizes: Vec<usize>,
+```
+
+**Use Case**: Models stored as multiple safetensors shards:
+```
+model-00001-of-00004.safetensors (35GB)
+model-00002-of-00004.safetensors (35GB)
+model-00003-of-00004.safetensors (35GB)
+model-00004-of-00004.safetensors (35GB)
+```
+
+**Implementation Considerations**:
+- Each shard becomes an independent SHM segment
+- SCM_RIGHTS supports passing multiple FDs in a single `sendmsg()`
+- Worker maps shards on-demand based on layer access patterns
+- NUMA-aware: Pin each shard to optimal NUMA node
+
+**Priority**: P2 (when 70B+ model deployment becomes common)
+
+---
+
+### 2. Active NUMA Diagnostics (H-35 Candidate)
+
+**Problem**: Users often don't know their optimal NUMA configuration.
+
+**Proposed Feature**:
+- Auto-detect NUMA topology at Host startup
+- Report recommended `VELO_NUMA_MASK` based on model size and node memory
+- Warn if cross-node allocation is detected
+
+---
+
+### 3. GPU Tensor Extension (H-36 Candidate)
+
+**Problem**: Current scope is CPU-only. GPU tensors require VRAM copy.
+
+**Proposed Feature**:
+- CUDA IPC (`cudaIpcGetMemHandle`) for NVIDIA GPUs
+- Requires same CUDA context constraints
+- Out of scope for v0.7.x
+
+---
 
