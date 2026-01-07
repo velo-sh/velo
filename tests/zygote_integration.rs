@@ -50,7 +50,7 @@ with open('{}', 'w') as f:
 
         let mut launcher = ZygoteLauncher::new(socket_path);
         // Start returns Result<()>, use pid() to get PID
-        launcher.start(&[], None).unwrap();
+        launcher.start(&[], None, false).unwrap();
         let zygote_pid = launcher.pid().expect("Zygote should have PID");
 
         assert!(zygote_pid > 0, "Zygote PID should be > 0");
@@ -171,7 +171,7 @@ with open('{}', 'w') as f:
         .unwrap();
 
         let mut launcher = ZygoteLauncher::new(socket_path);
-        launcher.start(&[], None).unwrap();
+        launcher.start(&[], None, false).unwrap();
 
         // Spawn worker via UDS method (mimicked by passing arguments)
         // In runner.rs we use `generate_uds_worker_script`.

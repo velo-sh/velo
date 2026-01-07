@@ -2,6 +2,8 @@
 //!
 //! Detects web frameworks (FastAPI, Django, Flask) to optimize Zygote startup.
 
+use crate::common::constants::*;
+use crate::common::paths::VeloPaths;
 use std::path::Path;
 
 /// Detected web framework type
@@ -34,7 +36,7 @@ impl std::fmt::Display for Framework {
 #[allow(clippy::collapsible_if)]
 pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
     // Check pyproject.toml for dependencies
-    let pyproject = project_dir.join("pyproject.toml");
+    let pyproject = VeloPaths::pyproject(project_dir);
     if pyproject.exists() {
         if let Ok(content) = std::fs::read_to_string(&pyproject) {
             return detect_from_deps(&content);
@@ -42,7 +44,7 @@ pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
     }
 
     // Check requirements.txt
-    let requirements = project_dir.join("requirements.txt");
+    let requirements = VeloPaths::project_file(project_dir, REQUIREMENTS_TXT);
     if requirements.exists() {
         if let Ok(content) = std::fs::read_to_string(&requirements) {
             return detect_from_deps(&content);
@@ -50,7 +52,7 @@ pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
     }
 
     // Check uv.lock for dependencies
-    let uv_lock = project_dir.join("uv.lock");
+    let uv_lock = VeloPaths::uv_lock(project_dir);
     if uv_lock.exists() {
         if let Ok(content) = std::fs::read_to_string(&uv_lock) {
             return detect_from_deps(&content);

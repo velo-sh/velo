@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
+use crate::common::constants::*;
 use crate::python;
 use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
@@ -48,11 +49,11 @@ pub struct ServeCmd {
     pub app: Option<String>,
 
     /// Bind host
-    #[arg(long, default_value = "127.0.0.1")]
+    #[arg(long, default_value = DEFAULT_HOST)]
     pub host: String,
 
     /// Bind port
-    #[arg(long, default_value_t = 8000, value_parser = parse_port)]
+    #[arg(long, default_value_t = DEFAULT_PORT, value_parser = parse_port)]
     pub port: u16,
 
     /// Shorthand for --host and --port (e.g., 0.0.0.0:8080)
@@ -64,7 +65,7 @@ pub struct ServeCmd {
     pub workers: u32,
 
     /// Graceful shutdown timeout in seconds
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = GRACEFUL_SHUTDOWN_TIMEOUT)]
     pub timeout: u64,
 
     /// Health check endpoint (e.g., 0.0.0.0:8081)

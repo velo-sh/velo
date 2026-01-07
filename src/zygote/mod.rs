@@ -23,6 +23,8 @@ pub mod ipc;
 
 extern crate log;
 
+use crate::common::paths::VeloPaths;
+use crate::config::VeloConfig;
 use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use error::{Result, ZygoteError};
 use ipc::{ZygoteResponse, is_socket_alive};
@@ -51,24 +53,17 @@ pub fn is_supported() -> bool {
 }
 
 fn get_worker_timeout_secs() -> u64 {
-    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
-        .zygote_worker_timeout
-        .unwrap_or(WORKER_TIMEOUT_SECS)
+    // Both worker and socket timeouts are now centralized
+    VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new("."))).zygote_socket_timeout
 }
 
 fn get_socket_timeout_secs() -> u64 {
-    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
-        .zygote_socket_timeout
-        .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
+    VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new("."))).zygote_socket_timeout
 }
 
 /// Get the path to the Zygote log file
 pub fn get_log_path() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".local/state/velo/zygote.log")
-    } else {
-        std::env::temp_dir().join("velo-zygote.log")
-    }
+    VeloPaths::zygote_log()
 }
 
 /// Get Zygote status
@@ -357,8 +352,9 @@ impl ZygoteLauncher {
     /// # Arguments
     /// * `preload` - List of Python modules to pre-import
     /// * `app_name` - Optional app name for affinity verification (WB-004)
+    /// * `daemon` - Whether to start as a persistent daemon (disables guardian)
     #[cfg(unix)]
-    pub fn start(&mut self, preload: &[&str], app_name: Option<&str>) -> Result<()> {
+    pub fn start(&mut self, preload: &[&str], app_name: Option<&str>, daemon: bool) -> Result<()> {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         ipc::cleanup_stale_sockets();
 
@@ -502,6 +498,10 @@ impl ZygoteLauncher {
         }
 
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
+
+        if daemon {
+            cmd.arg("--no-guardian");
+        }
 
         if !preload.is_empty() {
             cmd.arg("--preload");
@@ -670,7 +670,12 @@ impl ZygoteLauncher {
     }
 
     #[cfg(not(unix))]
-    pub fn start(&mut self, _preload: &[&str], _app_name: Option<&str>) -> Result<()> {
+    pub fn start(
+        &mut self,
+        _preload: &[&str],
+        _app_name: Option<&str>,
+        _daemon: bool,
+    ) -> Result<()> {
         Err(ZygoteError::NotSupported)
     }
 
