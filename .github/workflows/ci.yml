@@ -161,6 +161,15 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      # Upload macOS binary for Kinetic Regression Gate
+      - name: Upload macOS Binary
+        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: velo-binary-macos
+          path: target/release/velo
+          if-no-files-found: error
+
       - name: Run tests
         run: uv run run_tests.py
 
