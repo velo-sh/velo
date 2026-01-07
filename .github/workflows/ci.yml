@@ -75,7 +75,14 @@ jobs:
   build:
     name: Build (Ubuntu / 3.11)
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.analyze == 'true' ||
+      needs.changes.outputs.qa_infra == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +122,14 @@ jobs:
   build-matrix:
     name: Build Matrix (${{ matrix.os }} / ${{ matrix.python-version }})
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.loader == 'true' || 
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.analyze == 'true' ||
+      needs.changes.outputs.qa_infra == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
