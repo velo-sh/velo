@@ -389,6 +389,11 @@ impl ZygoteLauncher {
             .map_err(ZygoteError::SecurityViolation)?;
 
         // 2. High-Performance Isolation (RFC-0011 HPC-001)
+        // Pass GITHUB_ACTIONS to allow /home paths in CI
+        if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
+            cmd.env("GITHUB_ACTIONS", val);
+        }
+
         cmd.env("OMP_NUM_THREADS", "1");
         cmd.env("MKL_NUM_THREADS", "1");
         cmd.env("OPENBLAS_NUM_THREADS", "1");
@@ -477,6 +482,10 @@ impl ZygoteLauncher {
                 }
             }
             // HPC/OMP Thread pooling isolation
+            if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
+                sandbox_cmd.env("GITHUB_ACTIONS", val);
+            }
+
             sandbox_cmd.env("OMP_NUM_THREADS", "1");
             sandbox_cmd.env("MKL_NUM_THREADS", "1");
             sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
