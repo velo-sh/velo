@@ -2,8 +2,7 @@
 //!
 //! Detects web frameworks (FastAPI, Django, Flask) to optimize Zygote startup.
 
-use crate::common::constants::*;
-use crate::common::paths::VeloPaths;
+use crate::common::paths::*;
 use std::path::Path;
 
 /// Detected web framework type
