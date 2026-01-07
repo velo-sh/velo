@@ -3,6 +3,7 @@
 //! This module implements the critical padding algorithm required to ensure
 //! 64-byte alignment for tensor data in shared memory.
 
+use crate::shm::constants::{HEADER_LEN_SIZE, VELO_ALIGNMENT};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,28 +14,27 @@ pub enum AlignmentError {
 
 /// Calculates the required padding to ensure the next byte is 64-byte aligned.
 ///
-/// H-29 Invariant: `(sizeof(u64) + header_len + padding) % 64 == 0`
-/// Note that the initial `sizeof(u64)` comes from the length prefix in safetensors
+/// H-29 Invariant: `(HEADER_LEN_SIZE + header_len + padding) % VELO_ALIGNMENT == 0`
+/// Note that the initial `HEADER_LEN_SIZE` comes from the length prefix in safetensors
 /// format, but typically the "header length" we get is just the JSON bytes.
 ///
 /// The standard safetensors layout is:
 /// [u64: length_of_header] [header_bytes] [padding] [tensor_data]
 ///
-/// The goal is for `tensor_data` to start at % 64 == 0.
+/// The goal is for `tensor_data` to start at % VELO_ALIGNMENT == 0.
 #[inline]
 pub fn calculate_padding(header_len: usize) -> Result<usize, AlignmentError> {
-    let prefix_size = std::mem::size_of::<u64>();
     // SAFETY: Checked add to prevent overflow attacks (Council Review P0)
-    let current_offset = prefix_size
+    let current_offset = HEADER_LEN_SIZE
         .checked_add(header_len)
         .ok_or(AlignmentError::HeaderTooLarge)?;
 
-    let remainder = current_offset % 64;
+    let remainder = current_offset % VELO_ALIGNMENT;
 
     if remainder == 0 {
         Ok(0)
     } else {
-        Ok(64 - remainder)
+        Ok(VELO_ALIGNMENT - remainder)
     }
 }
 
