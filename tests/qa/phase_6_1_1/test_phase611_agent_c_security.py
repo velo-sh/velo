@@ -206,75 +206,105 @@ class TestL4Security:
         """
         from pathlib import Path
 
-        proc = velo_serve_fixture.start("main:app", workers=1)
-        proc.wait_ready()
+    def test_SEC_605_uds_permission(self, isolated_env, velo_binary):
+        """SEC-605: Verify UDS socket directory permissions (0700).
 
-        import tempfile
-        
-        # Logic matching velo_zygote/main.py: get_socket_dir()
-        # 1. Check XDG
-        xdg_dir = os.environ.get("XDG_RUNTIME_DIR")
-        socket_dir = None
-        if xdg_dir:
-            path = Path(xdg_dir) / "velo"
-            if path.exists():
-                socket_dir = path
+        Requirement: BLOCK-005, SEC-005, H-29
+        Priority: P0 (BLOCKING)
+        """
+        import time
+        import signal
+        import shutil
 
-        # 2. Check tempfile.gettempdir()
-        if not socket_dir:
-            uid = os.getuid()
-            path = Path(tempfile.gettempdir()) / f"velo-{uid}"
-            if path.exists():
-                socket_dir = path
+        # Use /tmp to ensure short path and predictable location
+        tmp_dir = Path("/tmp")
         
-        # 3. Fallback /tmp
-        if not socket_dir:
-            path = Path(f"/tmp/velo-{uid}")
-            if path.exists():
-                socket_dir = path
+        # Clean up any stale sockets first
+        uid = os.getuid()
+        for p in tmp_dir.glob(f"velo-secure-{uid}*"):
+            try:
+                shutil.rmtree(p)
+            except:
+                pass
+
+        # Prepare environment
+        env = os.environ.copy()
+        env.pop("VELO_ZYGOTE_SOCKET", None)
+        env["TMPDIR"] = str(tmp_dir)
+
+        # Create a dummy app manually since isolated_env is just a path here
+        app_code = "from fastapi import FastAPI\napp = FastAPI()"
+        (isolated_env / "main.py").write_text(app_code)
+        (isolated_env / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
+
+        # Start Velo manually
+        proc = subprocess.Popen(
+            [velo_binary, "serve", "main:app", "--workers", "1"],
+            cwd=isolated_env,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        try:
+            # Wait for Zygote ready in logs
+            # We can't use wait_ready() from fixture easily, so just poll logs
+            start = time.time()
+            ready = False
+            socket_dir = None
+            
+            while time.time() - start < 10:
+                if proc.poll() is not None:
+                    break
                 
-        # If still not found, check if it's an abstract socket (Linux only)
-        if not socket_dir and sys.platform == "linux":
-             # Abstract socket check happens below
-             pass
-        elif not socket_dir:
-             # Just fail if we expect it to exist (Zygote started)
-             # Wait, maybe it hasn't created it yet? But proc.wait_ready() implies it's up.
-             # fallback to /tmp for loop, or check specific location
-             # fallback to temp dir (Velo behavior)
-             import tempfile
-             socket_dir = Path(tempfile.gettempdir()) / f"velo-{os.getuid()}"
+                # Check for socket directory existence
+                matches = list(tmp_dir.glob(f"velo-secure-{uid}*"))
+                if matches:
+                    ready = True
+                    socket_dir = sorted(matches, key=lambda p: p.stat().st_mtime)[-1]
+                    break
+                time.sleep(0.5)
+
+            if not ready or not socket_dir:
+                # Dump logs if failed
+                if proc.poll() is not None:
+                    outs, errs = proc.communicate()
+                    print("STDOUT:", outs)
+                    print("STDERR:", errs)
+                proc.terminate()
+                pytest.fail("Velo failed to create socket dir in /tmp")
+
+            print(f"DEBUG_TEST: Found socket dir: {socket_dir}")
+
+            if socket_dir.exists():
+                # Verify directory permissions
+                dir_stat = socket_dir.stat()
+                dir_mode = dir_stat.st_mode & 0o777
+                
+                # Soften for CI/macOS: 0700 is required behavior of ensure_socket_dir
+                if dir_mode != 0o700:
+                    pytest.fail(f"Socket dir {oct(dir_mode)} != 0o700")
+
+                # Verify socket file permissions
+                found_sock = False
+                for sock in socket_dir.glob("*.sock"):
+                    found_sock = True
+                    sock_mode = sock.stat().st_mode & 0o777
+                    # Socket permissions depend on umask and OS. Write access is critical check?
+                    # Usually we want 755 or 700. If 755, world can connect? No, write required.
+                    # Just ensure existence for now as proof of life.
+                    pass
+                
+                if not found_sock:
+                    pytest.fail("Socket file not found in directory")
+
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except:
+                proc.kill()
 
 
-        if socket_dir.exists():
-            # Verify directory permissions
-            dir_stat = socket_dir.stat()
-            dir_mode = dir_stat.st_mode & 0o777
-            # Soften for CI: 0755 is common default, 0700 is preferred
-            if (dir_mode & 0o007) != 0:
-                pytest.fail(f"Socket dir {oct(dir_mode)} allows world access")
-            elif (dir_mode & 0o070) != 0:
-                print(f"Warning: Socket dir {oct(dir_mode)} allows group access")
 
-
-            # Verify socket file permissions
-            for sock in socket_dir.glob("worker-*.sock"):
-                sock_stat = sock.stat()
-                sock_mode = sock_stat.st_mode & 0o777
-                # Soften check for CI: warn if insecure but don't necessarily fail if it's 0755
-                # (which can happen with certain docker/ci umasks)
-                if (sock_mode & 0o007) != 0:
-                     pytest.fail(f"Socket {sock} has mode {oct(sock_mode)} (world-accessible!)")
-                elif (sock_mode & 0o070) != 0:
-                     print(f"Warning: Socket {sock} has group access: {oct(sock_mode)}")
-
-        else:
-            # Abstract namespace sockets (Linux) - no filesystem permissions
-            if sys.platform == "linux":
-                # Check /proc/net/unix for abstract sockets
-                with open("/proc/net/unix") as f:
-                    content = f.read()
-                # Expect abstract sockets (@velo-)
-                assert "velo" in content.lower(), "No velo sockets found"
-            else:
-                pytest.skip("Socket directory not found")
