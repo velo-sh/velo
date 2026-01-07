@@ -25,6 +25,10 @@ from pathlib import Path
 import pytest
 import requests
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
+
 
 def get_velo_binary():
     """Get path to velo binary."""
@@ -51,8 +55,10 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = 10) -> bool:
+def wait_for_port(port: int, timeout: float = None) -> bool:
     """Wait for port to open."""
+    if timeout is None:
+        timeout = T_MEDIUM
     start = time.time()
     while time.time() - start < timeout:
         if is_port_open(port):
@@ -99,7 +105,7 @@ class DestroyerTestEnv:
         for proc in self.procs:
             try:
                 proc.terminate()
-                proc.wait(timeout=5)
+                proc.wait(timeout=T_SHORT)
             except:
                 proc.kill()
         try:
@@ -151,7 +157,7 @@ def health():
             proc = env.start_serve("main:app", port)
             
             # Wait for server to start
-            started = wait_for_port(port, timeout=15)
+            started = wait_for_port(port, timeout=T_MEDIUM)
             
             if not started:
                 stderr = proc.stderr.read() if proc.stderr else ""
@@ -163,7 +169,7 @@ def health():
             
             # Try to make a request
             try:
-                response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+                response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                 assert response.status_code == 200
                 assert response.json().get("status") == "ok"
             except requests.exceptions.RequestException as e:
@@ -190,8 +196,8 @@ def root():
             port = 18099
             proc = env.start_serve("main:app", port)
             
-            if wait_for_port(port, timeout=15):
-                response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            if wait_for_port(port, timeout=T_MEDIUM):
+                response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                 assert response.status_code == 200
             else:
                 stderr = proc.stderr.read() if proc.stderr else ""
@@ -224,7 +230,7 @@ def get_pid():
             port = 18002
             proc = env.start_serve("main:app", port, workers=4)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 stderr = proc.stderr.read() if proc.stderr else ""
                 if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
                     pytest.skip("velo serve requires uvicorn in project venv")
@@ -236,7 +242,7 @@ def get_pid():
             pids = set()
             for _ in range(20):
                 try:
-                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=5)
+                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json().get("pid"))
                 except:
@@ -258,7 +264,7 @@ class TestErrorRecovery:
             [velo, "serve", "nonexistent_module:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         assert result.returncode != 0
@@ -322,7 +328,7 @@ class TestPromisedFeatures:
             [velo, "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # PORT should be documented
@@ -335,7 +341,7 @@ class TestPromisedFeatures:
             [velo, "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # WORKERS should be documented
@@ -351,7 +357,7 @@ class TestPromisedFeatures:
             [velo, "serve", "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # Check if serve help is working
@@ -400,14 +406,14 @@ def cleanup():
             port = 18005
             proc = env.start_serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
             # Send SIGTERM
             proc.terminate()
             
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=T_MEDIUM)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 pytest.fail("Process did not exit after SIGTERM within 10s")
@@ -437,14 +443,14 @@ def root():
             port = 18006
             proc = env.start_serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
             # Send SIGINT
             proc.send_signal(signal.SIGINT)
             
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=T_MEDIUM)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 pytest.fail("Process did not exit after SIGINT within 10s")
@@ -478,20 +484,20 @@ def timing():
             # First start - cold
             start1 = time.perf_counter()
             proc1 = env.start_serve("main:app", port)
-            cold_started = wait_for_port(port, timeout=15)
+            cold_started = wait_for_port(port, timeout=T_MEDIUM)
             cold_time = time.perf_counter() - start1
             
             if not cold_started:
                 pytest.skip("Server did not start")
             
             proc1.terminate()
-            proc1.wait(timeout=5)
+            proc1.wait(timeout=T_SHORT)
             time.sleep(1)  # Let port be released
             
             # Second start - should be faster if Zygote is working
             start2 = time.perf_counter()
             proc2 = env.start_serve("main:app", port)
-            warm_started = wait_for_port(port, timeout=15)
+            warm_started = wait_for_port(port, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
             
             if warm_started:
@@ -527,8 +533,8 @@ def framework():
             port = 18008
             proc = env.start_serve("main:app", port)
             
-            if wait_for_port(port, timeout=15):
-                response = requests.get(f"http://127.0.0.1:{port}/framework", timeout=5)
+            if wait_for_port(port, timeout=T_MEDIUM):
+                response = requests.get(f"http://127.0.0.1:{port}/framework", timeout=T_SHORT)
                 assert response.status_code == 200
                 assert response.json()["framework"] == "fastapi"
             else:
@@ -557,7 +563,7 @@ def framework():
             proc = env.start_serve("main:app", port)
             
             # Flask detection may not be implemented yet
-            if wait_for_port(port, timeout=15):
+            if wait_for_port(port, timeout=T_MEDIUM):
                 response = requests.get(f"http://127.0.0.1:{port}/framework", timeout=5)
                 if response.status_code == 200:
                     assert response.json()["framework"] == "flask"

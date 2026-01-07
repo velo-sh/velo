@@ -21,6 +21,11 @@ from typing import List, Optional
 import psutil
 import pytest
 
+# Import CI-aware timeout constants from parent conftest
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+
+
 
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
@@ -37,8 +42,10 @@ class VeloServeProcess:
         """Check if the main process is still running."""
         return self.proc.poll() is None
 
-    def wait_ready(self, timeout: float = 60.0) -> None:
+    def wait_ready(self, timeout: float = None) -> None:
         """Wait for server to be ready to accept requests."""
+        if timeout is None:
+            timeout = T_MEDIUM + T_SHORT  # ~15s base -> ~90s scaled in CI
         import requests
 
         start = time.time()
@@ -59,8 +66,10 @@ class VeloServeProcess:
         self.proc.terminate()
         raise TimeoutError(f"Server not ready after {timeout}s")
 
-    def wait_worker_ready(self, timeout: float = 5.0) -> None:
+    def wait_worker_ready(self, timeout: float = None) -> None:
         """Wait for a worker to be ready after restart."""
+        if timeout is None:
+            timeout = T_SHORT
         import requests
 
         start = time.time()
@@ -143,8 +152,10 @@ class VeloServeProcess:
                 pass
         return None
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = None) -> None:
         """Stop the server gracefully."""
+        if timeout is None:
+            timeout = T_SHORT
         if self.proc.poll() is None:
             self.proc.send_signal(signal.SIGTERM)
             try:

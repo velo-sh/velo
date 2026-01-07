@@ -17,6 +17,10 @@ from pathlib import Path
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM
+
+
 
 def get_velo_binary():
     """Get path to velo binary."""
@@ -43,7 +47,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", f"{long_module}:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should error, not crash
         assert result.returncode != 0
@@ -57,7 +61,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", "中文模块:应用"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should handle gracefully (error is OK, crash is not)
         assert result.returncode != 0 or "error" in result.stderr.lower()
@@ -69,7 +73,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", "path:to:module:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
         assert "invalid" in result.stderr.lower() or "format" in result.stderr.lower()
@@ -81,7 +85,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", ":app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
 
@@ -92,7 +96,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", "main:"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
 
@@ -103,7 +107,7 @@ class TestServeCliEdgeCases:
             [velo, "serve", "$(whoami):app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should not execute shell command, should treat as literal
         assert result.returncode != 0
@@ -120,7 +124,7 @@ class TestWorkerPoolEdgeCases:
             [velo, "serve", "main:app", "--workers", "-1"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
         # Accept both: old validation msg or clap's argument parsing error
@@ -134,7 +138,7 @@ class TestWorkerPoolEdgeCases:
             [velo, "serve", "main:app", "--workers", "0"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Either error or handled gracefully
         assert result.returncode != 0 or "worker" in result.stderr.lower()
@@ -147,7 +151,7 @@ class TestWorkerPoolEdgeCases:
                 [velo, "serve", "main:app", "--workers", "10000"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_SHORT
             )
             # Should either error or cap
             # Not crash with OOM
@@ -163,7 +167,7 @@ class TestWorkerPoolEdgeCases:
             [velo, "serve", "main:app", "--workers", "2.5"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
 
@@ -198,7 +202,7 @@ class TestSignalEdgeCases:
                 time.sleep(0.1)
             
             # Wait for exit
-            proc.wait(timeout=5)
+            proc.wait(timeout=T_SHORT)
             
             # Should not hang
             assert True
@@ -222,7 +226,7 @@ class TestPortEdgeCases:
             [velo, "serve", "main:app", "--port", "0"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Either auto-assign, port error, or uvicorn missing (CI env may not have uvicorn)
         stderr_lower = result.stderr.lower()
@@ -235,7 +239,7 @@ class TestPortEdgeCases:
             [velo, "serve", "main:app", "--port", "65535"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should be valid port
         # May fail for other reasons (module not found)
@@ -248,7 +252,7 @@ class TestPortEdgeCases:
             [velo, "serve", "main:app", "--port", "70000"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
         assert "port" in result.stderr.lower() or "invalid" in result.stderr.lower()
@@ -260,7 +264,7 @@ class TestPortEdgeCases:
             [velo, "serve", "main:app", "--port", "-8080"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
 
@@ -284,7 +288,9 @@ class EdgeTestEnv:
     def create_script(self, name: str, content: str):
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list, timeout: float = None) -> tuple:
+        if timeout is None:
+            timeout = T_MEDIUM
         result = subprocess.run(
             [self.velo] + args,
             cwd=self.path,
@@ -320,7 +326,7 @@ class TestEdgeCaseStability:
             [velo, "serve", f"{long_module}:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # Then: normal operation should work
@@ -328,7 +334,7 @@ class TestEdgeCaseStability:
             [velo, "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode == 0
 
@@ -340,7 +346,7 @@ class TestEdgeCaseStability:
         subprocess.run(
             [velo, "serve", "中文:应用"],
             capture_output=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # Recovery
@@ -348,7 +354,7 @@ class TestEdgeCaseStability:
             [velo, "--version"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode == 0
 
@@ -362,7 +368,7 @@ class TestEdgeCaseStability:
                 [velo, "serve", ":app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_SHORT
             )
             errors.append(result.returncode)
         
@@ -384,7 +390,7 @@ class TestEdgeCaseSecurity:
                 [velo, "serve", f"{long_str}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_SHORT
             )
             # Should not crash with SIGSEGV
             assert result.returncode != -11  # SIGSEGV
@@ -406,7 +412,7 @@ class TestEdgeCaseSecurity:
                     [velo, "serve", s],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=T_SHORT
                 )
                 # Should fail safely
                 assert result.returncode != 0
@@ -423,7 +429,7 @@ class TestEdgeCaseSecurity:
             [velo, "serve", "main:app", "--port", "1"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         
         # Should fail if not root
