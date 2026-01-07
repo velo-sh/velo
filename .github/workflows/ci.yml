@@ -198,17 +198,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Test: E2E Real User Environment"
-        run: uv run python -m pytest tests/qa/test_phase3_e2e_real_env.py -v --tb=short
+          command: uv run python -m pytest tests/qa/test_phase3_e2e_real_env.py -v --tb=short
 
   qa-zygote-security:
     name: "QA: Zygote Security Scan"
@@ -220,17 +213,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Test: IPC Security (path traversal, injection, DoS)"
-        run: uv run python -m pytest tests/qa/test_phase3_security.py -v --tb=short
+          command: uv run python -m pytest tests/qa/test_phase3_security.py -v --tb=short
 
   qa-zygote-deployment:
     name: "QA: Zygote Deployment Scenarios"
@@ -242,17 +228,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Test: Deployment Structures (pip, brew, cargo install)"
-        run: uv run python -m pytest tests/qa/test_phase3_deployment.py -v --tb=short
+          command: uv run python -m pytest tests/qa/test_phase3_deployment.py -v --tb=short
 
   qa-zygote-stress:
     name: "QA: Zygote Stress & Attack"
@@ -266,20 +245,12 @@ jobs:
     # Allow failures - stress tests may be flaky
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Test: Weird Environments (paths, permissions, signals)"
-        run: uv run python -m pytest tests/qa/test_phase3_weird_env.py -v --tb=short
-      
-      - name: "Test: Brutal Attacks (resource exhaustion, DoS)"
-        run: uv run python -m pytest tests/qa/test_phase3_brutal_attacks.py -v --tb=short
+          command: |
+             uv run python -m pytest tests/qa/test_phase3_weird_env.py -v --tb=short
+             uv run python -m pytest tests/qa/test_phase3_brutal_attacks.py -v --tb=short
 
   # ============================================
   # Phase 3.5: Tiered QA Testing (velo serve)
@@ -295,17 +266,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Tier 0: Smoke Tests (~3s)"
-        run: ./scripts/qa-fast.sh 0
+          command: ./scripts/qa-fast.sh 0
 
   qa-serve-fast:
     name: "QA 3.5: Fast (Tier 1)"
@@ -317,17 +281,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Tier 1: Fast Tests (~15s)"
-        run: ./scripts/qa-fast.sh 1
+          command: ./scripts/qa-fast.sh 1
 
   qa-serve-standard:
     name: "QA 3.5: Standard (Tier 2)"
@@ -339,17 +296,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Tier 2: Standard Tests (~7min)"
-        run: ./scripts/qa-fast.sh 2
+          command: ./scripts/qa-fast.sh 2
 
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
@@ -365,17 +315,10 @@ jobs:
       )
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Tier 3: Heavy/Brutal Tests (~5min)"
-        run: ./scripts/qa-fast.sh 3
+          command: ./scripts/qa-fast.sh 3
 
   # ============================================
   # Phase 5.0: Fast Loader QA (velo run --fast)
@@ -391,17 +334,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "L0: Smoke Tests (~3s)"
-        run: uv run pytest tests/qa/phase5/test_l0_smoke.py -v --tb=short -m smoke
+          command: uv run pytest tests/qa/phase5/test_l0_smoke.py -v --tb=short -m smoke
 
   qa-fast-loader-standard:
     name: "QA 5.0: Standard (L1-L3)"
@@ -413,24 +349,17 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "L1-L3: Happy Path + Sad Path + Config (~30s)"
-        run: |
-          uv run pytest tests/qa/test_phase5_loader.py \
-            tests/qa/phase5/test_l1_happy_path.py \
-            tests/qa/phase5/test_l2_sad_path.py \
-            tests/qa/phase5/test_l3_config.py \
-            tests/qa/phase5/test_python_loader.py \
-            tests/qa/phase5/test_cli_bundle.py \
-            -v --tb=short
+          command: |
+             uv run pytest tests/qa/test_phase5_loader.py \
+             tests/qa/phase5/test_l1_happy_path.py \
+             tests/qa/phase5/test_l2_sad_path.py \
+             tests/qa/phase5/test_l3_config.py \
+             tests/qa/phase5/test_python_loader.py \
+             tests/qa/phase5/test_cli_bundle.py \
+             -v --tb=short
 
   qa-fast-loader-security:
     name: "QA 5.0: Security (L4)"
@@ -442,17 +371,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "L4: Security Tests (RFC-0006 §3)"
-        run: uv run pytest tests/qa/phase5/test_l4_security.py -v --tb=short -m security
+          command: uv run pytest tests/qa/phase5/test_l4_security.py -v --tb=short -m security
 
   qa-fast-loader-chaos:
     name: "QA 5.0: Chaos (L5)"
@@ -465,17 +387,10 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # L5 chaos tests may be flaky
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "L5: Chaos/Edge Tests (stress testing)"
-        run: uv run pytest tests/qa/phase5/test_l5_chaos.py -v --tb=short -m edge
+          command: uv run pytest tests/qa/phase5/test_l5_chaos.py -v --tb=short -m edge
 
   # ============================================
   # Phase 6.1: Serve & Analyze Hardened QA
@@ -493,17 +408,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Security: Command Injection, Path Traversal, Env Sanitization"
-        run: uv run pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short
 
   qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
@@ -516,17 +424,10 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Stability: RAII Cleanup, Signal Forwarding, Debouncer"
-        run: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
 
   qa-phase61-dx-performance:
     name: "QA 6.1: DX & Performance"
@@ -540,20 +441,12 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true  # Performance tests may be flaky
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "DX: Error Messages, Typo Hints, Framework Detection"
-        run: uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
-      
-      - name: "Performance: Latency, Memory, File Descriptors"
-        run: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
+          command: |
+             uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
+             uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
 
   qa-phase62-prosecutor:
     name: "QA 6.2: Prosecutor Suite (RFC-0012)"
@@ -566,18 +459,11 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Prosecutor: Collision (Sin 3) & Hygiene (Sin 1)"
-        # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
-        run: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
+          # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
+          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
 
   qa-phase611-core:
     name: "QA 6.1.1: Core Integration"
@@ -590,22 +476,17 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      - name: "Run Core Tests"
-        run: |
-          uv run pytest \
-            tests/qa/phase_6_1_1/test_phase611_smoke.py \
-            tests/qa/phase_6_1_1/test_phase611_golden_path.py \
-            tests/qa/phase_6_1_1/test_phase611_features.py \
-            tests/qa/phase_6_1_1/test_phase611_integration.py \
-            tests/qa/phase_6_1_1/test_isolation.py \
-            -v --tb=short
+          command: |
+             uv run pytest \
+               tests/qa/phase_6_1_1/test_phase611_smoke.py \
+               tests/qa/phase_6_1_1/test_phase611_golden_path.py \
+               tests/qa/phase_6_1_1/test_phase611_features.py \
+               tests/qa/phase_6_1_1/test_phase611_integration.py \
+               tests/qa/phase_6_1_1/test_isolation.py \
+               -v --tb=short
 
   qa-phase611-agents:
     name: "QA 6.1.1: Multi-Agent Simulation"
@@ -618,18 +499,13 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      - name: "Run Agent Tests (A/B/C/D)"
-        run: |
-          uv run pytest \
-            tests/qa/phase_6_1_1/test_phase611_agent_*.py \
-            -v --tb=short
+          command: |
+             uv run pytest \
+               tests/qa/phase_6_1_1/test_phase611_agent_*.py \
+               -v --tb=short
 
   qa-phase611-specialized:
     name: "QA 6.1.1: Specialized & Expert"
@@ -642,21 +518,16 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      - name: "Run Expert/Blocker/Whitebox Tests"
-        run: |
-          uv run pytest \
-            tests/qa/phase_6_1_1/test_phase611_expert_concerns.py \
-            tests/qa/phase_6_1_1/test_phase611_release_blockers.py \
-            tests/qa/phase_6_1_1/test_phase611_whitebox.py \
-            tests/qa/phase_6_1_1/test_security_hardened.py \
-            -v --tb=short
+          command: |
+             uv run pytest \
+               tests/qa/phase_6_1_1/test_phase611_expert_concerns.py \
+               tests/qa/phase_6_1_1/test_phase611_release_blockers.py \
+               tests/qa/phase_6_1_1/test_phase611_whitebox.py \
+               tests/qa/phase_6_1_1/test_security_hardened.py \
+               -v --tb=short
 
   qa-phase611-perf:
     name: "QA 6.1.1: Performance Baselines"
@@ -670,19 +541,14 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      - name: "Run Performance Tests"
-        run: |
-          uv run pytest \
-            tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
-            tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
-            -v --tb=short
+          command: |
+             uv run pytest \
+               tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
+               tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
+               -v --tb=short
 
   # ============================================
   # Phase 4.0: velo analyze QA
@@ -698,19 +564,12 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Phase 4.0: Core + Agent Tests"
-        run: |
-          chmod +x .venv/bin/python3
-          uv run pytest tests/qa/test_phase4_analyze.py tests/qa/test_phase4_agent_*.py -v --tb=short
+          command: |
+            chmod +x .venv/bin/python3
+            uv run pytest tests/qa/test_phase4_analyze.py tests/qa/test_phase4_agent_*.py -v --tb=short
 
   qa-analyze-integration:
     name: "QA 4.0: Integration (SLOW)"
@@ -722,19 +581,12 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Phase 4.0: Integration Tests (Real Projects)"
-        run: |
-          chmod +x .venv/bin/python3
-          uv run pytest tests/qa/test_phase4_integration.py -v --tb=short
+          command: |
+             chmod +x .venv/bin/python3
+             uv run pytest tests/qa/test_phase4_integration.py -v --tb=short
 
   qa-benchmark:
     name: "QA: Benchmark"
@@ -746,19 +598,12 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
+      - uses: ./.github/actions/run-tests
         with:
-          python-version: '3.11'
-          download-binary: true
           uv-version: ${{ env.UV_VERSION }}
-      
-      - name: "Benchmark: Performance Validation"
-        run: |
-          chmod +x .venv/bin/python3
-          uv run python benchmark_projects.py --all
+          command: |
+             chmod +x .venv/bin/python3
+             uv run python benchmark_projects.py --all
 
   coverage:
     name: Code Coverage
