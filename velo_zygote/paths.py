@@ -18,6 +18,15 @@ except (ImportError, ValueError):
 class VeloPaths:
     """Centralized Path Resolver for Velo (Python Parity)."""
 
+    # Standard Filenames (RFC-0012)
+    PYPROJECT_TOML = "pyproject.toml"
+    UV_LOCK = "uv.lock"
+    REQUIREMENTS_TXT = "requirements.txt"
+    SITE_CUSTOMIZE = "sitecustomize.py"
+    VELO_LOADER = "velo_loader.py"
+    VELO_CACHE_DIR = ".velo_cache"
+    VELO_PROFILE_JSON = "velo_profile.json"
+
     @staticmethod
     def socket_dir() -> Path:
         """Get the canonical socket directory."""

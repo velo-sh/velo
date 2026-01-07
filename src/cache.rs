@@ -11,8 +11,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::common::constants::*;
-use crate::common::paths::VeloPaths;
+pub use crate::common::paths::*;
 use crate::python_info::PythonVersion;
 
 const CACHE_FILE_NAME: &str = "env.rkyv";

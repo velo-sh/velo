@@ -2,9 +2,11 @@
 //!
 //! Parses [tool.velo] section from pyproject.toml and applies environment overrides.
 
-use crate::common::constants::*;
 use crate::common::paths::VeloPaths;
 use std::path::Path;
+
+/// Embedded SSOT for runtime defaults
+const CONSTANTS_TOML: &str = include_str!("../config/constants.toml");
 
 /// Velo configuration
 #[derive(Debug, Clone)]
@@ -24,10 +26,26 @@ impl Default for VeloConfig {
         Self {
             preload: Vec::new(),
             max_bundle_size: 1024 * 1024 * 1024, // 1GB default
-            zygote_socket_timeout: SOCKET_STARTUP_TIMEOUT,
-            slow_threshold_ms: DEFAULT_SLOW_THRESHOLD_MS,
+            zygote_socket_timeout: extract_default_u64("socket_startup_timeout", 5),
+            slow_threshold_ms: extract_default_u64("default_slow_threshold_ms", 100),
         }
     }
+}
+
+/// Extract a u64 default from the embedded TOML
+fn extract_default_u64(key: &str, default: u64) -> u64 {
+    for line in CONSTANTS_TOML.lines() {
+        let line = line.trim();
+        if line.starts_with(key) {
+            let val = line
+                .split_once('=')
+                .and_then(|(_, v)| v.trim().parse().ok());
+            if let Some(v) = val {
+                return v;
+            }
+        }
+    }
+    default
 }
 
 impl VeloConfig {

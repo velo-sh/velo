@@ -7,8 +7,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
-use crate::common::constants::*;
-use crate::common::paths::VeloPaths;
+pub use crate::common::paths::*;
 use crate::config::VeloConfig;
 use crate::python;
 use crate::python_info::{PythonInfo, PythonVersion};
