@@ -98,6 +98,11 @@ fn extract_default_str(key: &str) -> Option<String> {
     None
 }
 
+/// Public interface to extract path configuration (RFC-0012 Phase 6.5)
+pub fn extract_path_config(key: &str) -> Option<String> {
+    extract_default_str(key)
+}
+
 /// Extract a u64 default from the embedded TOML
 fn extract_default_u64(key: &str, default: u64) -> u64 {
     for line in CONSTANTS_TOML.lines() {

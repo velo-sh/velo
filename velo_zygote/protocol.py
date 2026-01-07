@@ -1,18 +1,15 @@
 import asyncio
 import struct
-import msgpack
+try:
+    from .serializer import packer, unpacker
+except (ImportError, ValueError):
+    from serializer import packer, unpacker
+
 from typing import Dict, List, Optional, Any
 try:
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
 except (ImportError, ValueError):
     from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
-
-# MessagePack packing configuration (consistent with Rust's rmp-serde)
-def packer(msg: Dict) -> bytes:
-    return msgpack.packb(msg, use_bin_type=True)
-
-def unpacker(data: bytes) -> Any:
-    return msgpack.unpackb(data, raw=False)
 
 class ProtocolError(Exception):
     """Raised when an IPC protocol violation occurs."""

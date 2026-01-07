@@ -90,54 +90,10 @@ def get_versioned_socket_path() -> Path:
 # ============================================================================
 # MessagePack Import with Pure Python Fallback (ADV-3)
 # ============================================================================
-_USING_PURE_PYTHON_MSGPACK = False
-
 try:
-    # 1. Try high-performance C extension first
-    import msgpack
-    packer = lambda msg: msgpack.packb(msg, use_bin_type=True)
-    unpacker = lambda data: msgpack.unpackb(data, raw=False)
-
-except (ImportError, OSError) as e:
-    # 2. Fallback to vendored Pure Python implementation
-    _fallback_loaded = False
-    
-    # Search paths for vendored umsgpack.py
-    _search_paths = [
-        # Relative to this file: velo_zygote/main.py -> python/velo/_vendor
-        Path(__file__).parent.parent / "python" / "velo" / "_vendor",
-        # If running from project root
-        Path.cwd() / "python" / "velo" / "_vendor",
-        # If installed as package
-        Path(__file__).parent / "_vendor",
-    ]
-    
-    for _vendor_path in _search_paths:
-        if (_vendor_path / "umsgpack.py").exists():
-            if str(_vendor_path) not in sys.path:
-                sys.path.insert(0, str(_vendor_path))
-            try:
-                import umsgpack
-                
-                sys.stderr.write("[Velo] ⚠️  Warning: fast 'msgpack' extension failed to load.\n")
-                sys.stderr.write("[Velo]    Falling back to pure Python implementation (slower IPC).\n")
-                sys.stderr.write("[Velo]    Run: pip install msgpack  (requires C compiler)\n")
-                sys.stderr.flush()
-                
-                packer = lambda msg: umsgpack.packb(msg)
-                unpacker = lambda data: umsgpack.unpackb(data)
-                _USING_PURE_PYTHON_MSGPACK = True
-                _fallback_loaded = True
-                break
-            except ImportError:
-                continue
-    
-    if not _fallback_loaded:
-        sys.stderr.write(f"[Velo] ❌ Error: msgpack not available and fallback failed.\n")
-        sys.stderr.write(f"[Velo]    Original error: {e}\n")
-        sys.stderr.write(f"[Velo]    Searched: {[str(p) for p in _search_paths]}\n")
-        sys.stderr.write(f"[Velo]    Run: pip install msgpack\n")
-        sys.exit(1)
+    from .serializer import packer, unpacker, _USING_PURE_PYTHON_MSGPACK
+except (ImportError, ValueError):
+    from serializer import packer, unpacker, _USING_PURE_PYTHON_MSGPACK
 
 
 # Sensitive paths that should never be executed (SEC-P3-001)
@@ -542,7 +498,9 @@ class ForkHandler:
         t0 = time.time()
         def p_log(msg):
             try:
-                with open("/tmp/perf_zygote.log", "a") as f:
+                # Use socket dir for perf logs (transient, correct permissions)
+                log_path = VeloPaths.socket_dir() / "perf_zygote.log"
+                with open(log_path, "a") as f:
                     f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
             except: pass
 
@@ -858,6 +816,16 @@ class ZygoteServer:
             finally:
                 LogUtils.log("Shutting down Zygote - Cleaning up workers.")
                 self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
+                
+                # [DEF-62-005] Clean up socket file on exit
+                if not self.is_abstract:
+                    try:
+                        path = Path(self.socket_path)
+                        if path.exists():
+                            path.unlink()
+                            LogUtils.log(f"Cleaned up socket: {self.socket_path}")
+                    except Exception as e:
+                        LogUtils.debug_log(f"Socket cleanup failed: {e}")
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         sock = writer.get_extra_info('socket')

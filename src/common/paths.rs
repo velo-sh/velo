@@ -22,27 +22,82 @@ pub const VELO_CACHE_DIR: &str = ".velo_cache";
 pub const VELO_PROFILE_JSON: &str = "velo_profile.json";
 
 impl VeloPaths {
-    /// Get the canonical socket directory.
+    /// Get the canonical socket directory using hierarchical path resolution.
     pub fn socket_dir() -> PathBuf {
         let uid = unsafe { libc::getuid() };
+
+        // RFC-0012 Phase 6.5: Config-driven path resolution
+        // Check for environment override first
+        if let Some(socket_override) = std::env::var("VELO_SOCKET_DIR")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
+            return PathBuf::from(socket_override);
+        }
+
+        // Determine OS and environment
+        let os_name = match std::env::consts::OS {
+            "macos" => "macos",
+            _ => "linux",
+        };
+        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+
+        // Try environment-specific override first (e.g., path_macos_ci_socket_parent)
+        let env_key = format!("path_{}_{}_socket_parent", os_name, env_mode);
+        let base_key = format!("path_{}_base_socket_parent", os_name);
+
+        let parent_path = Self::get_path_config(&env_key)
+            .or_else(|| Self::get_path_config(&base_key))
+            .unwrap_or_else(|| "/tmp".to_string());
+
+        // Expand placeholders
+        let expanded_parent = Self::expand_path_placeholders(&parent_path);
         let dir_name = format!("velo-{}", uid);
 
-        // RFC-0012: On macOS/Unix, we MUST prioritize /tmp for sockets because
-        // hermetic test environments often have extremely long HOME/TMPDIR paths
-        // that exceed the 104-character AF_UNIX limit.
-        let short_path = PathBuf::from("/tmp").join(&dir_name);
+        let socket_path = PathBuf::from(expanded_parent).join(&dir_name);
 
-        // Check if short path is viable
-        if short_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
-            return short_path;
+        // Validate length constraint
+        if socket_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
+            return socket_path;
         }
 
-        // Fallback to environment variables only if necessary
-        if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-            return PathBuf::from(xdg).join("velo");
+        // Fallback to /tmp if path is too long
+        PathBuf::from("/tmp").join(dir_name)
+    }
+
+    /// Expand placeholders in path strings
+    fn expand_path_placeholders(s: &str) -> String {
+        let mut result = s.to_string();
+
+        if let Ok(home) = std::env::var("HOME") {
+            result = result.replace("${HOME}", &home);
         }
 
-        std::env::temp_dir().join(dir_name)
+        if result.contains("${XDG_RUNTIME_DIR}") {
+            if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+                result = result.replace("${XDG_RUNTIME_DIR}", &xdg);
+            } else {
+                // Fallback to /tmp if XDG_RUNTIME_DIR not set
+                result = result.replace("${XDG_RUNTIME_DIR}", "/tmp");
+            }
+        }
+
+        if result.contains("${TMPDIR}") {
+            result = result.replace("${TMPDIR}", &std::env::temp_dir().to_string_lossy());
+        }
+
+        if result.contains("${UID}") {
+            let uid = unsafe { libc::getuid() };
+            result = result.replace("${UID}", &uid.to_string());
+        }
+
+        result
+    }
+
+    /// Get a path config value from the embedded constants
+    fn get_path_config(key: &str) -> Option<String> {
+        // Delegate to the config extraction logic
+        crate::config::extract_path_config(key)
     }
 
     /// Get the full Zygote socket path.
