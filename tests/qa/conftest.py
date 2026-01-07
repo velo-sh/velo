@@ -43,6 +43,54 @@ def ci_timeout(base_seconds: float) -> float:
 TIMEOUT_MULTIPLIER = get_timeout_multiplier()
 CI_TIMEOUT = ci_timeout  # Alias for shorter imports
 
+# =============================================================================
+# CI TIMEOUT CONSTANTS (Preferred Clean Approach)
+# =============================================================================
+# Tests should use these constants for timeout values.
+# In CI, tests will use longer timeouts automatically.
+#
+# Usage in tests:
+#   from conftest import T_SHORT, T_MEDIUM, T_LONG
+#   subprocess.run([velo, "zygote", "start"], timeout=T_MEDIUM)
+
+# Base timeouts (local machine)
+_T_SHORT_BASE = 5     # Quick commands (--help, status)
+_T_MEDIUM_BASE = 15   # Normal operations (start, stop)
+_T_LONG_BASE = 60     # Heavy operations (stress tests)
+
+# Scaled timeouts (automatically larger in CI)
+T_SHORT = _T_SHORT_BASE * TIMEOUT_MULTIPLIER    # 5s local, 15s CI
+T_MEDIUM = _T_MEDIUM_BASE * TIMEOUT_MULTIPLIER  # 15s local, 45s CI
+T_LONG = _T_LONG_BASE * TIMEOUT_MULTIPLIER      # 60s local, 180s CI
+
+
+# =============================================================================
+# SUBPROCESS TIMEOUT AUTO-SCALING (Temporary Workaround)
+# =============================================================================
+# TODO(tech-debt): Refactor tests to use run_velo() or T_* constants instead.
+#
+# WHY THIS EXISTS:
+# - Many legacy tests use subprocess.run(..., timeout=5) directly
+# - CI environments (GitHub Actions) are ~3x slower than local machines
+# - Without this patch, tests timeout in CI but pass locally
+#
+# PROPER FIX (future):
+# - Update all tests to use run_velo() from test_harness.py
+# - Or use T_SHORT/T_MEDIUM/T_LONG constants from this file
+# - Then remove this monkey-patch
+#
+# This is a CONTROLLED patch that only affects subprocess timeout= kwargs.
+# It does NOT change any subprocess behavior other than extending timeouts.
+
+_original_subprocess_run = subprocess.run
+
+def _scaled_subprocess_run(*args, **kwargs):
+    """Auto-scale subprocess timeout for CI environments."""
+    if "timeout" in kwargs and kwargs["timeout"] is not None:
+        kwargs["timeout"] = kwargs["timeout"] * TIMEOUT_MULTIPLIER
+    return _original_subprocess_run(*args, **kwargs)
+
+subprocess.run = _scaled_subprocess_run
 
 
 # =============================================================================
