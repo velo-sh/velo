@@ -1,13 +1,14 @@
-use anyhow::{Context, Result, anyhow};
 use std::fs::File;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
 // Use alignment for verification (future H-29 integration)
 use crate::shm::alignment;
-use crate::zygote::error::ZygoteError;
+use crate::shm::error::MemoryError;
 
 pub struct MemoryRegistry {
     strict_numa: bool,
+    #[allow(dead_code)] // Used only on Linux in mbind()
+    numa_mask: u64,
 }
 
 impl Default for MemoryRegistry {
@@ -20,32 +21,43 @@ impl MemoryRegistry {
     pub fn new() -> Self {
         // H-30: Strict NUMA Check
         let strict_numa = std::env::var("VELO_STRICT_NUMA").unwrap_or_default() == "1";
+        // H-32: Configurable NUMA mask (defaults to node 0)
+        let numa_mask: u64 = std::env::var("VELO_NUMA_MASK")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1); // Default to node 0 bitmask
         if strict_numa {
-            eprintln!("🔥 VELO_STRICT_NUMA enabled. Verifying topology...");
-            // Real implementation would check libnuma here.
-            // For now, we assume if env is set, we ENFORCE mbind.
+            eprintln!("🔥 VELO_STRICT_NUMA enabled. NUMA mask: 0x{:x}", numa_mask);
         }
-        Self { strict_numa }
+        Self {
+            strict_numa,
+            numa_mask,
+        }
     }
 
     /// Create a shared memory segment from a file (e.g., safetensors).
     /// H-23: Strict Seal Ordering
     /// H-29: Alignment Enforcement (Padding)
-    pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File> {
+    pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File, MemoryError> {
         // HPC Critique: Use metadata() for size instead of reading entire file into Vec.
-        let file_meta = std::fs::metadata(file_path).context("Failed to get file metadata")?;
+        let file_meta = std::fs::metadata(file_path)
+            .map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
         let file_size = file_meta.len() as usize;
 
         if file_size < 8 {
-            return Err(anyhow!("File too small to be safetensors (H-29 check)"));
+            return Err(MemoryError::InvalidSourceFile(
+                "File too small to be safetensors (H-29 check)".to_string(),
+            ));
         }
 
         // Only read the first 8 bytes for header length
         let mut header_len_bytes = [0u8; 8];
         {
             use std::io::Read;
-            let mut f = File::open(file_path)?;
-            f.read_exact(&mut header_len_bytes)?;
+            let mut f =
+                File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
+            f.read_exact(&mut header_len_bytes)
+                .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
         }
         let header_len = u64::from_le_bytes(header_len_bytes) as usize;
 
@@ -73,21 +85,21 @@ impl MemoryRegistry {
         };
 
         if ptr == libc::MAP_FAILED {
-            return Err(anyhow!(
+            return Err(MemoryError::MmapFailed(format!(
                 "Failed to mmap RW: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         // H-30: NUMA Binding (Strict Mode)
         if self.strict_numa {
             #[cfg(target_os = "linux")]
             {
-                // Simple strict bind to node 0 for demonstration/default
-                let nodemask: u64 = 1;
+                // H-32: Use configurable NUMA mask instead of hardcoded node 0
+                let nodemask = self.numa_mask;
                 let maxnode = 64;
                 // SECURITY: mbind is used to enforce NUMA affinity in strict mode (H-30).
-                // This prevents cross-node latency by pinning memory to node 0.
+                // This prevents cross-node latency by pinning memory to the configured nodes.
                 let ret = unsafe {
                     libc::mbind(
                         ptr,
@@ -99,10 +111,11 @@ impl MemoryRegistry {
                     )
                 };
                 if ret < 0 {
-                    return Err(anyhow!(
-                        "H-30 Violation: Failed to mbind memory in strict mode! {:?}",
+                    return Err(MemoryError::NumaBindFailed(format!(
+                        "H-30 Violation: mbind failed with mask 0x{:x}: {:?}",
+                        nodemask,
                         std::io::Error::last_os_error()
-                    ));
+                    )));
                 }
             }
         }
@@ -110,9 +123,12 @@ impl MemoryRegistry {
         // 3. Populate (Zero-Copy Optimization)
         // HPC Critique: Avoid reading into Vec<u8> buffer. Map source file directly.
         {
-            let src_file =
-                File::open(file_path).context("Failed to open source file for zero-copy")?;
-            let src_size = src_file.metadata()?.len() as usize;
+            let src_file = File::open(file_path)
+                .map_err(|e| MemoryError::InvalidSourceFile(format!("Zero-copy open: {}", e)))?;
+            let src_size = src_file
+                .metadata()
+                .map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?
+                .len() as usize;
 
             // SECURITY: mmap of source file is safe as it is read-only and size-checked.
             let src_ptr = unsafe {
@@ -126,10 +142,10 @@ impl MemoryRegistry {
                 )
             };
             if src_ptr == libc::MAP_FAILED {
-                return Err(anyhow!(
+                return Err(MemoryError::MmapFailed(format!(
                     "Failed to mmap source file: {}",
                     std::io::Error::last_os_error()
-                ));
+                )));
             }
 
             // SECURITY: Copying from source-mmap to shm-mmap. Guaranteed disjoint memory regions.
@@ -143,7 +159,9 @@ impl MemoryRegistry {
                     libc::munmap(src_ptr, src_size);
                     libc::munmap(ptr, total_size);
                     let _ = libc::close(fd);
-                    return Err(anyhow!("Safetensors header_len > file size"));
+                    return Err(MemoryError::HeaderParseFailed(
+                        "Safetensors header_len > file size".to_string(),
+                    ));
                 }
 
                 // Copy [Len + Header]
@@ -188,10 +206,10 @@ impl MemoryRegistry {
         };
 
         if ptr_ro == libc::MAP_FAILED {
-            return Err(anyhow!(
+            return Err(MemoryError::MmapFailed(format!(
                 "Failed to mmap RO: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         // SECURITY: Unmapping verification pointer.
@@ -208,12 +226,11 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd> {
+    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd, MemoryError> {
         // H-26: Host Death - check PID namespace logic if needed here
 
         use std::ffi::CString;
-        let c_name = CString::new(name)
-            .map_err(|e| ZygoteError::ProtocolError(format!("Invalid SHM name: {}", e)))?;
+        let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
         // MFD_CLOEXEC | MFD_ALLOW_SEALING
         let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
@@ -221,10 +238,10 @@ impl MemoryRegistry {
         let fd = unsafe { libc::memfd_create(c_name.as_ptr(), flags) };
 
         if fd < 0 {
-            return Err(anyhow!(
+            return Err(MemoryError::SegmentCreationFailed(format!(
                 "memfd_create failed: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         // Allocate space
@@ -232,20 +249,19 @@ impl MemoryRegistry {
         if unsafe { libc::ftruncate(fd, size as i64) } < 0 {
             // SECURITY: closing the FD on error.
             let _ = unsafe { libc::close(fd) };
-            return Err(anyhow!(
+            return Err(MemoryError::ResizeFailed(format!(
                 "ftruncate failed: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         Ok(fd)
     }
 
     #[cfg(target_os = "macos")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd> {
+    fn create_shm_fd(&self, name: &str, size: usize) -> Result<RawFd, MemoryError> {
         use std::ffi::CString;
-        let c_name = CString::new(name)
-            .map_err(|e| ZygoteError::ProtocolError(format!("Invalid SHM name: {}", e)))?;
+        let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
         // SECURITY: shm_open for macOS shared memory. 0o600 perms for owner-only access.
         let fd = unsafe {
@@ -257,10 +273,10 @@ impl MemoryRegistry {
         };
 
         if fd < 0 {
-            return Err(anyhow!(
+            return Err(MemoryError::SegmentCreationFailed(format!(
                 "shm_open failed: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         // Unlink so it disappears when closed
@@ -271,16 +287,16 @@ impl MemoryRegistry {
         if unsafe { libc::ftruncate(fd, size as i64) } < 0 {
             // SECURITY: close on error.
             let _ = unsafe { libc::close(fd) };
-            return Err(anyhow!(
+            return Err(MemoryError::ResizeFailed(format!(
                 "ftruncate failed: {}",
                 std::io::Error::last_os_error()
-            ));
+            )));
         }
 
         Ok(fd)
     }
 
-    fn apply_seals(&self, fd: RawFd) -> Result<()> {
+    fn apply_seals(&self, fd: RawFd) -> Result<(), MemoryError> {
         #[cfg(target_os = "linux")]
         {
             // H-23.7: F_ADD_SEALS
@@ -289,10 +305,10 @@ impl MemoryRegistry {
             // SECURITY: Applying memfd seals to make the memory immutable before passing to workers.
             let ret = unsafe { libc::fcntl(fd, libc::F_ADD_SEALS, seals) };
             if ret < 0 {
-                return Err(anyhow!(
+                return Err(MemoryError::SealFailed(format!(
                     "Failed to add seals: {}",
                     std::io::Error::last_os_error()
-                ));
+                )));
             }
         }
         #[cfg(not(target_os = "linux"))]
