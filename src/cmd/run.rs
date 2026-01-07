@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::cache::EnvCache;
 use crate::config::VeloConfig;
 use crate::python_info::{PythonInfo, PythonVersion};
+use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
 use crate::{python, runner};
 
@@ -35,6 +36,10 @@ pub struct RunCmd {
     /// Use fast loader with bundle acceleration
     #[arg(long)]
     pub fast: bool,
+
+    /// Map a .safetensors file into shared memory (Memory Gravity)
+    #[arg(long, value_name = "PATH")]
+    pub shm: Option<PathBuf>,
 }
 
 impl RunCmd {
@@ -99,6 +104,15 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
     // Zygote mode: use pre-warmed process
     if cmd.zygote_enabled() {
+        // Create SHM segment if requested
+        let shm_file = if let Some(ref shm_path) = cmd.shm {
+            let registry = MemoryRegistry::new();
+            let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
+            Some(registry.create_segment(&segment_name, shm_path)?)
+        } else {
+            None
+        };
+
         if let Some(()) = try_zygote_run(
             &python_path,
             &cmd.script,
@@ -106,6 +120,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             cmd.fast,
             &project_dir,
             &config,
+            shm_file.as_ref(),
         )? {
             return Ok(());
         }
@@ -147,6 +162,7 @@ fn try_zygote_run(
     fast_enabled: bool,
     project_dir: &Path,
     config: &VeloConfig,
+    shm_file: Option<&std::fs::File>,
 ) -> Result<Option<()>> {
     use crate::zygote;
 
@@ -202,6 +218,7 @@ fn try_zygote_run(
             bundle_path,
             Some(project_dir.to_path_buf()),
             max_size,
+            shm_file,
         ) {
             Ok(worker) => {
                 if async_enabled {
@@ -262,6 +279,7 @@ fn try_zygote_run(
                             bundle_path,
                             Some(project_dir.to_path_buf()),
                             max_size,
+                            shm_file,
                         ) {
                             if async_enabled {
                                 eprintln!(

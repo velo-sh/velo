@@ -57,7 +57,7 @@ with open('{}', 'w') as f:
 
         // Spawn worker
         let worker = launcher
-            .spawn_worker(&script_path, &[], false, false, None, None, None)
+            .spawn_worker(&script_path, &[], false, false, None, None, None, None)
             .unwrap();
 
         assert!(
@@ -182,7 +182,7 @@ with open('{}', 'w') as f:
         let args = vec!["--uds", worker_socket.to_str().unwrap()];
 
         launcher
-            .spawn_worker(&script_path, &args, false, false, None, None, None)
+            .spawn_worker(&script_path, &args, false, false, None, None, None, None)
             .unwrap();
 
         assert!(wait_for_file(&output_file, 5000));
