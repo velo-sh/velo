@@ -2,10 +2,47 @@
 import subprocess
 import pytest
 import sys
+import os
 from pathlib import Path
 
 # Add tests/qa to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+# =============================================================================
+# CI TIMEOUT CONFIGURATION (FAIL-FAST RESILIENCE)
+# =============================================================================
+# GitHub Actions runners are slower than local machines.
+# Multiply all timeouts by this factor in CI environments.
+
+def get_timeout_multiplier() -> float:
+    """Get timeout multiplier based on environment.
+    
+    Returns:
+        1.0 for local development
+        3.0 for CI environments (GITHUB_ACTIONS=true)
+        Custom value from VELO_TIMEOUT_MULTIPLIER if set
+    """
+    if os.environ.get("VELO_TIMEOUT_MULTIPLIER"):
+        return float(os.environ["VELO_TIMEOUT_MULTIPLIER"])
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return 3.0  # CI is about 3x slower than local
+    return 1.0
+
+
+def ci_timeout(base_seconds: float) -> float:
+    """Scale timeout for CI environment.
+    
+    Usage:
+        subprocess.run(..., timeout=ci_timeout(5))  # 5s local, 15s in CI
+    """
+    return base_seconds * get_timeout_multiplier()
+
+
+# Export for use in test files
+TIMEOUT_MULTIPLIER = get_timeout_multiplier()
+CI_TIMEOUT = ci_timeout  # Alias for shorter imports
+
 
 
 # =============================================================================
