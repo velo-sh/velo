@@ -329,7 +329,7 @@ class TestIntegration:
         """
         Integration test: Verify velo analyze --shm command works.
         
-        This test requires the velo binary to be built.
+        This test requires the velo binary to be built for the current platform.
         """
         env = shm_test_env
         
@@ -337,7 +337,13 @@ class TestIntegration:
             pytest.skip("Velo binary not found - build with 'cargo build --release'")
         
         # Test 1: Check --help includes shm option
-        result = env.run_velo("analyze", "--help", timeout=10)
+        try:
+            result = env.run_velo("analyze", "--help", timeout=10)
+        except OSError as e:
+            # Handle binary architecture mismatch (e.g., macOS binary in Linux container)
+            if e.errno == 8:  # Exec format error
+                pytest.skip(f"Binary architecture mismatch: {e}")
+            raise
         
         # If analyze subcommand doesn't exist yet, skip
         if result.returncode != 0 and "no such subcommand" in result.stderr.lower():
@@ -348,4 +354,3 @@ class TestIntegration:
             assert True, "--shm flag is documented"
         else:
             pytest.skip("--shm flag not implemented in velo analyze yet")
-
