@@ -108,14 +108,8 @@ fn find_zygote_module() -> Result<PathBuf> {
         eprintln!("⚠️ VELO_ZYGOTE_PATH set but not found: {}", env_path);
     }
 
-    // 2. Compiled-in path from CARGO_MANIFEST_DIR (dev builds)
-    // This is set at compile time and points to the source directory
-    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
-    if manifest_path.exists() {
-        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
-    }
-
-    // 3. Search relative to executable (installed builds)
+    // 2. Search relative to executable (installed and multi-workspace builds)
+    // RFC-0013: Prioritizing runtime detection to prevent workspace pollution
     if let Ok(exe_path) = std::env::current_exe() {
         // Search up to 4 levels from executable
         let mut search_dir = exe_path.parent().map(|p| p.to_path_buf());
@@ -133,6 +127,13 @@ fn find_zygote_module() -> Result<PathBuf> {
                 search_dir = dir.parent().map(|p| p.to_path_buf());
             }
         }
+    }
+
+    // 3. Compiled-in path from CARGO_MANIFEST_DIR (legacy dev/monorepo builds)
+    // This is a fallback to support cargo test/run from the source dir
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
+    if manifest_path.exists() {
+        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
     }
 
     // 4. User install location ~/.local/share/velo/
