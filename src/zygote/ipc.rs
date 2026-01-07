@@ -14,8 +14,11 @@
 
 use super::error::{Result, ZygoteError};
 use blake3;
+use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg};
 use serde::{Deserialize, Serialize};
+use std::io::{IoSlice, IoSliceMut};
 use std::io::{Read, Write};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
@@ -54,6 +57,9 @@ pub enum ZygoteCommand {
         /// Max bundle size limit
         #[serde(default)]
         max_bundle_size: Option<u64>,
+        /// Size of the shared memory segment (if shm_fd is passed)
+        #[serde(default)]
+        shm_size: Option<usize>,
     },
     /// Shutdown the Zygote process
     Shutdown,
@@ -361,7 +367,11 @@ pub fn cleanup_socket(socket_path: &Path) {
 pub const PROTOCOL_VERSION: u8 = 0x01;
 
 /// Write a MessagePack message with length prefix and version byte
-fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+fn write_message<T: Serialize + std::fmt::Debug>(
+    stream: &mut UnixStream,
+    msg: &T,
+    fd: Option<RawFd>,
+) -> Result<()> {
     let mut buf = Vec::new();
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     msg.serialize(&mut ser)
@@ -382,39 +392,82 @@ fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &
     #[cfg(debug_assertions)]
     eprintln!("[IPC SEND] {:?}", msg);
 
-    // Write 4-byte length prefix (little-endian) - includes version + payload
+    // Frame: [Length 4B] [Version 1B] [Payload]
     let total_len = 1 + payload.len(); // version byte + payload
     let len_bytes = (total_len as u32).to_le_bytes();
-    stream
-        .write_all(&len_bytes)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    let version_byte = [PROTOCOL_VERSION];
 
-    // Write version byte (ADV-1)
-    stream
-        .write_all(&[PROTOCOL_VERSION])
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Some(raw_fd) = fd {
+        // Use SCM_RIGHTS via sendmsg
+        let iov = [
+            IoSlice::new(&len_bytes),
+            IoSlice::new(&version_byte),
+            IoSlice::new(&payload),
+        ];
 
-    // Write payload
-    stream
-        .write_all(&payload)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        let cmsg = [ControlMessage::ScmRights(&[raw_fd])];
 
-    stream
-        .flush()
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        sendmsg::<()>(stream.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), None)
+            .map_err(|e| ZygoteError::SocketError(format!("sendmsg failed: {}", e)))?;
+    } else {
+        // Standard Write
+        stream
+            .write_all(&len_bytes)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .write_all(&version_byte)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .write_all(&payload)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .flush()
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    }
 
     Ok(())
 }
 
 /// Read a MessagePack message with length prefix and version byte
+/// Read a MessagePack message with length prefix and version byte
 fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
-) -> Result<T> {
+) -> Result<(T, Option<RawFd>)> {
     // Read 4-byte length prefix (includes version + payload)
+    // Use recvmsg to capture synchronous ancillary data (FDs)
     let mut len_buf = [0u8; 4];
-    stream
-        .read_exact(&mut len_buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    let mut cmsg = nix::cmsg_space!([RawFd; 1]);
+    let (bytes, received_fd) = {
+        let mut iov = [IoSliceMut::new(&mut len_buf)];
+
+        let msg_result = recvmsg::<()>(
+            stream.as_raw_fd(),
+            &mut iov,
+            Some(&mut cmsg),
+            MsgFlags::empty(),
+        )
+        .map_err(|e| ZygoteError::SocketError(format!("recvmsg failed: {}", e)))?;
+
+        let mut fd = None;
+        for cmsg in msg_result.cmsgs() {
+            if let ControlMessageOwned::ScmRights(fds) = cmsg {
+                if !fds.is_empty() {
+                    fd = Some(fds[0]);
+                }
+            }
+        }
+        (msg_result.bytes, fd)
+    };
+
+    // Ensure we have full 4 bytes for length
+    if bytes < 4 {
+        stream
+            .read_exact(&mut len_buf[bytes..])
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    }
 
     let total_len = u32::from_le_bytes(len_buf) as usize;
 
@@ -460,9 +513,9 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC RECV] {:?}", msg);
+    eprintln!("[IPC RECV] {:?} (fd: {:?})", msg, received_fd);
 
-    Ok(msg)
+    Ok((msg, received_fd))
 }
 
 /// High-level wrapper for Zygote IPC connection
@@ -477,7 +530,7 @@ impl ZygoteStream {
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
         // 1. Receive mandatory "Ready" greeting
-        let ready: ZygoteResponse = read_message(&mut stream)?;
+        let (ready, _): (ZygoteResponse, _) = read_message(&mut stream)?;
         match ready {
             ZygoteResponse::Ready => Ok(Self { stream }),
             _ => Err(ZygoteError::ProtocolError(
@@ -487,32 +540,45 @@ impl ZygoteStream {
     }
 
     /// Send a command and wait for the response
-    pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
-        write_message(&mut self.stream, cmd)?;
-        read_message(&mut self.stream)
+    pub fn send_command(
+        &mut self,
+        cmd: &ZygoteCommand,
+        fd: Option<RawFd>,
+    ) -> Result<ZygoteResponse> {
+        write_message(&mut self.stream, cmd, fd)?;
+        let (resp, _fd) = read_message(&mut self.stream)?;
+        // We currently don't expect FDs from Zygote, so we drop it.
+        // If needed in future, we can change return type to (ZygoteResponse, Option<RawFd>)
+        Ok(resp)
     }
 }
 
 /// Accept a command from a client connection
-pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteCommand)> {
+pub fn accept_command(
+    listener: &UnixListener,
+) -> Result<(UnixStream, ZygoteCommand, Option<RawFd>)> {
     let (mut stream, _) = listener
         .accept()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-    let cmd: ZygoteCommand = read_message(&mut stream)?;
+    let (cmd, fd): (ZygoteCommand, Option<RawFd>) = read_message(&mut stream)?;
 
-    Ok((stream, cmd))
+    Ok((stream, cmd, fd))
 }
 
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
-    write_message(stream, &response)
+    write_message(stream, &response, None)
 }
 
 /// Connect to the Zygote and send a command, returning the response
-pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<ZygoteResponse> {
+pub fn send_command(
+    socket_path: &Path,
+    command: ZygoteCommand,
+    fd: Option<RawFd>,
+) -> Result<ZygoteResponse> {
     let mut stream = ZygoteStream::connect(socket_path)?;
-    stream.send_command(&command)
+    stream.send_command(&command, fd)
 }
 
 #[cfg(test)]

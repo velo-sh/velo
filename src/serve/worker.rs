@@ -24,7 +24,11 @@ pub struct Worker {
 
 impl Worker {
     /// Spawn worker via Zygote IPC (UDS mode)
-    pub fn spawn_uds_via_zygote(zygote_socket: &Path, app: &str) -> Result<Self> {
+    pub fn spawn_uds_via_zygote(
+        zygote_socket: &Path,
+        app: &str,
+        shm_file: Option<&std::fs::File>, // Optional SHM file to map
+    ) -> Result<Self> {
         Self::validate_app_path(app)?;
 
         let worker_id = WORKER_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -46,6 +50,15 @@ impl Worker {
             "--proxy-headers".to_string(),
         ];
 
+        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+            use std::os::unix::prelude::AsRawFd;
+            // Get size for the command
+            let meta = file.metadata()?;
+            (Some(file.as_raw_fd()), Some(meta.len() as usize))
+        } else {
+            (None, None)
+        };
+
         let response = ipc::send_command(
             zygote_socket,
             ipc::ZygoteCommand::Fork {
@@ -59,7 +72,9 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                shm_size,
             },
+            fd_to_pass,
         )?;
 
         if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
@@ -110,7 +125,9 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                shm_size: None,
             },
+            None,
         )?;
 
         if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
@@ -170,6 +187,7 @@ impl Worker {
             ipc::ZygoteCommand::WorkerStatus {
                 worker_pid: self.pid,
             },
+            None,
         ) {
             Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
             _ => false,
@@ -190,6 +208,7 @@ impl Worker {
                 worker_pid: self.pid,
                 signal: 15, // SIGTERM
             },
+            None,
         );
 
         let response = ipc::send_command(
@@ -198,6 +217,7 @@ impl Worker {
                 worker_pid: self.pid,
                 timeout_secs: Some(timeout.as_secs()),
             },
+            None,
         );
 
         match response {
@@ -209,6 +229,7 @@ impl Worker {
                         worker_pid: self.pid,
                         signal: 9, // SIGKILL
                     },
+                    None,
                 );
                 Ok(())
             }
