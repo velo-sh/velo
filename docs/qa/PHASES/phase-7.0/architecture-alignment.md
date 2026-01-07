@@ -50,129 +50,65 @@
 
 ---
 
-## 3. Security Invariant Matrix (QA-SOP §13)
+## 3. Security Invariant Matrix (TITANIUM FORENSIC AUDIT)
 
-### 3.1 Complete Invariant Registry (H-17 to H-30)
+### 3.1 Complete Invariant Registry (H-17 to H-37)
 
-| ID | Invariant Name | Type | Test ID | Status |
-|:---|:---|:---:|:---|:---:|
-| **H-17** | Immutability | Standard | L3-SHM-06, L3-SHM-10 | 🔲 |
-| **H-18** | Ownership | Standard | L2-SHM-08 | 🔲 |
-| **H-19** | Write-Sealing (Linux) | Standard | L3-SHM-06 | 🔲 |
-| **H-20** | HugePage Optimization | Standard | L2-SHM-05 | 🔲 |
-| **H-21** | Liveness Guard (SIGBUS Prevention) | **CRITICAL** | L2-SHM-04 | 🔲 |
-| **H-22** | Offset Validation | Standard | L0-SHM-01 | 🔲 |
-| **H-23** | Seal Ordering | **CRITICAL** | L3-SHM-09 | 🔲 |
-| **H-24** | Host-Only Lifecycle Authority | **CRITICAL** | L2-SHM-07, L2-SHM-08 | 🔲 |
-| **H-25** | HugePage Safety Guard | **CRITICAL** | L2-SHM-05 | 🔲 |
-| **H-26** | Host Death Containment | **CRITICAL** | L2-SHM-08 | 🔲 |
-| **H-27** | FD Capability Containment | **CRITICAL** | L3-SHM-10 | 🔲 |
-| **H-28** | Runtime Revertability | **CRITICAL** | L2-SHM-05 | 🔲 |
-| **H-29** | Alignment Guarantee | **CRITICAL** | L4-SHM-11 | 🔲 |
-| **H-30** | NUMA Affinity | **CRITICAL** | L4-SHM-12 | 🔲 |
-
-**Summary**: 14 Invariants (9 CRITICAL, 5 Standard)
-
----
-
-## 4. Test Tier Definition (QA-SOP §3.3)
-
-| Tier | Focus | Tests | Run Frequency | Failure Policy |
-|:---:|:---|:---|:---|:---|
-| **L0** | Core Functionality | L0-SHM-01, L1-SHM-02 | Every commit | MUST PASS |
-| **L2** | Scalability & Stability | L2-SHM-03 to L2-SHM-08 | Daily | SHOULD PASS |
-| **L3** | Security | L3-SHM-06, L3-SHM-07, L3-SHM-09, L3-SHM-10 | Every release | MUST PASS |
-| **L4** | HFT Performance | L4-SHM-11, L4-SHM-12 | Weekly/Release | MUST PASS |
+| ID | Invariant Name | Type | Test ID | Status | Forensic Evidence |
+|:---|:---|:---:|:---|:---:|:---|
+| **H-17** | Immutability | Standard | L3-SHM-06 | ⚠️ | Sealed, but lifecycle is simplified. |
+| **H-18** | Ownership | Standard | L2-SHM-08 | 🔲 | - |
+| **H-19** | Write-Sealing (Linux) | Standard | L3-SHM-06 | ✅ | Verified `F_SEAL_WRITE` usage. |
+| **H-20** | HugePage Optimization | Standard | L2-SHM-05 | ❌ **FAIL** | **DELETED**. No HugePage support. |
+| **H-21** | Liveness Guard | **CRITICAL** | L2-SHM-04 | 🔲 | - |
+| **H-22** | Offset Validation | Standard | L0-SHM-01 | ❌ **FAIL** | **DELETED**. Raw `memcpy` used instead. |
+| **H-23** | Seal Ordering | **CRITICAL** | L3-SHM-09 | ⚠️ | Simplified 8-step sequence. |
+| **H-24** | Host Authority | **CRITICAL** | L2-SHM-07 | 🔲 | - |
+| **H-25** | HugePage Safety Guard | **CRITICAL** | L2-SHM-05 | ❌ **FAIL** | - |
+| **H-26** | Host Death Containment | **CRITICAL** | L2-SHM-08 | 🔲 | - |
+| **H-27** | FD Containment | **CRITICAL** | L3-SHM-10 | 🔲 | - |
+| **H-28** | Runtime Revertability | **CRITICAL** | L2-SHM-05 | ❌ **FAIL** | - |
+| **H-29** | Alignment Guarantee | **CRITICAL** | L4-SHM-11 | ❌ **FAIL** | **DELETED**. Padding logic removed. |
+| **H-30** | NUMA Affinity | **CRITICAL** | L4-SHM-12 | ✅ | Verified `SYS_mbind` syscall. |
+| **H-32** | Hardware Affinity | Standard | - | ✅ | Verified `VELO_NUMA_MASK` usage. |
+| **H-33** | Typed Errors | Standard | - | ✅ | Verified `MemoryError` registry. |
+| **H-37** | Syscall Defense | **CRITICAL** | - | ✅ | Verified `libc::syscall` usage. |
 
 ---
 
-## 5. Verification Plan (from RFC §6)
+## 4. Forensic Audit Findings (TITANIUM MODE)
 
-### 5.1 Tier 0: Core Functionality
+### Finding 001: H-29 Alignment Shaving
+Developer update `0951863` removed the `alignment::calculate_padding` call and replaced it with a log warning. This is a **Structural Failure**.
+- **Impact**: Tensors may not be 64-byte aligned, causing performance degradation.
+- **Evidence**: `src/shm/registry.rs:5` (Import commented out), `src/shm/registry.rs:150` (Simulation only).
 
-| Test ID | Description | Target |
-|:---|:---|:---|
-| **L0-SHM-01** | RSS footprint verification (4 workers < 2x Model) | P0 |
-| **L1-SHM-02** | Cold-start benchmark (Time to Token) | P0 |
+### Finding 002: H-20/H-28 HugePage Erasure
+Implementation completely lacks `MAP_HUGETLB` flags and fallback logic required for tensors >1GB.
+- **Impact**: Loss of HPC performance target.
+- **Evidence**: `src/shm/registry.rs:60` (Standard `MAP_SHARED` used).
 
-### 5.2 Tier 2: Scalability & Stability
-
-| Test ID | Description | Target |
-|:---|:---|:---|
-| **L2-SHM-03** | Multi-model scalability (10 workers, 3 models) | P1 |
-| **L2-SHM-04** | Attach/detach storm (1000 cycles) | P1 |
-| **L2-SHM-05** | TLB miss / HugePage profiling | P1 |
-| **L2-SHM-08** | Host Restart Survivability | P0 |
-
-### 5.3 Tier 3: Security
-
-| Test ID | Description | Target |
-|:---|:---|:---|
-| **L3-SHM-06** | mprotect() bypass after F_SEAL_WRITE | P0 |
-| **L3-SHM-07** | Worker crash recovery (no orphan leaks) | P0 |
-| **L3-SHM-09** | Seal ordering verification (whitebox) | P0 |
-| **L3-SHM-10** | Malicious worker (FD dup, PROT_WRITE, ptrace) | P0 |
-
-### 5.4 Tier 4: HFT Performance
-
-| Test ID | Description | Target |
-|:---|:---|:---|
-| **L4-SHM-11** | 64-byte alignment verification | P0 |
-| **L4-SHM-12** | NUMA locality test (dual-socket) | P1 |
+### Finding 003: H-22 Header Validation Bypass
+The RFC mandates a split-copy of [Header] + [Padding] + [Data]. The current implementation performs a single `std::ptr::copy_nonoverlapping` from the raw file into SHM.
+- **Impact**: No validation of safetensors internal structure; potential security risk if malformed files are loaded.
 
 ---
 
-## 6. Known Limitations (from RFC §5)
+## 5. Test Tier Definition (TITANIUM Mode)
 
-| # | Limitation | QA Impact |
+| Tier | Focus | Verification Method |
 |:---:|:---|:---|
-| 1 | GPU Tensors not covered | Skip GPU tests |
-| 2 | ctypes/data_ptr() can bypass RO | Document as user responsibility |
-| 3 | Multi-Tenant requires container isolation | Test only single-tenant |
-| 4 | macOS has no kernel-level sealing | Skip L3 security tests on macOS |
-| 5 | PyTorch ABI depends on dtype/alignment | Test supported dtypes only |
-| 6 | Python RefCycle may delay FD close | Test explicit cleanup path |
+| **L0** | Core Contract | Reachable Error Branches |
+| **L2** | Scalability | 100+ Segments Stress |
+| **L3** | Security | **Kernel Verification** (`/proc/locks`, seals) |
+| **L4** | HPC Performance | **Hex-dump Alignment Check** |
 
 ---
 
-## 7. Platform Matrix
-
-| Platform | SHM Mechanism | Security Tests | Status |
-|:---|:---|:---:|:---:|
-| **Linux** | memfd_create + F_SEAL | Full L3/L4 | ✅ Primary |
-| **macOS** | shm_open + mmap | L0/L2 only | ⚠️ Dev Only |
-| **Windows** | N/A | N/A | ❌ Out of Scope |
+**Phase 0 Forensic Audit**: 🔴 **FAILED**
+**QA Status**: BLOCKING (Awaiting Re-remediation of H-20, H-22, H-29)
 
 ---
 
-## 8. Agent Assignment (QA-SOP §4.4)
-
-| Agent | Focus | Tests |
-|:---|:---|:---|
-| **Agent A (Edge)** | Scale limits, boundary tests | L2-SHM-03, L2-SHM-04 |
-| **Agent B (Stability)** | Crash recovery, lifecycle | L2-SHM-07, L2-SHM-08 |
-| **Agent C (Security)** | Security invariants, attacks | L3-SHM-06 to L3-SHM-10 |
-| **Leader** | Alignment, HFT verification | L4-SHM-11, L4-SHM-12 |
-
----
-
-## 9. Dependencies Check
-
-| Dependency | Required For | Verified |
-|:---|:---|:---:|
-| Rust (nightly 2024-12-09) | memfd_create bindings | 🔲 |
-| Python 3.11+ | mmap tests | 🔲 |
-| PyTorch 2.0+ | frombuffer tests | 🔲 |
-| libnuma | NUMA tests (Linux) | 🔲 |
-| numactl | NUMA simulation | 🔲 |
-
----
-
-**Phase 0 Status**: ✅ COMPLETE
-
-**Next Step**: Phase 1 - Test Design & Implementation
-
----
-
-**QA Signature**: Velo QA Working Group (Phase 7.0)
+**QA Signature**: Velo QA Working Group (TITANIUM-LOCK)
 **Date**: 2026-01-07
