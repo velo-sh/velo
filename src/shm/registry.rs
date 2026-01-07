@@ -10,7 +10,7 @@ mod numa {
     pub const MPOL_BIND: libc::c_int = 2;
     pub const MPOL_MF_STRICT: libc::c_uint = 1 << 0;
 
-    extern "C" {
+    unsafe extern "C" {
         pub fn mbind(
             addr: *mut libc::c_void,
             len: libc::c_ulong,
