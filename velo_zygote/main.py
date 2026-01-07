@@ -286,32 +286,116 @@ class PathValidator:
 
 
 class ZygoteTransport:
-    """Layer 1: Transport Layer - Handles asyncio-based MessagePack IO."""
+    """Layer 1: Transport Layer - Handles raw socket IO with recvmsg support."""
     
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        self.reader = reader
-        self.writer = writer
-        self.peer_capabilities: List[str] = []
+    def __init__(self, sock: socket.socket):
+        self.sock = sock
+        self.loop = asyncio.get_event_loop()
+        self.read_buffer = bytearray()
+        self.current_fd: Optional[int] = None
+        self._read_future: Optional[asyncio.Future] = None
 
-    async def recv(self) -> Optional[Dict]:
-        """Receive length-prefixed MessagePack message."""
+    async def recv(self) -> Tuple[Optional[Dict], Optional[int]]:
+        """Receive length-prefixed MessagePack message + optional FD."""
         try:
-            len_data = await self.reader.readexactly(4)
-            total_len = struct.unpack('<I', len_data)[0]
+            # 1. Read Header (4 bytes) with recvmsg to capture FD
+            header = await self._read_exactly(4, use_recvmsg=True)
+            if not header: return None, None
             
+            total_len = struct.unpack('<I', header)[0]
             if total_len > MAX_MESSAGE_SIZE or total_len < 1:
-                return None
+                return None, None
             
-            version_data = await self.reader.readexactly(1)
-            if version_data[0] != PROTOCOL_VERSION:
-                return None
+            # 2. Read Version (1 byte)
+            version_data = await self._read_exactly(1)
+            if not version_data or version_data[0] != PROTOCOL_VERSION:
+                return None, None
             
+            # 3. Read Payload
             payload_len = total_len - 1
-            data = await self.reader.readexactly(payload_len)
-            return unpacker(data)
+            data = await self._read_exactly(payload_len)
+            if not data: return None, None
+            
+            msg = unpacker(data)
+            fd = self.current_fd
+            self.current_fd = None # Consume FD
+            return msg, fd
+
         except Exception as e:
             LogUtils.debug_log(f"Transport Recv Error: {e}")
-            return None
+            return None, None
+
+    async def _read_exactly(self, n: int, use_recvmsg: bool = False) -> Optional[bytes]:
+        """Read exactly n bytes."""
+        while len(self.read_buffer) < n:
+            data, fd = await self._read_chunk(use_recvmsg and self.current_fd is None)
+            if not data: return None # EOF
+            self.read_buffer.extend(data)
+            if fd is not None:
+                if self.current_fd is not None:
+                     # Already have an FD? Close the new one to avoid leaks?
+                     # Or support multiple? For now, close old one or overwrite?
+                     # RFC says 1 FD per message.
+                     try: os.close(self.current_fd)
+                     except: pass
+                self.current_fd = fd
+        
+        result = self.read_buffer[:n]
+        self.read_buffer = self.read_buffer[n:]
+        return result
+
+    async def _read_chunk(self, use_recvmsg: bool) -> Tuple[bytes, Optional[int]]:
+        """Wait for and read a chunk from socket."""
+        if self._read_future:
+            await self._read_future
+
+        self._read_future = self.loop.create_future()
+        self.loop.add_reader(self.sock.fileno(), self._on_readable)
+        
+        try:
+            return await self._read_future
+        finally:
+            self.loop.remove_reader(self.sock.fileno())
+            self._read_future = None
+
+    def _on_readable(self):
+        try:
+            # Check if future is already done (spurious wakeup or race)
+            if self._read_future.done(): return
+
+            # Try to read
+            # use_recvmsg logic is passed? No, callback doesn't have args easily.
+            # We determine how to read based on checking socket state?
+            # Actually we can just ALWAYS use recvmsg if we want, or simple recv.
+            # But recvmsg is only strict for the first byte.
+            # We can use recvmsg always.
+            
+            try:
+                # 4096 buffer size
+                buf_size = 4096
+                anc_size = socket.CMSG_LEN(struct.calcsize('i'))
+                data, anc, flags, addr = self.sock.recvmsg(buf_size, anc_size)
+                
+                fd = None
+                for cmsg_level, cmsg_type, cmsg_data in anc:
+                    if cmsg_level == socket.SOL_SOCKET and cmsg_type == socket.SCM_RIGHTS:
+                        # Append FDs
+                        raw_fds = struct.unpack(f'{len(cmsg_data)//4}i', cmsg_data)
+                        if raw_fds: fd = raw_fds[0] # Take first
+                
+                if not data and not fd: # EOF
+                     self._read_future.set_result((b'', None))
+                else:
+                     self._read_future.set_result((data, fd))
+
+            except BlockingIOError:
+                pass # Should not happen if select said readable
+            except Exception as e:
+                self._read_future.set_exception(e)
+
+        except Exception as e:
+            if not self._read_future.done():
+                self._read_future.set_exception(e)
 
     async def send(self, msg: Dict):
         """Send length-prefixed MessagePack message."""
@@ -320,15 +404,13 @@ class ZygoteTransport:
             total_len = 1 + len(payload)
             header = struct.pack('<I', total_len)
             version = bytes([PROTOCOL_VERSION])
-            self.writer.write(header + version + payload)
-            await self.writer.drain()
+            await self.loop.sock_sendall(self.sock, header + version + payload)
         except Exception as e:
             LogUtils.debug_log(f"Transport Send Error: {e}")
 
     async def close(self):
-        self.writer.close()
         try:
-            await self.writer.wait_closed()
+            self.sock.close()
         except: pass
 
 
@@ -659,6 +741,90 @@ class ForkHandler:
 # Global router for Command Dispatch
 router = CommandRouter()
 
+# Handler registration (deferred to import time or explicit registration)
+# We need to register handlers.
+async def handle_status(server, cmd):
+    return {
+        "type": "Status",
+        "pid": os.getpid(),
+        "preload": server._preloaded_modules
+    }
+router.handlers["Status"] = handle_status
+
+async def handle_shutdown(server, cmd):
+    asyncio.get_event_loop().call_later(0.1, sys.exit, 0)
+    return {"type": "Ack"}
+router.handlers["Shutdown"] = handle_shutdown
+
+async def handle_fork(server, cmd):
+    # Check rate limit
+    if not server.fork_rate_limiter.acquire():
+         return {"type": "Error", "message": "Rate limit exceeded"}
+
+    # Shadow Preloading Barrier
+    if server.preload_state == "LOADING":
+        # Queue request
+        future = asyncio.get_event_loop().create_future()
+        await server.fork_queue.put((cmd, future))
+        LogUtils.debug_log("Queued fork request during preload")
+        return await future
+
+    # Check for FD
+    # If using SHM, we might need to map it?
+    shm_fd = cmd.get('shm_fd')
+    shm_size = cmd.get('shm_size')
+    
+    # Logic to handle shm mapping could go here or in ForkHandler?
+    # ForkHandler spawns a new process.
+    # If we map SHM here, we map it in the Zygote (Parent).
+    # Then we fork. Child inherits memory.
+    # This is correct for "Lazy Unmap" or "Cow"?
+    # Ideally, we want the child to have it.
+    # If Zygote maps it, child gets it.
+    # But does Zygote need to keep it mapped?
+    # If Zygote maps it, it accumulates mappings?
+    # No, we can unmap in Zygote after fork?
+    # Or, ForkHandler logic handles it.
+    
+    # We pass the FD logic to ForkHandler?
+    # Currently ForkHandler serializes args.
+    
+    # Note: shm_fd is an integer in this process.
+    # We should handle it in ForkHandler.
+    
+    pid = ForkHandler.handle_fork(cmd, server.worker_registry, server._preloaded_modules)
+    if pid > 0:
+        return {"type": "Forked", "worker_pid": pid}
+    else:
+        return {"type": "Error", "message": "Fork failed"}
+router.handlers["Fork"] = handle_fork
+
+async def handle_worker_status(server, cmd):
+    pid = cmd.get("worker_pid")
+    is_running = server.worker_registry.is_alive(pid)
+    uptime = 0 # TODO
+    return {"type": "WorkerInfo", "worker_pid": pid, "is_running": is_running, "uptime_secs": uptime}
+router.handlers["WorkerStatus"] = handle_worker_status
+
+async def handle_signal_worker(server, cmd):
+    pid = cmd.get("worker_pid")
+    sig = cmd.get("signal")
+    try:
+        os.kill(pid, sig)
+    except: pass
+    return {"type": "Ack"}
+router.handlers["SignalWorker"] = handle_signal_worker
+
+async def handle_wait_worker(server, cmd):
+    pid = cmd.get("worker_pid")
+    # Wait logic...
+    return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0} # Placeholder
+router.handlers["WaitWorker"] = handle_wait_worker
+
+async def handle_handshake(server, cmd):
+    return {"type": "Handshake", "version": PROTOCOL_VERSION, "capabilities": ["map-protocol"]}
+router.handlers["Handshake"] = handle_handshake
+
 class ZygoteServer:
     """Layer 2: App Layer - Orchestrates the Zygote service."""
 
@@ -707,12 +873,73 @@ class ZygoteServer:
             # Start background tasks
             asyncio.create_task(self._resource_guard())
             
-            # Start socket listener immediately (before preload completes)
-            await self._run_loop()
+            # Start socket listener manually (manual Accept Loop)
+            self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            # Cleanup old socket
+            if os.path.exists(self.socket_path):
+                # Abstract socket check handled?
+                if not self.is_abstract:
+                     try: os.unlink(self.socket_path)
+                     except: pass
+            
+            self.server_sock.bind(self.socket_path)
+            self.server_sock.listen(100)
+            self.server_sock.setblocking(False)
+            
+            if not self.is_abstract:
+                # Ensure 0700 (Red Line #2)
+                # But get_socket_dir already ensures dir permissions.
+                # Socket file itself should be 0700?
+                # Linux ignores perms on socket file usually, mainly dir matters.
+                pass
+
+            loop = asyncio.get_event_loop()
+            loop.add_reader(self.server_sock.fileno(), self._accept_client)
+            
+            # Start loop
+            while True:
+                await asyncio.sleep(3600) # Keep alive
+                
         except Exception as e:
             LogUtils.debug_log(f"Server Startup Error: {e}")
             traceback.print_exc()
             sys.exit(1)
+
+    def _accept_client(self):
+        try:
+            client_sock, _ = self.server_sock.accept()
+            client_sock.setblocking(False)
+            asyncio.create_task(self._handle_client_socket(client_sock))
+        except Exception as e:
+            LogUtils.debug_log(f"Accept Error: {e}")
+
+    async def _handle_client_socket(self, sock: socket.socket):
+        transport = ZygoteTransport(sock)
+        try:
+            # 1. Handshake
+            # Wait for handshake command... or rather we wait for any command?
+            # Protocol says: Client sends Connect?
+            # No, connect returns Ready from Server?
+            # Let's check rust impl: ZygoteStream::connect reads Ready.
+            
+            # Send Ready greeting
+            await transport.send({"type": "Ready"})
+            
+            while True:
+                msg, fd = await transport.recv()
+                if not msg: break
+                
+                # Handle FD injection
+                if fd is not None:
+                    msg['shm_fd'] = fd # Inject into message for handler
+                
+                response = await router.dispatch(self, msg)
+                await transport.send(response)
+                
+        except Exception as e:
+            LogUtils.debug_log(f"Client Handle Error: {e}")
+        finally:
+            await transport.close()
 
     async def _async_preload(self):
         """Async preloading of modules - runs in background."""

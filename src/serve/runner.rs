@@ -605,6 +605,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
                     capabilities: vec![],
                 },
+                None,
             ) {
                 Ok(crate::zygote::ipc::ZygoteResponse::Handshake { version, .. })
                     if version == crate::zygote::ipc::PROTOCOL_VERSION =>
@@ -644,7 +645,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         // Spawn N workers
         for i in 0..args.workers {
             // SWITCH TO UDS mode (RFC-0011)
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, None) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -831,7 +832,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                             ));
 
                             // Respawn via Zygote
-                            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+                            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, None) {
                                 Ok(new_worker) => {
                                     // Update LoadBalancer with new socket
                                     if let Some(ref old_path) = worker.socket_path {
@@ -866,6 +867,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     if let Err(e) = crate::zygote::ipc::send_command(
                         &socket_path,
                         crate::zygote::ipc::ZygoteCommand::Status,
+                        None,
                     ) {
                         logger.warn(&format!("Zygote health check failed: {}", e));
                         // Zygote is dead - could restart here, but for now just log
