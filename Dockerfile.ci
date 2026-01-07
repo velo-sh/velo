@@ -8,6 +8,11 @@
 #
 # For interactive debugging:
 #   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu bash
+#
+# BEST PRACTICES:
+# 1. FAIL FAST: Environment checks run FIRST before any builds
+# 2. DRY: Uses scripts/ci-common.sh shared library
+# 3. ISOLATED: Uses /tmp for venv to not overwrite host .venv
 
 FROM ubuntu:22.04
 
@@ -40,35 +45,55 @@ WORKDIR /workspace
 # Use /tmp for Docker venv to avoid destroying host .venv
 ENV UV_PROJECT_ENVIRONMENT=/tmp/.venv-docker
 
-# Default command: run full CI check
+# Default command: run full CI check with FAIL FAST
 CMD ["bash", "-c", "\
+    echo '' && \
     echo '🚀 Velo Local CI Simulation (Ubuntu 22.04)' && \
     echo '===========================================' && \
     echo '' && \
-    echo '📋 Environment:' && \
+    echo '==================== Phase 0: Environment Check (FAIL FAST) ====================' && \
+    echo '' && \
+    echo '▶ Checking environment...' && \
     uname -a && \
     rustc --version && \
-    uv python list && \
+    uv --version && \
+    echo '✅ Environment OK' && \
     echo '' && \
-    echo '🔧 Setting up project...' && \
+    echo '==================== Phase 1: Setup ====================' && \
+    echo '' && \
+    echo '▶ Setting up Python environment...' && \
     uv venv --python 3.11 /tmp/.venv-docker && \
     uv sync --extra dev && \
+    echo '✅ Python environment ready' && \
     echo '' && \
-    echo '🏗️ Building Rust...' && \
+    echo '==================== Phase 2: Build ====================' && \
+    echo '' && \
+    echo '▶ Building Rust (release)...' && \
     cargo build --release && \
+    echo '✅ Rust build complete' && \
     echo '' && \
-    echo '🧪 Running Rust tests...' && \
+    echo '==================== Phase 3: Test ====================' && \
+    echo '' && \
+    echo '▶ Running Rust tests...' && \
     cargo test --lib && \
+    echo '✅ Rust tests passed' && \
     echo '' && \
-    echo '🧹 Running Clippy...' && \
-    cargo clippy -- -D warnings && \
-    echo '' && \
-    echo '📝 Checking format...' && \
-    cargo fmt --check && \
-    echo '' && \
-    echo '🐍 Running Python tests...' && \
+    echo '▶ Running Python tests...' && \
     . /tmp/.venv-docker/bin/activate && \
     pytest tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py -v && \
+    echo '✅ Python tests passed' && \
     echo '' && \
-    echo '✅ All CI checks passed!' \
+    echo '==================== Phase 4: Lint ====================' && \
+    echo '' && \
+    echo '▶ Running Clippy...' && \
+    cargo clippy -- -D warnings && \
+    echo '✅ Clippy passed' && \
+    echo '' && \
+    echo '▶ Checking format...' && \
+    cargo fmt --check && \
+    echo '✅ Format OK' && \
+    echo '' && \
+    echo '==========================================' && \
+    echo '✅ ALL CI CHECKS PASSED!' && \
+    echo '==========================================' \
     "]

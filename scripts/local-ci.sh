@@ -1,113 +1,157 @@
 #!/bin/bash
-# Local CI Simulation Script
-# ==========================
-# Run GitHub Actions CI locally using Docker.
+# =============================================================================
+# Velo Local CI Script
+# =============================================================================
+# Run CI locally (macOS) or in Docker (Ubuntu simulation)
 #
-# Usage:
-#   ./scripts/local-ci.sh           # Run full CI
-#   ./scripts/local-ci.sh --build   # Just build the image
-#   ./scripts/local-ci.sh --shell   # Interactive shell for debugging
+# BEST PRACTICES:
+# 1. FAIL FAST: Environment checks run FIRST
+# 2. DRY: Uses shared ci-common.sh library
+# 3. MODULAR: Separate phases that can be run individually
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Source common library
+source "$SCRIPT_DIR/ci-common.sh"
+
+# =============================================================================
+# Configuration
+# =============================================================================
 IMAGE_NAME="velo-ci-ubuntu"
 DOCKERFILE="Dockerfile.ci"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
+# =============================================================================
+# Usage
+# =============================================================================
 print_usage() {
+    echo "Velo Local CI"
+    echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --build    Build the CI Docker image only"
-    echo "  --shell    Start interactive shell for debugging"
-    echo "  --quick    Run quick tests only (skip full CI suite)"
-    echo "  --help     Show this help message"
+    echo "  (no args)    Run full CI locally (macOS)"
+    echo "  --docker     Run full CI in Docker (Ubuntu simulation)"
+    echo "  --build      Build Docker image only"
+    echo "  --shell      Interactive Docker shell for debugging"
+    echo "  --quick      Quick local check (build + unit tests only)"
+    echo "  --check      Environment check only (fail fast)"
+    echo "  --help       Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0              # Run full CI simulation"
-    echo "  $0 --shell      # Debug in Ubuntu container"
+    echo "  $0                 # Full local CI"
+    echo "  $0 --docker        # Simulate Ubuntu CI"
+    echo "  $0 --check         # Quick environment validation"
 }
 
-build_image() {
-    echo -e "${YELLOW}🔨 Building CI Docker image...${NC}"
+# =============================================================================
+# Docker Functions
+# =============================================================================
+docker_build() {
+    log_step "Building Docker image..."
     docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" .
-    echo -e "${GREEN}✅ Image built successfully${NC}"
+    log_success "Docker image built"
 }
 
-run_ci() {
-    echo -e "${YELLOW}🚀 Running Local CI Simulation (Ubuntu 22.04)${NC}"
-    echo ""
-    
-    # Check if image exists, build if not
+docker_run() {
+    # Ensure image exists
     if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-        build_image
+        docker_build
     fi
     
+    log_step "Running CI in Docker (Ubuntu 22.04)..."
     docker run --rm \
-        -v "$(pwd):/workspace" \
+        -v "$PROJECT_ROOT:/workspace" \
         -e GITHUB_ACTIONS=true \
         "$IMAGE_NAME"
 }
 
-run_shell() {
-    echo -e "${YELLOW}🐚 Starting interactive shell...${NC}"
-    
-    # Check if image exists, build if not
+docker_shell() {
+    # Ensure image exists
     if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-        build_image
+        docker_build
     fi
     
+    log_step "Starting interactive Docker shell..."
     docker run --rm -it \
-        -v "$(pwd):/workspace" \
+        -v "$PROJECT_ROOT:/workspace" \
         -e GITHUB_ACTIONS=true \
         "$IMAGE_NAME" \
         bash
 }
 
-run_quick() {
-    echo -e "${YELLOW}⚡ Running quick CI check...${NC}"
+# =============================================================================
+# Local CI Functions
+# =============================================================================
+run_local_ci() {
+    echo ""
+    echo "🚀 Velo Local CI (macOS)"
+    echo "========================"
+    echo ""
     
-    if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
-        build_image
-    fi
+    # Phase 0: FAIL FAST environment check
+    check_env_fast
     
-    docker run --rm \
-        -v "$(pwd):/workspace" \
-        -e GITHUB_ACTIONS=true \
-        "$IMAGE_NAME" \
-        bash -c "
-            uv venv --python 3.11 && \
-            uv sync --extra dev && \
-            cargo build --release && \
-            cargo test --lib && \
-            echo '✅ Quick check passed!'
-        "
+    # Run full CI pipeline
+    run_full_ci ".venv" "tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py"
 }
 
-# Parse arguments
+run_quick_check() {
+    echo ""
+    echo "⚡ Velo Quick Check"
+    echo "==================="
+    echo ""
+    
+    # Phase 0: FAIL FAST environment check
+    check_env_fast
+    
+    # Quick build + test only
+    log_step "Quick build..."
+    cargo build --release
+    
+    log_step "Quick test..."
+    cargo test --lib
+    
+    echo ""
+    log_success "Quick check passed!"
+}
+
+# =============================================================================
+# Main
+# =============================================================================
 case "${1:-}" in
+    --docker)
+        export CHECK_DOCKER=true
+        check_env_fast
+        docker_run
+        ;;
     --build)
-        build_image
+        export CHECK_DOCKER=true
+        check_env_fast
+        docker_build
         ;;
     --shell)
-        run_shell
+        export CHECK_DOCKER=true
+        check_env_fast
+        docker_shell
         ;;
     --quick)
-        run_quick
+        run_quick_check
+        ;;
+    --check)
+        check_env_fast
         ;;
     --help|-h)
         print_usage
         ;;
     "")
-        run_ci
+        run_local_ci
         ;;
     *)
-        echo -e "${RED}Unknown option: $1${NC}"
+        log_error "Unknown option: $1"
         print_usage
         exit 1
         ;;
