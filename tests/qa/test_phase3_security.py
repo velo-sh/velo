@@ -26,6 +26,10 @@ from pathlib import Path
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM
+
+
 
 def get_velo_binary():
     repo_root = Path(__file__).parent.parent.parent
@@ -48,8 +52,10 @@ class SecurityEnv:
         (self.path / "uv.lock").write_text("{}")
         return self
     
-    def start_zygote(self, timeout=10):
+    def start_zygote(self, timeout=None):
         """Start Zygote and return socket path."""
+        if timeout is None:
+            timeout = T_MEDIUM  # CI-aware timeout
         result = subprocess.run(
             [self.velo, "zygote", "start"],
             cwd=self.path,
@@ -80,7 +86,7 @@ class SecurityEnv:
             [self.velo, "zygote", "stop"],
             cwd=self.path,
             capture_output=True,
-            timeout=5
+            timeout=T_SHORT  # CI-aware timeout
         )
     
     def send_raw(self, data: bytes) -> bytes:
