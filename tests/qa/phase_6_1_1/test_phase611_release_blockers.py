@@ -12,8 +12,14 @@ These tests cover the Release Blockers identified in 0011-qa-review.md:
 Priority: P0 (MUST pass before release)
 """
 
-import pytest
+import os
+import signal
+import time
 from pathlib import Path
+
+import psutil
+import pytest
+import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))

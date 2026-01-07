@@ -10,9 +10,12 @@ If any L0 test fails, do NOT proceed to L1+.
 Following QA SOP v2.2 Fail-Fast Rule.
 """
 
+from pathlib import Path
+
+import psutil
 import pytest
 import sys
-from pathlib import Path
+import requests
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))

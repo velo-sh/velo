@@ -13,8 +13,14 @@ These tests cover concerns raised by Expert Reviews:
 Priority: P2 (Important for production readiness)
 """
 
-import pytest
+import os
+import signal
+import time
 from pathlib import Path
+
+import psutil
+import pytest
+import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
