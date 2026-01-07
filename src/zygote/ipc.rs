@@ -13,7 +13,7 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
-use blake3;
+
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -118,122 +118,16 @@ pub enum ZygoteResponse {
 
 /// Get the default socket path for Zygote IPC
 ///
-/// DEF-61-004: Socket path includes protocol version for upgrade isolation
-/// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
+/// Delegates to `common::paths` for canonical resolution (RFC-0012).
 pub fn default_socket_path() -> PathBuf {
-    // Audit Remediation: Prioritize explicit socket path from environment (conftest.py support)
-    if let Ok(path) = std::env::var("VELO_ZYGOTE_SOCKET") {
-        return PathBuf::from(path);
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::ffi::OsStringExt;
-        let mut bytes = vec![0u8];
-        bytes.extend_from_slice(format!("velo-zygote-v{:02x}", PROTOCOL_VERSION).as_bytes());
-        PathBuf::from(std::ffi::OsString::from_vec(bytes))
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    get_socket_dir().join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
+    crate::common::paths::get_socket_path()
 }
 
 /// Get the user-isolated socket directory
 ///
-/// DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
-/// Directory has 0700 permissions for security
-///
-/// # Red Line #1: Path Length Circuit Breaker
-/// Unix sockets have a 108-character path limit. We use 104 as the threshold
-/// to leave margin for the socket filename. If exceeded, fallback to /tmp.
+/// Delegates to `common::paths` (RFC-0012).
 pub fn get_socket_dir() -> PathBuf {
-    /// Red Line #1: Path length limit with 4-byte margin
-    const SOCKET_PATH_LIMIT: usize = 104;
-    let uid = unsafe { libc::getuid() };
-
-    // RFC §3.3: Use project-specific randomized identity for isolation
-    let project_hash = if let Ok(cwd) = std::env::current_dir() {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(cwd.to_string_lossy().as_bytes());
-        let hash = hasher.finalize().to_hex()[..8].to_string();
-        format!("-{}", hash)
-    } else {
-        "".to_string()
-    };
-
-    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
-    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        let dir = PathBuf::from(xdg_dir).join("velo");
-        let test_path = dir.join("velo-zygote-v01.sock");
-        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
-            return dir;
-        }
-    }
-
-    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
-    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
-    let user_dir = std::env::temp_dir().join(&dir_name);
-    let test_path = user_dir.join("velo-zygote-v01.sock");
-
-    // Red Line #1: Check path length BEFORE ensuring directory
-    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
-        return user_dir;
-    }
-
-    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
-    // Red Line #1: /tmp fallback when path too long
-    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
-        eprintln!(
-            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
-            SOCKET_PATH_LIMIT
-        );
-    }
-    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
-    let _ = ensure_socket_dir(&fallback_dir);
-    fallback_dir
-}
-
-/// Ensure socket directory exists with proper permissions (0700)
-///
-/// # Red Line #2: Double Permission Verification
-/// After setting permissions, we MUST verify the mode is exactly 0700.
-/// If umask interferes and permissions are wrong, we log a warning.
-fn ensure_socket_dir(dir: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    // Create directory if needed with strict umask (RFC §3.3)
-    if !dir.exists() {
-        let old_mask = unsafe { libc::umask(0o077) };
-        let res = std::fs::create_dir_all(dir);
-        unsafe { libc::umask(old_mask) };
-        if res.is_err() {
-            return false;
-        }
-    }
-
-    // Set 0700 permissions (owner only) - redundant but safe (Red Line #2)
-    if let Ok(metadata) = dir.metadata() {
-        let mut perms = metadata.permissions();
-        perms.set_mode(0o700);
-        if std::fs::set_permissions(dir, perms.clone()).is_err() {
-            return false;
-        }
-
-        // Red Line #2: Double verification - confirm mode is 0700
-        if let Ok(verify_meta) = dir.metadata() {
-            let mode = verify_meta.permissions().mode() & 0o777;
-            if mode != 0o700 {
-                eprintln!(
-                    "🚨 SECURITY CRITICAL: Socket dir has insecure permissions: {:o} (expected 0700). Aborting.",
-                    mode
-                );
-                // RED LINE #2: Fail closed if permissions cannot be verified
-                return false;
-            }
-        }
-    }
-
-    true
+    crate::common::paths::get_socket_dir()
 }
 
 /// Check if a socket is alive (responds to connection attempt)

@@ -35,16 +35,17 @@ from typing import List, Optional, Set, Dict, Any, Tuple
 # ============================================================================
 # Protocol Constants (ADV-1 + DEF-61-004)
 # ============================================================================
-PROTOCOL_VERSION = 0x01
+
+# ============================================================================
+# Protocol Constants (ADV-1 + DEF-61-004)
+# ============================================================================
+try:
+    from velo_zygote.paths import PROTOCOL_VERSION, SOCKET_PATH_LIMIT, get_socket_dir, ensure_socket_dir
+except ImportError:
+    # Fallback when running directly from directory
+    from paths import PROTOCOL_VERSION, SOCKET_PATH_LIMIT, get_socket_dir, ensure_socket_dir
+
 MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-# ============================================================================
-# Socket Path Functions (DEF-61-004: Protocol Socket Isolation)
-# ============================================================================
-
-# Red Line #1: Path length limit with 4-byte margin from 108 Unix limit
-SOCKET_PATH_LIMIT = 104
 
 
 class ImportShield(importlib.abc.MetaPathFinder):
@@ -78,67 +79,6 @@ class ImportShield(importlib.abc.MetaPathFinder):
             if framework_dir in sys.path:
                 sys.path.remove(framework_dir)
 
-def get_socket_dir() -> Path:
-    """Get the user-isolated socket directory.
-    
-    DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
-    Directory has 0700 permissions for security.
-    
-    Red Line #1: Path Length Circuit Breaker
-    Unix sockets have a 108-character path limit. We use 104 as the threshold
-    to leave margin for the socket filename. If exceeded, fallback to /tmp.
-    """
-    uid = os.getuid()
-    
-    # 1. Try XDG_RUNTIME_DIR (preferred on Linux)
-    xdg_dir = os.environ.get("XDG_RUNTIME_DIR")
-    if xdg_dir:
-        dir_path = Path(xdg_dir) / "velo"
-        test_path = dir_path / "velo-zygote-v01.sock"
-        if len(str(test_path)) <= SOCKET_PATH_LIMIT and ensure_socket_dir(dir_path):
-            return dir_path
-    
-    # 2. Try user-isolated temp directory
-    import tempfile
-    user_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
-    test_path = user_dir / "velo-zygote-v01.sock"
-    # Red Line #1: Check path length BEFORE ensuring directory
-    if len(str(test_path)) <= SOCKET_PATH_LIMIT and ensure_socket_dir(user_dir):
-        return user_dir
-    
-    # 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
-    # Red Line #1: /tmp fallback when path too long
-    if len(str(test_path)) > SOCKET_PATH_LIMIT:
-        print(f"⚠️ $TMPDIR path too long (>{SOCKET_PATH_LIMIT} chars), falling back to /tmp", file=sys.stderr)
-    fallback_dir = Path("/tmp") / f"velo-{uid}"
-    ensure_socket_dir(fallback_dir)
-    return fallback_dir
-
-
-def ensure_socket_dir(dir_path: Path) -> bool:
-    """Ensure socket directory exists with 0700 permissions.
-    
-    Red Line #2 & #6: Double Permission Verification
-    After setting permissions, we MUST verify the mode is exactly 0700.
-    If umask interferes and permissions are wrong, we log a warning.
-    """
-    try:
-        dir_path.mkdir(parents=True, exist_ok=True)
-        # Set 0700 permissions (owner only)
-        os.chmod(dir_path, 0o700)
-        
-        # Red Line #2/#6: Double verification - confirm mode is 0700
-        actual_mode = os.stat(dir_path).st_mode & 0o777
-        if actual_mode != 0o700:
-            print(
-                f"⚠️ SECURITY: Socket dir has insecure permissions: {oct(actual_mode)} (expected 0700)",
-                file=sys.stderr
-            )
-            # Continue but warn - umask may have interfered
-        
-        return True
-    except (OSError, PermissionError):
-        return False
 
 
 def get_versioned_socket_path() -> Path:
