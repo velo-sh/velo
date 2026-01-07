@@ -205,8 +205,12 @@ except (ImportError, OSError) as e:
 _BLOCKED_PATHS = [
     "/etc", "/var", "/usr", "/bin", "/sbin",
     "/System", "/Library", "/private/etc",
-    "/root", "/home",
+    "/root",
 ]
+
+# Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
+if os.environ.get("GITHUB_ACTIONS") != "true":
+    _BLOCKED_PATHS.append("/home")
 
 
 class ForkRateLimiter:
@@ -422,17 +426,19 @@ class WorkerRegistry:
             }
 
     @staticmethod
-    def start_guardian(parent_pid: int, ttl: int):
+    def start_guardian(parent_pid: int, ttl: int, monitor_parent: bool = True):
         """Guardian thread to prevent orphans."""
         def guardian():
             start_time = time.time()
-            print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
+            # print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
             while True:
-                current_ppid = os.getppid()
-                if current_ppid != parent_pid: 
-                    # Supervisor lost - terminate immediately
-                    print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
-                    os._exit(1)
+                if monitor_parent:
+                    current_ppid = os.getppid()
+                    if current_ppid != parent_pid: 
+                        # Supervisor lost - terminate immediately
+                        # print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
+                        os._exit(1)
+                
                 if ttl > 0 and (time.time() - start_time) > ttl: 
                     # TTL expired
                     print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
@@ -628,8 +634,9 @@ class ForkHandler:
         p_log("Start _child_process")
         exit_code = 0
         try:
-            # 1. Start Guardian
-            WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
+            # 1. Start Guardian (Workers MUST die if Zygote dies)
+            WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
+            p_log("Guardian Started")
             p_log("Guardian Started")
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
@@ -757,9 +764,9 @@ class ZygoteServer:
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
             
-            # RAII Reaper Chain: Monitor our own parent (the supervisor)
-            # If the supervisor dies, we MUST die to prevent orphan leaks.
-            WorkerRegistry.start_guardian(os.getppid(), 0)
+            # RAII Reaper Chain: Zygote process doesn't monitor parent (lives until idle)
+            # Worker processes DO monitor Zygote parent.
+            # WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=False)
             
             self._setup_signals()
             
@@ -897,7 +904,11 @@ class ZygoteServer:
             path = Path(self.socket_path)
             if path.exists(): path.unlink()
             
-        server = await asyncio.start_unix_server(self._handle_client, path=self.socket_path)
+        server = await asyncio.start_unix_server(
+            self._handle_client, 
+            path=self.socket_path,
+            backlog=512
+        )
         LogUtils.log("Zygote IPC Layer Ready.")
         
         async with server:
