@@ -316,7 +316,7 @@ pub fn cleanup_stale_sockets() {
                     // Red Line #3: Atomic cleanup with proper error handling
                     match std::fs::remove_file(&path) {
                         Ok(_) => {
-                            eprintln!("🔄 Cleaned stale socket: {}", name);
+                            // println!("🔄 Cleaned stale socket: {}", name);
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             // Ignore - socket already removed (race condition)
@@ -403,7 +403,7 @@ fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC SEND] {:?}", msg);
+    // println!("[IPC SEND] {:?}", msg);
 
     // Write 4-byte length prefix (little-endian) - includes version + payload
     let total_len = 1 + payload.len(); // version byte + payload
@@ -483,8 +483,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC RECV] {:?}", msg);
-
+    // println!("[IPC RECV] {:?}", msg);
     Ok(msg)
 }
 
