@@ -627,16 +627,7 @@ class ForkHandler:
             with open(script_path, "rb") as f:
                 content = f.read()
                 code = compile(content, script_path, "exec")
-                t_compile = time.perf_counter()
                 exec(code, {"__name__": "__main__", "__file__": script_path})
-                t_exec = time.perf_counter()
-            
-            LogUtils.debug_log(f"Worker Timings (ms): total={ (t_exec-ts)*1000:.2f}, "
-                               f"env={ (t_env-ts)*1000:.2f}, guard={ (t_guard-t_env)*1000:.2f}, "
-                               f"reinit={ (t_reinit-t_guard)*1000:.2f}, shield={ (t_shield-t_reinit)*1000:.2f}, "
-                               f"io={ (t_io-t_shield)*1000:.2f}, args={ (t_args-t_io)*1000:.2f}, "
-                               f"fast={ (t_fast-t_args)*1000:.2f}, compile={ (t_compile-t_fast)*1000:.2f}, "
-                               f"exec={ (t_exec-t_compile)*1000:.2f}")
             
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)

@@ -122,6 +122,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             cmd.fast,
             &project_dir,
             &config,
+            cmd.profile,
         )? {
             if cmd.profile {
                 eprintln!(
@@ -169,6 +170,7 @@ fn try_zygote_run(
     fast_enabled: bool,
     project_dir: &Path,
     config: &VeloConfig,
+    profile: bool,
 ) -> Result<Option<()>> {
     use crate::zygote;
 
@@ -191,10 +193,12 @@ fn try_zygote_run(
             .map(|c| c.preload.iter().map(|s| s.as_str()).collect())
             .unwrap_or_default();
 
-        if preload.is_empty() {
-            eprintln!("🚀 Starting Zygote...");
-        } else {
-            eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
+        if profile {
+            if preload.is_empty() {
+                eprintln!("🚀 Starting Zygote...");
+            } else {
+                eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
+            }
         }
 
         if let Err(e) = launcher.start(&preload, None) {
@@ -202,7 +206,9 @@ fn try_zygote_run(
             eprintln!("   Falling back to normal mode");
             return Ok(None);
         }
-        eprintln!("✅ Zygote ready");
+        if profile {
+            eprintln!("✅ Zygote ready");
+        }
         true
     } else {
         false
@@ -235,7 +241,7 @@ fn try_zygote_run(
                 max_size,
             ) {
                 Ok(worker) => {
-                    if async_enabled {
+                    if async_enabled && profile {
                         eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
                         if let Some(stdout) = worker.stdout_path() {
                             eprintln!("📝 Logs (stdout): {}", stdout.display());

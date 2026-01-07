@@ -57,7 +57,6 @@ pub fn cmd_zygote(args: &[String]) -> Result<()> {
 #[cfg(unix)]
 fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<()> {
     let python_path = python::detect_python(project_dir)?;
-    println!("DEBUG: Velo detected python at: {:?}", python_path);
     let socket_path = zygote::ipc::default_socket_path();
 
     if socket_path.exists() {
