@@ -44,6 +44,45 @@ TIMEOUT_MULTIPLIER = get_timeout_multiplier()
 CI_TIMEOUT = ci_timeout  # Alias for shorter imports
 
 
+# =============================================================================
+# AUTOMATIC SUBPROCESS TIMEOUT SCALING
+# =============================================================================
+# Monkey-patch subprocess.run to automatically scale timeouts in CI.
+# This ensures ALL tests get scaled timeouts without code changes.
+
+_original_subprocess_run = subprocess.run
+
+def _patched_subprocess_run(*args, **kwargs):
+    """Wrapper that scales timeout by VELO_TIMEOUT_MULTIPLIER."""
+    if "timeout" in kwargs and kwargs["timeout"] is not None:
+        original_timeout = kwargs["timeout"]
+        kwargs["timeout"] = original_timeout * TIMEOUT_MULTIPLIER
+    return _original_subprocess_run(*args, **kwargs)
+
+# Apply the patch globally
+subprocess.run = _patched_subprocess_run
+
+# Also patch Popen.wait and Popen.communicate for good measure
+_original_popen_wait = subprocess.Popen.wait
+_original_popen_communicate = subprocess.Popen.communicate
+
+def _patched_popen_wait(self, timeout=None):
+    """Wrapper that scales timeout."""
+    if timeout is not None:
+        timeout = timeout * TIMEOUT_MULTIPLIER
+    return _original_popen_wait(self, timeout=timeout)
+
+def _patched_popen_communicate(self, input=None, timeout=None):
+    """Wrapper that scales timeout."""
+    if timeout is not None:
+        timeout = timeout * TIMEOUT_MULTIPLIER
+    return _original_popen_communicate(self, input=input, timeout=timeout)
+
+subprocess.Popen.wait = _patched_popen_wait
+subprocess.Popen.communicate = _patched_popen_communicate
+
+
+
 
 # =============================================================================
 # TIER MARKERS (per tiered-testing-guide.md)
