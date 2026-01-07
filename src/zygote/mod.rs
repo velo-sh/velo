@@ -745,6 +745,7 @@ impl ZygoteLauncher {
         bundle_path: Option<PathBuf>,
         project_root: Option<PathBuf>,
         max_bundle_size: Option<u64>,
+        shm_file: Option<&std::fs::File>,
     ) -> Result<WorkerHandle> {
         if !self.is_running() {
             return Err(ZygoteError::NotRunning);
@@ -771,6 +772,16 @@ impl ZygoteLauncher {
         let exit_code_path =
             std::env::temp_dir().join(format!("velo-exit-{}-{}.tmp", pid, timestamp));
 
+        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+            use std::os::unix::io::AsRawFd;
+            let meta = file
+                .metadata()
+                .map_err(|e| ZygoteError::IOError(e.to_string()))?;
+            (Some(file.as_raw_fd()), Some(meta.len() as usize))
+        } else {
+            (None, None)
+        };
+
         // Send FORK command over socket
         let response = ipc::send_command(
             &self.socket_path,
@@ -785,9 +796,9 @@ impl ZygoteLauncher {
                 bundle_path,
                 project_root,
                 max_bundle_size,
-                shm_size: None,
+                shm_size,
             },
-            None,
+            fd_to_pass,
         )?;
 
         match response {
