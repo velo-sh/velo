@@ -518,7 +518,7 @@ jobs:
   qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
-    needs: [qa-phase61-security-hardened, changes]
+    needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.zygote == 'true' ||
@@ -541,7 +541,7 @@ jobs:
   qa-phase61-dx-performance:
     name: "QA 6.1: DX & Performance"
     runs-on: ubuntu-latest
-    needs: [qa-phase61-stability-hardened, changes]
+    needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.zygote == 'true' ||
@@ -568,7 +568,7 @@ jobs:
   qa-phase62-prosecutor:
     name: "QA 6.2: Prosecutor Suite (RFC-0012)"
     runs-on: ubuntu-latest
-    needs: [qa-phase61-security-hardened, changes]
+    needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.zygote == 'true' ||
@@ -592,7 +592,7 @@ jobs:
   qa-phase611-core:
     name: "QA 6.1.1: Core Integration"
     runs-on: ubuntu-latest
-    needs: [qa-phase62-prosecutor, changes]
+    needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.zygote == 'true' ||
