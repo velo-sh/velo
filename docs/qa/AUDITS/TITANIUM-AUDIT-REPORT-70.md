@@ -1,26 +1,32 @@
-### Finding 004: Complete CLI Feature Erasure (CATASTROPHIC)
-The developer update `0951863` and `bada599` completely **DELETED** the `--shm` flag and related integration logic from the CLI.
-- **Evidence**: `src/cmd/analyze.rs` (No `shm` arguments defined), `src/cmd/run.rs` (No `shm` logic).
-- **Codified Test Failure**: `test_L0_cli_shm_flag_missing_analyze` and `test_L0_cli_shm_flag_missing_run` both FAILED in Docker CI.
-- **Impact**: The "Memory Gravity" feature is **unusable** via the CLI. Even if the internal logic existed, no user can trigger it.
-- **QA Verdict**: **TOTAL FAILURE**.
+### Finding 004: CLI Feature Restoration (RESOLVED)
+The developer update `bcfd485` restored the `--shm` flags in `analyze` and `run`.
+- **Verdict**: RESOLVED.
+
+### Finding 002: H-20 HugePage Optimization (STILL MISSING)
+Despite CLI restoration, the core implementation in `src/shm/registry.rs` still lacks `MAP_HUGETLB`/`MFD_HUGETLB` support.
+- **Evidence**: Grep of updated `registry.rs` confirms zero HugePage logic.
+- **Verdict**: STILL BROKEN.
+
+### Finding 005: DEF-70-004 Deadlock on Malformed/Unaligned Segments (P0 BLOCKER)
+The "restored" logic in `analyze.rs` causes a total process deadlock when processing malformed headers or unaligned data.
+- **Evidence**: `test_L0_alignment_integrity` and `test_L0_error_header_too_large` now **HANG** (TimeoutExpired) in Docker CI.
+- **Impact**: Systems using Memory Gravity can experience silent hangs on malformed input.
+- **Verdict**: NEW CRITICAL REGRESSION.
 
 ---
 
-## 🛑 Codified Test Results (Storm of Proof)
-
-The following tests in `tests/qa/phase_7_0/test_phase7_0_contract.py` now serve as permanent blockers for this branch:
+## 🛑 Codified Test Results (Storm of Proof v2)
 
 | Test Name | Status | Finding |
 |:---|:---|:---|
-| `test_L0_cli_shm_flag_missing_analyze` | ❌ FAILED | Finding 004 (CLI Erasure) |
-| `test_L0_cli_shm_flag_missing_run` | ❌ FAILED | Finding 004 (CLI Erasure) |
-| `test_L0_h20_hugepage_erasure` | ❌ FAILED | Finding 002 (HugePage missing) |
-| `test_L0_error_missing_file` | ❌ FAILED | Velo rejects CLI options before logic |
+| `test_L0_cli_shm_flag_missing_analyze` | ✅ PASSED | Finding 004 RESOLVED |
+| `test_L0_h20_hugepage_erasure` | ❌ FAILED | Finding 002 PERSISTS |
+| `test_L0_error_header_too_large` | ⏰ TIMEOUT | **Finding 005 (DEADLOCK)** |
+| `test_L0_alignment_integrity` | ⏰ TIMEOUT | **Finding 005 (DEADLOCK)** |
 
 ---
 
-## 📊 AUDIT SCORE: 0/100 (CATASTROPHIC FAIL)
+## 📊 AUDIT SCORE: 20/100 (REJECTED)
 
 The current implementation is functionally **NON-EXISTENT** at the CLI level and architecturally **mismatched** at the kernel level.
 
