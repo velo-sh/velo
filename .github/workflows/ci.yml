@@ -647,9 +647,17 @@ jobs:
           export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
           # Detect the specific regression we just fixed: dry-run hanging in Zygote mode
           # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
-          timeout 10s velo serve --dry-run || {
-            echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
-            exit 1
+          echo "from fastapi import FastAPI; app = FastAPI()" > main.py
+          uv pip install fastapi
+          timeout 10s velo serve main:app --dry-run || {
+            RET=$?
+            if [ $RET -eq 124 ]; then
+              echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
+              exit 1
+            elif [ $RET -ne 0 ]; then
+              echo "❌ CRITICAL FAILURE: velo serve failed with exit code $RET"
+              exit 1
+            fi
           }
 
   # ============================================
