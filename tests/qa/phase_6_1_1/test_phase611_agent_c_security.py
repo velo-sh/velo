@@ -209,7 +209,42 @@ class TestL4Security:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        socket_dir = Path(f"/tmp/velo-{os.getuid()}")
+        import tempfile
+        
+        # Logic matching velo_zygote/main.py: get_socket_dir()
+        # 1. Check XDG
+        xdg_dir = os.environ.get("XDG_RUNTIME_DIR")
+        socket_dir = None
+        if xdg_dir:
+            path = Path(xdg_dir) / "velo"
+            if path.exists():
+                socket_dir = path
+
+        # 2. Check tempfile.gettempdir()
+        if not socket_dir:
+            uid = os.getuid()
+            path = Path(tempfile.gettempdir()) / f"velo-{uid}"
+            if path.exists():
+                socket_dir = path
+        
+        # 3. Fallback /tmp
+        if not socket_dir:
+            path = Path(f"/tmp/velo-{uid}")
+            if path.exists():
+                socket_dir = path
+                
+        # If still not found, check if it's an abstract socket (Linux only)
+        if not socket_dir and sys.platform == "linux":
+             # Abstract socket check happens below
+             pass
+        elif not socket_dir:
+             # Just fail if we expect it to exist (Zygote started)
+             # Wait, maybe it hasn't created it yet? But proc.wait_ready() implies it's up.
+             # fallback to /tmp for loop, or check specific location
+             # fallback to temp dir (Velo behavior)
+             import tempfile
+             socket_dir = Path(tempfile.gettempdir()) / f"velo-{os.getuid()}"
+
 
         if socket_dir.exists():
             # Verify directory permissions

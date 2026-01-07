@@ -413,6 +413,15 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
     Ok(())
 }
 
+/// Exit reason for the server
+#[derive(Debug, PartialEq, Eq)]
+pub enum ServerExit {
+    /// Server shut down gracefully (signal or finished)
+    Shutdown,
+    /// Hot reload requested
+    Reload,
+}
+
 /// Run the ASGI/WSGI application via uvicorn/gunicorn
 ///
 /// # Arguments
@@ -420,7 +429,7 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
 /// * `python_path` - Path to Python interpreter
 /// * `project_dir` - Project directory
 #[cfg(unix)]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
+pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<ServerExit> {
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
     use std::time::Instant;
 
@@ -580,7 +589,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         let ready_ms = start_time.elapsed().as_millis();
         logger.log_with_timing("info", "Server ready (Dry Run)", None, Some(ready_ms));
         logger.info(&format!("App: {}", args.app));
-        return Ok(());
+        return Ok(ServerExit::Shutdown);
     }
 
     // Start Zygote if enabled and we have preload modules
@@ -807,7 +816,8 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                 }
                             }
                             eprintln!("✅ All workers stopped");
-                            return Ok(());
+                            eprintln!("✅ All workers stopped");
+                            return Ok(ServerExit::Shutdown);
                         }
                         _ => {}
                     },
@@ -897,7 +907,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             logger.error("KINETIC_FALLBACK: Zygote failed, falling back to cold start.");
         }
         if !spawn_failed {
-            return Ok(());
+            return Ok(ServerExit::Shutdown);
         }
     }
 
@@ -969,7 +979,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 .collect::<Vec<_>>()
                 .join(" ")
         ));
-        return Ok(());
+        return Ok(ServerExit::Shutdown);
     }
 
     if args.log_format == LogFormat::Text {
@@ -1023,7 +1033,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                             .store(false, std::sync::atomic::Ordering::SeqCst);
                                         continue;
                                     }
-                                    return Ok(());
+                                    return Ok(ServerExit::Shutdown);
                                 }
                                 Ok(None) => continue,
                                 Err(e) => {
@@ -1045,12 +1055,12 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                             match child.wait_timeout(Duration::from_secs(args.timeout)) {
                                 Ok(Some(_)) => {
                                     logger.info("Server stopped gracefully");
-                                    return Ok(());
+                                    return Ok(ServerExit::Shutdown);
                                 }
                                 Ok(None) => {
                                     logger.warn("Shutdown timeout expired, force killing...");
                                     let _ = child.kill();
-                                    return Ok(());
+                                    return Ok(ServerExit::Shutdown);
                                 }
                                 Err(e) => anyhow::bail!("Error during shutdown: {}", e),
                             }
@@ -1070,7 +1080,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                         let _ = child.kill();
                     }
                     // Break loop to trigger fresh spawn in the caller
-                    return Ok(());
+                    return Ok(ServerExit::Reload);
                 }
                 Err(_) => break, // Bus disconnected
                 _ => {}
@@ -1082,7 +1092,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         return Err(anyhow::anyhow!("Server failed to start: {}", e));
     }
 
-    Ok(())
+    Ok(ServerExit::Shutdown)
 }
 
 /// Helper to count Python files for scaling warnings (R4)
@@ -1125,7 +1135,7 @@ fn count_python_files(path: &Path) -> usize {
 }
 
 #[cfg(not(unix))]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
+pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<ServerExit> {
     // Windows: run uvicorn without Zygote
     eprintln!("🚀 Starting server (Zygote not supported on Windows)...");
     eprintln!("   App:     {}", args.app);
@@ -1162,7 +1172,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    Ok(())
+    Ok(ServerExit::Shutdown)
 }
 
 #[cfg(test)]

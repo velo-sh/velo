@@ -25,8 +25,9 @@ class TestPhase61PerformanceHardened:
         )
         env.create_app("main.py", code)
         
+        port = env.next_port()
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--port", "8011"],
+            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             bufsize=1
         )
@@ -53,7 +54,9 @@ class TestPhase61PerformanceHardened:
                 while True:
                     line = proc.stdout.readline()
                     if not line and proc.poll() is not None:
-                        raise RuntimeError(f"Velo exited during reload: {proc.returncode}")
+                         # Capture remaining output
+                         stdout_rem, stderr_rem = proc.communicate()
+                         raise RuntimeError(f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}")
                     if "Changes detected, restarting server..." in line:
                         reload_start = time.time()
                         print(f"Reload detected at {reload_start}")
@@ -88,8 +91,9 @@ class TestPhase61PerformanceHardened:
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
         
+        port = env.next_port()
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--port", "8012"],
+            [env.velo, "serve", "main:app", "--port", str(port)],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         
@@ -139,8 +143,9 @@ class TestPhase61PerformanceHardened:
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
         
+        port = env.next_port()
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--port", "8013"],
+            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         
