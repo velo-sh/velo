@@ -49,11 +49,14 @@ class AttackEnv:
                 [self.velo] + args,
                 cwd=self.path,
                 capture_output=True,
-                text=True,
+                text=False,  # Use bytes mode to handle binary output
                 timeout=timeout,
                 env=full_env
             )
-            return result.returncode, result.stdout, result.stderr
+            # Decode safely, replacing invalid UTF-8
+            stdout = result.stdout.decode('utf-8', errors='replace') if result.stdout else ""
+            stderr = result.stderr.decode('utf-8', errors='replace') if result.stderr else ""
+            return result.returncode, stdout, stderr
         except subprocess.TimeoutExpired:
             return -1, "", "TIMEOUT"
     
@@ -97,8 +100,10 @@ except MemoryError:
             
             # Should handle gracefully - either work or fail cleanly
             # Note: DEF-005 means stdout may be empty even on success
-            assert "TIMEOUT" not in stderr, "Should not hang on memory bomb"
+            # Check return code instead of string matching to avoid false positives
+            assert code != -1, "Should not hang on memory bomb (returned -1 = timeout)"
             print(f"  Memory bomb: code={code}, stdout_len={len(stdout)}")
+
 
     def test_attack_fork_bomb_attempt(self):
         """Try to fork bomb (should be prevented)."""
