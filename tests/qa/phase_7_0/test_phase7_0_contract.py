@@ -27,8 +27,9 @@ class TestCoreContract:
     def test_L0_error_missing_file(self, shm_test_env):
         """Verify that a missing source file triggers InvalidSourceFile."""
         env = shm_test_env
+        env.create_file("main.py", "print('hello')")
         # Attempt to analyze a non-existent file with SHM
-        result = env.run_velo("analyze", "--shm", "non_existent_file.safetensors")
+        result = env.run_velo("analyze", "--shm", "non_existent_file.safetensors", "main.py")
         assert "InvalidSourceFile" in result.stderr or "No such file" in result.stderr
 
     def test_L0_cli_shm_flag_missing_analyze(self, shm_test_env):
@@ -57,13 +58,14 @@ class TestCoreContract:
         H-22: Offset Validation
         """
         env = shm_test_env
+        env.create_file("main.py", "print('hello')")
         bad_file = env.path / "massive_header.safetensors"
         # Write 8 bytes indicating 1PB header
         with open(bad_file, "wb") as f:
             f.write(struct.pack("<Q", 1024 * 1024 * 1024 * 1024 * 1024))
         
         # We try to use --shm if it exists, otherwise we'll fail the CLI test anyway
-        result = env.run_velo("analyze", "--shm", str(bad_file))
+        result = env.run_velo("analyze", "--shm", str(bad_file), "main.py")
         
         if "Unknown option: --shm" in result.stderr:
              pytest.skip("CLI flag missing, covered by CLI tests")
@@ -87,6 +89,7 @@ class TestCoreContract:
         [PROSECUTOR] Verify that data with odd header length triggers H-29 logic.
         """
         env = shm_test_env
+        env.create_file("main.py", "print('hello')")
         header = b'{"t":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}'
         header_len = len(header)
         
@@ -96,7 +99,7 @@ class TestCoreContract:
             f.write(header)
             f.write(b"\x00\x00\x00\x00") 
             
-        result = env.run_velo("analyze", "--shm", str(test_file))
+        result = env.run_velo("analyze", "--shm", str(test_file), "main.py")
 
         if "Unknown option: --shm" in result.stderr:
              pytest.skip("CLI flag missing, covered by CLI tests")
