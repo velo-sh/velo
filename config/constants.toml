@@ -1,0 +1,5 @@
+# Velo Shared Constants (RFC-0012 SSOT)
+# Auto-generated into src/common/constants.rs and velo_zygote/constants.py
+
+protocol_version = 1
+socket_path_limit = 104

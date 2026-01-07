@@ -9,8 +9,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-SOCKET_PATH_LIMIT = 104
-PROTOCOL_VERSION = 1
+# RFC-0012: Import generated constants (SSOT)
+try:
+    from velo_zygote.constants import SOCKET_PATH_LIMIT, PROTOCOL_VERSION
+except ImportError:
+    # Fallback for dev environment without build
+    SOCKET_PATH_LIMIT = 104
+    PROTOCOL_VERSION = 1
 
 def get_socket_dir() -> Path:
     """Get the canonical socket directory.
