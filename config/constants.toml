@@ -66,3 +66,33 @@ security_linux_prod_trusted_prefixes = "${OS_BASE},${CWD}"
 security_linux_prod_env_whitelist = "${OS_BASE}"
 
 security_hpc_threads = 1
+
+# =============================================================================
+# Paths Matrix (RFC-0012 Phase 6.5)
+# =============================================================================
+# Hierarchy: Base -> OS_Base -> OS_Env (same pattern as Security)
+# Placeholders: ${TMPDIR}, ${HOME}, ${UID}, ${XDG_RUNTIME_DIR}
+
+# Level 0: Path Templates (shared across all platforms)
+path_socket_dir_name = "velo-${UID}"
+path_log_dir_relative = ".local/state/velo"
+path_cache_dir_name = ".velo_cache"
+
+# Level 1: macOS Base Paths
+path_macos_base_socket_parent = "/tmp"
+path_macos_base_log_parent = "${HOME}"
+path_macos_base_xdg_fallback = "/tmp"
+
+# Level 1: Linux Base Paths
+path_linux_base_socket_parent = "${XDG_RUNTIME_DIR}"
+path_linux_base_log_parent = "${HOME}"
+path_linux_base_xdg_fallback = "/tmp"
+
+# Level 2: Environment Overlays
+# CI: Use /tmp for simpler debugging and shorter paths
+path_macos_ci_socket_parent = "/tmp"
+path_linux_ci_socket_parent = "/tmp"
+
+# Prod: Same as base (no override needed)
+# path_macos_prod_socket_parent = (inherits from base)
+# path_linux_prod_socket_parent = (inherits from base)

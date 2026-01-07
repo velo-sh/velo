@@ -44,7 +44,6 @@ class ZygoteTestHelper:
         )
         
         # Wait for socket to be created
-        # Wait for socket to be created
         for _ in range(50):
             if self.process.poll() is not None:
                 stderr = self.process.stderr.read().decode()
@@ -60,27 +59,78 @@ class ZygoteTestHelper:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(str(self.socket_path))
         
-        # Read READY response
-        data = b""
-        while b"\n" not in data:
-            data += sock.recv(1024)
+        # Read READY response (MessagePack Protocol)
+        # 1. Read Length (4 bytes)
+        len_data = self._recv_exact(sock, 4)
+        total_len = int.from_bytes(len_data, 'little')
         
-        response = json.loads(data.decode().strip())
+        # 2. Read Version (1 byte)
+        ver_data = self._recv_exact(sock, 1)
+        
+        # 3. Read Payload
+        payload_len = total_len - 1
+        payload_data = self._recv_exact(sock, payload_len)
+        
+        # Decode
+        response = self._unpack(payload_data)
         assert response.get("type") == "Ready"
         
         return sock
     
     def send_command(self, sock: socket.socket, cmd: dict) -> dict:
         """Send command and get response."""
-        msg = json.dumps(cmd) + "\n"
-        sock.sendall(msg.encode())
+        # Encode (MessagePack)
+        # 1. Payload
+        payload = self._pack(cmd)
         
-        data = b""
-        while b"\n" not in data:
-            data += sock.recv(1024)
+        # 2. Key components
+        total_len = 1 + len(payload)
+        header = total_len.to_bytes(4, 'little')
+        version = b'\x01' 
         
-        return json.loads(data.decode().strip())
+        # Send
+        sock.sendall(header + version + payload)
+        
+        # Receive Response
+        len_data = self._recv_exact(sock, 4)
+        total_len = int.from_bytes(len_data, 'little')
+        
+        ver_data = self._recv_exact(sock, 1)
+        
+        payload_len = total_len - 1
+        payload_data = self._recv_exact(sock, payload_len)
+        
+        return self._unpack(payload_data)
     
+    def _recv_exact(self, sock, n):
+        data = b''
+        while len(data) < n:
+            chunk = sock.recv(n - len(data))
+            if not chunk:
+                raise EOFError("Socket closed")
+            data += chunk
+        return data
+
+    def _pack(self, msg):
+        try:
+            import msgpack
+            return msgpack.packb(msg, use_bin_type=True)
+        except ImportError:
+            # Fallback to internal serializer if available or simple json mapping (risky but maybe works for simple types)
+            # Better to import from serializer
+            sys.path.append(str(VELO_ROOT)) 
+            from velo_zygote.serializer import packer
+            return packer(msg)
+
+    def _unpack(self, data):
+        try:
+            import msgpack
+            return msgpack.unpackb(data, raw=False)
+        except ImportError:
+            sys.path.append(str(VELO_ROOT))
+            from velo_zygote.serializer import unpacker
+            return unpacker(data)
+
     def stop(self) -> None:
         """Stop Zygote process."""
         if self.process:
