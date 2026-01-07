@@ -5,7 +5,10 @@ Velo Top 100 Benchmark Runner (RFC-0013 v2)
 Executes benchmarks defined in benchmarks/top100/<category>/<package>/benchmark.toml
 """
 
+
+from __future__ import annotations
 import argparse
+
 import json
 import logging
 import platform
@@ -14,21 +17,13 @@ import re
 import shutil
 import subprocess
 import sys
-import time
-import statistics
+import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
+from typing import Any
 
 # Try to import velo.zygote components
-try:
-    # Assuming velo is in PYTHONPATH or installed
-    # If not directly importable, we might need sys.path hacks or proper install
-    # valid for now as we are in the repo
-    sys.path.append(str(Path(__file__).parent.parent.parent.parent / "velo_zygote"))
-    # Also need the rust extension if available, but for now we focus on the python side or CLI
-    pass
-except ImportError:
-    pass
+# Assuming velo is in PYTHONPATH or installed
+sys.path.append(str(Path(__file__).parent.parent.parent.parent / "velo_zygote"))
 
 # Try to import tomllib (Python 3.11+) or tomli
 try:
@@ -51,7 +46,7 @@ logger = logging.getLogger("runner")
 
 class BenchmarkRunner:
 
-    def __init__(self, limit: int = None, keep_env: bool = False, target_pkg: str = None, runs: int = 3, drop_cache: bool = False, use_zygote: bool = False):
+    def __init__(self, limit: int | None = None, keep_env: bool = False, target_pkg: str | None = None, runs: int = 3, drop_cache: bool = False, use_zygote: bool = False):
         self.limit = limit
         self.keep_env = keep_env
         self.target_pkg = [target_pkg] if isinstance(target_pkg, str) else (target_pkg or [])
@@ -77,7 +72,7 @@ class BenchmarkRunner:
         """Initial bootstrap (optional, as run_benchmark restarts it)."""
         self._start_zygote(["json", "os", "sys"])
 
-    def _start_zygote(self, preload_modules: List[str] = None):
+    def _start_zygote(self, preload_modules: list[str] | None = None):
         """Explicitly start the Master Zygote."""
         if not VELO_BIN.exists():
              logger.error(f"❌ Velo binary not found at {VELO_BIN}. Build it first!")
@@ -92,16 +87,17 @@ class BenchmarkRunner:
             self.env["PATH"] = str((SHARED_VENV_DIR / "bin").resolve()) + os.pathsep + self.env.get("PATH", "")
             
             # macOS Fork Safety & Compatibility (RFC-0014 Fix)
+            # macOS Fork Safety & Compatibility (RFC-0014 Fix)
             self.env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
-            self.env["MPLCONFIGDIR"] = "/tmp/velo_mpl_cache"
-            os.makedirs("/tmp/velo_mpl_cache", exist_ok=True)
+            self.mpl_cache_dir = tempfile.mkdtemp(prefix="velo_mpl_")
+            self.env["MPLCONFIGDIR"] = self.mpl_cache_dir
             
         cmd = [str(VELO_BIN), "zygote", "start"]
         if preload_modules:
             cmd.extend(["--preload", ",".join(preload_modules)])
             
         self.zygote_process = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.env, cwd=BENCHMARKS_DIR
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env, cwd=BENCHMARKS_DIR
         )
         
         # ✅ Poll until Zygote is fully ready (IPC handshake, not just socket exists)
@@ -150,7 +146,6 @@ class BenchmarkRunner:
         subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
         
         # 2. Kill local process backing it if we own it
-        # 2. Kill local process backing it if we own it
         if hasattr(self, 'zygote_process') and self.zygote_process:
             if self.zygote_process.poll() is None:
                 self.zygote_process.terminate()
@@ -158,8 +153,11 @@ class BenchmarkRunner:
                     self.zygote_process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     self.zygote_process.kill()
+        
+        if hasattr(self, 'mpl_cache_dir') and self.mpl_cache_dir and os.path.exists(self.mpl_cache_dir):
+            shutil.rmtree(self.mpl_cache_dir, ignore_errors=True)
 
-    def discover(self) -> List[Path]:
+    def discover(self) -> list[Path]:
         """Find all benchmark.toml files."""
         candidates = list(BENCHMARKS_DIR.glob("*/*/benchmark.toml"))
         # Sort by category then package
@@ -171,18 +169,18 @@ class BenchmarkRunner:
             
         return candidates
 
-    def run_command(self, cmd: List[str], cwd: Path, timeout: int, env: Dict[str, str] = None) -> subprocess.CompletedProcess:
+    def run_command(self, cmd: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
         """Run a command with timeout."""
         return subprocess.run(
             cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env
         )
 
-    def measure(self, cmd: List[str], cwd: Path, timeout: int, runs: int = 3, warmup_runs: int = 0, drop_cache: bool = False, env: Dict[str, str] = None) -> List[float]:
+    def measure(self, cmd: list[str], cwd: Path, timeout: int, runs: int = 3, warmup_runs: int = 0, drop_cache: bool = False, env: dict[str, str] | None = None) -> list[float]:
         """Measure execution time of a command."""
         times = []
         
         # Warmup (discard results)
-        for i in range(warmup_runs):
+        for _ in range(warmup_runs):
             try:
                 subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
@@ -231,15 +229,6 @@ class BenchmarkRunner:
         if not builder_script.exists():
             raise FileNotFoundError("bundle_builder.py not found")
         
-        # venv_python = pkg_dir / ".venv" / "bin" / "python"
-        # Use active environment python (Shared or Local)
-        # We need to know which one! build_bundle doesn't know 'using_shared_env'
-        # PASS IT AS ARG or derive dynamically
-        # For now, let's assume if Shared Venv exists and we use Zygote, we use it?
-        # But 'build_bundle' is called inside 'run_benchmark', we can pass python_bin path.
-        pass # Handle in caller or update signature. 
-        # For quick fix, let's look for venv in pkg_dir first, then Shared.
-        
         venv_python = pkg_dir / ".venv" / "bin" / "python"
         if not venv_python.exists() and SHARED_VENV_DIR.exists():
              venv_python = SHARED_VENV_DIR / "bin" / "python"
@@ -249,7 +238,7 @@ class BenchmarkRunner:
         if proc.returncode != 0:
             raise RuntimeError(f"Bundle build failed: {proc.stderr}")
             
-    def inject_preload(self, pkg_dir: Path, modules: List[str]):
+    def inject_preload(self, pkg_dir: Path, modules: list[str]):
         """Inject preload config into pyproject.toml."""
         config_path = pkg_dir / "pyproject.toml"
         
@@ -439,7 +428,8 @@ class BenchmarkRunner:
             if not self.keep_env:
                 # IMPORTANT: Never delete Shared Venv
                 if not (self.use_zygote and SHARED_VENV_DIR.exists()):
-                    if (pkg_dir / ".venv").exists(): shutil.rmtree(pkg_dir / ".venv")
+                    if (pkg_dir / ".venv").exists():
+                        shutil.rmtree(pkg_dir / ".venv")
                     
                 if (pkg_dir / ".velo_cache").exists(): shutil.rmtree(pkg_dir / ".velo_cache")
                 if (pkg_dir / "pyproject.toml").exists(): (pkg_dir / "pyproject.toml").unlink()
