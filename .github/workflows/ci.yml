@@ -19,6 +19,10 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 3
+  # Workaround for DEF-70-006 (Zygote IPC NetNS Isolation in Docker)
+  VELO_ZYGOTE_SOCKET: "/tmp/velo-zygote-ci.sock"
+  # Enforce Strict NUMA to verify DEF-70-004 fix
+  VELO_STRICT_NUMA: "1"
 
 
 jobs:
