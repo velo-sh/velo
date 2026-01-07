@@ -529,7 +529,7 @@ def main():
     # Verify data integrity
     print("Verifying data integrity...")
     mm_check = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
-    data = mm_check.read(16)
+    data = mm_check.read(15)  # \"PROTECTED_DATA_\" is 15 bytes
     mm_check.close()
     
     if data != b"PROTECTED_DATA_":
