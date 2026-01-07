@@ -443,7 +443,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     // Use recvmsg to capture synchronous ancillary data (FDs)
     let mut len_buf = [0u8; 4];
     let mut cmsg = nix::cmsg_space!([RawFd; 1]);
-    let (bytes, received_fd) = {
+    let (bytes, mut received_fd) = {
         let mut iov = [IoSliceMut::new(&mut len_buf)];
 
         let msg_result = recvmsg::<()>(
@@ -462,20 +462,40 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
                 }
             }
         }
+
+        // Council Advisory: Check for control message truncation
+        if msg_result.flags.contains(MsgFlags::MSG_CTRUNC) {
+            if let Some(f) = fd {
+                let _ = nix::unistd::close(f);
+            }
+            return Err(ZygoteError::ProtocolError(
+                "Control message truncated (too many FDs)".to_string(),
+            ));
+        }
+
         (msg_result.bytes, fd)
+    };
+
+    // Helper to ensure FD is closed on error
+    let cleanup_fd = |fd: &mut Option<RawFd>| {
+        if let Some(f) = fd.take() {
+            let _ = nix::unistd::close(f);
+        }
     };
 
     // Ensure we have full 4 bytes for length
     if bytes < 4 {
-        stream
-            .read_exact(&mut len_buf[bytes..])
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        if let Err(e) = stream.read_exact(&mut len_buf[bytes..]) {
+            cleanup_fd(&mut received_fd);
+            return Err(ZygoteError::SocketError(e.to_string()));
+        }
     }
 
     let total_len = u32::from_le_bytes(len_buf) as usize;
 
     // Security: Check message size
     if total_len > MAX_MESSAGE_SIZE {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(format!(
             "Message too large: {} bytes (max {})",
             total_len, MAX_MESSAGE_SIZE
@@ -484,6 +504,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // Need at least version byte
     if total_len < 1 {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(
             "Message too small to contain version byte".to_string(),
         ));
@@ -491,12 +512,14 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // Read version byte (ADV-1)
     let mut version_buf = [0u8; 1];
-    stream
-        .read_exact(&mut version_buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Err(e) = stream.read_exact(&mut version_buf) {
+        cleanup_fd(&mut received_fd);
+        return Err(ZygoteError::SocketError(e.to_string()));
+    }
 
     let version = version_buf[0];
     if version != PROTOCOL_VERSION {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(format!(
             "Protocol version mismatch: got {}, expected {}",
             version, PROTOCOL_VERSION
@@ -506,13 +529,16 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     // Read payload (total_len - 1 for version byte)
     let payload_len = total_len - 1;
     let mut buf = vec![0u8; payload_len];
-    stream
-        .read_exact(&mut buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Err(e) = stream.read_exact(&mut buf) {
+        cleanup_fd(&mut received_fd);
+        return Err(ZygoteError::SocketError(e.to_string()));
+    }
 
     // Deserialize
-    let msg: T =
-        rmp_serde::from_slice(&buf).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let msg: T = rmp_serde::from_slice(&buf).map_err(|e| {
+        cleanup_fd(&mut received_fd);
+        ZygoteError::ProtocolError(e.to_string())
+    })?;
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
@@ -533,7 +559,11 @@ impl ZygoteStream {
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
         // 1. Receive mandatory "Ready" greeting
-        let (ready, _): (ZygoteResponse, _) = read_message(&mut stream)?;
+        let (ready, fd): (ZygoteResponse, _) = read_message(&mut stream)?;
+        if let Some(fd) = fd {
+            // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
+            let _ = nix::unistd::close(fd);
+        }
         match ready {
             ZygoteResponse::Ready => Ok(Self { stream }),
             _ => Err(ZygoteError::ProtocolError(
@@ -549,9 +579,11 @@ impl ZygoteStream {
         fd: Option<RawFd>,
     ) -> Result<ZygoteResponse> {
         write_message(&mut self.stream, cmd, fd)?;
-        let (resp, _fd) = read_message(&mut self.stream)?;
-        // We currently don't expect FDs from Zygote, so we drop it.
-        // If needed in future, we can change return type to (ZygoteResponse, Option<RawFd>)
+        let (resp, fd) = read_message(&mut self.stream)?;
+        if let Some(fd) = fd {
+            // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
+            let _ = nix::unistd::close(fd);
+        }
         Ok(resp)
     }
 }

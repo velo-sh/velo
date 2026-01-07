@@ -383,6 +383,11 @@ class ZygoteTransport:
                         raw_fds = struct.unpack(f'{len(cmsg_data)//4}i', cmsg_data)
                         if raw_fds: fd = raw_fds[0] # Take first
                 
+                if flags & socket.MSG_CTRUNC:
+                    LogUtils.debug_log("CRITICAL: Control message truncated (too many FDs)")
+                    self._read_future.set_exception(Exception("Control message truncated"))
+                    return
+
                 if not data and not fd: # EOF
                      self._read_future.set_result((b'', None))
                 else:
@@ -532,23 +537,32 @@ class ReinitHooks:
     def register(self, hook_func):
         self.hooks.append(hook_func)
 
-    def run_all(self):
+    def run_all(self, *args, **kwargs):
         for hook in self.hooks:
             try:
-                hook()
+                hook(*args, **kwargs)
+            except TypeError:
+                # Fallback for hooks that don't take arguments
+                try: hook()
+                except Exception as e:
+                    LogUtils.debug_log(f"Hook Error (fallback): {e}")
             except Exception as e:
                 LogUtils.debug_log(f"Hook Error: {e}")
 
 # Global hooks registry
 reinit_hooks = ReinitHooks()
 
-def hook_security():
+def hook_security(keep_fds: Optional[Set[int]] = None):
     """SecurityHook: FD hygiene and random reseed."""
     import random
     import resource
     # Whitelist-based cleanup of inherited file descriptors. (RFC §2.4 Surgical Hygiene)
     try:
-        keep_fds = {0, 1, 2}
+        if keep_fds is None:
+            keep_fds = {0, 1, 2}
+        else:
+            keep_fds = keep_fds.union({0, 1, 2})
+            
         try:
             # Linux: /proc/self/fd is efficient
             current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
@@ -565,8 +579,9 @@ def hook_security():
             
             # loop through 3..4096 which is much safer than "max_fd" which could be 2^20
             for fd in range(3, max_fd):
-                try: os.close(fd)
-                except OSError: pass
+                if fd not in keep_fds:
+                    try: os.close(fd)
+                    except OSError: pass
     except: pass
 
     random.seed()
@@ -605,9 +620,9 @@ reinit_hooks.register(hook_computing)
 reinit_hooks.register(hook_telemetry)
 
 
-def post_fork_reinit():
+def post_fork_reinit(keep_fds: Optional[Set[int]] = None):
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
-    reinit_hooks.run_all()
+    reinit_hooks.run_all(keep_fds=keep_fds)
 
 
 class ForkHandler:
@@ -643,10 +658,11 @@ class ForkHandler:
         pid = os.fork()
 
         if pid == 0:
+            shm_fd = cmd.get('shm_fd')
             ForkHandler._child_process(
                 script_path, args, stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
-                worker_registry.worker_ttl
+                worker_registry.worker_ttl, shm_fd
             )
             return 0 # Should not be reached
         else:
@@ -659,7 +675,8 @@ class ForkHandler:
         script_path: str, args: List[str], stdout_path: Optional[str],
         stderr_path: Optional[str], exit_code_path: Optional[str],
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
-        max_bundle_size: Optional[int], worker_ttl: int
+        max_bundle_size: Optional[int], worker_ttl: int,
+        shm_fd: Optional[int] = None
     ):
         exit_code = 0
         try:
@@ -667,7 +684,7 @@ class ForkHandler:
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl)
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
-            post_fork_reinit()
+            post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
 
             # 2.1 Install ImportShield (Import Isolation)
             ImportShield.install()
@@ -800,6 +817,26 @@ async def handle_fork(server, cmd):
     # Note: shm_fd is an integer in this process.
     # We should handle it in ForkHandler.
     
+    # FD Validation (Council Advisory SEC-A1)
+    if shm_fd is not None:
+        try:
+            import stat as stat_mod
+            st = os.fstat(shm_fd)
+            # Ensure it's a regular file or shared memory segment
+            if not stat_mod.S_ISREG(st.st_mode):
+                 os.close(shm_fd)
+                 return {"type": "Error", "message": "Security Violation: Passed FD is not a regular file"}
+            
+            # Ensure size matches (at least as large as expected)
+            if shm_size and st.st_size < shm_size:
+                 os.close(shm_fd)
+                 return {"type": "Error", "message": f"Security Violation: SHM size mismatch ({st.st_size} < {shm_size})"}
+        except Exception as e:
+            if shm_fd is not None: 
+                try: os.close(shm_fd)
+                except: pass
+            return {"type": "Error", "message": f"FD Validation failed: {e}"}
+
     pid = ForkHandler.handle_fork(cmd, server.worker_registry, server._preloaded_modules)
     if pid > 0:
         return {"type": "Forked", "worker_pid": pid}
