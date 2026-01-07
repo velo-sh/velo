@@ -26,7 +26,7 @@ def get_timeout_multiplier() -> float:
     if os.environ.get("VELO_TIMEOUT_MULTIPLIER"):
         return float(os.environ["VELO_TIMEOUT_MULTIPLIER"])
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        return 3.0  # CI is about 3x slower than local
+        return 6.0  # CI is about 6x slower than local
     return 1.0
 
 

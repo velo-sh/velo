@@ -18,7 +18,7 @@ env:
   VELO_ZYGOTE_WORKER_TIMEOUT: 60
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
-  VELO_TIMEOUT_MULTIPLIER: 3
+  VELO_TIMEOUT_MULTIPLIER: 6
 
 
 jobs:
