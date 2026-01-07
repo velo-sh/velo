@@ -38,6 +38,19 @@ from typing import List, Optional, Set, Dict, Any, Tuple
 PROTOCOL_VERSION = 0x01
 MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
 
+# ============================================================================
+# Shared Memory Management (Phase 7.2)
+# ============================================================================
+try:
+    from velo_zygote import memory as _memory
+except (ImportError, ValueError):
+    try:
+        import memory as _memory
+    except ImportError:
+        _memory = None
+
+MEMORY_MANAGER = getattr(_memory, "MEMORY_MANAGER", None) if _memory else None
+
 
 # ============================================================================
 # Socket Path Functions (DEF-61-004: Protocol Socket Isolation)
@@ -659,14 +672,20 @@ class ForkHandler:
 
         if pid == 0:
             shm_fd = cmd.get('shm_fd')
+            shm_size = cmd.get('shm_size')
             ForkHandler._child_process(
                 script_path, args, stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
-                worker_registry.worker_ttl, shm_fd
+                worker_registry.worker_ttl, shm_fd, shm_size
             )
             return 0 # Should not be reached
         else:
             # Parent Process
+            # SECURITY: Close the passed FD in parent to avoid resource leaks (RFC §2.4)
+            shm_fd = cmd.get('shm_fd')
+            if shm_fd is not None:
+                try: os.close(shm_fd)
+                except: pass
             worker_registry.add(pid)
             return pid
 
@@ -676,7 +695,8 @@ class ForkHandler:
         stderr_path: Optional[str], exit_code_path: Optional[str],
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
         max_bundle_size: Optional[int], worker_ttl: int,
-        shm_fd: Optional[int] = None
+        shm_fd: Optional[int] = None,
+        shm_size: Optional[int] = None
     ):
         exit_code = 0
         try:
@@ -685,6 +705,22 @@ class ForkHandler:
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
             post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
+
+            # 2.2 Shared Memory Mapping (Phase 7.2)
+            worker_context = {"__name__": "__main__", "__file__": script_path}
+            if shm_fd is not None and shm_size is not None and MEMORY_MANAGER is not None:
+                try:
+                    shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size)
+                    if shm_obj is not None:
+                        # Inject into worker context
+                        worker_context["VELO_SHM"] = shm_obj
+                        LogUtils.debug_log(f"Attached SHM (fd={shm_fd}, size={shm_size})")
+                    
+                    # Close the FD after mapping (mmap keeps its own reference)
+                    try: os.close(shm_fd)
+                    except: pass
+                except Exception as e:
+                    print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
             # 2.1 Install ImportShield (Import Isolation)
             ImportShield.install()
@@ -702,7 +738,7 @@ class ForkHandler:
             # 6. Execute Script
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
-                exec(code, {"__name__": "__main__", "__file__": script_path})
+                exec(code, worker_context)
             
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
