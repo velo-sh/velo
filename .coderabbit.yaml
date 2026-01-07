@@ -25,10 +25,6 @@ reviews:
     shellcheck:
       enabled: true
 
-# Allow CodeRabbit to index the repository for better context
-knowledge_base:
-  opt_out: false
-
 # RAG / Knowledge Base: Allows AI to understand the whole codebase
 knowledge_base:
   opt_out: false
