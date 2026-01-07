@@ -148,7 +148,17 @@ fn apply_process_group(cmd: &mut Command) {
     unsafe {
         cmd.pre_exec(|| {
             // Become a process group leader (STB-RS-003)
-            libc::setpgid(0, 0);
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            // TITANIUM RULE: No Orphans
+            // Kill child if parent (supervisor) dies
+            #[cfg(target_os = "linux")]
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
             Ok(())
         });
     }
