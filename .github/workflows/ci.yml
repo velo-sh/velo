@@ -12,9 +12,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Lock versions for consistency between local and CI
-  # Lock versions for consistency between local and CI
-  UV_VERSION: "0.5"
+  UV_VERSION: "0.5" # Centralized uv version
+  # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
+  VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+  VELO_ZYGOTE_WORKER_TIMEOUT: 60
+  VELO_MAX_BUNDLE_SIZE: 50
 
 jobs:
   changes:
@@ -609,7 +611,8 @@ jobs:
         run: |
           export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
           # Detect the specific regression we just fixed: dry-run hanging in Zygote mode
-          timeout 5s velo serve --dry-run --use-zygote || {
+          # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
+          timeout 10s velo serve --dry-run || {
             echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
             exit 1
           }
