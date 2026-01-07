@@ -11,9 +11,9 @@ inputs:
     required: false
     default: 'false'
   artifact-name:
-    description: 'Name of the artifact to download'
+    description: 'Name of the artifact to download (auto-detects OS if not specified)'
     required: false
-    default: 'velo-binary-ubuntu'
+    default: ''
   uv-version:
     description: 'UV version to use'
     required: false
@@ -38,11 +38,24 @@ runs:
         uv venv --python ${{ inputs.python-version }}
         uv sync --extra dev
 
+    - name: Determine artifact name
+      if: inputs.download-binary == 'true'
+      id: artifact
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.artifact-name }}" ]; then
+          echo "name=${{ inputs.artifact-name }}" >> $GITHUB_OUTPUT
+        elif [ "$RUNNER_OS" = "macOS" ]; then
+          echo "name=velo-binary-macos" >> $GITHUB_OUTPUT
+        else
+          echo "name=velo-binary-ubuntu" >> $GITHUB_OUTPUT
+        fi
+
     - name: Download Binary
       if: inputs.download-binary == 'true'
       uses: actions/download-artifact@v4
       with:
-        name: ${{ inputs.artifact-name }}
+        name: ${{ steps.artifact.outputs.name }}
         path: target/release/
 
     - name: Set permissions
