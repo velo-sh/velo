@@ -1,6 +1,8 @@
 use crate::shm::alignment;
+use crate::shm::constants::*;
 use crate::shm::error::MemoryError;
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
 
@@ -19,15 +21,18 @@ impl Default for MemoryRegistry {
 impl MemoryRegistry {
     pub fn new() -> Self {
         // H-30: Strict NUMA Check
-        let strict_numa = std::env::var("VELO_STRICT_NUMA").unwrap_or_default() == "1";
+        let strict_numa = std::env::var(ENV_STRICT_NUMA).unwrap_or_default() == "1";
         // H-32: Configurable NUMA mask (defaults to node 0)
-        let numa_mask: u64 = std::env::var("VELO_NUMA_MASK")
+        let numa_mask: u64 = std::env::var(ENV_NUMA_MASK)
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(1); // Default to node 0 bitmask
+            .unwrap_or(DEFAULT_NUMA_MASK);
 
         if strict_numa {
-            eprintln!("🔥 VELO_STRICT_NUMA enabled. NUMA mask: 0x{:x}", numa_mask);
+            eprintln!(
+                "🔥 {} enabled. NUMA mask: 0x{:x}",
+                ENV_STRICT_NUMA, numa_mask
+            );
         }
         Self {
             strict_numa,
@@ -50,21 +55,17 @@ impl MemoryRegistry {
 
         let file_size = metadata.len() as usize;
 
-        if file_size < 8 {
+        if file_size < HEADER_LEN_SIZE {
             return Err(MemoryError::InvalidSourceFile(
                 "File too small to be safetensors (H-29 check)".to_string(),
             ));
         }
 
-        // Only read the first 8 bytes for header length
-        let mut header_len_bytes = [0u8; 8];
-        {
-            use std::io::Read;
-            let mut f =
-                File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
-            f.read_exact(&mut header_len_bytes)
-                .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
-        }
+        // 0x01: Software Engineering Principle - Reuse the open file handle
+        let mut header_len_bytes = [0u8; HEADER_LEN_SIZE];
+        let mut file = file; // Take ownership to read
+        file.read_exact(&mut header_len_bytes)
+            .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
         let header_len = u64::from_le_bytes(header_len_bytes) as usize;
 
         // Use H-29 logic
@@ -103,11 +104,7 @@ impl MemoryRegistry {
             {
                 // H-32: Use configurable NUMA mask instead of hardcoded node 0
                 let nodemask = self.numa_mask;
-                let maxnode: libc::c_ulong = 64;
-
-                // NUMA policy constants (may not be exported by all libc versions)
-                const MPOL_BIND: libc::c_int = 2;
-                const MPOL_MF_STRICT: libc::c_uint = 1 << 0;
+                let maxnode = linux::NUMA_MAX_NODES;
 
                 // SECURITY: mbind is used to enforce NUMA affinity in strict mode (H-30).
                 // This prevents cross-node latency by pinning memory to the configured nodes.
@@ -117,10 +114,10 @@ impl MemoryRegistry {
                         libc::SYS_mbind,
                         ptr,
                         total_size as libc::c_ulong,
-                        MPOL_BIND,
+                        linux::MPOL_BIND,
                         &nodemask as *const u64,
                         maxnode,
-                        MPOL_MF_STRICT,
+                        linux::MPOL_MF_STRICT,
                     )
                 };
                 if ret < 0 {
@@ -136,8 +133,10 @@ impl MemoryRegistry {
         // 3. Populate (Zero-Copy Optimization)
         // HPC Critique: Avoid reading into Vec<u8> buffer. Map source file directly.
         {
-            let src_file = File::open(file_path)
-                .map_err(|e| MemoryError::InvalidSourceFile(format!("Zero-copy open: {}", e)))?;
+            // Reset file pointer after header read
+            file.seek(SeekFrom::Start(0))
+                .map_err(|e| MemoryError::InvalidSourceFile(format!("Seek reset: {}", e)))?;
+            let src_file = file;
             let src_size = src_file
                 .metadata()
                 .map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?
@@ -168,7 +167,7 @@ impl MemoryRegistry {
                 let dst = ptr as *mut u8;
                 let src = src_ptr as *const u8;
 
-                let header_section_len = 8 + header_len;
+                let header_section_len = HEADER_LEN_SIZE + header_len;
                 if header_section_len > src_size {
                     libc::munmap(src_ptr, src_size);
                     libc::munmap(ptr, total_size);
@@ -199,14 +198,12 @@ impl MemoryRegistry {
 
             // H-29 Alignment Check: Verify the target tensor alignment
             // This is a Day 2 verification check (Directive 3)
-            // H-29 Alignment Check: Verify the target tensor alignment
-            // This is a Day 2 verification check (Directive 3)
-            let alignment_check = (ptr as usize) % 64;
+            let alignment_check = (ptr as usize) % VELO_ALIGNMENT;
             if alignment_check != 0 {
                 // We log this but don't fail yet, as padding implementation (Directive 1) is future work.
                 eprintln!(
-                    "⚠️ H-29 Alignment Warning: SHM segment is not 64-byte aligned (offset={})",
-                    alignment_check
+                    "⚠️ H-29 Alignment Warning: SHM segment is not {}-byte aligned (offset={})",
+                    VELO_ALIGNMENT, alignment_check
                 );
             }
 
