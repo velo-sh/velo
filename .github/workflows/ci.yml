@@ -45,7 +45,6 @@ jobs:
           uv run pytest tests/qa
 
 
-jobs:
   changes:
     name: Check for Changes
     runs-on: ubuntu-latest
