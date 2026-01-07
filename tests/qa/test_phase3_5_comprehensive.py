@@ -125,7 +125,8 @@ dependencies = ["fastapi", "uvicorn"]""")
         if "VIRTUAL_ENV" in env:
             del env["VIRTUAL_ENV"]
             
-        cmd = ["uv", "run", self.velo, "serve", app, "--port", str(port)]
+        # FIX: Add --offline --no-sync to prevent CI hangs (uv 0.9+)
+        cmd = ["uv", "run", "--offline", "--no-sync", self.velo, "serve", app, "--port", str(port)]
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
         
