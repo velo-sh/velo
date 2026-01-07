@@ -224,10 +224,11 @@ fn ensure_socket_dir(dir: &Path) -> bool {
             let mode = verify_meta.permissions().mode() & 0o777;
             if mode != 0o700 {
                 eprintln!(
-                    "⚠️ SECURITY: Socket dir has insecure permissions: {:o} (expected 0700)",
+                    "🚨 SECURITY CRITICAL: Socket dir has insecure permissions: {:o} (expected 0700). Aborting.",
                     mode
                 );
-                // Continue but warn - umask may have interfered
+                // RED LINE #2: Fail closed if permissions cannot be verified
+                return false;
             }
         }
     }
