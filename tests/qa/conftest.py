@@ -236,6 +236,13 @@ class VeloTestEnv:
         p.write_text(code)
         return p
 
+    def next_port(self) -> int:
+        """Get a free port for testing."""
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
+
 
 @pytest.fixture
 def velo_test_env(tmp_path, velo_binary):
