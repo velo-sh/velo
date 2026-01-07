@@ -74,12 +74,32 @@ impl MemoryRegistry {
         // Total size = original size + padding needed
         let total_size = file_size + padding_needed;
 
+        // DEF-70-004: Protection against 1PB allocation DoS/Deadlock
+        if total_size > MAX_SHM_SIZE {
+            return Err(MemoryError::InvalidSourceFile(format!(
+                "SHM size exceeds safety limit of 1TB: {} bytes",
+                total_size
+            )));
+        }
+
         // 1. Create SHM FD
         let fd = self.create_shm_fd(name, total_size)?;
 
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
         // We use PROT_READ | PROT_WRITE for population and later munmap/mmap RO for isolation.
+        #[cfg(target_os = "linux")]
+        let ptr = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                total_size,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED | linux::MAP_HUGETLB,
+                fd,
+                0,
+            )
+        };
+        #[cfg(not(target_os = "linux"))]
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
@@ -196,14 +216,17 @@ impl MemoryRegistry {
                 }
             }
 
-            // H-29 Alignment Check: Verify the target tensor alignment
+            // H-29 Alignment Check: Verify the target tensor alignment (Data Offset)
             // This is a Day 2 verification check (Directive 3)
-            let alignment_check = (ptr as usize) % VELO_ALIGNMENT;
+            let header_section_len = HEADER_LEN_SIZE + header_len;
+            let data_offset = ptr as usize + header_section_len + padding_needed;
+            let alignment_check = data_offset % VELO_ALIGNMENT;
+
             if alignment_check != 0 {
                 // We log this but don't fail yet, as padding implementation (Directive 1) is future work.
                 eprintln!(
-                    "⚠️ H-29 Alignment Warning: SHM segment is not {}-byte aligned (offset={})",
-                    VELO_ALIGNMENT, alignment_check
+                    "⚠️ H-29 Alignment Warning: SHM tensor data is not {}-byte aligned (offset={}, data_start={})",
+                    VELO_ALIGNMENT, alignment_check, data_offset
                 );
             }
 
