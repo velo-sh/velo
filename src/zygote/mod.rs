@@ -36,8 +36,8 @@ use std::time::Duration;
 pub const WORKER_TIMEOUT_SECS: u64 = 30;
 
 /// Socket startup timeout in seconds
-/// CI environments may need a higher value
-pub const SOCKET_STARTUP_TIMEOUT_SECS: u64 = 10;
+/// CI environments may need a higher value (increased from 10 to 30 for GitHub Actions)
+pub const SOCKET_STARTUP_TIMEOUT_SECS: u64 = 30;
 
 /// Check if Zygote is supported on this platform
 #[cfg(unix)]
@@ -51,14 +51,14 @@ pub fn is_supported() -> bool {
 }
 
 fn get_worker_timeout_secs() -> u64 {
-    crate::config::VeloConfig::from_pyproject_toml()
-        .and_then(|c| c.zygote_worker_timeout)
+    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
+        .zygote_worker_timeout
         .unwrap_or(WORKER_TIMEOUT_SECS)
 }
 
 fn get_socket_timeout_secs() -> u64 {
-    crate::config::VeloConfig::from_pyproject_toml()
-        .and_then(|c| c.zygote_socket_timeout)
+    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
+        .zygote_socket_timeout
         .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
 }
 
@@ -108,14 +108,8 @@ fn find_zygote_module() -> Result<PathBuf> {
         eprintln!("⚠️ VELO_ZYGOTE_PATH set but not found: {}", env_path);
     }
 
-    // 2. Compiled-in path from CARGO_MANIFEST_DIR (dev builds)
-    // This is set at compile time and points to the source directory
-    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
-    if manifest_path.exists() {
-        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
-    }
-
-    // 3. Search relative to executable (installed builds)
+    // 2. Search relative to executable (installed and multi-workspace builds)
+    // RFC-0013: Prioritizing runtime detection to prevent workspace pollution
     if let Ok(exe_path) = std::env::current_exe() {
         // Search up to 4 levels from executable
         let mut search_dir = exe_path.parent().map(|p| p.to_path_buf());
@@ -133,6 +127,13 @@ fn find_zygote_module() -> Result<PathBuf> {
                 search_dir = dir.parent().map(|p| p.to_path_buf());
             }
         }
+    }
+
+    // 3. Compiled-in path from CARGO_MANIFEST_DIR (legacy dev/monorepo builds)
+    // This is a fallback to support cargo test/run from the source dir
+    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
+    if manifest_path.exists() {
+        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
     }
 
     // 4. User install location ~/.local/share/velo/
@@ -392,6 +393,11 @@ impl ZygoteLauncher {
             .map_err(ZygoteError::SecurityViolation)?;
 
         // 2. High-Performance Isolation (RFC-0011 HPC-001)
+        // Pass GITHUB_ACTIONS to allow /home paths in CI
+        if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
+            cmd.env("GITHUB_ACTIONS", val);
+        }
+
         cmd.env("OMP_NUM_THREADS", "1");
         cmd.env("MKL_NUM_THREADS", "1");
         cmd.env("OPENBLAS_NUM_THREADS", "1");
@@ -480,6 +486,10 @@ impl ZygoteLauncher {
                 }
             }
             // HPC/OMP Thread pooling isolation
+            if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
+                sandbox_cmd.env("GITHUB_ACTIONS", val);
+            }
+
             sandbox_cmd.env("OMP_NUM_THREADS", "1");
             sandbox_cmd.env("MKL_NUM_THREADS", "1");
             sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");

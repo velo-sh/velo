@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "tqdm"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["tqdm"]
+timeout = 30

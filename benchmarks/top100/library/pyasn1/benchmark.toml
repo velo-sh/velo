@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "pyasn1"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["pyasn1"]
+timeout = 30

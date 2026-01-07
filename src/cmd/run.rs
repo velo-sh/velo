@@ -91,8 +91,8 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         }
     }
 
-    // Load config from discovered project root
-    let config = VeloConfig::from_path(&project_dir.join("pyproject.toml")).unwrap_or_default();
+    // Load config from discovered project root (with Env Var overrides)
+    let config = VeloConfig::load_with_overrides(&project_dir.join("pyproject.toml"));
 
     // Detect user's Python
     let python_path = python::detect_python(&project_dir)?;
@@ -162,12 +162,9 @@ fn try_zygote_run(
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
     let started_new = if !socket_path.exists() {
-        // Read preload config from pyproject.toml (DEV-FIX-001)
-        let config = VeloConfig::from_pyproject_toml();
-        let preload: Vec<&str> = config
-            .as_ref()
-            .map(|c| c.preload.iter().map(|s| s.as_str()).collect())
-            .unwrap_or_default();
+        // Read preload config from pyproject.toml (DEV-FIX-001) with Env Var overrides
+        let config = VeloConfig::load_with_overrides(Path::new("pyproject.toml"));
+        let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
         if preload.is_empty() {
             eprintln!("🚀 Starting Zygote...");

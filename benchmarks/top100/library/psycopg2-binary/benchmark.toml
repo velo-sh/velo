@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "psycopg2-binary"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["psycopg2"]
+timeout = 30

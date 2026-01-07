@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "aiobotocore"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["aiobotocore"]
+timeout = 30

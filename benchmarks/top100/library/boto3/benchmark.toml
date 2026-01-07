@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "boto3"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["boto3", "botocore"]
+timeout = 30

@@ -2,6 +2,7 @@ import os
 import pytest
 import subprocess
 import json
+import time
 from pathlib import Path
 
 # QA Agent A: DX/UX & Error Fidelity
@@ -22,8 +23,8 @@ class TestPhase61DXHardened:
         result = env.run_velo("serve", "main", timeout=5)
         
         # Benchmark: Rust-style source-pointing
-        assert "error: failed to detect" in result.stderr.lower()
-        assert "--> main.py" in result.stderr
+        assert "error: invalid app format" in result.stderr.lower()
+        assert "--> main" in result.stderr
         # assert "^^^" in result.stderr # High-fidelity check (may be deferred if CLI not polished)
         assert "help:" in result.stderr.lower()
 

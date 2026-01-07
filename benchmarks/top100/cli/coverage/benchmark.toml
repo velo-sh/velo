@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "coverage"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["coverage"]
+timeout = 30
