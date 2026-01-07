@@ -1,0 +1,33 @@
+name: 'Run Velo Tests'
+description: 'Standardized test execution with Checkout and Velo Setup'
+
+inputs:
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+  uv-version:
+    description: 'UV version to use'
+    required: false
+    default: '0.5'
+  command:
+    description: 'Test command to run'
+    required: true
+  download-binary:
+    description: 'Whether to download the pre-built velo binary'
+    required: false
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Velo
+      uses: ./.github/actions/setup-velo
+      with:
+        python-version: ${{ inputs.python-version }}
+        download-binary: ${{ inputs.download-binary }}
+        uv-version: ${{ inputs.uv-version }}
+
+    - name: Run Test Command
+      shell: bash
+      run: ${{ inputs.command }}

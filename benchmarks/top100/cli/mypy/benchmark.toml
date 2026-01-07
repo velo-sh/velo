@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "mypy"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["mypy"]
+timeout = 30

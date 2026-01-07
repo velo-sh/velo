@@ -23,9 +23,49 @@ pub struct VeloConfig {
 }
 
 impl VeloConfig {
-    /// Read from pyproject.toml in current directory
+    /// Read from pyproject.toml in current directory and apply overrides.
     pub fn from_pyproject_toml() -> Option<Self> {
-        Self::from_path(Path::new("pyproject.toml"))
+        let mut config = Self::from_path(Path::new("pyproject.toml"))?;
+        config.apply_env_overrides();
+        Some(config)
+    }
+
+    /// Load default config and apply environment overrides.
+    /// Useful when no pyproject.toml is present.
+    pub fn from_env_only() -> Self {
+        let mut config = Self::default();
+        config.apply_env_overrides();
+        config
+    }
+
+    /// Apply overrides from environment variables
+    #[allow(clippy::collapsible_if)]
+    pub fn apply_env_overrides(&mut self) {
+        if let Ok(val) = std::env::var("VELO_PRELOAD") {
+            self.preload = Self::parse_string_array(&val);
+        }
+        if let Ok(val) = std::env::var("VELO_MAX_BUNDLE_SIZE") {
+            if let Ok(mb) = val.parse::<u64>() {
+                self.max_bundle_size = Some(mb * 1024 * 1024);
+            }
+        }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_WORKER_TIMEOUT") {
+            if let Ok(secs) = val.parse::<u64>() {
+                self.zygote_worker_timeout = Some(secs);
+            }
+        }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_SOCKET_TIMEOUT") {
+            if let Ok(secs) = val.parse::<u64>() {
+                self.zygote_socket_timeout = Some(secs);
+            }
+        }
+    }
+
+    /// Read from specific path and apply environment overrides
+    pub fn load_with_overrides(path: &Path) -> Self {
+        let mut config = Self::from_path(path).unwrap_or_default();
+        config.apply_env_overrides();
+        config
     }
 
     /// Read from specific path
@@ -211,5 +251,26 @@ zygote_socket_timeout = 20
         let config = VeloConfig::parse_toml(content).unwrap();
         assert_eq!(config.zygote_worker_timeout, Some(60));
         assert_eq!(config.zygote_socket_timeout, Some(20));
+    }
+
+    #[test]
+    fn test_env_overrides() {
+        // Set env vars
+        unsafe {
+            std::env::set_var("VELO_ZYGOTE_WORKER_TIMEOUT", "99");
+            std::env::set_var("VELO_PRELOAD", "os,sys");
+        }
+
+        let mut config = VeloConfig::default();
+        config.apply_env_overrides();
+
+        assert_eq!(config.zygote_worker_timeout, Some(99));
+        assert_eq!(config.preload, vec!["os", "sys"]);
+
+        // Cleanup
+        unsafe {
+            std::env::remove_var("VELO_ZYGOTE_WORKER_TIMEOUT");
+            std::env::remove_var("VELO_PRELOAD");
+        }
     }
 }

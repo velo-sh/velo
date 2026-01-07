@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "google-auth"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["google.auth", "cachetools", "rsa", "pyasn1"]
+timeout = 30
