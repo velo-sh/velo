@@ -35,7 +35,13 @@ pub mod linux {
 
     /// Maximum number of NUMA nodes supported in the bitmask.
     pub const NUMA_MAX_NODES: libc::c_ulong = 64;
+
+    /// H-20: HugePages support (Linux).
+    pub const MAP_HUGETLB: libc::c_int = 0x40000;
 }
+
+/// Safety Limit: 1TB maximum generic SHM size to prevent DoS/Hangs (DEF-70-004).
+pub const MAX_SHM_SIZE: usize = 1024 * 1024 * 1024 * 1024;
 
 /// Helper to check if a path is a valid safetensors source.
 pub fn is_valid_safetensors(path: &Path) -> bool {
