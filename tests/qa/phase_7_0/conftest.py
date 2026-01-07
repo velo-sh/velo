@@ -5,6 +5,7 @@ QA-SOP Reference: §4.1
 RFC Reference: RFC-0015 (Memory Gravity)
 
 This module provides shared fixtures for testing Memory Gravity SHM infrastructure.
+Follows main branch patterns for CI-aware timeout scaling.
 """
 
 import os
@@ -17,6 +18,25 @@ import shutil
 from pathlib import Path
 from typing import Optional, Generator
 from dataclasses import dataclass
+
+# Import CI-aware timeout constants from parent conftest (main branch pattern)
+# These are automatically scaled for CI environments (3x multiplier)
+try:
+    from tests.qa.conftest import (
+        T_SHORT,      # 5s local, 15s CI
+        T_MEDIUM,     # 15s local, 45s CI
+        T_LONG,       # 60s local, 180s CI
+        ci_timeout,   # Function to scale custom timeouts
+        TIMEOUT_MULTIPLIER,
+    )
+except ImportError:
+    # Fallback for standalone execution
+    T_SHORT = 5
+    T_MEDIUM = 15
+    T_LONG = 60
+    TIMEOUT_MULTIPLIER = 1.0
+    def ci_timeout(base: float) -> float:
+        return base
 
 
 # =============================================================================
@@ -64,10 +84,16 @@ class VeloTestEnv:
     velo_binary: Optional[Path]
     python_path: Path
     
-    def run_velo(self, *args, timeout: int = 30, **kwargs) -> subprocess.CompletedProcess:
-        """Run velo command in the test environment."""
+    def run_velo(self, *args, timeout: float = None, **kwargs) -> subprocess.CompletedProcess:
+        """Run velo command in the test environment.
+        
+        Uses T_MEDIUM (15s local, 45s CI) as default timeout.
+        """
         if self.velo_binary is None:
             pytest.skip("Velo binary not found")
+        
+        if timeout is None:
+            timeout = T_MEDIUM
         
         cmd = [str(self.velo_binary)] + list(args)
         return subprocess.run(
@@ -79,8 +105,14 @@ class VeloTestEnv:
             **kwargs
         )
     
-    def run_python(self, script: str, timeout: int = 30) -> subprocess.CompletedProcess:
-        """Run a Python script in the test environment."""
+    def run_python(self, script: str, timeout: float = None) -> subprocess.CompletedProcess:
+        """Run a Python script in the test environment.
+        
+        Uses T_MEDIUM (15s local, 45s CI) as default timeout.
+        """
+        if timeout is None:
+            timeout = T_MEDIUM
+            
         script_path = self.path / "_test_script.py"
         script_path.write_text(script)
         
