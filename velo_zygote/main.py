@@ -502,16 +502,33 @@ def hook_security():
     except Exception:
         random.seed()
 
-    # 3. Signal Hygiene (MAC-P0-002: Reset to default handlers)
-    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD, signal.SIGHUP, signal.SIGPIPE]:
+    # 3. Signal Hygiene (H-12: Complete Reset)
+    try:
+        # 3.1 Unblock all signals (Inherited signal mask)
+        if hasattr(signal, 'pthread_sigmask'):
+            signal.pthread_sigmask(signal.SIG_SETMASK, [])
+    except (ValueError, RuntimeError, AttributeError):
+        pass
+
+    # 3.2 Reset all signal handlers to default
+    for sig in range(1, getattr(signal, 'NSIG', 65)):
         try:
             signal.signal(sig, signal.SIG_DFL)
-        except (ValueError, RuntimeError):
+        except (ValueError, RuntimeError, OSError):
+            # Skip signals that cannot be caught (SIGKILL, SIGSTOP) or are not supported
             pass
     
+    # 3.3 Purge wakeup FD (AsyncIO pollution)
     try:
         signal.set_wakeup_fd(-1)
     except (ValueError, RuntimeError):
+        pass
+
+    # 4. Extended PRNG Seeding (Industrial Isolation)
+    try:
+        import numpy as np
+        np.random.seed(int.from_bytes(os.urandom(4), 'little'))
+    except (ImportError, Exception):
         pass
 
 def hook_computing():
@@ -1125,6 +1142,15 @@ def check_cuda_initialized() -> bool:
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    print(f"DEBUG: Zygote Entry. Executable: {sys.executable}")
+    print(f"DEBUG: Zygote Entry. Version: {sys.version}")
+    print(f"DEBUG: Zygote Entry. sys.path: {sys.path}")
+    print(f"DEBUG: Zygote Entry. PYTHONPATH: {os.environ.get('PYTHONPATH')}")
+    print(f"DEBUG: Zygote Entry. PATH: {os.environ.get('PATH')}")
+    sys.stdout.flush()
+
     os.environ['OMP_NUM_THREADS'] = '1'
     import argparse
     parser = argparse.ArgumentParser(description="Velo Zygote Process")

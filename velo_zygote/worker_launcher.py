@@ -39,7 +39,18 @@ def main():
         run_kwargs["forwarded_allow_ips"] = "*"
         
     # Execute uvicorn
-    uvicorn.run(**run_kwargs)
+    try:
+        print(f"[WORKER] Launching uvicorn for {args.app}")
+        uvicorn.run(**run_kwargs)
+        print("[WORKER] uvicorn.run finished normally")
+    except Exception as e:
+        import traceback
+        with open("/tmp/worker_launch_error.log", "a") as f:
+            f.write(f"PID {os.getpid()}: CRASH: {e}\n")
+            f.write(traceback.format_exc())
+            f.write("\n")
+        print(f"[WORKER] CRASH: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
