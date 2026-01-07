@@ -25,8 +25,9 @@ app = FastAPI()
         # 1. Clear VIRTUAL_ENV to match ComprehensiveTestEnv behavior
         # 2. Use 'uv run' to ensure we pick up the isolated environment
         run_env = os.environ.copy()
-        if "VIRTUAL_ENV" in run_env:
-            del run_env["VIRTUAL_ENV"]
+        # 2. Use 'uv run' to ensure we pick up the isolated environment
+        run_env = os.environ.copy()
+        # NOTE: logic to del VIRTUAL_ENV removed to allow inheritance of dev dependencies (uvicorn/fastapi)
 
         port = env.next_port()
         process = subprocess.Popen(
@@ -71,8 +72,8 @@ app = FastAPI()
         import os
         
         run_env = os.environ.copy()
-        if "VIRTUAL_ENV" in run_env:
-            del run_env["VIRTUAL_ENV"]
+        run_env = os.environ.copy()
+        # NOTE: logic to del VIRTUAL_ENV removed to allow inheritance of dev dependencies (uvicorn/fastapi)
 
         port = env.next_port()
         process = subprocess.Popen(
@@ -124,8 +125,8 @@ app = FastAPI()
         import os
         
         run_env = os.environ.copy()
-        if "VIRTUAL_ENV" in run_env:
-            del run_env["VIRTUAL_ENV"]
+        run_env = os.environ.copy()
+        # NOTE: logic to del VIRTUAL_ENV removed to allow inheritance of dev dependencies (uvicorn/fastapi)
 
         port = env.next_port()
         process = subprocess.Popen(
