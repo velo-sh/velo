@@ -27,13 +27,13 @@ class TestPhase61StabilityHardened:
         Goal: Verify child process is killed when parent exits/panics.
         """
         env = isolated_env
-        env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
+        env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
         port = get_free_port()
         
         # Start velo serve in a new process group
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}"],
+            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             preexec_fn=os.setsid
         )
@@ -210,7 +210,7 @@ time.sleep(60)
         all child processes (including uvicorn workers) are properly cleaned up.
         """
         env = isolated_env
-        env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
+        env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
         port = get_free_port()
         
@@ -295,6 +295,12 @@ time.sleep(60)
         # If it triggers too early, it might fail to import or show partial code errors
         assert "SyntaxError" not in output, "Race Detected: Watcher triggered on partially written file"
 
+    def get_free_port(self):
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
+
     def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
         """
         STB-RS-002 (Hard-Cap): Continuous events MUST trigger a restart after hard-cap (max 5s).
@@ -304,15 +310,17 @@ time.sleep(60)
         app_code = """
 import os
 import time
-print(f"START_{os.getpid()}")
+print(f"START_{os.getpid()}", flush=True)
 app = lambda s, r, se: None
 """
         app_file = env.path / "main.py"
         app_file.write_text(app_code)
         
+        port = self.get_free_port()
+        
         # Start server
         proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload"],
+            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
             cwd=env.path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -337,6 +345,9 @@ app = lambda s, r, se: None
             proc.terminate()
             out, err = proc.communicate(timeout=1)
             starts = out.count("START_")
+            if starts < 2:
+                print(f"DEBUG: Captured Output:\n{out}")
+                print(f"DEBUG: Captured Error:\n{err}")
             # If starvation exists, starts will be 1 (the initial one).
             # If hard-cap exists, starts will be >= 2.
             assert starts >= 2, f"Starvation Detected: Only {starts} starts found after 4s of continuous events. Hard-cap missing in watcher.rs."
@@ -404,7 +415,7 @@ class TestRegressionBugFixes:
         Commit: c915723
         """
         env = isolated_env
-        env.create_app("main.py", "app = lambda s, r, se: None\nimport time; time.sleep(60)")
+        env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
         port = get_free_port()
         
