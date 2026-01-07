@@ -5,6 +5,23 @@ use std::path::Path;
 use crate::shm::alignment;
 use crate::shm::error::MemoryError;
 
+#[cfg(target_os = "linux")]
+mod numa {
+    pub const MPOL_BIND: libc::c_int = 2;
+    pub const MPOL_MF_STRICT: libc::c_uint = 1 << 0;
+
+    extern "C" {
+        pub fn mbind(
+            addr: *mut libc::c_void,
+            len: libc::c_ulong,
+            mode: libc::c_int,
+            nodemask: *const libc::c_ulong,
+            maxnode: libc::c_ulong,
+            flags: libc::c_uint,
+        ) -> libc::c_long;
+    }
+}
+
 pub struct MemoryRegistry {
     strict_numa: bool,
     #[allow(dead_code)] // Used only on Linux in mbind()
@@ -101,13 +118,13 @@ impl MemoryRegistry {
                 // SECURITY: mbind is used to enforce NUMA affinity in strict mode (H-30).
                 // This prevents cross-node latency by pinning memory to the configured nodes.
                 let ret = unsafe {
-                    libc::mbind(
+                    numa::mbind(
                         ptr,
                         total_size as u64,
-                        libc::MPOL_BIND,
+                        numa::MPOL_BIND,
                         &nodemask as *const u64,
                         maxnode,
-                        libc::MPOL_MF_STRICT,
+                        numa::MPOL_MF_STRICT,
                     )
                 };
                 if ret < 0 {
