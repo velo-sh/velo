@@ -17,7 +17,6 @@ import sys
 import time
 import statistics
 from pathlib import Path
-from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 
 # Try to import velo.zygote components
@@ -55,10 +54,9 @@ class BenchmarkRunner:
     def __init__(self, limit: int = None, keep_env: bool = False, target_pkg: str = None, runs: int = 3, drop_cache: bool = False, use_zygote: bool = False):
         self.limit = limit
         self.keep_env = keep_env
-        self.target_pkg = target_pkg or []
+        self.target_pkg = [target_pkg] if isinstance(target_pkg, str) else (target_pkg or [])
         self.runs = runs
         self.drop_cache = drop_cache
-        self.use_zygote = use_zygote
         self.use_zygote = use_zygote
         self.fleet_mode = False 
         self.zygote_process = None
@@ -68,13 +66,8 @@ class BenchmarkRunner:
             if platform.system() not in ["Linux", "Darwin"]:
                 logger.error("❌ Zygote mode is only supported on Linux/macOS.")
                 sys.exit(1)
-            # Startup is now handled by the caller or on-demand
-        self.keep_env = keep_env
-        self.target_pkg = target_pkg or []
-        self.runs = runs
-        self.drop_cache = drop_cache
+        
         self.results = []
-        self.success_count = 0
         self.success_count = 0
         self.fail_count = 0
 
@@ -157,14 +150,6 @@ class BenchmarkRunner:
         subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
         
         # 2. Kill local process backing it if we own it
-        if hasattr(self, 'zygote_process') and self.zygote_process:
-            if self.zygote_process.poll() is None:
-                self.zygote_process.terminate()
-                try:
-                    self.zygote_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.zygote_process.kill()
-        
         # 2. Kill local process backing it if we own it
         if hasattr(self, 'zygote_process') and self.zygote_process:
             if self.zygote_process.poll() is None:
@@ -388,7 +373,7 @@ class BenchmarkRunner:
                     if self.use_zygote:
                          return [str(VELO_BIN), "run", "--zygote", str(target_path)] + velo_args
                     else:
-                         return [str(VELO_BIN), "run", "--zygote", str(target_path)] + velo_args
+                         return [str(VELO_BIN), "run", str(target_path)] + velo_args
                 elif mode == "velo_bundle":
                     return [str(VELO_BIN), "run", "--zygote", "--fast", str(target_path)] + velo_args
                 elif mode == "velo_instant":
