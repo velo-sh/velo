@@ -85,12 +85,28 @@ def test_PERF_621_kinetic_speedup(isolated_env):
         cwd=app_dir
     )
     
-    # Wait for socket
-    timeout = time.time() + 15
-    while not socket_path.exists() and time.time() < timeout:
-        time.sleep(0.1)
+    # Wait for Zygote to be FULLY READY
+    # FIX: Socket file exists != Zygote accepting connections
+    import socket as sock_module
+    timeout = time.time() + 20
+    zygote_ready = False
+    while time.time() < timeout:
+        if not socket_path.exists():
+            time.sleep(0.2)
+            continue
+        try:
+            test_sock = sock_module.socket(sock_module.AF_UNIX, sock_module.SOCK_STREAM)
+            test_sock.settimeout(2.0)
+            test_sock.connect(str(socket_path))
+            test_sock.close()
+            zygote_ready = True
+            time.sleep(2.0)  # Wait for Zygote to finish initialization
+            break
+        except (sock_module.error, OSError):
+            pass
+        time.sleep(0.5)
     
-    assert socket_path.exists(), "Zygote failed to start"
+    assert zygote_ready, "Zygote failed to accept connections"
     
     port_kinetic = random.randint(40000, 49999)
     try:
