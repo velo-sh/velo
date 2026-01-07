@@ -73,7 +73,8 @@ import struct
 from typing import Tuple
 
 # Test header lengths per RFC-0015 Appendix A
-TEST_HEADER_LENGTHS = [1, 63, 64, 65, 127, 128, 1023, 1024]
+# Expert Recommendation #2: Include header_length=0 and other boundary cases
+TEST_HEADER_LENGTHS = [0, 1, 55, 56, 57, 63, 64, 65, 127, 128, 1023, 1024, 4096]
 ALIGNMENT = 64
 
 def calculate_aligned_header_length(original_length: int) -> int:
