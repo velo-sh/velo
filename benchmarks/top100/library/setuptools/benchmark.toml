@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "setuptools"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["setuptools"]
+timeout = 30

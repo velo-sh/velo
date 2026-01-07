@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "pydantic"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["pydantic", "pydantic_core"]
+timeout = 30

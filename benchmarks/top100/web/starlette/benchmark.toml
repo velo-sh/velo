@@ -1,0 +1,10 @@
+
+[meta]
+category = "web"
+package = "starlette"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["starlette", "starlette.applications", "starlette.routing", "starlette.requests", "starlette.responses"]
+timeout = 30

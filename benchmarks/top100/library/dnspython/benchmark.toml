@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "dnspython"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["dns", "dns.resolver", "dns.reversename", "dns.rdatatype"]
+timeout = 30

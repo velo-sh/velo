@@ -1,0 +1,10 @@
+
+[meta]
+category = "cli"
+package = "rich"
+
+[test]
+entry_point = "hello.py"
+expected_output = "Rich console created"
+preload_modules = []
+timeout = 30

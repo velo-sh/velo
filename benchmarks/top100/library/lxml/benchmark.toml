@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "lxml"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["lxml"]
+timeout = 30

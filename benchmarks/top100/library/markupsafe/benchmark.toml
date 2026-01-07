@@ -1,0 +1,10 @@
+
+[meta]
+category = "library"
+package = "markupsafe"
+
+[test]
+entry_point = "hello.py"
+expected_output = ".*"
+preload_modules = ["markupsafe"]
+timeout = 30
