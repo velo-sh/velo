@@ -13,13 +13,13 @@ These tests cover concerns raised by Expert Reviews:
 Priority: P2 (Important for production readiness)
 """
 
-import os
-import signal
-import socket
-import sys
-import time
-
 import pytest
+from pathlib import Path
+
+# Import CI-aware timeout constants from parent conftest
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
 
 # Mark all tests in this module as expert review tests
 pytestmark = pytest.mark.expert_review
@@ -53,7 +53,7 @@ class TestHPCConcerns:
         import requests
 
         for _ in range(10):
-            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
             assert response.status_code == 200
 
     def test_HPC_2_cuda_context_detection(self, velo_serve_fixture):
@@ -96,7 +96,7 @@ class TestHPCConcerns:
 
         workers_seen = set()
         for _ in range(20):
-            r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
+            r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)
             if r.status_code == 200:
                 workers_seen.add(r.json().get("pid"))
 
@@ -131,7 +131,7 @@ class TestNetworkConcerns:
         time.sleep(0.5)
         import requests
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200
 
     def test_NET_2_timeout_header(self, velo_serve_fixture):
@@ -164,7 +164,7 @@ class TestNetworkConcerns:
         # Server should still be up
         import requests
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200
 
     def test_NET_3_streaming_no_buffer(self, velo_serve_fixture):
@@ -186,7 +186,7 @@ class TestNetworkConcerns:
         response = requests.post(
             f"http://127.0.0.1:{proc.port}/health",  # POST to health is likely 405
             data=large_body,
-            timeout=30,
+            timeout=T_LONG,
         )
         # Any response is fine, just verify no crash
         assert response.status_code in [200, 405, 422]
@@ -243,7 +243,7 @@ class TestK8sConcerns:
 
         def make_slow_request():
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
                 return r.status_code
             except Exception as e:
                 in_flight_errors.append(str(e))
@@ -262,7 +262,7 @@ class TestK8sConcerns:
 
         # After SIGTERM, server should eventually exit
         try:
-            proc.proc.wait(timeout=10)
+            proc.proc.wait(timeout=T_MEDIUM)
         except Exception:
             proc.proc.kill()
             proc.proc.wait()
@@ -286,7 +286,7 @@ class TestK8sConcerns:
         proc.wait_ready()
 
         # Health check should reflect worker status
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200
 
         # Kill one worker
@@ -299,7 +299,7 @@ class TestK8sConcerns:
 
         # Health check should still work (other worker)
         time.sleep(1)
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         # Depending on implementation, might be 200 or 503
         assert response.status_code in [200, 503]
 
@@ -325,7 +325,7 @@ class TestO11yConcerns:
         response = requests.get(
             f"http://127.0.0.1:{proc.port}/headers",
             headers={"traceparent": traceparent},
-            timeout=5,
+            timeout=T_SHORT,
         )
 
         assert response.status_code == 200
@@ -350,7 +350,7 @@ class TestO11yConcerns:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/headers", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/headers", timeout=T_SHORT)
         assert response.status_code == 200
 
         headers = response.json()
@@ -382,5 +382,5 @@ class TestO11yConcerns:
                 pass
 
         # Server should still be healthy
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200

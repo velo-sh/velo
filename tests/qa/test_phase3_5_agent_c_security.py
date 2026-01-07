@@ -15,6 +15,10 @@ from pathlib import Path
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
+
 
 def get_velo_binary():
     """Get path to velo binary."""
@@ -45,7 +49,9 @@ class SecurityTestEnv:
     def create_script(self, name: str, content: str):
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list, timeout: float = None) -> tuple:
+        if timeout is None:
+            timeout = T_MEDIUM
         result = subprocess.run(
             [self.velo] + args,
             cwd=self.path,
@@ -78,7 +84,7 @@ class TestNetworkSecurity:
             [velo, "serve", "main:app", "--port", "80"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should either fail (permission) or warn
         # Should not silently succeed without root
@@ -92,7 +98,7 @@ class TestNetworkSecurity:
             [velo, "serve", "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Check help text for default host
         # Should default to 127.0.0.1 or localhost
@@ -148,7 +154,7 @@ class TestInputValidation:
             [velo, "serve", "../../../etc/passwd:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         assert result.returncode != 0
         # Should not attempt to access system files
@@ -168,7 +174,7 @@ class TestInputValidation:
                 [velo, "serve", "main\x01:app"],  # SOH control char instead
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_SHORT
             )
             # Should handle gracefully, not crash
             assert result.returncode != 0 or "error" in result.stderr.lower()
@@ -198,7 +204,7 @@ class TestInputValidation:
             [velo, "serve", "`id`:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should not execute shell command
         assert "uid=" not in result.stdout
@@ -211,7 +217,7 @@ class TestInputValidation:
             [velo, "serve", "main:app;id"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should not execute 'id' command
         assert "uid=" not in result.stdout
@@ -299,7 +305,7 @@ class TestErrorMessageSecurity:
             [velo, "serve", "/nonexistent/path:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should not show Rust stack trace to user
         assert "thread 'main' panicked" not in result.stderr
@@ -312,7 +318,7 @@ class TestErrorMessageSecurity:
             [velo, "serve", "nonexistent:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_SHORT
         )
         # Should not show full internal paths
         # e.g., /home/user/.cargo/registry/...
@@ -343,7 +349,7 @@ class TestSecurityEdgeCases:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=30)
+                t.join(timeout=T_MEDIUM)
             
             # All should have consistent behavior (all pass or all fail)
             if results:
@@ -359,7 +365,7 @@ class TestSecurityEdgeCases:
             except OSError:
                 pytest.skip("Cannot create symlinks")
             
-            code, stdout, stderr = env.run_velo(["run", "link_a.py"], timeout=10)
+            code, stdout, stderr = env.run_velo(["run", "link_a.py"], timeout=T_SHORT)
             # Should fail gracefully, not hang
             assert code != 0 or "error" in stderr.lower()
 
@@ -372,7 +378,7 @@ class TestSecurityEdgeCases:
             saved_env = os.environ.copy()
             os.environ['MASSIVE_VAR'] = 'x' * 100000
             try:
-                code, stdout, stderr = env.run_velo(["run", "env_size.py"], timeout=30)
+                code, stdout, stderr = env.run_velo(["run", "env_size.py"], timeout=T_MEDIUM)
                 # Should handle gracefully
                 assert code == 0 or "memory" in stderr.lower() or "Falling back" in stderr
             finally:
@@ -426,7 +432,7 @@ class TestSecurityStability:
                 [velo, "serve", f"{path}:app"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_SHORT
             )
             # All should fail
             assert result.returncode != 0, f"Path {path} was not blocked"

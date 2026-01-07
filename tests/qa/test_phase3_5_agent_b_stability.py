@@ -25,6 +25,10 @@ from pathlib import Path
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
+
 # Try to import requests, skip tests if not available
 try:
     import requests
@@ -58,8 +62,10 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = 10) -> bool:
+def wait_for_port(port: int, timeout: float = None) -> bool:
     """Wait for port to open."""
+    if timeout is None:
+        timeout = T_MEDIUM
     start = time.time()
     while time.time() - start < timeout:
         if is_port_open(port):
@@ -110,7 +116,7 @@ class StabilityTestEnv:
         for proc in self.procs:
             try:
                 proc.terminate()
-                proc.wait(timeout=5)
+                proc.wait(timeout=T_SHORT)
             except:
                 try:
                     proc.kill()
@@ -148,7 +154,7 @@ class TestLevel0Smoke:
             [velo, "--help"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_MEDIUM
         )
         assert "serve" in result.stdout.lower(), "serve command not in help"
 
@@ -162,7 +168,7 @@ class TestLevel0Smoke:
             
             # Check stderr for startup message
             proc.terminate()
-            proc.wait(timeout=5)
+            proc.wait(timeout=T_SHORT)
             
             stderr = proc.stderr.read()
             # Should show SOMETHING about starting
@@ -192,7 +198,7 @@ def root():
             proc = env.start_serve("main:app", port)
             
             # Wait for port to open
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 stderr = proc.stderr.read() if proc.stderr else ""
                 stdout = proc.stdout.read() if proc.stdout else ""
                 # If uvicorn dependency check, skip this test
@@ -236,12 +242,12 @@ def root():
             port = 18102
             proc = env.start_serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start - see SMOKE-004")
             
             # Make request
             try:
-                response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+                response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                 assert response.status_code == 200
                 assert response.json()["message"] == "Hello from Velo!"
             except requests.exceptions.RequestException as e:
@@ -249,7 +255,7 @@ def root():
             
             # Graceful stop
             proc.terminate()
-            exit_code = proc.wait(timeout=10)
+            exit_code = proc.wait(timeout=T_MEDIUM)
             # Exit code 0 or -15 (SIGTERM) are both acceptable
             assert exit_code in [0, -15, -signal.SIGTERM]
 
@@ -270,10 +276,10 @@ def health():
             port = 18103
             proc = env.start_serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
-            response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
+            response = requests.get(f"http://127.0.0.1:{port}/health", timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["healthy"] == True
 
@@ -299,13 +305,13 @@ def create_item(item: Item):
             port = 18104
             proc = env.start_serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
             response = requests.post(
                 f"http://127.0.0.1:{port}/items",
                 json={"name": "test"},
-                timeout=5
+                timeout=T_SHORT
             )
             assert response.status_code == 200
             assert response.json()["created"] == "test"
@@ -325,7 +331,7 @@ class TestLevel2SadPath:
             [velo, "serve", "nonexistent_module_xyz:app"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_MEDIUM
         )
         
         assert result.returncode != 0
@@ -343,7 +349,7 @@ class TestLevel2SadPath:
                 cwd=env.path,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=T_MEDIUM
             )
             
             # Should fail with clear error
@@ -368,7 +374,7 @@ def root():
             
             # First server
             proc1 = env.start_serve("main:app", port)
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("First server did not start")
             
             # Second server on same port
@@ -383,7 +389,7 @@ def root():
             
             # Should fail quickly
             try:
-                proc2.wait(timeout=10)
+                proc2.wait(timeout=T_MEDIUM)
             except subprocess.TimeoutExpired:
                 proc2.kill()
             
@@ -409,7 +415,7 @@ class TestLevel3Regression:
                 cwd=env.path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=T_MEDIUM
             )
             
             # Should work
@@ -424,7 +430,7 @@ class TestLevel3Regression:
                 [env.velo, "run", "exit42.py"],
                 cwd=env.path,
                 capture_output=True,
-                timeout=30
+                timeout=T_MEDIUM
             )
             
             # Exit code 42 or fallback mode (1)
@@ -437,7 +443,7 @@ class TestLevel3Regression:
             [velo, "info"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=T_MEDIUM
         )
         # Should output something
         assert len(result.stdout) > 0 or len(result.stderr) > 0
