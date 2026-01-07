@@ -38,6 +38,9 @@ pub mod linux {
 
     /// H-20: HugePages support (Linux).
     pub const MAP_HUGETLB: libc::c_int = 0x40000;
+
+    /// H-20: HugePages support for memfd (Linux).
+    pub const MFD_HUGETLB: libc::c_uint = 0x04;
 }
 
 /// Safety Limit: 1TB maximum generic SHM size to prevent DoS/Hangs (DEF-70-004).

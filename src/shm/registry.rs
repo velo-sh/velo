@@ -304,13 +304,31 @@ impl MemoryRegistry {
         // SECURITY: memfd_create is used for secure, anonymous shared memory on Linux.
         // MFD_CLOEXEC: Close on exec to prevent leak to children.
         // MFD_ALLOW_SEALING: Required for H-23 (F_ADD_SEALS).
-        let fd = unsafe {
-            libc::syscall(
-                libc::SYS_memfd_create,
-                c_name.as_ptr(),
-                libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
-            ) as RawFd
+        // H-20: Helper for HugePages attempt
+        let try_create = |flags: u32| -> i64 {
+            unsafe {
+                libc::syscall(
+                    libc::SYS_memfd_create,
+                    c_name.as_ptr(),
+                    libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING | flags,
+                )
+            }
         };
+
+        // H-20: Optimistic HugePages Attempt (MFD_HUGETLB)
+        // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
+        // we fallback to standard pages to prevent startup failure.
+        let mut fd = try_create(linux::MFD_HUGETLB);
+
+        if fd < 0 {
+            // Fallback to standard 4KB pages
+            eprintln!(
+                "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
+            );
+            fd = try_create(0);
+        }
+
+        let fd = fd as RawFd;
 
         if fd < 0 {
             return Err(MemoryError::SegmentCreationFailed(format!(
