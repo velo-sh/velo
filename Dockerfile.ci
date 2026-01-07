@@ -1,0 +1,99 @@
+# Velo Local CI Simulation
+# =========================
+# Simulates the GitHub Actions Ubuntu environment locally on macOS.
+#
+# Usage:
+#   docker build -t velo-ci-ubuntu -f Dockerfile.ci .
+#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu
+#
+# For interactive debugging:
+#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu bash
+#
+# BEST PRACTICES:
+# 1. FAIL FAST: Environment checks run FIRST before any builds
+# 2. DRY: Uses scripts/ci-common.sh shared library
+# 3. ISOLATED: Uses /tmp for venv to not overwrite host .venv
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies (matches ubuntu-latest on GitHub Actions)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (same as actions-rs/toolchain)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install uv (same as astral-sh/setup-uv)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install Python 3.11 via uv (same as CI)
+RUN uv python install 3.11
+
+# Set working directory
+WORKDIR /workspace
+
+# Use /tmp for Docker venv to avoid destroying host .venv
+ENV UV_PROJECT_ENVIRONMENT=/tmp/.venv-docker
+
+# Default command: run full CI check with FAIL FAST
+CMD ["bash", "-c", "\
+    echo '' && \
+    echo '🚀 Velo Local CI Simulation (Ubuntu 22.04)' && \
+    echo '===========================================' && \
+    echo '' && \
+    echo '==================== Phase 0: Environment Check (FAIL FAST) ====================' && \
+    echo '' && \
+    echo '▶ Checking environment...' && \
+    uname -a && \
+    rustc --version && \
+    uv --version && \
+    echo '✅ Environment OK' && \
+    echo '' && \
+    echo '==================== Phase 1: Setup ====================' && \
+    echo '' && \
+    echo '▶ Setting up Python environment...' && \
+    uv venv --python 3.11 /tmp/.venv-docker && \
+    uv sync --extra dev && \
+    echo '✅ Python environment ready' && \
+    echo '' && \
+    echo '==================== Phase 2: Build ====================' && \
+    echo '' && \
+    echo '▶ Building Rust (release)...' && \
+    cargo build --release && \
+    echo '✅ Rust build complete' && \
+    echo '' && \
+    echo '==================== Phase 3: Test ====================' && \
+    echo '' && \
+    echo '▶ Running Rust tests...' && \
+    cargo test --lib && \
+    echo '✅ Rust tests passed' && \
+    echo '' && \
+    echo '▶ Running Python tests...' && \
+    . /tmp/.venv-docker/bin/activate && \
+    pytest tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py -v && \
+    echo '✅ Python tests passed' && \
+    echo '' && \
+    echo '==================== Phase 4: Lint ====================' && \
+    echo '' && \
+    echo '▶ Running Clippy...' && \
+    cargo clippy -- -D warnings && \
+    echo '✅ Clippy passed' && \
+    echo '' && \
+    echo '▶ Checking format...' && \
+    cargo fmt --check && \
+    echo '✅ Format OK' && \
+    echo '' && \
+    echo '==========================================' && \
+    echo '✅ ALL CI CHECKS PASSED!' && \
+    echo '==========================================' \
+    "]
