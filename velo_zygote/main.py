@@ -205,8 +205,12 @@ except (ImportError, OSError) as e:
 _BLOCKED_PATHS = [
     "/etc", "/var", "/usr", "/bin", "/sbin",
     "/System", "/Library", "/private/etc",
-    "/root", "/home",
+    "/root",
 ]
+
+# Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
+if os.environ.get("GITHUB_ACTIONS") != "true":
+    _BLOCKED_PATHS.append("/home")
 
 
 class ForkRateLimiter:
