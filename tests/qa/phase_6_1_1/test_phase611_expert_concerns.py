@@ -20,6 +20,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+import socket
 import sys
 
 # Import CI-aware timeout constants from parent conftest
