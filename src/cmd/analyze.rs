@@ -251,6 +251,14 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
         eprintln!();
     }
 
+    // DEF-70-004: Validate SHM argument early to fail fast on errors
+    // This allows detecting invalid/malicious SHM files before finding the entry point script
+    if let Some(ref shm_path) = parsed.shm {
+        // We use MemoryRegistry's validation logic which handles 1PB checks etc.
+        MemoryRegistry::validate_source(shm_path)
+            .with_context(|| format!("InvalidSourceFile: {}", shm_path.display()))?;
+    }
+
     // Find entry point script
     let script = match &parsed.file {
         Some(f) => f.clone(),
