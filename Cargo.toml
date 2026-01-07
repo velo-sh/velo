@@ -69,6 +69,7 @@ pin-project-lite = "0.2"
 libc = "0.2"
 fs2 = "0.4"
 signal-hook = "0.3"      # Platform-specific signal handling
+nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS support
 
 [dev-dependencies]
 
