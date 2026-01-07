@@ -13,7 +13,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   # Lock versions for consistency between local and CI
-  RUST_VERSION: "1.92.0"
+  # Lock versions for consistency between local and CI
   UV_VERSION: "0.5"
 
 jobs:
@@ -87,10 +87,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -141,10 +139,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -168,10 +164,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_VERSION }}
           components: clippy
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -185,10 +180,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -778,10 +772,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust ${{ env.RUST_VERSION }}
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_VERSION }}
           components: llvm-tools-preview
       
       - name: Install cargo-llvm-cov
