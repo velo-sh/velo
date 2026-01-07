@@ -239,7 +239,7 @@ impl EnvironmentShield {
         }
 
         // 3.5. System Temp Directory (Required for Pytest/Workers in /tmp)
-        trusted.push(std::env::temp_dir());
+        // trusted.push(std::env::temp_dir());
 
         // 4. User Home Directory (RFC §3.5: User-trusted space)
         if let Ok(home) = std::env::var("HOME") {

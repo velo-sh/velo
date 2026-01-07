@@ -63,48 +63,38 @@ if __name__ == \"__main__\":
 
     probe_path.write_text(probe_script)
 
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        client.connect(str(socket_path))
-        
-        PROTOCOL_VERSION = 1
-        
-        def send_msg(sock, msg):
-            payload = msgpack.packb(msg, use_bin_type=True)
-            total_len = len(payload) + 1
-            sock.sendall(struct.pack("<I", total_len) + bytes([PROTOCOL_VERSION]) + payload)
-        
-        def recv_msg(sock):
-            raw_len = sock.recv(4)
-            if not raw_len: return None
-            total_len = struct.unpack("<I", raw_len)[0]
-            data = b""
-            while len(data) < total_len:
-                chunk = sock.recv(total_len - len(data))
-                if not chunk: break
-                data += chunk
-            return msgpack.unpackb(data[1:], raw=False)
+    import asyncio
+    from tests.qa.zygote_client import ZygoteClient
+    from velo_zygote.constants import PROTOCOL_VERSION
 
-        # 0. Sync
-        recv_msg(client)
-        
-        # 1. Handshake
-        send_msg(client, {"type": "Handshake", "version": 1, "capabilities": []})
-        recv_msg(client)
-        
-        # 2. Fork
-        cmd = {
-            "type": "Fork",
-            "script_path": str(probe_path),
-            "args": [],
-            "async_mode": False,
-            "stderr_path": str(stderr_log)
-        }
-        send_msg(client, cmd)
-        
-        # 3. Wait for Fork response
-        resp = recv_msg(client)
-        print(f"DEBUG: Fork Response: {resp}")
+    async def run_hygiene_test():
+        async with ZygoteClient(str(socket_path)) as client:
+            # 1. Handshake
+            handshake = {
+                "type": "Handshake",
+                "version": PROTOCOL_VERSION,
+                "capabilities": []
+            }
+            await client.send(handshake)
+            await client.recv()
+            
+            # 2. Fork
+            cmd = {
+                "type": "Fork",
+                "script_path": str(probe_path),
+                "args": [],
+                "async_mode": False,
+                "stderr_path": str(stderr_log)
+            }
+            await client.send(cmd)
+            
+            # 3. Wait for Fork response
+            resp = await client.recv()
+            print(f"DEBUG: Fork Response: {resp}")
+            return resp
+
+    try:
+        resp = asyncio.run(run_hygiene_test())
         
         # 4. Wait for results file
         for _ in range(50):
@@ -123,7 +113,9 @@ if __name__ == \"__main__\":
         assert "MASK_EMPTY:True" in content
         
     finally:
-        client.close()
+        # Keep files for debugging on failure
+        if results_file.exists():
+            print("INFO: Test Passed. Cleaning up.")
         # Keep files for debugging on failure
         if results_file.exists():
             print("INFO: Test Passed. Cleaning up.")

@@ -36,16 +36,13 @@ from typing import List, Optional, Set, Dict, Any, Tuple
 # Protocol Constants (ADV-1 + DEF-61-004)
 # ============================================================================
 
-# ============================================================================
-# Protocol Constants (ADV-1 + DEF-61-004)
-# ============================================================================
 try:
-    from velo_zygote.paths import PROTOCOL_VERSION, SOCKET_PATH_LIMIT, get_socket_dir, ensure_socket_dir
-except ImportError:
-    # Fallback when running directly from directory
-    from paths import PROTOCOL_VERSION, SOCKET_PATH_LIMIT, get_socket_dir, ensure_socket_dir
-
-MAX_MESSAGE_SIZE = 10 * 1024 * 1024  # 10MB
+    from .protocol import ZygoteTransport, ProtocolError
+    from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+except (ImportError, ValueError):
+    # Fallback when running main.py directly as a script
+    from protocol import ZygoteTransport, ProtocolError
+    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
 
 
 class ImportShield(importlib.abc.MetaPathFinder):
@@ -241,80 +238,7 @@ class PathValidator:
             return False, f"Invalid script path: {e}"
 
 
-class ZygoteTransport:
-    """Layer 1: Transport Layer - Handles asyncio-based MessagePack IO."""
-    
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        self.reader = reader
-        self.writer = writer
-        self.peer_capabilities: List[str] = []
-
-    async def recv(self) -> Optional[Dict]:
-        """Receive length-prefixed MessagePack message."""
-        try:
-            len_data = await self.reader.readexactly(4)
-            total_len = struct.unpack('<I', len_data)[0]
-            
-            # RFC-0013: Harden against malformed/oversized payloads (DoS protection)
-            if total_len > MAX_MESSAGE_SIZE:
-                hex_data = len_data.hex()
-                LogUtils.log(f"⛔ Protocol Error: Client sent oversized payload ({total_len} bytes, hex: {hex_data}, max {MAX_MESSAGE_SIZE}). Connection dropped.")
-                return None
-            if total_len < 1:
-                hex_data = len_data.hex()
-                LogUtils.log(f"⛔ Protocol Error: Client sent invalid length prefix ({total_len}, hex: {hex_data}). Connection dropped.")
-                return None
-            
-            version_data = await self.reader.readexactly(1)
-            if version_data[0] != PROTOCOL_VERSION:
-                LogUtils.log(f"⛔ Protocol Error: Version mismatch. Client sent 0x{version_data[0]:02x}, expected 0x{PROTOCOL_VERSION:02x}. Is client outdated?")
-                return None
-            
-            payload_len = total_len - 1
-            data = await self.reader.readexactly(payload_len)
-            
-            try:
-                msg = unpacker(data)
-                # Basic schema validation (must be a dict)
-                if not isinstance(msg, dict):
-                    LogUtils.log(f"⛔ Protocol Error: Payload is not a valid MessagePack dict. Got {type(msg).__name__}.")
-                    return None
-                return msg
-            except Exception as e:
-                LogUtils.log(f"⛔ Protocol Error: Failed to decode MessagePack payload. Data may be corrupted or not MessagePack format. ({e})")
-                return None
-                
-        except asyncio.IncompleteReadError:
-            # Client closed connection before sending complete message
-            LogUtils.debug_log("Client disconnected mid-message (incomplete read).")
-            return None
-        except (BrokenPipeError, ConnectionResetError) as e:
-            LogUtils.debug_log(f"Client connection lost: {type(e).__name__}")
-            return None
-        except Exception as e:
-            LogUtils.log(f"⚠️ Transport Error: Unexpected error during recv: {type(e).__name__}: {e}")
-            return None
-
-    async def send(self, msg: Dict):
-        """Send length-prefixed MessagePack message."""
-        try:
-            payload = packer(msg)
-            total_len = 1 + len(payload)
-            header = struct.pack('<I', total_len)
-            version = bytes([PROTOCOL_VERSION])
-            self.writer.write(header + version + payload)
-            await self.writer.drain()
-        except (BrokenPipeError, ConnectionResetError):
-            # Client disconnected before we could send response - this is expected during floods
-            LogUtils.debug_log("Client disconnected before response could be sent.")
-        except Exception as e:
-            LogUtils.log(f"⚠️ Transport Error: Failed to send response: {type(e).__name__}: {e}")
-
-    async def close(self):
-        self.writer.close()
-        try:
-            await self.writer.wait_closed()
-        except: pass
+# ZygoteTransport is now imported from .protocol
 
 
 class CommandRouter:
@@ -927,25 +851,23 @@ class ZygoteServer:
 
         transport = ZygoteTransport(reader, writer)
         try:
-            # 1. Send Ready
+            # 1. Send Ready (Server Handshake Greeting)
             await transport.send({"type": "Ready"})
             
             while True:
-                cmd = await transport.recv()
-                if not cmd: break
-                
-                response = await router.dispatch(self, cmd)
-                if response:
-                    await transport.send(response)
-                    if isinstance(cmd, dict) and cmd.get("type") == "Shutdown":
-                        asyncio.get_event_loop().stop()
-                        break
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as e:
-            # [CHAOS-621] Client disconnected during flood - silently ignore
-            LogUtils.debug_log(f"Client disconnected: {type(e).__name__}")
-        except Exception as e:
-            # Catch-all for unexpected transport errors
-            LogUtils.debug_log(f"Client handler error: {e}")
+                try:
+                    cmd = await transport.recv()
+                    if not cmd: break
+                    
+                    response = await router.dispatch(self, cmd)
+                    if response:
+                        await transport.send(response)
+                        if isinstance(cmd, dict) and cmd.get("type") == "Shutdown":
+                            asyncio.get_event_loop().stop()
+                            break
+                except ProtocolError as e:
+                    LogUtils.log(f"⛔ [FAIL FAST] Protocol Violation: {e}. Dropping connection.")
+                    break
         finally:
             await transport.close()
 
