@@ -700,14 +700,20 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             // RFC-0011: K8s-style CrashLoopBackOff tracker per worker
             // Prevents respawn storms with exponential backoff: 10s → 20s → 40s → ... → 300s (cap)
             struct RespawnTracker {
+                last_failure: Option<Instant>,
                 backoff_secs: u64,
-                last_failure: Option<std::time::Instant>,
+                consecutive_failures: u32,
             }
             impl RespawnTracker {
                 fn new() -> Self {
+                    let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(10);
                     Self {
-                        backoff_secs: 10,
                         last_failure: None,
+                        backoff_secs,
+                        consecutive_failures: 0,
                     }
                 }
                 fn should_respawn(&self) -> bool {
@@ -716,12 +722,29 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                         Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
                     }
                 }
-                fn record_failure(&mut self) {
-                    self.last_failure = Some(std::time::Instant::now());
+                fn record_failure(&mut self) -> bool {
+                    self.last_failure = Some(Instant::now());
+                    self.consecutive_failures += 1;
                     self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
+
+                    // RFC-0011 Fail-Fast: If we fail 5 times consecutively at startup,
+                    // it's a fatal environment issue.
+                    self.consecutive_failures < 5
                 }
                 fn reset(&mut self) {
-                    self.backoff_secs = 10;
+                    // RFC-0011 Stability Fix: "Probation Period".
+                    // Only reset if the system has been stable for at least 30 seconds.
+                    if let Some(t) = self.last_failure
+                        && t.elapsed().as_secs() < 30
+                    {
+                        return;
+                    }
+                    let default_backoff = std::env::var("VELO_BACKOFF_SECS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(10);
+                    self.backoff_secs = default_backoff;
+                    self.consecutive_failures = 0;
                     self.last_failure = None;
                 }
             }
@@ -843,6 +866,18 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                         for (i, worker) in workers.iter_mut().enumerate() {
                             if !worker.is_alive() {
                                 let tracker = &mut respawn_trackers[i];
+
+                                // RFC-0011 Fail-Fast: If a worker dies during startup, track consecutive failures
+                                if !tracker.record_failure() {
+                                    anyhow::bail!(
+                                        "FATAL: Workers are failing to start consistently. Check logs for permission/dependency issues."
+                                    );
+                                }
+                                logger.warn(&format!(
+                                    "A worker died during startup. Retrying in {}s (Attempt {}/5)...",
+                                    tracker.backoff_secs,
+                                    tracker.consecutive_failures
+                                ));
 
                                 // Check if we're still in backoff period
                                 if !tracker.should_respawn() {

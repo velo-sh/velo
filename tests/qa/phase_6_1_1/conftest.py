@@ -210,23 +210,13 @@ class VeloServeFactory:
         # RFC-0012: Use hermetic environment
         env = self.test_env.env.copy()
         
-        # RFC-0011 Audit: Path length limit on macOS is 104 chars. 
-        # Deeply nested pytest tmp_path can exceed this. Use /tmp/v-{hash}.s as fallback if needed.
-        # But wait - VeloTestEnv sets env vars to controlled paths.
-        # We should respect that.
-        # However, for the socket path check, we still need to be careful.
-        
-        # If VELO_ZYGOTE_SOCKET is empty (default in VeloTestEnv), Velo will use XDG_RUNTIME_DIR or TMPDIR.
-        # XDG_RUNTIME_DIR is set to test_env.xdg
-        # So we can let Velo decide, OR we can set it explicitly to test_env.xdg / "z.s"
-        
-        socket_path = Path(env["XDG_RUNTIME_DIR"]) / "z.s"
-        
-        # Override if path is too long (rare in our controlled env, but possible)
-        if len(str(socket_path)) > 100:
-             import tempfile, hashlib
-             h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
-             socket_path = Path(tempfile.gettempdir()) / f"v-{h}.s"
+        # RFC-0011/0012: Ensure socket path does NOT exceed 104 chars (macOS limit)
+        # We prioritize a short, stable path in /tmp for tests to avoid deep nesting issues.
+        import hashlib
+        h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
+        socket_dir = Path("/tmp") / f"velo-test-{h}"
+        socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        socket_path = socket_dir / "z.s"
         
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 

@@ -205,6 +205,7 @@ class VeloTestEnv:
             "XDG_RUNTIME_DIR": str(self.xdg),
             # Force Velo to use our isolated socket path logic
             "VELO_ZYGOTE_SOCKET": "", 
+            "VELO_BACKOFF_SECS": "0",
             "VELO_TEST_MODE": "1"
         })
 

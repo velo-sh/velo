@@ -257,10 +257,12 @@ class ZygoteTransport:
             
             # RFC-0013: Harden against malformed/oversized payloads (DoS protection)
             if total_len > MAX_MESSAGE_SIZE:
-                LogUtils.log(f"⛔ Protocol Error: Client sent oversized payload ({total_len} bytes, max {MAX_MESSAGE_SIZE}). Connection dropped.")
+                hex_data = len_data.hex()
+                LogUtils.log(f"⛔ Protocol Error: Client sent oversized payload ({total_len} bytes, hex: {hex_data}, max {MAX_MESSAGE_SIZE}). Connection dropped.")
                 return None
             if total_len < 1:
-                LogUtils.log(f"⛔ Protocol Error: Client sent invalid length prefix ({total_len}). Connection dropped.")
+                hex_data = len_data.hex()
+                LogUtils.log(f"⛔ Protocol Error: Client sent invalid length prefix ({total_len}, hex: {hex_data}). Connection dropped.")
                 return None
             
             version_data = await self.reader.readexactly(1)
@@ -452,61 +454,65 @@ class ReinitHooks:
 reinit_hooks = ReinitHooks()
 
 def hook_security():
-    """SecurityHook: FD hygiene and random reseed."""
-    # return # DISABLED for Debugging: Suspect causing crashes
+    """SecurityHook: FD hygiene and random reseed (RFC-0011 6A.2).
+    
+    Industrial Grade Cord-Cutting:
+    1. Close all non-standard file descriptors.
+    2. Reset signal handlers.
+    3. Re-seed random number generators.
+    """
     import random
     import resource
-    # Whitelist-based cleanup of inherited file descriptors.
+    import signal
+    
+    # 1. FD Hygiene (Whitelist standard FDs)
     try:
+        # Standard FDs: stdin=0, stdout=1, stderr=2
         keep_fds = {0, 1, 2}
-        # DEF-62-003: Preserve stdout/stderr handles (pipes) to prevent crash
-        try: keep_fds.add(sys.stdout.fileno())
-        except: pass
-        try: keep_fds.add(sys.stderr.fileno())
-        except: pass
-
-        try:
-            current_fds = set()
-            # Option A: Linux
-            if os.path.exists('/proc/self/fd'):
-                current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
-            # Option B: macOS / BSD
-            elif os.path.exists('/dev/fd'):
-                current_fds = set(int(fd) for fd in os.listdir('/dev/fd'))
-            
-            if current_fds:
-                for fd in current_fds:
-                    if fd not in keep_fds:
-                        try: os.close(fd)
-                        except OSError: pass
-            else:
-                raise Exception("FD listing failed")
-        except:
-            # Slow fallback if listing fails
+        
+        # Determine all open FDs
+        current_fds = set()
+        if os.path.exists('/proc/self/fd'):
+            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
+        elif os.path.exists('/dev/fd'):
+            current_fds = set(int(fd) for fd in os.listdir('/dev/fd'))
+        
+        # Close everything else (Surgical Cord-Cutting)
+        if current_fds:
+            for fd in current_fds:
+                if fd not in keep_fds:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+        else:
+            # Fallback for platforms without /proc or /dev/fd
             max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-            if max_fd == resource.RLIM_INFINITY: max_fd = 4096
+            if max_fd == resource.RLIM_INFINITY or max_fd > 1024:
+                max_fd = 1024
             os.closerange(3, max_fd)
-    except: pass
+    except Exception:
+        pass
 
-    # RFC-0013 P0-2: Taint Re-Randomization Contract
+    # 2. Random Selection (Taint Re-Randomization Contract RFC-0013)
     try:
         import secrets
         random.seed(secrets.token_bytes(32))
-        os.urandom(1) # Force kernel entropy refill
-    except:
-        # Fallback to basic seed if secrets fails
+        os.urandom(1)
+    except Exception:
         random.seed()
+
+    # 3. Signal Hygiene (MAC-P0-002: Reset to default handlers)
+    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD, signal.SIGHUP, signal.SIGPIPE]:
+        try:
+            signal.signal(sig, signal.SIG_DFL)
+        except (ValueError, RuntimeError):
+            pass
     
     try:
-        import ssl
-        ssl._create_default_https_context = ssl.create_default_context
-    except: pass
-    
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-    try: signal.set_wakeup_fd(-1)
-    except: pass
+        signal.set_wakeup_fd(-1)
+    except (ValueError, RuntimeError):
+        pass
 
 def hook_computing():
     """ComputingHook: OpenMP and CUDA reset."""
@@ -528,7 +534,20 @@ reinit_hooks.register(hook_telemetry)
 
 
 def post_fork_reinit():
-    """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
+    """RFC-0011 6A.2: Reset child process state using Hooks Registry.
+    
+    Must be called immediately after fork() in the child process.
+    """
+    # 1. Reset asyncio event loop (Industrial Grade Isolation)
+    # The child inherits the parent's loop state (executors, etc.) which must be purged.
+    try:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    except Exception:
+        pass
+
+    # 2. Run all registered hooks (Security, Computing, Telemetry)
     reinit_hooks.run_all()
 
 
@@ -586,16 +605,17 @@ class ForkHandler:
         p_log("Start _child_process")
         exit_code = 0
         try:
-            # 1. Start Guardian (Workers MUST die if Zygote dies)
+            # 1. RFC-0011 6A.2: Full post-fork state reset (Industrial Grade)
+            # This MUST happen before anything else to ensure a clean slate.
+            post_fork_reinit()
+            p_log("Reinit Done (Cord Cut)")
+
+            # 2. Start Guardian (Workers MUST die if Zygote dies)
+            # Now started after FDs are sanitized to avoid race conditions.
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
             p_log("Guardian Started")
-            p_log("Guardian Started")
 
-            # 2. RFC-0011 6A.2: Full post-fork state reset
-            post_fork_reinit()
-            p_log("Reinit Done")
-
-            # 2.1 Install ImportShield (Import Isolation)
+            # 3. Install ImportShield (Import Isolation)
             ImportShield.install()
             p_log("ImportShield Installed")
 
@@ -716,9 +736,8 @@ class ZygoteServer:
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
             
-            # RAII Reaper Chain: Zygote process doesn't monitor parent (lives until idle)
-            # Worker processes DO monitor Zygote parent.
-            # WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=False)
+            # RAII Reaper Chain: Zygote process MUST monitor parent to prevent orphans (RFC-0012)
+            WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=True)
             
             self._setup_signals()
             
