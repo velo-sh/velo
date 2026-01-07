@@ -138,15 +138,15 @@ uv run python -m pytest tests/qa/ -v
 # Benchmark against real projects (includes Zygote mode)
 python3 benchmark_projects.py --all -n 5
 
-# 🔬 Top 100 Package Baseline (RFC-0013)
-# We benchmarked the Top 100 downloaded PyPI packages.
-# Result: **95%** of packages start in **<20ms** using Velo Instant Mode.
+# 🔬 Top 100 Package Baseline (RFC-0013/0014)
+# We benchmarked the Top 100+ downloaded PyPI packages.
+# Result: **100%** compatible, **132ms** avg startup using Velo Fleet Mode.
 
-# Run the full benchmark suite (requires velo built in release mode)
-./benchmarks/top100/_runner/main.py
+# Run the full benchmark suite (Zygote Fleet Mode - Recommended)
+./benchmarks/top100/_runner/main.py --use-zygote --fleet
 
 # Run a specific package
-./benchmarks/top100/_runner/main.py --package requests
+./benchmarks/top100/_runner/main.py --package requests --use-zygote
 ```
 
 ### Code Quality
