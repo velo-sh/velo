@@ -2,7 +2,7 @@ use std::fs::File;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
 // Use alignment for verification (future H-29 integration)
-// use crate::shm::alignment;
+
 use crate::shm::error::MemoryError;
 
 pub struct MemoryRegistry {
@@ -145,6 +145,8 @@ impl MemoryRegistry {
                 std::ptr::copy_nonoverlapping(src_ptr as *const u8, ptr as *mut u8, src_size);
             }
 
+            // H-29 Alignment Check: Verify the target tensor alignment
+            // This is a Day 2 verification check (Directive 3)
             // H-29 Alignment Check: Verify the target tensor alignment
             // This is a Day 2 verification check (Directive 3)
             let alignment_check = (ptr as usize) % 64;
