@@ -649,7 +649,19 @@ jobs:
           # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
           echo "from fastapi import FastAPI; app = FastAPI()" > main.py
           uv pip install fastapi
-          timeout 10s velo serve main:app --dry-run || {
+          # Python timeout script for cross-platform support (Mac/Linux)
+          cat <<EOF > timeout_run.py
+          import sys, subprocess, time
+          try:
+              # Run command with timeout
+              subprocess.run(sys.argv[2:], timeout=float(sys.argv[1]), check=True)
+          except subprocess.TimeoutExpired:
+              sys.exit(124)
+          except subprocess.CalledProcessError as e:
+              sys.exit(e.returncode)
+          EOF
+          
+          python timeout_run.py 10 velo serve main:app --dry-run || {
             RET=$?
             if [ $RET -eq 124 ]; then
               echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
