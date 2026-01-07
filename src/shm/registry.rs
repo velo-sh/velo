@@ -2,7 +2,7 @@ use std::fs::File;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::path::Path;
 // Use alignment for verification (future H-29 integration)
-use crate::shm::alignment;
+// use crate::shm::alignment;
 use crate::shm::error::MemoryError;
 
 pub struct MemoryRegistry {
@@ -37,7 +37,8 @@ impl MemoryRegistry {
     }
 
     pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File, MemoryError> {
-        let file = File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
+        let file =
+            File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
         let metadata = file
             .metadata()
             .map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
