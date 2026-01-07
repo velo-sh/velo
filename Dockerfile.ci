@@ -37,6 +37,9 @@ RUN uv python install 3.11
 # Set working directory
 WORKDIR /workspace
 
+# Use /tmp for Docker venv to avoid destroying host .venv
+ENV UV_PROJECT_ENVIRONMENT=/tmp/.venv-docker
+
 # Default command: run full CI check
 CMD ["bash", "-c", "\
     echo '🚀 Velo Local CI Simulation (Ubuntu 22.04)' && \
@@ -48,7 +51,7 @@ CMD ["bash", "-c", "\
     uv python list && \
     echo '' && \
     echo '🔧 Setting up project...' && \
-    uv venv --python 3.11 && \
+    uv venv --python 3.11 /tmp/.venv-docker && \
     uv sync --extra dev && \
     echo '' && \
     echo '🏗️ Building Rust...' && \
@@ -64,7 +67,8 @@ CMD ["bash", "-c", "\
     cargo fmt --check && \
     echo '' && \
     echo '🐍 Running Python tests...' && \
-    uv run pytest tests/qa/test_phase6_2_env_pollution.py -v && \
+    . /tmp/.venv-docker/bin/activate && \
+    pytest tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py -v && \
     echo '' && \
     echo '✅ All CI checks passed!' \
-"]
+    "]
