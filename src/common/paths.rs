@@ -21,37 +21,43 @@ use crate::common::constants::{PROTOCOL_VERSION, SOCKET_PATH_LIMIT};
 /// Current decision: Use `velo-{uid}` to avoid path length issues.
 pub fn get_socket_dir() -> PathBuf {
     let uid = unsafe { libc::getuid() };
-
-    // 1. Try XDG_RUNTIME_DIR
-    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-        let dir = PathBuf::from(xdg).join("velo");
-        return dir;
-    }
-
-    // 2. Try TMPDIR provided by OS
     let dir_name = format!("velo-{}", uid);
-    let tmp = std::env::temp_dir();
-    let user_dir = tmp.join(&dir_name);
 
-    // Check path length safety
-    let test_socket = user_dir.join(format!("z-v{}.s", PROTOCOL_VERSION));
-    if test_socket.to_string_lossy().len() <= SOCKET_PATH_LIMIT {
-        return user_dir;
+    // RFC-0012: On macOS/Unix, we MUST prioritize /tmp for sockets because
+    // hermetic test environments often have extremely long HOME/TMPDIR paths
+    // that exceed the 104-character AF_UNIX limit.
+    let short_path = PathBuf::from("/tmp").join(&dir_name);
+
+    // Check if short path is viable
+    if short_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
+        return short_path;
     }
 
-    // 3. Fallback to /tmp if TMPDIR is too long (common on macOS)
-    PathBuf::from("/tmp").join(dir_name)
+    // Fallback to environment variables only if necessary
+    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+        return PathBuf::from(xdg).join("velo");
+    }
+
+    std::env::temp_dir().join(dir_name)
 }
 
 /// Get the full socket path.
 ///
 /// Respects `VELO_ZYGOTE_SOCKET` override.
 pub fn get_socket_path() -> PathBuf {
-    if let Some(path) = std::env::var("VELO_ZYGOTE_SOCKET")
+    if let Some(path_str) = std::env::var("VELO_ZYGOTE_SOCKET")
         .ok()
         .filter(|p| !p.is_empty())
     {
-        return PathBuf::from(path);
+        if path_str.len() <= SOCKET_PATH_LIMIT {
+            return PathBuf::from(path_str);
+        } else {
+            eprintln!(
+                "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long ({} bytes, max {}). Falling back to safe default.",
+                path_str.len(),
+                SOCKET_PATH_LIMIT
+            );
+        }
     }
 
     let dir = get_socket_dir();
@@ -97,4 +103,12 @@ pub fn ensure_socket_dir(dir: &Path) -> bool {
     }
 
     true
+}
+/// Generate a standardized, short path for a worker socket.
+///
+/// RFC-0011 6A.3: Guaranteed to be within sun_path limits (104B on macOS).
+pub fn generate_worker_socket_path(worker_id: u64) -> PathBuf {
+    let dir = get_socket_dir();
+    ensure_socket_dir(&dir);
+    dir.join(format!("w-{}.s", worker_id))
 }

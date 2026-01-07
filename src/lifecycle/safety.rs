@@ -159,22 +159,6 @@ pub fn set_cloexec_on_all_fds() -> std::io::Result<usize> {
     Ok(count)
 }
 
-/// Generate a unique socket path for a worker.
-///
-/// Format: `/tmp/velo-{uid}/worker-{id}.sock`
-pub fn generate_worker_socket_path(worker_id: u64) -> std::path::PathBuf {
-    #[cfg(unix)]
-    let socket_dir = {
-        let uid = unsafe { libc::getuid() };
-        std::path::PathBuf::from(format!("/tmp/velo-{}", uid))
-    };
-
-    #[cfg(not(unix))]
-    let socket_dir = std::env::temp_dir().join("velo");
-
-    socket_dir.join(format!("worker-{}.sock", worker_id))
-}
-
 /// RFC-0011 D.1: Generate Abstract Namespace Socket name (Linux only).
 ///
 /// Abstract Namespace Sockets have advantages over filesystem sockets:
@@ -452,11 +436,11 @@ mod tests {
 
     #[test]
     fn test_generate_worker_socket_path() {
-        let path1 = generate_worker_socket_path(1);
-        let path2 = generate_worker_socket_path(2);
+        let path1 = crate::common::paths::generate_worker_socket_path(1);
+        let path2 = crate::common::paths::generate_worker_socket_path(2);
 
-        assert!(path1.to_string_lossy().contains("worker-1.sock"));
-        assert!(path2.to_string_lossy().contains("worker-2.sock"));
+        assert!(path1.to_string_lossy().contains("w-1.s"));
+        assert!(path2.to_string_lossy().contains("w-2.s"));
         assert_ne!(path1, path2);
     }
 
