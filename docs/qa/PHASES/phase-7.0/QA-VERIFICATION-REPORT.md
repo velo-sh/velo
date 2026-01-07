@@ -8,24 +8,25 @@
 
 ## 🔴 BUGS FOUND BY QA
 
-### DEF-70-002: libc::mbind Compilation Failure (P0 BLOCKER)
+### DEF-70-003: H-29 Padding Logic REMOVED (REGRESSION)
 
 | Item | Detail |
 |:---|:---|
-| **Severity** | 🔴 P0 TITANIUM BLOCKER |
-| **Location** | `src/shm/registry.rs:104-110` |
-| **Root Cause** | Developer uses `libc::mbind()` and `libc::MPOL_MF_STRICT` which **DO NOT EXIST** in libc crate |
-| **Impact** | CI Pipeline DEAD - no code can merge |
-| **Found By** | QA Docker CI simulation |
-| **Owner** | Developer Team |
+| **Severity** | 🔴 P0 TITANIUM REGRESSION |
+| **Location** | `src/shm/registry.rs` |
+| **Root Cause** | Developer "simplified" the code by removing the `alignment::calculate_padding` logic. |
+| **Impact** | **H-29 Violation**: Tensors are no longer 64-byte aligned. This causes silent copies and performance degradation (HPC Red Line). |
+| **Verification** | `cargo test --test shm_tests` -> **FAILED** (`test_registry_enforces_padding`) |
+| **Evidence** | `Padding bytes must be zero!` at `tests/shm_tests.rs:90` |
 
-```rust
-// BROKEN CODE (src/shm/registry.rs:104-110)
-libc::mbind(...)          // ❌ DOES NOT EXIST
-libc::MPOL_MF_STRICT      // ❌ DOES NOT EXIST
-```
+---
 
-**Why it passed local**: macOS doesn't compile `#[cfg(target_os = "linux")]` block.
+### DEF-70-002: libc::mbind Compilation Failure (RESOLVED)
+
+| Item | Detail |
+|:---|:---|
+| **Status** | ✅ VERIFIED FIXED (using raw syscall) |
+| **Note** | Fix is correct from a compilation standpoint, but shipped with the above regression. |
 
 ---
 
