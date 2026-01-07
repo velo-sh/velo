@@ -54,11 +54,11 @@ pub fn is_supported() -> bool {
 
 fn get_worker_timeout_secs() -> u64 {
     // Both worker and socket timeouts are now centralized
-    VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new("."))).zygote_socket_timeout
+    VeloConfig::from_env_only().zygote_socket_timeout
 }
 
 fn get_socket_timeout_secs() -> u64 {
-    VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new("."))).zygote_socket_timeout
+    VeloConfig::from_env_only().zygote_socket_timeout
 }
 
 /// Get the path to the Zygote log file
@@ -354,7 +354,13 @@ impl ZygoteLauncher {
     /// * `app_name` - Optional app name for affinity verification (WB-004)
     /// * `daemon` - Whether to start as a persistent daemon (disables guardian)
     #[cfg(unix)]
-    pub fn start(&mut self, preload: &[&str], app_name: Option<&str>, daemon: bool) -> Result<()> {
+    pub fn start(
+        &mut self,
+        preload: &[&str],
+        app_name: Option<&str>,
+        daemon: bool,
+        config: &VeloConfig,
+    ) -> Result<()> {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         ipc::cleanup_stale_sockets();
 
@@ -380,28 +386,15 @@ impl ZygoteLauncher {
         cmd.env_clear();
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
-        let shield = EnvironmentShield::new();
+        let shield = EnvironmentShield::new(config);
         shield
             .apply(&mut cmd)
             .map_err(ZygoteError::SecurityViolation)?;
 
-        // 2. High-Performance Isolation (RFC-0011 HPC-001)
         // Pass GITHUB_ACTIONS to allow /home paths in CI
         if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
             cmd.env("GITHUB_ACTIONS", val);
         }
-
-        cmd.env("OMP_NUM_THREADS", "1");
-        cmd.env("MKL_NUM_THREADS", "1");
-        cmd.env("OPENBLAS_NUM_THREADS", "1");
-        cmd.env("VECLIB_MAXIMUM_THREADS", "1");
-        cmd.env("NUMEXPR_NUM_THREADS", "1");
-
-        // 3. MacOS/Python Specific Isolation
-        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-        cmd.env("PYTHONUNBUFFERED", "1"); // RFC §3.1
-        cmd.env("PYTHONIOENCODING", "utf-8");
-        cmd.env("PYTHONUTF8", "1");
 
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
@@ -848,7 +841,7 @@ mod tests {
 
     #[test]
     fn test_environment_shield_basic() {
-        let shield = EnvironmentShield::new();
+        let shield = EnvironmentShield::new(&crate::config::VeloConfig::default());
         // /usr/bin should be trusted
         assert!(shield.validate_path_variable("/usr/bin").is_ok());
 

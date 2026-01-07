@@ -23,3 +23,46 @@ default_slow_threshold_ms = 100
 # Network
 default_host = "127.0.0.1"
 default_port = 8000
+
+# Security (RFC-0012)
+# Supported Placeholders: ${CWD}, ${HOME}, ${EXE_DIR}, ${VIRTUAL_ENV}, ${CONDA_PREFIX}
+
+# Security Matrix (RFC-0012)
+# Hierarchy: Base -> OS_Base -> OS_Env
+# Placeholders: ${CWD}, ${HOME}, ${EXE_DIR}, ${VIRTUAL_ENV}, ${CONDA_PREFIX}, ${BASE}, ${OS_BASE}
+
+# Level 0: Global Base
+security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib"
+security_base_env_whitelist = "PATH,HOME,USER,TMPDIR,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone"
+
+# Level 1: macOS Defaults
+security_macos_base_trusted_prefixes = "${BASE},/opt/homebrew,/opt/local"
+security_macos_base_env_whitelist = "${BASE},__CF_USER_TEXT_ENCODING,XPC_FLAGS,XPC_SERVICE_NAME,TERM_PROGRAM"
+
+# Level 1: Linux Defaults
+security_linux_base_trusted_prefixes = "${BASE},/lib64,/etc/ssl/certs"
+security_linux_base_env_whitelist = "${BASE},XDG_RUNTIME_DIR"
+
+# Level 2: Environment Overlays
+# Dev (Permissive)
+security_macos_dev_trusted_prefixes = "${OS_BASE},${CWD},${HOME},${VIRTUAL_ENV},${CONDA_PREFIX}"
+security_macos_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX"
+
+security_linux_dev_trusted_prefixes = "${OS_BASE},${CWD},${HOME},${VIRTUAL_ENV},${CONDA_PREFIX}"
+security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX"
+
+# CI (Automated)
+security_macos_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,${CWD}"
+security_macos_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE"
+
+security_linux_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,/home/runner,${CWD}"
+security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE"
+
+# Prod (Hardened)
+security_macos_prod_trusted_prefixes = "${OS_BASE},${CWD}"
+security_macos_prod_env_whitelist = "${OS_BASE}"
+
+security_linux_prod_trusted_prefixes = "${OS_BASE},${CWD}"
+security_linux_prod_env_whitelist = "${OS_BASE}"
+
+security_hpc_threads = 1

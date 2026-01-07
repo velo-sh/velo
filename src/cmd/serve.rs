@@ -2,6 +2,7 @@
 //!
 //! Uses clap for argument parsing with derive macros.
 
+use crate::common::paths::VeloPaths;
 use anyhow::Result;
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -280,9 +281,13 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Convert to ServeArgs
     let serve_args = cmd.to_serve_args()?;
 
+    // Load config (Phase 6 security)
+    let config =
+        crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
+
     // Run the server with reload loop (RFC-0010)
     while let serve::runner::ServerExit::Reload =
-        serve::run_server(&serve_args, &python_path, &project_dir)?
+        serve::run_server(&serve_args, &python_path, &project_dir, &config)?
     {
         // Determine restart behavior
         // On reload, we loop and call run_server again.

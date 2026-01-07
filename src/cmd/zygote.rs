@@ -72,8 +72,11 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
             .map(|s| s.split(',').collect())
             .unwrap_or_default();
 
+        let config =
+            crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
+
         println!("🚀 Starting Zygote daemon...");
-        match launcher.start(&preload, None, true) {
+        match launcher.start(&preload, None, true, &config) {
             Ok(()) => {
                 println!("✅ Zygote started");
                 println!("   Socket: {}", socket_path.display());

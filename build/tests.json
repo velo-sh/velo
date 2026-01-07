@@ -1,5 +1,13 @@
 {
   "contracts": {},
-  "tests": {},
+  "tests": {
+    "tests/qa/test_phase6_2_regression.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "F...",
+      "sha1": "a9cc923f1f5af8abaf679be6eadd02c16833437a",
+      "txhash": []
+    }
+  },
   "tx": {}
 }
