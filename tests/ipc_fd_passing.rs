@@ -1,10 +1,8 @@
 use anyhow::Result;
-use std::fs::File;
 use std::io::Write;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::{Path, PathBuf};
+use std::os::unix::io::AsRawFd;
+use std::path::PathBuf;
 use std::time::Duration;
-use velo::shm::registry::MemoryRegistry;
 use velo::zygote::ipc::{self, ZygoteCommand, ZygoteResponse};
 
 #[test]
@@ -32,6 +30,7 @@ fn test_ipc_fd_passing_end_to_end() -> Result<()> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(&shm_path)?;
     file.write_all(b"HELLO SHM")?;
     file.set_len(1024)?;
@@ -40,7 +39,9 @@ fn test_ipc_fd_passing_end_to_end() -> Result<()> {
 
     // 4. Create worker script
     let worker_script = tmp_dir.path().join("worker.py");
-    std::fs::write(&worker_script, r#"
+    std::fs::write(
+        &worker_script,
+        r#"
 import sys
 import os
 print(f"[Worker] Started with PID {os.getpid()}", file=sys.stderr)
@@ -68,7 +69,8 @@ try:
 except Exception as e:
     print(f"[Worker] ❌ Exception: {e}", file=sys.stderr)
     sys.exit(30)
-"#)?;
+"#,
+    )?;
 
     // 5. Connect and Send Handshake
     let mut stream = ipc::ZygoteStream::connect(&socket_path)?;
@@ -99,10 +101,10 @@ except Exception as e:
 
     if let ZygoteResponse::Forked { worker_pid, .. } = response {
         println!("✅ Fork successful, worker_pid={}", worker_pid);
-        
+
         // Give worker time to execute and exit
         std::thread::sleep(Duration::from_millis(1000));
-        
+
         // Verify worker is gone (since it exited 0)
         let status = stream.send_command(&ZygoteCommand::WorkerStatus { worker_pid }, None)?;
         println!("Worker status: {:?}", status);

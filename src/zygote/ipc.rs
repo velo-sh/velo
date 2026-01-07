@@ -439,6 +439,13 @@ fn write_message<T: Serialize + std::fmt::Debug>(
 fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
 ) -> Result<(T, Option<RawFd>)> {
+    // Helper to ensure FD is closed on error
+    let cleanup_fd = |fd: &mut Option<RawFd>| {
+        if let Some(f) = fd.take() {
+            let _ = nix::unistd::close(f);
+        }
+    };
+
     // Read 4-byte length prefix (includes version + payload)
     // Use recvmsg to capture synchronous ancillary data (FDs)
     let mut len_buf = [0u8; 4];
@@ -457,17 +464,13 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
         let mut fd = None;
         for cmsg in msg_result.cmsgs() {
             if let ControlMessageOwned::ScmRights(fds) = cmsg {
-                if !fds.is_empty() {
-                    fd = Some(fds[0]);
-                }
+                fd = fds.first().copied();
             }
         }
 
         // Council Advisory: Check for control message truncation
         if msg_result.flags.contains(MsgFlags::MSG_CTRUNC) {
-            if let Some(f) = fd {
-                let _ = nix::unistd::close(f);
-            }
+            cleanup_fd(&mut fd);
             return Err(ZygoteError::ProtocolError(
                 "Control message truncated (too many FDs)".to_string(),
             ));
@@ -476,19 +479,12 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
         (msg_result.bytes, fd)
     };
 
-    // Helper to ensure FD is closed on error
-    let cleanup_fd = |fd: &mut Option<RawFd>| {
-        if let Some(f) = fd.take() {
-            let _ = nix::unistd::close(f);
-        }
-    };
-
     // Ensure we have full 4 bytes for length
     if bytes < 4 {
-        if let Err(e) = stream.read_exact(&mut len_buf[bytes..]) {
+        stream.read_exact(&mut len_buf[bytes..]).map_err(|e| {
             cleanup_fd(&mut received_fd);
-            return Err(ZygoteError::SocketError(e.to_string()));
-        }
+            ZygoteError::SocketError(e.to_string())
+        })?;
     }
 
     let total_len = u32::from_le_bytes(len_buf) as usize;
@@ -629,7 +625,8 @@ mod tests {
 
         // Test MessagePack roundtrip
         let bytes = rmp_serde::to_vec(&resp).expect("Serialization failed");
-        let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).expect("Deserialization failed");
+        let decoded: ZygoteResponse =
+            rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteResponse::Status { pid, preload } = decoded {
             assert_eq!(pid, 1234);
@@ -652,6 +649,7 @@ mod tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            shm_size: None,
         };
 
         let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
@@ -683,6 +681,7 @@ mod tests {
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
             project_root: Some(PathBuf::from("/home/user/project")),
             max_bundle_size: Some(1024 * 1024),
+            shm_size: Some(4096),
         };
 
         let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");

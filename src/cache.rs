@@ -7,7 +7,6 @@
 
 use anyhow::{Context, Result};
 use rkyv::{Archive, Deserialize, Serialize, rancor::Error as RkyvError};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +30,7 @@ pub struct EnvVar {
 #[rkyv(compare(PartialEq), derive(Debug))]
 pub struct EnvCache {
     // === Phase 1 (existing) ===
-    /// SHA256 hash of uv.lock (environment fingerprint)
+    /// BLAKE3 hash of uv.lock (environment fingerprint)
     pub fingerprint: String,
     /// Cached sys.path entries
     pub sys_path: Vec<String>,
@@ -47,7 +46,7 @@ pub struct EnvCache {
     pub platform_tag: String,
 
     // === Phase 1.5: Environment Integrity ===
-    /// SHA256 of sorted `pip freeze` output
+    /// BLAKE3 of sorted `pip freeze` output
     pub packages_hash: String,
     /// Critical environment variables
     pub critical_env_vars: Vec<EnvVar>,
@@ -110,7 +109,9 @@ impl EnvCache {
     /// Save cache to disk using rkyv binary format.
     pub fn save(&self, project_dir: &Path) -> Result<()> {
         let cache_path = project_dir.join(CACHE_FILE);
-        let cache_dir = cache_path.parent().unwrap();
+        let cache_dir = cache_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Failed to determine cache directory parent"))?;
 
         fs::create_dir_all(cache_dir)
             .with_context(|| format!("Failed to create cache directory: {:?}", cache_dir))?;
@@ -167,7 +168,7 @@ impl EnvCache {
         }
     }
 
-    /// Compute SHA256 hash of installed packages (pip freeze output).
+    /// Compute BLAKE3 hash of installed packages (pip freeze output).
     pub fn compute_packages_hash(python: &Path) -> Result<String> {
         use std::process::Command;
 
@@ -184,8 +185,8 @@ impl EnvCache {
         let mut packages: Vec<&str> = stdout.lines().collect();
         packages.sort();
 
-        let hash = Sha256::digest(packages.join("\n").as_bytes());
-        Ok(hex::encode(hash))
+        let hash = blake3::hash(packages.join("\n").as_bytes());
+        Ok(hash.to_hex().to_string())
     }
 
     /// Capture critical environment variables.
@@ -273,7 +274,7 @@ mod tests {
 
         let fingerprint = EnvCache::compute_fingerprint(dir.path());
         assert!(fingerprint.is_some());
-        assert_eq!(fingerprint.unwrap().len(), 64); // SHA256 hex length
+        assert_eq!(fingerprint.unwrap().len(), 64); // BLAKE3 hex length
     }
 
     #[test]

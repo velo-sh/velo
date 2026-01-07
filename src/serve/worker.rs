@@ -150,7 +150,9 @@ impl Worker {
             anyhow::bail!("Invalid app format: expected 'module:app'");
         }
 
-        let (module, _) = app.split_once(':').unwrap();
+        let (module, _) = app
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("Invalid app format: expected 'module:app'"))?;
 
         if module.contains("..") {
             anyhow::bail!("Path traversal detected in app: {}", app);

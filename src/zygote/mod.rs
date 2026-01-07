@@ -172,13 +172,16 @@ fn find_zygote_module() -> Result<PathBuf> {
 /// Find the standardized worker launcher script path
 pub fn find_worker_launcher() -> Result<PathBuf> {
     let zygote_main = find_zygote_module()?;
-    let launcher = zygote_main.parent().unwrap().join("worker_launcher.py");
+    let parent = zygote_main.parent().ok_or_else(|| {
+        ZygoteError::StartFailed("Zygote main script has no parent directory".to_string())
+    })?;
+    let launcher = parent.join("worker_launcher.py");
     if launcher.exists() {
         Ok(launcher)
     } else {
         Err(ZygoteError::StartFailed(format!(
             "worker_launcher.py not found in {}",
-            zygote_main.parent().unwrap().display()
+            parent.display()
         )))
     }
 }
