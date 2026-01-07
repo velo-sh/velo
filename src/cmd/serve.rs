@@ -280,10 +280,18 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Convert to ServeArgs
     let serve_args = cmd.to_serve_args()?;
 
-    // Run the server
-    serve::run_server(&serve_args, &python_path, &project_dir)?;
+    // Run the server with reload loop if enabled
+    loop {
+        let result = serve::run_server(&serve_args, &python_path, &project_dir);
 
-    Ok(())
+        // RFC-0012: If reload is disabled or we got an error, exit the loop
+        if !serve_args.reload || result.is_err() {
+            return result;
+        }
+
+        // Otherwise (it returned Ok(()) on reload), loop back to restart
+        // The logger in run_server already printed the restart message.
+    }
 }
 
 #[cfg(test)]
