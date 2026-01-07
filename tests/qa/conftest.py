@@ -115,6 +115,8 @@ def pytest_configure(config):
             config.option.log_cli_level = "INFO"
             config.option.log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"
             config.option.log_date_format = "%H:%M:%S"
+    
+    config.addinivalue_line("markers", "resource_budget: Resource budget verification tests")
 
 
 @pytest.fixture(autouse=True, scope="module")
