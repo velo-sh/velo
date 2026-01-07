@@ -51,14 +51,14 @@ pub fn is_supported() -> bool {
 }
 
 fn get_worker_timeout_secs() -> u64 {
-    crate::config::VeloConfig::from_pyproject_toml()
-        .and_then(|c| c.zygote_worker_timeout)
+    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
+        .zygote_worker_timeout
         .unwrap_or(WORKER_TIMEOUT_SECS)
 }
 
 fn get_socket_timeout_secs() -> u64 {
-    crate::config::VeloConfig::from_pyproject_toml()
-        .and_then(|c| c.zygote_socket_timeout)
+    crate::config::VeloConfig::load_with_overrides(Path::new("pyproject.toml"))
+        .zygote_socket_timeout
         .unwrap_or(SOCKET_STARTUP_TIMEOUT_SECS)
 }
 
