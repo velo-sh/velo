@@ -128,7 +128,7 @@ class TestNetworkConcerns:
 
         # Start a slow request and disconnect
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("127.0.0.1", 8000))
+        s.connect(("127.0.0.1", proc.port))
         s.send(b"GET /health HTTP/1.1\r\nHost: localhost\r\n")
         # Don't send final \r\n - leave request incomplete
         time.sleep(0.1)
@@ -153,7 +153,7 @@ class TestNetworkConcerns:
         # Send partial headers and wait
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(10)
-        s.connect(("127.0.0.1", 8000))
+        s.connect(("127.0.0.1", proc.port))
         s.send(b"GET /health HTTP/1.1\r\n")
         # Don't complete headers
 

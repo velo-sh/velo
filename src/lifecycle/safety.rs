@@ -248,9 +248,14 @@ impl EnvironmentShield {
             "/lib",
             "/opt/homebrew",
             "/opt/local",
+            // GitHub Actions Tool Cache (Fix for CI Scrubbing)
+            "/opt/hostedtoolcache",
         ] {
             trusted.push(PathBuf::from(p));
         }
+
+        // 3.5. System Temp Directory (Required for Pytest/Workers in /tmp)
+        trusted.push(std::env::temp_dir());
 
         // 4. User Home Directory (RFC §3.5: User-trusted space)
         if let Ok(home) = std::env::var("HOME") {
