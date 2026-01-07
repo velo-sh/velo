@@ -638,6 +638,66 @@ def post_fork_reinit(keep_fds: Optional[Set[int]] = None):
     reinit_hooks.run_all(keep_fds=keep_fds)
 
 
+
+# H-32: Demeter's Law - Encapsulate FD validation
+class InboundSharedMemory:
+    """Encapsulates validation and handling of inbound shared memory FDs.
+    
+    This class implements Demeter's Law (Law of Least Knowledge) by
+    hiding os.fstat and other low-level details from the business logic
+    in ForkHandler.
+    """
+    
+    def __init__(self, fd: int, expected_size: int):
+        self.fd = fd
+        self.expected_size = expected_size
+        self._validated = False
+        self._stat_result = None
+    
+    def validate(self) -> bool:
+        """Validate the FD is a regular file with correct size.
+        
+        Returns True if valid, False otherwise. Logs warnings on failure.
+        """
+        try:
+            self._stat_result = os.fstat(self.fd)
+            # S_ISREG check for regular file
+            import stat
+            if not stat.S_ISREG(self._stat_result.st_mode):
+                LogUtils.debug_log(f"⚠️ SHM FD {self.fd} is not a regular file")
+                return False
+            if self.expected_size and self._stat_result.st_size < self.expected_size:
+                LogUtils.debug_log(
+                    f"⚠️ SHM FD {self.fd} size mismatch: "
+                    f"expected {self.expected_size}, got {self._stat_result.st_size}"
+                )
+                return False
+            self._validated = True
+            return True
+        except OSError as e:
+            LogUtils.debug_log(f"⚠️ SHM FD {self.fd} fstat failed: {e}")
+            return False
+    
+    def close(self):
+        """Close the FD, typically called in the parent after fork."""
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+    
+    @classmethod
+    def from_command(cls, cmd: Dict[str, Any]) -> Optional['InboundSharedMemory']:
+        """Factory method to create InboundSharedMemory from a Fork command.
+        
+        Returns None if no SHM was passed.
+        """
+        fd = cmd.get('shm_fd')
+        size = cmd.get('shm_size')
+        if fd is None:
+            return None
+        return cls(fd, size or 0)
+
+
 class ForkHandler:
     """Handles the forking logic and child process environment setup."""
 
