@@ -43,45 +43,54 @@ def ci_timeout(base_seconds: float) -> float:
 TIMEOUT_MULTIPLIER = get_timeout_multiplier()
 CI_TIMEOUT = ci_timeout  # Alias for shorter imports
 
+# =============================================================================
+# CI TIMEOUT CONSTANTS (Preferred Clean Approach)
+# =============================================================================
+# Tests should use these constants for timeout values.
+# In CI, tests will use longer timeouts automatically.
+#
+# Usage in tests:
+#   from conftest import T_SHORT, T_MEDIUM, T_LONG
+#   subprocess.run([velo, "zygote", "start"], timeout=T_MEDIUM)
+
+# Base timeouts (local machine)
+_T_SHORT_BASE = 5     # Quick commands (--help, status)
+_T_MEDIUM_BASE = 15   # Normal operations (start, stop)
+_T_LONG_BASE = 60     # Heavy operations (stress tests)
+
+# Scaled timeouts (automatically larger in CI)
+T_SHORT = _T_SHORT_BASE * TIMEOUT_MULTIPLIER    # 5s local, 15s CI
+T_MEDIUM = _T_MEDIUM_BASE * TIMEOUT_MULTIPLIER  # 15s local, 45s CI
+T_LONG = _T_LONG_BASE * TIMEOUT_MULTIPLIER      # 60s local, 180s CI
+
 
 # =============================================================================
-# AUTOMATIC SUBPROCESS TIMEOUT SCALING
+# SUBPROCESS TIMEOUT AUTO-SCALING (Temporary Workaround)
 # =============================================================================
-# Monkey-patch subprocess.run to automatically scale timeouts in CI.
-# This ensures ALL tests get scaled timeouts without code changes.
+# TODO(tech-debt): Refactor tests to use run_velo() or T_* constants instead.
+#
+# WHY THIS EXISTS:
+# - Many legacy tests use subprocess.run(..., timeout=5) directly
+# - CI environments (GitHub Actions) are ~3x slower than local machines
+# - Without this patch, tests timeout in CI but pass locally
+#
+# PROPER FIX (future):
+# - Update all tests to use run_velo() from test_harness.py
+# - Or use T_SHORT/T_MEDIUM/T_LONG constants from this file
+# - Then remove this monkey-patch
+#
+# This is a CONTROLLED patch that only affects subprocess timeout= kwargs.
+# It does NOT change any subprocess behavior other than extending timeouts.
 
 _original_subprocess_run = subprocess.run
 
-def _patched_subprocess_run(*args, **kwargs):
-    """Wrapper that scales timeout by VELO_TIMEOUT_MULTIPLIER."""
+def _scaled_subprocess_run(*args, **kwargs):
+    """Auto-scale subprocess timeout for CI environments."""
     if "timeout" in kwargs and kwargs["timeout"] is not None:
-        original_timeout = kwargs["timeout"]
-        kwargs["timeout"] = original_timeout * TIMEOUT_MULTIPLIER
+        kwargs["timeout"] = kwargs["timeout"] * TIMEOUT_MULTIPLIER
     return _original_subprocess_run(*args, **kwargs)
 
-# Apply the patch globally
-subprocess.run = _patched_subprocess_run
-
-# Also patch Popen.wait and Popen.communicate for good measure
-_original_popen_wait = subprocess.Popen.wait
-_original_popen_communicate = subprocess.Popen.communicate
-
-def _patched_popen_wait(self, timeout=None):
-    """Wrapper that scales timeout."""
-    if timeout is not None:
-        timeout = timeout * TIMEOUT_MULTIPLIER
-    return _original_popen_wait(self, timeout=timeout)
-
-def _patched_popen_communicate(self, input=None, timeout=None):
-    """Wrapper that scales timeout."""
-    if timeout is not None:
-        timeout = timeout * TIMEOUT_MULTIPLIER
-    return _original_popen_communicate(self, input=input, timeout=timeout)
-
-subprocess.Popen.wait = _patched_popen_wait
-subprocess.Popen.communicate = _patched_popen_communicate
-
-
+subprocess.run = _scaled_subprocess_run
 
 
 # =============================================================================
