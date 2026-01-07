@@ -140,9 +140,11 @@ impl MemoryRegistry {
         }
 
         // H-30: NUMA Binding (Strict Mode)
+        // DEF-70-004: Only attempt strict mbind if we successfully allocated HugePages.
+        // Strict mbind on standard 4KB pages in Docker/Container environments causes kernel hangs.
         if self.strict_numa {
             #[cfg(target_os = "linux")]
-            {
+            if is_huge {
                 // H-32: Use configurable NUMA mask instead of hardcoded node 0
                 let nodemask = self.numa_mask;
                 let maxnode = linux::NUMA_MAX_NODES;
@@ -168,6 +170,11 @@ impl MemoryRegistry {
                         std::io::Error::last_os_error()
                     )));
                 }
+            } else {
+                // Fallback path (Standard Pages): Skip strict mbind to avoid Deadlock
+                eprintln!(
+                    "⚠️ H-30 Warning: Skipping strict NUMA mbind on standard pages to prevent container deadlock."
+                );
             }
         }
 
