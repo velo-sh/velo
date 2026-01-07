@@ -209,7 +209,6 @@ _BLOCKED_PATHS = [
 ]
 
 # Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
-# (Verified via Run 20770498875+)
 if os.environ.get("GITHUB_ACTIONS") != "true":
     _BLOCKED_PATHS.append("/home")
 

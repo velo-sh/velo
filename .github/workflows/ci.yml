@@ -498,6 +498,7 @@ jobs:
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
@@ -520,6 +521,7 @@ jobs:
     needs: [qa-phase61-security-hardened, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
@@ -542,6 +544,7 @@ jobs:
     needs: [qa-phase61-stability-hardened, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
@@ -568,6 +571,7 @@ jobs:
     needs: [qa-phase61-security-hardened, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
