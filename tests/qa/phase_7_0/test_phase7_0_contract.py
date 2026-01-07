@@ -13,14 +13,16 @@ class TestCoreContract:
     """
 
     def test_L0_error_invalid_name(self, shm_test_env):
-        """Verify that an invalid name (with NUL) triggers an error."""
+        """Verify that an invalid name triggers an error."""
         env = shm_test_env
-        # We can't easily trigger this from Python if Velo cleans it, 
-        # but let's try passing a name that might cause issues.
-        # RFC-0015 H-33: Typed Error Disciplines
-        result = env.run_velo("run", "dummy.py", "--shm-name", "invalid\0name")
-        # Velo should catch this or the syscall should fail
-        assert "InvalidName" in result.stderr or result.returncode != 0
+        try:
+             result = env.run_velo("run", "dummy.py", "--shm-name", "invalid\0name")
+             # Velo should catch this or the syscall should fail
+             assert "InvalidName" in result.stderr or result.returncode != 0
+        except ValueError as e:
+             if "embedded null byte" in str(e):
+                 pytest.skip("Python subprocess doesn't support NUL bytes (blocked at test harness level)")
+             raise e
 
     def test_L0_error_missing_file(self, shm_test_env):
         """Verify that a missing source file triggers InvalidSourceFile."""
@@ -28,6 +30,26 @@ class TestCoreContract:
         # Attempt to analyze a non-existent file with SHM
         result = env.run_velo("analyze", "--shm", "non_existent_file.safetensors")
         assert "InvalidSourceFile" in result.stderr or "No such file" in result.stderr
+
+    def test_L0_cli_shm_flag_missing_analyze(self, shm_test_env):
+        """
+        [PROSECUTOR] Verify that 'analyze --shm' is recognized.
+        RFC-0015 CLI Integration.
+        """
+        env = shm_test_env
+        result = env.run_velo("analyze", "--help")
+        if "--shm" not in result.stdout:
+            pytest.fail("REGRESSION: --shm flag DELETED from 'analyze' command! (Finding 004)")
+
+    def test_L0_cli_shm_flag_missing_run(self, shm_test_env):
+        """
+        [PROSECUTOR] Verify that 'run --shm' is recognized.
+        RFC-0015 CLI Integration.
+        """
+        env = shm_test_env
+        result = env.run_velo("run", "--help")
+        if "--shm" not in result.stdout:
+            pytest.fail("REGRESSION: --shm flag DELETED from 'run' command! (Finding 004)")
 
     def test_L0_error_header_too_large(self, shm_test_env):
         """
@@ -40,20 +62,31 @@ class TestCoreContract:
         with open(bad_file, "wb") as f:
             f.write(struct.pack("<Q", 1024 * 1024 * 1024 * 1024 * 1024))
         
+        # We try to use --shm if it exists, otherwise we'll fail the CLI test anyway
         result = env.run_velo("analyze", "--shm", str(bad_file))
         
-        # CURRENT REGRESSION: The dev code just does a single copy of 'metadata.len()'
-        # based on the file size, and doesn't even READ the header length (line 52).
-        # This test SHOULD fail if it doesn't find HeaderParseFailed or similar.
+        if "Unknown option: --shm" in result.stderr:
+             pytest.skip("CLI flag missing, covered by CLI tests")
+
         if "HeaderParseFailed" not in result.stderr and "InvalidSourceFile" not in result.stderr:
             pytest.fail("REGRESSION: Velo failed to validate safetensors header length (H-22 Violation)")
+
+    def test_L0_h20_hugepage_erasure(self, shm_test_env):
+        """
+        [PROSECUTOR] Verify if the binary even contains HugePage capability code.
+        H-20: MAP_HUGETLB usage.
+        """
+        env = shm_test_env
+        # Fix: run_python expects raw script content, not -c
+        result = env.run_python("import os; print(open('/workspace/src/shm/registry.rs').read())")
+        if "MAP_HUGETLB" not in result.stdout:
+            pytest.fail("REGRESSION: H-20 HugePage support (MAP_HUGETLB) is MISSING from implementation! (Finding 002)")
 
     def test_L0_alignment_integrity(self, shm_test_env):
         """
         [PROSECUTOR] Verify that data with odd header length triggers H-29 logic.
         """
         env = shm_test_env
-        # 1 byte header -> needs 55 bytes padding
         header = b'{"t":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}'
         header_len = len(header)
         
@@ -61,14 +94,12 @@ class TestCoreContract:
         with open(test_file, "wb") as f:
             f.write(struct.pack("<Q", header_len))
             f.write(header)
-            f.write(b"\x00\x00\x00\x00") # 4 bytes data
+            f.write(b"\x00\x00\x00\x00") 
             
-        # Run analyze
         result = env.run_velo("analyze", "--shm", str(test_file))
+
+        if "Unknown option: --shm" in result.stderr:
+             pytest.skip("CLI flag missing, covered by CLI tests")
         
-        # In a TITANIUM implementation, this should either work (with padding) 
-        # OR fail if the file is truly malformed. 
-        # But here we want to check if the implementation ADMITTED it didn't align.
-        # Developer log warning check (from finding 001)
         if "⚠️ H-29 Alignment Warning" in result.stderr:
-            pytest.fail("REGRESSION: H-29 Padding logic is missing! (Simulation warning detected)")
+            pytest.fail("REGRESSION: H-29 Padding logic is BROKEN! (Simulation warning detected instead of enforcement)")

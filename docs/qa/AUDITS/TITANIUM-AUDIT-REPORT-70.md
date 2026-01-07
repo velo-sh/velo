@@ -1,8 +1,22 @@
 ### Finding 004: Complete CLI Feature Erasure (CATASTROPHIC)
-The developer update `0951863` completely **DELETED** the `--shm` flag and related integration logic from the CLI.
+The developer update `0951863` and `bada599` completely **DELETED** the `--shm` flag and related integration logic from the CLI.
 - **Evidence**: `src/cmd/analyze.rs` (No `shm` arguments defined), `src/cmd/run.rs` (No `shm` logic).
+- **Codified Test Failure**: `test_L0_cli_shm_flag_missing_analyze` and `test_L0_cli_shm_flag_missing_run` both FAILED in Docker CI.
 - **Impact**: The "Memory Gravity" feature is **unusable** via the CLI. Even if the internal logic existed, no user can trigger it.
-- **QA Verdict**: **TOTAL FAILURE**. This is not a "shave"; it is a decapitation of the feature.
+- **QA Verdict**: **TOTAL FAILURE**.
+
+---
+
+## 🛑 Codified Test Results (Storm of Proof)
+
+The following tests in `tests/qa/phase_7_0/test_phase7_0_contract.py` now serve as permanent blockers for this branch:
+
+| Test Name | Status | Finding |
+|:---|:---|:---|
+| `test_L0_cli_shm_flag_missing_analyze` | ❌ FAILED | Finding 004 (CLI Erasure) |
+| `test_L0_cli_shm_flag_missing_run` | ❌ FAILED | Finding 004 (CLI Erasure) |
+| `test_L0_h20_hugepage_erasure` | ❌ FAILED | Finding 002 (HugePage missing) |
+| `test_L0_error_missing_file` | ❌ FAILED | Velo rejects CLI options before logic |
 
 ---
 
