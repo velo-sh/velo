@@ -58,9 +58,11 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     socket_path = Path("/tmp") / f"perf_zygote_speedup_{os.getpid()}.sock"
     app_dir = env.path / "app"
     app_dir.mkdir()
-    (app_dir / "main.py").write_text("import fastapi; import pandas; app = fastapi.FastAPI()")
-    (app_dir / "pyproject.toml").write_text('[project]\nname = "perf-app"\nversion = "0.1.0"\ndependencies = ["fastapi", "pandas"]')
-    (app_dir / "uv.lock").write_text("{}") 
+    # Use only fastapi (installed dep) and json (stdlib) - pandas may not be available
+    (app_dir / "main.py").write_text("import fastapi; import json; import hashlib; app = fastapi.FastAPI()")
+    (app_dir / "pyproject.toml").write_text('[project]\nname = "perf-app"\nversion = "0.1.0"\ndependencies = ["fastapi"]')
+    (app_dir / "uv.lock").write_text("{}")
+ 
     
     # 1. Measure Cold Start (Real Execution, pays import cost)
     # Cold start doesn't have architecture phase log
@@ -76,9 +78,9 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
-    # Preload modules to skip import cost
+    # Preload modules to skip import cost (use stdlib + installed deps)
     proc = subprocess.Popen(
-        [env.velo, "zygote", "start", "--preload", "pandas,fastapi"],
+        [env.velo, "zygote", "start", "--preload", "json,hashlib,fastapi"],
         env=cmd_env,
         cwd=app_dir
     )
