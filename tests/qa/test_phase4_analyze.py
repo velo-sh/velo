@@ -129,7 +129,7 @@ preload = ["json"]
             
             assert result.returncode == 0
             # Should display found config
-            assert "Found [tool.velo] config" in result.stderr
+            assert "Using [tool.velo] config" in result.stderr
             assert "slow_threshold_ms = 50" in result.stderr
 
     def test_analyze_json_output(self):
