@@ -85,10 +85,19 @@ class ImportShield:
             return None
 
         # 1. Block internal framework access from child process
-        if fullname.startswith("velo_zygote"):
+        # EXCEPTION: Allow access to config/constants for runtime introspection
+        # This prevents Trap 178 (Bootstrap Deadlock).
+        whitelist = ("velo_zygote.constants", "velo_zygote.config", "velo_zygote.LogUtils")
+        
+        if fullname.startswith("velo_zygote") and fullname not in whitelist:
             # We allow the launcher to import us once, but once the app is loading,
             # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
-            raise ImportError(f"Unauthorized access to internal framework module: {fullname}")
+            msg = f"Unauthorized access to internal framework module: {fullname}"
+            try:
+                # Log to stderr for visibility in CI logs (Trap 178.2/3)
+                print(f"🛡️ [ImportShield] {msg}", file=sys.stderr)
+            except: pass
+            raise ImportError(msg)
         
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
@@ -784,13 +793,9 @@ class ForkHandler:
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
             # 3. Install ImportShield (Import Isolation)
-            # We always install it, but only "activate" it immediately for non-launcher scripts.
-            # For the launcher, it's activated just before user code runs.
+            # We always install it, but DEFER activation (Trap 178)
             ImportShield.install()
             is_internal_launcher = script_path.endswith("worker_launcher.py")
-            if not is_internal_launcher:
-                ImportShield.activate()
-                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
@@ -801,6 +806,12 @@ class ForkHandler:
             # 5. Fast Mode Activation
             if fast_mode and bundle_path:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
+
+            # 5.5 Final Seal: Activate ImportShield (H-12 Deferred)
+            # Only if not the internal launcher (launcher handles its own loading)
+            if not is_internal_launcher:
+                ImportShield.activate()
+                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
             # 6. Execute Script
             with open(script_path, "rb") as f:

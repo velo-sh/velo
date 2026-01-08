@@ -107,8 +107,8 @@ impl MemoryRegistry {
         }
 
         // 1. Create SHM FD
-        #[allow(unused_variables)]
-        let (fd, is_huge) = self.create_shm_fd(name, total_size)?;
+        #[allow(unused_mut)]
+        let (mut fd, mut _is_huge) = self.create_shm_fd(name, total_size, true)?;
 
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
@@ -117,11 +117,12 @@ impl MemoryRegistry {
         #[allow(unused_mut)]
         let mut flags = libc::MAP_SHARED;
         #[cfg(target_os = "linux")]
-        if is_huge {
+        if _is_huge {
             flags |= linux::MAP_HUGETLB;
         }
 
-        let ptr = unsafe {
+        #[allow(unused_mut)]
+        let mut ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
                 total_size,
@@ -131,6 +132,31 @@ impl MemoryRegistry {
                 0,
             )
         };
+
+        // H-20: Robust Fallback for HugePage mmap failure (ENOMEM)
+        #[cfg(target_os = "linux")]
+        if ptr == libc::MAP_FAILED
+            && _is_huge
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOMEM)
+        {
+            eprintln!(
+                "⚠️ H-20 Warning: HugePages mmap RW failed with ENOMEM, falling back to standard pages."
+            );
+            unsafe { libc::close(fd) };
+            let (new_fd, new_is_huge) = self.create_shm_fd(name, total_size, false)?;
+            fd = new_fd;
+            _is_huge = new_is_huge;
+            ptr = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    total_size,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_SHARED,
+                    fd,
+                    0,
+                )
+            };
+        }
 
         if ptr == libc::MAP_FAILED {
             return Err(MemoryError::MmapFailed(format!(
@@ -144,7 +170,7 @@ impl MemoryRegistry {
         // Strict mbind on standard 4KB pages in Docker/Container environments causes kernel hangs.
         if self.strict_numa {
             #[cfg(target_os = "linux")]
-            if is_huge {
+            if _is_huge {
                 // H-32: Use configurable NUMA mask instead of hardcoded node 0
                 let nodemask = self.numa_mask;
                 let maxnode = linux::NUMA_MAX_NODES;
@@ -312,7 +338,12 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
+    fn create_shm_fd(
+        &self,
+        name: &str,
+        size: usize,
+        prefer_huge: bool,
+    ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
@@ -331,10 +362,13 @@ impl MemoryRegistry {
         };
 
         // H-20: Optimistic HugePages Attempt (MFD_HUGETLB)
-        // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
-        // we fallback to standard pages.
-        let mut fd = try_create(linux::MFD_HUGETLB);
-        let mut is_huge = true;
+        // We try with hugepages first if preferred.
+        let mut fd = if prefer_huge {
+            try_create(linux::MFD_HUGETLB)
+        } else {
+            -1
+        };
+        let mut is_huge = fd >= 0;
 
         if fd >= 0 {
             // H-20: Alignment Requirement (Verified Logic)
@@ -387,7 +421,12 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "macos")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
+    fn create_shm_fd(
+        &self,
+        name: &str,
+        size: usize,
+        _prefer_huge: bool,
+    ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
