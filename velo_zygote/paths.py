@@ -135,6 +135,18 @@ class VeloPaths:
         return Path(expanded_parent) / PATH_LOG_DIR_RELATIVE / "zygote.log"
 
     @staticmethod
+    def worker_log() -> Path:
+        """Get the log path for the Worker."""
+        # Use SSOT constants parity with zygote_log
+        os_name = "macos" if sys.platform == "darwin" else "linux"
+        base_key = f"PATH_{os_name.upper()}_BASE_LOG_PARENT"
+        
+        parent_tmpl = VeloPaths._get_path_config(base_key) or "${HOME}"
+        expanded_parent = VeloPaths._expand_placeholders(parent_tmpl)
+        
+        return Path(expanded_parent) / PATH_LOG_DIR_RELATIVE / "worker.log"
+
+    @staticmethod
     def project_file(project_root: Path, file_name: str) -> Path:
         """Get a project-relative file path."""
         return project_root / file_name

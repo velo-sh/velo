@@ -225,7 +225,10 @@ print("imported")
             env.run_velo(["zygote", "start"], timeout=10)
             
             # Kill Zygote to simulate failure
-            subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
+            # Stop Zygote gracefully
+            env.run_velo(["zygote", "stop"], timeout=5)
+            # Safe backup: kill only exact 'velo' process if still alive
+            subprocess.run(["pkill", "^velo$"], capture_output=True)
             time.sleep(0.2)  # Give it time to die
             
             # Now run should fallback to normal mode

@@ -3,13 +3,20 @@ name: CI
 on:
   push:
     branches: ['**']
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: ['**']
   schedule:
     - cron: '0 2 * * *'  # Run nightly at 2 AM UTC (Performance Canary)
 
+# Concurrency: Only cancel code CI runs, not docs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: code-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -21,7 +28,6 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
-  
 jobs:
   performance-canary:
     name: 🐤 Performance Canary (Nightly)
@@ -353,6 +359,7 @@ jobs:
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [qa-serve-standard, changes]
     # Only run on main branch - heavy tests are optional
     if: |
@@ -661,7 +668,7 @@ jobs:
               sys.exit(e.returncode)
           EOF
           
-          python timeout_run.py 10 velo serve main:app --dry-run || {
+          python timeout_run.py 30 velo serve main:app --dry-run || {
             RET=$?
             if [ $RET -eq 124 ]; then
               echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"

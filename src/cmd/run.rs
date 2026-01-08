@@ -12,6 +12,7 @@ use crate::config::VeloConfig;
 use crate::python;
 use crate::python_info::{PythonInfo, PythonVersion};
 use crate::runner;
+use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
 
 /// Run a Python script
@@ -37,6 +38,10 @@ pub struct RunCmd {
     /// Use fast loader with bundle acceleration
     #[arg(long)]
     pub fast: bool,
+
+    /// Map a .safetensors file into shared memory (Memory Gravity)
+    #[arg(long, value_name = "PATH")]
+    pub shm: Option<PathBuf>,
 }
 
 impl RunCmd {
@@ -118,6 +123,14 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
     // 4. Zygote/Fast/Normal run
     if cmd.zygote_enabled() {
         let _zygote_start = std::time::Instant::now();
+        // Create SHM segment if requested
+        let shm_file = if let Some(ref shm_path) = cmd.shm {
+            let registry = MemoryRegistry::new();
+            let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
+            Some(registry.create_segment(&segment_name, shm_path)?)
+        } else {
+            None
+        };
         if let Some(()) = try_zygote_run(
             &python_path,
             &cmd.script,
@@ -126,6 +139,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             &config,
             cmd.profile,
+            shm_file.as_ref(),
         )? {
             if cmd.profile {
                 eprintln!(
@@ -167,6 +181,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
 /// Try to run via Zygote, returns Some(()) on success, None on failure
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn try_zygote_run(
     python_path: &Path,
     script_path: &str,
@@ -175,6 +190,7 @@ fn try_zygote_run(
     project_dir: &Path,
     config: &VeloConfig,
     profile: bool,
+    shm_file: Option<&std::fs::File>,
 ) -> Result<Option<()>> {
     use crate::zygote;
 
@@ -238,6 +254,7 @@ fn try_zygote_run(
             bundle_path.clone(),
             Some(project_dir.to_path_buf()),
             max_size,
+            shm_file,
         ) {
             Ok(worker) => {
                 if async_enabled && profile {
@@ -300,6 +317,7 @@ fn try_zygote_run(
                             bundle_path,
                             Some(project_dir.to_path_buf()),
                             max_size,
+                            shm_file,
                         ) {
                             if async_enabled {
                                 eprintln!(

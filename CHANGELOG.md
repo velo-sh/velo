@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Zygote Stabilization (TITANIUM)**: 151x startup speedup on macOS
+  - Process group isolation via `os.setsid()` for signal hygiene
+  - Single Source of Truth (SSOT) lifecycle management via Rust supervisor
+  - Slot-based stable UDS paths for race-free worker spawns
+  - macOS kernel sandbox (`sandbox-exec`) enabled by default
+  - **Linux Security Parity Gap (RFC-0016 Appendix A)**: ImportShield and Sandbox temporarily disabled on Linux to stabilize CI/CD.
+
+### Known Issues
+
+| Issue | Risk | Workaround |
+|-------|------|------------|
+| **macOS Orphan Processes** | 🟡 Medium | If supervisor is `SIGKILL`ed, workers may orphan. Use `pkill -f velo` for cleanup. |
+| **`sandbox-exec` Deprecation** | 🟡 Medium | Apple may remove in future macOS. Will gracefully degrade to non-sandboxed mode. |
+| **Reduced Debuggability** | 🟢 Low | Workers in separate session. Use `ps -o sid,pid,pgid,cmd` to discover worker PIDs. |
+| **Uvicorn Signal Handling** | 🟢 Low | Workers rely on POSIX `SIGTERM`. Pin uvicorn version if issues arise. |
+| **Linux Security Gap** | 🟠 High | ImportShield/Sandbox disabled on Linux. Avoid running untrusted code on Linux runners until fixed. |
+
 ## [0.6.2] - 2026-01-06
 
 ### Added

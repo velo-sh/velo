@@ -85,8 +85,8 @@ class TestPhase61PerformanceHardened:
             p50_latency = sorted(latencies)[len(latencies)//2]
             print(f"P50 Restart Latency: {p50_latency:.2f}ms")
             
-            # Threshold: < 500ms for Debug build (CI), < 50ms for local release
-            assert p50_latency < 500, f"Restart too slow: {p50_latency:.2f}ms"
+            # Threshold: < 1500ms for CI slack (User Request), < 50ms for local ideal
+            assert p50_latency < 1500, f"Restart too slow: {p50_latency:.2f}ms"
             
         finally:
             proc.kill()

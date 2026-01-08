@@ -95,7 +95,7 @@ print("Hello from test")
             
             # Should succeed
             assert result.returncode == 0
-            assert "Analyzing imports" in result.stderr
+            assert "analyzing imports" in result.stderr.lower()
             assert "Import Analysis" in result.stdout
 
     def test_analyze_respects_config_threshold(self):
@@ -129,7 +129,7 @@ preload = ["json"]
             
             assert result.returncode == 0
             # Should display found config
-            assert "Found [tool.velo] config" in result.stderr
+            assert "Using [tool.velo] config" in result.stderr
             assert "slow_threshold_ms = 50" in result.stderr
 
     def test_analyze_json_output(self):
