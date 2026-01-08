@@ -80,7 +80,8 @@ def main():
         # Emergency logging for startup failures
         try:
             # SEC-P0-005: Use tempfile API for secure, restrictive (0600) log creation
-            fd, _log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir="/tmp")
+            fd, _log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir=tempfile.gettempdir())
+            os.fchmod(fd, 0o600)
             with os.fdopen(fd, 'w') as f:
                 f.write(f"FATAL: {e}\n")
                 traceback.print_exc(file=f)

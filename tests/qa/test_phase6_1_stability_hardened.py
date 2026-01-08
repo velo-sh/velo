@@ -309,7 +309,7 @@ time.sleep(60)
         output = ""
         try:
             while True:
-                line = self._read_with_timeout(proc.stdout, timeout=5)
+                line = self._read_with_timeout(proc.stdout, timeout=15)
                 if not line: break
                 output += line
         finally:

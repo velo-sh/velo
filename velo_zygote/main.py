@@ -759,9 +759,14 @@ class ForkHandler:
                 # RFC-0011: Synchronize sys.path with new PYTHONPATH
                 python_path = env.get("PYTHONPATH")
                 if python_path:
+                    # Normalize sys.path once for faster lookup
+                    norm_sys_path = {os.path.normpath(os.path.abspath(p)) for p in sys.path}
                     for path_entry in reversed(python_path.split(os.pathsep)):
-                        if path_entry and path_entry not in sys.path:
-                            sys.path.insert(0, path_entry)
+                        if path_entry:
+                            norm_entry = os.path.normpath(os.path.abspath(path_entry))
+                            if norm_entry not in norm_sys_path:
+                                sys.path.insert(0, norm_entry)
+                                norm_sys_path.add(norm_entry)
 
             # 1. Start Guardian (Workers MUST die if Zygote dies)
             # Now started after FDs are sanitized to avoid race conditions.
