@@ -742,6 +742,8 @@ pub fn run_server(
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10);
+                    // VELO_FAIL_FAST_LIMIT sets the maximum consecutive worker startup failures before giving up.
+                    // Default: 5. Typical use: raise for flaky environments, lower for CI.
                     let fail_fast_limit = std::env::var("VELO_FAIL_FAST_LIMIT")
                         .ok()
                         .and_then(|v| v.parse().ok())
@@ -766,7 +768,17 @@ pub fn run_server(
 
                     // RFC-0011 Fail-Fast: If we fail consecutively at startup,
                     // it's a fatal environment issue.
-                    self.consecutive_failures < self.fail_fast_limit
+                    if self.consecutive_failures >= self.fail_fast_limit {
+                        eprintln!(
+                            "FATAL: Worker failed to start after {}/{} attempts. \
+                             Please check environment configuration, networking, and dependencies. \
+                             To adjust this threshold, set the VELO_FAIL_FAST_LIMIT environment variable (e.g., VELO_FAIL_FAST_LIMIT=10).",
+                            self.consecutive_failures, self.fail_fast_limit
+                        );
+                        false
+                    } else {
+                        true
+                    }
                 }
                 fn reset(&mut self) {
                     // RFC-0011 Stability Fix: "Probation Period".
@@ -943,10 +955,10 @@ pub fn run_server(
                                 }
 
                                 logger.warn(&format!(
-                                    "Worker {} (PID: {}) died, respawning (backoff: {}s)...",
-                                    i + 1,
-                                    worker.pid(),
-                                    tracker.backoff_secs
+                                    "A worker died during startup. Retrying in {}s (attempt {}/{})...",
+                                    tracker.backoff_secs,
+                                    tracker.consecutive_failures,
+                                    tracker.fail_fast_limit
                                 ));
 
                                 // Respawn via Zygote
