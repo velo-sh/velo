@@ -101,12 +101,6 @@ impl MemoryRegistry {
         #[allow(unused_mut)]
         let (mut fd, mut _is_huge) = self.create_shm_fd(name, size as usize, prefer_huge)?;
 
-        let page_size = if _is_huge {
-            HUGE_PAGE_SIZE
-        } else {
-            unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
-        };
-
         // We need to re-read header len for population
         let mut file =
             File::open(source_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
@@ -180,6 +174,13 @@ impl MemoryRegistry {
             )));
         }
 
+        // Calculate page_size AFTER potential fallback to ensure accuracy
+        let page_size = if _is_huge {
+            HUGE_PAGE_SIZE
+        } else {
+            unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+        };
+
         // H-30: NUMA Binding (Strict Mode)
         // DEF-70-004: Only attempt strict mbind if we successfully allocated HugePages.
         // Strict mbind on standard 4KB pages in Docker/Container environments causes kernel hangs.
@@ -200,7 +201,7 @@ impl MemoryRegistry {
                         linux::MPOL_BIND,
                         &nodemask as *const u64,
                         maxnode,
-                        libc::MPOL_MF_STRICT,
+                        linux::MPOL_MF_STRICT,
                     )
                 };
                 if ret < 0 {

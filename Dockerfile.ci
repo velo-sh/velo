@@ -29,8 +29,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust (same as actions-rs/toolchain)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# Pre-install specific version + components to avoid repeated downloads
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.92.0
 ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup component add clippy rustfmt llvm-tools-preview
 
 # Install uv (same as astral-sh/setup-uv)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh

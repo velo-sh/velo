@@ -140,10 +140,10 @@ mod tests {
             .create_segment("qa_test_alignment_overflow", tmp_overflow.path())
             .unwrap();
         let size_overflow = segment_overflow.file.metadata().unwrap().len();
-        let _page_size_overflow = segment_overflow.actual_page_size;
 
         #[cfg(target_os = "linux")]
         {
+            let page_size_overflow = segment_overflow.actual_page_size;
             // Expected aligned size = align_up(header_len + padding + file_size, page_size)
             // For a 56-byte header, padding = 0. Total = 2,097,153 + 0 = 2,097,153.
             // If 2MB pages: Aligns to 4MB. If 4KB pages: Aligns to (2MB + 4KB).
