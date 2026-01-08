@@ -1,0 +1,15 @@
+{
+    "baseline_python": {
+        "cold_start_ms": 1534,
+        "rss_kb": 212000
+    },
+    "docker_python": {
+        "cold_start_ms": 2041,
+        "rss_kb": 215000
+    },
+    "velo": {
+        "cold_start_ms": 83,
+        "rss_kb": 49800
+    },
+    "notes": "Measured on Apple M1 Pro. Your results will vary but trend should be consistent."
+}
