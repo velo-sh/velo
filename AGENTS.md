@@ -213,6 +213,7 @@ I will review/implement with [ROLE]'s perspective.
 - ❌ Skip `uv sync` when testing user projects
 - ❌ Commit without running pre-commit hooks
 - ❌ Use different lint/check flags than CI (causes silent failures)
+- ❌ **NO DIRECT REBASE**: Do not use `git rebase` to "beautify" logs. Aesthetic purity is not worth the risk of code loss. Use **Squash Merge** on the branch entry point (main/master) instead. Commit early and often locally; the squash merge will ensure a clean history on the shared trunk.
 
 > [!TIP]
 > Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit. This prevents most style-related CI failures.
@@ -286,4 +287,4 @@ I will review/implement with [ROLE]'s perspective.
 
 ---
 
-*Last Updated: 2026-01-02*
+*Last Updated: 2026-01-08*
