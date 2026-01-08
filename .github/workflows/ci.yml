@@ -622,9 +622,25 @@ jobs:
                -v --tb=short
 
   # ============================================
-  # Phase 6.2: Kinetic Protocol (RFC-0013)
-  # Regression & Corruption Guardrails
+  # Phase 7.0: Memory Gravity (RFC-0015)
   # ============================================
+
+  qa-phase7-0-memory:
+    name: "QA 7.0: Memory Gravity (RFC-0015)"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_7_0 -v --tb=short
+
+
 
   qa-kinetic-regression-gate:
     name: "QA 6.2: Kinetic Regression Gate"
