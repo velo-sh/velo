@@ -171,7 +171,20 @@ impl Worker {
 
     /// Fast check if worker process exists (no IPC overhead)
     /// Used for health monitoring in the signal loop
+    ///
+    /// RFC-0016: During startup grace period, assume worker is alive to prevent
+    /// false-positive death detection before the worker binds its socket.
     pub fn is_alive(&self) -> bool {
+        // Grace period: workers get 5 seconds to initialize before liveness checks kick in
+        const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(5);
+
+        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
+            // During grace period, only check if process still exists
+            // Don't trigger respawn logic even if socket isn't ready
+            return unsafe { libc::kill(self.pid as i32, 0) == 0 };
+        }
+
+        // After grace period, normal liveness check
         // Safety: kill with signal 0 checks process existence without sending signal
         unsafe { libc::kill(self.pid as i32, 0) == 0 }
     }

@@ -552,10 +552,12 @@ class ForkHandler:
             # 2. State & Resource Hygiene
             post_fork_reinit()
 
-            # 3. Import Protection
-            ImportShield.install()
-            if fast_mode:
-                ImportShield.activate()
+            # 3. Import Protection (Linux CI Stability: Disabled temporarily)
+            # ImportShield can cause workers to fail startup on some Linux environments
+            if sys.platform == "darwin":
+                ImportShield.install()
+                if fast_mode:
+                    ImportShield.activate()
             
             # 4. Interface Isolation (I/O Redirection)
             if stdout_path:
