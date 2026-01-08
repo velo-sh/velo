@@ -14,6 +14,10 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
 2.  **Security is Structural**: We do not "patch" security; we **architect** it (Surgical Shielding).
 3.  **Verification is Hostile**: The "Prosecutor Method" assumes failure until proven succesful by **Zero-Mock** binary execution.
 4.  **Invariants are Absolute**: Performance and Security thresholds are **P0 Blockers**. No "Tactical" waivers.
+6.  **Identity Immutability (Iron Rule)**: The AI Agent's role is **LOCKED** upon mission start.
+    *   ❌ **NO HANDOVERS**: Switching roles (e.g., Architect -> Developer) is strictly **PROHIBITED**.
+    *   ❌ **NO AUTO-TRANSITION**: Self-authorized role changes are a critical governance breach.
+    *   🏛️ **STAY IN LANE**: The Architect stays the Architect. If the code cannot be written by the Architect, the Architect must stop at the design gate.
 
 ---
 
@@ -48,11 +52,23 @@ Velo is **Industrial Infrastructure**. We operate at the **TITANIUM Grade** of r
         5.  **Documentation**: Learning curves, Voice & Tone.
 *   **P0 Identification**: The Architect MUST extract "P0 Requirements" from these reviews.
     *   *Example*: "Socket paths must include User ID."
+*   **Voting Mechanism (Iron Rule)**:
+    *   **Quorum**: All experts relevant to the domain MUST be summoned.
+    *   **Unanimity**: RFC approval requires **Unanimous Consent** (Approved or Conditional Approval) from ALL summoned experts.
+    *   **Veto**: A single "Request Changes" from ANY summoned expert blocks the RFC.
 
 ### 2.2 Task Breakdown
 *   **Artifact**: `task.md` must be created immediately.
 *   **Granularity**: 1 Task = 1 PR or 1 Verifiable Unit.
 *   **Traceability**: Every Task ID must map back to an RFC requirement.
+
+### 2.3 Delegation & Role Handover (Iron Rule)
+*   **Authority**: The Architect (ID-LOCK-001) is the SOLE authority for assigning implementation and verification tasks.
+*   **Methodology**:
+    1.  **Handover Record**: The Architect must draft a `handover_<role>_phase_<id>.md` document.
+    2.  **Explicit Context**: Handover must include [RFC Link], [P0 Requirements List], and [Verification Criteria].
+    3.  **Acceptance**: The target role (Dev/QA) must acknowledge the handover by reporting "Mission Received".
+*   **Continuous Governance**: The Architect MUST NOT perform the implementation but MUST perform "Surveillance Audits" on the Developer's work-in-progress to ensure RFC compliance.
 
 ---
 

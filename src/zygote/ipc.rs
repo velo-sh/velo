@@ -13,14 +13,14 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
-use blake3;
+
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-/// Maximum message size (1MB) - prevents DoS via oversized messages
-const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+pub use crate::common::constants::{MAX_MESSAGE_SIZE, PROTOCOL_VERSION};
 
 /// Commands sent from Launcher to Zygote
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,138 +123,16 @@ pub enum ZygoteResponse {
 
 /// Get the default socket path for Zygote IPC
 ///
-/// DEF-61-004: Socket path includes protocol version for upgrade isolation
-/// Format: `{socket_dir}/velo-zygote-v{PROTOCOL_VERSION}.sock`
+/// Delegates to `common::paths` for canonical resolution (RFC-0012).
 pub fn default_socket_path() -> PathBuf {
-    // Audit Remediation: Prioritize explicit socket path from environment (conftest.py support)
-    if let Ok(path) = std::env::var("VELO_ZYGOTE_SOCKET") {
-        return PathBuf::from(path);
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::ffi::OsStringExt;
-        let mut bytes = vec![0u8];
-        bytes.extend_from_slice(format!("velo-zygote-v{:02x}", PROTOCOL_VERSION).as_bytes());
-        return PathBuf::from(std::ffi::OsString::from_vec(bytes));
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    get_socket_dir().join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
+    crate::common::paths::get_socket_path()
 }
 
 /// Get the user-isolated socket directory
 ///
-/// DEF-61-004: Uses XDG_RUNTIME_DIR or falls back to /tmp/velo-{uid}
-/// Directory has 0700 permissions for security
-///
-/// # Red Line #1: Path Length Circuit Breaker
-/// Unix sockets have a 108-character path limit. We use 104 as the threshold
-/// to leave margin for the socket filename. If exceeded, fallback to /tmp.
+/// Delegates to `common::paths` (RFC-0012).
 pub fn get_socket_dir() -> PathBuf {
-    /// Red Line #1: Path length limit with 4-byte margin
-    const SOCKET_PATH_LIMIT: usize = 104;
-    let uid = unsafe { libc::getuid() };
-
-    // RFC §3.3: Use project-specific randomized identity for isolation.
-    // We use the project root (where pyproject.toml or .git is) instead of CWD
-    // to ensure consistency when running from subdirectories (e.g., benchmarks).
-    let project_root = {
-        let mut curr = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let mut root = curr.clone();
-        loop {
-            if curr.join("pyproject.toml").exists() || curr.join(".git").exists() {
-                root = curr;
-                break;
-            }
-            if let Some(parent) = curr.parent() {
-                curr = parent.to_path_buf();
-            } else {
-                break;
-            }
-        }
-        root
-    };
-
-    let project_hash = {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(project_root.to_string_lossy().as_bytes());
-        let hash = hasher.finalize().to_hex()[..8].to_string();
-        format!("-{}", hash)
-    };
-
-    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
-    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        let dir = PathBuf::from(xdg_dir).join("velo");
-        let test_path = dir.join("velo-zygote-v01.sock");
-        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
-            return dir;
-        }
-    }
-
-    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
-    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
-    let user_dir = std::env::temp_dir().join(&dir_name);
-    let test_path = user_dir.join("velo-zygote-v01.sock");
-
-    // Red Line #1: Check path length BEFORE ensuring directory
-    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
-        return user_dir;
-    }
-
-    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
-    // Red Line #1: /tmp fallback when path too long
-    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
-        eprintln!(
-            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
-            SOCKET_PATH_LIMIT
-        );
-    }
-    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
-    let _ = ensure_socket_dir(&fallback_dir);
-    fallback_dir
-}
-
-/// Ensure socket directory exists with proper permissions (0700)
-///
-/// # Red Line #2: Double Permission Verification
-/// After setting permissions, we MUST verify the mode is exactly 0700.
-/// If umask interferes and permissions are wrong, we log a warning.
-fn ensure_socket_dir(dir: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-
-    // Create directory if needed with strict umask (RFC §3.3)
-    if !dir.exists() {
-        let old_mask = unsafe { libc::umask(0o077) };
-        let res = std::fs::create_dir_all(dir);
-        unsafe { libc::umask(old_mask) };
-        if res.is_err() {
-            return false;
-        }
-    }
-
-    // Set 0700 permissions (owner only) - redundant but safe (Red Line #2)
-    if let Ok(metadata) = dir.metadata() {
-        let mut perms = metadata.permissions();
-        perms.set_mode(0o700);
-        if std::fs::set_permissions(dir, perms.clone()).is_err() {
-            return false;
-        }
-
-        // Red Line #2: Double verification - confirm mode is 0700
-        if let Ok(verify_meta) = dir.metadata() {
-            let mode = verify_meta.permissions().mode() & 0o777;
-            if mode != 0o700 {
-                eprintln!(
-                    "⚠️ SECURITY: Socket dir has insecure permissions: {:o} (expected 0700)",
-                    mode
-                );
-                // Continue but warn - umask may have interfered
-            }
-        }
-    }
-
-    true
+    crate::common::paths::get_socket_dir()
 }
 
 /// Check if a socket is alive (responds to connection attempt)
@@ -366,25 +244,52 @@ pub fn cleanup_socket(socket_path: &Path) {
 // MessagePack serialization helpers (length-prefix + version framing)
 // ============================================================================
 
-/// Protocol version (ADV-1 + DEF-61-004)
-///
-/// # Red Line #5: Version Coupling Documentation
-/// This constant is used in TWO critical places:
-/// 1. **Message framing**: `[Length 4B LE] [Version 1B] [Payload MsgPack]`
-/// 2. **Socket path**: `velo-zygote-v{:02x}.sock`
-///
-/// # Important
-/// Incrementing this value creates a NEW socket path, providing automatic
-/// isolation from old Zygote processes. Old processes using the previous
-/// socket will not interfere with new processes.
-///
-/// # Version History
-/// - 0x00: JSON protocol (v0.6.1 and earlier)
-/// - 0x01: MessagePack protocol (v0.6.2+, DEF-61-004)
-pub const PROTOCOL_VERSION: u8 = 0x01;
+// Protocol version (ADV-1 + DEF-61-004) - Now using SSOT from config/constants.toml
+
+/// Helper for enforcing a wall-clock deadline across multiple IPC operations
+struct Deadline {
+    end: Instant,
+}
+
+impl Deadline {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            end: Instant::now() + timeout,
+        }
+    }
+
+    fn remaining(&self) -> Result<Duration> {
+        let now = Instant::now();
+        if now >= self.end {
+            return Err(ZygoteError::ConnectionFailed(
+                "Kinetic handshake budget exceeded (10ms wall-clock deadline)".to_string(),
+            ));
+        }
+        Ok(self.end - now)
+    }
+
+    /// Apply remaining time as socket timeout
+    fn apply(&self, stream: &UnixStream) -> Result<()> {
+        let timeout = self.remaining()?;
+        stream
+            .set_read_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        stream
+            .set_write_timeout(Some(timeout))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        Ok(())
+    }
+}
 
 /// Write a MessagePack message with length prefix and version byte
-fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+fn write_message<T: Serialize + std::fmt::Debug>(
+    stream: &mut UnixStream,
+    msg: &T,
+    deadline: Option<&Deadline>,
+) -> Result<()> {
+    if let Some(d) = deadline {
+        d.apply(stream)?;
+    }
     let mut buf = Vec::new();
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     msg.serialize(&mut ser)
@@ -434,7 +339,11 @@ fn write_message<T: Serialize + std::fmt::Debug>(stream: &mut UnixStream, msg: &
 /// Read a MessagePack message with length prefix and version byte
 fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
+    deadline: Option<&Deadline>,
 ) -> Result<T> {
+    if let Some(d) = deadline {
+        d.apply(stream)?;
+    }
     // Read 4-byte length prefix (includes version + payload)
     let mut len_buf = [0u8; 4];
     stream
@@ -467,7 +376,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     let version = version_buf[0];
     if version != PROTOCOL_VERSION {
         return Err(ZygoteError::ProtocolError(format!(
-            "Protocol version mismatch: got {}, expected {}",
+            "Protocol version mismatch: got 0x{:02x}, expected 0x{:02x}. Is one side outdated?",
             version, PROTOCOL_VERSION
         )));
     }
@@ -495,22 +404,33 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 /// High-level wrapper for Zygote IPC connection
 pub struct ZygoteStream {
     stream: UnixStream,
+    deadline: Deadline,
 }
 
 impl ZygoteStream {
     /// Connect to Zygote and verify the initial "Ready" greeting
+    ///
+    /// RFC-0013: Enforces a 10ms wall-clock timeout for the entire handshake.
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        let mut stream = UnixStream::connect(socket_path)
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        // DEF-62-002: Increased to 2000ms (2s) to tolerate GIL contention during Shadow Preloading.
+        // Idle Zygote responds in <1ms. Busy Zygote (loading pandas) needs patience.
+        let deadline = Deadline::new(Duration::from_millis(2000));
+
+        let stream = UnixStream::connect(socket_path).map_err(|e| {
+            ZygoteError::ConnectionFailed(format!("Failed to connect to Zygote: {}", e))
+        })?;
 
         // 0. Verify server identity (RFC §3.7 Mutual Auth)
         #[cfg(target_os = "linux")]
         verify_peer_credentials(&stream)?;
 
+        let mut zygote_stream = Self { stream, deadline };
+
         // 1. Receive mandatory "Ready" greeting
-        let ready: ZygoteResponse = read_message(&mut stream)?;
+        let ready: ZygoteResponse =
+            read_message(&mut zygote_stream.stream, Some(&zygote_stream.deadline))?;
         match ready {
-            ZygoteResponse::Ready => Ok(Self { stream }),
+            ZygoteResponse::Ready => Ok(zygote_stream),
             _ => Err(ZygoteError::ProtocolError(
                 "Connection greeting failed - expected Ready".to_string(),
             )),
@@ -519,8 +439,8 @@ impl ZygoteStream {
 
     /// Send a command and wait for the response
     pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
-        write_message(&mut self.stream, cmd)?;
-        read_message(&mut self.stream)
+        write_message(&mut self.stream, cmd, Some(&self.deadline))?;
+        read_message(&mut self.stream, Some(&self.deadline))
     }
 }
 
@@ -534,14 +454,14 @@ pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteComm
     #[cfg(target_os = "linux")]
     verify_peer_credentials(&stream)?;
 
-    let cmd: ZygoteCommand = read_message(&mut stream)?;
+    let cmd: ZygoteCommand = read_message(&mut stream, None)?;
 
     Ok((stream, cmd))
 }
 
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
-    write_message(stream, &response)
+    write_message(stream, &response, None)
 }
 
 /// Connect to the Zygote and send a command, returning the response
@@ -676,5 +596,39 @@ mod tests {
             msgpack_bytes.len(),
             json_bytes.len()
         );
+    }
+
+    #[test]
+    fn test_read_message_oversized() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let (mut reader, mut writer) = UnixStream::pair().unwrap();
+
+        // Send a message that claims to be huge
+        let huge_len = (MAX_MESSAGE_SIZE + 1) as u32;
+        writer.write_all(&huge_len.to_le_bytes()).unwrap();
+
+        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("Message too large"));
+    }
+
+    #[test]
+    fn test_read_message_version_mismatch() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+
+        let (mut reader, mut writer) = UnixStream::pair().unwrap();
+
+        let total_len = 1u32;
+        writer.write_all(&total_len.to_le_bytes()).unwrap();
+        writer.write_all(&[0xFF]).unwrap(); // Wrong version
+
+        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("Protocol version mismatch"));
     }
 }

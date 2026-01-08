@@ -6,7 +6,6 @@ pub mod safety;
 
 pub use safety::{
     EnvironmentShield, apply_standard_hygiene, ensure_socket_directory,
-    generate_abstract_socket_name, generate_worker_socket_path, set_cloexec,
-    set_cloexec_on_all_fds, supports_abstract_sockets, unlink_socket_if_exists,
-    unlink_socket_if_exists_sync,
+    generate_abstract_socket_name, set_cloexec, set_cloexec_on_all_fds, supports_abstract_sockets,
+    unlink_socket_if_exists, unlink_socket_if_exists_sync,
 };

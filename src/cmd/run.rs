@@ -7,10 +7,12 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
+pub use crate::common::paths::*;
 use crate::config::VeloConfig;
+use crate::python;
 use crate::python_info::{PythonInfo, PythonVersion};
+use crate::runner;
 use crate::zygote::ZygoteLauncher;
-use crate::{python, runner};
 
 /// Run a Python script
 #[derive(Parser, Debug)]
@@ -83,10 +85,10 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             parent
         };
 
-        if p.join("pyproject.toml").exists() {
+        if VeloPaths::pyproject(p).exists() {
             project_dir = p.to_path_buf();
         } else if let Some(grandparent) = p.parent() {
-            if grandparent.join("pyproject.toml").exists() {
+            if VeloPaths::pyproject(grandparent).exists() {
                 project_dir = grandparent.to_path_buf();
             }
         }
@@ -95,7 +97,8 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
     // 2. Load config
     let _config_start = std::time::Instant::now();
-    let config = VeloConfig::from_path(&project_dir.join("pyproject.toml")).unwrap_or_default();
+    // Load config from discovered project root (with Env Var overrides)
+    let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
     let _config_time = _config_start.elapsed();
 
     // 3. Detect Python
@@ -145,12 +148,13 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &cmd.script,
             &project_dir,
             pythonpath,
-            config.max_bundle_size,
+            Some(config.max_bundle_size as u64),
+            &config,
         )?;
     } else if cmd.profile {
-        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
     } else {
-        runner::run_script(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script(&python_path, &cmd.script, pythonpath, &config)?;
     }
 
     // If we didn't have cache, capture sys.path for next time
@@ -181,17 +185,17 @@ fn try_zygote_run(
     let socket_path = zygote::ipc::default_socket_path();
     let script = Path::new(script_path);
 
+    // config is already loaded and passed in
+    let _timeout = config.zygote_socket_timeout;
+
     // Check if Zygote is running, start if not (hybrid mode)
     let mut launcher =
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
     let started_new = if !socket_path.exists() {
-        // Read preload config from pyproject.toml (DEV-FIX-001)
-        let config = VeloConfig::from_pyproject_toml();
-        let preload: Vec<&str> = config
-            .as_ref()
-            .map(|c| c.preload.iter().map(|s| s.as_str()).collect())
-            .unwrap_or_default();
+        // Read preload config from pyproject.toml (DEV-FIX-001) with Env Var overrides
+        let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new(".")));
+        let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
         if profile {
             if preload.is_empty() {
@@ -201,7 +205,7 @@ fn try_zygote_run(
             }
         }
 
-        if let Err(e) = launcher.start(&preload, None) {
+        if let Err(e) = launcher.start(&preload, None, false, &config) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
@@ -220,66 +224,103 @@ fn try_zygote_run(
         let (bundle_path, max_size) = if fast_enabled {
             (
                 find_bundle(project_dir, script_path),
-                config.max_bundle_size,
+                Some(config.max_bundle_size as u64),
             )
         } else {
             (None, None)
         };
 
-        // RFC-0014: High-Reliability Spawn Loop (AUDIT-51-002)
-        let mut retries = 3;
-        let mut backoff_ms = 100;
-
-        while retries > 0 {
-            match launcher.spawn_worker(
-                script,
-                &[],
-                async_enabled,
-                fast_enabled,
-                bundle_path.clone(),
-                Some(project_dir.to_path_buf()),
-                max_size,
-            ) {
-                Ok(worker) => {
-                    if async_enabled && profile {
-                        eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
-                        if let Some(stdout) = worker.stdout_path() {
-                            eprintln!("📝 Logs (stdout): {}", stdout.display());
-                        }
-                        if let Some(stderr) = worker.stderr_path() {
-                            eprintln!("📝 Logs (stderr): {}", stderr.display());
-                        }
-
-                        // Keep Zygote alive but exit CLI immediately
-                        if started_new {
-                            std::mem::forget(launcher);
-                        }
-                        std::process::exit(0);
+        match launcher.spawn_worker(
+            script,
+            &[],
+            async_enabled,
+            fast_enabled,
+            bundle_path.clone(),
+            Some(project_dir.to_path_buf()),
+            max_size,
+        ) {
+            Ok(worker) => {
+                if async_enabled && profile {
+                    eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
+                    if let Some(stdout) = worker.stdout_path() {
+                        eprintln!("📝 Logs (stdout): {}", stdout.display());
+                    }
+                    if let Some(stderr) = worker.stderr_path() {
+                        eprintln!("📝 Logs (stderr): {}", stderr.display());
                     }
 
-                    // Wait for worker to complete and get exit code
-                    let exit_code = worker.wait().unwrap_or(1);
-
-                    // Keep Zygote alive if we started it (daemon mode)
+                    // Keep Zygote alive but exit CLI immediately
                     if started_new {
                         std::mem::forget(launcher);
                     }
-
-                    // Exit with worker's exit code
-                    std::process::exit(exit_code);
+                    std::process::exit(0);
                 }
-                Err(e) => {
-                    let err_msg = e.to_string();
-                    let is_transient = err_msg.contains("Connection refused")
-                        || err_msg.contains("Broken pipe")
-                        || err_msg.contains("connection error")
-                        || err_msg.contains("failed to fill whole buffer");
 
-                    if is_transient && retries > 1 {
-                        retries -= 1;
-                        std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
-                        backoff_ms *= 2;
-                        continue;
+                // Wait for worker to complete and get exit code
+                let exit_code = worker.wait().unwrap_or(1);
+
+                // Keep Zygote alive if we started it (daemon mode)
+                if started_new {
+                    std::mem::forget(launcher);
+                }
+
+                // Exit with worker's exit code
+                std::process::exit(exit_code);
+            }
+
+            Err(e) => {
+                // Check if this is a stale socket (connection refused)
+                let is_stale = e.to_string().contains("Connection refused")
+                    || e.to_string().contains("Connection failed")
+                    || e.to_string().contains("Broken pipe");
+
+                if is_stale && !started_new {
+                    // Stale socket - remove and restart Zygote
+                    eprintln!("🔄 Stale socket detected, restarting Zygote...");
+                    zygote::ipc::cleanup_socket(&socket_path);
+
+                    if let Ok(()) = launcher.start(&[], None, false, config) {
+                        eprintln!("✅ Zygote ready");
+
+                        // Retry spawn
+                        let (bundle_path, max_size) = if fast_enabled {
+                            (
+                                find_bundle(project_dir, script_path),
+                                Some(config.max_bundle_size as u64),
+                            )
+                        } else {
+                            (None, None)
+                        };
+
+                        if let Ok(worker) = launcher.spawn_worker(
+                            script,
+                            &[],
+                            async_enabled,
+                            fast_enabled,
+                            bundle_path,
+                            Some(project_dir.to_path_buf()),
+                            max_size,
+                        ) {
+                            if async_enabled {
+                                eprintln!(
+                                    "⚡ Worker spawned in background (PID: {})",
+                                    worker.pid()
+                                );
+                                if let Some(stdout) = worker.stdout_path() {
+                                    eprintln!("📝 Logs (stdout): {}", stdout.display());
+                                }
+                                if let Some(stderr) = worker.stderr_path() {
+                                    eprintln!("📝 Logs (stderr): {}", stderr.display());
+                                }
+                                std::mem::forget(launcher);
+                                return Ok(Some(()));
+                            }
+
+                            eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                            let exit_code = worker.wait().unwrap_or(1);
+                            std::mem::forget(launcher);
+                            std::process::exit(exit_code);
+                        }
                     }
 
                     // Final fallback
@@ -353,7 +394,7 @@ fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
 fn find_bundle(project_dir: &Path, script_path: &str) -> Option<PathBuf> {
     let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
     let possible_bundles = [
-        project_dir.join(".velo/cache/bundle.veloc"),
+        VeloPaths::project_file(project_dir, VELO_CACHE_DIR).join("bundle.veloc"),
         project_dir.join("bundle.veloc"),
         script_dir.join("bundle.veloc"),
     ];
@@ -370,6 +411,7 @@ fn run_with_fast_loader(
     project_dir: &Path,
     pythonpath: Option<String>,
     max_bundle_size: Option<u64>,
+    config: &VeloConfig,
 ) -> Result<()> {
     use std::io::Write;
 
@@ -381,7 +423,7 @@ fn run_with_fast_loader(
                 eprintln!("⚠️  No bundle found. Build one first:");
                 eprintln!("    python python/bundle_builder.py .");
                 eprintln!("   Falling back to normal mode...");
-                return runner::run_script(python_path, script_path, pythonpath);
+                return runner::run_script(python_path, script_path, pythonpath, config);
             }
         };
 
@@ -390,7 +432,7 @@ fn run_with_fast_loader(
         if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
             eprintln!("⚠️  Fast loader security check failed: {}", e);
             eprintln!("   Falling back to normal imports...");
-            return runner::run_script(python_path, script_path, pythonpath);
+            return runner::run_script(python_path, script_path, pythonpath, config);
         }
 
         eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
@@ -401,7 +443,7 @@ fn run_with_fast_loader(
         // Create a unique temporary directory for sitecustomize.py
         // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
         let temp_dir = tempfile::tempdir()?;
-        let site_file = temp_dir.path().join("sitecustomize.py");
+        let site_file = VeloPaths::site_customize(temp_dir.path());
 
         // Get absolute paths
 
@@ -432,7 +474,7 @@ fn run_with_fast_loader(
 
         let velo_loader_path = possible_paths
             .iter()
-            .find(|p: &&PathBuf| p.join("velo_loader.py").exists())
+            .find(|p| VeloPaths::project_file(p, VELO_LOADER).exists())
             .cloned()
             .unwrap_or_else(|| possible_paths[0].clone());
 
@@ -476,7 +518,7 @@ except Exception as e:
 
         // Run script with enhanced PYTHONPATH
         // Cleanup: temp_dir will be automatically deleted when goes out of scope
-        runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+        runner::run_script(python_path, script_path, Some(enhanced_pythonpath), config)
     })();
 
     // Always report metrics, even on error
@@ -565,7 +607,7 @@ mod tests {
         let project_root = temp.path();
 
         // Create pyproject.toml in temp dir
-        File::create(project_root.join("pyproject.toml"))?;
+        File::create(VeloPaths::pyproject(project_root))?;
 
         // Scenario: Script is "main.py" and we are in the same directory
         let script_path = Path::new("main.py");
@@ -580,7 +622,7 @@ mod tests {
         };
 
         // Verify we can find pyproject.toml using this path
-        let found = project_root.join(p).join("pyproject.toml").exists();
+        let found = VeloPaths::pyproject(&project_root.join(p)).exists();
         assert!(
             found,
             "Should find pyproject.toml even with empty parent path"

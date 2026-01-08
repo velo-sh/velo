@@ -41,4 +41,8 @@ markers = [
     "release_blocker: Critical release blocker tests (MANDATORY)",
     "expert_review: Tests covering specific expert panel concerns",
     "integration: Tier 2 integration-level tests",
+    "regression: Phase 6.2 regression probes",
+    "tier4: Heavy chaos/stress tests",
+    "heavy: Resource-intensive tests",
+    "timeout: Tests with custom timeout requirements",
 ]

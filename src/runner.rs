@@ -10,7 +10,12 @@ use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use crate::profile;
 
 /// Run a Python script.
-pub fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) -> Result<()> {
+pub fn run_script(
+    python: &Path,
+    script_path: &str,
+    pythonpath: Option<String>,
+    config: &crate::config::VeloConfig,
+) -> Result<()> {
     let res = (|| -> Result<()> {
         let path = Path::new(script_path);
         if !path.exists() {
@@ -33,7 +38,7 @@ pub fn run_script(python: &Path, script_path: &str, pythonpath: Option<String>) 
         let mut cmd = Command::new(python);
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
-        let shield = EnvironmentShield::new();
+        let shield = EnvironmentShield::new(config);
         shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
 
         // Build final PYTHONPATH
@@ -65,6 +70,7 @@ pub fn run_script_with_profile(
     python: &Path,
     script_path: &str,
     pythonpath: Option<String>,
+    config: &crate::config::VeloConfig,
 ) -> Result<()> {
     use std::fs;
     use std::io::Write;
@@ -109,7 +115,7 @@ pub fn run_script_with_profile(
         let mut cmd = Command::new(python);
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
-        let shield = EnvironmentShield::new();
+        let shield = EnvironmentShield::new(config);
         shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
 
         // Build final PYTHONPATH and profile output

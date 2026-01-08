@@ -124,10 +124,14 @@ def run_velo(
         args: Command arguments (without 'velo' itself)
         cwd: Working directory
         env: Environment variables (merged with os.environ)
-        timeout: Maximum execution time in seconds
+        timeout: Maximum execution time in seconds (auto-scaled for CI)
     
     Returns:
         VeloTestResult with execution details
+        
+    Note:
+        Timeout is automatically scaled by VELO_TIMEOUT_MULTIPLIER for CI.
+        Default multiplier is 1.0 (local) or 3.0 (CI/GitHub Actions).
     """
     if not VELO_BINARY.exists():
         raise FileNotFoundError(
@@ -135,10 +139,15 @@ def run_velo(
             f"Run 'cargo build --release' first."
         )
     
+    # Apply CI timeout multiplier
+    multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+    scaled_timeout = timeout * multiplier
+    
     cmd = [str(VELO_BINARY)] + args
     full_env = os.environ.copy()
     if env:
         full_env.update(env)
+
     
     start = time.perf_counter()
     try:
@@ -147,7 +156,7 @@ def run_velo(
             cwd=cwd,
             env=full_env,
             capture_output=True,
-            timeout=timeout
+            timeout=scaled_timeout
         )
         duration_ms = (time.perf_counter() - start) * 1000
         
@@ -171,10 +180,11 @@ def run_velo(
         return VeloTestResult(
             returncode=-1,
             stdout="",
-            stderr=f"TIMEOUT after {timeout}s",
+            stderr=f"TIMEOUT after {scaled_timeout}s (base={timeout}s, multiplier={multiplier})",
             duration_ms=duration_ms,
             command=cmd
         )
+
 
 
 def assert_velo_fails_gracefully(result: VeloTestResult, expected_in_stderr: str = "") -> None:

@@ -2,6 +2,7 @@
 //!
 //! Uses clap for argument parsing with derive macros.
 
+use crate::common::paths::VeloPaths;
 use anyhow::Result;
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,6 @@ use std::path::{Path, PathBuf};
 use crate::python;
 use crate::serve;
 use crate::serve::config::{LogFormat, ServeArgs};
-use colored::Colorize;
 
 /// Custom parser for workers argument with clear error messages
 fn parse_workers(s: &str) -> Result<u32, String> {
@@ -65,7 +65,7 @@ pub struct ServeCmd {
     pub workers: u32,
 
     /// Graceful shutdown timeout in seconds
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = 20)]
     pub timeout: u64,
 
     /// Health check endpoint (e.g., 0.0.0.0:8081)
@@ -220,6 +220,7 @@ fn discover_app(python_path: &Path, project_dir: &Path) -> Result<String> {
     Ok(format!("{}:{}", apps[0].module, apps[0].app))
 }
 
+#[allow(dead_code)]
 fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<String> {
     let script_path = find_python_helper(project_dir, "detect_app.py")?;
     let output = std::process::Command::new(python_path)
@@ -271,25 +272,28 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
             Err(e) => return Err(e),
         }
     } else {
-        // If app is provided, check if it matches candidates, if not suggest
-        if let Some(suggestion) = cmd
-            .app
-            .as_ref()
-            .and_then(|app_str| suggest_app(app_str, &python_path, &project_dir))
-        {
-            eprintln!(
-                "   {} a similar app exists: {}",
-                "tip:".yellow(),
-                suggestion.cyan()
-            );
-        }
+        // PERF-FIX: Do not run suggest_app on every startup!
+        // It spawns a python process (~100ms overhead) just to check for typos.
+        // This defeats the purpose of Kinetic Protocol.
+        // Future improvement: Move this to error handling path if server fails.
     }
 
     // Convert to ServeArgs
     let serve_args = cmd.to_serve_args()?;
 
-    // Run the server
-    serve::run_server(&serve_args, &python_path, &project_dir)?;
+    // Load config (Phase 6 security)
+    let config =
+        crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
+
+    // Run the server with reload loop (RFC-0010)
+    while let serve::runner::ServerExit::Reload =
+        serve::run_server(&serve_args, &python_path, &project_dir, &config)?
+    {
+        // Determine restart behavior
+        // On reload, we loop and call run_server again.
+        // run_server will spawn a fresh uvicorn/zygote.
+        eprintln!("🔄 Restarting server...");
+    }
 
     Ok(())
 }

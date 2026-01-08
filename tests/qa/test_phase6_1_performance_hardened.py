@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import pytest
 import subprocess
@@ -33,20 +34,20 @@ class TestPhase61PerformanceHardened:
             "app = FastAPI()"
         )
         env.create_app("main.py", code)
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            bufsize=1
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--port", str(port),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1
         )
         
         try:
             # Wait for startup
-            print("Waiting for startup...")
-            for _ in range(50):
+            for _ in range(100):
                 line = proc.stdout.readline()
                 if "Started server process" in line:
+                    break
+                if not line and proc.poll() is not None:
                     break
             
             latencies = []
@@ -54,13 +55,16 @@ class TestPhase61PerformanceHardened:
             for i in range(5):
                 print(f"Iteration {i}: Touching main.py")
                 # Trigger reload
+                trigger_time = time.time()
                 (env.path / "main.py").touch()
                 
                 reload_start = None
                 while True:
                     line = proc.stdout.readline()
                     if not line and proc.poll() is not None:
-                        raise RuntimeError(f"Velo exited during reload: {proc.returncode}")
+                         # Capture remaining output
+                         stdout_rem, stderr_rem = proc.communicate()
+                         raise RuntimeError(f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}")
                     if "Changes detected, restarting server..." in line:
                         reload_start = time.time()
                         print(f"Reload detected at {reload_start}")
@@ -96,9 +100,10 @@ class TestPhase61PerformanceHardened:
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
         port = get_free_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--port", str(port)],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        port = env.next_port()
+        proc = env.spawn_velo(
+            "serve", "main:app", "--port", str(port),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         
         time.sleep(3)
@@ -151,6 +156,7 @@ class TestPhase61PerformanceHardened:
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
         port = get_free_port()
         
+        port = env.next_port()
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
             cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE
