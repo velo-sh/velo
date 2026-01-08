@@ -95,7 +95,7 @@ print("Hello from test")
             
             # Should succeed
             assert result.returncode == 0
-            assert "Analyzing imports" in result.stderr
+            assert "analyzing imports" in result.stderr.lower()
             assert "Import Analysis" in result.stdout
 
     def test_analyze_respects_config_threshold(self):
