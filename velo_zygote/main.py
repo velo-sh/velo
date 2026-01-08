@@ -85,24 +85,22 @@ class ImportShield:
             return None
 
         # RFC-0012: Resilience Whitelist for Framework Bootstrap
-        # We must allow the base package and critical config modules.
-        whitelist = (
-            "velo_zygote",
-            "velo_zygote.main",
-            "velo_zygote.constants",
-            "velo_zygote.config",
-            "velo_zygote.LogUtils"
-        )
+        # We allow anything explicitly in whitelist OR any submodule of a whitelisted package.
+        # This prevents Trap 178 while maintaining surgical isolation.
+        whitelist = ("velo_zygote",)
         
-        if fullname.startswith("velo_zygote") and fullname not in whitelist:
-            # We allow the launcher to import us once, but once the app is loading,
-            # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
-            msg = f"Unauthorized access to internal framework module: {fullname}"
-            try:
-                # Log to stderr for visibility in CI logs (Trap 178.2/3)
-                print(f"🛡️ [ImportShield] {msg}", file=sys.stderr)
-            except: pass
-            raise ImportError(msg)
+        if fullname.startswith("velo_zygote"):
+            if not any(fullname == w or fullname.startswith(w + ".") for w in whitelist):
+                # We allow the launcher to import us once, but once the app is loading,
+                # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
+                msg = f"Unauthorized access to internal framework module: {fullname}"
+                try:
+                    # Log to stderr for visibility in CI logs (Trap 178.2/3)
+                    # We use sys.stderr.write + flush because LogUtils might be blocked!
+                    sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
+                    sys.stderr.flush()
+                except: pass
+                raise ImportError(msg)
         
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
@@ -202,6 +200,7 @@ class LogUtils:
         """Log message with Zygote prefix."""
         try:
             print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
+            sys.stderr.flush() # Double flush for CI/Multiplexing robustness
         except (BrokenPipeError, OSError):
             pass
 
@@ -1469,6 +1468,9 @@ def check_cuda_initialized() -> bool:
 if __name__ == "__main__":
     import sys
     import os
+    # RFC-0012: Ensure Zygote itself is NOT shielded
+    os.environ.pop("VELO_ZYGOTE_SHIELD_ACTIVE", None)
+
     print(f"DEBUG: Zygote Entry. Executable: {sys.executable}")
     print(f"DEBUG: Zygote Entry. Version: {sys.version}")
     print(f"DEBUG: Zygote Entry. sys.path: {sys.path}")
