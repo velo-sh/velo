@@ -63,6 +63,8 @@ def main():
         import traceback
         try:
             log_path = VeloPaths.worker_log()
+            # Ensure log directory exists
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a") as f:
                 f.write(f"PID {os.getpid()}: CRASH: {e}\n")
                 f.write(traceback.format_exc())

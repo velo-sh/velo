@@ -757,7 +757,15 @@ class ZygoteServer:
                 if pid <= 0: break
                 
                 # Resolve exit code
-                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+                if os.WIFEXITED(status):
+                    exit_code = os.WEXITSTATUS(status)
+                    LogUtils.debug_log(f"info: Worker {pid} exited with code {exit_code}")
+                elif os.WIFSIGNALED(status):
+                    sig = os.WTERMSIG(status)
+                    LogUtils.debug_log(f"info: Worker {pid} killed by signal {sig}")
+                    exit_code = 128 + sig
+                else:
+                    exit_code = 1
                 
                 # Update registry
                 self.worker_registry.remove(pid)

@@ -104,12 +104,18 @@ class ZygoteTestHelper:
     
     def _recv_exact(self, sock, n):
         data = b''
-        while len(data) < n:
-            chunk = sock.recv(n - len(data))
-            if not chunk:
-                raise EOFError("Socket closed")
-            data += chunk
-        return data
+        sock.settimeout(5.0)  # Defensive timeout (RFC-0010 security)
+        try:
+            while len(data) < n:
+                chunk = sock.recv(n - len(data))
+                if not chunk:
+                    raise EOFError("Socket closed")
+                data += chunk
+            return data
+        except socket.timeout:
+            raise RuntimeError(f"Socket timeout waiting for {n} bytes")
+        finally:
+            sock.settimeout(None)
 
     def _pack(self, msg):
         try:
