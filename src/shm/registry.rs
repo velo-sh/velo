@@ -332,26 +332,34 @@ impl MemoryRegistry {
 
         // H-20: Optimistic HugePages Attempt (MFD_HUGETLB)
         // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
-        // or if the size is not hugepage-aligned (EINVAL), we fallback to standard pages.
+        // we fallback to standard pages.
         let mut fd = try_create(linux::MFD_HUGETLB);
         let mut is_huge = true;
 
         if fd >= 0 {
-            // Attempt to size the hugepage segment immediately.
-            // If this fails (e.g. size 68 bytes != 2MB aligned), we must fallback.
-            if unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
+            // H-20: Alignment Requirement (Verified Logic)
+            // Use the shared alignment helper to ensure we meet valid HugePage boundaries.
+            let aligned_size = alignment::align_to_huge_page(size);
+
+            // Attempt to size with the aligned size.
+            // If this fails even with aligned size, then HugePages are likely fundamentally broken
+            // (e.g. not mounted, insufficient pool, or quota exceeded).
+            if unsafe { libc::ftruncate(fd as RawFd, aligned_size as i64) } < 0 {
                 let err = std::io::Error::last_os_error();
                 unsafe { libc::close(fd as RawFd) };
                 fd = -1;
                 eprintln!(
-                    "⚠️ H-20 Warning: HugePages ftruncate failed ({}), falling back to standard 4KB pages.",
-                    err
+                    "⚠️ H-20 Warning: HugePages ftruncate failed ({} for aligned size {}), falling back to standard 4KB pages.",
+                    err, aligned_size
                 );
             }
         }
 
         if fd < 0 {
             // Fallback to standard 4KB pages
+            // This path is taken if:
+            // 1. MFD_HUGETLB failed (not supported/disabled)
+            // 2. ftruncate failed (quota exceeded, etc)
             fd = try_create(0);
             is_huge = false;
 

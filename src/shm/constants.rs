@@ -46,6 +46,9 @@ pub mod linux {
 /// Safety Limit: 1TB maximum generic SHM size to prevent DoS/Hangs (DEF-70-004).
 pub const MAX_SHM_SIZE: usize = 1024 * 1024 * 1024 * 1024;
 
+/// Standard HugePage size (2MB). Used for alignment (H-20).
+pub const HUGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
+
 /// Helper to check if a path is a valid safetensors source.
 pub fn is_valid_safetensors(path: &Path) -> bool {
     path.extension()
