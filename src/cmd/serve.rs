@@ -2,6 +2,7 @@
 //!
 //! Uses clap for argument parsing with derive macros.
 
+use crate::common::paths::VeloPaths;
 use anyhow::Result;
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -64,7 +65,7 @@ pub struct ServeCmd {
     pub workers: u32,
 
     /// Graceful shutdown timeout in seconds
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = 20)]
     pub timeout: u64,
 
     /// Health check endpoint (e.g., 0.0.0.0:8081)
@@ -280,18 +281,21 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Convert to ServeArgs
     let serve_args = cmd.to_serve_args()?;
 
-    // Run the server with reload loop if enabled
-    loop {
-        let result = serve::run_server(&serve_args, &python_path, &project_dir);
+    // Load config (Phase 6 security)
+    let config =
+        crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
 
-        // RFC-0012: If reload is disabled or we got an error, exit the loop
-        if !serve_args.reload || result.is_err() {
-            return result;
-        }
-
-        // Otherwise (it returned Ok(()) on reload), loop back to restart
-        // The logger in run_server already printed the restart message.
+    // Run the server with reload loop (RFC-0010)
+    while let serve::runner::ServerExit::Reload =
+        serve::run_server(&serve_args, &python_path, &project_dir, &config)?
+    {
+        // Determine restart behavior
+        // On reload, we loop and call run_server again.
+        // run_server will spawn a fresh uvicorn/zygote.
+        eprintln!("🔄 Restarting server...");
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

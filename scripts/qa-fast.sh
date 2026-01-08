@@ -19,7 +19,7 @@ case "$TIER" in
     echo "  Running: Smoke tests only (< 30s)"
     echo ""
     # Smoke tests - just CLI and binary checks, no server startup
-    uv run python -m pytest \
+    uv run pytest \
       "tests/qa/test_phase3_5_comprehensive.py::TestL0Smoke::test_l0_001_binary_exists" \
       "tests/qa/test_phase3_5_comprehensive.py::TestL0Smoke::test_l0_002_serve_in_help" \
       "tests/qa/test_phase3_5_comprehensive.py::TestL0Smoke::test_l0_003_uvicorn_dependency_message" \
@@ -31,7 +31,7 @@ case "$TIER" in
     echo "  Running: Fast tests - CLI only, no server (< 2min)"
     echo ""
     # Fast tests - security and error handling, no server startup
-    uv run python -m pytest \
+    uv run pytest \
       tests/qa/test_phase3_5_agent_c_security.py \
       tests/qa/test_phase3_5_hardening.py \
       "tests/qa/test_phase3_5_comprehensive.py::TestL2SadPath" \
@@ -42,14 +42,14 @@ case "$TIER" in
   2)
     echo "  Running: Standard tests - all except brutal (< 7min)"
     echo ""
-    uv run python -m pytest tests/qa/test_phase3_5_*.py \
+    uv run pytest tests/qa/test_phase3_5_*.py \
       --ignore=tests/qa/test_phase3_5_leader_brutal.py \
       --tb=short -q
     ;;
   3)
     echo "  Running: Heavy tests - brutal/chaos only"
     echo ""
-    uv run python -m pytest tests/qa/test_phase3_5_leader_brutal.py \
+    uv run pytest tests/qa/test_phase3_5_leader_brutal.py \
       --tb=short -v
     ;;
   *)

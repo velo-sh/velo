@@ -10,9 +10,10 @@ use rkyv::{Archive, Deserialize, Serialize, rancor::Error as RkyvError};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub use crate::common::paths::*;
 use crate::python_info::PythonVersion;
 
-const CACHE_FILE: &str = ".velo_cache/env.rkyv";
+const CACHE_FILE_NAME: &str = "env.rkyv";
 
 /// Cache format version. Bump when struct changes.
 pub const CACHE_VERSION: u32 = 2;
@@ -77,7 +78,7 @@ impl EnvCache {
 
     /// Compute fingerprint from uv.lock file using Keyed BLAKE3 (H-6).
     pub fn compute_fingerprint(project_dir: &Path) -> Option<String> {
-        let lock_file = project_dir.join("uv.lock");
+        let lock_file = VeloPaths::uv_lock(project_dir);
         if !lock_file.exists() {
             return None;
         }
@@ -91,7 +92,7 @@ impl EnvCache {
     /// Load cache from disk if fingerprint matches.
     /// Uses rkyv zero-copy deserialization for maximum speed.
     pub fn load(project_dir: &Path, current_fingerprint: &str) -> Option<Self> {
-        let cache_path = project_dir.join(CACHE_FILE);
+        let cache_path = VeloPaths::project_file(project_dir, VELO_CACHE_DIR).join(CACHE_FILE_NAME);
         let bytes = fs::read(&cache_path).ok()?;
 
         // Zero-copy access to archived data
@@ -108,7 +109,7 @@ impl EnvCache {
 
     /// Save cache to disk using rkyv binary format.
     pub fn save(&self, project_dir: &Path) -> Result<()> {
-        let cache_path = project_dir.join(CACHE_FILE);
+        let cache_path = VeloPaths::project_file(project_dir, VELO_CACHE_DIR).join(CACHE_FILE_NAME);
         let cache_dir = cache_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("Failed to determine cache directory parent"))?;
@@ -128,7 +129,7 @@ impl EnvCache {
     /// Get the cache directory path.
     #[allow(dead_code)]
     pub fn cache_dir(project_dir: &Path) -> PathBuf {
-        project_dir.join(".velo_cache")
+        VeloPaths::project_file(project_dir, VELO_CACHE_DIR)
     }
 
     /// Check if this cache is compatible with current Velo version.
@@ -269,7 +270,7 @@ mod tests {
     #[test]
     fn test_fingerprint_computation() {
         let dir = tempdir().unwrap();
-        let lock_file = dir.path().join("uv.lock");
+        let lock_file = VeloPaths::uv_lock(dir.path());
         fs::write(&lock_file, "test content").unwrap();
 
         let fingerprint = EnvCache::compute_fingerprint(dir.path());
