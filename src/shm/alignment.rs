@@ -38,6 +38,27 @@ pub fn calculate_padding(header_len: usize) -> Result<usize, AlignmentError> {
     }
 }
 
+/// Aligns a size up to the next HugePage (2MB) boundary.
+///
+/// H-20 Invariant: `ftruncate` on hugetlbfs requires size to be a multiple of the page size.
+///
+/// Algorithm:
+/// - If `size % HUGE_PAGE_SIZE == 0`: return `size`.
+/// - Otherwise: return `((size / HUGE_PAGE_SIZE) + 1) * HUGE_PAGE_SIZE`.
+#[inline]
+pub fn align_to_huge_page(size: usize) -> usize {
+    use crate::shm::constants::HUGE_PAGE_SIZE;
+    if size == 0 {
+        return 0;
+    }
+    let remainder = size % HUGE_PAGE_SIZE;
+    if remainder == 0 {
+        size
+    } else {
+        (size / HUGE_PAGE_SIZE + 1) * HUGE_PAGE_SIZE
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,5 +78,28 @@ mod tests {
 
         // Case 4: Overflow
         assert!(calculate_padding(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn test_huge_page_alignment() {
+        // H-20 Internal Logic Tests
+        use crate::shm::constants::HUGE_PAGE_SIZE;
+
+        // Case 1: Underflow (Small file) -> 2MB
+        assert_eq!(align_to_huge_page(68), HUGE_PAGE_SIZE);
+        assert_eq!(align_to_huge_page(1), HUGE_PAGE_SIZE);
+
+        // Case 2: Exact Match -> 2MB
+        assert_eq!(align_to_huge_page(HUGE_PAGE_SIZE), HUGE_PAGE_SIZE);
+
+        // Case 3: Overflow -> 4MB
+        assert_eq!(align_to_huge_page(HUGE_PAGE_SIZE + 1), HUGE_PAGE_SIZE * 2);
+
+        // Case 4: Zero -> 0 (or 2MB? - Implementation choice, typically we want at least one page if non-zero)
+        // Our implementation: if input is 0, (0 / 2M) * 2M = 0?
+        // Logic: ((size / H) + 1) * H would represent "next boundary".
+        // If size % H == 0, returns size. So 0 returns 0.
+        // If the file is empty, we probably shouldn't allocate hugepages or minimal 2MB.
+        assert_eq!(align_to_huge_page(0), 0);
     }
 }
