@@ -3,8 +3,10 @@ mod tests {
     use crate::shm::alignment;
     use crate::shm::constants::*;
     use crate::shm::registry::MemoryRegistry;
-    use std::io::Write;
+    use std::io::{Seek, SeekFrom, Write};
     use tempfile::NamedTempFile;
+
+    const EXPECTED_HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
 
     /// TITANIUM: Verify H-29 Padding Calculation Logic
     #[test]
@@ -66,6 +68,119 @@ mod tests {
             use crate::shm::constants::linux::*;
             assert_eq!(MPOL_BIND, 2);
             assert_eq!(MPOL_MF_STRICT, 1);
+        }
+    }
+
+    /// QA HOSTILE: Scheme B (Alignment) Verification
+    /// "Try hard to break dev code"
+    #[test]
+    fn test_qa_alignment_scheme_b_integration() {
+        // Case 2.1: HugePages Enabled (Simulated by verifying file size alignment)
+        // We create a tiny file. If Scheme B is working, the backing SHM must be 2MB.
+        // Input: 18 bytes (header) + 0 body.
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        let header_len: u64 = 10;
+        tmp.write_all(&header_len.to_le_bytes()).unwrap(); // 8 bytes
+        tmp.write_all(&[0u8; 10]).unwrap(); // 10 bytes content
+        tmp.flush().unwrap();
+
+        let registry = MemoryRegistry::new(); // Defaults to strict_numa=false in tests usually unless env set
+
+        let shm_file = registry
+            .create_segment("qa_test_alignment_underflow", tmp.path())
+            .unwrap();
+        let metadata = shm_file.metadata().unwrap();
+        let size = metadata.len();
+
+        // CRITICAL CHECK: Must be 2MB (HUGE_PAGE_SIZE), not 64 bytes or 1 page.
+        // If the dev code falls back to Scheme A (Standard Pages) or doesn't align, this fails.
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                size, EXPECTED_HUGE_PAGE_SIZE,
+                "QA FAILURE: SHM size should be aligned to 2MB (HugePage) to prevent EINVAL fallback, got {} bytes",
+                size
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            println!(
+                "ℹ️ QA INFO: HugePage alignment skipped on non-Linux platform (Got {}, Expected 2MB on Linux)",
+                size
+            );
+        }
+
+        // Case 1.3: Overflow (溢出一点点)
+        // We need a source that results in logically 2MB + 1 byte.
+        // HugePage = 2,097,152.
+        // We want raw_size = 2,097,153.
+        // Let's make a file of size 2,097,153 (assuming aligned header for simplicity).
+        // Header 56 bytes -> padding 0.
+        // Total = File Size.
+
+        let mut tmp_overflow = NamedTempFile::new().unwrap();
+        let file_size = EXPECTED_HUGE_PAGE_SIZE + 1;
+        // Efficiently create large file
+        tmp_overflow.as_file().set_len(file_size).unwrap();
+
+        // Write a valid header at start
+        tmp_overflow.seek(SeekFrom::Start(0)).unwrap();
+        let header_len_56: u64 = 56 - 8; // 48
+        tmp_overflow
+            .write_all(&header_len_56.to_le_bytes())
+            .unwrap();
+        // We don't need to write all data, validate_source just checks size and header.
+        tmp_overflow.flush().unwrap();
+
+        let shm_file_overflow = registry
+            .create_segment("qa_test_alignment_overflow", tmp_overflow.path())
+            .unwrap();
+        let size_overflow = shm_file_overflow.metadata().unwrap().len();
+
+        // Expect 4MB
+        let _expected_size = EXPECTED_HUGE_PAGE_SIZE * 2;
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                size_overflow, _expected_size,
+                "QA FAILURE: Just over 2MB should align to 4MB, got {} bytes",
+                size_overflow
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            println!(
+                "ℹ️ QA INFO: Overflow alignment skipped on non-Linux platform (Got {}, Expected 4MB on Linux)",
+                size_overflow
+            );
+        }
+    }
+
+    /// QA HOSTILE: Boundary & Negative Testing
+    #[test]
+    fn test_qa_boundary_limits() {
+        // Case 3.2: Max Size Logic Check
+        // We can't actually allocate 1TB or usize::MAX in a unit test easily without OOM,
+        // but we can check the Registry error response for "Safety Limit".
+
+        let tmp_limit = NamedTempFile::new().unwrap();
+        // Fake a file size > MAX_SHM_SIZE (1TB)
+        // Note: set_len is sparse, so this is fast and doesn't verify disk space usually.
+        let huge_size = crate::shm::constants::MAX_SHM_SIZE as u64 + 1;
+
+        // We use a safe wrapper to avoid actual checking if OS fails set_len on massive sizes
+        if tmp_limit.as_file().set_len(huge_size).is_ok() {
+            let registry = MemoryRegistry::new();
+            let res = registry.create_segment("qa_test_limit", tmp_limit.path());
+
+            assert!(res.is_err());
+            // Must fail with InvalidSourceFile (Safety limit)
+            assert!(
+                res.unwrap_err()
+                    .to_string()
+                    .contains("exceeds safety limit")
+            );
         }
     }
 }
