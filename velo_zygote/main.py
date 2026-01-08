@@ -1010,6 +1010,9 @@ class ZygoteServer:
         self.preload_state: str = "STARTING"  # STARTING → LOADING → READY
         self.preload_complete = asyncio.Event()  # Signaled when preload finishes
         self.fork_queue: asyncio.Queue = asyncio.Queue()  # Queue for Fork requests during LOADING
+        
+        # [DEF-62-004] Sync fork management
+        self.pending_forks: Dict[int, asyncio.Future] = {}
 
     async def start(self):
         """Start the Zygote server using asyncio with Shadow Preloading.
@@ -1065,9 +1068,50 @@ class ZygoteServer:
         try:
             client_sock, _ = self.server_sock.accept()
             client_sock.setblocking(False)
+            
+            # [DEF-62-001] Peer Identity Verification (SO_PEERCRED / LOCAL_PEERCRED)
+            if not self._verify_peer(client_sock):
+                LogUtils.log("🚨 Security: Unauthorized connection attempt (UID mismatch). Dropping.")
+                client_sock.close()
+                return
+                
             asyncio.create_task(self._handle_client_socket(client_sock))
         except Exception as e:
             LogUtils.debug_log(f"Accept Error: {e}")
+
+    def _verify_peer(self, sock: socket.socket) -> bool:
+        """Verify that the connecting peer has the same UID as the Zygote.
+        
+        Implements Cross-Account Isolation (RFC-0012 §3.1).
+        """
+        try:
+            my_uid = os.getuid()
+            
+            if sys.platform == "linux":
+                # Option A: Linux SO_PEERCRED (struct ucred)
+                # struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+                SO_PEERCRED = 17 
+                creds = sock.getsockopt(socket.SOL_SOCKET, SO_PEERCRED, struct.calcsize('3i'))
+                _, peer_uid, _ = struct.unpack('3i', creds)
+                return peer_uid == my_uid
+            
+            elif sys.platform == "darwin":
+                # Option B: macOS LOCAL_PEERCRED (struct xucred)
+                # struct xucred { u_int cr_version; uid_t cr_uid; ... }
+                SOL_LOCAL = 0
+                LOCAL_PEERCRED = 0x001
+                # xucred is larger, but we only need the second field (uid_t)
+                creds = sock.getsockopt(SOL_LOCAL, LOCAL_PEERCRED, 128)
+                # xucred starts with version (u_int=I), then uid (uid_t=I) at offset 4
+                _, peer_uid = struct.unpack('II', creds[:8])
+                return peer_uid == my_uid
+            
+            # Fallback for other platforms: allow for now but log warning
+            LogUtils.log(f"Warning: Peer verification not implemented for {sys.platform}")
+            return True
+        except Exception as e:
+            LogUtils.debug_log(f"Peer Verification Error: {e}")
+            return False
 
     async def _handle_client_socket(self, sock: socket.socket):
         LogUtils.debug_log(f"Handling new client connection (FD: {sock.fileno()})")
@@ -1155,6 +1199,15 @@ class ZygoteServer:
     async def _async_reap(self):
         """Async-safe zombie reaping."""
         self.worker_registry.reap_stale()
+        
+        # Signal stale pending forks
+        if hasattr(self, 'pending_forks'):
+            for pid, fut in list(self.pending_forks.items()):
+                if not self.worker_registry.is_alive(pid):
+                    if not fut.done():
+                        fut.set_result(0xDEAD)
+                    self.pending_forks.pop(pid, None)
+
         while True:
             try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
@@ -1172,6 +1225,12 @@ class ZygoteServer:
                 
                 # Update registry
                 self.worker_registry.remove(pid)
+                
+                # Resolve any pending sync fork [DEF-62-004]
+                if hasattr(self, 'pending_forks') and pid in self.pending_forks:
+                    fut = self.pending_forks.pop(pid)
+                    if not fut.done():
+                        fut.set_result(exit_code)
             except ChildProcessError: break
             except: break
 
@@ -1276,14 +1335,21 @@ async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
     if cmd.get("async_mode"):
         return {"type": "Forked", "worker_pid": worker_pid, "exit_code": None}
     else:
-        # Sync mode: Wait for exit
+        # Sync mode: Non-blocking wait using asyncio.Future [DEF-62-004]
         try:
-            pid, status = os.waitpid(worker_pid, 0)
-            exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
-            server.worker_registry.remove(worker_pid)
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            server.pending_forks[worker_pid] = future
+            
+            # Use wait_for to prevent infinite hang if reaper fails (30s budget)
+            exit_code = await asyncio.wait_for(future, timeout=30.0)
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
-        except ChildProcessError:
-            return {"type": "Forked", "worker_pid": worker_pid, "exit_code": 0}
+        except asyncio.TimeoutError:
+            server.pending_forks.pop(worker_pid, None)
+            return {"type": "Error", "message": "Fork wait timeout (30s exceeded)"}
+        except Exception as e:
+            server.pending_forks.pop(worker_pid, None)
+            return {"type": "Error", "message": f"Fork wait failure: {e}"}
 
 @router.handler("WaitWorker")
 async def handle_wait_worker(server: ZygoteServer, cmd: Dict) -> Dict:
