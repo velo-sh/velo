@@ -3,6 +3,7 @@ import os
 import sys
 import uvicorn
 import signal
+import traceback
 
 def main():
     try:
@@ -51,20 +52,38 @@ def main():
             run_kwargs["host"] = args.host
         if args.port:
             run_kwargs["port"] = args.port
+        
         if getattr(args, "proxy_headers", False):
+            # SEC-P0-004: Unsafe proxy headers bypass protection
+            # require explicit trust via environment or non-wildcard IPs
+            trusted = os.environ.get("VELO_TRUSTED_PROXY") == "1"
+            allowed_ips = os.environ.get("VELO_FORWARDED_ALLOW_IPS", "")
+            
+            if not (trusted or allowed_ips):
+                print("FATAL: --proxy-headers requires VELO_TRUSTED_PROXY=1 or VELO_FORWARDED_ALLOW_IPS list.", file=sys.stderr)
+                sys.exit(1)
+            
             run_kwargs["proxy_headers"] = True
-            run_kwargs["forwarded_allow_ips"] = "*"
+            run_kwargs["forwarded_allow_ips"] = allowed_ips if allowed_ips else "*"
             
         # 6. Execution
         uvicorn.run(**run_kwargs)
+        
     except Exception as e:
         # Emergency logging for startup failures
+        log_path = f"/tmp/worker_error_{os.getpid()}.log"
         try:
-            with open(f"/tmp/worker_error_{os.getpid()}.log", "w") as f:
+            # SEC-P0-005: Use secure permissions (0600) for emergency logs
+            fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as f:
                 f.write(f"FATAL: {e}\n")
-                import traceback
                 traceback.print_exc(file=f)
-        except: pass
+        except Exception as log_exc:
+            # Fallback to stderr if file logging fails
+            print(f"FAILED TO WRITE EMERGENCY LOG: {log_exc}", file=sys.stderr)
+            print(f"ORIGINAL ERROR: {e}", file=sys.stderr)
+            traceback.print_exc()
+            
         sys.exit(1)
 
 if __name__ == "__main__":
