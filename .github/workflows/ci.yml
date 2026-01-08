@@ -356,6 +356,7 @@ jobs:
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [qa-serve-standard, changes]
     # Only run on main branch - heavy tests are optional
     if: |
