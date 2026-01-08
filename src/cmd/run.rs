@@ -78,10 +78,11 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 /// Internal implementation of script running
 #[allow(clippy::collapsible_if)]
 fn run_script_impl(cmd: &RunCmd) -> Result<()> {
+    let _total_start = std::time::Instant::now();
     let script_path = Path::new(&cmd.script);
     let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
-    // Determine project directory by looking for pyproject.toml
+    // 1. Project discovery
     if let Some(parent) = script_path.parent() {
         let p = if parent.as_os_str().is_empty() {
             Path::new(".")
@@ -97,15 +98,31 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             }
         }
     }
+    let _discovery_time = _total_start.elapsed();
 
+    // 2. Load config
+    let _config_start = std::time::Instant::now();
     // Load config from discovered project root (with Env Var overrides)
     let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
+    let _config_time = _config_start.elapsed();
 
-    // Detect user's Python
+    // 3. Detect Python
+    let _python_start = std::time::Instant::now();
     let python_path = python::detect_python(&project_dir)?;
+    let _python_time = _python_start.elapsed();
 
-    // Zygote mode: use pre-warmed process
+    if cmd.profile {
+        eprintln!(
+            "[VELO] Discovery: {:.1}ms, Config: {:.1}ms, Python Detect: {:.1}ms",
+            _discovery_time.as_secs_f64() * 1000.0,
+            _config_time.as_secs_f64() * 1000.0,
+            _python_time.as_secs_f64() * 1000.0
+        );
+    }
+
+    // 4. Zygote/Fast/Normal run
     if cmd.zygote_enabled() {
+        let _zygote_start = std::time::Instant::now();
         // Create SHM segment if requested
         let shm_file = if let Some(ref shm_path) = cmd.shm {
             let registry = MemoryRegistry::new();
@@ -114,7 +131,6 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         } else {
             None
         };
-
         if let Some(()) = try_zygote_run(
             &python_path,
             &cmd.script,
@@ -122,11 +138,18 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             cmd.fast,
             &project_dir,
             &config,
+            cmd.profile,
             shm_file.as_ref(),
         )? {
+            if cmd.profile {
+                eprintln!(
+                    "[VELO] Zygote Total: {:.1}ms, Total E2E: {:.1}ms",
+                    _zygote_start.elapsed().as_secs_f64() * 1000.0,
+                    _total_start.elapsed().as_secs_f64() * 1000.0
+                );
+            }
             return Ok(());
         }
-        // Fallback to normal mode if Zygote fails
     }
 
     // Normal mode (or fallback)
@@ -158,6 +181,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
 /// Try to run via Zygote, returns Some(()) on success, None on failure
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn try_zygote_run(
     python_path: &Path,
     script_path: &str,
@@ -165,6 +189,7 @@ fn try_zygote_run(
     fast_enabled: bool,
     project_dir: &Path,
     config: &VeloConfig,
+    profile: bool,
     shm_file: Option<&std::fs::File>,
 ) -> Result<Option<()>> {
     use crate::zygote;
@@ -188,10 +213,12 @@ fn try_zygote_run(
         let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new(".")));
         let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
-        if preload.is_empty() {
-            eprintln!("🚀 Starting Zygote...");
-        } else {
-            eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
+        if profile {
+            if preload.is_empty() {
+                eprintln!("🚀 Starting Zygote...");
+            } else {
+                eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
+            }
         }
 
         if let Err(e) = launcher.start(&preload, None, false, &config) {
@@ -199,7 +226,9 @@ fn try_zygote_run(
             eprintln!("   Falling back to normal mode");
             return Ok(None);
         }
-        eprintln!("✅ Zygote ready");
+        if profile {
+            eprintln!("✅ Zygote ready");
+        }
         true
     } else {
         false
@@ -221,13 +250,13 @@ fn try_zygote_run(
             &[],
             async_enabled,
             fast_enabled,
-            bundle_path,
+            bundle_path.clone(),
             Some(project_dir.to_path_buf()),
             max_size,
             shm_file,
         ) {
             Ok(worker) => {
-                if async_enabled {
+                if async_enabled && profile {
                     eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
                     if let Some(stdout) = worker.stdout_path() {
                         eprintln!("📝 Logs (stdout): {}", stdout.display());
@@ -251,13 +280,15 @@ fn try_zygote_run(
                     std::mem::forget(launcher);
                 }
 
-                // Exit with worker's exit code (DEF-P3-013/014)
+                // Exit with worker's exit code
                 std::process::exit(exit_code);
             }
+
             Err(e) => {
                 // Check if this is a stale socket (connection refused)
                 let is_stale = e.to_string().contains("Connection refused")
-                    || e.to_string().contains("Connection failed");
+                    || e.to_string().contains("Connection failed")
+                    || e.to_string().contains("Broken pipe");
 
                 if is_stale && !started_new {
                     // Stale socket - remove and restart Zygote
@@ -308,10 +339,11 @@ fn try_zygote_run(
                             std::process::exit(exit_code);
                         }
                     }
-                }
 
-                eprintln!("⚠️ Zygote spawn failed: {}", e);
-                eprintln!("   Falling back to normal mode");
+                    // Final fallback
+                    eprintln!("⚠️ Zygote spawn failed: {}", e);
+                    return Ok(None);
+                }
             }
         }
     }

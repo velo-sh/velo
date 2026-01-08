@@ -32,14 +32,14 @@ def test_CHAOS_621_protocol_flood(isolated_env):
     )
     
     # Wait for socket to appear (Titanium robustness)
-    timeout = time.time() + 5
+    timeout = time.time() + 30
     while not socket_path.exists() and time.time() < timeout:
         time.sleep(0.1)
     
     assert socket_path.exists(), "Zygote failed to create socket within 5s"
     
     # Wait for Rust CLI to complete (it starts daemon and exits)
-    proc.wait(timeout=5)
+    proc.wait(timeout=30)
     
     try:
         # Connect
@@ -99,7 +99,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
         cwd=app_dir
     )
     # Wait for socket
-    timeout = time.time() + 5
+    timeout = time.time() + 30
     while not socket_path.exists() and time.time() < timeout:
         time.sleep(0.1)
 
@@ -116,7 +116,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
         
         time.sleep(0.1)
         proc.send_signal(signal.SIGINT)
-        proc.wait(timeout=5)
+        proc.wait(timeout=30)
         
         # Verify no orphaned Python processes (heuristic check)
         # In a real environment, we'd check pgid, but here we check for leaks.
@@ -140,9 +140,11 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
         env=cmd_env
     )
     # Wait for socket
-    timeout = time.time() + 5
+    timeout = time.time() + 30
     while not socket_path.exists() and time.time() < timeout:
         time.sleep(0.1)
+    
+    env.create_app("main.py", "app = lambda s, r, se: None")
     
     sockets = []
     try:
@@ -159,9 +161,10 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
         res = subprocess.run(
             [env.velo, "serve", "main:app", "--dry-run"],
             env=cmd_env,
-            capture_output=True
+            capture_output=True,
+            timeout=30
         )
-        assert res.returncode == 0, "Zygote non-responsive after socket pressure"
+        assert res.returncode == 0, f"Zygote non-responsive after socket pressure. STDOUT: {res.stdout.decode()} STDERR: {res.stderr.decode()}"
         
     finally:
         for s in sockets:

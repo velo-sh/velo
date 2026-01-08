@@ -64,7 +64,7 @@ pub fn cmd_info() -> Result<()> {
     } else {
         use crate::zygote::ipc::ZygoteResponse;
         match crate::zygote::get_status() {
-            Ok(ZygoteResponse::Status { pid, preload }) => {
+            Ok(ZygoteResponse::Status { pid, preload, .. }) => {
                 println!("├─ PID:     {}", pid);
                 if preload.is_empty() {
                     println!("└─ Preload: None");

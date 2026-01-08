@@ -4,9 +4,37 @@ import pytest
 import sys
 import os
 from pathlib import Path
+from typing import Any
+
+
 
 # Add tests/qa to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+
+# =============================================================================
+# MIDDLEWARE HELPERS
+# =============================================================================
+
+UDS_PROXY_MIDDLEWARE_CODE = """
+class UDSProxyMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+            headers = dict(scope.get("headers", []))
+            try:
+                # Try to restore client from X-Forwarded-For
+                forwarded = headers.get(b"x-forwarded-for")
+                if forwarded:
+                    # simple parse: take the first IP
+                    ip = forwarded.decode("latin1").split(",")[0].strip()
+                    # mock port 0 as we don't know the real source port
+                    scope["client"] = (ip, 0)
+            except (UnicodeDecodeError, AttributeError, IndexError, ValueError):
+                pass
+        await self.app(scope, receive, send)
+"""
 
 
 # =============================================================================
@@ -201,22 +229,31 @@ class VeloTestEnv:
             
         # The Hermetic Environment Dictionary
         self.env = os.environ.copy()
+        
+        # Ensure VIRTUAL_ENV is set correctly even if not in os.environ (fallback to sys.prefix)
+        # This is critical for 'velo' to detect the project-local python/deps
+        current_venv = os.environ.get("VIRTUAL_ENV") or sys.prefix
+        
         self.env.update({
             "TMPDIR": str(self.tmp),
             "TEMP": str(self.tmp),
             "HOME": str(self.home),
             "XDG_RUNTIME_DIR": str(self.xdg),
+            "VIRTUAL_ENV": current_venv,
+            # Ensure bin/ is in PATH for 'which python' checks
+            "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
             # Force Velo to use our isolated socket path logic
             "VELO_ZYGOTE_SOCKET": "", 
             "VELO_BACKOFF_SECS": "0",
-            "VELO_TEST_MODE": "1"
+            "VELO_TEST_MODE": "1",
+            "PYTHONUNBUFFERED": "1"
         })
 
         # Backward compatibility
         self.path = self.root
 
     def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
-        """Run Velo binary in the hermetic environment."""
+        """Run Velo binary in the hermetic environment (blocking)."""
         # Merge env
         env = self.env.copy()
         if "env" in kwargs:
@@ -231,6 +268,23 @@ class VeloTestEnv:
             capture_output=kwargs.pop("capture_output", True),
             text=kwargs.pop("text", True),
             timeout=timeout,
+            **kwargs
+        )
+
+    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
+        """Spawn Velo binary in the hermetic environment (non-blocking)."""
+        env = self.env.copy()
+        if "env" in kwargs:
+            env.update(kwargs.pop("env"))
+            
+        # Set text=True by default unless explicitly overridden
+        if "text" not in kwargs:
+            kwargs["text"] = True
+            
+        return subprocess.Popen(
+            [self.velo, *args],
+            env=env,
+            cwd=kwargs.pop("cwd", self.root),
             **kwargs
         )
         

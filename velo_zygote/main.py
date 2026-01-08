@@ -20,6 +20,8 @@ import asyncio
 import os
 import sys
 
+
+
 import signal
 import socket
 import struct
@@ -31,6 +33,7 @@ import importlib.abc
 import importlib.util
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
+import secrets
 
 # ============================================================================
 # Protocol Constants (ADV-1 + DEF-61-004)
@@ -72,6 +75,7 @@ except (ImportError, ValueError):
 
 class ImportShield:
     _active = False
+    _is_velo_import_shield = True
 
     @classmethod
     def activate(cls):
@@ -436,7 +440,6 @@ class WorkerRegistry:
                         # Supervisor lost - terminate immediately
                         print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
                         os._exit(1)
-                
                 if ttl > 0 and (time.time() - start_time) > ttl: 
                     # TTL expired
                     print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
@@ -483,15 +486,21 @@ class ReinitHooks:
 
     def run_all(self, *args, **kwargs):
         for hook in self.hooks:
+            t0 = time.perf_counter()
             try:
-                hook(*args, **kwargs)
-            except TypeError:
-                # Fallback for hooks that don't take arguments
-                try: hook()
-                except Exception as e:
-                    LogUtils.debug_log(f"Hook Error (fallback): {e}")
+                try:
+                    hook(*args, **kwargs)
+                except TypeError:
+                    # Fallback for hooks that don't take arguments
+                    try:
+                        hook()
+                    except Exception as e:
+                        LogUtils.debug_log(f"Hook Error (fallback) {hook.__name__}: {e}")
             except Exception as e:
-                LogUtils.debug_log(f"Hook Error: {e}")
+                LogUtils.debug_log(f"Hook Error {hook.__name__}: {e}")
+            finally:
+                t1 = time.perf_counter()
+                LogUtils.debug_log(f"Hook {hook.__name__}: {(t1-t0)*1000:.2f}ms")
 
 # Global hooks registry
 reinit_hooks = ReinitHooks()
@@ -701,20 +710,13 @@ class ForkHandler:
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
 
-        # DEBUG: Write before fork
-        try:
-            with open("/tmp/worker_fork_debug.log", "a") as f:
-                f.write(f"[FORK DEBUG] About to fork, parent pid={os.getpid()}\n")
-                f.flush()
-        except: pass
-
         pid = os.fork()
 
         if pid == 0:
             shm_fd = cmd.get('shm_fd')
             shm_size = cmd.get('shm_size')
             ForkHandler._child_process(
-                script_path, args, stdout_path, stderr_path, exit_code_path,
+                script_path, args, cmd.get("env", {}), stdout_path, stderr_path, exit_code_path,
                 fast_mode, bundle_path, project_root, max_bundle_size,
                 worker_registry.worker_ttl, shm_fd, shm_size
             )
@@ -731,7 +733,7 @@ class ForkHandler:
 
     @staticmethod
     def _child_process(
-        script_path: str, args: List[str], stdout_path: Optional[str],
+        script_path: str, args: List[str], env: Dict[str, str], stdout_path: Optional[str],
         stderr_path: Optional[str], exit_code_path: Optional[str],
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
         max_bundle_size: Optional[int], worker_ttl: int,
@@ -744,19 +746,28 @@ class ForkHandler:
                 # Use socket dir for perf logs (transient, correct permissions)
                 log_path = VeloPaths.socket_dir() / "perf_zygote.log"
                 with open(log_path, "a") as f:
-                    f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
-            except: pass
-            
-            # HARDCODED DEBUG
-            try:
-                with open("/tmp/velo_debug.log", "a") as f:
-                     f.write(f"DEBUG_MAIN[{os.getpid()}]: {msg}\n")
+                    f.write(f"PERF_CHILD[{os.getpid()}]: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
             except: pass
 
 
-        p_log("Start _child_process")
         exit_code = 0
         try:
+
+            # 0. Apply Environment Overrides from CLI (RESTORED FROM HEAD)
+            if env:
+                os.environ.update(env)
+                # RFC-0011: Synchronize sys.path with new PYTHONPATH
+                python_path = env.get("PYTHONPATH")
+                if python_path:
+                    # Normalize sys.path once for faster lookup
+                    norm_sys_path = {os.path.normpath(os.path.abspath(p)) for p in sys.path}
+                    for path_entry in reversed(python_path.split(os.pathsep)):
+                        if path_entry:
+                            norm_entry = os.path.normpath(os.path.abspath(path_entry))
+                            if norm_entry not in norm_sys_path:
+                                sys.path.insert(0, norm_entry)
+                                norm_sys_path.add(norm_entry)
+
             # 1. Start Guardian (Workers MUST die if Zygote dies)
             # Now started after FDs are sanitized to avoid race conditions.
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
@@ -795,16 +806,21 @@ class ForkHandler:
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
 
+
             # 4. Setup Sys Args
-            sys.argv = [script_path] + args
+            sys.argv = [script_path, *args]
+
 
             # 5. Fast Mode Activation
             if fast_mode and bundle_path:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
 
+
             # 6. Execute Script
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
+                p_log("Script compiled")
+
                 exec(code, worker_context)
             
         except SystemExit as e:
@@ -818,7 +834,7 @@ class ForkHandler:
         finally:
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
             os._exit(exit_code)
-
+            
     @staticmethod
     def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
         if stdout_path:
@@ -1027,7 +1043,7 @@ class ZygoteServer:
             # RFC-0012: The Guardian monitors the parent process. 
             monitor_parent = getattr(self, "_monitor_parent", True)
             WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=monitor_parent)
-            
+
             self._setup_signals()
             
             # Shadow Preloading: Open socket FIRST, preload ASYNC
@@ -1421,7 +1437,8 @@ async def handle_zy_status(server: ZygoteServer, cmd: Dict) -> Dict:
     return {
         "type": "Status",
         "pid": os.getpid(),
-        "preload": server._preloaded_modules
+        "preload": server._preloaded_modules,
+        "state": server.preload_state
     }
 
 

@@ -1,0 +1,8 @@
+[meta]
+category = "qa"
+description = "Verify Environment Isolation"
+
+[test]
+entry_point = "test_isolation.py"
+expected_output = "FOO is None"
+preload_modules = ["os"]
