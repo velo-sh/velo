@@ -4,13 +4,9 @@
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::zygote::ipc;
-
-/// Global worker counter (avoid temp file conflicts)
-static WORKER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct Worker {
     pub pid: u32,
@@ -27,11 +23,10 @@ impl Worker {
     pub fn spawn_uds_via_zygote(
         zygote_socket: &Path,
         app: &str,
+        worker_id: u64,
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
-
-        let worker_id = WORKER_COUNTER.fetch_add(1, Ordering::SeqCst);
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
         let launcher_path = crate::zygote::find_worker_launcher()
