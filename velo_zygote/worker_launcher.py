@@ -4,6 +4,7 @@ import sys
 import uvicorn
 import signal
 import traceback
+import tempfile
 
 def main():
     try:
@@ -21,9 +22,10 @@ def main():
         args = parser.parse_args()
         
         # 3. ImportShield Activation (Titanium Isolation)
-        # Search for the existing shield instance in meta_path to avoid module name conflicts
+        # Search for the existing shield instance in meta_path
+        # Use marker attribute check for robustness (getattr)
         for finder in sys.meta_path:
-            if finder.__class__.__name__ == "ImportShield":
+            if getattr(finder, "_is_velo_import_shield", False) or finder.__class__.__name__ == "ImportShield":
                 finder.activate()
                 os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
                 break
@@ -55,26 +57,30 @@ def main():
         
         if getattr(args, "proxy_headers", False):
             # SEC-P0-004: Unsafe proxy headers bypass protection
-            # require explicit trust via environment or non-wildcard IPs
+            # Require explicit trust AND a non-empty allowlist.
+            # RFC-0011/SEC: Never fallback to "*" for security.
             trusted = os.environ.get("VELO_TRUSTED_PROXY") == "1"
             allowed_ips = os.environ.get("VELO_FORWARDED_ALLOW_IPS", "")
             
-            if not (trusted or allowed_ips):
-                print("FATAL: --proxy-headers requires VELO_TRUSTED_PROXY=1 or VELO_FORWARDED_ALLOW_IPS list.", file=sys.stderr)
+            if not allowed_ips:
+                print("FATAL: --proxy-headers requires VELO_FORWARDED_ALLOW_IPS list.", file=sys.stderr)
+                sys.exit(1)
+            
+            if not trusted:
+                print("FATAL: --proxy-headers requires VELO_TRUSTED_PROXY=1.", file=sys.stderr)
                 sys.exit(1)
             
             run_kwargs["proxy_headers"] = True
-            run_kwargs["forwarded_allow_ips"] = allowed_ips if allowed_ips else "*"
+            run_kwargs["forwarded_allow_ips"] = allowed_ips
             
         # 6. Execution
         uvicorn.run(**run_kwargs)
         
     except Exception as e:
         # Emergency logging for startup failures
-        log_path = f"/tmp/worker_error_{os.getpid()}.log"
         try:
-            # SEC-P0-005: Use secure permissions (0600) for emergency logs
-            fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            # SEC-P0-005: Use tempfile API for secure, restrictive (0600) log creation
+            fd, log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir="/tmp")
             with os.fdopen(fd, 'w') as f:
                 f.write(f"FATAL: {e}\n")
                 traceback.print_exc(file=f)

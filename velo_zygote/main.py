@@ -75,6 +75,7 @@ except (ImportError, ValueError):
 
 class ImportShield:
     _active = False
+    _is_velo_import_shield = True
 
     @classmethod
     def activate(cls):
