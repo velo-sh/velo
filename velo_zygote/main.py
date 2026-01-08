@@ -49,14 +49,20 @@ except (ImportError, ValueError):
     from config import VeloConfig
 
 
-class ImportShield(importlib.abc.MetaPathFinder):
-    """
-    RFC-0011 §6.2.1: Import Isolation Layer (ImportShield)
-    
-    Prevents the user application from importing or shadowing internal 
-    framework modules (e.g., velo_zygote.*).
-    """
+class ImportShield:
+    _active = False
+
+    @classmethod
+    def activate(cls):
+        """Enable the shield. Once enabled, internal imports are blocked."""
+        cls._active = True
+
     def find_spec(self, fullname, path, target=None):
+        # 0. Only block if shield is active (via class var or environment)
+        # Environment check is the target-safe SSOT for forked children.
+        if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
+            return None
+
         # 1. Block internal framework access from child process
         if fullname.startswith("velo_zygote"):
             # We allow the launcher to import us once, but once the app is loading,
@@ -71,14 +77,17 @@ class ImportShield(importlib.abc.MetaPathFinder):
     @staticmethod
     def install():
         """Install the shield at the front of sys.meta_path."""
-        if not any(isinstance(f, ImportShield) for f in sys.meta_path):
+        # Use name check instead of isinstance to avoid potential ABC issues or hangs
+        if not any(type(f).__name__ == "ImportShield" for f in sys.meta_path):
             sys.meta_path.insert(0, ImportShield())
             
             # Centralized Path Sanitization (RFC-0011 6A.1)
             # Prevent shadowing of user modules by framework modules.
-            framework_dir = os.path.dirname(os.path.abspath(__file__))
-            if framework_dir in sys.path:
-                sys.path.remove(framework_dir)
+            try:
+                framework_dir = os.path.dirname(os.path.abspath(__file__))
+                if framework_dir in sys.path:
+                    sys.path.remove(framework_dir)
+            except: pass
 
 
 
@@ -525,18 +534,16 @@ class ForkHandler:
             p_log("Guardian Started")
 
             # 3. Install ImportShield (Import Isolation)
-            # Skip for internal worker launcher (it manages its own imports)
+            # We always install it, but only "activate" it immediately for non-launcher scripts.
+            # For the launcher, it's activated just before user code runs.
+            ImportShield.install()
             is_internal_launcher = script_path.endswith("worker_launcher.py")
             if not is_internal_launcher:
-                ImportShield.install()
-                p_log(f"ImportShield Installed (User Script)")
-            else:
-                p_log(f"ImportShield Skipped (Internal Launcher)")
+                ImportShield.activate()
+                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
-            # p_log("IO Redirected") # Might fail to log after redirect to file! 
-            # But I use /dev/stderr directly in p_log.
 
             # 4. Setup Sys Args
             sys.argv = [script_path] + args
