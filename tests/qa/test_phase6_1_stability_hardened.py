@@ -10,9 +10,6 @@ from pathlib import Path
 # QA Agent B: Hardened Stability & Platform Parity
 # Requirements: RFC-0010 §4.1, §4.4, §4.6, §4.9
 
-# def get_free_port(): (Removed to prevent TOCTOU race)
-#     pass
-
 @pytest.mark.tier1
 class TestPhase61StabilityHardened:
     

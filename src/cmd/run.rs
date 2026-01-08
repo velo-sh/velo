@@ -235,7 +235,6 @@ fn try_zygote_run(
     };
 
     // Try to spawn via Zygote
-    // Try to spawn via Zygote
     if socket_path.exists() {
         let (bundle_path, max_size) = if fast_enabled {
             (
