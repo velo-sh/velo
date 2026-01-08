@@ -332,9 +332,12 @@ class ZygoteTransport:
             total_len = 1 + len(payload)
             header = struct.pack('<I', total_len)
             version = bytes([PROTOCOL_VERSION])
-            await self.loop.sock_sendall(self.sock, header + version + payload)
+            full_msg = header + version + payload
+            # LogUtils.debug_log(f"Transport.send: {len(full_msg)} bytes")
+            await self.loop.sock_sendall(self.sock, full_msg)
         except Exception as e:
             LogUtils.debug_log(f"Transport Send Error: {e}")
+            traceback.print_exc()
 
     async def close(self):
         try:
@@ -1019,7 +1022,7 @@ class ZygoteServer:
                      except: pass
             
             self.server_sock.bind(self.socket_path)
-            self.server_sock.listen(100)
+            self.server_sock.listen(512)
             self.server_sock.setblocking(False)
             
             # Ensure 0700 (Red Line #2) handled by ensure_socket_dir upstream
@@ -1045,30 +1048,33 @@ class ZygoteServer:
             LogUtils.debug_log(f"Accept Error: {e}")
 
     async def _handle_client_socket(self, sock: socket.socket):
+        LogUtils.debug_log(f"Handling new client connection (FD: {sock.fileno()})")
         transport = ZygoteTransport(sock)
         try:
             # 1. Handshake
-            # Wait for handshake command... or rather we wait for any command?
-            # Protocol says: Client sends Connect?
-            # No, connect returns Ready from Server?
-            # Let's check rust impl: ZygoteStream::connect reads Ready.
-            
-            # Send Ready greeting
+            LogUtils.debug_log("Sending Ready greeting...")
             await transport.send({"type": "Ready"})
+            LogUtils.debug_log("Ready greeting sent.")
             
             while True:
                 msg, fd = await transport.recv()
-                if not msg: break
+                if not msg:
+                    LogUtils.debug_log("Client disconnected (EOF)")
+                    break
                 
+                LogUtils.debug_log(f"Received command: {msg.get('type')}")
                 # Handle FD injection
                 if fd is not None:
+                    LogUtils.debug_log(f"Received FD: {fd}")
                     msg['shm_fd'] = fd # Inject into message for handler
                 
                 response = await router.dispatch(self, msg)
+                LogUtils.debug_log(f"Sending response: {response.get('type')}")
                 await transport.send(response)
                 
         except Exception as e:
             LogUtils.debug_log(f"Client Handle Error: {e}")
+            traceback.print_exc()
         finally:
             await transport.close()
 
