@@ -29,7 +29,7 @@ fn build_worker_env(
     if !env.contains_key("VELO_FORWARDED_ALLOW_IPS") {
         env.insert(
             "VELO_FORWARDED_ALLOW_IPS".to_string(),
-            "127.0.0.1".to_string(),
+            "127.0.0.1,::1".to_string(),
         );
     }
     Box::new(env)

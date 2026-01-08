@@ -121,7 +121,8 @@ impl MemoryRegistry {
             flags |= linux::MAP_HUGETLB;
         }
 
-        let ptr = unsafe {
+        #[allow(unused_mut)]
+        let mut ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
                 total_size,
@@ -131,6 +132,27 @@ impl MemoryRegistry {
                 0,
             )
         };
+
+        // H-20 Fix: If HugePages mapping fails with ENOMEM (no pool available),
+        // fallback to standard pages by stripping MAP_HUGETLB.
+        #[cfg(target_os = "linux")]
+        if ptr == libc::MAP_FAILED
+            && is_huge
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOMEM)
+        {
+            eprintln!("⚠️ H-20: HugePages mmap failed (ENOMEM). Falling back to standard pages.");
+            flags &= !linux::MAP_HUGETLB;
+            ptr = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    total_size,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    flags,
+                    fd,
+                    0,
+                )
+            };
+        }
 
         if ptr == libc::MAP_FAILED {
             return Err(MemoryError::MmapFailed(format!(
