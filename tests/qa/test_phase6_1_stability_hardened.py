@@ -298,7 +298,7 @@ time.sleep(60)
         app_file = env.path / "main.py"
         with open(app_file, "w") as f:
             for i in range(5):
-                f.write("print('LOADING')\n" * 10000)
+                f.write("print('LOADING')\n" * 100)
                 f.flush()
                 os.fsync(f.fileno())
                 time.sleep(0.5)
