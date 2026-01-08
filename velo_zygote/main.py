@@ -492,7 +492,8 @@ class ReinitHooks:
                     hook(*args, **kwargs)
                 except TypeError:
                     # Fallback for hooks that don't take arguments
-                    try: hook()
+                    try:
+                        hook()
                     except Exception as e:
                         LogUtils.debug_log(f"Hook Error (fallback) {hook.__name__}: {e}")
             except Exception as e:
@@ -802,7 +803,7 @@ class ForkHandler:
 
 
             # 4. Setup Sys Args
-            sys.argv = [script_path] + args
+            sys.argv = [script_path, *args]
 
 
             # 5. Fast Mode Activation

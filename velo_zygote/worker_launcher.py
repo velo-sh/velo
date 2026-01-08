@@ -52,7 +52,7 @@ def main():
             run_kwargs["uds"] = args.uds
         if args.host:
             run_kwargs["host"] = args.host
-        if args.port:
+        if args.port is not None:
             run_kwargs["port"] = args.port
         
         if getattr(args, "proxy_headers", False):
@@ -80,7 +80,7 @@ def main():
         # Emergency logging for startup failures
         try:
             # SEC-P0-005: Use tempfile API for secure, restrictive (0600) log creation
-            fd, log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir="/tmp")
+            fd, _log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir="/tmp")
             with os.fdopen(fd, 'w') as f:
                 f.write(f"FATAL: {e}\n")
                 traceback.print_exc(file=f)
