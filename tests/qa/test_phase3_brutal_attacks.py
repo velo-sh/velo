@@ -71,8 +71,8 @@ class AttackEnv:
         (self.path / name).write_text(content)
     
     def cleanup(self):
-        # Kill any leftover Zygote processes
-        subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
+        # Kill any leftover Velo processes safely (Exact match only)
+        subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
             shutil.rmtree(self.path)
         except:

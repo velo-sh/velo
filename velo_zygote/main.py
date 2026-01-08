@@ -737,6 +737,13 @@ class ForkHandler:
                 with open(log_path, "a") as f:
                     f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
             except: pass
+            
+            # HARDCODED DEBUG
+            try:
+                with open("/tmp/velo_debug.log", "a") as f:
+                     f.write(f"DEBUG_MAIN[{os.getpid()}]: {msg}\n")
+            except: pass
+
 
         p_log("Start _child_process")
         exit_code = 0
@@ -768,7 +775,13 @@ class ForkHandler:
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
             # 3. Install ImportShield (Import Isolation)
-            ImportShield.install()
+            # Skip for internal worker launcher (it manages its own imports)
+            is_internal_launcher = script_path.endswith("worker_launcher.py")
+            if not is_internal_launcher:
+                ImportShield.install()
+                p_log(f"ImportShield Installed (User Script)")
+            else:
+                p_log(f"ImportShield Skipped (Internal Launcher)")
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
@@ -1137,6 +1150,18 @@ class ZygoteServer:
             try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
                 if pid <= 0: break
+                # Resolve exit code
+                if os.WIFEXITED(status):
+                    exit_code = os.WEXITSTATUS(status)
+                    LogUtils.debug_log(f"info: Worker {pid} exited with code {exit_code}")
+                elif os.WIFSIGNALED(status):
+                    sig = os.WTERMSIG(status)
+                    LogUtils.debug_log(f"info: Worker {pid} killed by signal {sig}")
+                    exit_code = 128 + sig
+                else:
+                    exit_code = 1
+                
+                # Update registry
                 self.worker_registry.remove(pid)
             except ChildProcessError: break
             except: break
@@ -1169,55 +1194,7 @@ class ZygoteServer:
                     # For now, we allow the next IDLE timeout to handle it or shutdown.
             except: pass
 
-    async def _run_loop(self):
-        if not self.is_abstract:
-            path = Path(self.socket_path)
-            if path.exists(): path.unlink()
-            
-        server = await asyncio.start_unix_server(self._handle_client, path=self.socket_path)
-        LogUtils.log("Zygote IPC Layer Ready.")
-        
-        async with server:
-            try:
-                await asyncio.wait_for(server.serve_forever(), timeout=self.idle_timeout)
-            except (asyncio.TimeoutError, KeyboardInterrupt):
-                LogUtils.log("Zygote Idle Timeout.")
-            finally:
-                LogUtils.log("Shutting down Zygote - Cleaning up workers.")
-                self.worker_registry.kill_all() # RFC-0011 6A.1: Prevent orphan leaks
-                
-                # [DEF-62-005] Clean up socket file on exit
-                if not self.is_abstract:
-                    try:
-                        path = Path(self.socket_path)
-                        if path.exists():
-                            path.unlink()
-                            LogUtils.log(f"Cleaned up socket: {self.socket_path}")
-                    except Exception as e:
-                        LogUtils.debug_log(f"Socket cleanup failed: {e}")
 
-    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        transport = ZygoteTransport(reader, writer)
-        try:
-            # 1. Send Ready (Server Handshake Greeting)
-            await transport.send({"type": "Ready"})
-            
-            while True:
-                try:
-                    cmd = await transport.recv()
-                    if not cmd: break
-                    
-                    response = await router.dispatch(self, cmd)
-                    if response:
-                        await transport.send(response)
-                        if isinstance(cmd, dict) and cmd.get("type") == "Shutdown":
-                            asyncio.get_event_loop().stop()
-                            break
-                except ProtocolError as e:
-                    LogUtils.log(f"⛔ [FAIL FAST] Protocol Violation: {e}. Dropping connection.")
-                    break
-        finally:
-            await transport.close()
 
 
 @router.handler("Handshake")

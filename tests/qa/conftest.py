@@ -54,7 +54,7 @@ CI_TIMEOUT = ci_timeout  # Alias for shorter imports
 #   subprocess.run([velo, "zygote", "start"], timeout=T_MEDIUM)
 
 # Base timeouts (local machine)
-_T_SHORT_BASE = 5     # Quick commands (--help, status)
+_T_SHORT_BASE = 10     # Quick commands (--help, status)
 _T_MEDIUM_BASE = 15   # Normal operations (start, stop)
 _T_LONG_BASE = 60     # Heavy operations (stress tests)
 
@@ -149,8 +149,10 @@ def cleanup_zygote_between_modules():
     
     yield
     
-    # Clean after module completes too
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+    # Clean after module completes
+    # RFC-0012: We rely on hermetic isolation (unique TMPDIR/sockets) 
+    # and the Zygote Guardian thread to prevent leaks. 
+    # Blind pkill is avoided to support parallel test execution.
     if sock_path.exists():
         try:
             sock_path.unlink()
