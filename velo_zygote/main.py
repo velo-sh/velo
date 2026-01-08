@@ -797,7 +797,7 @@ class ForkHandler:
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
             # 2.5 Diagnostic: First log from child
-            LogUtils.stderr_log(f"🔄 Child {os.getpid()} starting re-init...")
+            LogUtils.log(f"🔄 Child {os.getpid()} starting re-init...")
 
             # 3. Install ImportShield (Import Isolation)
             # We always install it, but DEFER activation (Trap 178)
