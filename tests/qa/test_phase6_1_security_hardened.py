@@ -141,7 +141,7 @@ class TestPhase61SecurityHardened:
             (env.path / f"file_{i}.py").touch()
             
         # Use dynamic port to avoid conflicts with other tests
-        port = get_free_port()
+        port = env.next_port()
             
         # Implementation check: Velo should log a warning or throttle
         # We'll check if the watcher is still alive and didn't crash

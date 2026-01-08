@@ -319,12 +319,6 @@ time.sleep(60)
         # If it triggers too early, it might fail to import or show partial code errors
         assert "SyntaxError" not in output, "Race Detected: Watcher triggered on partially written file"
 
-    def get_free_port(self):
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            return s.getsockname()[1]
-
     def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
         """
         STB-RS-002 (Hard-Cap): Continuous events MUST trigger a restart after hard-cap (max 5s).
