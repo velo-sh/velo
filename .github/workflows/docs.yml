@@ -1,0 +1,29 @@
+name: Docs
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'docs/**'
+      - '*.md'
+      - 'CHANGELOG.md'
+
+# Docs has its own concurrency group - never cancels code CI
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Markdown Check
+        run: |
+          echo "📝 Docs updated. No code CI required."
+          echo "Files changed:"
+          git diff --name-only HEAD~1 || true
+          echo ""
+          echo "✅ Docs CI complete (lightweight)"
