@@ -76,28 +76,34 @@ fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
     let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
     let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
 
-    // Convert relative path to absolute by joining with project root
+    // Convert relative path to absolute by joining with canonical project root
     let full_path = if path_buf.is_absolute() {
         path_buf.clone()
     } else {
-        project_root.join(&path_buf)
+        canonical_root.join(&path_buf)
     };
 
-    // If the path exists, canonicalize it to resolve symlinks and '..'
-    if full_path.exists() {
-        let canonical_path = full_path
+    // Strict canonicalization check
+    let canonical_path = if full_path.exists() {
+        full_path.canonicalize().ok()
+    } else if let Some(parent) = full_path.parent() {
+        parent
             .canonicalize()
-            .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+            .ok()
+            .map(|p| p.join(full_path.file_name().unwrap_or_default()))
+    } else {
+        None
+    };
 
-        if !canonical_path.starts_with(&canonical_root) {
+    if let Some(cp) = canonical_path {
+        if !cp.starts_with(&canonical_root) {
             anyhow::bail!(
                 "{} access denied: path traversal detected (resolves outside project root)",
                 arg_name
             );
         }
     } else {
-        // For non-existent paths, check for obvious traversal patterns
-        // This catches ../../etc/passwd even if the file doesn't exist locally
+        // Fallback for cases where even the parent doesn't exist
         let normalized = normalize_path_components(&full_path);
         if !normalized.starts_with(&canonical_root) {
             anyhow::bail!(

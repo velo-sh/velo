@@ -56,6 +56,22 @@ def main():
         
     # Execute uvicorn
     try:
+        # Seal the process: activate ImportShield before user code (uvicorn) runs
+        # We use both class-based activation AND environment variable to ensure
+        # consistency across potential module duplication/reloads.
+        os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+        try:
+            from velo_zygote.main import ImportShield
+            ImportShield.activate()
+            
+            # Scrub the evidence: remove framework modules from sys.modules
+            # This forces any subsequent import of velo_zygote (by user app) 
+            # to hit sys.meta_path, where ImportShield will block it.
+            for m in list(sys.modules.keys()):
+                if m.startswith("velo_zygote"):
+                    del sys.modules[m]
+        except: pass
+
         print(f"[WORKER] Launching uvicorn for {args.app}")
         uvicorn.run(**run_kwargs)
         print("[WORKER] uvicorn.run finished normally")
