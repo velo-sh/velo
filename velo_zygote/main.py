@@ -51,27 +51,40 @@ except (ImportError, ValueError):
 
 class ImportShield:
     _active = False
+    _env_active = None # Cached environment variable check
 
     @classmethod
     def activate(cls):
         """Enable the shield. Once enabled, internal imports are blocked."""
         cls._active = True
 
+    _env_active = None
+
     def find_spec(self, fullname, path, target=None):
-        # 0. Only block if shield is active (via class var or environment)
-        # Environment check is the target-safe SSOT for forked children.
-        if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
+        # 0. Fast-path: check class variable first.
+        # This is the primary activation mechanism for the launcher.
+        if self._active:
+            pass
+        elif self._env_active is None:
+            # Cache environment check once per process to avoid overhead.
+            self._env_active = (os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1")
+            if not self._env_active: return None
+        elif not self._env_active:
             return None
 
         # 1. Block internal framework access from child process
-        if fullname.startswith("velo_zygote"):
-            # We allow the launcher to import us once, but once the app is loading,
-            # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
+        if fullname.startswith(("velo_zygote", "velo_core")):
+            # Whitelist essential modules for internal operation
+            if fullname in (
+                "velo_zygote", "velo_zygote.main", "velo_zygote.protocol",
+                "velo_zygote.constants", "velo_zygote.paths", "velo_zygote.config",
+                "velo_core"
+            ):
+                return None
+            
+            # TITANIUM: Final blocking (Audit mode disabled for performance)
             raise ImportError(f"Unauthorized access to internal framework module: {fullname}")
         
-        # 2. Shadowing Protection: main.py
-        # This finder is installed at the top of sys.meta_path.
-        # If it returns None, Python falls back to standard finders (PathFinder).
         return None
 
     @staticmethod
@@ -276,54 +289,44 @@ class WorkerRegistry:
         """Guardian thread to prevent orphans."""
         def guardian():
             start_time = time.time()
-            # print(f"[GUARDIAN] Started: parent_pid={parent_pid}, ttl={ttl}", file=sys.stderr)
+            try:
+                with open("/tmp/guardian.log", "a") as f:
+                    f.write(f"PID {os.getpid()}: Guardian started. parent_pid={parent_pid}, ttl={ttl}\n")
+            except: pass
+
             while True:
                 if monitor_parent:
                     current_ppid = os.getppid()
                     if current_ppid != parent_pid: 
                         # Supervisor lost - terminate immediately
                         # print(f"[GUARDIAN] Parent changed: {parent_pid} -> {current_ppid}, exiting!", file=sys.stderr)
+                        try:
+                            with open("/tmp/guardian.log", "a") as f:
+                                f.write(f"PID {os.getpid()}: PARENT MISMATCH! expected={parent_pid}, got={current_ppid}. EXITING.\n")
+                        except: pass
                         os._exit(1)
                 
                 if ttl > 0 and (time.time() - start_time) > ttl: 
                     # TTL expired
-                    print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
+                    # print(f"[GUARDIAN] TTL expired ({ttl}s), exiting!", file=sys.stderr)
+                    try:
+                        with open("/tmp/guardian.log", "a") as f:
+                            f.write(f"PID {os.getpid()}: TTL EXPIRED! ({ttl}s). EXITING.\n")
+                    except: pass
                     os._exit(1)
                 time.sleep(1) # Reduced to 1s for immediate response (H-11 compliance)
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
 
     def reap_stale(self) -> List[int]:
-        """Cleanup logic for timed-out or missing workers. Returns list of reaped PIDs."""
-        now = time.time()
-        to_remove = []
-        with self.lock:
-            for pid, (start_time, _) in self.workers.items():
-                if now - start_time > self.worker_ttl:
-                    to_remove.append(pid)
-        
-        for pid in to_remove:
-            LogUtils.log(f"Reaping stale worker: {pid}")
-            try: os.kill(pid, 9)
-            except: pass
-            self.remove(pid)
-        return to_remove
+        """Disabled for Architectural Stability - Supervisor owns lifecycle"""
+        return []
 
     def kill_all(self):
-        """Terminate all tracked workers. Called on shutdown."""
-        with self.lock:
-            pids = list(self.workers.keys())
-        
-        for pid in pids:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            except Exception as e:
-                LogUtils.debug_log(f"Failed to kill worker {pid}: {e}")
-            self.remove(pid)
-        
-        LogUtils.log(f"Killed {len(pids)} workers on shutdown.")
+        """Terminate all tracked workers. (Disabled for Architectural Stability - Supervisor owns PIDs)"""
+        # RFC-0012: The Rust supervisor is the SSOT for worker lifecycles.
+        # Zygote parent no longer kills children on shutdown to avoid races.
+        pass
 
 
 class ReinitHooks:
@@ -358,31 +361,17 @@ def hook_security():
     import signal
     
     # 1. FD Hygiene (Whitelist standard FDs)
+    # RFC-0011 6A.2: Cord-cutting is essential for macOS stability
+    # 1. FD Hygiene (Whitelist standard FDs)
+    # RFC-0011 6A.2: Cord-cutting is essential for macOS stability
     try:
-        # Standard FDs: stdin=0, stdout=1, stderr=2
-        keep_fds = {0, 1, 2}
-        
-        # Determine all open FDs
-        current_fds = set()
-        if os.path.exists('/proc/self/fd'):
-            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
-        elif os.path.exists('/dev/fd'):
-            current_fds = set(int(fd) for fd in os.listdir('/dev/fd'))
-        
-        # Close everything else (Surgical Cord-Cutting)
-        if current_fds:
-            for fd in current_fds:
-                if fd not in keep_fds:
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass
-        else:
-            # Fallback for platforms without /proc or /dev/fd
-            max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
-            if max_fd == resource.RLIM_INFINITY or max_fd > 1024:
-                max_fd = 1024
-            os.closerange(3, max_fd)
+        # Close everything above stderr (FD 3+)
+        # This prevents inherited socket/kqueue conflicts on macOS
+        import resource
+        max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        if max_fd == resource.RLIM_INFINITY or max_fd > 1024:
+            max_fd = 1024
+        os.closerange(3, max_fd)
     except Exception:
         pass
 
@@ -447,17 +436,51 @@ def post_fork_reinit():
     
     Must be called immediately after fork() in the child process.
     """
-    # 1. Reset asyncio event loop (Industrial Grade Isolation)
-    # The child inherits the parent's loop state (executors, etc.) which must be purged.
+    # 1. Cord-Cutting (Must happen BEFORE anything else)
+    reinit_hooks.run_all()
+    
+    # 1.1 Brutal FD Hygiene (Deactivated for macOS Stability - Over-Isolation Trap)
+    # try:
+    #     import resource
+    #     import os
+    #     max_fd = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+    #     if max_fd == resource.RLIM_INFINITY or max_fd > 1024:
+    #         max_fd = 1024
+    #     for fd in range(3, max_fd):
+    #         try:
+    #             os.close(fd)
+    #         except OSError:
+    #             pass
+    # except: pass
+
+    # 1.2 Signal Reset (Clean Slate for uvicorn)
+    import signal
+    # RFC-0012: RESET HANDLERS BEFORE UNMASKING
+    # If we unmask first, any pending signal from parent window will kill us 
+    # using the old handler before we can reset it.
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD, signal.SIGPIPE):
+        try:
+            signal.signal(sig, signal.SIG_DFL)
+        except: pass
+
+    # UNMASK ALL SIGNALS (Child should start clean)
+    try:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, signal.valid_signals())
+    except: pass
+
+    # 2. Reset asyncio event loop (Industrial Grade Isolation)
     try:
         import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # macOS specific: strictly close and replace inherited loop
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_running(): loop.close()
+        except: pass
+        
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
     except Exception:
         pass
-
-    # 2. Run all registered hooks (Security, Computing, Telemetry)
-    reinit_hooks.run_all()
 
 
 class ForkHandler:
@@ -483,7 +506,18 @@ class ForkHandler:
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
 
+        # RFC-0012: Signal Masking Ritual (Disabled for MacOS Stability)
+        # try:
+        #     signal.pthread_sigmask(signal.SIG_BLOCK, all_signals)
+        # except: pass
+
         pid = os.fork()
+
+        if pid != 0:
+            # Parent: immediately unblock signals
+            try:
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, all_signals)
+            except: pass
 
         if pid == 0:
             ForkHandler._child_process(
@@ -504,72 +538,49 @@ class ForkHandler:
         fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
         max_bundle_size: Optional[int], worker_ttl: int
     ):
-        t0 = time.time()
-        def p_log(msg):
-            try:
-                # Use socket dir for perf logs (transient, correct permissions)
-                log_path = VeloPaths.socket_dir() / "perf_zygote.log"
-                with open(log_path, "a") as f:
-                    f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
-            except: pass
-            
-            # HARDCODED DEBUG
-            try:
-                with open("/tmp/velo_debug.log", "a") as f:
-                     f.write(f"DEBUG_MAIN[{os.getpid()}]: {msg}\n")
-            except: pass
-
-
-        p_log("Start _child_process")
-        exit_code = 0
+        """[TITANIUM STABLE] Final stabilized child process ritual for macOS."""
+        import os
+        import sys
+        import signal
         try:
-            # 1. RFC-0011 6A.2: Full post-fork state reset (Industrial Grade)
-            # This MUST happen before anything else to ensure a clean slate.
+            # 1. Physical Isolation (Hardware Level)
+            try:
+                os.setsid()
+            except OSError:
+                os.setpgid(0, 0)
+
+            # 2. State & Resource Hygiene
             post_fork_reinit()
-            p_log("Reinit Done (Cord Cut)")
 
-            # 2. Start Guardian (Workers MUST die if Zygote dies)
-            # Now started after FDs are sanitized to avoid race conditions.
-            WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
-            p_log("Guardian Started")
-
-            # 3. Install ImportShield (Import Isolation)
-            # We always install it, but only "activate" it immediately for non-launcher scripts.
-            # For the launcher, it's activated just before user code runs.
+            # 3. Import Protection
             ImportShield.install()
-            is_internal_launcher = script_path.endswith("worker_launcher.py")
-            if not is_internal_launcher:
+            if fast_mode:
                 ImportShield.activate()
-                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+            
+            # 4. Interface Isolation (I/O Redirection)
+            if stdout_path:
+                fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+                os.dup2(fd, 1)
+            if stderr_path:
+                fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+                os.dup2(fd, 2)
 
-            # 3. I/O Redirection
-            ForkHandler._redirect_io(stdout_path, stderr_path)
-
-            # 4. Setup Sys Args
+            # 5. Bootstrap Environment
             sys.argv = [script_path] + args
-
-            # 5. Fast Mode Activation
-            if fast_mode and bundle_path:
-                ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
-
+            
             # 6. Execute Script
-            p_log(f"Exec script: {script_path}")
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
-                p_log("Script compiled")
                 exec(code, {"__name__": "__main__", "__file__": script_path})
-            
-        except SystemExit as e:
-            exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except Exception:
+
+        except BaseException as e:
             try:
                 import traceback
-                traceback.print_exc()
+                with open("/tmp/velo_child_fatal.log", "a") as f:
+                    f.write(f"PID {os.getpid()} FATAL: {e}\n{traceback.format_exc()}\n")
             except: pass
-            exit_code = 1
-        finally:
-            ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
-            os._exit(exit_code)
+            os._exit(1)
+        os._exit(0)
 
     @staticmethod
     def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
@@ -663,31 +674,37 @@ class ZygoteServer:
         self.fork_queue: asyncio.Queue = asyncio.Queue()  # Queue for Fork requests during LOADING
 
     async def start(self):
-        """Start the Zygote server using asyncio with Shadow Preloading.
-        
-        Shadow Preloading: Socket opens immediately, preloading happens async.
-        This minimizes time-to-ready for the Rust supervisor.
-        """
+        """Start the Zygote server with Thread-Fork Safety (macOS Hardened)."""
         try:
             LogUtils.log(f"Starting Refactored Zygote (PID: {os.getpid()})")
             
-            # RFC-0012: The Guardian monitors the parent process. 
-            # In daemon mode (--no-guardian), we disable parent monitoring.
-            monitor_parent = getattr(self, "_monitor_parent", True)
-            WorkerRegistry.start_guardian(os.getppid(), 0, monitor_parent=monitor_parent)
+            # [TITANIUM] Asyncio-based Parent Monitoring (No Threads for Fork-Safety)
+            if self._monitor_parent:
+                asyncio.create_task(self._monitor_parent_loop())
             
             self._setup_signals()
             
-            # Shadow Preloading: Open socket FIRST, preload ASYNC
+            # [HARDENING] Perform preload SYNCHRONOUSLY on macOS to avoid background threads.
+            # This ensures the parent is quiescent and fork-safe.
             self.preload_state = "LOADING"
             
-            # Start async preload task (non-blocking)
-            asyncio.create_task(self._async_preload())
+            # Synchronous execution in the main loop to avoid ThreadPoolExecutor
+            LogUtils.log("Pre-warming Zygote (Synchronous)...")
+            self._preload_modules()
             
-            # Start background tasks
+            # Check CUDA after preload
+            if check_cuda_initialized():
+                LogUtils.log("CRITICAL: CUDA initialized in Zygote! Shutting down.")
+                sys.exit(1)
+            
+            self.preload_state = "READY"
+            self.preload_complete.set()
+            LogUtils.log(f"Preloading complete. State: READY")
+            
+            # Start background tasks (Now that preloading is done)
             asyncio.create_task(self._resource_guard())
             
-            # Start socket listener immediately (before preload completes)
+            # Start socket listener
             await self._run_loop()
         except Exception as e:
             LogUtils.debug_log(f"Server Startup Error: {e}")
@@ -766,13 +783,22 @@ class ZygoteServer:
                 # Resolve exit code
                 if os.WIFEXITED(status):
                     exit_code = os.WEXITSTATUS(status)
-                    LogUtils.debug_log(f"info: Worker {pid} exited with code {exit_code}")
+                    msg = f"info: Worker {pid} exited with code {exit_code}"
                 elif os.WIFSIGNALED(status):
                     sig = os.WTERMSIG(status)
-                    LogUtils.debug_log(f"info: Worker {pid} killed by signal {sig}")
+                    msg = f"info: Worker {pid} killed by signal {sig}"
                     exit_code = 128 + sig
                 else:
+                    msg = f"info: Worker {pid} stopped for unknown reason"
                     exit_code = 1
+                
+                # Forensic Logging
+                try:
+                    with open("/tmp/zygote_reap.log", "a") as f:
+                        f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+                except: pass
+                
+                LogUtils.debug_log(msg)
                 
                 # Update registry
                 self.worker_registry.remove(pid)
@@ -786,6 +812,11 @@ class ZygoteServer:
             except Exception as e:
                 LogUtils.debug_log(f"Reap Error: {e}")
                 break
+
+    @staticmethod
+    def start_reaper(worker_registry, loop, pending_forks):
+        """Disabled for Architectural Stability - Rust Supervisor reaps workers."""
+        return
 
     def _preload_modules(self):
         for module in self.preload:
@@ -814,6 +845,19 @@ class ZygoteServer:
                     # In a production environment, this would signal the supervisor to restart.
                     # For now, we allow the next IDLE timeout to handle it or shutdown.
             except: pass
+
+    async def _monitor_parent_loop(self):
+        """Non-blocking monitor for the supervisor process."""
+        parent_pid = os.getppid()
+        while self.running:
+            try:
+                os.kill(parent_pid, 0)
+            except ProcessLookupError:
+                LogUtils.log("Supervisor died. Zygote shutting down.")
+                self.stop()
+                break
+            except: pass
+            await asyncio.sleep(2)
 
     async def _run_loop(self):
         if not self.is_abstract:

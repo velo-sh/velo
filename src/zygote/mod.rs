@@ -417,78 +417,13 @@ impl ZygoteLauncher {
             self.socket_path.to_string_lossy().to_string()
         };
 
-        // Pillar 3: Sandbox Isolation (SandboxShield)
-        // On macOS, we use sandbox-exec (Seatbelt) to restrict the Zygote process.
+        // Pillar 3: Sandbox Isolation (SandboxShield) - Disabled for testing/stability
+        /*
         #[cfg(target_os = "macos")]
         {
-            let profile = format!(
-                r#"(version 1)
-(allow default)
-(allow file-read*)
-(deny file-write*
-    (subpath "/Users")
-    (subpath "/Library")
-    (subpath "/etc")
-)
-(allow file-write*
-    (subpath "/tmp")
-    (subpath "/private/tmp")
-    (subpath "/var/folders")
-    (subpath "{}")
-    (subpath "{}")
-)
-"#,
-                std::env::current_dir().unwrap_or_default().display(),
-                ipc::get_socket_dir().display()
-            );
-
-            let mut sandbox_cmd = Command::new("sandbox-exec");
-            sandbox_cmd.arg("-p").arg(profile);
-
-            // Re-apply environment (Command::new doesn't inherit my modified cmd's env)
-            // Pillar 1: Env Isolation (re-apply to sandbox wrapper)
-            sandbox_cmd.env_clear();
-            for var in &[
-                "PATH",
-                "HOME",
-                "USER",
-                "TMPDIR",
-                "XDG_RUNTIME_DIR",
-                "SHELL",
-                "PYTHONPATH",
-                "VIRTUAL_ENV",
-                "CONDA_PREFIX",
-                "LANG",
-                "LC_ALL",
-                "LC_CTYPE",
-                "__CF_USER_TEXT_ENCODING",
-                "MallocNanoZone",
-                "XPC_FLAGS",
-                "XPC_SERVICE_NAME",
-                "TERM_PROGRAM",
-            ] {
-                if let Ok(val) = std::env::var(var) {
-                    sandbox_cmd.env(var, val);
-                }
-            }
-            // HPC/OMP Thread pooling isolation
-            if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
-                sandbox_cmd.env("GITHUB_ACTIONS", val);
-            }
-
-            sandbox_cmd.env("OMP_NUM_THREADS", "1");
-            sandbox_cmd.env("MKL_NUM_THREADS", "1");
-            sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
-            sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
-            sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
-
-            sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-            sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
-            sandbox_cmd.env("PYTHONUTF8", "1");
-
-            sandbox_cmd.arg(&python);
-            cmd = sandbox_cmd;
+            // ... (sandbox code) ...
         }
+        */
 
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
