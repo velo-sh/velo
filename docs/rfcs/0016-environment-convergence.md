@@ -3,6 +3,7 @@
 **Status**: DRAFT
 **Owner**: DevOps/Architecture Team
 **Created**: 2026-01-07
+**Last Updated**: 2026-01-08
 
 ## 1. Problem Statement
 The current Velo codebase exhibits "Environment Fragmentation":
@@ -51,3 +52,28 @@ Instead of `conftest.py` guessing paths, we should export a "Velo Standard Paths
 *   **Never Trust `/tmp`**: It is a shared, hostile resource.
 *   **Fail Fast on Env Leaks**: Tests should fail if they detect write access to `/tmp` outside their sandbox.
 *   **Dynamic Timeouts**: Continue using `TIMEOUT_MULTIPLIER` but centralize it in a `Timeouts` struct available to Rust tests too.
+
+---
+
+## Appendix A: Security Debt & Linux Parity Gap (Recorded: 2026-01-08)
+
+During the "Zygote Stabilization" phase (Jan 2026), Velo achieved "TITANIUM" grade security on macOS (via `sandbox-exec` and `ImportShield`). However, the Linux implementation was temporarily degraded to resolve critical CI/CD blockers. This appendix formally records this debt.
+
+### A.1 The Security Gap
+
+| Security Feature | macOS (Reference) | Linux (Current) | Status | Risk Level |
+| :--- | :--- | :--- | :--- | :--- |
+| **ImportShield** | ✅ Active (Blocking) | ❌ **Disabled** | **DEGRADED** | **Medium**: Malicious dependencies can be imported during bootstrap. |
+| **Kernel Sandbox** | ✅ `sandbox-exec` | ❌ **None** | **DEGRADED** | **High**: No OS-level file write prevention. |
+| **Process Isolation** | ✅ `setsid()` | ✅ `setpgid()` | **Parity** | Low: Group isolation is sufficient for signal management. |
+
+### A.2 Root Cause
+1.  **CI Environment Instability**: Linux runners crashed when `ImportShield` interacted with `uvloop`/`asyncio` during startup.
+2.  **Lack of Linux Equivalents**: No direct zero-dependency equivalent for `sandbox-exec` exists on Linux (requires `landlock` or external tools like `bubblewrap`).
+
+### A.3 Remediation Roadmap
+This debt is blocking for v1.0 General Availability.
+
+*   **Phase 1 (Immediate)**: Acknowledge debt (Done).
+*   **Phase 2 (Next Release)**: Debug `ImportShield` crash on Linux and evaluate `landlock` crate for native Rust sandboxing.
+*   **Phase 3 (Future)**: Implement `SecurityProvider` strategy pattern for abstract, platform-agnostic security enforcement.
