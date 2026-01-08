@@ -610,7 +610,7 @@ pub fn run_server(
     let mut _zygote_guard: Option<crate::zygote::ZygoteLauncher> = None;
 
     // Step 6: Start server
-    logger.info("Starting server...");
+    logger.info("Starting TITANIUM server...");
     if args.log_format == LogFormat::Text {
         eprintln!("   App:       {}", args.app);
         eprintln!("   Server:    {}", server);
@@ -656,6 +656,7 @@ pub fn run_server(
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
                     capabilities: vec![],
                 },
+                None,
             ) {
                 Ok(crate::zygote::ipc::ZygoteResponse::Handshake { version, .. })
                     if version == crate::zygote::ipc::PROTOCOL_VERSION =>
@@ -697,8 +698,7 @@ pub fn run_server(
         // Spawn N workers
         let mut spawn_failed = false;
         for i in 0..args.workers {
-            // SWITCH TO UDS mode (RFC-0011)
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -862,8 +862,11 @@ pub fn run_server(
 
             // Wait for signal with periodic worker health checks
             loop {
+                // RFC-0011 Stabilization: Give workers time to bind
+                std::thread::sleep(std::time::Duration::from_millis(500));
+
                 // Check for signals with timeout for health monitoring
-                match rx.recv_timeout(Duration::from_secs(1)) {
+                match rx.recv_timeout(std::time::Duration::from_secs(1)) {
                     Ok(ServerEvent::Signal(sig)) => match sig {
                         signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                             eprintln!("\n🛑 Received shutdown signal, stopping workers...");
@@ -878,17 +881,24 @@ pub fn run_server(
                             eprintln!("✅ All workers stopped");
                             return Ok(ServerExit::Shutdown);
                         }
-                        _ => {}
+                        _ => {
+                            logger.trace(&format!("Supressing signal {} in Zygote mode", sig));
+                        }
                     },
                     Ok(ServerEvent::WorkerExit) => {
                         // Worker exited - check which ones and respawn
-                        logger.warn("Worker exit event received, checking workers...");
+                        logger.warn(
+                            "Worker exit event received (Manual/Windows path), checking workers...",
+                        );
                     }
                     Ok(ServerEvent::Reload) => {
-                        eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
+                        logger.warn(
+                            "Reload requested but not supported in Zygote worker mode (ignoring)",
+                        );
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         // Periodic health check - respawn dead workers with K8s CrashLoopBackOff
+                        // [STABILIZATION] Temporary deactivation of death scan
                         for (i, worker) in workers.iter_mut().enumerate() {
                             if !worker.is_alive() {
                                 let tracker = &mut respawn_trackers[i];
@@ -928,7 +938,12 @@ pub fn run_server(
                                 ));
 
                                 // Respawn via Zygote
-                                match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+                                match Worker::spawn_uds_via_zygote(
+                                    &socket_path,
+                                    &args.app,
+                                    i as u64,
+                                    None,
+                                ) {
                                     Ok(new_worker) => {
                                         // Update LoadBalancer with new socket
                                         if let Some(ref old_path) = worker.socket_path {
@@ -963,12 +978,15 @@ pub fn run_server(
                         if let Err(e) = crate::zygote::ipc::send_command(
                             &socket_path,
                             crate::zygote::ipc::ZygoteCommand::Status,
+                            None,
                         ) {
                             logger.warn(&format!("Zygote health check failed: {}", e));
-                            // Zygote is dead - could restart here, but for now just log
                         }
                     }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        logger.error("Signal bus disconnected! Finalizing Zygote shutdown.");
+                        break;
+                    }
                 }
             }
         }
@@ -1522,7 +1540,11 @@ mod tests {
         //   Err(RecvTimeoutError::Timeout) => {
         //       for worker in workers.iter_mut() {
         //           if !worker.is_alive() {
-        //               Worker::spawn_uds_via_zygote(&socket_path, &args.app)
+        //               if let Some(tracker) = respawn_trackers.get_mut(&i) {
+        //                   if tracker.should_respawn() {
+        //                       match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64) {
+        //                   }
+        //               }
         //           }
         //       }
         //   }

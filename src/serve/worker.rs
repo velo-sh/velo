@@ -4,13 +4,9 @@
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::zygote::ipc;
-
-/// Global worker counter (avoid temp file conflicts)
-static WORKER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub struct Worker {
     pub pid: u32,
@@ -24,10 +20,13 @@ pub struct Worker {
 
 impl Worker {
     /// Spawn worker via Zygote IPC (UDS mode)
-    pub fn spawn_uds_via_zygote(zygote_socket: &Path, app: &str) -> Result<Self> {
+    pub fn spawn_uds_via_zygote(
+        zygote_socket: &Path,
+        app: &str,
+        worker_id: u64,
+        shm_file: Option<&std::fs::File>, // Optional SHM file to map
+    ) -> Result<Self> {
         Self::validate_app_path(app)?;
-
-        let worker_id = WORKER_COUNTER.fetch_add(1, Ordering::SeqCst);
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
         let launcher_path = crate::zygote::find_worker_launcher()
@@ -45,6 +44,15 @@ impl Worker {
             "--proxy-headers".to_string(),
         ];
 
+        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+            use std::os::unix::prelude::AsRawFd;
+            // Get size for the command
+            let meta = file.metadata()?;
+            (Some(file.as_raw_fd()), Some(meta.len() as usize))
+        } else {
+            (None, None)
+        };
+
         let response = ipc::send_command(
             zygote_socket,
             ipc::ZygoteCommand::Fork {
@@ -59,7 +67,9 @@ impl Worker {
                 project_root: None,
                 max_bundle_size: None,
                 env: Box::new(std::env::vars().collect()),
+                shm_size,
             },
+            fd_to_pass,
         )?;
 
         if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
@@ -111,7 +121,9 @@ impl Worker {
                 project_root: None,
                 max_bundle_size: None,
                 env: Box::new(std::env::vars().collect()),
+                shm_size: None,
             },
+            None,
         )?;
 
         if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
@@ -134,7 +146,9 @@ impl Worker {
             anyhow::bail!("Invalid app format: expected 'module:app'");
         }
 
-        let (module, _) = app.split_once(':').unwrap();
+        let (module, _) = app
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("Invalid app format: expected 'module:app'"))?;
 
         if module.contains("..") {
             anyhow::bail!("Path traversal detected in app: {}", app);
@@ -171,6 +185,7 @@ impl Worker {
             ipc::ZygoteCommand::WorkerStatus {
                 worker_pid: self.pid,
             },
+            None,
         ) {
             Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
             _ => false,
@@ -179,8 +194,22 @@ impl Worker {
 
     /// Fast check if worker process exists (no IPC overhead)
     /// Used for health monitoring in the signal loop
+    ///
+    /// RFC-0016: During startup grace period, assume worker is alive to prevent
+    /// false-positive death detection before the worker binds its socket.
     pub fn is_alive(&self) -> bool {
+        // Grace period: workers get 5 seconds to initialize before liveness checks kick in
+        const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(5);
+
+        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
+            // During grace period, only check if process still exists
+            // Don't trigger respawn logic even if socket isn't ready
+            return unsafe { libc::kill(self.pid as i32, 0) == 0 };
+        }
+
+        // After grace period, normal liveness check
         // Safety: kill with signal 0 checks process existence without sending signal
+        // SECURITY: libc::kill(pid, 0) is a standard non-destructive check for process existence.
         unsafe { libc::kill(self.pid as i32, 0) == 0 }
     }
 
@@ -191,6 +220,7 @@ impl Worker {
                 worker_pid: self.pid,
                 signal: 15, // SIGTERM
             },
+            None,
         );
 
         let response = ipc::send_command(
@@ -199,6 +229,7 @@ impl Worker {
                 worker_pid: self.pid,
                 timeout_secs: Some(timeout.as_secs()),
             },
+            None,
         );
 
         match response {
@@ -210,6 +241,7 @@ impl Worker {
                         worker_pid: self.pid,
                         signal: 9, // SIGKILL
                     },
+                    None,
                 );
                 Ok(())
             }

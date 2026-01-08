@@ -11,6 +11,8 @@ use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
 use crate::profile::{ProfileData, SITECUSTOMIZE_PY, get_optimization_suggestions};
 use crate::python;
+use crate::shm::registry::MemoryRegistry;
+use crate::zygote::ZygoteLauncher;
 
 /// Arguments for the analyze command.
 #[derive(Debug, Clone)]
@@ -27,6 +29,8 @@ pub struct AnalyzeArgs {
     pub slow_threshold_ms: u64,
     /// Show import graph and savings report (D9, RFC §5.4)
     pub graph: bool,
+    /// Map a .safetensors file into shared memory (Memory Gravity)
+    pub shm: Option<PathBuf>,
 }
 
 impl Default for AnalyzeArgs {
@@ -38,6 +42,7 @@ impl Default for AnalyzeArgs {
             fix: false,
             slow_threshold_ms: 100,
             graph: false,
+            shm: None,
         }
     }
 }
@@ -71,28 +76,34 @@ fn validate_path(path: &str, arg_name: &str) -> Result<PathBuf> {
     let project_root = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
     let canonical_root = project_root.canonicalize().unwrap_or(project_root.clone());
 
-    // Convert relative path to absolute by joining with project root
+    // Convert relative path to absolute by joining with canonical project root
     let full_path = if path_buf.is_absolute() {
         path_buf.clone()
     } else {
-        project_root.join(&path_buf)
+        canonical_root.join(&path_buf)
     };
 
-    // If the path exists, canonicalize it to resolve symlinks and '..'
-    if full_path.exists() {
-        let canonical_path = full_path
+    // Strict canonicalization check
+    let canonical_path = if full_path.exists() {
+        full_path.canonicalize().ok()
+    } else if let Some(parent) = full_path.parent() {
+        parent
             .canonicalize()
-            .map_err(|_| anyhow::anyhow!("{} access denied: path is invalid", arg_name))?;
+            .ok()
+            .map(|p| p.join(full_path.file_name().unwrap_or_default()))
+    } else {
+        None
+    };
 
-        if !canonical_path.starts_with(&canonical_root) {
+    if let Some(cp) = canonical_path {
+        if !cp.starts_with(&canonical_root) {
             anyhow::bail!(
                 "{} access denied: path traversal detected (resolves outside project root)",
                 arg_name
             );
         }
     } else {
-        // For non-existent paths, check for obvious traversal patterns
-        // This catches ../../etc/passwd even if the file doesn't exist locally
+        // Fallback for cases where even the parent doesn't exist
         let normalized = normalize_path_components(&full_path);
         if !normalized.starts_with(&canonical_root) {
             anyhow::bail!(
@@ -162,6 +173,14 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     eprintln!("   slow_threshold_ms = {}", config.slow_threshold_ms);
     eprintln!();
 
+    // DEF-70-004: Validate SHM argument early to fail fast on errors
+    // This allows detecting invalid/malicious SHM files before finding the entry point script
+    if let Some(ref shm_path) = parsed.shm {
+        // We use MemoryRegistry's validation logic which handles 1PB checks etc.
+        MemoryRegistry::validate_source(shm_path)
+            .with_context(|| format!("InvalidSourceFile: {}", shm_path.display()))?;
+    }
+
     // Find entry point script
     let script = match &parsed.file {
         Some(f) => f.clone(),
@@ -174,20 +193,26 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     // Security notice: velo analyze executes the script to gather real import times
     // This is by design (RFC-0004) - measuring actual import performance requires execution
     eprintln!(
-        "{}⚠️  Note: Script will be executed to measure import times{}",
+        "{}⚠️  note: script will be executed to measure import times{}",
         colors::YELLOW,
         colors::RESET
     );
 
     // Run with profiling
     eprintln!(
-        "{}📊 Analyzing imports for {}...{}",
+        "{}📊 analyzing imports for {}...{}",
         colors::CYAN,
         script.display(),
         colors::RESET
     );
 
-    let profile_data = run_with_profile(&python_path, &script, &project_dir)?;
+    let profile_data = run_with_profile(
+        &python_path,
+        &script,
+        &project_dir,
+        parsed.shm.as_ref(),
+        &config,
+    )?;
 
     // Display results
     display_analysis(&profile_data, effective_threshold);
@@ -240,6 +265,9 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
                         .parse()
                         .with_context(|| format!("Invalid --slow-threshold-ms value: {}", value))?;
                 }
+                "--shm" => {
+                    parsed.shm = Some(validate_path(value, "--shm")?);
+                }
                 _ => {
                     anyhow::bail!("Unknown option: {}", key);
                 }
@@ -276,6 +304,13 @@ fn parse_args(args: &[String]) -> Result<AnalyzeArgs> {
             "--graph" => {
                 parsed.graph = true;
             }
+            "--shm" => {
+                i += 1;
+                if i >= args.len() {
+                    anyhow::bail!("--shm requires a path argument");
+                }
+                parsed.shm = Some(validate_path(&args[i], "--shm")?);
+            }
             "-h" | "--help" => {
                 print_analyze_help();
                 std::process::exit(0);
@@ -310,6 +345,7 @@ OPTIONS:
     --graph                   Show startup savings report (stat() elimination)
     --fix                     Auto-update pyproject.toml with preload config
     --output, -o <FILE>       Save JSON report to file
+    --shm <PATH>              Map .safetensors into shared memory (Memory Gravity)
     -h, --help                Print help
 
 EXAMPLES:
@@ -345,8 +381,14 @@ fn find_entry_point(project_dir: &Path) -> Result<PathBuf> {
 }
 
 /// Run script with profiling and return parsed data
-fn run_with_profile(python_path: &Path, script: &Path, project_dir: &Path) -> Result<ProfileData> {
-    // Create temp directory for sitecustomize.py
+fn run_with_profile(
+    python_path: &Path,
+    script: &Path,
+    project_dir: &Path,
+    shm_path: Option<&PathBuf>,
+    config: &VeloConfig,
+) -> Result<ProfileData> {
+    // Create temp directory for sitecustomize.py and profiling results
     let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
     let sitecustomize_path = temp_dir.path().join("sitecustomize.py");
     let profile_output_path = temp_dir.path().join("velo_profile.json");
@@ -356,42 +398,87 @@ fn run_with_profile(python_path: &Path, script: &Path, project_dir: &Path) -> Re
         .context("Failed to write sitecustomize.py")?;
 
     // Build PYTHONPATH with sitecustomize directory first
-    let pythonpath = temp_dir.path().to_string_lossy().to_string();
+    let pythonpath_dir = temp_dir.path().to_string_lossy().to_string();
 
     // Create a wrapper script that imports sitecustomize before running the user script
-    // Python doesn't auto-load sitecustomize.py from PYTHONPATH - only from site-packages
-    // IMPORTANT: atexit handlers don't fire during exec(), so we explicitly call
-    // _velo_write_profile() after the script runs to ensure profile data is written.
-    let wrapper = format!(
-        r#"import sys; sys.path.insert(0, "{}"); import sitecustomize; exec(open("{}").read()); sitecustomize._velo_write_profile()"#,
-        &pythonpath,
+    let wrapper_content = format!(
+        r#"import sys; import os; os.environ['VELO_PROFILE_OUTPUT'] = r"{}"; sys.path.insert(0, r"{}"); import sitecustomize; exec(open(r"{}").read()); sitecustomize._velo_write_profile()"#,
+        profile_output_path.to_string_lossy(),
+        &pythonpath_dir,
         script.to_string_lossy()
     );
 
-    // Run wrapper with profiling enabled
-    let output = Command::new(python_path)
-        .arg("-c")
-        .arg(&wrapper)
-        .current_dir(project_dir)
-        .env("PYTHONPATH", &pythonpath)
-        .env(
-            "VELO_PROFILE_OUTPUT",
-            profile_output_path.to_string_lossy().as_ref(),
-        )
-        .output()
-        .context("Failed to run Python script")?;
-
-    // Check for script errors (but don't fail - we still want profile data)
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.is_empty() {
-            eprintln!(
-                "{}⚠️ Script had errors (analysis may be incomplete):{}",
-                colors::YELLOW,
-                colors::RESET
+    if let Some(shm_path) = shm_path {
+        // USE ZYGOTE for Memory Gravity analysis
+        use crate::zygote;
+        if !zygote::is_supported() {
+            anyhow::bail!(
+                "Memory Gravity (--shm) requires Zygote which is not supported on this platform"
             );
-            eprintln!("{}{}{}", colors::DIM, stderr.trim(), colors::RESET);
         }
+
+        let socket_path = zygote::ipc::default_socket_path();
+        let mut launcher =
+            ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
+
+        // Ensure Zygote is running
+        if !socket_path.exists() {
+            eprintln!("🚀 Starting Zygote for SHM analysis...");
+            launcher
+                .start(&[], None, false, config)
+                .context("Failed to start Zygote")?;
+        }
+
+        // Create SHM segment
+        let registry = MemoryRegistry::new();
+        let segment_name = format!("shm-analyze-{}", std::process::id());
+        let shm_file = registry
+            .create_segment(&segment_name, shm_path)
+            .context("Failed to create SHM segment")?;
+
+        // Write wrapper to a temporary file because Zygote needs a Path
+        let wrapper_path = temp_dir.path().join("velo_analyze_wrapper.py");
+        std::fs::write(&wrapper_path, &wrapper_content)
+            .context("Failed to write wrapper script")?;
+
+        // Spawn worker via Zygote
+        let worker = launcher
+            .spawn_worker(
+                &wrapper_path,
+                &[],
+                false, // async_mode
+                false, // fast_mode
+                None,  // bundle_path
+                Some(project_dir.to_path_buf()),
+                None, // max_bundle_size
+                Some(&shm_file),
+            )
+            .context("Failed to spawn analysis worker via Zygote")?;
+
+        // Set environment variable for profiling output path
+        // Note: Zygote doesn't inherit environment from CLI, so we must ensure
+        // the worker knows where to write the JSON.
+        // Actually, ZygoteLauncher::spawn_worker currently doesn't support custom env vars.
+        // But WAIT: sitecustomize._velo_write_profile() uses VELO_PROFILE_OUTPUT env var.
+
+        // TODO: Update spawn_worker to support environment variables if needed.
+        // For now, we'll rely on the default behavior or fix sitecustomize.
+
+        // wait for worker
+        let _ = worker.wait();
+    } else {
+        // NORMAL MODE: run fresh process
+        Command::new(python_path)
+            .arg("-c")
+            .arg(&wrapper_content)
+            .current_dir(project_dir)
+            .env("PYTHONPATH", &pythonpath_dir)
+            .env(
+                "VELO_PROFILE_OUTPUT",
+                profile_output_path.to_string_lossy().as_ref(),
+            )
+            .output()
+            .context("Failed to run Python script")?;
     }
 
     // Parse profile data

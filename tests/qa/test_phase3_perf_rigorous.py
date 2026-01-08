@@ -63,7 +63,7 @@ class PerfEnv:
             self.run_timed(["run", "--zygote", script], timeout=10)
     
     def cleanup(self):
-        subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
+        subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
             shutil.rmtree(self.path)
         except:

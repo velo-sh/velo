@@ -50,6 +50,7 @@ mod ipc_tests {
             project_root: None,
             max_bundle_size: None,
             env: Box::new(std::collections::HashMap::new()),
+            shm_size: None,
         };
         let serialized = rmp_serde::to_vec(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = rmp_serde::from_slice(&serialized).unwrap();
@@ -168,7 +169,9 @@ mod ipc_tests {
                 project_root: None,
                 max_bundle_size: None,
                 env: Box::new(std::collections::HashMap::new()),
+                shm_size: None,
             },
+            None,
         )
         .unwrap();
 
@@ -191,6 +194,7 @@ mod ipc_tests {
         let result = velo::zygote::ipc::send_command(
             &socket_path,
             velo::zygote::ipc::ZygoteCommand::Shutdown,
+            None,
         );
         assert!(result.is_err());
     }
