@@ -474,6 +474,12 @@ impl ZygoteLauncher {
                     sandbox_cmd.env(var, val);
                 }
             }
+            // RFC-0012: Resilience - Dynamically pass all VELO_* configuration to sandbox
+            for (key, value) in std::env::vars() {
+                if key.starts_with("VELO_") {
+                    sandbox_cmd.env(key, value);
+                }
+            }
             // HPC/OMP Thread pooling isolation
             if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
                 sandbox_cmd.env("GITHUB_ACTIONS", val);
