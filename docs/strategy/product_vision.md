@@ -4,9 +4,9 @@
 > **Status**: TITANIUM (Active)
 
 ## 1. Core Vision
-**"Industrial Infrastructure for the Python AI Era."**
+**"The Industrial Runtime for the Python AI Era."**
 
-Velo is not just a runner; it is a **Runtime Supervisor** designed to bring Rust's reliability and performance to the sprawling Python ecosystem. We presume Python code is slow and unsafe, and we wrap it in a **Titanium Shell**.
+Velo is not just a runner; it is an **AI-Focused Runtime Supervisor**. We solve the "Python Tax" in AI inference—specifically targeting cold-start latency, memory density, and deployment simplicity. We wrap the sprawling AI ecosystem in a **Titanium Shell**.
 
 ---
 
@@ -14,11 +14,11 @@ Velo is not just a runner; it is a **Runtime Supervisor** designed to bring Rust
 
 A system's reliability is determined by its shortest stave (weakest link). Velo rejects "Feature Velocity" if it creates a short stave in reliability.
 
-*   **Short Stave**: 500ms restart latency → **Fix**: Zygote Mode (<50ms).
-*   **Short Stave**: "Works on my machine" → **Fix**: Surgical Shielding (RFC-0012).
-*   **Short Stave**: "Silent Failure" → **Fix**: Prosecutor Mode (Zero-Mock Assurance).
+*   **Short Stave**: AI Cold Start (500ms+) → **Fix**: Velo Zygote / Fast Loader (<50ms).
+*   **Short Stave**: Model Memory Bloat (RSS duplication) → **Fix**: Memory Gravity (Phase 7.0).
+*   **Short Stave**: Deployment Complexity (Dockerfile/venv hell) → **Fix**: Bundle-First Distribution.
 
-**We optimize for the "Worst Case", not the "Happy Path".**
+**We optimize for "AI Serverless Performance", not "Generic Web Throughput".**
 
 ---
 
@@ -43,7 +43,7 @@ Quality is not an accident; it is enforced.
 
 ## 4. The 5-Year Horizon (2026-2030)
 
-*   **2026 (The Foundation)**: Rust Supervisor + Zygote Integration. (Done)
-*   **2027 (The Compiler)**: Native compilation of hot Python paths.
-*   **2028 (The Intelligence)**: AI-driven self-optimization (PGO).
-*   **2030 (The Standard)**: Velo becomes the default runtime for Enterprise Python.
+*   **2026 (The AI Foundation)**: Rust Supervisor + AI Inference MVP (Cold Start < 50ms).
+*   **2027 (The Memory Gravity)**: Zero-copy shared model parameters between workers.
+*   **2028 (The Native Execution)**: Compilation of hot AI inference paths.
+*   **2030 (The Standard)**: Velo becomes the de-facto standard for AI Serverless Runtimes.

@@ -637,6 +637,7 @@ pub fn run_server(
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
                     capabilities: vec![],
                 },
+                None,
             ) {
                 Ok(crate::zygote::ipc::ZygoteResponse::Handshake { version, .. })
                     if version == crate::zygote::ipc::PROTOCOL_VERSION =>
@@ -676,8 +677,7 @@ pub fn run_server(
         // Spawn N workers
         let mut spawn_failed = false;
         for i in 0..args.workers {
-            // SWITCH TO UDS mode (RFC-0011)
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -921,6 +921,7 @@ pub fn run_server(
                                     &socket_path,
                                     &args.app,
                                     i as u64,
+                                    None,
                                 ) {
                                     Ok(new_worker) => {
                                         // Update LoadBalancer with new socket
@@ -956,6 +957,7 @@ pub fn run_server(
                         if let Err(e) = crate::zygote::ipc::send_command(
                             &socket_path,
                             crate::zygote::ipc::ZygoteCommand::Status,
+                            None,
                         ) {
                             logger.warn(&format!("Zygote health check failed: {}", e));
                         }

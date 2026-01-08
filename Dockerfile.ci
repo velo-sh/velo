@@ -80,6 +80,8 @@ CMD ["bash", "-c", "\
     echo '' && \
     echo '▶ Running Python tests...' && \
     . /tmp/.venv-docker/bin/activate && \
+    pytest tests/qa/phase_7_0/ -v --tb=short && \
+    echo '✅ Phase 7.0 Memory Gravity tests passed' && \
     pytest tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py -v && \
     echo '✅ Python tests passed' && \
     echo '' && \

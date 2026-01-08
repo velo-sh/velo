@@ -33,6 +33,7 @@ COMMANDS:
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
     --profile  Show detailed startup timing breakdown
+    --shm <PATH>  Map .safetensors into shared memory (Memory Gravity)
 
 SERVE OPTIONS:
     --host <HOST>    Bind host (default: 127.0.0.1)
@@ -46,6 +47,7 @@ ANALYZE OPTIONS:
     --suggest-preload         Show preload suggestions
     --fix                     Auto-update pyproject.toml with recommendations
     --output <FILE>           Save JSON report to file
+    --shm <PATH>              Map .safetensors into shared memory (Memory Gravity)
 
 ZYGOTE SUBCOMMANDS:
     start        Start Zygote daemon

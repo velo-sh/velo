@@ -77,7 +77,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
         ));
     }
 
-    send_command(&socket_path, ZygoteCommand::Status)
+    send_command(&socket_path, ZygoteCommand::Status, None)
 }
 
 /// Find the velo_zygote Python module path
@@ -168,13 +168,16 @@ fn find_zygote_module() -> Result<PathBuf> {
 /// Find the standardized worker launcher script path
 pub fn find_worker_launcher() -> Result<PathBuf> {
     let zygote_main = find_zygote_module()?;
-    let launcher = zygote_main.parent().unwrap().join("worker_launcher.py");
+    let parent = zygote_main.parent().ok_or_else(|| {
+        ZygoteError::StartFailed("Zygote main script has no parent directory".to_string())
+    })?;
+    let launcher = parent.join("worker_launcher.py");
     if launcher.exists() {
         Ok(launcher)
     } else {
         Err(ZygoteError::StartFailed(format!(
             "worker_launcher.py not found in {}",
-            zygote_main.parent().unwrap().display()
+            parent.display()
         )))
     }
 }
@@ -421,7 +424,80 @@ impl ZygoteLauncher {
         /*
         #[cfg(target_os = "macos")]
         {
-            // ... (sandbox code) ...
+            let profile = format!(
+                r#"(version 1)
+(allow default)
+(allow file-read*)
+(deny file-write*
+    (subpath "/Users")
+    (subpath "/Library")
+    (subpath "/etc")
+)
+(allow file-write*
+    (subpath "/tmp")
+    (subpath "/private/tmp")
+    (subpath "/var/folders")
+    (subpath "{}")
+    (subpath "{}")
+)
+"#,
+                std::env::current_dir().unwrap_or_default().display(),
+                ipc::get_socket_dir().display()
+            );
+
+            let mut sandbox_cmd = Command::new("sandbox-exec");
+            sandbox_cmd.arg("-p").arg(profile);
+
+            // Re-apply environment (Command::new doesn't inherit my modified cmd's env)
+            // Pillar 1: Env Isolation (re-apply to sandbox wrapper)
+            sandbox_cmd.env_clear();
+            for var in &[
+                "PATH",
+                "HOME",
+                "USER",
+                "TMPDIR",
+                "XDG_RUNTIME_DIR",
+                "SHELL",
+                "PYTHONPATH",
+                "VIRTUAL_ENV",
+                "CONDA_PREFIX",
+                "LANG",
+                "LC_ALL",
+                "LC_CTYPE",
+                "__CF_USER_TEXT_ENCODING",
+                "MallocNanoZone",
+                "XPC_FLAGS",
+                "XPC_SERVICE_NAME",
+                "TERM_PROGRAM",
+            ] {
+                if let Ok(val) = std::env::var(var) {
+                    sandbox_cmd.env(var, val);
+                }
+            }
+            // RFC-0012: Resilience - Use formal whitelist from SSOT (Configuration De-Hellification)
+            let config = VeloConfig::default();
+            for var in &config.security_env_whitelist {
+                if let Ok(val) = std::env::var(var) {
+                    sandbox_cmd.env(var, val);
+                }
+            }
+            // HPC/OMP Thread pooling isolation
+            if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
+                sandbox_cmd.env("GITHUB_ACTIONS", val);
+            }
+
+            sandbox_cmd.env("OMP_NUM_THREADS", "1");
+            sandbox_cmd.env("MKL_NUM_THREADS", "1");
+            sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
+            sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
+            sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
+
+            sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+            sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
+            sandbox_cmd.env("PYTHONUTF8", "1");
+
+            sandbox_cmd.arg(&python);
+            cmd = sandbox_cmd;
         }
         */
 
@@ -558,7 +634,7 @@ impl ZygoteLauncher {
             version: ipc::PROTOCOL_VERSION,
             capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
         };
-        let response = zygote_stream.send_command(&handshake_cmd)?;
+        let response = zygote_stream.send_command(&handshake_cmd, None)?;
 
         if let ipc::ZygoteResponse::Handshake {
             version,
@@ -577,7 +653,7 @@ impl ZygoteLauncher {
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
         let status_cmd = ipc::ZygoteCommand::Status;
-        let response = zygote_stream.send_command(&status_cmd)?;
+        let response = zygote_stream.send_command(&status_cmd, None)?;
 
         if let ipc::ZygoteResponse::Status { pid, .. } = response {
             if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
@@ -617,7 +693,7 @@ impl ZygoteLauncher {
 
         // Try to send shutdown command
         if self.socket_path.exists() {
-            let _ = ipc::send_command(&self.socket_path, ipc::ZygoteCommand::Shutdown);
+            let _ = ipc::send_command(&self.socket_path, ipc::ZygoteCommand::Shutdown, None);
         }
 
         // Wait for process to exit or kill it
@@ -675,6 +751,7 @@ impl ZygoteLauncher {
         bundle_path: Option<PathBuf>,
         project_root: Option<PathBuf>,
         max_bundle_size: Option<u64>,
+        shm_file: Option<&std::fs::File>,
     ) -> Result<WorkerHandle> {
         if !self.is_running() {
             return Err(ZygoteError::NotRunning);
@@ -701,6 +778,16 @@ impl ZygoteLauncher {
         let exit_code_path =
             std::env::temp_dir().join(format!("velo-exit-{}-{}.tmp", pid, timestamp));
 
+        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+            use std::os::unix::io::AsRawFd;
+            let meta = file
+                .metadata()
+                .map_err(|e| ZygoteError::IOError(e.to_string()))?;
+            (Some(file.as_raw_fd()), Some(meta.len() as usize))
+        } else {
+            (None, None)
+        };
+
         // Send FORK command over socket
         let response = ipc::send_command(
             &self.socket_path,
@@ -715,7 +802,9 @@ impl ZygoteLauncher {
                 bundle_path,
                 project_root,
                 max_bundle_size,
+                shm_size,
             },
+            fd_to_pass,
         )?;
 
         match response {
