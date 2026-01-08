@@ -169,12 +169,24 @@ def velo_binary():
     """Build and return path to Velo binary."""
     # RFC-0013: Ensure we use the binary from the current workspace
     root_dir = Path(__file__).parents[2]
+    
+    # Priority 1: Check for Release Binary (CI/Prod)
+    release_bin = (root_dir / "target/release/velo").resolve()
+    if release_bin.exists():
+        return str(release_bin)
+        
+    # Priority 2: Check for Debug Binary (Local Dev)
+    debug_bin = (root_dir / "target/debug/velo").resolve()
+    if debug_bin.exists():
+        return str(debug_bin)
+
+    # Priority 3: Build Debug Binary (Local Fallback)
+    print("Velo binary not found, building (debug)...")
     subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
     
-    bin_path = (root_dir / "target/debug/velo").resolve()
-    if not bin_path.exists():
-        raise RuntimeError(f"Velo binary not found at {bin_path}")
-    return str(bin_path)
+    if not debug_bin.exists():
+        raise RuntimeError(f"Velo binary not found at {debug_bin}")
+    return str(debug_bin)
 
 # =============================================================================
 # HERMETIC TEST ENVIRONMENT (RFC-0012)
