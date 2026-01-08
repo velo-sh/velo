@@ -42,9 +42,9 @@ class TestPhase61StabilityHardened:
                 # Still no children? Try one more short wait
                 time.sleep(5)
                 children = p.children(recursive=True)
-        except psutil.NoSuchProcess:
+        except psutil.NoSuchProcess as err:
             stdout, stderr = proc.communicate()
-            raise RuntimeError(f"Velo exited prematurely.\nSTDOUT: {stdout}\nSTDERR: {stderr}")
+            raise RuntimeError(f"Velo exited prematurely.\nSTDOUT: {stdout}\nSTDERR: {stderr}") from err
             
         assert len(children) >= 1, f"No child processes detected after 15s.\nSTDOUT: {proc.stdout.read() if proc.stdout else ''}"
         child_pid = children[0].pid
@@ -69,7 +69,7 @@ class TestPhase61StabilityHardened:
                     return line
         return None
 
-    def _read_until(self, stream, pattern, timeout=15):
+    def _read_until(self, stream, pattern, timeout=15) -> str:
         import select
         output = ""
         start_time = time.time()
@@ -77,7 +77,8 @@ class TestPhase61StabilityHardened:
             r, _, _ = select.select([stream], [], [], 0.1)
             if r:
                 line = stream.readline()
-                if not line: break
+                if not line:
+                    break
                 output += line
                 if pattern in line:
                     return output
@@ -145,7 +146,8 @@ class TestPhase61StabilityHardened:
         time.sleep(2)
         while True:
             line = self._read_with_timeout(proc.stdout, timeout=0.5)
-            if not line: break
+            if not line:
+                break
             prefix += line
 
         # Continuous events every 200ms for 3 seconds ( > default 300ms debounce)
@@ -364,8 +366,7 @@ app = lambda s, r, se: None
             out, err = proc.communicate(timeout=1)
             starts = out.count("START_")
             if starts < 2:
-                print(f"DEBUG: Captured Output:\n{out}")
-                print(f"DEBUG: Captured Error:\n{err}")
+                print(f"DEBUG: Captured Output (stderr merged):\n{out}")
             # If starvation exists, starts will be 1 (the initial one).
             # If hard-cap exists, starts will be >= 2.
             assert starts >= 2, f"Starvation Detected: Only {starts} starts found after 4s of continuous events. Hard-cap missing in watcher.rs."
@@ -449,10 +450,9 @@ class TestRegressionBugFixes:
         # Find ALL children (uvicorn + workers)
         try:
             children = psutil.Process(parent_pid).children(recursive=True)
-        except psutil.NoSuchProcess:
+        except psutil.NoSuchProcess as err:
             stdout, _ = proc.communicate()
-            raise RuntimeError(f"Velo exited prematurely.\nLOGS: {stdout}")
-            pytest.skip("Process exited before we could get children")
+            raise RuntimeError(f"Velo exited prematurely.\nLOGS: {stdout}") from err
         
         assert len(children) >= 1, "Expected at least one child process"
         child_pids = [c.pid for c in children]

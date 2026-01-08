@@ -5,8 +5,31 @@ import sys
 import os
 from pathlib import Path
 
+
 # Add tests/qa to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+
+# =============================================================================
+# MIDDLEWARE HELPERS
+# =============================================================================
+
+UDS_PROXY_MIDDLEWARE_CODE = """
+class UDSProxyMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+            headers = dict(scope.get("headers", []))
+            # Try to restore client from X-Forwarded-For
+            forwarded = headers.get(b"x-forwarded-for")
+            if forwarded:
+                # simple parse: take the first IP
+                ip = forwarded.decode("latin1").split(",")[0].strip()
+                # mock port 0 as we don't know the real source port
+                scope["client"] = (ip, 0)
+        await self.app(scope, receive, send)
+"""
 
 
 # =============================================================================
