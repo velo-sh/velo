@@ -77,7 +77,7 @@ You will see:
 - Memory usage drop dramatically
 - Why Python does not have to behave this way
 
-➡️ `ai-serverless-demo/README.md`
+➡️ [**ai-serverless-demo/README.md**](./ai-serverless-demo/README.md)
 
 ---
 
