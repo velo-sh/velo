@@ -160,7 +160,7 @@ mod tests {
                 _ => unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize },
             };
             assert_eq!(
-                size_overflow,
+                size_overflow as usize,
                 alignment::align_up(EXPECTED_HUGE_PAGE_SIZE + 64, page_size),
                 "QA FAILURE: Overflow size {} not aligned to page boundary ({}KB)",
                 size_overflow,
