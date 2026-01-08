@@ -18,7 +18,7 @@ pub const UV_LOCK: &str = "uv.lock";
 pub const REQUIREMENTS_TXT: &str = "requirements.txt";
 pub const SITE_CUSTOMIZE: &str = "sitecustomize.py";
 pub const VELO_LOADER: &str = "velo_loader.py";
-pub const VELO_CACHE_DIR: &str = ".velo_cache";
+pub const VELO_CACHE_DIR: &str = ".velo/cache";
 pub const VELO_PROFILE_JSON: &str = "velo_profile.json";
 
 impl VeloPaths {
