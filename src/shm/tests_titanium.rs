@@ -103,7 +103,7 @@ mod tests {
             let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
             if size == EXPECTED_HUGE_PAGE_SIZE {
                 println!("✅ QA INFO: HugePage alignment verified (2MB)");
-            } else if size % page_size == 0 && size < EXPECTED_HUGE_PAGE_SIZE {
+            } else if size.is_multiple_of(page_size) && size < EXPECTED_HUGE_PAGE_SIZE {
                 println!(
                     "⚠️ QA INFO: HugePage fallback detected (Standard {}KB page used). This is acceptable in resource-constrained environments.",
                     page_size / 1024
