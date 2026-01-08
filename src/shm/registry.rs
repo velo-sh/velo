@@ -397,7 +397,14 @@ impl MemoryRegistry {
             fd = try_create(0);
             is_huge = false;
 
-            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
+            #[cfg(target_os = "linux")]
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+            #[cfg(not(target_os = "linux"))]
+            let page_size = 4096;
+
+            let aligned_size = alignment::align_up(size, page_size);
+
+            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, aligned_size as i64) } < 0 {
                 let err = std::io::Error::last_os_error();
                 unsafe { libc::close(fd as RawFd) };
                 return Err(MemoryError::ResizeFailed(format!(

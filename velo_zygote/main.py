@@ -84,10 +84,15 @@ class ImportShield:
         if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
             return None
 
-        # 1. Block internal framework access from child process
-        # EXCEPTION: Allow access to config/constants for runtime introspection
-        # This prevents Trap 178 (Bootstrap Deadlock).
-        whitelist = ("velo_zygote.constants", "velo_zygote.config", "velo_zygote.LogUtils")
+        # RFC-0012: Resilience Whitelist for Framework Bootstrap
+        # We must allow the base package and critical config modules.
+        whitelist = (
+            "velo_zygote",
+            "velo_zygote.main",
+            "velo_zygote.constants",
+            "velo_zygote.config",
+            "velo_zygote.LogUtils"
+        )
         
         if fullname.startswith("velo_zygote") and fullname not in whitelist:
             # We allow the launcher to import us once, but once the app is loading,
@@ -791,6 +796,9 @@ class ForkHandler:
                     except: pass
                 except Exception as e:
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
+
+            # 2.5 Diagnostic: First log from child
+            LogUtils.stderr_log(f"🔄 Child {os.getpid()} starting re-init...")
 
             # 3. Install ImportShield (Import Isolation)
             # We always install it, but DEFER activation (Trap 178)
