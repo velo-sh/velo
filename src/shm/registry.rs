@@ -381,8 +381,30 @@ impl MemoryRegistry {
             is_huge = true;
         }
 
+        if fd >= 0 {
+            // H-20: Alignment Requirement (Verified Logic)
+            // Use the shared alignment helper to ensure we meet valid HugePage boundaries.
+            let aligned_size = alignment::align_to_huge_page(size);
+
+            // Attempt to size with the aligned size.
+            // If this fails even with aligned size, then HugePages are likely fundamentally broken
+            // (e.g. not mounted, insufficient pool, or quota exceeded).
+            if unsafe { libc::ftruncate(fd as RawFd, aligned_size as i64) } < 0 {
+                let err = std::io::Error::last_os_error();
+                unsafe { libc::close(fd as RawFd) };
+                fd = -1;
+                eprintln!(
+                    "⚠️ H-20 Warning: HugePages ftruncate failed ({} for aligned size {}), falling back to standard 4KB pages.",
+                    err, aligned_size
+                );
+            }
+        }
+
         if fd < 0 {
             // Fallback to standard 4KB pages
+            // This path is taken if:
+            // 1. MFD_HUGETLB failed (not supported/disabled)
+            // 2. ftruncate failed (quota exceeded, etc)
             if allow_huge {
                 eprintln!(
                     "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
@@ -390,6 +412,15 @@ impl MemoryRegistry {
             }
             fd = try_create(0);
             is_huge = false;
+
+            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
+                let err = std::io::Error::last_os_error();
+                unsafe { libc::close(fd as RawFd) };
+                return Err(MemoryError::ResizeFailed(format!(
+                    "ftruncate failed on standard page: {}",
+                    err
+                )));
+            }
         }
 
         let fd = fd as RawFd;
@@ -401,16 +432,7 @@ impl MemoryRegistry {
             )));
         }
 
-        // SECURITY: ftruncate is used to set the initial size of the shared memory segment.
-        if unsafe { libc::ftruncate(fd, size as i64) } < 0 {
-            // SECURITY: closing the FD on error.
-            let _ = unsafe { libc::close(fd) };
-            return Err(MemoryError::ResizeFailed(format!(
-                "ftruncate failed: {}",
-                std::io::Error::last_os_error()
-            )));
-        }
-
+        // Seals are applied later by caller via apply_seals() to allow mapping first
         Ok((fd, is_huge))
     }
 
