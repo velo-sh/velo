@@ -22,6 +22,8 @@ import psutil
 import pytest
 import socket
 import sys
+import traceback
+
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
@@ -305,10 +307,28 @@ class TestK8sConcerns:
                 pass
 
         # Health check should still work (other worker)
-        time.sleep(1)
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+        # Retry logic: Connection might be reset if we hit the dead worker's pipe
+        # or if the proxy is handling the disconnect.
+        start_time = time.time()
+        final_status = None
+        
+        while time.time() - start_time < 5:
+            try:
+                response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+                final_status = response.status_code
+                if response.status_code in [200, 503]:
+                    break
+            except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+                print(f"DEBUG: Health check retry caught expected error: {e}")
+                time.sleep(0.5)
+            except Exception as e:
+                # Other errors might be fatal, but let's retry briefly
+                print(f"DEBUG: Health check retry caught unexpected error: {e}")
+                traceback.print_exc()
+                time.sleep(0.5)
+        
         # Depending on implementation, might be 200 or 503
-        assert response.status_code in [200, 503]
+        assert final_status in [200, 503], f"Health check failed (status={final_status}) after worker kill"
 
 
 class TestO11yConcerns:

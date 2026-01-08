@@ -323,7 +323,30 @@ import os
 import signal
 import asyncio
 
+class UDSProxyMiddleware:
+    """Restores client IP from X-Forwarded-For when running over UDS."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+            headers = dict(scope.get("headers", []))
+            # Try to restore client from X-Forwarded-For
+            forwarded = headers.get(b"x-forwarded-for")
+            if forwarded:
+                # simple parse: take the first IP
+                try:
+                    ip = forwarded.decode("latin1").split(",")[0].strip()
+                    # mock port 0 as we don't know the real source port
+                    scope["client"] = (ip, 0)
+                except Exception:
+                    pass
+        await self.app(scope, receive, send)
+
+
 app = FastAPI()
+app.add_middleware(UDSProxyMiddleware)
+
 
 # Track concurrent requests for testing
 _concurrent_counter = 0

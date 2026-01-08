@@ -200,16 +200,14 @@ pub fn get_server_type(framework: Framework) -> Server {
 
 /// Check if the server is installed
 pub fn check_server_installed(server: Server, python_path: &std::path::Path) -> bool {
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     let check_cmd = format!("import {}", server.module_name());
-    Command::new(python_path)
-        .args(["-c", &check_cmd])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let mut cmd = Command::new(python_path);
+    cmd.args(["-c", &check_cmd]);
+
+    let output = cmd.output();
+    output.map(|s| s.status.success()).unwrap_or(false)
 }
 
 #[cfg(test)]

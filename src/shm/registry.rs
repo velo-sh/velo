@@ -106,9 +106,9 @@ impl MemoryRegistry {
             )));
         }
 
-        // 1. Create SHM FD
-        #[allow(unused_variables)]
-        let (fd, is_huge) = self.create_shm_fd(name, total_size)?;
+        // 1. Create SHM FD (Optimistically target HugePages if possible)
+        #[allow(unused)]
+        let (mut fd, mut is_huge) = self.create_shm_fd(name, total_size, true)?;
 
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
@@ -121,7 +121,8 @@ impl MemoryRegistry {
             flags |= linux::MAP_HUGETLB;
         }
 
-        let ptr = unsafe {
+        #[allow(unused_mut)]
+        let mut ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
                 total_size,
@@ -131,6 +132,40 @@ impl MemoryRegistry {
                 0,
             )
         };
+
+        // H-20 Fix: If HugePages mapping fails with ENOMEM (no pool available),
+        // fallback to standard pages.
+        // IMPORTANT: We MUST recreate the FD without MFD_HUGETLB because the kernel
+        // will reject standard mmap on an MFD_HUGETLB FD with ENOMEM.
+        #[cfg(target_os = "linux")]
+        if ptr == libc::MAP_FAILED
+            && is_huge
+            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOMEM)
+        {
+            eprintln!(
+                "⚠️ H-20: HugePages mmap failed (ENOMEM). Re-creating FD and falling back to standard pages."
+            );
+
+            // Close the HugePage-backed FD
+            unsafe { libc::close(fd) };
+
+            // Re-create WITHOUT HugePages
+            let (new_fd, new_is_huge) = self.create_shm_fd(name, total_size, false)?;
+            fd = new_fd;
+            is_huge = new_is_huge;
+
+            flags &= !linux::MAP_HUGETLB;
+            ptr = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    total_size,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    flags,
+                    fd,
+                    0,
+                )
+            };
+        }
 
         if ptr == libc::MAP_FAILED {
             return Err(MemoryError::MmapFailed(format!(
@@ -312,7 +347,12 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
+    fn create_shm_fd(
+        &self,
+        name: &str,
+        size: usize,
+        allow_huge: bool,
+    ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
@@ -332,9 +372,14 @@ impl MemoryRegistry {
 
         // H-20: Optimistic HugePages Attempt (MFD_HUGETLB)
         // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
-        // we fallback to standard pages.
-        let mut fd = try_create(linux::MFD_HUGETLB);
-        let mut is_huge = true;
+        // we fallback to standard pages to prevent startup failure.
+        let mut fd = -1;
+        let mut is_huge = false;
+
+        if allow_huge {
+            fd = try_create(linux::MFD_HUGETLB);
+            is_huge = true;
+        }
 
         if fd >= 0 {
             // H-20: Alignment Requirement (Verified Logic)
@@ -360,6 +405,11 @@ impl MemoryRegistry {
             // This path is taken if:
             // 1. MFD_HUGETLB failed (not supported/disabled)
             // 2. ftruncate failed (quota exceeded, etc)
+            if allow_huge {
+                eprintln!(
+                    "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
+                );
+            }
             fd = try_create(0);
             is_huge = false;
 
@@ -387,7 +437,12 @@ impl MemoryRegistry {
     }
 
     #[cfg(target_os = "macos")]
-    fn create_shm_fd(&self, name: &str, size: usize) -> Result<(RawFd, bool), MemoryError> {
+    fn create_shm_fd(
+        &self,
+        name: &str,
+        size: usize,
+        _allow_huge: bool,
+    ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
 
