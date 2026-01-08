@@ -179,8 +179,19 @@ pub struct ManagedChild {
     pgid: Option<i32>,
     pid_file: Option<PathBuf>,
 }
-
 impl ManagedChild {
+    /// Get child process ID.
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Get process group ID (Unix only).
+    #[cfg(unix)]
+    pub fn pgid(&self) -> Option<i32> {
+        self.pgid
+    }
+
+    /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
     /// Spawn a new managed child process.
     ///
     /// # Arguments
@@ -319,11 +330,6 @@ impl ManagedChild {
             }
         }
         self.child.kill().map_err(ServeError::SignalError)
-    }
-
-    /// Get the child's PID.
-    pub fn id(&self) -> u32 {
-        self.child.id()
     }
 }
 
@@ -1165,13 +1171,20 @@ pub fn run_server(
                             }
                             _ => {
                                 // CN-P0-002: Forward other signals to child group
-                                let target = if let Some(pgid) = child.pgid {
-                                    -pgid
-                                } else {
-                                    child.child.id() as i32
-                                };
-                                unsafe {
-                                    libc::kill(target, sig);
+                                #[cfg(unix)]
+                                {
+                                    let target = if let Some(pgid) = child.pgid() {
+                                        -pgid
+                                    } else {
+                                        child.id() as i32
+                                    };
+                                    unsafe {
+                                        libc::kill(target, sig);
+                                    }
+                                }
+                                #[cfg(not(unix))]
+                                {
+                                    let _ = sig; // Suppress unused warning
                                 }
                             }
                         }

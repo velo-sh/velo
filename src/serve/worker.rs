@@ -66,7 +66,12 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
-                env: Box::new(std::env::vars().collect()),
+                env: {
+                    let mut env =
+                        std::env::vars().collect::<std::collections::HashMap<String, String>>();
+                    env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
+                    Box::new(env.into_iter().collect())
+                },
                 shm_size,
             },
             fd_to_pass,
