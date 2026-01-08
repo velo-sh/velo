@@ -21,13 +21,16 @@ class UDSProxyMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket") and scope.get("client") is None:
             headers = dict(scope.get("headers", []))
-            # Try to restore client from X-Forwarded-For
-            forwarded = headers.get(b"x-forwarded-for")
-            if forwarded:
-                # simple parse: take the first IP
-                ip = forwarded.decode("latin1").split(",")[0].strip()
-                # mock port 0 as we don't know the real source port
-                scope["client"] = (ip, 0)
+            try:
+                # Try to restore client from X-Forwarded-For
+                forwarded = headers.get(b"x-forwarded-for")
+                if forwarded:
+                    # simple parse: take the first IP
+                    ip = forwarded.decode("latin1").split(",")[0].strip()
+                    # mock port 0 as we don't know the real source port
+                    scope["client"] = (ip, 0)
+            except Exception:
+                pass
         await self.app(scope, receive, send)
 """
 
