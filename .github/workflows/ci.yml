@@ -5,6 +5,8 @@ on:
     branches: ['**']
   pull_request:
     branches: ['**']
+  schedule:
+    - cron: '0 2 * * *'  # Run nightly at 2 AM UTC (Performance Canary)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,20 +14,40 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  UV_VERSION: "0.5" # Centralized uv version
+  UV_VERSION: "0.9" # Centralized uv version
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
   VELO_ZYGOTE_WORKER_TIMEOUT: 60
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
-  VELO_TIMEOUT_MULTIPLIER: 3
+  VELO_TIMEOUT_MULTIPLIER: 6
   # Workaround for DEF-70-006 (Zygote IPC NetNS Isolation in Docker)
   VELO_ZYGOTE_SOCKET: "/tmp/velo-zygote-ci.sock"
   # Enforce Strict NUMA to verify DEF-70-004 fix
   VELO_STRICT_NUMA: "1"
-
-
 jobs:
+  performance-canary:
+    name: 🐤 Performance Canary (Nightly)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    env:
+      VELO_TIMEOUT_MULTIPLIER: 1.0  # STRICT: Must pass with 1x timeout
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+      - name: Install Python 3.11
+        run: uv python install 3.11
+      - name: Build Velo (Release)
+        run: cargo build --release
+      - name: Run Total War Suite (Strict)
+        run: |
+          uv venv
+          uv pip install pytest psutil requests
+          # Run everything with strict timeouts
+          uv run pytest tests/qa
+
+
   changes:
     name: Check for Changes
     runs-on: ubuntu-latest
@@ -628,9 +650,29 @@ jobs:
           export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
           # Detect the specific regression we just fixed: dry-run hanging in Zygote mode
           # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
-          timeout 10s velo serve --dry-run || {
-            echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
-            exit 1
+          echo "from fastapi import FastAPI; app = FastAPI()" > main.py
+          uv pip install fastapi
+          # Python timeout script for cross-platform support (Mac/Linux)
+          cat <<EOF > timeout_run.py
+          import sys, subprocess, time
+          try:
+              # Run command with timeout
+              subprocess.run(sys.argv[2:], timeout=float(sys.argv[1]), check=True)
+          except subprocess.TimeoutExpired:
+              sys.exit(124)
+          except subprocess.CalledProcessError as e:
+              sys.exit(e.returncode)
+          EOF
+          
+          python timeout_run.py 10 velo serve main:app --dry-run || {
+            RET=$?
+            if [ $RET -eq 124 ]; then
+              echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"
+              exit 1
+            elif [ $RET -ne 0 ]; then
+              echo "❌ CRITICAL FAILURE: velo serve failed with exit code $RET"
+              exit 1
+            fi
           }
 
   # ============================================

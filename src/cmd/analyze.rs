@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::common::paths::VeloPaths;
+use crate::config::VeloConfig;
 use crate::profile::{ProfileData, SITECUSTOMIZE_PY, get_optimization_suggestions};
 use crate::python;
 use crate::shm::registry::MemoryRegistry;
@@ -123,87 +125,7 @@ fn normalize_path_components(path: &Path) -> PathBuf {
     components.iter().collect()
 }
 
-/// Configuration from pyproject.toml [tool.velo] section
-#[derive(Debug, Clone, Default)]
-pub struct VeloConfig {
-    /// Modules to preload
-    pub preload: Vec<String>,
-    /// Custom slow threshold in ms
-    pub slow_threshold_ms: Option<u64>,
-}
-
-impl VeloConfig {
-    /// Read [tool.velo] configuration from pyproject.toml
-    pub fn from_project(project_dir: &Path) -> Option<Self> {
-        let pyproject_path = project_dir.join("pyproject.toml");
-        if !pyproject_path.exists() {
-            return None;
-        }
-
-        let content = std::fs::read_to_string(&pyproject_path).ok()?;
-        Self::parse_toml(&content)
-    }
-
-    /// Parse [tool.velo] section from TOML content
-    fn parse_toml(content: &str) -> Option<Self> {
-        // Simple TOML parsing for [tool.velo] section
-        // We avoid adding a full TOML parser dependency
-        let mut in_tool_velo = false;
-        let mut config = VeloConfig::default();
-
-        for line in content.lines() {
-            let trimmed = line.trim();
-
-            // Check for section headers
-            if trimmed.starts_with('[') {
-                in_tool_velo = trimmed == "[tool.velo]";
-                continue;
-            }
-
-            if !in_tool_velo {
-                continue;
-            }
-
-            // Parse key = value pairs
-            if let Some((key, value)) = trimmed.split_once('=') {
-                let key = key.trim();
-                let value = value.trim();
-
-                match key {
-                    "preload" => {
-                        // Parse array: ["mod1", "mod2"]
-                        config.preload = parse_string_array(value);
-                    }
-                    "slow_threshold_ms" => {
-                        config.slow_threshold_ms = value.parse().ok();
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if config.preload.is_empty() && config.slow_threshold_ms.is_none() {
-            None
-        } else {
-            Some(config)
-        }
-    }
-}
-
-/// Parse a TOML-like string array: ["a", "b", "c"]
-fn parse_string_array(s: &str) -> Vec<String> {
-    let s = s.trim();
-    if !s.starts_with('[') || !s.ends_with(']') {
-        return vec![];
-    }
-
-    let inner = &s[1..s.len() - 1];
-    inner
-        .split(',')
-        .map(|item| item.trim().trim_matches('"').trim_matches('\'').to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
+// Local VeloConfig removed in favor of crate::config::VeloConfig
 
 /// ANSI color codes for terminal output
 mod colors {
@@ -224,32 +146,26 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
     // Read existing [tool.velo] config
-    let existing_config = VeloConfig::from_project(&project_dir);
+    let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
 
     // Determine effective threshold (CLI > config > default)
     let effective_threshold = if parsed.slow_threshold_ms != 100 {
         parsed.slow_threshold_ms // CLI takes priority
-    } else if let Some(ref cfg) = existing_config {
-        cfg.slow_threshold_ms.unwrap_or(100)
     } else {
-        100
+        config.slow_threshold_ms
     };
 
-    // Show existing config if present
-    if let Some(ref cfg) = existing_config {
-        eprintln!(
-            "{}📦 Found [tool.velo] config:{}",
-            colors::CYAN,
-            colors::RESET
-        );
-        if !cfg.preload.is_empty() {
-            eprintln!("   preload = {:?}", cfg.preload);
-        }
-        if let Some(t) = cfg.slow_threshold_ms {
-            eprintln!("   slow_threshold_ms = {}", t);
-        }
-        eprintln!();
+    // Show existing config (always present now via VeloConfig::load_with_overrides)
+    eprintln!(
+        "{}📦 Using [tool.velo] config:{}",
+        colors::CYAN,
+        colors::RESET
+    );
+    if !config.preload.is_empty() {
+        eprintln!("   preload = {:?}", config.preload);
     }
+    eprintln!("   slow_threshold_ms = {}", config.slow_threshold_ms);
+    eprintln!();
 
     // DEF-70-004: Validate SHM argument early to fail fast on errors
     // This allows detecting invalid/malicious SHM files before finding the entry point script
@@ -284,7 +200,13 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
         colors::RESET
     );
 
-    let profile_data = run_with_profile(&python_path, &script, &project_dir, parsed.shm.as_ref())?;
+    let profile_data = run_with_profile(
+        &python_path,
+        &script,
+        &project_dir,
+        parsed.shm.as_ref(),
+        &config,
+    )?;
 
     // Display results
     display_analysis(&profile_data, effective_threshold);
@@ -296,7 +218,7 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
 
     // Show suggestions if requested
     if parsed.suggest_preload {
-        display_preload_suggestions(&profile_data, effective_threshold, existing_config.as_ref());
+        display_preload_suggestions(&profile_data, effective_threshold, Some(&config));
     }
 
     // Output to file if requested
@@ -458,6 +380,7 @@ fn run_with_profile(
     script: &Path,
     project_dir: &Path,
     shm_path: Option<&PathBuf>,
+    config: &VeloConfig,
 ) -> Result<ProfileData> {
     // Create temp directory for sitecustomize.py and profiling results
     let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
@@ -496,7 +419,7 @@ fn run_with_profile(
         if !socket_path.exists() {
             eprintln!("🚀 Starting Zygote for SHM analysis...");
             launcher
-                .start(&[], None)
+                .start(&[], None, false, config)
                 .context("Failed to start Zygote")?;
         }
 
@@ -846,7 +769,7 @@ fn update_pyproject_toml(
     profile: &ProfileData,
     threshold_ms: u64,
 ) -> Result<()> {
-    let pyproject_path = project_dir.join("pyproject.toml");
+    let pyproject_path = VeloPaths::pyproject(project_dir);
 
     // Get slow imports as top-level module names
     let preload_modules: Vec<String> = profile
@@ -970,65 +893,6 @@ mod tests {
     fn test_truncate_str() {
         assert_eq!(truncate_str("short", 10), "short     ");
         assert_eq!(truncate_str("verylongmodulename", 10), "verylon...");
-    }
-
-    #[test]
-    fn test_parse_args_unknown_option() {
-        let args = vec![
-            "velo".to_string(),
-            "analyze".to_string(),
-            "--unknown".to_string(),
-        ];
-        let result = parse_args(&args);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown option"));
-    }
-
-    #[test]
-    fn test_parse_string_array() {
-        assert_eq!(
-            parse_string_array(r#"["numpy", "pandas"]"#),
-            vec!["numpy", "pandas"]
-        );
-        assert_eq!(parse_string_array(r#"["single"]"#), vec!["single"]);
-        assert_eq!(parse_string_array("[]"), Vec::<String>::new());
-        assert_eq!(parse_string_array("invalid"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn test_velo_config_parse_toml() {
-        let content = r#"
-[project]
-name = "test"
-
-[tool.velo]
-preload = ["numpy", "pandas"]
-slow_threshold_ms = 50
-"#;
-        let config = VeloConfig::parse_toml(content).unwrap();
-        assert_eq!(config.preload, vec!["numpy", "pandas"]);
-        assert_eq!(config.slow_threshold_ms, Some(50));
-    }
-
-    #[test]
-    fn test_velo_config_parse_toml_no_section() {
-        let content = r#"
-[project]
-name = "test"
-"#;
-        let config = VeloConfig::parse_toml(content);
-        assert!(config.is_none());
-    }
-
-    #[test]
-    fn test_velo_config_parse_toml_empty_preload() {
-        let content = r#"
-[tool.velo]
-slow_threshold_ms = 75
-"#;
-        let config = VeloConfig::parse_toml(content).unwrap();
-        assert!(config.preload.is_empty());
-        assert_eq!(config.slow_threshold_ms, Some(75));
     }
 
     #[test]

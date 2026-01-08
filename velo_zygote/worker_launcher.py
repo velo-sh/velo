@@ -7,6 +7,8 @@ import sys
 import os
 import argparse
 import uvicorn
+from .config import VeloConfig
+from .paths import VeloPaths
 
 def main():
     parser = argparse.ArgumentParser(description="Velo Standardized Worker")
@@ -28,18 +30,32 @@ def main():
         "log_level": "info",
     }
     
-    if args.uds:
-        run_kwargs["uds"] = args.uds
     else:
-        run_kwargs["host"] = args.host or "127.0.0.1"
-        run_kwargs["port"] = args.port or 8000
+        config = VeloConfig()
+        run_kwargs["host"] = args.host or config.host
+        run_kwargs["port"] = args.port or config.port
     
     if args.proxy_headers:
         run_kwargs["proxy_headers"] = True
         run_kwargs["forwarded_allow_ips"] = "*"
         
     # Execute uvicorn
-    uvicorn.run(**run_kwargs)
+    try:
+        print(f"[WORKER] Launching uvicorn for {args.app}")
+        uvicorn.run(**run_kwargs)
+        print("[WORKER] uvicorn.run finished normally")
+    except Exception as e:
+        import traceback
+        try:
+            log_path = VeloPaths.worker_log()
+            with open(log_path, "a") as f:
+                f.write(f"PID {os.getpid()}: CRASH: {e}\n")
+                f.write(traceback.format_exc())
+                f.write("\n")
+        except:
+            pass
+        print(f"[WORKER] CRASH: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

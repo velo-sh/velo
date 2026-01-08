@@ -7,11 +7,13 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
+pub use crate::common::paths::*;
 use crate::config::VeloConfig;
+use crate::python;
 use crate::python_info::{PythonInfo, PythonVersion};
+use crate::runner;
 use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
-use crate::{python, runner};
 
 /// Run a Python script
 #[derive(Parser, Debug)]
@@ -87,17 +89,17 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             parent
         };
 
-        if p.join("pyproject.toml").exists() {
+        if VeloPaths::pyproject(p).exists() {
             project_dir = p.to_path_buf();
         } else if let Some(grandparent) = p.parent() {
-            if grandparent.join("pyproject.toml").exists() {
+            if VeloPaths::pyproject(grandparent).exists() {
                 project_dir = grandparent.to_path_buf();
             }
         }
     }
 
     // Load config from discovered project root (with Env Var overrides)
-    let config = VeloConfig::load_with_overrides(&project_dir.join("pyproject.toml"));
+    let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
 
     // Detect user's Python
     let python_path = python::detect_python(&project_dir)?;
@@ -137,12 +139,13 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &cmd.script,
             &project_dir,
             pythonpath,
-            config.max_bundle_size,
+            Some(config.max_bundle_size as u64),
+            &config,
         )?;
     } else if cmd.profile {
-        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
     } else {
-        runner::run_script(&python_path, &cmd.script, pythonpath)?;
+        runner::run_script(&python_path, &cmd.script, pythonpath, &config)?;
     }
 
     // If we didn't have cache, capture sys.path for next time
@@ -173,13 +176,16 @@ fn try_zygote_run(
     let socket_path = zygote::ipc::default_socket_path();
     let script = Path::new(script_path);
 
+    // config is already loaded and passed in
+    let _timeout = config.zygote_socket_timeout;
+
     // Check if Zygote is running, start if not (hybrid mode)
     let mut launcher =
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
     let started_new = if !socket_path.exists() {
         // Read preload config from pyproject.toml (DEV-FIX-001) with Env Var overrides
-        let config = VeloConfig::load_with_overrides(Path::new("pyproject.toml"));
+        let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new(".")));
         let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
         if preload.is_empty() {
@@ -188,7 +194,7 @@ fn try_zygote_run(
             eprintln!("🚀 Starting Zygote with preload: {:?}", preload);
         }
 
-        if let Err(e) = launcher.start(&preload, None) {
+        if let Err(e) = launcher.start(&preload, None, false, &config) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
@@ -204,7 +210,7 @@ fn try_zygote_run(
         let (bundle_path, max_size) = if fast_enabled {
             (
                 find_bundle(project_dir, script_path),
-                config.max_bundle_size,
+                Some(config.max_bundle_size as u64),
             )
         } else {
             (None, None)
@@ -258,14 +264,14 @@ fn try_zygote_run(
                     eprintln!("🔄 Stale socket detected, restarting Zygote...");
                     zygote::ipc::cleanup_socket(&socket_path);
 
-                    if let Ok(()) = launcher.start(&[], None) {
+                    if let Ok(()) = launcher.start(&[], None, false, config) {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
                         let (bundle_path, max_size) = if fast_enabled {
                             (
                                 find_bundle(project_dir, script_path),
-                                config.max_bundle_size,
+                                Some(config.max_bundle_size as u64),
                             )
                         } else {
                             (None, None)
@@ -373,7 +379,7 @@ fn save_cache_if_needed(project_dir: &Path, python_path: &Path) {
 fn find_bundle(project_dir: &Path, script_path: &str) -> Option<PathBuf> {
     let script_dir = Path::new(script_path).parent().unwrap_or(Path::new("."));
     let possible_bundles = [
-        project_dir.join(".velo/cache/bundle.veloc"),
+        VeloPaths::project_file(project_dir, VELO_CACHE_DIR).join("bundle.veloc"),
         project_dir.join("bundle.veloc"),
         script_dir.join("bundle.veloc"),
     ];
@@ -390,6 +396,7 @@ fn run_with_fast_loader(
     project_dir: &Path,
     pythonpath: Option<String>,
     max_bundle_size: Option<u64>,
+    config: &VeloConfig,
 ) -> Result<()> {
     use std::io::Write;
 
@@ -401,7 +408,7 @@ fn run_with_fast_loader(
                 eprintln!("⚠️  No bundle found. Build one first:");
                 eprintln!("    python python/bundle_builder.py .");
                 eprintln!("   Falling back to normal mode...");
-                return runner::run_script(python_path, script_path, pythonpath);
+                return runner::run_script(python_path, script_path, pythonpath, config);
             }
         };
 
@@ -410,7 +417,7 @@ fn run_with_fast_loader(
         if let Err(e) = crate::loader::verify::load_and_verify(&actual_bundle, max_bundle_size) {
             eprintln!("⚠️  Fast loader security check failed: {}", e);
             eprintln!("   Falling back to normal imports...");
-            return runner::run_script(python_path, script_path, pythonpath);
+            return runner::run_script(python_path, script_path, pythonpath, config);
         }
 
         eprintln!("⚡ Fast mode: loading from {}", actual_bundle.display());
@@ -421,7 +428,7 @@ fn run_with_fast_loader(
         // Create a unique temporary directory for sitecustomize.py
         // RFC-0006: Injects sitecustomize.py to activate VeloBundle import hook
         let temp_dir = tempfile::tempdir()?;
-        let site_file = temp_dir.path().join("sitecustomize.py");
+        let site_file = VeloPaths::site_customize(temp_dir.path());
 
         // Get absolute paths
 
@@ -452,7 +459,7 @@ fn run_with_fast_loader(
 
         let velo_loader_path = possible_paths
             .iter()
-            .find(|p: &&PathBuf| p.join("velo_loader.py").exists())
+            .find(|p| VeloPaths::project_file(p, VELO_LOADER).exists())
             .cloned()
             .unwrap_or_else(|| possible_paths[0].clone());
 
@@ -496,7 +503,7 @@ except Exception as e:
 
         // Run script with enhanced PYTHONPATH
         // Cleanup: temp_dir will be automatically deleted when goes out of scope
-        runner::run_script(python_path, script_path, Some(enhanced_pythonpath))
+        runner::run_script(python_path, script_path, Some(enhanced_pythonpath), config)
     })();
 
     // Always report metrics, even on error
@@ -585,7 +592,7 @@ mod tests {
         let project_root = temp.path();
 
         // Create pyproject.toml in temp dir
-        File::create(project_root.join("pyproject.toml"))?;
+        File::create(VeloPaths::pyproject(project_root))?;
 
         // Scenario: Script is "main.py" and we are in the same directory
         let script_path = Path::new("main.py");
@@ -600,7 +607,7 @@ mod tests {
         };
 
         // Verify we can find pyproject.toml using this path
-        let found = project_root.join(p).join("pyproject.toml").exists();
+        let found = VeloPaths::pyproject(&project_root.join(p)).exists();
         assert!(
             found,
             "Should find pyproject.toml even with empty parent path"

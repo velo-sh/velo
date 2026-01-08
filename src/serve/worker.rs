@@ -37,9 +37,8 @@ impl Worker {
         let launcher_path = crate::zygote::find_worker_launcher()
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
 
-        // 1. Determine a unique UDS path
-        let temp_dir = std::env::temp_dir();
-        let socket_path = temp_dir.join(format!("velo-worker-{}.sock", worker_id));
+        // 1. Determine a unique UDS path (Industrial Grade - Standardized)
+        let socket_path = crate::common::paths::generate_worker_socket_path(worker_id);
         let socket_path_str = socket_path.to_string_lossy().to_string();
 
         let args = vec![

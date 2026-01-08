@@ -6,6 +6,7 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::Path;
 
+use crate::common::paths::VeloPaths;
 use crate::python;
 use crate::zygote::{self, ZygoteLauncher};
 
@@ -71,8 +72,11 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
             .map(|s| s.split(',').collect())
             .unwrap_or_default();
 
+        let config =
+            crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
+
         println!("🚀 Starting Zygote daemon...");
-        match launcher.start(&preload, None) {
+        match launcher.start(&preload, None, true, &config) {
             Ok(()) => {
                 println!("✅ Zygote started");
                 println!("   Socket: {}", socket_path.display());
@@ -142,7 +146,8 @@ fn cmd_zygote_auto_config() -> Result<()> {
     use crate::zygote::auto_config::ZygoteConfig;
     use std::fs;
 
-    let profile_path = std::env::temp_dir().join("velo_profile/profile.json");
+    let project_dir = std::env::current_dir()?;
+    let profile_path = VeloPaths::zygote_profile(&project_dir);
 
     if !profile_path.exists() {
         bail!(
@@ -159,7 +164,7 @@ fn cmd_zygote_auto_config() -> Result<()> {
     println!("{}", config.summary());
 
     // Update pyproject.toml with [tool.velo] section
-    let pyproject_path = std::env::current_dir()?.join("pyproject.toml");
+    let pyproject_path = VeloPaths::pyproject(&project_dir);
 
     if pyproject_path.exists() {
         let content = fs::read_to_string(&pyproject_path)?;

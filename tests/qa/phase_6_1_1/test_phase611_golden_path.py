@@ -15,6 +15,13 @@ import time
 
 import psutil
 import pytest
+import sys
+from pathlib import Path
+
+# Import CI-aware timeout constants from parent conftest
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
 import requests
 
 
@@ -60,7 +67,7 @@ class TestGoldenPathE2E:
                 pass  # Worker may have restarted
         
         # Phase 3: Complete ping-pong
-        response = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=10)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_MEDIUM)
         assert response.status_code == 200, f"Ping failed: {response.status_code}"
         
         # Verify response content (if endpoint returns pong)
@@ -69,7 +76,7 @@ class TestGoldenPathE2E:
         
         # Phase 4: Verify request actually went through workers
         # (not some cached response)
-        response2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
+        response2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
         assert response2.status_code == 200
         
         # Phase 5: Graceful shutdown verification is handled by fixture
@@ -93,7 +100,7 @@ class TestGoldenPathE2E:
         for i in range(100):
             try:
                 # Use /whoami endpoint which returns worker's PID
-                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)
                 if r.status_code == 200:
                     success_count += 1
                     data = r.json()
@@ -137,7 +144,7 @@ class TestGoldenPathE2E:
                 "X-Custom-Test": "qa-value",
                 "Connection": "keep-alive",  # Hop-by-hop, should be stripped
             },
-            timeout=10
+            timeout=T_MEDIUM
         )
         
         assert response.status_code == 200, f"Headers endpoint failed: {response.status_code}"
@@ -304,7 +311,7 @@ class TestGoldenPathE2E:
         time.sleep(3)
         
         # Verify service still works
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
         assert response.status_code == 200, "Service not responding after worker crash"
         
         # Verify worker count restored
@@ -329,7 +336,7 @@ class TestGoldenPathE2E:
         
         def make_request():
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=30)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_LONG)
                 return r.status_code == 200
             except Exception:
                 return False
@@ -366,7 +373,7 @@ class TestGoldenPathE2E:
             pytest.fail("GOLD-008: Zygote process not found - FALLBACK MODE DETECTED!")
         
         # Get worker's view of its own PPID via HTTP
-        response = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=10)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM)
         assert response.status_code == 200, f"whoami endpoint failed: {response.status_code}"
         
         data = response.json()
@@ -398,22 +405,22 @@ class TestGoldenPathE2E:
         proc.wait_ready()
         
         # Test root endpoint
-        r1 = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=10)
+        r1 = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=T_MEDIUM)
         assert r1.status_code == 200, f"Root endpoint failed: {r1.status_code}"
         assert r1.json() == {"status": "ok"}, f"Unexpected root response: {r1.json()}"
         
         # Test health endpoint
-        r2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
+        r2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
         assert r2.status_code == 200
         assert r2.json() == {"healthy": True}
         
         # Test ping-pong
-        r3 = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=10)
+        r3 = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_MEDIUM)
         assert r3.status_code == 200
         assert r3.json() == {"ping": "pong"}, f"Ping-pong failed: {r3.json()}"
         
         # Test slow endpoint (async works)
-        r4 = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=1", timeout=10)
+        r4 = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=1", timeout=T_MEDIUM)
         assert r4.status_code == 200
         assert r4.json() == {"slept": 1}
         
@@ -493,7 +500,7 @@ class TestGoldenPathE2E:
         # Check 4: /whoami endpoint confirmation
         if zygote_pid:
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=5)
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)
                 if r.status_code == 200:
                     data = r.json()
                     mode_evidence["whoami_confirms_zygote"] = (data.get("ppid") == zygote_pid)
@@ -534,7 +541,7 @@ class TestGoldenPathDemonCatching:
         response = requests.post(
             f"http://127.0.0.1:{proc.port}/echo",
             json=test_body,
-            timeout=10
+            timeout=T_MEDIUM
         )
         
         assert response.status_code == 200, f"POST failed: {response.status_code}"
@@ -557,7 +564,7 @@ class TestGoldenPathDemonCatching:
         proc.wait_ready()
         
         # Get scope details
-        response = requests.get(f"http://127.0.0.1:{proc.port}/scope", timeout=10)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/scope", timeout=T_MEDIUM)
         assert response.status_code == 200
         
         scope = response.json()
@@ -572,7 +579,7 @@ class TestGoldenPathDemonCatching:
         assert len(client) == 2, f"Invalid client format: {client}"
         
         # Get detailed client-ip info
-        response2 = requests.get(f"http://127.0.0.1:{proc.port}/client-ip", timeout=10)
+        response2 = requests.get(f"http://127.0.0.1:{proc.port}/client-ip", timeout=T_MEDIUM)
         client_info = response2.json()
         print(f"Client IP info: {client_info}")
         
@@ -601,7 +608,7 @@ class TestGoldenPathDemonCatching:
                 pool.submit(
                     lambda: requests.get(
                         f"http://127.0.0.1:{proc.port}/concurrent",
-                        timeout=10
+                        timeout=T_MEDIUM
                     )
                 )
                 for _ in range(10)
@@ -636,17 +643,17 @@ class TestGoldenPathDemonCatching:
         proc.wait_ready()
         
         # Test 404
-        r404 = requests.get(f"http://127.0.0.1:{proc.port}/error/404", timeout=10)
+        r404 = requests.get(f"http://127.0.0.1:{proc.port}/error/404", timeout=T_MEDIUM)
         assert r404.status_code == 404, f"Expected 404, got {r404.status_code}"
         assert "not found" in r404.text.lower(), "404 message lost"
         
         # Test 500
-        r500 = requests.get(f"http://127.0.0.1:{proc.port}/error/500", timeout=10)
+        r500 = requests.get(f"http://127.0.0.1:{proc.port}/error/500", timeout=T_MEDIUM)
         assert r500.status_code == 500, f"Expected 500, got {r500.status_code}"
         assert "server error" in r500.text.lower(), "500 message lost"
         
         # Test 503
-        r503 = requests.get(f"http://127.0.0.1:{proc.port}/error/503", timeout=10)
+        r503 = requests.get(f"http://127.0.0.1:{proc.port}/error/503", timeout=T_MEDIUM)
         assert r503.status_code == 503, f"Expected 503, got {r503.status_code}"
         
         print("✅ All error codes correctly flow through proxy")
@@ -662,7 +669,7 @@ class TestGoldenPathDemonCatching:
         # Request 100KB response
         response = requests.get(
             f"http://127.0.0.1:{proc.port}/large?size_kb=100",
-            timeout=30
+            timeout=T_LONG
         )
         
         assert response.status_code == 200, f"Large response failed: {response.status_code}"
@@ -688,7 +695,7 @@ class TestGoldenPathDemonCatching:
         proc.wait_ready()
         
         t0 = time.time()
-        response = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=T_SHORT)
         duration = time.time() - t0
         
         assert response.status_code == 200
@@ -715,7 +722,7 @@ class TestGoldenPathDemonCatching:
         response = requests.post(
             f"http://127.0.0.1:{proc.port}/echo",
             data=generate_chunks(),
-            timeout=10
+            timeout=T_MEDIUM
         )
         
         assert response.status_code == 200, f"Chunked upload failed: {response.status_code}"
