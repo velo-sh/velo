@@ -7,8 +7,21 @@ import sys
 import os
 import argparse
 import uvicorn
-from .config import VeloConfig
-from .paths import VeloPaths
+
+# Inject repo root into sys.path to allow absolute imports of framework
+try:
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+except: pass
+
+try:
+    from .config import VeloConfig
+    from .paths import VeloPaths
+except ImportError:
+    # Fallback for execution as __main__ without package context
+    from velo_zygote.config import VeloConfig
+    from velo_zygote.paths import VeloPaths
 
 def main():
     parser = argparse.ArgumentParser(description="Velo Standardized Worker")
@@ -30,6 +43,8 @@ def main():
         "log_level": "info",
     }
     
+    if args.uds:
+        run_kwargs["uds"] = args.uds
     else:
         config = VeloConfig()
         run_kwargs["host"] = args.host or config.host

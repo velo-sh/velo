@@ -503,6 +503,13 @@ class ForkHandler:
                 with open(log_path, "a") as f:
                     f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
             except: pass
+            
+            # HARDCODED DEBUG
+            try:
+                with open("/tmp/velo_debug.log", "a") as f:
+                     f.write(f"DEBUG_MAIN[{os.getpid()}]: {msg}\n")
+            except: pass
+
 
         p_log("Start _child_process")
         exit_code = 0
@@ -518,8 +525,13 @@ class ForkHandler:
             p_log("Guardian Started")
 
             # 3. Install ImportShield (Import Isolation)
-            ImportShield.install()
-            p_log("ImportShield Installed")
+            # Skip for internal worker launcher (it manages its own imports)
+            is_internal_launcher = script_path.endswith("worker_launcher.py")
+            if not is_internal_launcher:
+                ImportShield.install()
+                p_log(f"ImportShield Installed (User Script)")
+            else:
+                p_log(f"ImportShield Skipped (Internal Launcher)")
 
             # 3. I/O Redirection
             ForkHandler._redirect_io(stdout_path, stderr_path)
