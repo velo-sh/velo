@@ -1013,6 +1013,7 @@ class ZygoteServer:
         
         # [DEF-62-004] Sync fork management
         self.pending_forks: Dict[int, asyncio.Future] = {}
+        self._last_activity = time.time()
 
     async def start(self):
         """Start the Zygote server using asyncio with Shadow Preloading.
@@ -1055,9 +1056,19 @@ class ZygoteServer:
             loop = asyncio.get_event_loop()
             loop.add_reader(self.server_sock.fileno(), self._accept_client)
             
-            # Start loop
+            # Start loop with idle timeout (RFC-0012)
             while True:
-                await asyncio.sleep(3600) # Keep alive
+                await asyncio.sleep(10)
+                if self.idle_timeout and (time.time() - self._last_activity) > self.idle_timeout:
+                    LogUtils.log(f"Zygote Idle Timeout ({self.idle_timeout}s reached). Shutting down.")
+                    break
+            
+            # Graceful Exit
+            LogUtils.log("Shutting down Zygote - Cleaning up workers.")
+            self.worker_registry.kill_all()
+            if not self.is_abstract and os.path.exists(self.socket_path):
+                try: os.unlink(self.socket_path)
+                except: pass
                 
         except Exception as e:
             LogUtils.debug_log(f"Server Startup Error: {e}")
@@ -1134,9 +1145,16 @@ class ZygoteServer:
                     LogUtils.debug_log(f"Received FD: {fd}")
                     msg['shm_fd'] = fd # Inject into message for handler
                 
+                self._last_activity = time.time()
                 response = await router.dispatch(self, msg)
                 LogUtils.debug_log(f"Sending response: {response.get('type')}")
                 await transport.send(response)
+                
+                # RFC-0012: Graceful loop termination on Shutdown
+                if msg.get("type") == "Shutdown":
+                    LogUtils.log("Shutdown command received. Terminating server loop.")
+                    self._last_activity = 0 # Force immediate idle timeout
+                    break
                 
         except Exception as e:
             LogUtils.debug_log(f"Client Handle Error: {e}")
