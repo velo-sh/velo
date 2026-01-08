@@ -122,7 +122,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             cmd.fast,
             &project_dir,
             &config,
-            shm_file.as_ref(),
+            shm_file.as_ref().map(|s| &s.file),
         )? {
             return Ok(());
         }

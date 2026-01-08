@@ -87,84 +87,75 @@ mod tests {
 
         let registry = MemoryRegistry::new(); // Defaults to strict_numa=false in tests usually unless env set
 
-        let shm_file = registry
+        let segment = registry
             .create_segment("qa_test_alignment_underflow", tmp.path())
             .unwrap();
-        let metadata = shm_file.metadata().unwrap();
-        let size = metadata.len();
+        let size = segment.file.metadata().unwrap().len();
+        let actual_page_size = segment.actual_page_size;
 
-        // CRITICAL CHECK: Must be 2MB (HUGE_PAGE_SIZE), not 64 bytes or 1 page.
-        // If the dev code falls back to Scheme A (Standard Pages) or doesn't align, this fails.
-        // Case 2.1: HugePages Enabled (Simulated by verifying file size alignment)
-        // We create a tiny file. If Scheme B is working, the backing SHM should be 2MB.
-        // H-20: If HugePages are unavailable (ENOMEM), we fall back to standard pages (4KB).
+        // CRITICAL CHECK: Must be aligned to the ACTUAL page size used by the registry.
+        // This is the "Segment Page Identity" model (RFC-0015).
         #[cfg(target_os = "linux")]
         {
-            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 };
-            if size == EXPECTED_HUGE_PAGE_SIZE {
+            assert_eq!(
+                size % actual_page_size as u64,
+                0,
+                "QA FAILURE: SHM size {} is not aligned to actual page size ({}KB)",
+                size,
+                actual_page_size / 1024
+            );
+
+            if actual_page_size == HUGE_PAGE_SIZE {
                 println!("✅ QA INFO: HugePage alignment verified (2MB)");
-            } else if size.is_multiple_of(page_size) && size < EXPECTED_HUGE_PAGE_SIZE {
-                println!(
-                    "⚠️ QA INFO: HugePage fallback detected (Standard {}KB page used). This is acceptable in resource-constrained environments.",
-                    page_size / 1024
-                );
+                assert_eq!(size, HUGE_PAGE_SIZE as u64);
             } else {
-                panic!(
-                    "QA FAILURE: SHM size {} is not aligned to HugePage (2MB) nor standard page ({}KB)",
-                    size,
-                    page_size / 1024
+                println!(
+                    "⚠️ QA INFO: HugePage fallback detected (Standard {}KB page used).",
+                    actual_page_size / 1024
                 );
             }
         }
         #[cfg(not(target_os = "linux"))]
         {
+            let _ = actual_page_size;
             println!(
-                "ℹ️ QA INFO: HugePage alignment skipped on non-Linux platform (Got {}, Expected 2MB on Linux)",
+                "ℹ️ QA INFO: Alignment skipped on non-Linux platform (Got {} bytes)",
                 size
             );
         }
 
-        // Case 1.3: Overflow (溢出一点点)
-        // We need a source that results in logically 2MB + 1 byte.
-        // HugePage = 2,097,152.
-        // We want raw_size = 2,097,153.
-        // Let's make a file of size 2,097,153 (assuming aligned header for simplicity).
-        // Header 56 bytes -> padding 0.
-        // Total = File Size.
-
+        // Case 1.3: Overflow
         let mut tmp_overflow = NamedTempFile::new().unwrap();
-        let file_size = EXPECTED_HUGE_PAGE_SIZE + 1;
-        // Efficiently create large file
-        tmp_overflow.as_file().set_len(file_size).unwrap();
+        let file_size_overflow = EXPECTED_HUGE_PAGE_SIZE + 1;
+        tmp_overflow.as_file().set_len(file_size_overflow).unwrap();
 
-        // Write a valid header at start
         tmp_overflow.seek(SeekFrom::Start(0)).unwrap();
-        let header_len_56: u64 = 56 - 8; // 48
+        let header_len_56: u64 = 56 - 8;
         tmp_overflow
             .write_all(&header_len_56.to_le_bytes())
             .unwrap();
-        // We don't need to write all data, validate_source just checks size and header.
         tmp_overflow.flush().unwrap();
 
-        let shm_file_overflow = registry
+        let segment_overflow = registry
             .create_segment("qa_test_alignment_overflow", tmp_overflow.path())
             .unwrap();
-        let size_overflow = shm_file_overflow.metadata().unwrap().len();
+        let size_overflow = segment_overflow.file.metadata().unwrap().len();
+        let _page_size_overflow = segment_overflow.actual_page_size;
 
-        // Expect 4MB
-        let _expected_size = EXPECTED_HUGE_PAGE_SIZE * 2;
         #[cfg(target_os = "linux")]
         {
-            let page_size = match size_overflow {
-                s if s == _expected_size => HUGE_PAGE_SIZE,
-                _ => unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize },
-            };
+            // Expected aligned size = align_up(header_len + padding + file_size, page_size)
+            // For a 56-byte header, padding = 0. Total = 2,097,153 + 0 = 2,097,153.
+            // If 2MB pages: Aligns to 4MB. If 4KB pages: Aligns to (2MB + 4KB).
+            let expected_aligned =
+                alignment::align_up(file_size_overflow as usize + 64, page_size_overflow);
+
             assert_eq!(
                 size_overflow as usize,
-                alignment::align_up(EXPECTED_HUGE_PAGE_SIZE + 64, page_size),
-                "QA FAILURE: Overflow size {} not aligned to page boundary ({}KB)",
+                expected_aligned,
+                "QA FAILURE: Overflow size {} not aligned to expected boundary ({}KB pages)",
                 size_overflow,
-                page_size / 1024
+                page_size_overflow / 1024
             );
         }
         #[cfg(not(target_os = "linux"))]
