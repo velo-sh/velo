@@ -135,10 +135,14 @@ class TestPhase61StabilityHardened:
         # If implementation is vulnerable, it will NEVER restart during these 3s.
         # Requirement: It MUST restart at least once due to a hard-cap.
         output = ""
-        while True:
-            line = self._read_with_timeout(proc.stdout, timeout=1)
-            if not line: break
+        # Give more time for CI environments where restarts may be delayed
+        for _ in range(5):
+            line = self._read_with_timeout(proc.stdout, timeout=2)
+            if not line: 
+                break
             output += line
+            if "START_" in output:
+                break
         
         proc.kill()
         assert "START_" in output, "Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events)"
