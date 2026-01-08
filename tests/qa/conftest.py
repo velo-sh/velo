@@ -149,8 +149,10 @@ def cleanup_zygote_between_modules():
     
     yield
     
-    # Clean after module completes too
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+    # Clean after module completes
+    # RFC-0012: We rely on hermetic isolation (unique TMPDIR/sockets) 
+    # and the Zygote Guardian thread to prevent leaks. 
+    # Blind pkill is avoided to support parallel test execution.
     if sock_path.exists():
         try:
             sock_path.unlink()
