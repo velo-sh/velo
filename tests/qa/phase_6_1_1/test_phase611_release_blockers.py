@@ -14,10 +14,17 @@ Priority: P0 (MUST pass before release)
 
 import os
 import signal
-import sys
 import time
+from pathlib import Path
 
+import psutil
 import pytest
+import sys
+
+# Import CI-aware timeout constants from parent conftest
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+
 
 # RFC-0011 is now implemented (at least partially)
 pytestmark = [
@@ -56,13 +63,14 @@ class TestReleaseBlockers:
 
         # Wait for graceful shutdown
         try:
-            proc.proc.wait(timeout=10)
+            proc.proc.wait(timeout=T_MEDIUM)
         except Exception:
             proc.proc.kill()
             proc.proc.wait()
 
         # Give system time to clean up
-        time.sleep(1)
+        time.sleep(1 * get_timeout_multiplier())
+
 
         # Verify NO zombie/orphan workers remain
         for worker_pid in workers_before:
@@ -93,7 +101,8 @@ class TestReleaseBlockers:
         proc.proc.wait()
 
         # Wait for orphan adoption and cleanup
-        time.sleep(3)
+        time.sleep(3 * get_timeout_multiplier())
+
 
         # Check workers are gone
         orphans = []
@@ -169,7 +178,7 @@ class TestReleaseBlockers:
             pass  # Connection error is also valid
 
         # Even on error, server should remain healthy
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200, "Server unhealthy after error"
 
     def test_BLOCKER_5_macos_linux_parity(self, velo_serve_fixture):
@@ -216,7 +225,7 @@ class TestReleaseBlockers:
         import concurrent.futures
 
         def make_request():
-            r = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=5)
+            r = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
             return r.status_code
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:

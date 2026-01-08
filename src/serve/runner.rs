@@ -148,7 +148,17 @@ fn apply_process_group(cmd: &mut Command) {
     unsafe {
         cmd.pre_exec(|| {
             // Become a process group leader (STB-RS-003)
-            libc::setpgid(0, 0);
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            // TITANIUM RULE: No Orphans
+            // Kill child if parent (supervisor) dies
+            #[cfg(target_os = "linux")]
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
             Ok(())
         });
     }
@@ -436,6 +446,15 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
     Ok(())
 }
 
+/// Exit reason for the server
+#[derive(Debug, PartialEq, Eq)]
+pub enum ServerExit {
+    /// Server shut down gracefully (signal or finished)
+    Shutdown,
+    /// Hot reload requested
+    Reload,
+}
+
 /// Run the ASGI/WSGI application via uvicorn/gunicorn
 ///
 /// # Arguments
@@ -443,7 +462,12 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
 /// * `python_path` - Path to Python interpreter
 /// * `project_dir` - Project directory
 #[cfg(unix)]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
+pub fn run_server(
+    args: &ServeArgs,
+    python_path: &Path,
+    project_dir: &Path,
+    config: &crate::config::VeloConfig,
+) -> Result<ServerExit> {
     use crate::serve::framework::{Server, check_server_installed, get_server_type};
     use std::time::Instant;
 
@@ -598,8 +622,12 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
-    // Start Zygote if enabled and we have preload modules
-    if args.use_zygote && !preload_modules.is_empty() && crate::zygote::is_supported() {
+    // Start Zygote if enabled and we have preload modules (Skip in Dry Run)
+    if !args.dry_run
+        && args.use_zygote
+        && !preload_modules.is_empty()
+        && crate::zygote::is_supported()
+    {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
@@ -607,7 +635,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
-            if let Err(e) = launcher.start(&preload_modules, Some(&args.app)) {
+            if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
                 logger.warn(&format!("Zygote pre-warm failed: {}", e));
                 if args.log_format == LogFormat::Text {
                     eprintln!("   Continuing without Zygote optimization");
@@ -640,7 +668,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     let _ = std::fs::remove_file(&socket_path);
                 }
                 Err(e) => {
-                    logger.warn(&format!("Existing Zygote not responding: {}", e));
+                    logger.error(&format!("Existing Zygote not responding: {}", e));
                     let _ = std::fs::remove_file(&socket_path);
                 }
             }
@@ -651,7 +679,9 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
     // We use >= 1 because even a single worker must go through the proxy to ensure
     // consistent header injection (X-Forwarded-For) and Scope matching.
     // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
-    if args.workers >= 1
+    // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
+    if !args.dry_run
+        && args.workers >= 1
         && args.use_zygote
         && !preload_modules.is_empty()
         && _zygote_guard.is_some()
@@ -665,6 +695,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         let mut workers = Vec::new();
 
         // Spawn N workers
+        let mut spawn_failed = false;
         for i in 0..args.workers {
             // SWITCH TO UDS mode (RFC-0011)
             match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
@@ -673,232 +704,278 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     workers.push(worker);
                 }
                 Err(e) => {
-                    eprintln!("  ❌ Failed to spawn worker {}: {}", i + 1, e);
-                    // Cleanup already spawned workers
-                    for worker in workers.iter() {
-                        let _ = worker.shutdown(Duration::from_secs(5));
+                    // RFC-0013: Silent Fallback to cold start on IPC failure
+                    logger.warn(&format!(
+                        "  ⚠️ Zygote worker spawn failed: {}. Falling back to cold start...",
+                        e
+                    ));
+                    spawn_failed = true;
+                    break;
+                }
+            }
+        }
+
+        if spawn_failed {
+            // Cleanup already spawned workers (if any) before falling back
+            for worker in workers.iter() {
+                let _ = worker.shutdown(Duration::from_secs(5));
+            }
+        } else {
+            eprintln!("✅ All workers ready");
+
+            // RFC-0011: K8s-style CrashLoopBackOff tracker per worker
+            // Prevents respawn storms with exponential backoff: 10s → 20s → 40s → ... → 300s (cap)
+            struct RespawnTracker {
+                last_failure: Option<Instant>,
+                backoff_secs: u64,
+                consecutive_failures: u32,
+            }
+            impl RespawnTracker {
+                fn new() -> Self {
+                    let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(10);
+                    Self {
+                        last_failure: None,
+                        backoff_secs,
+                        consecutive_failures: 0,
                     }
-                    anyhow::bail!("Failed to spawn workers via Zygote");
                 }
-            }
-        }
-
-        eprintln!("✅ All workers ready");
-
-        // RFC-0011: K8s-style CrashLoopBackOff tracker per worker
-        // Prevents respawn storms with exponential backoff: 10s → 20s → 40s → ... → 300s (cap)
-        struct RespawnTracker {
-            backoff_secs: u64,
-            last_failure: Option<std::time::Instant>,
-        }
-        impl RespawnTracker {
-            fn new() -> Self {
-                Self {
-                    backoff_secs: 10,
-                    last_failure: None,
-                }
-            }
-            fn should_respawn(&self) -> bool {
-                match self.last_failure {
-                    None => true,
-                    Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
-                }
-            }
-            fn record_failure(&mut self) {
-                self.last_failure = Some(std::time::Instant::now());
-                self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
-            }
-            fn reset(&mut self) {
-                self.backoff_secs = 10;
-                self.last_failure = None;
-            }
-        }
-        let mut respawn_trackers: Vec<RespawnTracker> =
-            (0..workers.len()).map(|_| RespawnTracker::new()).collect();
-
-        // =========================================================================
-        // RFC-0011 Phase 2B: L7 Proxy Integration
-        // =========================================================================
-
-        // 1. Create LoadBalancer
-        let socket_paths: Vec<String> = workers
-            .iter()
-            .filter_map(|w| {
-                w.socket_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().to_string())
-            })
-            .collect();
-        let lb = Arc::new(LoadBalancer::new(socket_paths));
-        // 2. Update Health Check with LB reference (B2: Deep Health Check)
-        {
-            if let Ok(mut guard) = lb_holder.lock() {
-                *guard = Some(lb.clone());
-                logger.debug("LoadBalancer attached to HealthServer");
-            } else {
-                logger.warn("Failed to attach LoadBalancer to HealthServer (lock error)");
-            }
-        }
-        // 3. Start Tokio Runtime for Hyper
-        logger.info("Starting L7 Proxy...");
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| anyhow::anyhow!("Failed to create Tokio runtime: {}", e))?;
-
-        // 4. Create Proxy Service components
-        // VeloProxyService takes Arc<LoadBalancer> and implements hyper::service::Service
-        let service = VeloProxyService::new(lb.clone());
-
-        let addr = format!("{}:{}", args.host, args.port);
-        let bind_addr: std::net::SocketAddr = addr
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid bind address {}: {}", addr, e))?;
-
-        // 5. Start Proxy Server
-        // RFC-0011 Phase 3C: We run the proxy in an async block to ensure the runtime stays alive
-        // and background health checks can continue.
-        let lb_for_proxy = lb.clone(); // Clone for async spawn
-        let _proxy_handle = rt.spawn(async move {
-            let listener = match tokio::net::TcpListener::bind(bind_addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!("❌ Proxy failed to bind {}: {}", bind_addr, e);
-                    return;
-                }
-            };
-
-            // RFC-0011 Phase 3C: Active health checks MUST run inside runtime context
-            lb_for_proxy
-                .clone()
-                .spawn_health_checks(Duration::from_secs(5));
-
-            eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
-
-            loop {
-                match listener.accept().await {
-                    Ok((stream, peer_addr)) => {
-                        let io = TokioIo::new(stream);
-                        // RFC-0011 BLOCK-004 Fix: Pass client address for X-Forwarded-For injection
-                        let service_with_addr = service.clone().with_client_addr(peer_addr);
-
-                        tokio::spawn(async move {
-                            if let Err(err) = http1::Builder::new()
-                                .serve_connection(io, service_with_addr)
-                                .await
-                            {
-                                let _ = err;
-                            }
-                        });
+                fn should_respawn(&self) -> bool {
+                    match self.last_failure {
+                        None => true,
+                        Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
                     }
+                }
+                fn record_failure(&mut self) -> bool {
+                    self.last_failure = Some(Instant::now());
+                    self.consecutive_failures += 1;
+                    self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
+
+                    // RFC-0011 Fail-Fast: If we fail 5 times consecutively at startup,
+                    // it's a fatal environment issue.
+                    self.consecutive_failures < 5
+                }
+                fn reset(&mut self) {
+                    // RFC-0011 Stability Fix: "Probation Period".
+                    // Only reset if the system has been stable for at least 30 seconds.
+                    if let Some(t) = self.last_failure
+                        && t.elapsed().as_secs() < 30
+                    {
+                        return;
+                    }
+                    let default_backoff = std::env::var("VELO_BACKOFF_SECS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(10);
+                    self.backoff_secs = default_backoff;
+                    self.consecutive_failures = 0;
+                    self.last_failure = None;
+                }
+            }
+            let mut respawn_trackers: Vec<RespawnTracker> =
+                (0..workers.len()).map(|_| RespawnTracker::new()).collect();
+
+            // =========================================================================
+            // RFC-0011 Phase 2B: L7 Proxy Integration
+            // =========================================================================
+
+            // 1. Create LoadBalancer
+            let socket_paths: Vec<String> = workers
+                .iter()
+                .filter_map(|w| {
+                    w.socket_path
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().to_string())
+                })
+                .collect();
+            let lb = Arc::new(LoadBalancer::new(socket_paths));
+            // 2. Update Health Check with LB reference (B2: Deep Health Check)
+            {
+                if let Ok(mut guard) = lb_holder.lock() {
+                    *guard = Some(lb.clone());
+                    logger.debug("LoadBalancer attached to HealthServer");
+                } else {
+                    logger.warn("Failed to attach LoadBalancer to HealthServer (lock error)");
+                }
+            }
+            // 3. Start Tokio Runtime for Hyper
+            logger.info("Starting L7 Proxy...");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create Tokio runtime: {}", e))?;
+
+            // 4. Create Proxy Service components
+            // VeloProxyService takes Arc<LoadBalancer> and implements hyper::service::Service
+            let service = VeloProxyService::new(lb.clone());
+
+            let addr = format!("{}:{}", args.host, args.port);
+            let bind_addr: std::net::SocketAddr = addr
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid bind address {}: {}", addr, e))?;
+
+            // 5. Start Proxy Server
+            // RFC-0011 Phase 3C: We run the proxy in an async block to ensure the runtime stays alive
+            // and background health checks can continue.
+            let lb_for_proxy = lb.clone(); // Clone for async spawn
+            let _proxy_handle = rt.spawn(async move {
+                let listener = match tokio::net::TcpListener::bind(bind_addr).await {
+                    Ok(l) => l,
                     Err(e) => {
-                        eprintln!("⚠️ Proxy accept error: {}", e);
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        eprintln!("❌ Proxy failed to bind {}: {}", bind_addr, e);
+                        return;
                     }
-                }
-            }
-        });
+                };
 
-        // Wait for signal with periodic worker health checks
-        loop {
-            // Check for signals with timeout for health monitoring
-            match rx.recv_timeout(Duration::from_secs(1)) {
-                Ok(ServerEvent::Signal(sig)) => match sig {
-                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                        eprintln!("\n🛑 Received shutdown signal, stopping workers...");
-                        for (i, worker) in workers.iter().enumerate() {
-                            eprint!("  Stopping worker {}... ", i + 1);
-                            match worker.shutdown(Duration::from_secs(args.timeout)) {
-                                Ok(_) => eprintln!("✅"),
-                                Err(e) => eprintln!("⚠️ {}", e),
-                            }
-                        }
-                        eprintln!("✅ All workers stopped");
-                        return Ok(());
-                    }
-                    _ => {}
-                },
-                Ok(ServerEvent::WorkerExit) => {
-                    // Worker exited - check which ones and respawn
-                    logger.warn("Worker exit event received, checking workers...");
-                }
-                Ok(ServerEvent::Reload) => {
-                    eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Periodic health check - respawn dead workers with K8s CrashLoopBackOff
-                    for (i, worker) in workers.iter_mut().enumerate() {
-                        if !worker.is_alive() {
-                            let tracker = &mut respawn_trackers[i];
+                // RFC-0011 Phase 3C: Active health checks MUST run inside runtime context
+                lb_for_proxy
+                    .clone()
+                    .spawn_health_checks(Duration::from_secs(5));
 
-                            // Check if we're still in backoff period
-                            if !tracker.should_respawn() {
-                                logger.debug(&format!(
-                                    "Worker {} in backoff ({}s remaining)",
-                                    i + 1,
-                                    tracker.backoff_secs.saturating_sub(
-                                        tracker
-                                            .last_failure
-                                            .map(|t| t.elapsed().as_secs())
-                                            .unwrap_or(0)
-                                    )
-                                ));
-                                continue;
-                            }
+                eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
 
-                            logger.warn(&format!(
-                                "Worker {} (PID: {}) died, respawning (backoff: {}s)...",
-                                i + 1,
-                                worker.pid(),
-                                tracker.backoff_secs
-                            ));
+                loop {
+                    match listener.accept().await {
+                        Ok((stream, peer_addr)) => {
+                            let io = TokioIo::new(stream);
+                            // RFC-0011 BLOCK-004 Fix: Pass client address for X-Forwarded-For injection
+                            let service_with_addr = service.clone().with_client_addr(peer_addr);
 
-                            // Respawn via Zygote
-                            match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
-                                Ok(new_worker) => {
-                                    // Update LoadBalancer with new socket
-                                    if let Some(ref old_path) = worker.socket_path {
-                                        lb.remove_backend(&old_path.to_string_lossy());
-                                    }
-                                    if let Some(ref new_path) = new_worker.socket_path {
-                                        lb.add_backend(&new_path.to_string_lossy());
-                                    }
-
-                                    logger.info(&format!(
-                                        "  ✅ Respawned worker {} (new PID: {})",
-                                        i + 1,
-                                        new_worker.pid()
-                                    ));
-                                    *worker = new_worker;
-                                    tracker.reset(); // Success - reset backoff
+                            tokio::spawn(async move {
+                                if let Err(err) = http1::Builder::new()
+                                    .serve_connection(io, service_with_addr)
+                                    .await
+                                {
+                                    let _ = err;
                                 }
-                                Err(e) => {
-                                    logger.error(&format!(
+                            });
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️ Proxy accept error: {}", e);
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                    }
+                }
+            });
+
+            // Wait for signal with periodic worker health checks
+            loop {
+                // Check for signals with timeout for health monitoring
+                match rx.recv_timeout(Duration::from_secs(1)) {
+                    Ok(ServerEvent::Signal(sig)) => match sig {
+                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                            eprintln!("\n🛑 Received shutdown signal, stopping workers...");
+                            for (i, worker) in workers.iter().enumerate() {
+                                eprint!("  Stopping worker {}... ", i + 1);
+                                match worker.shutdown(Duration::from_secs(args.timeout)) {
+                                    Ok(_) => eprintln!("✅"),
+                                    Err(e) => eprintln!("⚠️ {}", e),
+                                }
+                            }
+                            eprintln!("✅ All workers stopped");
+                            eprintln!("✅ All workers stopped");
+                            return Ok(ServerExit::Shutdown);
+                        }
+                        _ => {}
+                    },
+                    Ok(ServerEvent::WorkerExit) => {
+                        // Worker exited - check which ones and respawn
+                        logger.warn("Worker exit event received, checking workers...");
+                    }
+                    Ok(ServerEvent::Reload) => {
+                        eprintln!("⚠️ Reload requested but not supported in Zygote worker mode");
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        // Periodic health check - respawn dead workers with K8s CrashLoopBackOff
+                        for (i, worker) in workers.iter_mut().enumerate() {
+                            if !worker.is_alive() {
+                                let tracker = &mut respawn_trackers[i];
+
+                                // RFC-0011 Fail-Fast: If a worker dies during startup, track consecutive failures
+                                if !tracker.record_failure() {
+                                    anyhow::bail!(
+                                        "FATAL: Workers are failing to start consistently. Check logs for permission/dependency issues."
+                                    );
+                                }
+                                logger.warn(&format!(
+                                    "A worker died during startup. Retrying in {}s (Attempt {}/5)...",
+                                    tracker.backoff_secs,
+                                    tracker.consecutive_failures
+                                ));
+
+                                // Check if we're still in backoff period
+                                if !tracker.should_respawn() {
+                                    logger.debug(&format!(
+                                        "Worker {} in backoff ({}s remaining)",
+                                        i + 1,
+                                        tracker.backoff_secs.saturating_sub(
+                                            tracker
+                                                .last_failure
+                                                .map(|t| t.elapsed().as_secs())
+                                                .unwrap_or(0)
+                                        )
+                                    ));
+                                    continue;
+                                }
+
+                                logger.warn(&format!(
+                                    "Worker {} (PID: {}) died, respawning (backoff: {}s)...",
+                                    i + 1,
+                                    worker.pid(),
+                                    tracker.backoff_secs
+                                ));
+
+                                // Respawn via Zygote
+                                match Worker::spawn_uds_via_zygote(&socket_path, &args.app) {
+                                    Ok(new_worker) => {
+                                        // Update LoadBalancer with new socket
+                                        if let Some(ref old_path) = worker.socket_path {
+                                            lb.remove_backend(&old_path.to_string_lossy());
+                                        }
+                                        if let Some(ref new_path) = new_worker.socket_path {
+                                            lb.add_backend(&new_path.to_string_lossy());
+                                        }
+
+                                        logger.info(&format!(
+                                            "  ✅ Respawned worker {} (new PID: {})",
+                                            i + 1,
+                                            new_worker.pid()
+                                        ));
+                                        *worker = new_worker;
+                                        tracker.reset(); // Success - reset backoff
+                                    }
+                                    Err(e) => {
+                                        logger.error(&format!(
                                         "  ❌ Respawn failed for worker {}: {} (next retry in {}s)",
                                         i + 1,
                                         e,
                                         tracker.backoff_secs * 2
                                     ));
-                                    tracker.record_failure(); // Double backoff
+                                        tracker.record_failure(); // Double backoff
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // P2: Zygote deep probe - verify Zygote is still responding
-                    if let Err(e) = crate::zygote::ipc::send_command(
-                        &socket_path,
-                        crate::zygote::ipc::ZygoteCommand::Status,
-                    ) {
-                        logger.warn(&format!("Zygote health check failed: {}", e));
-                        // Zygote is dead - could restart here, but for now just log
+                        // P2: Zygote deep probe - verify Zygote is still responding
+                        if let Err(e) = crate::zygote::ipc::send_command(
+                            &socket_path,
+                            crate::zygote::ipc::ZygoteCommand::Status,
+                        ) {
+                            logger.warn(&format!("Zygote health check failed: {}", e));
+                            // Zygote is dead - could restart here, but for now just log
+                        }
                     }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
 
-        return Ok(());
+        if spawn_failed {
+            eprintln!("KINETIC_FALLBACK: Zygote failed, falling back to cold start.");
+        }
     }
 
     // STB-RS-005: Respawn Loop
@@ -945,13 +1022,6 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             }
         }
 
-        // RFC-0012: Surgical Environment Management (Whitelist)
-        // Replaces SEC-P0-005 blacklist with robust provenance guard
-        let shield = crate::lifecycle::EnvironmentShield::new();
-        if let Err(e) = shield.apply(&mut cmd) {
-            logger.warn(&format!("Environment shield warning: {}", e));
-        }
-
         // Set working directory and inherit stdio
         logger.verbose(&format!("Current directory: {:?}", project_dir));
         cmd.current_dir(project_dir)
@@ -972,7 +1042,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                     .collect::<Vec<_>>()
                     .join(" ")
             ));
-            return Ok(());
+            return Ok(ServerExit::Shutdown);
         }
 
         if args.log_format == LogFormat::Text {
@@ -984,6 +1054,13 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
             if args.reload {
                 eprintln!("   Reload:    enabled");
             }
+        }
+
+        // RFC-0012: Surgical Environment Management (Whitelist)
+        // Replaces SEC-P0-005 blacklist with robust provenance guard
+        let shield = crate::lifecycle::EnvironmentShield::new(config);
+        if let Err(e) = shield.apply(&mut cmd) {
+            logger.warn(&format!("Environment shield warning: {}", e));
         }
 
         // Spawn with ManagedChild for RAII cleanup (D2)
@@ -1003,8 +1080,8 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                 // Optimistic: Child might have exited
                                 match child.wait_timeout(Duration::from_millis(0)) {
                                     Ok(Some(status)) => {
+                                        let code = status.code().unwrap_or(1);
                                         if !status.success() {
-                                            let code = status.code().unwrap_or(1);
                                             if code == 1 {
                                                 eprintln!();
                                                 eprintln!(
@@ -1028,26 +1105,17 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                         }
                                         // Child exited successfully (code 0)
                                         if !args.reload {
-                                            // Normal exit
-                                            return Ok(());
+                                            return Ok(ServerExit::Shutdown);
                                         } else {
-                                            // Unexpected exit in reload mode, wait for change
                                             logger.warn("Server exited (0). Waiting for reload...");
                                             health_ready
                                                 .store(false, std::sync::atomic::Ordering::SeqCst);
                                             continue;
                                         }
                                     }
-                                    Ok(None) => continue,
-                                    Err(e) => {
-                                        return Err(anyhow::anyhow!(
-                                            "Error waiting for server: {}",
-                                            e
-                                        ));
-                                    }
+                                    _ => continue,
                                 }
                             }
-
                             signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
                                 eprintln!();
                                 logger.info(
@@ -1062,14 +1130,13 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                                 match child.wait_timeout(Duration::from_secs(args.timeout)) {
                                     Ok(Some(_)) => {
                                         logger.info("Server stopped gracefully");
-                                        return Ok(());
+                                        return Ok(ServerExit::Shutdown);
                                     }
-                                    Ok(None) => {
+                                    _ => {
                                         logger.warn("Shutdown timeout expired, force killing...");
                                         let _ = child.kill();
-                                        return Ok(());
+                                        return Ok(ServerExit::Shutdown);
                                     }
-                                    Err(e) => anyhow::bail!("Error during shutdown: {}", e),
                                 }
                             }
                             _ => {
@@ -1094,11 +1161,6 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
                 }
             }
         } else if let Err(e) = child_result {
-            // If start fails, checks args.reload to decide whether to retry or exit?
-            // Typically if specific config is bad, it won't fix itself?
-            // But maybe syntax error in app? The app is passed to python, so 'spawn' usually succeeds
-            // unless 'python' binary is missing.
-            // If spawn fails, it's critical.
             logger.error(&format!("Failed to start server: {}", e));
             return Err(anyhow::anyhow!("Server failed to start: {}", e));
         }
@@ -1109,7 +1171,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         }
     }
 
-    Ok(())
+    Ok(ServerExit::Shutdown)
 }
 
 /// Helper to count Python files for scaling warnings (R4)
@@ -1152,7 +1214,12 @@ fn count_python_files(path: &Path) -> usize {
 }
 
 #[cfg(not(unix))]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<()> {
+pub fn run_server(
+    args: &ServeArgs,
+    python_path: &Path,
+    project_dir: &Path,
+    _config: &crate::config::VeloConfig,
+) -> Result<ServerExit> {
     // Windows: run uvicorn without Zygote
     eprintln!("🚀 Starting server (Zygote not supported on Windows)...");
     eprintln!("   App:     {}", args.app);
@@ -1189,7 +1256,7 @@ pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> R
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    Ok(())
+    Ok(ServerExit::Shutdown)
 }
 
 #[cfg(test)]

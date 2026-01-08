@@ -10,7 +10,17 @@ If any L0 test fails, do NOT proceed to L1+.
 Following QA SOP v2.2 Fail-Fast Rule.
 """
 
+from pathlib import Path
+
+import psutil
 import pytest
+import sys
+import requests
+
+# Import CI-aware timeout constants from parent conftest
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
 
 # Smoke tests are now verified to pass with the new implementation
 pytestmark = [pytest.mark.smoke]
@@ -38,7 +48,7 @@ class TestL0Smoke:
         proc.wait_ready()
         assert proc.is_running(), "Velo serve process should be running"
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/health")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         assert response.json()["healthy"] is True
 
@@ -97,11 +107,11 @@ class TestL0Smoke:
         proc = velo_serve_fixture.start("main:app", workers=2)
         proc.wait_ready()
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=T_SHORT)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         assert response.json()["status"] == "ok"
 
         # Also test /ping endpoint
-        response = requests.get(f"http://127.0.0.1:{proc.port}/ping")
+        response = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
         assert response.status_code == 200
         assert response.json() == {"ping": "pong"}

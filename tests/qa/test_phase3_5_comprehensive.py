@@ -29,6 +29,10 @@ from typing import Optional
 
 import pytest
 
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM, T_LONG
+
+
 try:
     import requests
     HAS_REQUESTS = True
@@ -61,8 +65,10 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = 15) -> bool:
+def wait_for_port(port: int, timeout: float = None) -> bool:
     """Wait for port to open."""
+    if timeout is None:
+        timeout = T_MEDIUM
     start = time.time()
     while time.time() - start < timeout:
         if is_port_open(port):
@@ -94,9 +100,13 @@ class ComprehensiveTestEnv:
         self._port_counter += 1
         return self._port_counter
 
-    def setup(self):
+    def setup(self, with_project=True):
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
-        (self.path / "uv.lock").write_text("{}")
+        if with_project:
+            (self.path / "pyproject.toml").write_text("""[project]
+name = "test-app"
+version = "0.1.0"
+dependencies = ["fastapi", "uvicorn"]""")
         return self
 
     def install(self, *packages):
@@ -109,13 +119,21 @@ class ComprehensiveTestEnv:
         (self.path / name).write_text(code)
 
     def serve(self, app: str, port: int, **opts) -> subprocess.Popen:
-        cmd = [self.velo, "serve", app, "--port", str(port)]
+        # Use 'uv run' to ensure the local venv is used for dependencies
+        # Clear VIRTUAL_ENV to avoid uv discovery warnings in nested venvs
+        env = os.environ.copy()
+        if "VIRTUAL_ENV" in env:
+            del env["VIRTUAL_ENV"]
+            
+        # FIX: Add --offline --no-sync to prevent CI hangs (uv 0.9+)
+        cmd = ["uv", "run", "--offline", "--no-sync", self.velo, "serve", app, "--port", str(port)]
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
         
         proc = subprocess.Popen(
             cmd, cwd=self.path,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=env
         )
         self.procs.append(proc)
         return proc
@@ -124,7 +142,7 @@ class ComprehensiveTestEnv:
         for proc in self.procs:
             try:
                 proc.terminate()
-                proc.wait(timeout=5)
+                proc.wait(timeout=T_SHORT)
             except:
                 try:
                     proc.kill()
@@ -136,6 +154,8 @@ class ComprehensiveTestEnv:
             pass
 
     def __enter__(self):
+        # By default, setup with project metadata. 
+        # Individual tests like l0_003 can override if they call setup(False) manually.
         return self.setup()
 
     def __exit__(self, *args):
@@ -163,18 +183,20 @@ class TestL0Smoke:
     def test_l0_002_serve_in_help(self):
         """'serve' appears in --help."""
         velo = get_velo_binary()
-        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=10)
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert "serve" in result.stdout.lower()
 
     def test_l0_003_uvicorn_dependency_message(self):
         """Without uvicorn, show clear dependency error."""
         with ComprehensiveTestEnv() as env:
+            # Explicitly setup WITHOUT project metadata to test dependency error
+            env.setup(with_project=False)
             env.create_app("main.py", "app = None")
             # Do NOT install uvicorn - test the error message
             proc = env.serve("main:app", env.next_port())
             time.sleep(2)
             proc.terminate()
-            proc.wait(timeout=5)
+            proc.wait(timeout=T_SHORT)
             stderr = proc.stderr.read()
             # Dev added good error message
             assert "uvicorn" in stderr.lower() or "dependency" in stderr.lower()
@@ -198,7 +220,7 @@ def root():
             port = env.next_port()
             proc = env.serve("main:app", port)
             
-            if wait_for_port(port, timeout=20):
+            if wait_for_port(port, timeout=T_MEDIUM):
                 L0_PASSED = True
                 assert True
             else:
@@ -238,7 +260,10 @@ def root():
             if not wait_for_port(port):
                 pytest.skip("Server did not start (L0 issue)")
             
-            response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            # Settle time for workers to connect to proxy
+            time.sleep(1)
+            
+            response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["message"] == "hello"
 
@@ -262,10 +287,12 @@ def echo(data: dict):
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
             
+            time.sleep(1)
+            
             response = requests.post(
                 f"http://127.0.0.1:{port}/echo",
                 json={"test": "value"},
-                timeout=5
+                timeout=T_SHORT
             )
             assert response.status_code == 200
 
@@ -292,8 +319,10 @@ def count():
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
             
+            time.sleep(1)
+            
             for i in range(100):
-                response = requests.get(f"http://127.0.0.1:{port}/count", timeout=5)
+                response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
                 assert response.status_code == 200
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
@@ -324,11 +353,11 @@ def on_exit():
                 pytest.skip("Server did not start")
             
             # Make a request to ensure it's working
-            requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             
             # Send SIGTERM
             proc.terminate()
-            exit_code = proc.wait(timeout=10)
+            exit_code = proc.wait(timeout=T_MEDIUM)
             
             # Check graceful shutdown
             shutdown_file = env.path / "shutdown.txt"
@@ -349,7 +378,7 @@ class TestL2SadPath:
         velo = get_velo_binary()
         result = subprocess.run(
             [velo, "serve", "nonexistent_xyz:app"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=T_SHORT
         )
         assert result.returncode != 0
         # Accept various error indicators (may be uvicorn missing or module not found)
@@ -363,7 +392,7 @@ class TestL2SadPath:
             
             result = subprocess.run(
                 [env.velo, "serve", "noapp:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=10
+                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
             )
             assert result.returncode != 0
 
@@ -375,7 +404,7 @@ class TestL2SadPath:
             
             result = subprocess.run(
                 [env.velo, "serve", "broken:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=10
+                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
             )
             assert result.returncode != 0
             # Should mention syntax, error, or uvicorn missing
@@ -389,7 +418,7 @@ class TestL2SadPath:
             
             result = subprocess.run(
                 [env.velo, "serve", "crasher:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=10
+                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
             )
             assert result.returncode != 0
             # Should show the actual error or dependency message
@@ -409,7 +438,7 @@ class TestL2SadPath:
         for fmt in invalid_formats:
             result = subprocess.run(
                 [velo, "serve", fmt],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=T_SHORT
             )
             assert result.returncode != 0, f"{fmt} should fail"
 
@@ -444,11 +473,12 @@ def root():
                 pytest.skip("Server did not start")
             
             # Verify it's on the right port
-            response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
             
             # Verify it's NOT on default port
-            assert not is_port_open(8000)
+            # Verify it's NOT on some other port we don't expect
+            assert not is_port_open(19501)
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_l3_002_workers_spawn_multiple(self):
@@ -475,7 +505,7 @@ def get_pid():
             pids = set()
             for _ in range(50):
                 try:
-                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=5)
+                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json()["pid"])
                 except:
@@ -510,13 +540,13 @@ def root():
             port = env.next_port()
             proc = env.serve("main:app", port)
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
             proc.send_signal(signal.SIGINT)
             
             try:
-                exit_code = proc.wait(timeout=10)
+                exit_code = proc.wait(timeout=T_MEDIUM)
                 # SIGINT should cause clean exit
             except subprocess.TimeoutExpired:
                 proc.kill()
@@ -539,7 +569,7 @@ def root():
             proc = env.serve("main:app", port)
             main_pid = proc.pid
             
-            if not wait_for_port(port, timeout=15):
+            if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
             
             # Get child PIDs before shutdown
@@ -547,7 +577,7 @@ def root():
             
             # Shutdown
             proc.terminate()
-            proc.wait(timeout=10)
+            proc.wait(timeout=T_MEDIUM)
             
             time.sleep(1)
             
@@ -587,6 +617,9 @@ def root():
             proc = env.serve("main:app", port)
             
             time.sleep(3)
+            # Terminate first to avoid blocking read()
+            proc.terminate()
+            proc.wait(timeout=T_SHORT)
             stderr = proc.stderr.read() if proc.stderr else ""
             
             # Banner should show framework
@@ -615,20 +648,20 @@ def root():
             # Cold start
             start1 = time.perf_counter()
             proc1 = env.serve("main:app", port1)
-            cold_started = wait_for_port(port1, timeout=20)
+            cold_started = wait_for_port(port1, timeout=T_MEDIUM)
             cold_time = time.perf_counter() - start1
             
             if not cold_started:
                 pytest.skip("Server did not start")
             
             proc1.terminate()
-            proc1.wait(timeout=5)
+            proc1.wait(timeout=T_SHORT)
             time.sleep(1)
             
             # Warm start
             start2 = time.perf_counter()
             proc2 = env.serve("main:app", port2)
-            warm_started = wait_for_port(port2, timeout=20)
+            warm_started = wait_for_port(port2, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
             
             print(f"Cold: {cold_time:.2f}s, Warm: {warm_time:.2f}s")

@@ -20,9 +20,7 @@ use crate::cache::EnvCache;
 /// 3. VELO_PYTHON environment variable
 /// 4. System python3
 pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
-    // 1. Check for project-local venv names FIRST (critical for CI)
-    // In CI environments, VIRTUAL_ENV may be set to the runner's venv,
-    // not the project's venv that contains the actual dependencies.
+    // 1. Check for project-local venv names FIRST
     for name in [".venv", "venv", ".env", "env"] {
         let path = project_dir.join(name);
         let python = if cfg!(windows) {

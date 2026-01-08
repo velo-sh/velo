@@ -10,13 +10,8 @@ from pathlib import Path
 # QA Agent B: Hardened Stability & Platform Parity
 # Requirements: RFC-0010 §4.1, §4.4, §4.6, §4.9
 
-def get_free_port():
-    """Get a free port by binding to port 0 and releasing."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
+# def get_free_port(): (Removed to prevent TOCTOU race)
+#     pass
 
 @pytest.mark.tier1
 class TestPhase61StabilityHardened:
@@ -29,21 +24,32 @@ class TestPhase61StabilityHardened:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
-        port = get_free_port()
+        port = env.next_port()
         
         # Start velo serve in a new process group
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        proc = env.spawn_velo(
+            "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             preexec_fn=os.setsid
         )
         
-        time.sleep(3)
+        # Wait longer for debug build
+        time.sleep(10)
         parent_pid = proc.pid
         
         # Find child (uvicorn/gunicorn)
-        children = psutil.Process(parent_pid).children(recursive=True)
-        assert len(children) >= 1
+        try:
+            p = psutil.Process(parent_pid)
+            children = p.children(recursive=True)
+            if not children:
+                # Still no children? Try one more short wait
+                time.sleep(5)
+                children = p.children(recursive=True)
+        except psutil.NoSuchProcess:
+            stdout, stderr = proc.communicate()
+            raise RuntimeError(f"Velo exited prematurely.\nSTDOUT: {stdout}\nSTDERR: {stderr}")
+            
+        assert len(children) >= 1, f"No child processes detected after 15s.\nSTDOUT: {proc.stdout.read() if proc.stdout else ''}"
         child_pid = children[0].pid
         
         # Terminate parent (causes graceful exit where Drop can run)
@@ -66,6 +72,20 @@ class TestPhase61StabilityHardened:
                     return line
         return None
 
+    def _read_until(self, stream, pattern, timeout=15):
+        import select
+        output = ""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            r, _, _ = select.select([stream], [], [], 0.1)
+            if r:
+                line = stream.readline()
+                if not line: break
+                output += line
+                if pattern in line:
+                    return output
+        return output
+
     def test_stab_rs_002_watcher_debounce(self, isolated_env):
         """
         ENG-P0-002: 300ms Watcher Debounce
@@ -74,19 +94,16 @@ class TestPhase61StabilityHardened:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nimport time\nprint(f'START_{time.time()}')")
         
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            bufsize=1
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1
         )
         
-        # Wait for first start
-        start_count = 0
-        line = self._read_with_timeout(proc.stdout, timeout=10)
-        if line and "START_" in line:
-            start_count += 1
+        # Wait for first start (until first START_)
+        self._read_until(proc.stdout, "START_", timeout=15)
+        start_count = 1  # We just found it
         
         # Blast 100 events in 200ms
         for _ in range(100):
@@ -113,19 +130,27 @@ class TestPhase61StabilityHardened:
         Goal: Continuous events for 3s should still trigger at least one restart.
         """
         env = isolated_env
-        env.create_app("main.py", "app = lambda s, r, se: None\nimport time\nprint(f'START_{time.time()}')")
+        env.create_app("main.py", "app = lambda s, r, se: None\nimport time\nprint(f'START_{time.time()}', flush=True)")
         
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             bufsize=1
         )
         
-        # Wait for first start
-        self._read_with_timeout(proc.stdout, timeout=5)
+        # Wait for first start (drain everything until first START_)
+        prefix = self._read_until(proc.stdout, "START_", timeout=20)
+        assert "START_" in prefix, f"Server failed to start the first time.\nLOGS: {prefix}"
         
+        # DRAIN any remaining startup logs to avoid false positives in second phase
+        time.sleep(2)
+        while True:
+            line = self._read_with_timeout(proc.stdout, timeout=0.5)
+            if not line: break
+            prefix += line
+
         # Continuous events every 200ms for 3 seconds ( > default 300ms debounce)
         start_trigger = time.time()
         while time.time() - start_trigger < 3:
@@ -134,14 +159,14 @@ class TestPhase61StabilityHardened:
             
         # If implementation is vulnerable, it will NEVER restart during these 3s.
         # Requirement: It MUST restart at least once due to a hard-cap.
-        output = ""
-        while True:
-            line = self._read_with_timeout(proc.stdout, timeout=1)
-            if not line: break
-            output += line
+        # Wait for the restart's START_ marker. 
+        # Debug build is slow, give it 30s to finish the restart cycles.
+        output = self._read_until(proc.stdout, "START_", timeout=30)
         
+        # Kill immediately to release port
         proc.kill()
-        assert "START_" in output, "Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events)"
+        
+        assert "START_" in output, f"Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events).\nFull Trace: {prefix}\nNew Logs: {output}"
 
     def test_stab_deadlock_pipe_saturation(self, isolated_env):
         """
@@ -175,11 +200,11 @@ print("CHILD_READY")
 time.sleep(60)
 """)
         
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        proc = env.spawn_velo(
+            "serve", "main:app", "--bind", f"127.0.0.1:{port}",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         
         # Wait for child ready
@@ -212,13 +237,15 @@ time.sleep(60)
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
-        port = get_free_port()
+        # Use ephemeral port (0) to avoid conflicts
+        # We don't need to connect, only verify lifecycle
+        port = env.next_port()
         
         # Start server in new session
         # Use --timeout 5 for fast graceful shutdown in tests
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        proc = env.spawn_velo(
+            "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             preexec_fn=os.setsid
         )
         
@@ -256,11 +283,11 @@ time.sleep(60)
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--bind", f"127.0.0.1:{port}",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         
         # Wait for ready
@@ -316,15 +343,13 @@ app = lambda s, r, se: None
         app_file = env.path / "main.py"
         app_file.write_text(app_code)
         
-        port = self.get_free_port()
+        port = env.next_port()
         
         # Start server
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
-            cwd=env.path,
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--port", str(port),
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stderr=subprocess.STDOUT
         )
         
         try:
@@ -417,21 +442,23 @@ class TestRegressionBugFixes:
         env = isolated_env
         env.create_app("main.py", "app = lambda s, r, se: None\nprint('READY')")
         
-        port = get_free_port()
+        port = env.next_port()
         
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        proc = env.spawn_velo(
+            "serve", "main:app", "--bind", f"127.0.0.1:{port}", "--timeout", "5",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             preexec_fn=os.setsid
         )
         
-        time.sleep(3)
+        time.sleep(10)
         parent_pid = proc.pid
         
         # Find ALL children (uvicorn + workers)
         try:
             children = psutil.Process(parent_pid).children(recursive=True)
         except psutil.NoSuchProcess:
+            stdout, _ = proc.communicate()
+            raise RuntimeError(f"Velo exited prematurely.\nLOGS: {stdout}")
             pytest.skip("Process exited before we could get children")
         
         assert len(children) >= 1, "Expected at least one child process"

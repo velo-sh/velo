@@ -15,6 +15,10 @@ import subprocess
 import tempfile
 import threading
 import time
+
+# Import CI-aware timeout constants
+from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+
 from pathlib import Path
 
 import pytest
@@ -40,7 +44,10 @@ class AttackEnv:
         (self.path / "uv.lock").write_text("{}")
         return self
     
-    def run(self, args, timeout=30, env=None):
+    def run(self, args, timeout=None, env=None):
+        if timeout is None:
+            timeout = T_MEDIUM
+
         full_env = os.environ.copy()
         if env:
             full_env.update(env)
@@ -49,11 +56,14 @@ class AttackEnv:
                 [self.velo] + args,
                 cwd=self.path,
                 capture_output=True,
-                text=True,
+                text=False,  # Use bytes mode to handle binary output
                 timeout=timeout,
                 env=full_env
             )
-            return result.returncode, result.stdout, result.stderr
+            # Decode safely, replacing invalid UTF-8
+            stdout = result.stdout.decode('utf-8', errors='replace') if result.stdout else ""
+            stderr = result.stderr.decode('utf-8', errors='replace') if result.stderr else ""
+            return result.returncode, stdout, stderr
         except subprocess.TimeoutExpired:
             return -1, "", "TIMEOUT"
     
@@ -93,12 +103,14 @@ try:
 except MemoryError:
     print("memory_error")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "memory_bomb.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "memory_bomb.py"], timeout=T_MEDIUM)
             
             # Should handle gracefully - either work or fail cleanly
             # Note: DEF-005 means stdout may be empty even on success
-            assert "TIMEOUT" not in stderr, "Should not hang on memory bomb"
+            # Check return code instead of string matching to avoid false positives
+            assert code != -1, "Should not hang on memory bomb (returned -1 = timeout)"
             print(f"  Memory bomb: code={code}, stdout_len={len(stdout)}")
+
 
     def test_attack_fork_bomb_attempt(self):
         """Try to fork bomb (should be prevented)."""
@@ -117,7 +129,7 @@ for i in range(10):
         os.waitpid(pid, 0)
 print("fork_bomb_done")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "fork_bomb.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "fork_bomb.py"], timeout=T_MEDIUM)
             
             # Should not hang
             assert "TIMEOUT" not in stderr
@@ -141,7 +153,7 @@ finally:
         except:
             pass
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "fd_leak.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "fd_leak.py"], timeout=T_MEDIUM)
             
             assert "TIMEOUT" not in stderr
 
@@ -170,7 +182,7 @@ finally:
         except:
             pass
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "tmp_fill.py"], timeout=60)
+            code, stdout, stderr = env.run(["run", "--zygote", "tmp_fill.py"], timeout=T_LONG)
             
             assert "TIMEOUT" not in stderr
 
@@ -191,7 +203,7 @@ for i in range(100):
     print("x" * 102400)
 print("DONE")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "huge_stdout.py"], timeout=60)
+            code, stdout, stderr = env.run(["run", "--zygote", "huge_stdout.py"], timeout=T_LONG)
             
             # Should complete without hanging
             assert "TIMEOUT" not in stderr
@@ -209,7 +221,7 @@ sys.stdout.buffer.write(bytes(range(256)) * 100)
 sys.stdout.buffer.write(b"\\nDONE\\n")
 sys.stdout.buffer.flush()
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "binary_stdout.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "binary_stdout.py"], timeout=T_MEDIUM)
             
             # Should not crash
             assert "TIMEOUT" not in stderr
@@ -224,7 +236,7 @@ for i in range(1000):
     print(f"stderr_{i}", file=sys.stderr, flush=True)
 print("MIXED_DONE")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "mixed_output.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "mixed_output.py"], timeout=T_MEDIUM)
             
             assert "TIMEOUT" not in stderr
 
@@ -239,7 +251,7 @@ for _ in range(10000):
 print("")  # Final newline
 print("DONE")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "no_newline.py"], timeout=30)
+            code, stdout, stderr = env.run(["run", "--zygote", "no_newline.py"], timeout=T_MEDIUM)
             
             assert "TIMEOUT" not in stderr
 
@@ -258,7 +270,7 @@ class TestTimeAttacks:
 while True:
     pass
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "infinite.py"], timeout=5)
+            code, stdout, stderr = env.run(["run", "--zygote", "infinite.py"], timeout=T_SHORT)
             
             # Should timeout, not hang forever
             assert "TIMEOUT" in stderr or code != 0
@@ -270,7 +282,7 @@ while True:
 import time
 time.sleep(99999)
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "sleep_forever.py"], timeout=3)
+            code, stdout, stderr = env.run(["run", "--zygote", "sleep_forever.py"], timeout=T_SHORT)
             
             # Should timeout
             assert "TIMEOUT" in stderr or code != 0
@@ -284,7 +296,7 @@ import sys
 data = sys.stdin.read()
 print(f"got: {data}")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "block_stdin.py"], timeout=3)
+            code, stdout, stderr = env.run(["run", "--zygote", "block_stdin.py"], timeout=T_SHORT)
             
             # Should timeout or return immediately (no stdin)
             assert "TIMEOUT" in stderr or code != 0 or code == 0
@@ -324,7 +336,7 @@ print("DONE")
             proc.terminate()
             
             try:
-                proc.wait(timeout=3)
+                proc.wait(timeout=T_SHORT)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 pytest.fail("Process ignored SIGTERM and couldn't be killed gracefully")
@@ -338,7 +350,7 @@ import os
 # Send SIGSEGV to self
 os.kill(os.getpid(), signal.SIGSEGV)
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "segfault.py"], timeout=10)
+            code, stdout, stderr = env.run(["run", "--zygote", "segfault.py"], timeout=T_SHORT)
             
             # Should handle the signal, not crash Zygote itself
             print(f"  SIGSEGV result: code={code}")
@@ -353,7 +365,7 @@ print("BEFORE_STOP", flush=True)
 os.kill(os.getpid(), signal.SIGSTOP)
 print("AFTER_STOP")
 ''')
-            code, stdout, stderr = env.run(["run", "--zygote", "sigstop.py"], timeout=3)
+            code, stdout, stderr = env.run(["run", "--zygote", "sigstop.py"], timeout=T_SHORT)
             
             # Should timeout or handle gracefully
             print(f"  SIGSTOP result: code={code}, timeout={('TIMEOUT' in stderr)}")
@@ -370,7 +382,7 @@ class TestIPCAttacks:
         """Spam connections to Zygote socket."""
         with AttackEnv() as env:
             # Start Zygote
-            env.run(["zygote", "start"], timeout=10)
+            env.run(["zygote", "start"], timeout=T_SHORT)
             
             # Find socket
             sock_path = None
@@ -396,13 +408,13 @@ class TestIPCAttacks:
                 print(f"  Connection spam: {100 - errors}/100 succeeded")
                 
                 # Zygote should still work
-                code, stdout, stderr = env.run(["zygote", "status"], timeout=5)
+                code, stdout, stderr = env.run(["zygote", "status"], timeout=T_SHORT)
                 # Should not crash
 
     def test_attack_garbage_to_socket(self):
         """Send garbage data to Zygote socket."""
         with AttackEnv() as env:
-            env.run(["zygote", "start"], timeout=10)
+            env.run(["zygote", "start"], timeout=T_SHORT)
             
             sock_path = None
             cache_dir = env.path / ".velo_cache"
@@ -434,13 +446,13 @@ class TestIPCAttacks:
                 
                 # Zygote should survive
                 time.sleep(0.5)
-                code, _, _ = env.run(["zygote", "status"], timeout=5)
+                code, _, _ = env.run(["zygote", "status"], timeout=T_SHORT)
                 print(f"  After garbage: status code={code}")
 
     def test_attack_half_close(self):
         """Half-close socket connection."""
         with AttackEnv() as env:
-            env.run(["zygote", "start"], timeout=10)
+            env.run(["zygote", "start"], timeout=T_SHORT)
             
             sock_path = None
             cache_dir = env.path / ".velo_cache"  
@@ -480,7 +492,7 @@ class TestConcurrentAttacks:
             
             def run_one():
                 try:
-                    code, stdout, stderr = env.run(["run", "--zygote", "quick.py"], timeout=30)
+                    code, stdout, stderr = env.run(["run", "--zygote", "quick.py"], timeout=T_MEDIUM)
                     results.append(code)
                 except Exception as e:
                     errors.append(str(e))
@@ -490,7 +502,7 @@ class TestConcurrentAttacks:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=60)
+                t.join(timeout=T_LONG)
             
             success = sum(1 for r in results if r == 0)
             print(f"  100 concurrent: {success} succeeded, {len(errors)} errors")
@@ -503,7 +515,7 @@ class TestConcurrentAttacks:
             def start_loop():
                 for _ in range(20):
                     try:
-                        env.run(["zygote", "start"], timeout=5)
+                        env.run(["zygote", "start"], timeout=T_SHORT)
                     except:
                         pass
                     time.sleep(0.05)
@@ -511,7 +523,7 @@ class TestConcurrentAttacks:
             def stop_loop():
                 for _ in range(20):
                     try:
-                        env.run(["zygote", "stop"], timeout=5)
+                        env.run(["zygote", "stop"], timeout=T_SHORT)
                     except:
                         pass
                     time.sleep(0.05)
@@ -521,11 +533,11 @@ class TestConcurrentAttacks:
             
             t1.start()
             t2.start()
-            t1.join(timeout=30)
-            t2.join(timeout=30)
+            t1.join(timeout=T_MEDIUM)
+            t2.join(timeout=T_MEDIUM)
             
             # Should not leave in bad state
-            env.run(["zygote", "stop"], timeout=5)
+            env.run(["zygote", "stop"], timeout=T_SHORT)
 
 
 # =============================================================================
