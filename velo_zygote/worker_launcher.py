@@ -5,6 +5,32 @@ import uvicorn
 import signal
 import traceback
 import tempfile
+import importlib
+
+class UDSProxyMiddleware:
+    """
+    Titanium Fix: Ensures scope['client'] is not None on UDS connections.
+    
+    Uvicorn's ProxyHeadersMiddleware (and some frameworks) skip X-Forwarded-For 
+    processing if the connection is via UDS because scope['client'] is None.
+    
+    This middleware simulates a localhost client if forwarding headers are present,
+    thereby allowing downstream middlewares to correctly identify the real client.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+            # Check for common proxy headers in scope headers (list of tuples)
+            headers = scope.get("headers", [])
+            has_proxy_headers = any(k.lower() in (b"x-forwarded-for", b"x-real-ip") for k, v in headers)
+            
+            if has_proxy_headers:
+                # Inject a dummy local client to satisfy uvicorn/framework checks
+                # format: (host, port)
+                scope["client"] = ("127.0.0.1", 0)
+        await self.app(scope, receive, send)
 
 def main():
     try:
@@ -43,8 +69,21 @@ def main():
             sys.path.insert(0, os.getcwd())
 
         # 5. Uvicorn Configuration
+        # Load app if we need to wrap it for UDS IP preservation
+        app = args.app
+        if args.uds and getattr(args, "proxy_headers", False):
+            try:
+                from uvicorn.config import Config
+                config = Config(app=args.app)
+                app = config.loaded_app
+                app = UDSProxyMiddleware(app)
+            except Exception as e:
+                print(f"Warning: Could not wrap app for UDS IP preservation: {e}", file=sys.stderr)
+                # Fallback to original app string
+                app = args.app
+
         run_kwargs = {
-            "app": args.app,
+            "app": app,
             "log_level": "info",
         }
         
