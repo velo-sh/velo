@@ -71,6 +71,7 @@ jobs:
             rust:
               - 'src/**/*.rs'
               - 'tests/**/*.rs'
+              - 'tests/qa/**/*.py'
               - 'Cargo.*'
             loader:
               - 'src/loader/**/*.rs'
