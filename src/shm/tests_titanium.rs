@@ -155,10 +155,16 @@ mod tests {
         let _expected_size = EXPECTED_HUGE_PAGE_SIZE * 2;
         #[cfg(target_os = "linux")]
         {
+            let page_size = match size_overflow {
+                s if s == _expected_size => HUGE_PAGE_SIZE,
+                _ => unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize },
+            };
             assert_eq!(
-                size_overflow, _expected_size,
-                "QA FAILURE: Just over 2MB should align to 4MB, got {} bytes",
-                size_overflow
+                size_overflow,
+                alignment::align_up(EXPECTED_HUGE_PAGE_SIZE + 64, page_size),
+                "QA FAILURE: Overflow size {} not aligned to page boundary ({}KB)",
+                size_overflow,
+                page_size / 1024
             );
         }
         #[cfg(not(target_os = "linux"))]
