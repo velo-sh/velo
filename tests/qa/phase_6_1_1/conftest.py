@@ -218,6 +218,11 @@ class VeloServeFactory:
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
         
+        # RFC-0013 Phase 6.1.1: Prevent Workspace Pollution
+        # Explicitly set Zygote path to current workspace 
+        root_dir = Path(__file__).parents[3]
+        env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/main.py")
+        
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
         proc = subprocess.Popen(
@@ -241,34 +246,19 @@ class VeloServeFactory:
                 pass
 
 
-def find_velo_binary() -> str:
-    """Find the velo binary (release > debug > PATH)."""
-    repo_root = Path(__file__).parent.parent.parent.parent
-
-    # Check release build first
-    release_bin = repo_root / "target" / "release" / "velo"
-    if release_bin.exists():
-        return str(release_bin)
-
-    # Check debug build
-    debug_bin = repo_root / "target" / "debug" / "velo"
-    if debug_bin.exists():
-        return str(debug_bin)
-
-    # Fall back to PATH
-    import shutil
-
-    path_bin = shutil.which("velo")
-    if path_bin:
-        return path_bin
-
-    pytest.skip("Velo binary not found. Run 'cargo build --release' first.")
-
-
 @pytest.fixture(scope="session")
 def velo_binary() -> str:
-    """Session-scoped fixture for velo binary path."""
-    return find_velo_binary()
+    """Find the velo binary for this workspace (forcing debug to match edits)."""
+    repo_root = Path(__file__).parents[3]
+    
+    # Force rebuild debug binary
+    subprocess.run(["cargo", "build"], cwd=repo_root, check=True)
+    
+    debug_bin = repo_root / "target" / "debug" / "velo"
+    if debug_bin.exists():
+        return str(debug_bin.resolve())
+    
+    raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}")
 
 
 @pytest.fixture

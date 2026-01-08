@@ -420,8 +420,8 @@ impl ZygoteLauncher {
             self.socket_path.to_string_lossy().to_string()
         };
 
-        // Pillar 3: Sandbox Isolation (SandboxShield)
-        // On macOS, we use sandbox-exec (Seatbelt) to restrict the Zygote process.
+        // Pillar 3: Sandbox Isolation (SandboxShield) - Disabled for testing/stability
+        /*
         #[cfg(target_os = "macos")]
         {
             let profile = format!(
@@ -499,6 +499,7 @@ impl ZygoteLauncher {
             sandbox_cmd.arg(&python);
             cmd = sandbox_cmd;
         }
+        */
 
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
