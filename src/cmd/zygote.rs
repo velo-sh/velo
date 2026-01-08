@@ -104,7 +104,7 @@ fn cmd_zygote_stop() {
         println!("ℹ️  Zygote not running");
     } else {
         println!("🛑 Stopping Zygote...");
-        match zygote::ipc::send_command(&socket_path, zygote::ipc::ZygoteCommand::Shutdown) {
+        match zygote::ipc::send_command(&socket_path, zygote::ipc::ZygoteCommand::Shutdown, None) {
             Ok(_) => {
                 println!("✅ Zygote stopped");
             }

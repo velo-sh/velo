@@ -47,6 +47,43 @@ Before making any changes, AI agents MUST read:
 
 ## ⚠️ Critical Architecture Principles
 
+### The Kernel Engineer Mindset (TITANIUM Standard)
+
+> **This is the foundational thinking pattern for all Velo development.**
+
+When designing or reviewing any system-level feature, every agent MUST think like a **kernel engineer**:
+
+1. **Assume the World is Hostile**
+   - Every input is malicious until proven otherwise.
+   - Every external process will crash, hang, or misbehave.
+   - Every "normal flow" will eventually fail.
+
+2. **Never Trust "Normal Flows"**
+   - "It works in the happy path" is not a defense.
+   - Design for the 3 AM incident, not the demo.
+   - If it can fail, it WILL fail—plan the recovery.
+
+3. **The Three Questions of Death**
+   - **Who dies?** (Process, thread, connection, memory segment)
+   - **When do they die?** (SIGKILL, OOM, container eviction, panic)
+   - **Who cleans up the body?** (Host? Kernel? Orphaned forever?)
+
+4. **Zero Undefined Behaviors**
+   - Kernel-level design has only one standard: **0 undefined behaviors**.
+   - Every failure path must be explicitly handled.
+   - "Let it crash" is NOT acceptable for shared resources.
+
+5. **Ownership and Lifecycle Authority**
+   - Every resource has exactly ONE owner.
+   - The owner is responsible for cleanup, not the user.
+   - Never rely on "cooperative" cleanup from other processes.
+
+**This is not a technique. This is a way of thinking.**
+
+> *"99% correct + 1% wrong = system-level disaster."*
+
+---
+
 ### Test Environment Isolation
 
 > **CRITICAL**: Velo's development environment and user project environments MUST be completely isolated.
@@ -68,6 +105,7 @@ See [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) for full details.
 - ❌ Don't hardcode preload modules
 - ✅ Use runtime analysis (`--profile`)
 - ✅ Use user config (`pyproject.toml [tool.velo]`)
+
 
 ---
 

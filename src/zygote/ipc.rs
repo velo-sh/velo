@@ -13,12 +13,14 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
-
+use blake3;
+use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg};
 use serde::{Deserialize, Serialize};
+use std::io::{IoSlice, IoSliceMut};
 use std::io::{Read, Write};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 pub use crate::common::constants::{MAX_MESSAGE_SIZE, PROTOCOL_VERSION};
 
@@ -54,6 +56,9 @@ pub enum ZygoteCommand {
         /// Max bundle size limit
         #[serde(default)]
         max_bundle_size: Option<u64>,
+        /// Size of the shared memory segment (if shm_fd is passed)
+        #[serde(default)]
+        shm_size: Option<usize>,
     },
     /// Shutdown the Zygote process
     Shutdown,
@@ -126,7 +131,56 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Delegates to `common::paths` (RFC-0012).
 pub fn get_socket_dir() -> PathBuf {
-    crate::common::paths::get_socket_dir()
+    /// Red Line #1: Path length limit with 4-byte margin
+    const SOCKET_PATH_LIMIT: usize = 104;
+    // SECURITY: getuid() is a standard read-only syscall used for multi-tenant path isolation.
+    let uid = unsafe { libc::getuid() };
+
+    // RFC §3.3: Use project-specific randomized identity for isolation
+    let project_hash = if let Ok(cwd) = std::env::current_dir() {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(cwd.to_string_lossy().as_bytes());
+        let hash = hasher.finalize().to_hex()[..8].to_string();
+        format!("-{}", hash)
+    } else {
+        "".to_string()
+    };
+
+    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
+    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let dir = PathBuf::from(xdg_dir).join("velo");
+        let test_path = dir.join("velo-zygote-v01.sock");
+        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
+            return dir;
+        }
+    }
+
+    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
+    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
+    let user_dir = std::env::temp_dir().join(&dir_name);
+    let test_path = user_dir.join("velo-zygote-v01.sock");
+
+    // Red Line #1: Check path length BEFORE ensuring directory
+    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
+        return user_dir;
+    }
+
+    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
+    // Red Line #1: /tmp fallback when path too long
+    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
+        eprintln!(
+            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
+            SOCKET_PATH_LIMIT
+        );
+    }
+    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
+    let _ = ensure_socket_dir(&fallback_dir);
+    fallback_dir
+}
+
+/// Ensure socket directory exists with proper permissions (0700)
+fn ensure_socket_dir(dir: &Path) -> bool {
+    crate::common::paths::ensure_socket_dir(dir)
 }
 
 /// Check if a socket is alive (responds to connection attempt)
@@ -240,50 +294,12 @@ pub fn cleanup_socket(socket_path: &Path) {
 
 // Protocol version (ADV-1 + DEF-61-004) - Now using SSOT from config/constants.toml
 
-/// Helper for enforcing a wall-clock deadline across multiple IPC operations
-struct Deadline {
-    end: Instant,
-}
-
-impl Deadline {
-    fn new(timeout: Duration) -> Self {
-        Self {
-            end: Instant::now() + timeout,
-        }
-    }
-
-    fn remaining(&self) -> Result<Duration> {
-        let now = Instant::now();
-        if now >= self.end {
-            return Err(ZygoteError::ConnectionFailed(
-                "Kinetic handshake budget exceeded (10ms wall-clock deadline)".to_string(),
-            ));
-        }
-        Ok(self.end - now)
-    }
-
-    /// Apply remaining time as socket timeout
-    fn apply(&self, stream: &UnixStream) -> Result<()> {
-        let timeout = self.remaining()?;
-        stream
-            .set_read_timeout(Some(timeout))
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-        stream
-            .set_write_timeout(Some(timeout))
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
-        Ok(())
-    }
-}
-
 /// Write a MessagePack message with length prefix and version byte
 fn write_message<T: Serialize + std::fmt::Debug>(
     stream: &mut UnixStream,
     msg: &T,
-    deadline: Option<&Deadline>,
+    fd: Option<RawFd>,
 ) -> Result<()> {
-    if let Some(d) = deadline {
-        d.apply(stream)?;
-    }
     let mut buf = Vec::new();
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     msg.serialize(&mut ser)
@@ -304,48 +320,103 @@ fn write_message<T: Serialize + std::fmt::Debug>(
     #[cfg(debug_assertions)]
     eprintln!("[IPC SEND] {:?}", msg);
 
-    // Write 4-byte length prefix (little-endian) - includes version + payload
+    // Frame: [Length 4B] [Version 1B] [Payload]
     let total_len = 1 + payload.len(); // version byte + payload
     let len_bytes = (total_len as u32).to_le_bytes();
-    stream
-        .write_all(&len_bytes)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    let version_byte = [PROTOCOL_VERSION];
 
-    // Write version byte (ADV-1)
-    stream
-        .write_all(&[PROTOCOL_VERSION])
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Some(raw_fd) = fd {
+        // Use SCM_RIGHTS via sendmsg
+        let iov = [
+            IoSlice::new(&len_bytes),
+            IoSlice::new(&version_byte),
+            IoSlice::new(&payload),
+        ];
 
-    // Write payload
-    stream
-        .write_all(&payload)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        let cmsg = [ControlMessage::ScmRights(&[raw_fd])];
 
-    stream
-        .flush()
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        sendmsg::<()>(stream.as_raw_fd(), &iov, &cmsg, MsgFlags::empty(), None)
+            .map_err(|e| ZygoteError::SocketError(format!("sendmsg failed: {}", e)))?;
+    } else {
+        // Standard Write
+        stream
+            .write_all(&len_bytes)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .write_all(&version_byte)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .write_all(&payload)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
+        stream
+            .flush()
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    }
 
     Ok(())
 }
 
 /// Read a MessagePack message with length prefix and version byte
+/// Read a MessagePack message with length prefix and version byte
 fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
-    deadline: Option<&Deadline>,
-) -> Result<T> {
-    if let Some(d) = deadline {
-        d.apply(stream)?;
-    }
+) -> Result<(T, Option<RawFd>)> {
+    // Helper to ensure FD is closed on error
+    let cleanup_fd = |fd: &mut Option<RawFd>| {
+        if let Some(f) = fd.take() {
+            let _ = nix::unistd::close(f);
+        }
+    };
+
     // Read 4-byte length prefix (includes version + payload)
+    // Use recvmsg to capture synchronous ancillary data (FDs)
     let mut len_buf = [0u8; 4];
-    stream
-        .read_exact(&mut len_buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    let mut cmsg = nix::cmsg_space!([RawFd; 1]);
+    let (bytes, mut received_fd) = {
+        let mut iov = [IoSliceMut::new(&mut len_buf)];
+
+        let msg_result = recvmsg::<()>(
+            stream.as_raw_fd(),
+            &mut iov,
+            Some(&mut cmsg),
+            MsgFlags::empty(),
+        )
+        .map_err(|e| ZygoteError::SocketError(format!("recvmsg failed: {}", e)))?;
+
+        let mut fd = None;
+        for cmsg in msg_result.cmsgs() {
+            if let ControlMessageOwned::ScmRights(fds) = cmsg {
+                fd = fds.first().copied();
+            }
+        }
+
+        // Council Advisory: Check for control message truncation
+        if msg_result.flags.contains(MsgFlags::MSG_CTRUNC) {
+            cleanup_fd(&mut fd);
+            return Err(ZygoteError::ProtocolError(
+                "Control message truncated (too many FDs)".to_string(),
+            ));
+        }
+
+        (msg_result.bytes, fd)
+    };
+
+    // Ensure we have full 4 bytes for length
+    if bytes < 4 {
+        stream.read_exact(&mut len_buf[bytes..]).map_err(|e| {
+            cleanup_fd(&mut received_fd);
+            ZygoteError::SocketError(e.to_string())
+        })?;
+    }
 
     let total_len = u32::from_le_bytes(len_buf) as usize;
 
     // Security: Check message size
     if total_len > MAX_MESSAGE_SIZE {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(format!(
             "Message too large: {} bytes (max {})",
             total_len, MAX_MESSAGE_SIZE
@@ -354,6 +425,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // Need at least version byte
     if total_len < 1 {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(
             "Message too small to contain version byte".to_string(),
         ));
@@ -361,12 +433,14 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
     // Read version byte (ADV-1)
     let mut version_buf = [0u8; 1];
-    stream
-        .read_exact(&mut version_buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Err(e) = stream.read_exact(&mut version_buf) {
+        cleanup_fd(&mut received_fd);
+        return Err(ZygoteError::SocketError(e.to_string()));
+    }
 
     let version = version_buf[0];
     if version != PROTOCOL_VERSION {
+        cleanup_fd(&mut received_fd);
         return Err(ZygoteError::ProtocolError(format!(
             "Protocol version mismatch: got 0x{:02x}, expected 0x{:02x}. Is one side outdated?",
             version, PROTOCOL_VERSION
@@ -376,51 +450,43 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     // Read payload (total_len - 1 for version byte)
     let payload_len = total_len - 1;
     let mut buf = vec![0u8; payload_len];
-    stream
-        .read_exact(&mut buf)
-        .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+    if let Err(e) = stream.read_exact(&mut buf) {
+        cleanup_fd(&mut received_fd);
+        return Err(ZygoteError::SocketError(e.to_string()));
+    }
 
     // Deserialize
-    let msg: T =
-        rmp_serde::from_slice(&buf).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
+    let msg: T = rmp_serde::from_slice(&buf).map_err(|e| {
+        cleanup_fd(&mut received_fd);
+        ZygoteError::ProtocolError(e.to_string())
+    })?;
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC RECV] {:?}", msg);
+    eprintln!("[IPC RECV] {:?} (fd: {:?})", msg, received_fd);
 
-    Ok(msg)
+    Ok((msg, received_fd))
 }
 
 /// High-level wrapper for Zygote IPC connection
 pub struct ZygoteStream {
     stream: UnixStream,
-    deadline: Deadline,
 }
 
 impl ZygoteStream {
     /// Connect to Zygote and verify the initial "Ready" greeting
-    ///
-    /// RFC-0013: Enforces a 10ms wall-clock timeout for the entire handshake.
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        // DEF-62-002: Increased to 2000ms (2s) to tolerate GIL contention during Shadow Preloading.
-        // Idle Zygote responds in <1ms. Busy Zygote (loading pandas) needs patience.
-        let deadline = Deadline::new(Duration::from_millis(2000));
-
-        let stream = UnixStream::connect(socket_path).map_err(|e| {
-            ZygoteError::ConnectionFailed(format!("Failed to connect to Zygote: {}", e))
-        })?;
-
-        // 0. Verify server identity (RFC §3.7 Mutual Auth)
-        #[cfg(target_os = "linux")]
-        verify_peer_credentials(&stream)?;
-
-        let mut zygote_stream = Self { stream, deadline };
+        let mut stream = UnixStream::connect(socket_path)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
         // 1. Receive mandatory "Ready" greeting
-        let ready: ZygoteResponse =
-            read_message(&mut zygote_stream.stream, Some(&zygote_stream.deadline))?;
+        let (ready, fd): (ZygoteResponse, _) = read_message(&mut stream)?;
+        if let Some(fd) = fd {
+            // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
+            let _ = nix::unistd::close(fd);
+        }
         match ready {
-            ZygoteResponse::Ready => Ok(zygote_stream),
+            ZygoteResponse::Ready => Ok(Self { stream }),
             _ => Err(ZygoteError::ProtocolError(
                 "Connection greeting failed - expected Ready".to_string(),
             )),
@@ -428,25 +494,32 @@ impl ZygoteStream {
     }
 
     /// Send a command and wait for the response
-    pub fn send_command(&mut self, cmd: &ZygoteCommand) -> Result<ZygoteResponse> {
-        write_message(&mut self.stream, cmd, Some(&self.deadline))?;
-        read_message(&mut self.stream, Some(&self.deadline))
+    pub fn send_command(
+        &mut self,
+        cmd: &ZygoteCommand,
+        fd: Option<RawFd>,
+    ) -> Result<ZygoteResponse> {
+        write_message(&mut self.stream, cmd, fd)?;
+        let (resp, fd) = read_message(&mut self.stream)?;
+        if let Some(fd) = fd {
+            // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
+            let _ = nix::unistd::close(fd);
+        }
+        Ok(resp)
     }
 }
 
 /// Accept a command from a client connection
-pub fn accept_command(listener: &UnixListener) -> Result<(UnixStream, ZygoteCommand)> {
+pub fn accept_command(
+    listener: &UnixListener,
+) -> Result<(UnixStream, ZygoteCommand, Option<RawFd>)> {
     let (mut stream, _) = listener
         .accept()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-    // 0. Verify client identity (RFC §3.7)
-    #[cfg(target_os = "linux")]
-    verify_peer_credentials(&stream)?;
+    let (cmd, fd): (ZygoteCommand, Option<RawFd>) = read_message(&mut stream)?;
 
-    let cmd: ZygoteCommand = read_message(&mut stream, None)?;
-
-    Ok((stream, cmd))
+    Ok((stream, cmd, fd))
 }
 
 /// Send a response back to the launcher
@@ -455,47 +528,13 @@ pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Resul
 }
 
 /// Connect to the Zygote and send a command, returning the response
-pub fn send_command(socket_path: &Path, command: ZygoteCommand) -> Result<ZygoteResponse> {
+pub fn send_command(
+    socket_path: &Path,
+    command: ZygoteCommand,
+    fd: Option<RawFd>,
+) -> Result<ZygoteResponse> {
     let mut stream = ZygoteStream::connect(socket_path)?;
-    stream.send_command(&command)
-}
-
-/// Verify that the peer is owned by the same user (RFC §3.7)
-///
-/// This is CRITICAL for Abstract Namespace Sockets which rely entirely
-/// on peer credentials for security, having no filesystem permissions.
-#[cfg(target_os = "linux")]
-fn verify_peer_credentials(stream: &UnixStream) -> Result<()> {
-    use std::os::unix::io::AsRawFd;
-
-    let fd = stream.as_raw_fd();
-    let ucred = unsafe {
-        let mut ucred: libc::ucred = std::mem::zeroed();
-        let mut len = std::mem::size_of::<libc::ucred>() as u32;
-        if libc::getsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            &mut ucred as *mut _ as *mut libc::c_void,
-            &mut len,
-        ) != 0
-        {
-            return Err(ZygoteError::SecurityViolation(
-                "Failed to get peer credentials".to_string(),
-            ));
-        }
-        ucred
-    };
-
-    let current_uid = unsafe { libc::getuid() };
-    if ucred.uid != current_uid {
-        return Err(ZygoteError::SecurityViolation(format!(
-            "Peer UID mismatch: expected {}, got {}",
-            current_uid, ucred.uid
-        )));
-    }
-
-    Ok(())
+    stream.send_command(&command, fd)
 }
 
 #[cfg(test)]
@@ -510,8 +549,9 @@ mod tests {
         };
 
         // Test MessagePack roundtrip
-        let bytes = rmp_serde::to_vec(&resp).unwrap();
-        let decoded: ZygoteResponse = rmp_serde::from_slice(&bytes).unwrap();
+        let bytes = rmp_serde::to_vec(&resp).expect("Serialization failed");
+        let decoded: ZygoteResponse =
+            rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteResponse::Status { pid, preload } = decoded {
             assert_eq!(pid, 1234);
@@ -534,10 +574,11 @@ mod tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            shm_size: None,
         };
 
-        let bytes = rmp_serde::to_vec(&cmd).unwrap();
-        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).unwrap();
+        let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
+        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteCommand::Fork {
             script_path,
@@ -565,10 +606,11 @@ mod tests {
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
             project_root: Some(PathBuf::from("/home/user/project")),
             max_bundle_size: Some(1024 * 1024),
+            shm_size: Some(4096),
         };
 
-        let msgpack_bytes = rmp_serde::to_vec(&cmd).unwrap();
-        let json_bytes = serde_json::to_vec(&cmd).unwrap();
+        let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");
+        let json_bytes = serde_json::to_vec(&cmd).expect("JSON serialization failed");
 
         // MessagePack should be smaller
         assert!(
@@ -590,7 +632,7 @@ mod tests {
         let huge_len = (MAX_MESSAGE_SIZE + 1) as u32;
         writer.write_all(&huge_len.to_le_bytes()).unwrap();
 
-        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        let res: Result<(ZygoteResponse, Option<RawFd>)> = read_message(&mut reader);
         assert!(res.is_err());
         let err = res.unwrap_err().to_string();
         assert!(err.contains("Message too large"));
@@ -607,7 +649,7 @@ mod tests {
         writer.write_all(&total_len.to_le_bytes()).unwrap();
         writer.write_all(&[0xFF]).unwrap(); // Wrong version
 
-        let res: Result<ZygoteResponse> = read_message(&mut reader, None);
+        let res: Result<(ZygoteResponse, Option<RawFd>)> = read_message(&mut reader);
         assert!(res.is_err());
         let err = res.unwrap_err().to_string();
         assert!(err.contains("Protocol version mismatch"));

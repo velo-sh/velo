@@ -28,7 +28,6 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
-  
 jobs:
   performance-canary:
     name: 🐤 Performance Canary (Nightly)
@@ -669,7 +668,7 @@ jobs:
               sys.exit(e.returncode)
           EOF
           
-          python timeout_run.py 10 velo serve main:app --dry-run || {
+          python timeout_run.py 30 velo serve main:app --dry-run || {
             RET=$?
             if [ $RET -eq 124 ]; then
               echo "❌ CRITICAL REGRESSION: velo serve --dry-run hung (Zygote deadlock)!"

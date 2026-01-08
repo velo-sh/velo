@@ -10,6 +10,8 @@ _USING_PURE_PYTHON_MSGPACK = False
 try:
     # 1. Try high-performance C extension first
     import msgpack
+    if not hasattr(msgpack, 'packb'):
+        raise ImportError("msgpack installed but packb missing")
     
     def packer(msg: Dict) -> bytes:
         return msgpack.packb(msg, use_bin_type=True)
@@ -17,7 +19,7 @@ try:
     def unpacker(data: bytes) -> Any:
         return msgpack.unpackb(data, raw=False)
 
-except (ImportError, OSError):
+except (ImportError, OSError, AttributeError):
     # 2. Fallback to vendored Pure Python implementation
     _fallback_loaded = False
     
