@@ -1,4 +1,4 @@
-# RFC-0016: Zygote Stabilization Known Issues and Mitigations
+# RFC-0017: Zygote Stabilization Known Issues and Mitigations
 
 **Date**: 2026-01-08
 **Status**: Accepted
