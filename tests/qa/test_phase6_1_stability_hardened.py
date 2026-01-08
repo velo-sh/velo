@@ -298,7 +298,9 @@ time.sleep(60)
         app_file = env.path / "main.py"
         with open(app_file, "w") as f:
             for i in range(5):
-                f.write("print('LOADING')\n" * 100)
+                # Write 1MB comment block + a few prints to reach 5MB total
+                f.write(f"# {'x' * 1_000_000}\n")
+                f.write("print('LOADING')\n")
                 f.flush()
                 os.fsync(f.fileno())
                 time.sleep(0.5)
