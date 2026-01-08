@@ -70,6 +70,7 @@ jobs:
           filters: |
             rust:
               - 'src/**/*.rs'
+              - 'tests/**/*.rs'
               - 'Cargo.*'
             loader:
               - 'src/loader/**/*.rs'
