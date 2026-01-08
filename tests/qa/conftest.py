@@ -254,7 +254,7 @@ class VeloTestEnv:
             kwargs["text"] = True
             
         return subprocess.Popen(
-            [self.velo] + list(args),
+            [self.velo, *args],
             env=env,
             cwd=kwargs.pop("cwd", self.root),
             **kwargs

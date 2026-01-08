@@ -10,14 +10,6 @@ from pathlib import Path
 # QA Agent C: Hardened Security Invariants
 # Requirements: RFC-0010 §4.10 (SEC-P0-001 to SEC-P0-006)
 
-def get_free_port():
-    """Get a free port by binding to port 0 and releasing."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
-
 @pytest.mark.tier1
 class TestPhase61SecurityHardened:
     

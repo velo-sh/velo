@@ -33,11 +33,7 @@ import importlib.abc
 import importlib.util
 from pathlib import Path
 from typing import List, Optional, Set, Dict, Any, Tuple
-import random
-import resource
 import secrets
-import ssl
-import re
 
 # ============================================================================
 # Protocol Constants (ADV-1 + DEF-61-004)
@@ -489,20 +485,20 @@ class ReinitHooks:
 
     def run_all(self, *args, **kwargs):
         for hook in self.hooks:
+            t0 = time.perf_counter()
             try:
-                t0 = time.perf_counter()
                 try:
                     hook(*args, **kwargs)
                 except TypeError:
                     # Fallback for hooks that don't take arguments
                     try: hook()
                     except Exception as e:
-                        LogUtils.debug_log(f"Hook Error (fallback): {e}")
+                        LogUtils.debug_log(f"Hook Error (fallback) {hook.__name__}: {e}")
+            except Exception as e:
+                LogUtils.debug_log(f"Hook Error {hook.__name__}: {e}")
+            finally:
                 t1 = time.perf_counter()
                 LogUtils.debug_log(f"Hook {hook.__name__}: {(t1-t0)*1000:.2f}ms")
-            except Exception as e:
-                try: LogUtils.debug_log(f"Hook Error: {e}")
-                except: pass
 
 # Global hooks registry
 reinit_hooks = ReinitHooks()
@@ -768,7 +764,7 @@ class ForkHandler:
         p_log("Start _child_process")
         exit_code = 0
         try:
-            ts = time.perf_counter()
+
             # 0. Apply Environment Overrides from CLI (RESTORED FROM HEAD)
             if env:
                 os.environ.update(env)
@@ -820,12 +816,12 @@ class ForkHandler:
 
             # 4. Setup Sys Args
             sys.argv = [script_path] + args
-            t_args = time.perf_counter()
+
 
             # 5. Fast Mode Activation
             if fast_mode and bundle_path:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
-            t_fast = time.perf_counter()
+
 
             # 6. Execute Script
             with open(script_path, "rb") as f:

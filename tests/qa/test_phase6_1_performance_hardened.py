@@ -1,5 +1,5 @@
 import os
-import sys
+
 import time
 import pytest
 import subprocess
@@ -9,14 +9,6 @@ from pathlib import Path
 
 # QA Agent D: Hardened Performance Benchmarks
 # Requirements: RFC-0010 §3.1, §4.14 (PERF-01 to PERF-03)
-
-def get_free_port():
-    """Get a free port by binding to port 0 and releasing."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
 
 @pytest.mark.perf
 class TestPhase61PerformanceHardened:
@@ -98,7 +90,6 @@ class TestPhase61PerformanceHardened:
         """
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
-        port = get_free_port()
         
         port = env.next_port()
         proc = env.spawn_velo(
@@ -154,8 +145,6 @@ class TestPhase61PerformanceHardened:
         """
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
-        port = get_free_port()
-        
         port = env.next_port()
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--port", str(port)],

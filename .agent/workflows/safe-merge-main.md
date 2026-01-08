@@ -13,17 +13,25 @@ Before doing anything, secure the current state.
 git branch backup/pre-merge-$(date +%s)
 ```
 
+
 ## 2. Fetch Upstream
+
 Ensure you have the absolute latest state of `main`.
+
 ```bash
 git fetch origin main
 ```
 
+
+
 ## 3. Merge Attempt
+
 Initiate the merge from the remote main.
+
 ```bash
 git merge origin/main
 ```
+
 
 ## 4. Conflict Resolution Protocol (The "Keep Both" Rule)
 If conflicts occur, you must adhere to the following logic:
@@ -45,9 +53,13 @@ If conflicts occur, you must adhere to the following logic:
 4.  **Verify**:
     *   After resolving, run `cargo check` and relevant tests to ensure the integration didn't break functionality.
 
+
 ## 5. Completion
+
 Once conflicts are resolved and verified:
+
 ```bash
 git add .
 git commit -m "Merge origin/main - Resolve core conflicts"
 ```
+

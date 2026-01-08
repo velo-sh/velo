@@ -680,7 +680,6 @@ pub fn run_server(
     // We use >= 1 because even a single worker must go through the proxy to ensure
     // consistent header injection (X-Forwarded-For) and Scope matching.
     // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
-    // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
     if !args.dry_run
         && args.workers >= 1
         && args.use_zygote
@@ -1159,9 +1158,13 @@ pub fn run_server(
                             }
                             _ => {
                                 // CN-P0-002: Forward other signals to child group
-                                let pid = child.id() as i32;
+                                let target = if let Some(pgid) = child.pgid {
+                                    -pgid
+                                } else {
+                                    child.child.id() as i32
+                                };
                                 unsafe {
-                                    libc::kill(-pid, sig);
+                                    libc::kill(target, sig);
                                 }
                             }
                         }

@@ -325,7 +325,7 @@ fn write_message<T: Serialize + std::fmt::Debug>(
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
     {
-        // println!("[IPC SEND] {:?}", msg);
+        log::debug!("[IPC SEND] {:?}", msg);
     }
 
     // Frame: [Length 4B] [Version 1B] [Payload]
