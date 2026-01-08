@@ -76,7 +76,7 @@ security_hpc_threads = 1
 # Level 0: Path Templates (shared across all platforms)
 path_socket_dir_name = "velo-${UID}"
 path_log_dir_relative = ".local/state/velo"
-path_cache_dir_name = ".velo_cache"
+path_cache_dir_name = ".velo/cache"
 
 # Level 1: macOS Base Paths
 path_macos_base_socket_parent = "/tmp"
