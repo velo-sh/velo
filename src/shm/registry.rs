@@ -363,15 +363,13 @@ impl MemoryRegistry {
             fd = try_create(0);
             is_huge = false;
 
-            if fd >= 0 {
-                if unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
-                    let err = std::io::Error::last_os_error();
-                    unsafe { libc::close(fd as RawFd) };
-                    return Err(MemoryError::ResizeFailed(format!(
-                        "ftruncate failed on standard page: {}",
-                        err
-                    )));
-                }
+            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
+                let err = std::io::Error::last_os_error();
+                unsafe { libc::close(fd as RawFd) };
+                return Err(MemoryError::ResizeFailed(format!(
+                    "ftruncate failed on standard page: {}",
+                    err
+                )));
             }
         }
 
