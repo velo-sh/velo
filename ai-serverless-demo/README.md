@@ -79,7 +79,7 @@ This is what Python should feel like in the AI era.
 
 ## Learn More
 
-- https://github.com/velo-sh/velo
+- [Velo Repository](https://github.com/velo-sh/velo)
 
 > Python is perfect for coding.
 > Velo is perfect for running.
