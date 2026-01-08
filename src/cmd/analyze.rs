@@ -193,14 +193,14 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     // Security notice: velo analyze executes the script to gather real import times
     // This is by design (RFC-0004) - measuring actual import performance requires execution
     eprintln!(
-        "{}⚠️  Note: Script will be executed to measure import times{}",
+        "{}⚠️  note: script will be executed to measure import times{}",
         colors::YELLOW,
         colors::RESET
     );
 
     // Run with profiling
     eprintln!(
-        "{}📊 Analyzing imports for {}...{}",
+        "{}📊 analyzing imports for {}...{}",
         colors::CYAN,
         script.display(),
         colors::RESET
