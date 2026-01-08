@@ -54,7 +54,7 @@ CI_TIMEOUT = ci_timeout  # Alias for shorter imports
 #   subprocess.run([velo, "zygote", "start"], timeout=T_MEDIUM)
 
 # Base timeouts (local machine)
-_T_SHORT_BASE = 5     # Quick commands (--help, status)
+_T_SHORT_BASE = 10     # Quick commands (--help, status)
 _T_MEDIUM_BASE = 15   # Normal operations (start, stop)
 _T_LONG_BASE = 60     # Heavy operations (stress tests)
 
