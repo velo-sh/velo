@@ -167,12 +167,13 @@ def cleanup_zygote_between_modules():
 @pytest.fixture(scope="session")
 def velo_binary():
     """Build and return path to Velo binary."""
-    # Build binary (fast in dev mode)
-    subprocess.run(["cargo", "build"], check=True)
+    # RFC-0013: Ensure we use the binary from the current workspace
+    root_dir = Path(__file__).parents[2]
+    subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
     
-    bin_path = Path("target/debug/velo").resolve()
+    bin_path = (root_dir / "target/debug/velo").resolve()
     if not bin_path.exists():
-        raise RuntimeError("Velo binary not found after build")
+        raise RuntimeError(f"Velo binary not found at {bin_path}")
     return str(bin_path)
 
 # =============================================================================

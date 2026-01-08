@@ -1,43 +1,28 @@
-#!/usr/bin/env python3
-"""
-Velo Standardized Worker Launcher (Phase 3A)
-Architect recommendation: Move from dynamic scripts to preset modules.
-"""
-import sys
-import os
 import argparse
+import os
+import sys
 import uvicorn
-
-# Inject repo root into sys.path to allow absolute imports of framework
-try:
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
-except: pass
-
-try:
-    from .config import VeloConfig
-    from .paths import VeloPaths
-except ImportError:
-    # Fallback for execution as __main__ without package context
-    from velo_zygote.config import VeloConfig
-    from velo_zygote.paths import VeloPaths
+import signal
 
 def main():
-    parser = argparse.ArgumentParser(description="Velo Standardized Worker")
-    parser.add_argument("--app", required=True, help="ASGI app import path (module:app)")
-    parser.add_argument("--uds", help="Unix Domain Socket path")
-    parser.add_argument("--host", help="TCP Host (if not using UDS)")
-    parser.add_argument("--port", type=int, help="TCP Port (if not using UDS)")
-    parser.add_argument("--proxy-headers", action="store_true", help="Enable X-Forwarded-* headers")
+    """Velo Worker Launcher (Titanium Stabilized)"""
+    # 1. Signal Hygiene
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD):
+        try:
+            signal.signal(sig, signal.SIG_DFL)
+        except: pass
+
+    # 2. Argument Parsing
+    parser = argparse.ArgumentParser(description="Velo Worker Launcher")
+    parser.add_argument("--app", required=True)
+    parser.add_argument("--uds")
+    parser.add_argument("--host")
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--proxy-headers", action="store_true")
     
-    # Parse args
     args = parser.parse_args()
     
-    # Add current working directory to path for app imports
-    if os.getcwd() not in sys.path:
-        sys.path.insert(0, os.getcwd())
-    
+    # 3. Uvicorn Configuration
     run_kwargs = {
         "app": args.app,
         "log_level": "info",
@@ -45,50 +30,16 @@ def main():
     
     if args.uds:
         run_kwargs["uds"] = args.uds
-    else:
-        config = VeloConfig()
-        run_kwargs["host"] = args.host or config.host
-        run_kwargs["port"] = args.port or config.port
-    
+    if args.host:
+        run_kwargs["host"] = args.host
+    if args.port:
+        run_kwargs["port"] = args.port
     if args.proxy_headers:
         run_kwargs["proxy_headers"] = True
         run_kwargs["forwarded_allow_ips"] = "*"
         
-    # Execute uvicorn
-    try:
-        # Seal the process: activate ImportShield before user code (uvicorn) runs
-        # We use both class-based activation AND environment variable to ensure
-        # consistency across potential module duplication/reloads.
-        os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
-        try:
-            from velo_zygote.main import ImportShield
-            ImportShield.activate()
-            
-            # Scrub the evidence: remove framework modules from sys.modules
-            # This forces any subsequent import of velo_zygote (by user app) 
-            # to hit sys.meta_path, where ImportShield will block it.
-            for m in list(sys.modules.keys()):
-                if m.startswith("velo_zygote"):
-                    del sys.modules[m]
-        except: pass
-
-        print(f"[WORKER] Launching uvicorn for {args.app}")
-        uvicorn.run(**run_kwargs)
-        print("[WORKER] uvicorn.run finished normally")
-    except Exception as e:
-        import traceback
-        try:
-            log_path = VeloPaths.worker_log()
-            # Ensure log directory exists
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a") as f:
-                f.write(f"PID {os.getpid()}: CRASH: {e}\n")
-                f.write(traceback.format_exc())
-                f.write("\n")
-        except:
-            pass
-        print(f"[WORKER] CRASH: {e}", file=sys.stderr)
-        sys.exit(1)
+    # 4. Execution
+    uvicorn.run(**run_kwargs)
 
 if __name__ == "__main__":
     main()
