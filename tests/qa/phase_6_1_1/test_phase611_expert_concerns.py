@@ -22,6 +22,8 @@ import psutil
 import pytest
 import socket
 import sys
+import traceback
+
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
@@ -316,10 +318,13 @@ class TestK8sConcerns:
                 final_status = response.status_code
                 if response.status_code in [200, 503]:
                     break
-            except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
+            except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+                print(f"DEBUG: Health check retry caught expected error: {e}")
                 time.sleep(0.5)
-            except Exception:
+            except Exception as e:
                 # Other errors might be fatal, but let's retry briefly
+                print(f"DEBUG: Health check retry caught unexpected error: {e}")
+                traceback.print_exc()
                 time.sleep(0.5)
         
         # Depending on implementation, might be 200 or 503

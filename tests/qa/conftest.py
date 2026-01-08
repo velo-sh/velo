@@ -4,6 +4,8 @@ import pytest
 import sys
 import os
 from pathlib import Path
+from typing import Any
+
 
 
 # Add tests/qa to path for imports
@@ -29,7 +31,7 @@ class UDSProxyMiddleware:
                     ip = forwarded.decode("latin1").split(",")[0].strip()
                     # mock port 0 as we don't know the real source port
                     scope["client"] = (ip, 0)
-            except Exception:
+            except (UnicodeDecodeError, AttributeError, IndexError, ValueError):
                 pass
         await self.app(scope, receive, send)
 """
@@ -269,7 +271,7 @@ class VeloTestEnv:
             **kwargs
         )
 
-    def spawn_velo(self, *args, **kwargs) -> subprocess.Popen:
+    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
         """Spawn Velo binary in the hermetic environment (non-blocking)."""
         env = self.env.copy()
         if "env" in kwargs:
