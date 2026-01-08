@@ -106,6 +106,11 @@ class TestPhase61StabilityHardened:
         assert start_count <= 2 
         proc.kill()
 
+
+    @pytest.mark.xfail(
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="File watcher on CI may use poll mode without inotify support"
+    )
     def test_stab_rs_002_starvation_vulnerability(self, isolated_env):
         """
         A-EDGE-6.1-001: Debouncer Starvation (Agent A Finding)
