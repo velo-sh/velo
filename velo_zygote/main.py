@@ -708,13 +708,6 @@ class ForkHandler:
         project_root = cmd.get("project_root")
         max_bundle_size = cmd.get("max_bundle_size")
 
-        # DEBUG: Write before fork
-        try:
-            with open("/tmp/worker_fork_debug.log", "a") as f:
-                f.write(f"[FORK DEBUG] About to fork, parent pid={os.getpid()}\n")
-                f.flush()
-        except: pass
-
         pid = os.fork()
 
         if pid == 0:
@@ -751,17 +744,10 @@ class ForkHandler:
                 # Use socket dir for perf logs (transient, correct permissions)
                 log_path = VeloPaths.socket_dir() / "perf_zygote.log"
                 with open(log_path, "a") as f:
-                    f.write(f"PERF_CHILD: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
-            except: pass
-            
-            # HARDCODED DEBUG
-            try:
-                with open("/tmp/velo_debug.log", "a") as f:
-                     f.write(f"DEBUG_MAIN[{os.getpid()}]: {msg}\n")
+                    f.write(f"PERF_CHILD[{os.getpid()}]: {msg} (+{(time.time()-t0)*1000:.2f}ms)\n")
             except: pass
 
 
-        p_log("Start _child_process")
         exit_code = 0
         try:
 

@@ -728,6 +728,7 @@ pub fn run_server(
                 last_failure: Option<Instant>,
                 backoff_secs: u64,
                 consecutive_failures: u32,
+                fail_fast_limit: u32,
             }
             impl RespawnTracker {
                 fn new() -> Self {
@@ -735,10 +736,15 @@ pub fn run_server(
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10);
+                    let fail_fast_limit = std::env::var("VELO_FAIL_FAST_LIMIT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(5);
                     Self {
                         last_failure: None,
                         backoff_secs,
                         consecutive_failures: 0,
+                        fail_fast_limit,
                     }
                 }
                 fn should_respawn(&self) -> bool {
@@ -752,9 +758,9 @@ pub fn run_server(
                     self.consecutive_failures += 1;
                     self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
-                    // RFC-0011 Fail-Fast: If we fail 5 times consecutively at startup,
+                    // RFC-0011 Fail-Fast: If we fail consecutively at startup,
                     // it's a fatal environment issue.
-                    self.consecutive_failures < 5
+                    self.consecutive_failures < self.fail_fast_limit
                 }
                 fn reset(&mut self) {
                     // RFC-0011 Stability Fix: "Probation Period".
@@ -909,9 +915,10 @@ pub fn run_server(
                                     );
                                 }
                                 logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (Attempt {}/5)...",
+                                    "A worker died during startup. Retrying in {}s (Attempt {}/{})...",
                                     tracker.backoff_secs,
-                                    tracker.consecutive_failures
+                                    tracker.consecutive_failures,
+                                    tracker.fail_fast_limit
                                 ));
 
                                 // Check if we're still in backoff period
