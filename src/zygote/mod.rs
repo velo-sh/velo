@@ -474,10 +474,11 @@ impl ZygoteLauncher {
                     sandbox_cmd.env(var, val);
                 }
             }
-            // RFC-0012: Resilience - Dynamically pass all VELO_* configuration to sandbox
-            for (key, value) in std::env::vars() {
-                if key.starts_with("VELO_") {
-                    sandbox_cmd.env(key, value);
+            // RFC-0012: Resilience - Use formal whitelist from SSOT (Configuration De-Hellification)
+            let config = VeloConfig::default();
+            for var in &config.security_env_whitelist {
+                if let Ok(val) = std::env::var(var) {
+                    sandbox_cmd.env(var, val);
                 }
             }
             // HPC/OMP Thread pooling isolation
