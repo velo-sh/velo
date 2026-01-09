@@ -23,8 +23,8 @@ class VeloConfig:
     
     Source Priority:
     1. CLI Arguments (passed via constructor/override)
-    2. Environment Variables (VELO_*)
-    3. Defaults
+    2. Environment Variables (VELO_*) - INJECTED BY RUST SUPERVISOR (Bridge of Truth)
+    3. Defaults (Fallback)
     """
     
     # Environment
@@ -44,7 +44,7 @@ class VeloConfig:
     strict_numa: bool = field(default=False)
     max_bundle_size: int = field(default=MAX_MESSAGE_SIZE)
     socket_startup_timeout: int = field(default=5)
-    graceful_shutdown_timeout: int = field(default=20)
+    graceful_shutdown_timeout: int = field(default=30) # Default aligned with Rust (src/config.rs), but usually injected
     host: str = field(default="127.0.0.1")
     port: int = field(default=8000)
     
@@ -98,7 +98,7 @@ class VeloConfig:
             strict_numa=strict_numa,
             max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", 1024 * 1024 * 1024), # 1GB default
             socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", 5),
-            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", 20),
+            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", 30), # Fallback to 30s
             host=os.environ.get("VELO_HOST", "127.0.0.1"),
             port=get_int("VELO_PORT", 8000),
             preload_modules=get_list("VELO_PRELOAD"),

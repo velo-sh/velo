@@ -25,6 +25,8 @@ pub struct VeloConfig {
     pub security_env_whitelist: Vec<String>,
     /// Max threads for HPC libraries (OpenMP, MKL, etc)
     pub security_hpc_threads: usize,
+    /// Graceful shutdown timeout in seconds
+    pub graceful_shutdown_timeout: u64,
 }
 
 impl Default for VeloConfig {
@@ -81,6 +83,7 @@ impl Default for VeloConfig {
             security_trusted_prefixes: Self::parse_string_array(&raw_prefixes),
             security_env_whitelist: Self::parse_string_array(&raw_envs),
             security_hpc_threads: extract_default_u64("security_hpc_threads", 1) as usize,
+            graceful_shutdown_timeout: extract_default_u64("graceful_shutdown_timeout", 30),
         }
     }
 }
@@ -169,6 +172,12 @@ impl VeloConfig {
         {
             self.security_hpc_threads = n;
         }
+        if let Some(secs) = std::env::var("VELO_GRACEFUL_SHUTDOWN_TIMEOUT")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            self.graceful_shutdown_timeout = secs;
+        }
     }
 
     /// Read from specific path and apply environment overrides
@@ -245,6 +254,11 @@ impl VeloConfig {
                     "security_hpc_threads" => {
                         if let Ok(n) = value.parse::<usize>() {
                             config.security_hpc_threads = n;
+                        }
+                    }
+                    "graceful_shutdown_timeout" => {
+                        if let Ok(secs) = value.parse::<u64>() {
+                            config.graceful_shutdown_timeout = secs;
                         }
                     }
                     _ => {}
