@@ -31,21 +31,17 @@ class ImportShield:
         if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
             return None
 
-        # RFC-0012: Resilience Whitelist for Framework Bootstrap
-        # We allow anything explicitly in whitelist OR any submodule of a whitelisted package.
-        whitelist = ("velo_zygote",) # Restore framework access for bootstrap
-        
+        # RFC-0012: Block ALL velo_zygote imports when shield is active.
+        # The shield is activated AFTER the launcher imports what it needs,
+        # so any subsequent import of velo_zygote.* is from untrusted user code.
         if fullname.startswith("velo_zygote"):
-            if not any(fullname == w or fullname.startswith(w + ".") for w in whitelist):
-                # We allow the launcher to import us once, but once the app is loading,
-                # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
-                msg = f"Unauthorized access to internal framework module: {fullname}"
-                try:
-                    # Log to stderr for visibility in CI logs (Trap 178.2/3)
-                    sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
-                    sys.stderr.flush()
-                except: pass
-                raise ImportError(msg)
+            msg = f"Unauthorized access to internal framework module: {fullname}"
+            try:
+                # Log to stderr for visibility in CI logs (Trap 178.2/3)
+                sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
+                sys.stderr.flush()
+            except: pass
+            raise ImportError(msg)
         
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
@@ -66,6 +62,13 @@ class ImportShield:
                 if framework_dir in sys.path:
                     sys.path.remove(framework_dir)
             except: pass
+
+
+# RFC-0012 Phase 11.3: Auto-install when environment variable is set.
+# This ensures protection even when Zygote falls back to direct uvicorn mode.
+if os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1":
+    ImportShield.install()
+    ImportShield._active = True
 
 
 class PathValidator:
