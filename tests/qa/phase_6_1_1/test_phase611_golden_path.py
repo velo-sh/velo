@@ -25,6 +25,10 @@ from conftest import T_SHORT, T_MEDIUM, T_LONG
 import requests
 
 
+# RFC-0017: Tier 2 - E2E tests, full Zygote runtime
+pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required]
+
+
 class TestGoldenPathE2E:
     """E2E tests covering the complete Zygote critical path."""
 

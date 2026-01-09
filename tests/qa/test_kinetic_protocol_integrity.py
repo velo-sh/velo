@@ -7,6 +7,9 @@ import msgpack
 import pytest
 from pathlib import Path
 
+# RFC-0017: Tier 1 - Integration tests, needs binary
+pytestmark = pytest.mark.tier1
+
 # Velo Kinetic IPC Protocol (KIP) Constants (Sync with constants.py)
 PROTOCOL_VERSION = 1
 MAX_MESSAGE_SIZE = 10485760
