@@ -361,3 +361,53 @@ def get_pss(pid: int) -> int:
             return p.memory_info().rss
     except Exception:
         return 0
+
+# =============================================================================
+# FAILURE ARTIFACT COLLECTION (Phase 4)
+# =============================================================================
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture logs and state on test failure."""
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when == "call" and report.failed:
+        sys.stderr.write(f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n")
+        
+        try:
+             # Locate binary
+             root_dir = Path(__file__).parents[2]
+             velo_bin = root_dir / "target/debug/velo"
+             if not velo_bin.exists():
+                 velo_bin = root_dir / "target/release/velo"
+             
+             if velo_bin.exists():
+                 log_dir = None
+                 
+                 # Check for isolated env
+                 if "velo_test_env" in item.funcargs:
+                      env = item.funcargs["velo_test_env"]
+                      # RFC-0012: Logs are in HOME/.local/state/velo
+                      log_path = env.home / ".local/state/velo"
+                      if log_path.exists():
+                          log_dir = log_path
+                 elif "isolated_env" in item.funcargs:
+                      env = item.funcargs["isolated_env"]
+                      log_path = env.home / ".local/state/velo"
+                      if log_path.exists():
+                          log_dir = log_path
+
+                 cmd = [str(velo_bin), "bundle", "collect"]
+                 if log_dir:
+                     cmd.extend(["--log-dir", str(log_dir)])
+                     # Unique filename
+                     import time
+                     ts = int(time.time())
+                     safe_name = item.name.replace("[", "_").replace("]", "_").replace("/", "_")
+                     filename = f"failure-{safe_name}-{ts}.tar.gz"
+                     cmd.extend(["--output", filename])
+                 
+                 subprocess.run(cmd, check=False)
+        except Exception as e:
+            sys.stderr.write(f"[Artifacts] Failed to bundle: {e}\n")
