@@ -39,7 +39,7 @@ Adopt a `cargo test`-like model where tests **declare their tier** via pytest ma
 | **Tier 2** | `@pytest.mark.tier2` | < 5min | E2E tests, full Zygote runtime | `phase_6_1_1/test_*.py` |
 | **Tier 3** | `@pytest.mark.tier3` | < 5min | Hardened security/stability tests | `test_phase6_1_*_hardened.py` |
 
-### 2.2 Platform Markers
+### 2.2 Platform & Lifecycle Markers
 
 | Marker | Description |
 |---|---|
@@ -47,6 +47,7 @@ Adopt a `cargo test`-like model where tests **declare their tier** via pytest ma
 | `@pytest.mark.macos_only` | Requires macOS-specific features (sandbox-exec) |
 | `@pytest.mark.slow` | Tests that exceed tier SLA (for optional exclusion) |
 | `@pytest.mark.zygote_required` | Requires Zygote mode (not fallback uvicorn) |
+| `@pytest.mark.flaky` | Known intermittent tests (tracked for stability baseline) |
 
 ---
 
@@ -65,6 +66,7 @@ markers = [
     "macos_only: macOS-specific features",
     "slow: Tests exceeding tier SLA",
     "zygote_required: Requires Zygote mode",
+    "flaky: Known intermittent tests",
 ]
 
 # Default: run all tests in tests/qa/
@@ -100,6 +102,7 @@ jobs:
   qa-tier0-unit:
     name: "QA: Tier 0 (Unit)"
     runs-on: ubuntu-latest
+    timeout-minutes: 2  # SLA: < 30s + buffer
     steps:
       - run: pytest -m "tier0" tests/qa/
 
@@ -107,6 +110,7 @@ jobs:
     name: "QA: Tier 1 (Integration)"
     needs: [build-matrix]
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # SLA: < 2min + buffer
     steps:
       - run: pytest -m "tier1" tests/qa/
 
@@ -114,6 +118,7 @@ jobs:
     name: "QA: Tier 2 (E2E)"
     needs: [build-matrix]
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # SLA: < 5min + buffer
     steps:
       - run: pytest -m "tier2" tests/qa/
 
@@ -121,6 +126,7 @@ jobs:
     name: "QA: Tier 3 (Hardened)"
     needs: [build-matrix]
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # SLA: < 5min + buffer
     steps:
       - run: pytest -m "tier3" tests/qa/
 ```
@@ -240,6 +246,7 @@ The following documents SHALL be updated once this RFC is approved:
 | 2026-01-09 | DRAFT v1 | Initial proposal for review |
 | 2026-01-09 | DRAFT v2 | Addressed P1 observations from Grand Council: multi-marker conflict rules (3.6), orphan detection (3.7), TL;DR added |
 | 2026-01-09 | DRAFT v3 | **[P1-ARCH]** Added CI Job Mapping (§3.3) per Architect review |
+| 2026-01-09 | DRAFT v4 | **[P2-COUNCIL]** Added `@flaky` marker, `timeout-minutes` per Grand Council |
 
 ---
 
