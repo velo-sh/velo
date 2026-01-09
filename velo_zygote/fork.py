@@ -96,7 +96,7 @@ class ForkHandler:
                 
                 # 2. Execution
                 exit_code = ForkHandler._child_process(
-                    script_path=script_path,
+                    script_path=str(script_path) if script_path else "",
                     args=args,
                     env=env,
                     stdout_path=stdout_path,
@@ -212,6 +212,31 @@ class ForkHandler:
                         "__loader__": None,
                         "__spec__": None,
                     }
+                    
+                    # Inject VELO_SHM if available
+                    if shm_fd is not None:
+                        try:
+                            # Try absolute import first (standard in Velo)
+                            from velo_zygote.memory import MEMORY_MANAGER
+                        except ImportError:
+                            try:
+                                # Try relative import
+                                from .memory import MEMORY_MANAGER
+                            except (ImportError, ValueError):
+                                # Fallback for standalone execution
+                                try:
+                                    from memory import MEMORY_MANAGER  # type: ignore[no-redef]
+                                except ImportError:
+                                    MEMORY_MANAGER = None  # type: ignore[assignment]
+                                    
+                        if MEMORY_MANAGER:
+                            try:
+                                shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size if shm_size else 0)
+                                if shm_obj is not None:
+                                    child_globals["VELO_SHM"] = shm_obj
+                            except Exception as e:
+                                sys.stderr.write(f"SHM Attachment Warning: {e}\n")
+
                     exec(code, child_globals)
             elif fast_mode:
                 # Already handled in _activate_fast_mode
