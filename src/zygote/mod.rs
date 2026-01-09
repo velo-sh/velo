@@ -484,11 +484,6 @@ impl ZygoteLauncher {
                 r#"(version 1)
 (allow default)
 (allow file-read*)
-(deny file-write*
-    (subpath "/Users")
-    (subpath "/Library")
-    (subpath "/etc")
-)
 (allow file-write*
     (subpath "/tmp")
     (subpath "/private/tmp")
