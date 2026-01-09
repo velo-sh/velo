@@ -77,6 +77,8 @@ fn main() {
     // Level 2: Environment Overlays
     let path_macos_ci_socket_parent = extract_str(&content, "path_macos_ci_socket_parent");
     let path_linux_ci_socket_parent = extract_str(&content, "path_linux_ci_socket_parent");
+    let path_linux_fd_dir = extract_str(&content, "path_linux_fd_dir");
+    let path_macos_fd_dir = extract_str(&content, "path_macos_fd_dir");
 
     // 5. Generate Python Constants
     let py_path = Path::new("velo_zygote/constants.py");
@@ -125,7 +127,16 @@ fn main() {
          PATH_LINUX_BASE_SOCKET_PARENT = \"{}\"\n\
          PATH_LINUX_BASE_LOG_PARENT = \"{}\"\n\
          PATH_MACOS_CI_SOCKET_PARENT = \"{}\"\n\
-         PATH_LINUX_CI_SOCKET_PARENT = \"{}\"\n",
+         PATH_LINUX_CI_SOCKET_PARENT = \"{}\"\n\
+         PATH_LINUX_FD_DIR = \"{}\"\n\
+         PATH_MACOS_FD_DIR = \"{}\"\n\
+         \n\
+         # Security (Phase 10.1)\n\
+         DEFAULT_BLOCKED_PATHS = [\n\
+             \"/etc\", \"/var\", \"/usr\", \"/bin\", \"/sbin\",\n\
+             \"/System\", \"/Library\", \"/private/etc\",\n\
+             \"/root\", \"/home\",\n\
+         ]\n",
         protocol_version,
         socket_limit,
         max_message_size,
@@ -154,7 +165,9 @@ fn main() {
         path_linux_base_socket_parent,
         path_linux_base_log_parent,
         path_macos_ci_socket_parent,
-        path_linux_ci_socket_parent
+        path_linux_ci_socket_parent,
+        path_linux_fd_dir,
+        path_macos_fd_dir
     );
     fs::write(py_path, python_constants).unwrap();
 }

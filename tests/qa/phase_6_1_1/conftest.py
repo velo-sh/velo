@@ -243,7 +243,8 @@ class VeloServeFactory:
             "/etc/ssl/certs", 
             "/opt/hostedtoolcache", "/home/runner", 
             "${CWD}", 
-            "/workspace"
+            "/workspace",
+            "${VIRTUAL_ENV}"
         ]
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
         
