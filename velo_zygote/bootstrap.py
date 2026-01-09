@@ -1,6 +1,12 @@
 import os
 import sys
 
+# Import EnvProfile for self-describing environment
+try:
+    from .env_profile import ENV_PROFILE
+except (ImportError, ValueError):
+    from env_profile import ENV_PROFILE
+
 def _normalize_environment():
     """
     Ensure critical environment variables are set and normalized.
@@ -30,7 +36,7 @@ def _log_banner():
         banner = [
             f"\n\033[1m[Velo Zygote Bootstrap]\033[0m",
             f"  • PID:      {os.getpid()}",
-            f"  • MODE:     {env.upper()}",
+            f"  • ENV:      {ENV_PROFILE.describe()}",
             f"  • BUILD:    {hash_scm} (v{proto})",
             f"  • ROOT:     {os.path.dirname(os.path.abspath(__file__))}",
             f"  • CWD:      {os.getcwd()}\n"

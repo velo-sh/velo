@@ -10,6 +10,12 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional, List, Set
 
+# Environment Profile (SSOT for all env detection)
+try:
+    from .env_profile import ENV_PROFILE, RunContext, OsType
+except (ImportError, ValueError):
+    from env_profile import ENV_PROFILE, RunContext, OsType
+
 # Shared constants
 try:
     from .constants import *
@@ -24,12 +30,12 @@ class VeloConfig:
     Source Priority:
     1. CLI Arguments (passed via constructor/override)
     2. Environment Variables (VELO_*) - INJECTED BY RUST SUPERVISOR (Bridge of Truth)
-    3. Defaults (Fallback)
+    3. EnvProfile (auto-detected, immutable)
+    4. Defaults (Fallback)
     """
     
-    # Environment
+    # Environment (derived from ENV_PROFILE)
     env: str = field(default="dev")  # dev, ci, prod
-    is_ci: bool = field(default=False)
     
     # Security
     shield_active: bool = field(default=False)
@@ -62,21 +68,17 @@ class VeloConfig:
     def load_from_env(cls) -> 'VeloConfig':
         """
         Load configuration from environment variables.
-        Recursive SSOT: Fail-Fast if critical vars are missing.
+        Uses ENV_PROFILE as SSOT for environment classification.
         """
         # RFC-0012: Boundary convergence requires VELO_ENV.
         # This is now normalized in bootstrap.py. If missing here, it's a critical failure.
         if "VELO_ENV" not in os.environ:
             raise ValueError("CRITICAL: VELO_ENV not injected by Rust or Normalized by Bootstrap. Boundary convergence failed.")
 
-        env_mode = os.environ["VELO_ENV"].lower()
-        
-        # Detect CI environment primarily via standard flags
-        is_ci = (
-            os.environ.get("CI") == "true" or 
-            os.environ.get("GITHUB_ACTIONS") == "true" or
-            env_mode == "ci"
-        )
+        # Use EnvProfile for run context (replaces scattered is_ci checks)
+        env_mode = ENV_PROFILE.run_context.name.lower()
+        if env_mode == "test":
+            env_mode = "dev"  # Map TEST -> DEV for Velo config purposes
         
         # Helper for ints with mandatory check
         def get_int(key: str, default: Optional[int] = None) -> int:
@@ -99,12 +101,11 @@ class VeloConfig:
 
         instance = cls(
             env=env_mode,
-            is_ci=is_ci,
             shield_active=os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1",
             trusted_proxy=os.environ.get("VELO_TRUSTED_PROXY") == "1",
             forwarded_allow_ips=os.environ.get("VELO_FORWARDED_ALLOW_IPS", ""),
-            timeout_multiplier=float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0")),
-            strict_numa=os.environ.get("VELO_STRICT_NUMA") == "1",
+            timeout_multiplier=ENV_PROFILE.timeout_multiplier,
+            strict_numa=ENV_PROFILE.strict_numa,
             max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", MAX_MESSAGE_SIZE),
             socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", SOCKET_STARTUP_TIMEOUT),
             graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", GRACEFUL_SHUTDOWN_TIMEOUT),
@@ -118,19 +119,19 @@ class VeloConfig:
         instance.trusted_prefixes = cls._resolve_security_list(env_mode, "trusted_prefixes")
         instance.env_whitelist = cls._resolve_security_list(env_mode, "env_whitelist")
         
-        # Resolve Blocked Paths (Phase 10.1)
-        instance._blocked_paths = cls._resolve_blocked_paths(is_ci)
+        # Resolve Blocked Paths (using EnvProfile)
+        instance._blocked_paths = cls._resolve_blocked_paths()
 
         return instance
 
     @staticmethod
-    def _resolve_blocked_paths(is_ci: bool) -> List[str]:
-        """Resolve blocked paths, applying CI logic (Policy)."""
+    def _resolve_blocked_paths() -> List[str]:
+        """Resolve blocked paths using EnvProfile (Policy)."""
         # Copy base list to avoid mutation
         base = list(globals().get("DEFAULT_BLOCKED_PATHS", []))
         
-        # Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
-        if is_ci:
+        # Validation Fix: Allow /home in CI (where runner is in /home/runner)
+        if ENV_PROFILE.allow_home_path:
             if "/home" in base:
                 base.remove("/home")
         else:
@@ -144,17 +145,14 @@ class VeloConfig:
     def _resolve_security_list(env_mode: str, base_key: str) -> List[str]:
         """
         Resolve security lists using hierarchical Platform x Environment matrix.
-        Matches logic from RFC-0012/config.py
+        Matches logic from RFC-0012/config.py, using EnvProfile for OS detection.
         """
-        # We need access to constants. Since we are in settings.py, they are imported in global scope.
-        # However, to avoid circular imports or issues, we assume they are present in globals().
-        
         env_key = f"VELO_SECURITY_{base_key.upper()}"
         env_val = os.environ.get(env_key)
         if env_val:
              return [s.strip() for s in env_val.split(",") if s.strip()]
 
-        os_name = "macos" if sys.platform == "darwin" else "linux"
+        os_name = "macos" if ENV_PROFILE.os_type == OsType.MACOS else "linux"
         suffix = base_key.upper()
         
         # Level 0: Global Base
@@ -176,7 +174,7 @@ class VeloConfig:
     def validate(self) -> List[str]:
         """Verify configuration integrity. Returns list of errors."""
         errors = []
-        if self.strict_numa and not sys.platform.startswith("linux"):
+        if self.strict_numa and ENV_PROFILE.os_type != OsType.LINUX:
             errors.append("VELO_STRICT_NUMA is only supported on Linux")
             
         return errors
