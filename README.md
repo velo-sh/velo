@@ -1,11 +1,3 @@
-# Velo
-
-> **Python is perfect for coding.  
-> Velo is perfect for running.**
-
-Velo is a **high-performance runtime for the AI era**.  
-It preserves the Python ecosystem you already use, while fundamentally rethinking how Python applications *start*, *scale*, and *consume memory* in production.
-
 <div align="center">
 
 <p style="color: grey; font-size: 1.2rem;">
@@ -26,7 +18,39 @@ It preserves the Python ecosystem you already use, while fundamentally rethinkin
 
 </div>
 
-Velo is not a framework.  ```bash
+> 🚧 **Heavy Work In Progress.** Not ready for production. Expect breaking changes.
+
+## Why Velo?
+
+| Problem | Solution |
+|---------|----------|
+| Python cold start is slow | **12x faster** with **Instant Startup** 🧬 |
+| Version mismatch issues | Single binary supports **Python 3.11, 3.12, 3.13+** |
+| ABI compatibility crashes | **Automatic ABI detection** prevents C-extension issues |
+| Dependency chaos | Auto-detects `uv` virtual environments |
+
+## Architecture
+
+Velo uses **process isolation** - it detects your project's Python and spawns it with optimized environment settings:
+
+```
+┌─────────────────────────────┐
+│        Velo Binary          │
+│  - Detect .venv/bin/python  │
+│  - Cache sys.path (rkyv)    │
+│  - Optimize PYTHONPATH      │
+└──────────────┬──────────────┘
+               │ subprocess
+               ▼
+┌─────────────────────────────┐
+│    Your Project's Python    │
+│    (3.11, 3.12, 3.13...)    │
+└─────────────────────────────┘
+```
+
+## Quick Start
+
+```bash
 git clone https://github.com/velo-sh/velo.git && cd velo
 cargo build --release
 ./target/release/velo run examples/hello.py
@@ -59,79 +83,79 @@ cargo build --release
 
 > **Note**: Speedups come from preloading dependencies (pydantic, django, numpy, etc.) into the **Velo background runner**.
 
-## See It in Action (HIO Program 🚀)
+## How It Works
 
-**Velo High-Inertia Optimization (HIO)** specifically hunts down the "Big Three", demonstrating Python's performance leap in heavy initialization scenarios.
+1. **Python Detection**: Finds `.venv/bin/python` or `VELO_PYTHON` env var
+2. **ABI Fingerprinting**: Detects Python version and ABI tag for C-extension compatibility
+3. **Environment Fingerprinting**: Hash `uv.lock` to detect dependency changes
+4. **Path Caching**: Cache `sys.path` with zero-copy `rkyv` serialization
+5. **Security Invariants (H1-H7)**: Hardened via Global BLAKE3 Hashing, Atomic `flock` reads, and Keyed BLAKE3 environment binding.
+6. **Deferred Capture**: First run executes immediately, caches for next time
 
-### 🎯 [Django (The Heavyweight)](./examples/django-heavy/README.md)
-Solves the slow App Registry loading and DB Setup in Django testing. **Leverages COW shared memory to accelerate test loops.**
-
-### 🎯 [LangChain / LlamaIndex (The AI Glue)](./examples/langchain-fast/README.md)
-Eliminates `import` waits in AI development. **Zygote pre-loads heavy AI libraries, ready to run instantly.**
-
-### 🎯 [FastAPI + SQLAlchemy (Modern Stack)](./examples/fastapi-instant/README.md)
-Demonstrates "Instant Rollback". **Uses process destruction for state reset, eliminating tedious database cleanup.**
-
----
-
-👉 **[AI Serverless Demo](./examples/ai-serverless/README.md)**  
-Feel the shock of cold starts shrinking from seconds to milliseconds.
-
----
-
-## Why Velo Exists
-
-Python won the AI ecosystem — but its runtime model did not evolve with it.
-
-Today’s Python production stack suffers from:
-
-- Slow cold starts (seconds, not milliseconds)
-- Massive memory duplication across processes
-- Heavy Docker images and poor density
-- Serverless platforms that punish Python workloads
-
-These problems are not caused by Python *code*.  
-They are caused by Python’s **runtime assumptions**.
-
-Velo fixes that.
-
----
-
-## What Velo Does (In One Sentence)
-
-**Velo turns Python into a serverless- and AI-native runtime by eliminating redundant startup work and enabling OS-level memory sharing.**
-
----
-
-## Core Capabilities
-
-### ⚡ Sub-millisecond Startup
-- Environment fingerprinting
-- Cached import graphs
-- Zero redundant filesystem scans
-
-### 🧠 Memory Sharing by Design
-- Zygote-based process model
-- Copy-on-write memory semantics
-- One model loaded, many instances served
-
-### 📦 Industrial Delivery
-- Single-binary packaging (roadmap)
-- Zero-extraction execution
-- Source sealing for commercial distribution
-
-### ☁️ Serverless-First Architecture
-- Designed for scale-to-zero
-- Optimized for high fan-out AI inference
-- No Docker required
-
----
-
-### 🔬 Top 100 Package Baseline (RFC-0013/0014)
-We benchmarked the Top 100+ downloaded PyPI packages.
-Result: **100%** compatible, **132ms** avg startup using Velo Fleet Mode.
+## Commands
 
 ```bash
+# Run a Python script with optimized startup
+velo run script.py
+
+# 🧬 Run with Instant Mode (49x faster!)
+velo run --zygote script.py
+
+# Manage Zygote daemon
+velo zygote start    # Start pre-warming daemon
+velo zygote status   # Check status
+velo zygote stop     # Stop daemon
+
+# Run with startup profiling
+velo run --profile script.py
+
+# Show environment information
+velo info
+
+# 🌐 Serve a web application (FastAPI, Django, Flask)
+velo serve main:app --workers 4
+velo serve main:app --reload          # Hot reload
+velo serve main:app --no-zygote       # Standard mode
+
+# 📊 Analyze import times (⚠️ executes the script!)
+velo analyze main.py                  # Analyze imports
+velo analyze --fix                    # Auto-update pyproject.toml
+```
+
+
+
+## Development
+
+### Setup (One-Click)
+
+```bash
+# Clone and setup (installs pre-commit hooks, creates venv, verifies build)
+git clone https://github.com/velo-sh/velo.git
+cd velo
+./setup-dev.sh
+```
+
+**Locked Versions** (same for local and CI):
+- Rust: 1.92.0 (see `rust-toolchain.toml`)
+- Python: 3.11+
+
+
+### Testing
+
+```bash
+# Run unit tests
+cargo test
+
+# Run QA tests
+uv run python -m pytest tests/qa/ -v
+
+# Benchmark against real projects (includes Zygote mode)
+python3 benchmark_projects.py --all -n 5
+
+# 🔬 Top 100 Package Baseline (RFC-0013/0014)
+# We benchmarked the Top 100+ downloaded PyPI packages.
+# Result: **100%** compatible, **132ms** avg startup using Velo Fleet Mode.
+
 # Run the full benchmark suite (Zygote Fleet Mode - Recommended)
 ./benchmarks/top100/_runner/main.py --use-zygote --fleet
 
@@ -139,80 +163,42 @@ Result: **100%** compatible, **132ms** avg startup using Velo Fleet Mode.
 ./benchmarks/top100/_runner/main.py --package requests --use-zygote
 ```
 
-## See It in Action (5 Minutes)
+### Code Quality
 
-The fastest way to understand Velo is to *feel* the difference.
+Pre-commit hooks automatically run on every commit:
+- `cargo fmt --check` - Format check
+- `cargo clippy -- -D warnings` - Lint check
+- `cargo test --lib` - Unit tests
 
-👉 **AI Serverless Demo**
+To run manually:
+```bash
+cargo fmt && cargo clippy -- -D warnings
+```
 
-This demo runs the same Python AI service in three modes:
 
-1. Baseline Python  
-2. Dockerized Python  
-3. Velo Runtime  
+## Compatibility
 
-You will see:
-- Cold-start latency collapse from seconds to milliseconds
-- Memory usage drop dramatically
-- Why Python does not have to behave this way
+- **Python**: 3.11, 3.12, 3.13+ (single binary)
+- **Packages**: Full PyPI compatibility (NumPy, Pandas, FastAPI, Django, etc.)
+- **Environment**: Works with `uv`-managed virtual environments
 
-➡️ [**ai-serverless-demo/README.md**](./ai-serverless-demo/README.md)
+### 🏛️ Engineering Governance (TITANIUM)
+- [SOP-001: Master Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md)
+- [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md)
+- [SOP-003: Knowledge Treasury](./docs/architecture/SOP-003-knowledge-treasury.md)
 
----
+## Roadmap
 
-## Architecture Overview
+- [x] Phase 1: Environment fingerprinting & path caching
+- [x] Phase 1.5: Environment Fingerprinting (ABI checks, `velo info`, `--profile`)
+- [x] Phase 2: Process isolation (multi-Python support)
+- [x] Phase 3: Instant Startup (Velo Mode) 🧬
+- [x] Phase 3.5: uvicorn integration (`velo serve`) 🌐
+- [x] Phase 4: Static analysis & security
+- [x] Phase 5: Fast Loader & 14x Zygote speedup 🚀
+- [x] Phase 6: Static Import Graph & Security Hardening (H1-H10)
+- [x] **Phase 6.1: velo serve + velo analyze (The Hook)** 🎣
 
-Velo works *with* CPython, not against it.
+## License
 
-- Rust-based host runtime
-- Full CPython C-API compatibility
-- Zero changes to user code
-- Progressive enhancement from tooling → runtime → cloud
-
-Think of Velo as:
-> **The Bun of Python — evolving toward the Vercel of AI.**
-
----
-
-## Who Is This For?
-
-- AI teams deploying Python inference services
-- Companies struggling with Python cold starts
-- Engineers hitting memory limits with model-heavy workloads
-- Anyone who loves Python but hates its runtime behavior in production
-
----
-
-## Project Status
-
-Velo is under active development.
-
-Current focus:
-- AI serverless runtime
-- Memory sharing primitives
-- Fast loader infrastructure
-
-The project follows a staged roadmap from tooling to full cloud runtime.
-
----
-
-## Roadmap (High Level)
-
-- Phase 6.x — Fast loader & runtime primitives
-- Phase 7.x — AI serverless runtime
-- Phase 8.x — Single-binary packaging & hybrid engine
-- Phase 9.x — Velo Cloud (Python AI serverless platform)
-
----
-
-## Get Involved
-
-- ⭐ Star the repo if this resonates
-- 🧪 Try the AI Serverless Demo
-- 💬 Open issues for real production pain
-- 🤝 Reach out if you’re building serious AI infrastructure
-
----
-
-> **Python won AI.  
-> Velo makes it production-grade.**
+Apache-2.0
