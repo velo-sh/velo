@@ -180,6 +180,7 @@ async def handle_zy_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
         "type": "Status",
         "pid": os.getpid(),
         "state": server.preload_state,
+        "preload": server._preloaded_modules,
         "workers": server.worker_registry.get_stats(),
         "app": server.app_name
     }
@@ -286,6 +287,8 @@ class ZygoteServer:
         """Handle a client connection using the synchronous transport."""
         transport = ZygoteTransport(sock)
         try:
+            # RFC-0011 Requirement: Send Ready greeting immediately upon connection
+            await asyncio.get_event_loop().run_in_executor(None, transport.send, {"type": "Ready"})
             while True:
                 # Use run_in_executor for blocking recvmsg
                 msg = await asyncio.get_event_loop().run_in_executor(None, transport.recv)
