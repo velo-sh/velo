@@ -19,6 +19,7 @@ class CommandRouter:
     async def dispatch(self, server: Any, cmd: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatch command to handler."""
         cmd_type = cmd.get("type", "Unknown")
+        
         handler = self.handlers.get(cmd_type)
         if not handler:
             return {"type": "Error", "message": f"Unknown command: {cmd_type}"}

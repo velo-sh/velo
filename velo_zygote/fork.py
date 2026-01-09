@@ -163,7 +163,18 @@ class ForkHandler:
                         code = compile(f.read(), script_path, "exec")
                     except Exception as e:
                         raise RuntimeError(f"Compilation Intent Failure: Target '{script_path}' is not a valid Python script: {e}")
-                    exec(code, {"__name__": "__main__"})
+                    
+                    # Prepare execution environment
+                    child_globals = {
+                        "__name__": "__main__",
+                        "__file__": os.path.abspath(script_path),
+                        "__builtins__": __builtins__,
+                        "__doc__": None,
+                        "__package__": None,
+                        "__loader__": None,
+                        "__spec__": None,
+                    }
+                    exec(code, child_globals)
             elif fast_mode:
                 # Already handled in _activate_fast_mode
                 pass
