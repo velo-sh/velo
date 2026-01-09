@@ -1,0 +1,14 @@
+FROM velo-ci-ubuntu
+
+# Pre-create virtual environment and install test dependencies
+# We use /tmp/.venv-docker to match the test script expectation
+RUN uv venv --python 3.11 /tmp/.venv-docker && \
+    . /tmp/.venv-docker/bin/activate && \
+    uv pip install fastapi uvicorn pytest requests psutil
+
+# Set environment variables to use the venv by default
+ENV VIRTUAL_ENV=/tmp/.venv-docker
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Set PYTHONPATH to include workspace
+ENV PYTHONPATH="/workspace"
