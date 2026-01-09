@@ -71,9 +71,9 @@ class VeloPaths:
         os_name = "macos" if sys.platform == "darwin" else "linux"
         env_mode = os.environ.get("VELO_ENV")
         if not env_mode:
-            # Fallback to dev ONLY if not enforced by config, but Rule 2 says Enforce.
-            # We'll keep it for local dev but raise if in prod/ci.
-            env_mode = "dev"
+            # Rule 2: Never Guess. If Rust didn't inject it, the boundary is breached.
+            from .integrity import IntegrityError
+            raise IntegrityError("CRITICAL: VELO_ENV not injected. Python boundary convergence failed.")
         
         # 3. Resolve using Matrix
         env_key = f"PATH_{os_name}_{env_mode.lower()}_SOCKET_PARENT"

@@ -50,10 +50,10 @@ class VeloConfig:
     timeout_multiplier: float = field(default=1.0)
     strict_numa: bool = field(default=False)
     max_bundle_size: int = field(default=MAX_MESSAGE_SIZE)
-    socket_startup_timeout: int = field(default=5)
-    graceful_shutdown_timeout: int = field(default=30) # Default aligned with Rust (src/config.rs), but usually injected
+    socket_startup_timeout: int = field(default=SOCKET_STARTUP_TIMEOUT)
+    graceful_shutdown_timeout: int = field(default=GRACEFUL_SHUTDOWN_TIMEOUT)
     host: str = field(default="127.0.0.1")
-    port: int = field(default=8000)
+    port: int = field(default=DEFAULT_PORT)
     
     # Features
     preload_modules: List[str] = field(default_factory=list)
@@ -65,14 +65,9 @@ class VeloConfig:
         Recursive SSOT: Fail-Fast if critical vars are missing.
         """
         if "VELO_ENV" not in os.environ:
-            # Fallback allowed ONLY in dev if clearly marked, but Rule 2 suggests we should Enforce.
-            # We'll allow 'dev' as a default BUT log a warning, OR we just enforce.
-            # Let's align with 'Never Guess' and see if it breaks tests.
-            # Actually, some tests might not set VELO_ENV yet.
-            # But the Rule says "Python strictly forbidden from detecting paths by itself".
-            pass 
+            raise ValueError("CRITICAL: VELO_ENV not injected by Rust. Boundary convergence failed.")
 
-        env_mode = os.environ.get("VELO_ENV", "dev").lower()
+        env_mode = os.environ["VELO_ENV"].lower()
         
         # Detect CI environment primarily via standard flags
         is_ci = (
@@ -108,11 +103,11 @@ class VeloConfig:
             forwarded_allow_ips=os.environ.get("VELO_FORWARDED_ALLOW_IPS", ""),
             timeout_multiplier=float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0")),
             strict_numa=os.environ.get("VELO_STRICT_NUMA") == "1",
-            max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", 1024 * 1024 * 1024),
-            socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", 5),
-            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", 30),
+            max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", MAX_MESSAGE_SIZE),
+            socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", SOCKET_STARTUP_TIMEOUT),
+            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", GRACEFUL_SHUTDOWN_TIMEOUT),
             host=os.environ.get("VELO_HOST", "127.0.0.1"),
-            port=get_int("VELO_PORT", 8000),
+            port=get_int("VELO_PORT", DEFAULT_PORT),
             preload_modules=get_list("VELO_PRELOAD"),
             hpc_threads=get_int("VELO_SECURITY_HPC_THREADS", 1)
         )
