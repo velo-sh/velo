@@ -131,6 +131,43 @@ class VeloTestEnv:
         file_path.write_text(content)
         return file_path
 
+    @property
+    def home(self) -> Path:
+        """Compat property for artifact collection."""
+        return self.path / "home"
+
+    def spawn_velo(self, *args, **kwargs) -> subprocess.Popen:
+        """Spawn Velo binary in the test environment (non-blocking)."""
+        if self.velo_binary is None:
+            pytest.skip("Velo binary not found")
+        
+        # Default text=True unless binary output needed
+        if "text" not in kwargs:
+            kwargs["text"] = True
+            
+        cmd = [str(self.velo_binary)] + list(args)
+        return subprocess.Popen(
+            cmd,
+            cwd=self.path,
+            **kwargs
+        )
+
+    def get_actual_page_size(self) -> int:
+        """[RITUAL 30] Query the actual page size reported by the Velo binary."""
+        # Run a simple check command that triggers the standard header
+        # 'velo' with no args prints usage and the header to stderr
+        result = self.run_velo(timeout=T_SHORT)
+        output = result.stderr
+        
+        import re
+        match = re.search(r"Actual Page Size:\s+(\d+)", output)
+        if match:
+            return int(match.group(1))
+        
+        # Fallback to system page size if binary doesn't report it (shouldn't happen in TITANIUM)
+        import resource
+        return resource.getpagesize()
+
 
 def find_velo_binary() -> Optional[Path]:
     """Find the velo binary in standard locations."""

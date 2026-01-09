@@ -451,7 +451,8 @@ fn run_with_profile(
                 None,  // bundle_path
                 Some(project_dir.to_path_buf()),
                 None, // max_bundle_size
-                Some(&shm_file),
+                Some(&shm_file.file),
+                config,
             )
             .context("Failed to spawn analysis worker via Zygote")?;
 

@@ -1,13 +1,5 @@
 {
   "contracts": {},
-  "tests": {
-    "tests/qa/test_phase3_zygote.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "......",
-      "sha1": "4a73c0d8ef7c13cde07a8a70c29d16169160f9ef",
-      "txhash": []
-    }
-  },
+  "tests": {},
   "tx": {}
 }

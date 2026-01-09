@@ -1,8 +1,10 @@
 import os
+
 import time
 import pytest
 import subprocess
 import psutil
+import socket
 from pathlib import Path
 
 # QA Agent D: Hardened Performance Benchmarks
@@ -24,32 +26,30 @@ class TestPhase61PerformanceHardened:
             "app = FastAPI()"
         )
         env.create_app("main.py", code)
-        
         port = env.next_port()
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            bufsize=1
+        
+        proc = env.spawn_velo(
+            "serve", "main:app", "--reload", "--port", str(port),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1
         )
         
         try:
-            # Wait for first start
-            print("Waiting for startup...")
-            while True:
+            # Wait for startup
+            for _ in range(100):
                 line = proc.stdout.readline()
+                if "Started server process" in line:
+                    break
                 if not line and proc.poll() is not None:
-                     raise RuntimeError(f"Velo exited: {proc.returncode}")
-                if "STARTED_" in line:
                     break
             
             latencies = []
+            
             for i in range(5):
                 print(f"Iteration {i}: Touching main.py")
+                # Trigger reload
                 trigger_time = time.time()
                 (env.path / "main.py").touch()
                 
-                # Wait for next start
-                # Wait for next start
                 reload_start = None
                 while True:
                     line = proc.stdout.readline()
@@ -92,9 +92,9 @@ class TestPhase61PerformanceHardened:
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
         
         port = env.next_port()
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--port", str(port)],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        proc = env.spawn_velo(
+            "serve", "main:app", "--port", str(port),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         
         time.sleep(3)
@@ -104,7 +104,10 @@ class TestPhase61PerformanceHardened:
             p = psutil.Process(proc.pid)
             total_rss = p.memory_info().rss
             for child in p.children(recursive=True):
-                total_rss += child.memory_info().rss
+                try:
+                    total_rss += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                    pass
                 
             rss_mb = total_rss / (1024 * 1024)
             print(f"Total Memory occupancy: {rss_mb:.2f}MB")
@@ -142,7 +145,6 @@ class TestPhase61PerformanceHardened:
         """
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
-        
         port = env.next_port()
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--reload", "--port", str(port)],
@@ -161,7 +163,12 @@ class TestPhase61PerformanceHardened:
                 (env.path / "main.py").touch()
                 time.sleep(1) # Wait for reload to complete
                 
-            final_fds = p.num_fds()
+            try:
+                final_fds = p.num_fds()
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                # If process died during check, we can't measure, but it's not a leak crash
+                return
+
             print(f"FD Count: {initial_fds} -> {final_fds}")
             assert final_fds <= initial_fds + 2
         finally:

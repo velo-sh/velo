@@ -3,13 +3,13 @@ import struct
 try:
     from .serializer import packer, unpacker
 except (ImportError, ValueError):
-    from serializer import packer, unpacker
+    from serializer import packer, unpacker  # type: ignore[no-redef, import-not-found]
 
 from typing import Dict, List, Optional, Any
 try:
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
 except (ImportError, ValueError):
-    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef, import-not-found]
 
 class ProtocolError(Exception):
     """Raised when an IPC protocol violation occurs."""

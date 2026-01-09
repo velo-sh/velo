@@ -13,7 +13,6 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
-use blake3;
 use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg};
 use serde::{Deserialize, Serialize};
 use std::io::{IoSlice, IoSliceMut};
@@ -56,28 +55,50 @@ pub enum ZygoteCommand {
         /// Max bundle size limit
         #[serde(default)]
         max_bundle_size: Option<u64>,
+        /// Environment variables to inject into the worker
+        #[serde(default)]
+        env: Box<std::collections::HashMap<String, String>>,
         /// Size of the shared memory segment (if shm_fd is passed)
         #[serde(default)]
         shm_size: Option<usize>,
+        /// Correlation ID for tracing
+        #[serde(default)]
+        request_id: Option<String>,
     },
     /// Shutdown the Zygote process
     Shutdown,
     /// Query Zygote status
-    Status,
+    Status {
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Wait for a worker to exit
     WaitWorker {
         worker_pid: u32,
         #[serde(default)]
         timeout_secs: Option<u64>,
+        #[serde(default)]
+        request_id: Option<String>,
     },
     /// Send signal to a worker
-    SignalWorker { worker_pid: u32, signal: i32 },
+    SignalWorker {
+        worker_pid: u32,
+        signal: i32,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Query worker status
-    WorkerStatus { worker_pid: u32 },
+    WorkerStatus {
+        worker_pid: u32,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Capability handshake
     Handshake {
         version: u8,
         capabilities: Vec<String>,
+        #[serde(default)]
+        request_id: Option<String>,
     },
 }
 
@@ -95,6 +116,9 @@ pub enum ZygoteResponse {
         pid: u32,
         /// List of preloaded modules
         preload: Vec<String>,
+        /// Preload state (e.g., "READY", "LOADING")
+        #[serde(default)]
+        state: String,
     },
     /// A worker was successfully forked
     Forked {
@@ -131,56 +155,7 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Delegates to `common::paths` (RFC-0012).
 pub fn get_socket_dir() -> PathBuf {
-    /// Red Line #1: Path length limit with 4-byte margin
-    const SOCKET_PATH_LIMIT: usize = 104;
-    // SECURITY: getuid() is a standard read-only syscall used for multi-tenant path isolation.
-    let uid = unsafe { libc::getuid() };
-
-    // RFC §3.3: Use project-specific randomized identity for isolation
-    let project_hash = if let Ok(cwd) = std::env::current_dir() {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(cwd.to_string_lossy().as_bytes());
-        let hash = hasher.finalize().to_hex()[..8].to_string();
-        format!("-{}", hash)
-    } else {
-        "".to_string()
-    };
-
-    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
-    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        let dir = PathBuf::from(xdg_dir).join("velo");
-        let test_path = dir.join("velo-zygote-v01.sock");
-        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
-            return dir;
-        }
-    }
-
-    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
-    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
-    let user_dir = std::env::temp_dir().join(&dir_name);
-    let test_path = user_dir.join("velo-zygote-v01.sock");
-
-    // Red Line #1: Check path length BEFORE ensuring directory
-    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
-        return user_dir;
-    }
-
-    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
-    // Red Line #1: /tmp fallback when path too long
-    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
-        eprintln!(
-            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
-            SOCKET_PATH_LIMIT
-        );
-    }
-    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
-    let _ = ensure_socket_dir(&fallback_dir);
-    fallback_dir
-}
-
-/// Ensure socket directory exists with proper permissions (0700)
-fn ensure_socket_dir(dir: &Path) -> bool {
-    crate::common::paths::ensure_socket_dir(dir)
+    crate::common::paths::VeloPaths::socket_dir()
 }
 
 /// Check if a socket is alive (responds to connection attempt)
@@ -242,7 +217,7 @@ pub fn cleanup_stale_sockets() {
                     // Red Line #3: Atomic cleanup with proper error handling
                     match std::fs::remove_file(&path) {
                         Ok(_) => {
-                            eprintln!("🔄 Cleaned stale socket: {}", name);
+                            // println!("🔄 Cleaned stale socket: {}", name);
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             // Ignore - socket already removed (race condition)
@@ -318,7 +293,9 @@ fn write_message<T: Serialize + std::fmt::Debug>(
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC SEND] {:?}", msg);
+    {
+        log::debug!("[IPC SEND] {:?}", msg);
+    }
 
     // Frame: [Length 4B] [Version 1B] [Payload]
     let total_len = 1 + payload.len(); // version byte + payload
@@ -546,6 +523,7 @@ mod tests {
         let resp = ZygoteResponse::Status {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
+            state: "READY".to_string(),
         };
 
         // Test MessagePack roundtrip
@@ -553,9 +531,15 @@ mod tests {
         let decoded: ZygoteResponse =
             rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
-        if let ZygoteResponse::Status { pid, preload } = decoded {
+        if let ZygoteResponse::Status {
+            pid,
+            preload,
+            state,
+        } = decoded
+        {
             assert_eq!(pid, 1234);
             assert_eq!(preload, vec!["numpy", "pandas"]);
+            assert_eq!(state, "READY");
         } else {
             panic!("Decoded wrong variant");
         }
@@ -574,7 +558,9 @@ mod tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            env: Box::new(std::collections::HashMap::new()),
             shm_size: None,
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
         let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
@@ -606,7 +592,9 @@ mod tests {
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
             project_root: Some(PathBuf::from("/home/user/project")),
             max_bundle_size: Some(1024 * 1024),
+            env: Box::new(std::collections::HashMap::new()),
             shm_size: Some(4096),
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
         let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");

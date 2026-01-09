@@ -62,17 +62,21 @@ class VeloPaths:
     def socket_dir() -> Path:
         """Get the canonical socket directory using hierarchical path resolution."""
         # 1. Check for environment override
+        # RFC-0012: In production, this should always be explicitly set or derive from Matrix.
         override = os.environ.get("VELO_SOCKET_DIR")
         if override:
             return Path(override)
 
-        # 2. Determine OS and Environment
+        # 2. Determine OS and Environment (Must be injected by Rust)
         os_name = "macos" if sys.platform == "darwin" else "linux"
-        env_mode = os.environ.get("VELO_ENV", "dev").lower()
+        env_mode = os.environ.get("VELO_ENV")
+        if not env_mode:
+            # Rule 2: Never Guess. If Rust didn't inject it, the boundary is breached.
+            from .integrity import IntegrityError
+            raise IntegrityError("CRITICAL: VELO_ENV not injected. Python boundary convergence failed.")
         
         # 3. Resolve using Matrix
-        # Try specific env first (e.g. PATH_MACOS_CI_SOCKET_PARENT)
-        env_key = f"PATH_{os_name}_{env_mode}_SOCKET_PARENT"
+        env_key = f"PATH_{os_name}_{env_mode.lower()}_SOCKET_PARENT"
         base_key = f"PATH_{os_name}_BASE_SOCKET_PARENT"
         
         parent_path = VeloPaths._get_path_config(env_key)
@@ -80,7 +84,10 @@ class VeloPaths:
             parent_path = VeloPaths._get_path_config(base_key)
             
         if not parent_path:
-            parent_path = "/tmp" # Ultimate backup
+            # Rule 2: Throw IntegrityError instead of guessing /tmp
+            from .integrity import IntegrityError
+            raise IntegrityError(f"CRITICAL: Socket path matrix resolution failed for {os_name}/{env_mode}. "
+                                 f"Missing {env_key} or {base_key} in constants.py")
 
         # 4. Expand Placeholders
         expanded_parent = VeloPaths._expand_placeholders(parent_path)
@@ -91,12 +98,12 @@ class VeloPaths:
         socket_path = Path(expanded_parent) / dir_name
         
         # 6. Check Length Limit
-        # (Rust logic: if path too long, fallback to /tmp)
-        if len(str(socket_path)) + 30 <= SOCKET_PATH_LIMIT:
-             return socket_path
-             
-        # Fallback
-        return Path("/tmp") / dir_name
+        if len(str(socket_path)) + 30 > SOCKET_PATH_LIMIT:
+             # Rule 2: Throw IntegrityError if path is too long
+             from .integrity import IntegrityError
+             raise IntegrityError(f"CRITICAL: Resolved socket path is too long ({len(str(socket_path))} chars): {socket_path}")
+
+        return socket_path
 
     @staticmethod
     def zygote_socket() -> Path:
@@ -155,6 +162,22 @@ class VeloPaths:
     def pyproject(cls, project_root: Path) -> Path:
         """Canonical path to pyproject.toml."""
         return cls.project_file(project_root, PYPROJECT_TOML)
+
+    @staticmethod
+    def sanitize_sys_path(script_file: str):
+        """
+        Surgical Path Sanitization (RFC-0014).
+        
+        1. Prevent the script's directory from shadowing user modules by moving it to the end.
+        2. Ensure CWD is at the front (Standard parity with CPython).
+        """
+        script_dir = os.path.dirname(os.path.abspath(script_file))
+        if script_dir in sys.path:
+            sys.path.remove(script_dir)
+            sys.path.append(script_dir)
+        
+        if os.getcwd() not in sys.path:
+            sys.path.insert(0, os.getcwd())
 
     @classmethod
     def uv_lock(cls, project_root: Path) -> Path:

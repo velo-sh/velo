@@ -1,0 +1,10 @@
+requests
+numpy
+pandas
+scipy
+torch
+flask
+django
+fastapi
+black
+mypy

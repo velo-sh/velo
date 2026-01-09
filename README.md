@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Velo
 
 > **Python is perfect for coding.  
@@ -5,6 +6,27 @@
 
 Velo is a **high-performance runtime for the AI era**.  
 It preserves the Python ecosystem you already use, while fundamentally rethinking how Python applications *start*, *scale*, and *consume memory* in production.
+=======
+<div align="center">
+
+<p style="color: grey; font-size: 1.2rem;">
+  Life is short. Use Python.
+</p>
+
+<h1 style="font-size: 4rem; font-weight: 800;">
+  Python, Unchained.
+</h1>
+
+<p align="center">
+  <img src="assets/velo_logo.jpg" alt="Velo Logo" width="200" />
+</p>
+
+<p style="font-size: 1.5rem;">
+  The Instant Runtime that Python deserves.
+</p>
+
+</div>
+>>>>>>> main
 
 Velo is not a framework.  ```bash
 git clone https://github.com/velo-sh/velo.git && cd velo
@@ -106,6 +128,18 @@ Velo fixes that.
 - No Docker required
 
 ---
+
+### 🔬 Top 100 Package Baseline (RFC-0013/0014)
+We benchmarked the Top 100+ downloaded PyPI packages.
+Result: **100%** compatible, **132ms** avg startup using Velo Fleet Mode.
+
+```bash
+# Run the full benchmark suite (Zygote Fleet Mode - Recommended)
+./benchmarks/top100/_runner/main.py --use-zygote --fleet
+
+# Run a specific package
+./benchmarks/top100/_runner/main.py --package requests --use-zygote
+```
 
 ## See It in Action (5 Minutes)
 

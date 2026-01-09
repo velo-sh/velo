@@ -4,9 +4,37 @@ import pytest
 import sys
 import os
 from pathlib import Path
+from typing import Any
+
+
 
 # Add tests/qa to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+
+# =============================================================================
+# MIDDLEWARE HELPERS
+# =============================================================================
+
+UDS_PROXY_MIDDLEWARE_CODE = """
+class UDSProxyMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+            headers = dict(scope.get("headers", []))
+            try:
+                # Try to restore client from X-Forwarded-For
+                forwarded = headers.get(b"x-forwarded-for")
+                if forwarded:
+                    # simple parse: take the first IP
+                    ip = forwarded.decode("latin1").split(",")[0].strip()
+                    # mock port 0 as we don't know the real source port
+                    scope["client"] = (ip, 0)
+            except (UnicodeDecodeError, AttributeError, IndexError, ValueError):
+                pass
+        await self.app(scope, receive, send)
+"""
 
 
 # =============================================================================
@@ -164,17 +192,75 @@ def cleanup_zygote_between_modules():
          except: pass
 
 
+# =============================================================================
+# VELO BINARY PATH RESOLUTION (SSOT)
+# =============================================================================
+# Priority Order:
+#   1. VELO_BINARY env var (explicit override)
+#   2. target/release/velo (CI/Prod builds)
+#   3. test_deploy_tmp/bin/velo (test deployment artifacts)
+#   4. target/debug/velo (local development)
+#   5. Auto-build debug binary (fallback)
+#
+# Usage:
+#   from conftest import get_velo_binary
+#   velo = get_velo_binary()
+
+def get_velo_binary() -> str:
+    """Get the path to the Velo binary with consistent priority.
+    
+    Returns:
+        Absolute path to the velo binary.
+        
+    Raises:
+        RuntimeError: If no binary found and auto-build fails.
+    """
+    root_dir = Path(__file__).parents[2]
+    
+    # Priority 1: Environment Variable (explicit override for CI/testing)
+    env_binary = os.environ.get("VELO_BINARY")
+    if env_binary:
+        env_path = Path(env_binary)
+        if env_path.exists():
+            return str(env_path.resolve())
+        else:
+            print(f"⚠️ VELO_BINARY={env_binary} does not exist, checking fallbacks...")
+    
+    # Priority 2: Release Binary (CI/Prod)
+    release_bin = (root_dir / "target/release/velo").resolve()
+    if release_bin.exists():
+        return str(release_bin)
+    
+    # Priority 3: Test Deployment Artifact (deployable package)
+    test_deploy_bin = (root_dir / "test_deploy_tmp/bin/velo").resolve()
+    if test_deploy_bin.exists():
+        return str(test_deploy_bin)
+        
+    # Priority 4: Debug Binary (Local Dev)
+    debug_bin = (root_dir / "target/debug/velo").resolve()
+    if debug_bin.exists():
+        return str(debug_bin)
+
+    # Priority 5: Auto-build Debug Binary (Fallback)
+    print("⚠️ Velo binary not found, building (debug)...")
+    result = subprocess.run(
+        ["cargo", "build"], 
+        cwd=root_dir, 
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to build velo: {result.stderr}")
+    
+    if not debug_bin.exists():
+        raise RuntimeError(f"Velo binary not found at {debug_bin} after build")
+    return str(debug_bin)
+
+
 @pytest.fixture(scope="session")
 def velo_binary():
-    """Build and return path to Velo binary."""
-    # RFC-0013: Ensure we use the binary from the current workspace
-    root_dir = Path(__file__).parents[2]
-    subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
-    
-    bin_path = (root_dir / "target/debug/velo").resolve()
-    if not bin_path.exists():
-        raise RuntimeError(f"Velo binary not found at {bin_path}")
-    return str(bin_path)
+    """Pytest fixture: Build and return path to Velo binary."""
+    return get_velo_binary()
 
 # =============================================================================
 # HERMETIC TEST ENVIRONMENT (RFC-0012)
@@ -201,22 +287,31 @@ class VeloTestEnv:
             
         # The Hermetic Environment Dictionary
         self.env = os.environ.copy()
+        
+        # Ensure VIRTUAL_ENV is set correctly even if not in os.environ (fallback to sys.prefix)
+        # This is critical for 'velo' to detect the project-local python/deps
+        current_venv = os.environ.get("VIRTUAL_ENV") or sys.prefix
+        
         self.env.update({
             "TMPDIR": str(self.tmp),
             "TEMP": str(self.tmp),
             "HOME": str(self.home),
             "XDG_RUNTIME_DIR": str(self.xdg),
+            "VIRTUAL_ENV": current_venv,
+            # Ensure bin/ is in PATH for 'which python' checks
+            "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
             # Force Velo to use our isolated socket path logic
             "VELO_ZYGOTE_SOCKET": "", 
             "VELO_BACKOFF_SECS": "0",
-            "VELO_TEST_MODE": "1"
+            "VELO_TEST_MODE": "1",
+            "PYTHONUNBUFFERED": "1"
         })
 
         # Backward compatibility
         self.path = self.root
 
     def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
-        """Run Velo binary in the hermetic environment."""
+        """Run Velo binary in the hermetic environment (blocking)."""
         # Merge env
         env = self.env.copy()
         if "env" in kwargs:
@@ -231,6 +326,23 @@ class VeloTestEnv:
             capture_output=kwargs.pop("capture_output", True),
             text=kwargs.pop("text", True),
             timeout=timeout,
+            **kwargs
+        )
+
+    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
+        """Spawn Velo binary in the hermetic environment (non-blocking)."""
+        env = self.env.copy()
+        if "env" in kwargs:
+            env.update(kwargs.pop("env"))
+            
+        # Set text=True by default unless explicitly overridden
+        if "text" not in kwargs:
+            kwargs["text"] = True
+            
+        return subprocess.Popen(
+            [self.velo, *args],
+            env=env,
+            cwd=kwargs.pop("cwd", self.root),
             **kwargs
         )
         
@@ -295,3 +407,53 @@ def get_pss(pid: int) -> int:
             return p.memory_info().rss
     except Exception:
         return 0
+
+# =============================================================================
+# FAILURE ARTIFACT COLLECTION (Phase 4)
+# =============================================================================
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture logs and state on test failure."""
+    outcome = yield
+    report = outcome.get_result()
+
+    if report.when == "call" and report.failed:
+        sys.stderr.write(f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n")
+        
+        try:
+             # Locate binary
+             root_dir = Path(__file__).parents[2]
+             velo_bin = root_dir / "target/debug/velo"
+             if not velo_bin.exists():
+                 velo_bin = root_dir / "target/release/velo"
+             
+             if velo_bin.exists():
+                 log_dir = None
+                 
+                 # Check for isolated env
+                 if "velo_test_env" in item.funcargs:
+                      env = item.funcargs["velo_test_env"]
+                      # RFC-0012: Logs are in HOME/.local/state/velo
+                      log_path = env.home / ".local/state/velo"
+                      if log_path.exists():
+                          log_dir = log_path
+                 elif "isolated_env" in item.funcargs:
+                      env = item.funcargs["isolated_env"]
+                      log_path = env.home / ".local/state/velo"
+                      if log_path.exists():
+                          log_dir = log_path
+
+                 cmd = [str(velo_bin), "bundle", "collect"]
+                 if log_dir:
+                     cmd.extend(["--log-dir", str(log_dir)])
+                     # Unique filename
+                     import time
+                     ts = int(time.time())
+                     safe_name = item.name.replace("[", "_").replace("]", "_").replace("/", "_")
+                     filename = f"failure-{safe_name}-{ts}.tar.gz"
+                     cmd.extend(["--output", filename])
+                 
+                 subprocess.run(cmd, check=False)
+        except Exception as e:
+            sys.stderr.write(f"[Artifacts] Failed to bundle: {e}\n")

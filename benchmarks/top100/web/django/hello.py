@@ -1,9 +1,11 @@
-import django
-from django.conf import settings
-
-# Minimal configuration to boostrap Django
-if not settings.configured:
-    settings.configure(INSTALLED_APPS=[])
-    
-django.setup()
-print(f"Django version: {django.get_version()}")
+import sys
+import os
+print(f"Executable: {sys.executable}")
+print(f"Prefix: {sys.prefix}")
+print(f"Path: {sys.path}")
+try:
+    import django
+    print(f"Django: {django.__version__}")
+except ImportError as e:
+    print(f"ImportError: {e}")
+    sys.exit(1)
