@@ -3,10 +3,12 @@ Velo Utilities
 """
 import os
 import time
+
+# Use EnvProfile as SSOT for environment detection
 try:
-    from .settings import velo_config
+    from .env_profile import ENV_PROFILE
 except (ImportError, ValueError):
-    from settings import velo_config
+    from env_profile import ENV_PROFILE
 
 class ForkRateLimiter:
     """RFC-0011 WB-005: Token bucket rate limiter for Fork DoS protection."""
@@ -16,7 +18,8 @@ class ForkRateLimiter:
         self.refill_interval_ms = refill_interval_ms / 1000.0  # Convert to seconds
         self.tokens = max_tokens
         self.last_refill = time.time()
-        self._disabled = velo_config.is_ci or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
+        # Use EnvProfile as SSOT (Phase 11.4)
+        self._disabled = ENV_PROFILE.rate_limit_disabled
 
     def acquire(self) -> bool:
         if self._disabled:
