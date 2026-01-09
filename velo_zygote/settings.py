@@ -38,6 +38,13 @@ class VeloConfig:
     trusted_prefixes: List[str] = field(default_factory=list)
     env_whitelist: List[str] = field(default_factory=list)
     hpc_threads: int = field(default=1)
+    _blocked_paths: List[str] = field(default_factory=list)
+
+    @property
+    def blocked_paths(self) -> List[str]:
+        """Validated list of blocked paths with environment adjustments."""
+        return self._blocked_paths
+
     
     # Tuning
     timeout_multiplier: float = field(default=1.0)
@@ -109,7 +116,27 @@ class VeloConfig:
         instance.trusted_prefixes = cls._resolve_security_list(env_mode, "trusted_prefixes")
         instance.env_whitelist = cls._resolve_security_list(env_mode, "env_whitelist")
         
+        # Resolve Blocked Paths (Phase 10.1)
+        instance._blocked_paths = cls._resolve_blocked_paths(is_ci)
+
         return instance
+
+    @staticmethod
+    def _resolve_blocked_paths(is_ci: bool) -> List[str]:
+        """Resolve blocked paths, applying CI logic (Policy)."""
+        # Copy base list to avoid mutation
+        base = list(globals().get("DEFAULT_BLOCKED_PATHS", []))
+        
+        # Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
+        if is_ci:
+            if "/home" in base:
+                base.remove("/home")
+        else:
+            if "/home" not in base:
+                base.append("/home")
+                
+        return base
+
 
     @staticmethod
     def _resolve_security_list(env_mode: str, base_key: str) -> List[str]:

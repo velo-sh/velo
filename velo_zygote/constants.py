@@ -45,3 +45,11 @@ PATH_LINUX_CI_SOCKET_PARENT = "/tmp"
 # System Paths (Phase 9.0)
 PATH_LINUX_FD_DIR = "/proc/self/fd"
 PATH_MACOS_FD_DIR = "/dev/fd"
+
+# Security (Phase 10.1)
+# Sensitive paths that should never be executed (SEC-P3-001)
+DEFAULT_BLOCKED_PATHS = [
+    "/etc", "/var", "/usr", "/bin", "/sbin",
+    "/System", "/Library", "/private/etc",
+    "/root", "/home",
+]
