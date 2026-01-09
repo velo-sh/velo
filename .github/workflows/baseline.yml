@@ -1,0 +1,108 @@
+name: Velo Top 100 Baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Limit number of benchmarks to run'
+        required: false
+        default: ''
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'benchmarks/**'
+      - 'velo_zygote/**'
+
+env:
+  CARGO_TERM_COLOR: always
+  CUDA_VISIBLE_DEVICES: ""
+  PYTHONUNBUFFERED: "1"
+  VELO_TEST_MODE: "1"
+  OBJC_DISABLE_INITIALIZE_FORK_SAFETY: "YES"
+
+jobs:
+  benchmark:
+    name: Run Baseline Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache Rust Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build Velo (Release)
+        run: cargo build --release
+
+      - name: Cache Shared Venv
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/top100/.shared_venv
+          key: ${{ runner.os }}-shared-venv-${{ hashFiles('benchmarks/top100_list.json', 'benchmarks/top100/**/benchmark.toml') }}
+
+      - name: Setup Shared Venv (if not cached)
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          cd benchmarks/top100
+          uv venv .shared_venv
+          source .shared_venv/bin/activate
+          # Use uv pip install for speed. 
+          # We extract all packages from top100_list.json
+          cat top100_list.json | python3 -c "import json, sys; print('\n'.join(json.load(sys.stdin)['packages']))" > requirements.txt
+          uv pip install -r requirements.txt
+          uv pip install tomli blake3  # Runner dependencies
+
+      - name: Hardening (Read-Only Venv)
+        run: chmod -R 555 benchmarks/top100/.shared_venv
+
+      - name: Run Baseline Benchmarks (Fleet Mode)
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          python3 benchmarks/top100/_runner/main.py \
+            --use-zygote \
+            --fleet \
+            --runs 1 \
+            ${{ github.event.inputs.limit != '' && format('--limit {0}', github.event.inputs.limit) || '' }}
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-results
+          path: benchmarks/top100/top100_v2_results.json
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          if [ -f benchmarks/top100/top100_v2_results.json ]; then
+            python3 -c "import json, os; 
+            with open('benchmarks/top100/top100_v2_results.json') as f:
+                data = json.load(f)
+                s = data['summary']
+                print(f'### 📊 Baseline Summary\n- Total: {s[\"total\"]}\n- Passed: {s[\"passed\"]}\n- Failed: {s[\"failed\"]}')
+            " >> $GITHUB_STEP_SUMMARY
+          fi
