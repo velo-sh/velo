@@ -37,6 +37,20 @@ class ImportShield:
         # so any subsequent import of velo_zygote.* is from untrusted user code.
         if fullname.startswith("velo_zygote"):
             msg = f"Unauthorized access to internal framework module: {fullname}"
+            
+            # Check mode
+            mode = os.environ.get("VELO_SHIELD_MODE", "enforce")
+            
+            if mode == "dry_run":
+                try:
+                    sys.stderr.write(f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n")
+                    sys.stderr.flush()
+                except: pass
+                return None  # Allow the import
+            
+            if mode == "disabled":
+                return None
+
             try:
                 # Log to stderr for visibility in CI logs (Trap 178.2/3)
                 sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
