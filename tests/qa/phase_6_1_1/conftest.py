@@ -51,7 +51,19 @@ class VeloServeProcess:
         start = time.time()
         while time.time() - start < timeout:
             if not self.is_running():
-                raise RuntimeError("Server process died")
+                # Get exit code for diagnostics
+                exit_code = self.proc.returncode
+                # Give stderr a moment to flush (CI buffer delay)
+                time.sleep(0.2)
+                print(f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}")
+                print(f"    PID: {self.pid}, Port: {self.port}")
+                print(f"    Socket: {self.socket_path}")
+                print(f"    Elapsed: {time.time() - start:.2f}s")
+                # Force stderr flush for visibility
+                import sys
+                sys.stderr.flush()
+                sys.stdout.flush()
+                raise RuntimeError(f"Server process died (exit code: {exit_code})")
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
                 if r.status_code == 200:
