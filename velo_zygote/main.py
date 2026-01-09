@@ -29,7 +29,7 @@ try:
     from velo_zygote.settings import velo_config
     from velo_zygote.shield import PathValidator
     from velo_zygote.utils import ForkRateLimiter, LogUtils
-    from velo_zygote.lifecycle import WorkerRegistry, post_fork_reinit
+    from velo_zygote.lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
     from velo_zygote.routing import CommandRouter
     from velo_zygote.fork import ForkHandler, InboundSharedMemory
     from velo_zygote.transport_sync import ZygoteTransport, ProtocolError
@@ -80,16 +80,19 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
     
     capabilities_dict = {
         "protocol": "map",
-        "preload": server.preload_state.lower(),
+        "preload": server.state.name.lower(),
         "features": ["async-reaper", "resource-guard", "hook-reinit", "rate-limit", "shadow-preload"],
     }
     if server.app_name:
         capabilities_dict["app"] = server.app_name
     
-    capabilities_list = ["map-protocol", "async-reaper", "resource-guard", "hook-reinit"]
-    if server.app_name:
-        capabilities_list.append(f"app:{server.app_name}")
-    capabilities_list.append(f"preload:{server.preload_state.lower()}")
+    # Zygote Capabilites System (Phase 11.0)
+    capabilities_list = ["fork:sync", "fork:async", "shm:v1"]
+    capabilities_list.append(f"preload:{server.state.name.lower()}")
+    
+    # 3. Decision Logic
+    if server.state == ZygoteState.PRELOADING:
+        return {"type": "Error", "message": "Zygote is preloading. Try again shortly."}
     
     return {
         "type": "Handshake",
@@ -101,7 +104,7 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
 @router.handler("Fork")
 async def handle_fork(server: 'ZygoteServer', cmd: Dict) -> Dict:
     # Shadow Preloading: Wait for preload to complete if still loading
-    if server.preload_state == "LOADING":
+    if server.state == ZygoteState.PRELOADING:
         try:
             await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
         except asyncio.TimeoutError:
@@ -182,20 +185,22 @@ async def handle_worker_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
 @router.handler("Shutdown")
 async def handle_shutdown(server: 'ZygoteServer', cmd: Dict) -> Dict:
     LogUtils.log("Graceful Shutdown Initiated.")
+    server._set_state(ZygoteState.SHUTDOWN)
     asyncio.get_event_loop().call_later(0.1, sys.exit, 0)
     return {"type": "Ack"}
 
 @router.handler("Status")
 async def handle_zy_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
-    return {
+    status = {
         "type": "Status",
         "pid": os.getpid(),
-        "state": server.preload_state,
+        "state": server.state.name,
         "preload": server._preloaded_modules,
         # RFC-0011: Optional fields moved to extra or kept if known to supervisor
         "workers": server.worker_registry.get_stats(),
         "app": server.app_name
     }
+    return status
 
 # ============================================================================
 # Zygote Server
@@ -223,12 +228,19 @@ class ZygoteServer:
         self.fork_rate_limiter = ForkRateLimiter()  
         self._monitor_parent = monitor_parent 
         
-        self.preload_state: str = "STARTING"  
+        self.state = ZygoteState.INIT
         self.preload_complete = asyncio.Event()  
         self.fork_queue: asyncio.Queue = asyncio.Queue()  
         
         self.pending_forks: Dict[int, asyncio.Future] = {}
         self._last_activity = time.time()
+
+    def _set_state(self, new_state: ZygoteState):
+        """Standardized state transition with audit trail."""
+        old_state = self.state
+        if old_state != new_state:
+            self.state = new_state
+            LogUtils.debug_log(f"State Transition: {old_state.name} -> {new_state.name}")
 
     async def start(self):
         """Start the Zygote server using asyncio."""
@@ -269,6 +281,7 @@ class ZygoteServer:
         # 5. Resource Monitoring
         asyncio.create_task(self._resource_guard())
         
+        self._set_state(ZygoteState.IDLE)
         LogUtils.log(f"Listening on {self.socket_path}")
         
         loop = asyncio.get_event_loop()
@@ -300,7 +313,6 @@ class ZygoteServer:
         transport = ZygoteTransport(sock)
         try:
             # RFC-0011 Requirement: Send Ready greeting immediately upon connection
-            # We send directly to avoid unnecessary thread handoff for a tiny packet
             transport.send({"type": "Ready"})
             while True:
                 # Use run_in_executor for blocking recvmsg
@@ -313,22 +325,29 @@ class ZygoteServer:
                 
                 if response.get("type") == "Ack" and msg.get("type") == "Shutdown":
                     break
+        except ProtocolError as pe:
+            # Rule 2: Fail-Loud for protocol violations
+            LogUtils.log(f"🚨 IPC Protocol Violation: {pe}")
         except Exception as e:
-            LogUtils.log(f"Client error: {e}")
+            LogUtils.log(f"Unexpected Client error (PID:{os.getpid()}): {e}")
+            import traceback
+            LogUtils.debug_log(traceback.format_exc())
         finally:
             transport.close()
 
     async def _async_preload(self):
-        """Async preloading of modules."""
-        self.preload_state = "LOADING"
+        """Handle preloading modules in the background."""
+        self._set_state(ZygoteState.PRELOADING)
         loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, self._preload_modules)
+            self._set_state(ZygoteState.READY)
+            LogUtils.log(f"Preload complete. {len(self._preloaded_modules)} modules loaded.")
+        except Exception as e:
+            LogUtils.log(f"Preload Critical Failure: {e}")
+            self._set_state(ZygoteState.ERROR)
         
-        # Run preloading in a thread to keep reactor alive
-        await loop.run_in_executor(None, self._preload_modules)
-        
-        self.preload_state = "READY"
         self.preload_complete.set()
-        LogUtils.log(f"Preload complete. {len(self._preloaded_modules)} modules loaded.")
         
         # Process fork queue
         await self._process_fork_queue()

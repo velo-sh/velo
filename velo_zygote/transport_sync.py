@@ -41,15 +41,21 @@ class ZygoteTransport:
             client_version = header_data[4]
             
             if total_len > MAX_MESSAGE_SIZE:
-                raise ProtocolError(f"Oversized payload: {total_len}")
+                raise ProtocolError(f"Oversized payload: {total_len} bytes (limit: {MAX_MESSAGE_SIZE})")
             if client_version != PROTOCOL_VERSION:
-                raise ProtocolError(f"Version mismatch")
+                raise ProtocolError(f"Protocol version mismatch: Client v{client_version} != Server v{PROTOCOL_VERSION}")
             
             # 2. Read Payload
             payload_len = total_len - 1
-            data = self._read_exactly(payload_len)
+            try:
+                data = self._read_exactly(payload_len)
+            except EOFError:
+                raise ProtocolError(f"Unexpected EOF while reading payload (expected {payload_len} bytes)")
             
-            msg = unpacker(data)
+            try:
+                msg = unpacker(data)
+            except Exception as e:
+                raise ProtocolError(f"Failed to unpack MessagePack payload: {e}")
             
             # 3. Handle Ancillary Data (FDs)
             if ancdata:
@@ -65,8 +71,10 @@ class ZygoteTransport:
             return msg
         except (EOFError, ConnectionResetError, BrokenPipeError):
             return None
+        except ProtocolError:
+            raise
         except Exception as e:
-            raise ProtocolError(f"Transport error: {e}")
+            raise ProtocolError(f"Unexpected transport error: {type(e).__name__}({e})")
 
     def _read_exactly(self, n: int) -> bytes:
         data = b''

@@ -38,7 +38,9 @@ class LogUtils:
     
     @staticmethod
     def log(msg: str):
-        print(f"[Zygote] {msg}")
+        import sys
+        sys.stderr.write(f"[Zygote] {msg}\n")
+        sys.stderr.flush()
 
     @staticmethod
     def debug_log(msg: str):
