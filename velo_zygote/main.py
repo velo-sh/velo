@@ -769,10 +769,30 @@ class ForkHandler:
                                 norm_sys_path.add(norm_entry)
 
             # 1. Start Guardian (Workers MUST die if Zygote dies)
-            # Now started after FDs are sanitized to avoid race conditions.
+            # Reduced interval to 0.1s to beat the test race condition (tests wait 1s)
+            # (Merged from HEAD: Started after FDs are sanitized/env updated)
             WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
             p_log("Guardian Started")
-            
+
+            # 1.5. TITANIUM RULE: Recursive No Orphans (Linux Only)
+            # Ensure THIS child dies if Zygote (Parent) dies.
+            if sys.platform.startswith("linux"):
+                try:
+                    import ctypes
+                    # Try loading libc robustly
+                    try: libc = ctypes.CDLL("libc.so.6")
+                    except: libc = ctypes.CDLL(None)
+                    
+                    PR_SET_PDEATHSIG = 1
+                    SIGKILL = 9
+                    res = libc.prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)
+                    if res != 0:
+                        p_log(f"PDEATHSIG Failed (code {res})")
+                    else:
+                        p_log("PDEATHSIG Set")
+                except Exception as e:
+                    p_log(f"PDEATHSIG Exception: {e}")
+
             # 2. RFC-0011 6A.2: Full post-fork state reset
             # This MUST happen before anything else to ensure a clean slate.
             post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
