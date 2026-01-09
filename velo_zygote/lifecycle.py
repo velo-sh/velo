@@ -138,7 +138,7 @@ def hook_security(keep_fds: Optional[Set[int]] = None):
             np.random.seed()
         except: pass
 
-def hook_computing():
+def hook_computing(**kwargs):
     """OpenMP and CUDA reset."""
     if 'torch' in sys.modules:
         try:
@@ -147,7 +147,7 @@ def hook_computing():
                 torch.cuda.empty_cache()
         except: pass
 
-def hook_telemetry():
+def hook_telemetry(**kwargs):
     """Reset spans/trace context."""
     # Placeholder for OpenTelemetry re-init
     pass
