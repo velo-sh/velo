@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Velo
 
 > **Python is perfect for coding.  
@@ -6,7 +5,7 @@
 
 Velo is a **high-performance runtime for the AI era**.  
 It preserves the Python ecosystem you already use, while fundamentally rethinking how Python applications *start*, *scale*, and *consume memory* in production.
-=======
+
 <div align="center">
 
 <p style="color: grey; font-size: 1.2rem;">
@@ -26,7 +25,6 @@ It preserves the Python ecosystem you already use, while fundamentally rethinkin
 </p>
 
 </div>
->>>>>>> main
 
 Velo is not a framework.  ```bash
 git clone https://github.com/velo-sh/velo.git && cd velo
