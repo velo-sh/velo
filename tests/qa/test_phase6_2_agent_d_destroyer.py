@@ -20,15 +20,16 @@ def test_CHAOS_621_protocol_flood(isolated_env):
     # Clean up any stale socket
     if socket_path.exists():
         socket_path.unlink()
-    
+    # Create dummy app for Zygote to load
+    env.create_app("main.py", "app = lambda s, r, se: None")
+
     # Start Zygote via Rust CLI (CLI will exit after starting daemon)
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
     proc = subprocess.Popen(
         [env.velo, "zygote", "start"],
         env=cmd_env,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE
+        cwd=env.path
     )
     
     # Wait for socket to appear (Titanium robustness)
@@ -36,7 +37,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
     while not socket_path.exists() and time.time() < timeout:
         time.sleep(0.1)
     
-    assert socket_path.exists(), "Zygote failed to create socket within 5s"
+    assert socket_path.exists(), "Zygote failed to create socket within 30s"
     
     # Wait for Rust CLI to complete (it starts daemon and exits)
     proc.wait(timeout=30)
