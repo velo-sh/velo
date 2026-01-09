@@ -1,6 +1,9 @@
 import sys
 import os
-import toml
+try:
+    import tomllib
+except ImportError:
+    import toml as tomllib # Fallback if someone installs it, but 3.11 has tomllib
 import unittest
 import importlib.util
 from pathlib import Path
@@ -13,8 +16,8 @@ import velo_zygote.constants as py_constants
 class TestSSOTParity(unittest.TestCase):
     def setUp(self):
         self.toml_path = Path(__file__).parents[3] / "config" / "constants.toml"
-        with open(self.toml_path, "r") as f:
-            self.toml_data = toml.load(f)
+        with open(self.toml_path, "rb") as f:
+            self.toml_data = tomllib.load(f)
 
     def test_value_parity(self):
         """Verify python constants match TOML SSOT"""

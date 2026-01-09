@@ -20,6 +20,14 @@ class TestImportShieldHostile(unittest.TestCase):
         # Remove from meta_path if present
         sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
         
+    def tearDown(self):
+        # Reset shield so other tests aren't blocked
+        if hasattr(shield.ImportShield, "_active"):
+             shield.ImportShield._active = False
+        sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
+        # Restore os/subprocess if they were popped (optional but good)
+        importlib.invalidate_caches()
+
     def test_shield_logic_internals(self):
         """Verify shield blocks velo_zygote.* imports"""
         
@@ -46,8 +54,11 @@ class TestImportShieldHostile(unittest.TestCase):
         # 2. Dry Run Mode
         os.environ["VELO_SHIELD_MODE"] = "dry_run"
         spec = finder.find_spec("velo_zygote.constants", None)
-        self.assertIsNone(spec) # Should allow (return None means proceed to next finder)
-
+        self.assertIsNone(spec) # Should allow
+        
+        spec = finder.find_spec("os", None)
+        self.assertIsNone(spec) # Should allow
+        
     def test_shield_logic_os(self):
         """Verify if shield blocks 'os' as per QA Handoff Requirements"""
         
@@ -58,16 +69,15 @@ class TestImportShieldHostile(unittest.TestCase):
         finder = [x for x in sys.meta_path if isinstance(x, shield.ImportShield)][0]
         
         # Handoff says: Worker imports os -> Assertion: Import FAILS.
-        # My analysis says: It will succeed (return None).
         
-        try:
+        # We expect ImportError (Unauthorized access)
+        with self.assertRaises(ImportError) as cm:
             finder.find_spec("os", None)
-        except ImportError:
-            self.fail("ImportShield blocked 'os', which matches QA Requirements but contradicts my code analysis!")
         
-        # If we reach here, 'os' was allowed.
-        # This confirms the discrepancy. 
-        print("\n[HOSTILE] Analysis Confirmed: 'os' is NOT blocked by ImportShield.")
+        self.assertIn("Unauthorized access", str(cm.exception))
+        
+        # If we reach here, verification passed.
+        print("\n[HOSTILE] Analysis Confirmed: 'os' IS blocked by ImportShield.")
 
 if __name__ == "__main__":
     unittest.main()

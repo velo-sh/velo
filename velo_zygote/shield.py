@@ -58,6 +58,21 @@ class ImportShield:
             except: pass
             raise ImportError(msg)
         
+        # 1. Block Sensitive Standard Library Modules (Defect-01)
+        # Workers should not spawn subprocesses or access valid OS functions directly.
+        if fullname in ("os", "subprocess"):
+            msg = f"Unauthorized access to sensitive module: {fullname}"
+            
+            # Check mode (DRY RUN logic applied here too)
+            mode = os.environ.get("VELO_SHIELD_MODE", "enforce")
+            if mode == "dry_run":
+                 return None
+
+            if mode == "disabled":
+                 return None
+                 
+            raise ImportError(msg)
+        
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
         # If it returns None, Python falls back to standard finders (PathFinder).
