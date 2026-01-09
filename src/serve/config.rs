@@ -164,9 +164,8 @@ impl ServeArgs {
             .into());
         }
 
-        if self.port == 0 {
-            return Err(ServeError::InvalidPort { port: self.port }.into());
-        }
+        // Port 0 is valid - OS assigns an ephemeral port dynamically
+        // This is commonly used in tests to avoid port conflicts
 
         Ok(())
     }

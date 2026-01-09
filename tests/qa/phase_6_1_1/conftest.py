@@ -51,7 +51,19 @@ class VeloServeProcess:
         start = time.time()
         while time.time() - start < timeout:
             if not self.is_running():
-                raise RuntimeError("Server process died")
+                # Get exit code for diagnostics
+                exit_code = self.proc.returncode
+                # Give stderr a moment to flush (CI buffer delay)
+                time.sleep(0.2)
+                print(f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}")
+                print(f"    PID: {self.pid}, Port: {self.port}")
+                print(f"    Socket: {self.socket_path}")
+                print(f"    Elapsed: {time.time() - start:.2f}s")
+                # Force stderr flush for visibility
+                import sys
+                sys.stderr.flush()
+                sys.stdout.flush()
+                raise RuntimeError(f"Server process died (exit code: {exit_code})")
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
                 if r.status_code == 200:
@@ -222,8 +234,21 @@ class VeloServeFactory:
         # Explicitly set Zygote path to current workspace 
         root_dir = Path(__file__).parents[3]
         env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/main.py")
+
+        # RFC-0012: Resilience Whitelist for Framework Bootstrap
+        # We must explicitly trust /workspace so sys.path isn't scrubbed by the Rust binary's EnvironmentShield
+        # Using a comprehensive list to override defaults while keeping safety
+        trusted_paths = [
+            "/usr", "/bin", "/sbin", "/lib", "/lib64", 
+            "/etc/ssl/certs", 
+            "/opt/hostedtoolcache", "/home/runner", 
+            "${CWD}", 
+            "/workspace"
+        ]
+        env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
         
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+        env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
         proc = subprocess.Popen(
             cmd,
@@ -248,13 +273,26 @@ class VeloServeFactory:
 
 @pytest.fixture(scope="session")
 def velo_binary() -> str:
-    """Find the velo binary for this workspace (forcing debug to match edits)."""
+    """Find the velo binary for this workspace.
+    
+    CI downloads a release binary; local dev uses debug binary.
+    This fixture prefers existing binaries to avoid unnecessary builds.
+    """
     repo_root = Path(__file__).parents[3]
     
-    # Force rebuild debug binary
+    # 1. Check for CI-downloaded release binary (primary for CI environments)
+    release_bin = repo_root / "target" / "release" / "velo"
+    if release_bin.exists():
+        return str(release_bin.resolve())
+    
+    # 2. Check for existing debug binary (common for local dev)
+    debug_bin = repo_root / "target" / "debug" / "velo"
+    if debug_bin.exists():
+        return str(debug_bin.resolve())
+    
+    # 3. No binary exists - build debug binary for local development
     subprocess.run(["cargo", "build"], cwd=repo_root, check=True)
     
-    debug_bin = repo_root / "target" / "debug" / "velo"
     if debug_bin.exists():
         return str(debug_bin.resolve())
     

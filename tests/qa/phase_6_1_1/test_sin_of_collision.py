@@ -10,12 +10,20 @@ import arch_guard
 
 # Robust binary path resolution
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-VELO_BIN = os.path.join(PROJECT_ROOT, "target/debug/velo")
+
+# Priority 1: Check for Release Binary (CI/Prod)
+VELO_BIN = os.path.join(PROJECT_ROOT, "target/release/velo")
+if not os.path.exists(VELO_BIN):
+    # Priority 2: Check for Debug Binary (Local Dev)
+    VELO_BIN = os.path.join(PROJECT_ROOT, "target/debug/velo")
 
 # Ensure we aren't getting confused by symlinks or relative path madness
 if not os.path.exists(VELO_BIN):
     # Fallback for when running from root
-    VELO_BIN = os.path.abspath("target/debug/velo")
+     if os.path.exists("target/release/velo"):
+         VELO_BIN = os.path.abspath("target/release/velo")
+     else:
+         VELO_BIN = os.path.abspath("target/debug/velo")
 
 @pytest.fixture
 def workspace_a(tmp_path):
