@@ -3,7 +3,11 @@ Velo Utilities
 """
 import os
 import time
+import contextvars
+from typing import Optional
 
+# Global context for Correlation IDs (Phase 2)
+request_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_context", default=None)
 # Use EnvProfile as SSOT for environment detection
 try:
     from .env_profile import ENV_PROFILE
@@ -42,7 +46,9 @@ class LogUtils:
     @staticmethod
     def log(msg: str):
         import sys
-        sys.stderr.write(f"[Zygote] {msg}\n")
+        req_id = request_context.get()
+        prefix = f"[Req:{req_id}] " if req_id else ""
+        sys.stderr.write(f"[Zygote] {prefix}{msg}\n")
         sys.stderr.flush()
 
     @staticmethod

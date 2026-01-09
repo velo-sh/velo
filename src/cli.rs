@@ -19,6 +19,7 @@ USAGE:
     velo analyze [OPTIONS] [file.py]
     velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
+    velo debug <zygote> [OPTIONS]
     velo info
     velo graph <generate|verify> [OPTIONS]
 
@@ -28,6 +29,7 @@ COMMANDS:
     analyze  Analyze import times and suggest optimizations
     bundle   Bundle management (inspect, build)
     zygote   Manage Zygote pre-warming daemon
+    debug    Internal debugging tools (RFC-0020)
     info     Show environment information
 
 RUN OPTIONS:
@@ -102,6 +104,7 @@ pub fn run() -> Result<()> {
         "bundle" => cmd::cmd_bundle(&args),
         "info" => cmd::cmd_info(),
         "zygote" => cmd::cmd_zygote(&args),
+        "debug" => cmd::cmd_debug(&args),
         "graph" => cmd::cmd_graph(&args),
         cmd => {
             eprintln!("{}: unknown command '{}'", "error".red().bold(), cmd);

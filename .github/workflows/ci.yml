@@ -88,6 +88,7 @@ jobs:
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
+              - 'tests/qa/test_preflight.py'
             serve:
               - 'src/serve/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
@@ -154,6 +155,9 @@ jobs:
 
       - name: Run tests
         run: uv run run_tests.py
+
+      - name: "RFC-0020: Pre-Flight Check"
+        run: ./target/release/velo debug zygote --json
 
       - name: Check binary size
         run: |

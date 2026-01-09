@@ -7,11 +7,11 @@ T = TypeVar('T')
 
 class CommandRouter:
     """Layer 2: Control Plane - Decorator-based command dispatching."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.handlers: Dict[str, Callable] = {}
 
-    def handler(self, command_name: str):
-        def decorator(func):
+    def handler(self, command_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             self.handlers[command_name] = func
             return func
         return decorator

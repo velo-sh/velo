@@ -31,7 +31,7 @@ try:
     from velo_zygote.paths import VeloPaths
     from velo_zygote.settings import velo_config
     from velo_zygote.shield import PathValidator
-    from velo_zygote.utils import ForkRateLimiter, LogUtils
+    from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
     from velo_zygote.routing import CommandRouter
     from velo_zygote.fork import ForkHandler, InboundSharedMemory
@@ -42,21 +42,21 @@ except (ImportError, ValueError):
         from .paths import VeloPaths
         from .settings import velo_config
         from .shield import PathValidator
-        from .utils import ForkRateLimiter, LogUtils
+        from .utils import ForkRateLimiter, LogUtils, request_context
         from .lifecycle import WorkerRegistry, post_fork_reinit
         from .routing import CommandRouter
         from .fork import ForkHandler, InboundSharedMemory
         from .transport_sync import ZygoteTransport, ProtocolError
     except (ImportError, ValueError):
-        from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
-        from paths import VeloPaths
-        from settings import velo_config
-        from shield import PathValidator
-        from utils import ForkRateLimiter, LogUtils
-        from lifecycle import WorkerRegistry, post_fork_reinit
-        from routing import CommandRouter
-        from fork import ForkHandler, InboundSharedMemory
-        from transport_sync import ZygoteTransport, ProtocolError
+        from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef, import-not-found]
+        from paths import VeloPaths  # type: ignore[no-redef, import-not-found]
+        from settings import velo_config  # type: ignore[no-redef, import-not-found]
+        from shield import PathValidator  # type: ignore[no-redef, import-not-found]
+        from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
+        from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
+        from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
+        from fork import ForkHandler, InboundSharedMemory  # type: ignore[no-redef, import-not-found]
+        from transport_sync import ZygoteTransport, ProtocolError  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -73,7 +73,7 @@ router = CommandRouter()
 # ============================================================================
 
 @router.handler("Handshake")
-async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
+async def handle_handshake(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
     """Protocol Handshake and Capability alignment."""
     server_version = PROTOCOL_VERSION
     client_app = cmd.get("app_name")
@@ -117,7 +117,7 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
     }
 
 @router.handler("Fork")
-async def handle_fork(server: 'ZygoteServer', cmd: Dict) -> Dict:
+async def handle_fork(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
     # Shadow Preloading: Wait for preload to complete if still loading
     if server.state == ZygoteState.PRELOADING:
         try:
@@ -162,8 +162,8 @@ async def handle_fork(server: 'ZygoteServer', cmd: Dict) -> Dict:
             return {"type": "Error", "message": f"Fork wait failure: {e}"}
 
 @router.handler("WaitWorker")
-async def handle_wait_worker(server: 'ZygoteServer', cmd: Dict) -> Dict:
-    pid = cmd.get("worker_pid")
+async def handle_wait_worker(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
+    pid = int(cmd.get("worker_pid", 0))
     timeout = cmd.get("timeout_secs")
     if not server.worker_registry.is_alive(pid):
         return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0}
@@ -183,8 +183,8 @@ async def handle_wait_worker(server: 'ZygoteServer', cmd: Dict) -> Dict:
         return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0}
 
 @router.handler("SignalWorker")
-async def handle_signal(server: 'ZygoteServer', cmd: Dict) -> Dict:
-    pid, sig = cmd.get("worker_pid"), cmd.get("signal")
+async def handle_signal(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
+    pid, sig = int(cmd.get("worker_pid", 0)), int(cmd.get("signal", 0))
     try:
         os.kill(pid, sig)
         return {"type": "Ack"}
@@ -192,8 +192,8 @@ async def handle_signal(server: 'ZygoteServer', cmd: Dict) -> Dict:
         return {"type": "Error", "message": "Process not found"}
 
 @router.handler("WorkerStatus")
-async def handle_worker_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
-    pid = cmd.get("worker_pid")
+async def handle_worker_status(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
+    pid = int(cmd.get("worker_pid", 0))
     alive = server.worker_registry.is_alive(pid)
     return {"type": "WorkerInfo", "worker_pid": pid, "is_running": alive, "uptime_secs": 0}
 
@@ -205,7 +205,7 @@ async def handle_shutdown(server: 'ZygoteServer', cmd: Dict) -> Dict:
     return {"type": "Ack"}
 
 @router.handler("Status")
-async def handle_zy_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
+async def handle_zy_status(server: 'ZygoteServer', cmd: Dict[str, Any]) -> Dict[str, Any]:
     status = {
         "type": "Status",
         "pid": os.getpid(),
@@ -224,7 +224,7 @@ async def handle_zy_status(server: 'ZygoteServer', cmd: Dict) -> Dict:
 class ZygoteServer:
     """Layer 2: App Layer - Orchestrates the Zygote service."""
 
-    def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = None, worker_ttl: int = None, app_name: str = None, monitor_parent: bool = True):
+    def __init__(self, socket_path: str, preload: Optional[List[str]] = None, idle_timeout: Optional[int] = None, worker_ttl: Optional[int] = None, app_name: Optional[str] = None, monitor_parent: bool = True):
         self.config = velo_config
         
         # RFC-0011 D.1: Support abstract sockets (@ -> \0)
@@ -245,19 +245,19 @@ class ZygoteServer:
         
         self.state = ZygoteState.INIT
         self.preload_complete = asyncio.Event()  
-        self.fork_queue: asyncio.Queue = asyncio.Queue()  
+        self.fork_queue: asyncio.Queue[Tuple[Dict[str, Any], asyncio.Future[Any]]] = asyncio.Queue()  
         
-        self.pending_forks: Dict[int, asyncio.Future] = {}
+        self.pending_forks: Dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
 
-    def _set_state(self, new_state: ZygoteState):
+    def _set_state(self, new_state: ZygoteState) -> None:
         """Standardized state transition with audit trail."""
         old_state = self.state
         if old_state != new_state:
             self.state = new_state
             LogUtils.debug_log(f"State Transition: {old_state.name} -> {new_state.name}")
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the Zygote server using asyncio."""
         LogUtils.log(f"Zygote initializing (PID: {os.getpid()})")
         
@@ -344,8 +344,13 @@ class ZygoteServer:
                 if not msg:
                     break
                 
-                response = await router.dispatch(self, msg)
-                await asyncio.get_event_loop().run_in_executor(None, transport.send, response)
+                req_id = msg.get("request_id")
+                token = request_context.set(req_id)
+                try:
+                    response = await router.dispatch(self, msg)
+                    await asyncio.get_event_loop().run_in_executor(None, transport.send, response)
+                finally:
+                    request_context.reset(token)
                 
                 if response.get("type") == "Ack" and msg.get("type") == "Shutdown":
                     break
@@ -359,7 +364,7 @@ class ZygoteServer:
         finally:
             transport.close()
 
-    async def _async_preload(self):
+    async def _async_preload(self) -> None:
         """Handle preloading modules in the background."""
         self._set_state(ZygoteState.PRELOADING)
         loop = asyncio.get_event_loop()
@@ -376,7 +381,7 @@ class ZygoteServer:
         # Process fork queue
         await self._process_fork_queue()
 
-    def _preload_modules(self):
+    def _preload_modules(self) -> None:
         import importlib
         for module_name in self.preload:
             try:
@@ -385,13 +390,13 @@ class ZygoteServer:
             except Exception as e:
                 LogUtils.log(f"Preload failed for {module_name}: {e}")
 
-    async def _process_fork_queue(self):
+    async def _process_fork_queue(self) -> None:
         while not self.fork_queue.empty():
             cmd, future = await self.fork_queue.get()
             result = await handle_fork(self, cmd)
             future.set_result(result)
 
-    def _setup_signals(self):
+    def _setup_signals(self) -> None:
         def handle_chld(sig, frame):
             # We can't do much in a signal handler, so we just trigger the async reaper
             pass
@@ -402,7 +407,7 @@ class ZygoteServer:
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         asyncio.create_task(self._async_reap())
 
-    async def _async_reap(self):
+    async def _async_reap(self) -> None:
         """Async-safe zombie reaping."""
         while True:
             await asyncio.sleep(0.01)
@@ -428,7 +433,7 @@ class ZygoteServer:
             except Exception as e:
                 LogUtils.log(f"Reaper error: {e}")
 
-    async def _resource_guard(self):
+    async def _resource_guard(self) -> None:
         """Monitor memory usage and guard resources."""
         while True:
             await asyncio.sleep(60.0)
@@ -439,7 +444,7 @@ class ZygoteServer:
 # Entry Point
 # ============================================================================
 
-def zygote_main():
+def zygote_main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Velo Zygote Process")
     parser.add_argument("--socket", required=True)

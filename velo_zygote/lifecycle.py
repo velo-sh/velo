@@ -29,7 +29,7 @@ class StateTransitionError(Exception):
 try:
     from .utils import LogUtils
 except (ImportError, ValueError):
-    from utils import LogUtils
+    from utils import LogUtils  # type: ignore[no-redef, import-not-found]
 
 class WorkerRegistry:
     """Layer 3: State Management - Tracks worker lifecycle."""
@@ -37,10 +37,10 @@ class WorkerRegistry:
         self.workers: Dict[int, Tuple[float, Any]] = {} # pid -> (start_time, metadata)
         self.worker_ttl = worker_ttl
 
-    def add(self, pid: int, metadata: Any = None):
+    def add(self, pid: int, metadata: Any = None) -> None:
         self.workers[pid] = (time.time(), metadata)
 
-    def remove(self, pid: int):
+    def remove(self, pid: int) -> None:
         self.workers.pop(pid, None)
 
     def is_alive(self, pid: int) -> bool:
@@ -60,7 +60,7 @@ class WorkerRegistry:
         }
 
     @staticmethod
-    def start_guardian(parent_pid: int, ttl: int, monitor_parent: bool = True):
+    def start_guardian(parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
         def guardian():
             while True:
@@ -78,7 +78,7 @@ class WorkerRegistry:
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
 
-    def kill_all(self):
+    def kill_all(self) -> None:
         """Emergency cleanup of all workers."""
         for pid in list(self.workers.keys()):
             try:
@@ -86,7 +86,7 @@ class WorkerRegistry:
             except: pass
         self.workers.clear()
 
-    def reap_stale(self):
+    def reap_stale(self) -> None:
         """Cleanup logic for timed-out or missing workers."""
         now = time.time()
         for pid, (start_time, _) in list(self.workers.items()):
@@ -100,13 +100,13 @@ class WorkerRegistry:
 
 class ReinitHooks:
     """Layer 3: Hook-based Re-initialization system."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.hooks = []
 
-    def register(self, hook_func):
+    def register(self, hook_func: Any) -> None:
         self.hooks.append(hook_func)
 
-    def run_all(self, *args, **kwargs):
+    def run_all(self, *args: Any, **kwargs: Any) -> None:
         for hook in self.hooks:
             try:
                 hook(*args, **kwargs)
@@ -116,13 +116,13 @@ class ReinitHooks:
 # Global hooks registry
 reinit_hooks = ReinitHooks()
 
-def hook_security(keep_fds: Optional[Set[int]] = None):
+def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
     """Industrial Grade Cord-Cutting."""
     # 1. Close all non-standard file descriptors
     try:
         from .constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
     except (ImportError, ValueError):
-        from constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
+        from constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR  # type: ignore[no-redef, import-not-found]
     
     fd_dir = PATH_MACOS_FD_DIR if sys.platform == 'darwin' else PATH_LINUX_FD_DIR
     try:
@@ -156,7 +156,7 @@ def hook_security(keep_fds: Optional[Set[int]] = None):
             np.random.seed()
         except: pass
 
-def hook_computing(**kwargs):
+def hook_computing(**kwargs: Any) -> None:
     """OpenMP and CUDA reset."""
     if 'torch' in sys.modules:
         try:
@@ -165,7 +165,7 @@ def hook_computing(**kwargs):
                 torch.cuda.empty_cache()
         except: pass
 
-def hook_telemetry(**kwargs):
+def hook_telemetry(**kwargs: Any) -> None:
     """Reset spans/trace context."""
     # Placeholder for OpenTelemetry re-init
     pass
@@ -174,6 +174,6 @@ reinit_hooks.register(hook_security)
 reinit_hooks.register(hook_computing)
 reinit_hooks.register(hook_telemetry)
 
-def post_fork_reinit(keep_fds: Optional[Set[int]] = None):
+def post_fork_reinit(keep_fds: Optional[Set[int]] = None) -> None:
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
     reinit_hooks.run_all(keep_fds=keep_fds)

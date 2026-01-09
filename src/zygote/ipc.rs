@@ -61,25 +61,44 @@ pub enum ZygoteCommand {
         /// Size of the shared memory segment (if shm_fd is passed)
         #[serde(default)]
         shm_size: Option<usize>,
+        /// Correlation ID for tracing
+        #[serde(default)]
+        request_id: Option<String>,
     },
     /// Shutdown the Zygote process
     Shutdown,
     /// Query Zygote status
-    Status,
+    Status {
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Wait for a worker to exit
     WaitWorker {
         worker_pid: u32,
         #[serde(default)]
         timeout_secs: Option<u64>,
+        #[serde(default)]
+        request_id: Option<String>,
     },
     /// Send signal to a worker
-    SignalWorker { worker_pid: u32, signal: i32 },
+    SignalWorker {
+        worker_pid: u32,
+        signal: i32,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Query worker status
-    WorkerStatus { worker_pid: u32 },
+    WorkerStatus {
+        worker_pid: u32,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
     /// Capability handshake
     Handshake {
         version: u8,
         capabilities: Vec<String>,
+        #[serde(default)]
+        request_id: Option<String>,
     },
 }
 
@@ -541,6 +560,7 @@ mod tests {
             max_bundle_size: None,
             env: Box::new(std::collections::HashMap::new()),
             shm_size: None,
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
         let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
@@ -574,6 +594,7 @@ mod tests {
             max_bundle_size: Some(1024 * 1024),
             env: Box::new(std::collections::HashMap::new()),
             shm_size: Some(4096),
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
         let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");
