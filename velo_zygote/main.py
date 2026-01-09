@@ -61,14 +61,14 @@ MEMORY_MANAGER = getattr(_memory, "MEMORY_MANAGER", None) if _memory else None
 SOCKET_PATH_LIMIT = 104
 
 try:
-    from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE, PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
     from .paths import VeloPaths
     from .settings import VeloConfig, velo_config
     # We define ZygoteTransport locally to support FD passing (HEAD/Phase 7 requirement)
     # from .protocol import ZygoteTransport, ProtocolError 
 except (ImportError, ValueError):
     # Fallback when running main.py directly as a script
-    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE, PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
     from paths import VeloPaths
     from settings import VeloConfig, velo_config
 
