@@ -1,6 +1,20 @@
 import os
 import sys
 
+def _normalize_environment():
+    """
+    Ensure critical environment variables are set and normalized.
+    RFC-0012: SSOT for environment configuration.
+    """
+    if "VELO_ENV" not in os.environ:
+        # 🟢 Fallback to 'dev' with explicit logging for auditability
+        os.environ["VELO_ENV"] = "dev"
+        sys.stderr.write("[BOOTSTRAP-INFO] VELO_ENV missing, normalized to 'dev' for discovery/tests.\n")
+        sys.stderr.flush()
+    else:
+        # Standardize to lowercase
+        os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
+
 def initialize():
     """
     Standardize the Velo Python environment.
@@ -9,7 +23,10 @@ def initialize():
     Rule 1: Explicit Bootstrap
     Rule 3: Boot-Validation
     """
-    # 1. Normalize sys.path
+    # 1. Environment Normalization (Phase 11.1)
+    _normalize_environment()
+
+    # 2. Normalize sys.path
     # SCRIPT_DIR is the directory of this file (velo_zygote/)
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     # PKG_ROOT is the directory containing velo_zygote/
@@ -20,17 +37,15 @@ def initialize():
         sys.path.insert(0, _pkg_root)
     
     # Ensure CWD is at the front (Standard parity with CPython)
-    # This prevents 'ImportError: No module named ...' when running from project root
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
 
-    # 2. Pre-flight Integrity Check (Fail-Fast)
+    # 3. Pre-flight Integrity Check (Fail-Fast)
     try:
         from velo_zygote import integrity
         integrity.validate_runtime()
     except Exception as e:
         # Rule 2: Fail-Loud Principle
-        # Emergency stderr logging before complex infrastructure is loaded
         sys.stderr.write(f"\n\033[91m🚨 VELO BOOTSTRAP FAILURE: {e}\033[0m\n")
         sys.stderr.flush()
         if isinstance(e, ImportError):

@@ -409,9 +409,7 @@ def zygote_main():
     args = parser.parse_args()
     
     # Pillar 1: Env Isolation Check (Council Rule)
-    # RFC-0012: We fallback to 'dev' if not set to avoid breaking test harnesses.
-    if not os.environ.get("VELO_ENV"):
-         os.environ["VELO_ENV"] = "dev"
+    # RFC-0012: Environment is already normalized/checked in bootstrap.initialize()
          
     server = ZygoteServer(
         socket_path=args.socket,
