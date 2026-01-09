@@ -1,6 +1,6 @@
 """Velo Zygote - Process pre-warming for fast Python startup."""
 
-from .main import zygote_main
+# Removed circular import of .main
 
 __version__ = "0.1.0"
 __all__ = ["zygote_main"]

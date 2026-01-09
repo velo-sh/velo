@@ -42,12 +42,12 @@ impl Worker {
         app: &str,
         worker_id: u64,
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
+        config: &crate::config::VeloConfig,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
-        let config = crate::config::VeloConfig::default();
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
-        let launcher_path = crate::zygote::find_worker_launcher()
+        let launcher_path = crate::zygote::find_worker_launcher(config)
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
 
         // 1. Determine a unique UDS path (Industrial Grade - Standardized)
@@ -84,7 +84,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
-                env: build_worker_env(&config),
+                env: build_worker_env(config),
                 shm_size,
             },
             fd_to_pass,
@@ -110,11 +110,11 @@ impl Worker {
         app: &str,
         host: &str,
         port: u16,
+        config: &crate::config::VeloConfig,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
-        let config = crate::config::VeloConfig::default();
 
-        let launcher_path = crate::zygote::find_worker_launcher()
+        let launcher_path = crate::zygote::find_worker_launcher(config)
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
 
         let args = vec![
@@ -139,7 +139,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
-                env: build_worker_env(&config),
+                env: build_worker_env(config),
                 shm_size: None,
             },
             None,

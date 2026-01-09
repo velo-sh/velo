@@ -1,8 +1,22 @@
-# Velo 🚀
+<div align="center">
 
-**Python is perfect for coding. Velo is perfect for running.**
+<p style="color: grey; font-size: 1.2rem;">
+  Life is short. Use Python.
+</p>
 
-The high-performance Python runtime for the AI era, built with Rust.
+<h1 style="font-size: 4rem; font-weight: 800;">
+  Python, Unchained.
+</h1>
+
+<p align="center">
+  <img src="assets/velo_logo.jpg" alt="Velo Logo" width="200" />
+</p>
+
+<p style="font-size: 1.5rem;">
+  The Instant Runtime that Python deserves.
+</p>
+
+</div>
 
 > 🚧 **Heavy Work In Progress.** Not ready for production. Expect breaking changes.
 

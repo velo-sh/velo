@@ -44,6 +44,25 @@ pub fn run_script(
         // Build final PYTHONPATH
         cmd.env("PYTHONPATH", &final_pythonpath);
 
+        // Phase 8.0: Bridge of Truth (Configuration Injection)
+        cmd.env(
+            "VELO_GRACEFUL_SHUTDOWN_TIMEOUT",
+            config.graceful_shutdown_timeout.to_string(),
+        );
+        cmd.env(
+            "VELO_SOCKET_STARTUP_TIMEOUT",
+            config.zygote_socket_timeout.to_string(),
+        );
+        cmd.env("VELO_MAX_BUNDLE_SIZE", config.max_bundle_size.to_string());
+        cmd.env(
+            "VELO_SLOW_THRESHOLD_MS",
+            config.slow_threshold_ms.to_string(),
+        );
+        cmd.env(
+            "VELO_SECURITY_HPC_THREADS",
+            config.security_hpc_threads.to_string(),
+        );
+
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
 
@@ -121,6 +140,25 @@ pub fn run_script_with_profile(
         // Build final PYTHONPATH and profile output
         cmd.env("PYTHONPATH", &final_pythonpath)
             .env("VELO_PROFILE_OUTPUT", &profile_output);
+
+        // Phase 8.0: Bridge of Truth (Configuration Injection)
+        cmd.env(
+            "VELO_GRACEFUL_SHUTDOWN_TIMEOUT",
+            config.graceful_shutdown_timeout.to_string(),
+        );
+        cmd.env(
+            "VELO_SOCKET_STARTUP_TIMEOUT",
+            config.zygote_socket_timeout.to_string(),
+        );
+        cmd.env("VELO_MAX_BUNDLE_SIZE", config.max_bundle_size.to_string());
+        cmd.env(
+            "VELO_SLOW_THRESHOLD_MS",
+            config.slow_threshold_ms.to_string(),
+        );
+        cmd.env(
+            "VELO_SECURITY_HPC_THREADS",
+            config.security_hpc_threads.to_string(),
+        );
 
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);

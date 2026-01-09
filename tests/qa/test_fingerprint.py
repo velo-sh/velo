@@ -24,6 +24,8 @@ from test_harness import (
     assert_no_crash,
 )
 
+# RFC-0017: Tier 0 - Unit tests, no binary deps
+pytestmark = pytest.mark.tier0
 
 class TestFingerprintATTACKS:
     """FP-001 to FP-004: Malicious uv.lock tests."""

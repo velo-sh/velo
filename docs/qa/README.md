@@ -11,6 +11,7 @@
 |:---|:---|
 | **Start QA work on a new Phase** | [STANDARDS/QA-SOP.md](./STANDARDS/QA-SOP.md) |
 | **Understand testing methodology** | [STANDARDS/TIERED-TESTING-GUIDE.md](./STANDARDS/TIERED-TESTING-GUIDE.md) |
+| **Use pytest markers for test discovery** | [RFC-0017](../rfcs/0017-test-tier-discovery.md) |
 | **Explore all knowledge assets** | [STANDARDS/KNOWLEDGE-TREASURY.md](./STANDARDS/KNOWLEDGE-TREASURY.md) |
 | **Use a checklist template** | [TEMPLATES/CHECKLIST-TEMPLATE.md](./TEMPLATES/CHECKLIST-TEMPLATE.md) |
 | **Review feature requirements** | [REQUIREMENTS/](./REQUIREMENTS/) |

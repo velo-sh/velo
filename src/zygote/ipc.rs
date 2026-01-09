@@ -13,7 +13,6 @@
 //! - Zygote → Launcher:   Ready, Ack, Status, Forked, Error
 
 use super::error::{Result, ZygoteError};
-use blake3;
 use nix::sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg};
 use serde::{Deserialize, Serialize};
 use std::io::{IoSlice, IoSliceMut};
@@ -137,56 +136,7 @@ pub fn default_socket_path() -> PathBuf {
 ///
 /// Delegates to `common::paths` (RFC-0012).
 pub fn get_socket_dir() -> PathBuf {
-    /// Red Line #1: Path length limit with 4-byte margin
-    const SOCKET_PATH_LIMIT: usize = 104;
-    // SECURITY: getuid() is a standard read-only syscall used for multi-tenant path isolation.
-    let uid = unsafe { libc::getuid() };
-
-    // RFC §3.3: Use project-specific randomized identity for isolation
-    let project_hash = if let Ok(cwd) = std::env::current_dir() {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(cwd.to_string_lossy().as_bytes());
-        let hash = hasher.finalize().to_hex()[..8].to_string();
-        format!("-{}", hash)
-    } else {
-        "".to_string()
-    };
-
-    // 1. Try XDG_RUNTIME_DIR (preferred on Linux, usually /run/user/{uid})
-    if let Ok(xdg_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        let dir = PathBuf::from(xdg_dir).join("velo");
-        let test_path = dir.join("velo-zygote-v01.sock");
-        if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&dir) {
-            return dir;
-        }
-    }
-
-    // 2. Try user-isolated temp directory (with RFC §3.3 Randomized Identity)
-    let dir_name = format!("velo-secure-{}{}", uid, project_hash);
-    let user_dir = std::env::temp_dir().join(&dir_name);
-    let test_path = user_dir.join("velo-zygote-v01.sock");
-
-    // Red Line #1: Check path length BEFORE ensuring directory
-    if test_path.to_string_lossy().len() <= SOCKET_PATH_LIMIT && ensure_socket_dir(&user_dir) {
-        return user_dir;
-    }
-
-    // 3. Fallback to /tmp (for macOS with long $TMPDIR paths)
-    // Red Line #1: /tmp fallback when path too long
-    if test_path.to_string_lossy().len() > SOCKET_PATH_LIMIT {
-        eprintln!(
-            "⚠️ $TMPDIR path too long (>{} chars), falling back to /tmp",
-            SOCKET_PATH_LIMIT
-        );
-    }
-    let fallback_dir = PathBuf::from("/tmp").join(&dir_name);
-    let _ = ensure_socket_dir(&fallback_dir);
-    fallback_dir
-}
-
-/// Ensure socket directory exists with proper permissions (0700)
-fn ensure_socket_dir(dir: &Path) -> bool {
-    crate::common::paths::ensure_socket_dir(dir)
+    crate::common::paths::VeloPaths::socket_dir()
 }
 
 /// Check if a socket is alive (responds to connection attempt)
