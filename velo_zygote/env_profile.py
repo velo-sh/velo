@@ -141,18 +141,25 @@ class EnvProfile:
             os_type = OsType.UNKNOWN
         
         # 2. Run Context Detection (Priority Order)
+        # CRITICAL: VELO_ENV takes precedence over all implicit detection.
+        # This ensures CI tests that set VELO_ENV work correctly.
         velo_env = os.environ.get("VELO_ENV", "").lower()
         ci_flag = os.environ.get("CI", "")
         gh_actions = os.environ.get("GITHUB_ACTIONS", "")
-        pytest_running = "pytest" in sys.modules
         
-        if pytest_running and velo_env != "ci":
-            # Running inside pytest but not explicitly CI mode
-            run_context = RunContext.TEST
-        elif ci_flag == "true" or gh_actions == "true" or velo_env == "ci":
+        # Priority 1: Explicit VELO_ENV (SSOT from Rust or bootstrap)
+        if velo_env == "ci":
             run_context = RunContext.CI
         elif velo_env == "production" or velo_env == "prod":
             run_context = RunContext.PRODUCTION
+        elif velo_env == "dev":
+            run_context = RunContext.DEV
+        # Priority 2: Implicit CI detection (GitHub Actions, etc.)
+        elif ci_flag == "true" or gh_actions == "true":
+            run_context = RunContext.CI
+        # Priority 3: Pytest detection (only if no explicit VELO_ENV)
+        elif "pytest" in sys.modules and not velo_env:
+            run_context = RunContext.TEST
         else:
             run_context = RunContext.DEV
         
