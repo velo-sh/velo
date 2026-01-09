@@ -21,8 +21,8 @@ source "$SCRIPT_DIR/ci-common.sh"
 # =============================================================================
 # Configuration
 # =============================================================================
-IMAGE_NAME="velo-ci-ubuntu"
-DOCKERFILE="Dockerfile.ci"
+IMAGE_NAME="velo-ci-optimized"
+DOCKERFILE="Dockerfile.test"
 
 # =============================================================================
 # Usage

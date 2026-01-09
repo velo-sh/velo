@@ -819,6 +819,7 @@ class ForkHandler:
                 LogUtils.log(f"🔄 Child {os.getpid()} starting re-init...")
                 # dlog("LogUtils Success")
             except Exception as e:
+                pass
                 # dlog(f"LogUtils Failed: {e}")
 
             # 3. Install ImportShield (Import Isolation)
