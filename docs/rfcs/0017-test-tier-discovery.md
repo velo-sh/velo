@@ -90,7 +90,46 @@ pytest -m "not linux_only and not macos_only" tests/qa/
 pytest -m "not slow" tests/qa/
 ```
 
-### 3.3 Test File Conventions
+### 3.3 CI Job Mapping (GitHub Actions)
+
+Each tier SHALL be executed as a separate CI job for parallelism and fast feedback:
+
+```yaml
+# .github/workflows/ci.yml
+jobs:
+  qa-tier0-unit:
+    name: "QA: Tier 0 (Unit)"
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest -m "tier0" tests/qa/
+
+  qa-tier1-integration:
+    name: "QA: Tier 1 (Integration)"
+    needs: [build-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest -m "tier1" tests/qa/
+
+  qa-tier2-e2e:
+    name: "QA: Tier 2 (E2E)"
+    needs: [build-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest -m "tier2" tests/qa/
+
+  qa-tier3-hardened:
+    name: "QA: Tier 3 (Hardened)"
+    needs: [build-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - run: pytest -m "tier3" tests/qa/
+```
+
+**Matrix Strategy**: Platform-specific tests use `runs-on` matrix:
+- `linux_only` → `ubuntu-latest`
+- `macos_only` → `macos-latest`
+
+### 3.4 Test File Conventions
 
 Every test file MUST declare at least one tier marker at the class or module level:
 
@@ -109,13 +148,13 @@ def test_simple_unit():
     ...
 ```
 
-### 3.4 Enforcement
+### 3.5 Enforcement
 
 A pre-commit hook or CI check SHALL verify:
 1. Every test file in `tests/qa/` has at least one tier marker.
 2. No test file is "orphaned" (exists but never collected).
 
-### 3.5 Multi-Marker Conflict Resolution (P1-Council)
+### 3.6 Multi-Marker Conflict Resolution (P1-Council)
 
 **Rule**: A test function/class SHALL have exactly ONE tier marker. Multiple tier markers are forbidden.
 
@@ -127,7 +166,7 @@ A pre-commit hook or CI check SHALL verify:
 
 **Rationale**: Tier markers represent mutually exclusive categories. A test cannot be both a "unit test" and an "E2E test" simultaneously.
 
-### 3.6 Orphan Test Detection (P1-Council)
+### 3.7 Orphan Test Detection (P1-Council)
 
 CI SHALL run the following check to detect orphaned tests:
 
@@ -199,7 +238,8 @@ The following documents SHALL be updated once this RFC is approved:
 | Date | Decision | Rationale |
 |---|---|---|
 | 2026-01-09 | DRAFT v1 | Initial proposal for review |
-| 2026-01-09 | DRAFT v2 | Addressed P1 observations from Grand Council: multi-marker conflict rules (3.5), orphan detection (3.6), TL;DR added |
+| 2026-01-09 | DRAFT v2 | Addressed P1 observations from Grand Council: multi-marker conflict rules (3.6), orphan detection (3.7), TL;DR added |
+| 2026-01-09 | DRAFT v3 | **[P1-ARCH]** Added CI Job Mapping (§3.3) per Architect review |
 
 ---
 
