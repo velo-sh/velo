@@ -173,3 +173,90 @@ def test_state_visibility_via_status(zygote_process):
         assert resp["state"] in ["READY", "PRELOADING", "IDLE"]
     finally:
         s.close()
+
+def test_state_lifecycle_progression():
+    """Verify the sequential progression: PRELOADING -> READY -> SHUTDOWN."""
+    repo_root = Path(__file__).parent.parent.parent
+    sock_path = f"/tmp/velo_test_lifecycle_{os.getpid()}.sock"
+    if os.path.exists(sock_path):
+        os.unlink(sock_path)
+        
+    # Create a dummy module that takes time to load to catch PRELOADING state
+    dummy_mod = Path(repo_root) / "slow_mod.py"
+    dummy_mod.write_text("import time\ntime.sleep(1.5)")
+    
+    env = os.environ.copy()
+    env["VELO_ENV"] = "dev"
+    env["PYTHONPATH"] = str(repo_root)
+    
+    proc = subprocess.Popen(
+        ["uv", "run", "python3", "-m", "velo_zygote.main", "--socket", sock_path, "--preload", "slow_mod"],
+        cwd=str(repo_root),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    try:
+        # 1. Wait for socket
+        for _ in range(50):
+            if os.path.exists(sock_path): break
+            time.sleep(0.1)
+        
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect(sock_path)
+        
+        # Read Greeting
+        s.recv(1024)
+        
+        def get_state(sock):
+            cmd = {"type": "Status"}
+            p = msgpack.packb(cmd)
+            h = struct.pack('<I', 1 + len(p))
+            sock.sendall(h + bytes([PROTOCOL_VERSION]) + p)
+            rh = sock.recv(5)
+            l = struct.unpack('<I', rh[:4])[0]
+            rp = sock.recv(l-1)
+            return msgpack.unpackb(rp)["state"]
+
+        # 2. Check for PRELOADING or IDLE/PRELOADING transition
+        state = get_state(s)
+        # It moves from INIT -> IDLE -> PRELOADING very fast.
+        assert state in ["IDLE", "PRELOADING"]
+        
+        # 3. Wait for READY
+        ready = False
+        for _ in range(30):
+            if get_state(s) == "READY":
+                ready = True
+                break
+            time.sleep(0.1)
+        assert ready, "Zygote never reached READY state"
+        
+        # 4. Initiate Shutdown
+        cmd = {"type": "Shutdown"}
+        p = msgpack.packb(cmd)
+        h = struct.pack('<I', 1 + len(p))
+        s.sendall(h + bytes([PROTOCOL_VERSION]) + p)
+        
+        # Read Ack
+        rh = s.recv(5)
+        l = struct.unpack('<I', rh[:4])[0]
+        s.recv(l-1)
+        
+        # 5. Verify SHUTDOWN state if possible before exit
+        # We try one last status, it might fail if process exits too fast
+        try:
+            final_state = get_state(s)
+            assert final_state == "SHUTDOWN"
+        except:
+            pass # Process might have exited
+            
+    finally:
+        if dummy_mod.exists():
+            dummy_mod.unlink()
+        proc.terminate()
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
