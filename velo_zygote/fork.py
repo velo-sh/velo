@@ -11,8 +11,8 @@ try:
     from .lifecycle import post_fork_reinit, WorkerRegistry
     from .utils import LogUtils
 except (ImportError, ValueError):
-    from lifecycle import post_fork_reinit, WorkerRegistry
-    from utils import LogUtils
+    from lifecycle import post_fork_reinit, WorkerRegistry  # type: ignore[no-redef, import-not-found]
+    from utils import LogUtils  # type: ignore[no-redef, import-not-found]
 
 class InboundSharedMemory:
     """Encapsulates validation and handling of inbound shared memory FDs."""
@@ -47,7 +47,7 @@ class InboundSharedMemory:
         fd = cmd.get('shm_fd')
         size = cmd.get('shm_size')
         if fd is not None:
-            return cls(fd, size)
+            return cls(int(fd), int(size) if size else 0)
         return None
 
 class ForkHandler:
@@ -90,7 +90,7 @@ class ForkHandler:
                     ImportShield.activate()
                 except (ImportError, ValueError):
                     try:
-                        from shield import ImportShield
+                        from shield import ImportShield  # type: ignore[no-redef, import-not-found]
                         ImportShield.activate()
                     except: pass
                 
@@ -248,13 +248,13 @@ class ForkHandler:
                 print(f"Forensic IO Warning: Failed to redirect stderr to '{stderr_path}': {e}", file=sys.stderr)
 
     @staticmethod
-    def _activate_fast_mode(bundle_path: str, project_root: Optional[str], max_size: Optional[int]):
+    def _activate_fast_mode(bundle_path: Optional[str], project_root: Optional[str], max_size: Optional[int]) -> None:
         """Specialized loading for pre-compiled or bundled apps."""
         # Implementation details...
         pass
 
     @staticmethod
-    def _cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code):
+    def _cleanup_child(stdout_path: Optional[str], stderr_path: Optional[str], exit_code_path: Optional[str], exit_code: int) -> None:
         if exit_code_path:
             try:
                 with open(exit_code_path, "w") as f:

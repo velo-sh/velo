@@ -168,7 +168,7 @@ Every IPC command will include a `request_id` in the header:
 # velo_zygote/ipc.py
 @dataclass
 class ZygoteCommand:
-    request_id: str  # UUID v4
+    request_id: str  # UUID v7 (Time-ordered)
     command_type: str
     payload: dict
 ```

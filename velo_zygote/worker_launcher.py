@@ -6,6 +6,7 @@ import traceback
 # --- Velo Bootstrap ---
 import os
 import sys
+from typing import Any, Dict
 _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
@@ -24,10 +25,10 @@ class UDSProxyMiddleware:
     This middleware simulates a localhost client if forwarding headers are present,
     thereby allowing downstream middlewares to correctly identify the real client.
     """
-    def __init__(self, app):
+    def __init__(self, app: Any):
         self.app = app
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] in ("http", "websocket") and scope.get("client") is None:
             # Check for common proxy headers in scope headers (list of tuples)
             headers = scope.get("headers", [])
@@ -39,7 +40,7 @@ class UDSProxyMiddleware:
                 scope["client"] = ("127.0.0.1", 0)
         await self.app(scope, receive, send)
 
-def main():
+def main() -> None:
     try:
         # 1. Signal Hygiene
         signal.signal(signal.SIGINT, signal.SIG_DFL)

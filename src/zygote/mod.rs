@@ -77,7 +77,13 @@ pub fn get_status() -> Result<ZygoteResponse> {
         ));
     }
 
-    send_command(&socket_path, ZygoteCommand::Status, None)
+    send_command(
+        &socket_path,
+        ZygoteCommand::Status {
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
+        },
+        None,
+    )
 }
 
 /// Find the velo_zygote Python module path
@@ -677,6 +683,7 @@ impl ZygoteLauncher {
         let handshake_cmd = ipc::ZygoteCommand::Handshake {
             version: ipc::PROTOCOL_VERSION,
             capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
         let response = zygote_stream.send_command(&handshake_cmd, None)?;
 
@@ -696,7 +703,9 @@ impl ZygoteLauncher {
 
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
-        let status_cmd = ipc::ZygoteCommand::Status;
+        let status_cmd = ipc::ZygoteCommand::Status {
+            request_id: Some(uuid::Uuid::now_v7().to_string()),
+        };
         let response = zygote_stream.send_command(&status_cmd, None)?;
 
         if let ipc::ZygoteResponse::Status { pid, .. } = response {
@@ -853,6 +862,7 @@ impl ZygoteLauncher {
                         .collect(),
                 ),
                 shm_size,
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
             },
             fd_to_pass,
         )?;

@@ -664,7 +664,8 @@ pub fn run_server(
                 &socket_path,
                 crate::zygote::ipc::ZygoteCommand::Handshake {
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
-                    capabilities: vec![],
+                    capabilities: vec!["serve:http".to_string()],
+                    request_id: Some(uuid::Uuid::now_v7().to_string()),
                 },
                 None,
             ) {
@@ -1006,7 +1007,9 @@ pub fn run_server(
                         // P2: Zygote deep probe - verify Zygote is still responding
                         if let Err(e) = crate::zygote::ipc::send_command(
                             &socket_path,
-                            crate::zygote::ipc::ZygoteCommand::Status,
+                            crate::zygote::ipc::ZygoteCommand::Status {
+                                request_id: Some(uuid::Uuid::now_v7().to_string()),
+                            },
                             None,
                         ) {
                             logger.warn(&format!("Zygote health check failed: {}", e));
