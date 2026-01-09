@@ -19,14 +19,16 @@ Architecture:
 import os
 import sys
 
-# --- Velo Bootstrap Start ---
+# --- Velo Bootstrap ---
+import os
+import sys
 _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
 
 from velo_zygote import bootstrap
 bootstrap.initialize()
-# --- Velo Bootstrap End ---
+# --------------------
 
 import asyncio
 import signal
@@ -64,8 +66,7 @@ MEMORY_MANAGER = getattr(_memory, "MEMORY_MANAGER", None) if _memory else None
 # Socket Path Functions (DEF-61-004: Protocol Socket Isolation)
 # ============================================================================
 
-# Red Line #1: Path length limit with 4-byte margin from 108 Unix limit
-SOCKET_PATH_LIMIT = 104
+# Protocol Constants are imported from .constants (SSOT)
 
 try:
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE, PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
@@ -463,7 +464,6 @@ def hook_security(keep_fds: Optional[Set[int]] = None):
         if keep_fds:
             default_keep.update(keep_fds)
         
-        # Determine all open FDs
         # Determine all open FDs
         current_fds = set()
         if os.path.exists(PATH_LINUX_FD_DIR):
