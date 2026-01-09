@@ -7,7 +7,7 @@ import msgpack
 import pytest
 from pathlib import Path
 
-# Velo Protocol Constants (Sync with constants.py)
+# Velo Kinetic IPC Protocol (KIP) Constants (Sync with constants.py)
 PROTOCOL_VERSION = 1
 MAX_MESSAGE_SIZE = 10485760
 
@@ -83,8 +83,8 @@ def send_raw_hostile(sock_path, total_len, version, payload_bytes):
     finally:
         s.close()
 
-def test_sec_p0_007_oversized_payload_rejection(zygote_process):
-    """SEC-P0-007: Zygote must reject oversized payloads and log violation."""
+def test_kip_p0_007_oversized_payload_rejection(zygote_process):
+    """KIP-P0-007: Zygote must reject oversized payloads and log violation."""
     sock_path, proc = zygote_process
     
     # Construct a packet that CLAIMS to be huge
@@ -109,8 +109,8 @@ def test_sec_p0_007_oversized_payload_rejection(zygote_process):
     assert "🚨 IPC Protocol Violation: Oversized payload" in stderr
     assert f"limit: {MAX_MESSAGE_SIZE}" in stderr
 
-def test_sec_p0_008_version_mismatch_rejection(zygote_process):
-    """SEC-P0-008: Zygote must reject mismatched protocol versions."""
+def test_kip_p0_008_version_mismatch_rejection(zygote_process):
+    """KIP-P0-008: Zygote must reject mismatched protocol versions."""
     sock_path, proc = zygote_process
     
     payload = msgpack.packb({"type": "Handshake"})
@@ -128,8 +128,8 @@ def test_sec_p0_008_version_mismatch_rejection(zygote_process):
     assert "🚨 IPC Protocol Violation: Protocol version mismatch" in stderr
     assert f"Client v{bad_version}" in stderr
 
-def test_sec_p0_009_malformed_msgpack_rejection(zygote_process):
-    """SEC-P0-009: Zygote must handle malformed MessagePack gracefully."""
+def test_kip_p0_009_malformed_msgpack_rejection(zygote_process):
+    """KIP-P0-009: Zygote must handle malformed MessagePack gracefully."""
     sock_path, proc = zygote_process
     
     # Invalid MessagePack (broken header)
