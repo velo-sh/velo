@@ -140,7 +140,17 @@ mod spawn_tests {
 
         // Spawn worker
         let worker = launcher
-            .spawn_worker(&script_path, &[], false, false, None, None, None, None)
+            .spawn_worker(
+                &script_path,
+                &[],
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                &velo::config::VeloConfig::default(),
+            )
             .unwrap();
         assert!(worker.pid() > 0);
 

@@ -59,6 +59,11 @@ class VeloServeProcess:
                 print(f"    PID: {self.pid}, Port: {self.port}")
                 print(f"    Socket: {self.socket_path}")
                 print(f"    Elapsed: {time.time() - start:.2f}s")
+                # RFC-0011: Print Zygote log if it exists
+                log_path = Path(os.environ.get("HOME", "/tmp")) / ".local/state/velo/zygote.log"
+                if log_path.exists():
+                    print(f"\n📄 [ZYGOTE LOG] {log_path}")
+                    print(log_path.read_text())
                 # Force stderr flush for visibility
                 import sys
                 sys.stderr.flush()
@@ -101,7 +106,6 @@ class VeloServeProcess:
             
         try:
             supervisor = psutil.Process(self.pid)
-            # Search children recursively. The Zygote is usually a direct child.
             for child in supervisor.children(recursive=True):
                 try:
                     cmdline = child.cmdline()
@@ -134,13 +138,13 @@ class VeloServeProcess:
             if self.zygote_pid:
                 try:
                     zygote_proc = psutil.Process(self.zygote_pid)
-                    workers = [child.pid for child in zygote_proc.children(recursive=False)]
+                    workers = [child.pid for child in zygote_proc.children(recursive=True)]
                     if workers:
                         return workers
                 except psutil.NoSuchProcess:
                     self.zygote_pid = None
             
-            time.sleep(0.2)
+            time.sleep(0.5) # Increased sleep for macOS/CI
         
         return []
 
@@ -249,7 +253,7 @@ class VeloServeFactory:
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
         
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-        env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+        # env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1" # Breaks Zygote startup
 
         proc = subprocess.Popen(
             cmd,

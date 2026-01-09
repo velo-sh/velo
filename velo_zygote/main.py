@@ -92,7 +92,14 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
     
     # 3. Decision Logic
     if server.state == ZygoteState.PRELOADING:
-        return {"type": "Error", "message": "Zygote is preloading. Try again shortly."}
+        try:
+            # Wait for preload to finish (architectural requirement for deep probe)
+            await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            return {"type": "Error", "message": "Zygote is preloading (timeout during handshake wait)."}
+    
+    if server.state == ZygoteState.ERROR:
+        return {"type": "Error", "message": "Zygote is in ERROR state."}
     
     return {
         "type": "Handshake",

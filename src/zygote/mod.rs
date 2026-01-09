@@ -90,7 +90,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
 /// 5. /usr/local/share/velo/velo_zygote (system install)
 /// 6. Current working directory (fallback)
 #[allow(clippy::collapsible_if)]
-fn find_zygote_module() -> Result<PathBuf> {
+pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
     const ZYGOTE_MAIN: &str = "velo_zygote/main.py";
 
     // 1. Check VELO_ZYGOTE_PATH environment variable (explicit override)
@@ -166,8 +166,8 @@ fn find_zygote_module() -> Result<PathBuf> {
 }
 
 /// Find the standardized worker launcher script path
-pub fn find_worker_launcher() -> Result<PathBuf> {
-    let zygote_main = find_zygote_module()?;
+pub fn find_worker_launcher(config: &VeloConfig) -> Result<PathBuf> {
+    let zygote_main = find_zygote_module(config)?;
     let parent = zygote_main.parent().ok_or_else(|| {
         ZygoteError::StartFailed("Zygote main script has no parent directory".to_string())
     })?;
@@ -382,7 +382,7 @@ impl ZygoteLauncher {
         log::info!("🚀 Zygote using socket: {}", socket_path.display());
 
         // Find zygote module
-        let zygote_module = find_zygote_module()?;
+        let zygote_module = find_zygote_module(config)?;
 
         // Build command with EnvShield (Pillar 1: Env Isolation)
         // Use 'env' to wrapper execution (Workaround for macOS symlink/Command::new issue)
@@ -506,7 +506,6 @@ impl ZygoteLauncher {
                 }
             }
             // RFC-0012: Resilience - Use formal whitelist from SSOT (Configuration De-Hellification)
-            let config = VeloConfig::default();
             for var in &config.security_env_whitelist {
                 if let Ok(val) = std::env::var(var) {
                     sandbox_cmd.env(var, val);
@@ -785,6 +784,7 @@ impl ZygoteLauncher {
         project_root: Option<PathBuf>,
         max_bundle_size: Option<u64>,
         shm_file: Option<&std::fs::File>,
+        config: &VeloConfig,
     ) -> Result<WorkerHandle> {
         if !self.is_running() {
             return Err(ZygoteError::NotRunning);
@@ -835,7 +835,11 @@ impl ZygoteLauncher {
                 bundle_path,
                 project_root,
                 max_bundle_size,
-                env: Box::new(std::env::vars().collect()),
+                env: Box::new(
+                    std::env::vars()
+                        .filter(|(k, _)| config.security_env_whitelist.contains(k))
+                        .collect(),
+                ),
                 shm_size,
             },
             fd_to_pass,
