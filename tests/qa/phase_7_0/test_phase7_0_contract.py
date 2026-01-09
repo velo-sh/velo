@@ -78,10 +78,11 @@ class TestCoreContract:
         [PROSECUTOR] Verify if the binary even contains HugePage capability code.
         H-20: MAP_HUGETLB usage.
         """
-        env = shm_test_env
-        # Fix: run_python expects raw script content, not -c
-        result = env.run_python("import os; print(open('/workspace/src/shm/registry.rs').read())")
-        if "MAP_HUGETLB" not in result.stdout:
+        # Fix: use path relative to the test file
+        root_dir = Path(__file__).parents[3]
+        registry_path = root_dir / "src/shm/registry.rs"
+        content = registry_path.read_text()
+        if "MAP_HUGETLB" not in content:
             pytest.fail("REGRESSION: H-20 HugePage support (MAP_HUGETLB) is MISSING from implementation! (Finding 002)")
 
     def test_L0_h20_hugepage_integrity(self, shm_test_env):
@@ -89,10 +90,11 @@ class TestCoreContract:
         [PROSECUTOR] Verify that MFD_HUGETLB is used for memfd creation.
         H-20: HugePage Support.
         """
-        env = shm_test_env
-        result = env.run_python("import os; print(open('/workspace/src/shm/registry.rs').read())")
+        root_dir = Path(__file__).parents[3]
+        registry_path = root_dir / "src/shm/registry.rs"
+        content = registry_path.read_text()
         
-        has_mfd = "MFD_HUGETLB" in result.stdout
+        has_mfd = "MFD_HUGETLB" in content
         
         if not has_mfd:
             pytest.fail("REGRESSION: H-20 HugePage support (MFD_HUGETLB) is MISSING! This is a TITANIUM Requirement.")

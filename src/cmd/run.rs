@@ -139,7 +139,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             &config,
             cmd.profile,
-            shm_file.as_ref(),
+            shm_file.as_ref().map(|s| &s.file),
         )? {
             if cmd.profile {
                 eprintln!(

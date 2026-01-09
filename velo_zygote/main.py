@@ -88,11 +88,23 @@ class ImportShield:
         if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
             return None
 
-        # 1. Block internal framework access from child process
+        # RFC-0012: Resilience Whitelist for Framework Bootstrap
+        # We allow anything explicitly in whitelist OR any submodule of a whitelisted package.
+        # This prevents Trap 178 while maintaining surgical isolation.
+        whitelist = () # Strict Mode (was "velo_zygote")
+        
         if fullname.startswith("velo_zygote"):
-            # We allow the launcher to import us once, but once the app is loading,
-            # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
-            raise ImportError(f"Unauthorized access to internal framework module: {fullname}")
+            if not any(fullname == w or fullname.startswith(w + ".") for w in whitelist):
+                # We allow the launcher to import us once, but once the app is loading,
+                # any SUBSEQUENT import of velo_zygote (by user code) is blocked.
+                msg = f"Unauthorized access to internal framework module: {fullname}"
+                try:
+                    # Log to stderr for visibility in CI logs (Trap 178.2/3)
+                    # We use sys.stderr.write + flush because LogUtils might be blocked!
+                    sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
+                    sys.stderr.flush()
+                except: pass
+                raise ImportError(msg)
         
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
@@ -192,6 +204,7 @@ class LogUtils:
         """Log message with Zygote prefix."""
         try:
             print(f"[velo-zygote] {msg}", file=sys.stderr, flush=True)
+            sys.stderr.flush() # Double flush for CI/Multiplexing robustness
         except (BrokenPipeError, OSError):
             pass
 
@@ -619,6 +632,9 @@ def post_fork_reinit(keep_fds: Optional[Set[int]] = None):
     # The child inherits the parent's loop state (executors, etc.) which must be purged.
     try:
         import asyncio
+        # RFC-0016 Fix: Detach from broken uvloop state in forked child (Linux Parity Gap)
+        # uvloop is not fork-safe without explicit policy reset.
+        asyncio.set_event_loop_policy(None)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     except Exception:
@@ -794,15 +810,21 @@ class ForkHandler:
                     p_log(f"PDEATHSIG Exception: {e}")
 
             # 2. RFC-0011 6A.2: Full post-fork state reset
-            # This MUST happen before anything else to ensure a clean slate.
-            post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
-            p_log("Reinit Done (Cord Cut)")
+            try:
+                # dlog("Starting Reinit")
+                post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
+                # dlog("Reinit Done")
+            except Exception as e:
+                # dlog(f"Reinit Failed: {e}")
+                raise
 
             # 2.2 Shared Memory Mapping (Phase 7.2)
             worker_context = {"__name__": "__main__", "__file__": script_path}
             if shm_fd is not None and shm_size is not None and MEMORY_MANAGER is not None:
                 try:
+                    # dlog("Attaching SHM")
                     shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size)
+                    # dlog(f"SHM result: {shm_obj}")
                     if shm_obj is not None:
                         # Inject into worker context
                         worker_context["VELO_SHM"] = shm_obj
@@ -812,19 +834,30 @@ class ForkHandler:
                     try: os.close(shm_fd)
                     except: pass
                 except Exception as e:
+                    # dlog(f"SHM Failed: {e}")
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
+            # 2.5 Diagnostic: First log from child
+            try:
+                # dlog("LogUtils call")
+                LogUtils.log(f"🔄 Child {os.getpid()} starting re-init...")
+                # dlog("LogUtils Success")
+            except Exception as e:
+                pass
+                # dlog(f"LogUtils Failed: {e}")
+
             # 3. Install ImportShield (Import Isolation)
-            # We always install it, but only "activate" it immediately for non-launcher scripts.
-            # For the launcher, it's activated just before user code runs.
+            # We always install it, but DEFER activation (Trap 178)
+            # dlog("Installing ImportShield")
             ImportShield.install()
+            # dlog("ImportShield Installed")
             is_internal_launcher = script_path.endswith("worker_launcher.py")
-            if not is_internal_launcher:
-                ImportShield.activate()
-                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+            # dlog(f"Script: {script_path}, Internal: {is_internal_launcher}")
 
             # 3. I/O Redirection
+            # dlog(f"Redirecting IO: out={stdout_path}, err={stderr_path}")
             ForkHandler._redirect_io(stdout_path, stderr_path)
+            # dlog("IO Redirected")
 
 
             # 4. Setup Sys Args
@@ -835,23 +868,54 @@ class ForkHandler:
             if fast_mode and bundle_path:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
 
+            # 5.5 Final Seal: Activate ImportShield (H-12 Deferred)
+            # We enforce this for ALL scripts, including the internal launcher (worker_launcher.py),
+            # to prevent user apps loaded by the launcher from accessing framework internals.
+            # Was: if not is_internal_launcher:
+            # dlog("Activating ImportShield")
+            ImportShield.activate()
+            os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+            # dlog("ImportShield Activated")
+
+            # 5.6 Isolation Purge: Evict framework from sys.modules (RFC-0012)
+            # This forces any re-import to strictly go through ImportShield.
+            # Without this, pre-loaded modules bypass the shield check.
+            blacklist_prefix = "velo_zygote"
+            for k in list(sys.modules.keys()):
+                if k == blacklist_prefix or k.startswith(blacklist_prefix + "."):
+                    try:
+                        del sys.modules[k]
+                    except: pass
+            # dlog("Framework Purged from sys.modules")
 
             # 6. Execute Script
+            # dlog("Reading Script")
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
                 p_log("Script compiled")
-
                 exec(code, worker_context)
+                # dlog("Exec Finished (Should not happen)")
             
         except SystemExit as e:
+            # dlog(f"SystemExit: {e}")
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except Exception:
+        except Exception as e:
+            # dlog(f"Child Exception: {e}")
             try:
                 import traceback
-                traceback.print_exc()
+                # traceback.print_exc() # Redirected, might be lost
+                # dlog(traceback.format_exc())
             except: pass
             exit_code = 1
         finally:
+            # dlog(f"Exiting with {exit_code}")
+            if stderr_path and os.path.exists(stderr_path):
+                 try:
+                     with open(stderr_path, "r") as f:
+                         content = f.read()
+                         # dlog(f"STDERR_CONTENT: {content}")
+                 except: pass
+            
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
             os._exit(exit_code)
             
@@ -1487,6 +1551,9 @@ def check_cuda_initialized() -> bool:
 if __name__ == "__main__":
     import sys
     import os
+    # RFC-0012: Ensure Zygote itself is NOT shielded
+    os.environ.pop("VELO_ZYGOTE_SHIELD_ACTIVE", None)
+
     print(f"DEBUG: Zygote Entry. Executable: {sys.executable}")
     print(f"DEBUG: Zygote Entry. Version: {sys.version}")
     print(f"DEBUG: Zygote Entry. sys.path: {sys.path}")
