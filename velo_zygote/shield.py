@@ -8,20 +8,6 @@ try:
 except (ImportError, ValueError):
     from settings import velo_config
 
-# Sensitive paths that should never be executed (SEC-P3-001)
-_BLOCKED_PATHS = [
-    "/etc", "/var", "/usr", "/bin", "/sbin",
-    "/System", "/Library", "/private/etc",
-    "/root", "/home",
-]
-
-# Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
-if velo_config.is_ci:
-    if "/home" in _BLOCKED_PATHS:
-        _BLOCKED_PATHS.remove("/home")
-else:
-    if "/home" not in _BLOCKED_PATHS:
-        _BLOCKED_PATHS.append("/home")
 
 
 class ImportShield:
@@ -95,7 +81,7 @@ class PathValidator:
             script = Path(script_path).resolve()
             script_str = str(script)
             
-            for blocked in _BLOCKED_PATHS:
+            for blocked in velo_config.blocked_paths:
                 if script_str.startswith(blocked + "/") or script_str == blocked:
                     return False, f"Access denied: script in protected system path '{blocked}'"
             
