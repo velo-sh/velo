@@ -13,12 +13,26 @@ def _normalize_environment():
     RFC-0012: SSOT for environment configuration.
     """
     if "VELO_ENV" not in os.environ:
-        # 🟢 Fallback to 'dev' with explicit logging for auditability
-        os.environ["VELO_ENV"] = "dev"
-        # Logged via _log_banner later
-    else:
-        # Standardize to lowercase
-        os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
+        # SSOT: Use EnvProfile to auto-detect context (e.g. CI, Production)
+        # instead of blindly defaulting to 'dev'.
+        try:
+            from .env_profile import EnvProfile, RunContext
+        except (ImportError, ValueError):
+            from env_profile import EnvProfile, RunContext
+            
+        profile = EnvProfile.detect()
+        
+        # Map RunContext back to VELO_ENV convention
+        if profile.run_context == RunContext.CI:
+            os.environ["VELO_ENV"] = "ci"
+        elif profile.run_context == RunContext.PRODUCTION:
+            os.environ["VELO_ENV"] = "prod"
+        else:
+            # 🟢 Default to 'dev' only if no other context detected
+            os.environ["VELO_ENV"] = "dev"
+            
+    # Standardize to lowercase
+    os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
 
 def _log_banner():
     """

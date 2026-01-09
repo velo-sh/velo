@@ -11,11 +11,18 @@ from pathlib import Path
 
 # Internal imports
 try:
+    # Rule 1: Bootstrap MUST run before anything else to normalize env
+    from . import bootstrap
+    bootstrap.initialize()
+    
     from .env_profile import ENV_PROFILE, RunContext, OsType
     from .shield import ImportShield, PathValidator
     from .settings import velo_config
 except (ImportError, ValueError):
     # Fallback for direct execution if needed
+    import bootstrap
+    bootstrap.initialize()
+    
     from env_profile import ENV_PROFILE, RunContext, OsType
     from shield import ImportShield, PathValidator
     from settings import velo_config
