@@ -84,8 +84,18 @@ class ForkHandler:
                 
                 post_fork_reinit(keep_fds=keep)
                 
+                # RFC-0012: Activate security shield in worker after fork
+                try:
+                    from .shield import ImportShield
+                    ImportShield.activate()
+                except (ImportError, ValueError):
+                    try:
+                        from shield import ImportShield
+                        ImportShield.activate()
+                    except: pass
+                
                 # 2. Execution
-                ForkHandler._child_process(
+                exit_code = ForkHandler._child_process(
                     script_path=script_path,
                     args=args,
                     env=env,
@@ -100,13 +110,12 @@ class ForkHandler:
                     shm_fd=shm_fd,
                     shm_size=shm_size
                 )
+                os._exit(exit_code)
             except Exception as e:
                 with open(stderr_path or "/dev/stderr", "a") as f:
                     f.write(f"FATAL CHILD ERROR: {e}\n")
                     traceback.print_exc(file=f)
                 os._exit(1)
-            finally:
-                os._exit(0)
 
         else:  # Parent process
             if shm:
@@ -122,7 +131,7 @@ class ForkHandler:
         max_bundle_size: Optional[int], worker_ttl: int,
         shm_fd: Optional[int] = None,
         shm_size: Optional[int] = None
-    ):
+    ) -> int:
         # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
         #    Ensure THIS child dies if Zygote (Parent) dies.
         #    Ported from main branch commit e10380a.
@@ -215,6 +224,8 @@ class ForkHandler:
         
         # 6. Final Cleanup
         ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
+        
+        return exit_code
 
     @staticmethod
     def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):

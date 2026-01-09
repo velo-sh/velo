@@ -21,6 +21,7 @@ class ImportShield:
     @classmethod
     def activate(cls):
         """Enable the shield. Once enabled, internal imports are blocked."""
+        cls.install()
         cls._active = True
         # Set environment variable for persistence in forks
         os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"

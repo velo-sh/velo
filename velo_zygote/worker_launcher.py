@@ -75,6 +75,7 @@ def main():
             try:
                 from uvicorn.config import Config
                 config = Config(app=args.app)
+                config.load()
                 app = config.loaded_app
                 app = UDSProxyMiddleware(app)
             except Exception as e:

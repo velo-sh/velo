@@ -547,7 +547,11 @@ pub fn run_server(
     }
 
     // Step 4: Check server is installed
-    logger.debug(&format!("Checking if {} is installed...", server));
+    logger.debug(&format!(
+        "Checking if {} is installed (using python_path: {})...",
+        server,
+        python_path.display()
+    ));
     if !check_server_installed(server, python_path) {
         logger.error(&format!("Missing dependency: {}", server));
         eprintln!();
@@ -703,7 +707,7 @@ pub fn run_server(
         // Spawn N workers
         let mut spawn_failed = false;
         for i in 0..args.workers {
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -967,6 +971,7 @@ pub fn run_server(
                                     &args.app,
                                     i as u64,
                                     None,
+                                    config,
                                 ) {
                                     Ok(new_worker) => {
                                         // Update LoadBalancer with new socket
