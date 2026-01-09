@@ -16,25 +16,19 @@ Architecture:
   ForkHandler: Handles the complexity of forking and environment setup.
 """
 
-import asyncio
 import os
 import sys
 
+# --- Velo Bootstrap Start ---
+_pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _pkg_root not in sys.path:
+    sys.path.insert(0, _pkg_root)
 
-# Integrity Check (Pre-Flight) - RFC-0012 Defense-in-Depth
-try:
-    from . import integrity
-except (ImportError, ValueError):
-    import integrity
+from velo_zygote import bootstrap
+bootstrap.initialize()
+# --- Velo Bootstrap End ---
 
-try:
-    # Validate runtime environment, constants, and consistency
-    integrity.validate_runtime()
-except integrity.IntegrityError as e:
-    print(f"\n\033[91m🚨 PRE-FLIGHT CHECK FAILED: {e}\033[0m\n", file=sys.stderr)
-    sys.exit(1)
-
-
+import asyncio
 import signal
 import socket
 import struct

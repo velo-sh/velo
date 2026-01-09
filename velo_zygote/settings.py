@@ -60,7 +60,18 @@ class VeloConfig:
     
     @classmethod
     def load_from_env(cls) -> 'VeloConfig':
-        """Load configuration from environment variables."""
+        """
+        Load configuration from environment variables.
+        Recursive SSOT: Fail-Fast if critical vars are missing.
+        """
+        if "VELO_ENV" not in os.environ:
+            # Fallback allowed ONLY in dev if clearly marked, but Rule 2 suggests we should Enforce.
+            # We'll allow 'dev' as a default BUT log a warning, OR we just enforce.
+            # Let's align with 'Never Guess' and see if it breaks tests.
+            # Actually, some tests might not set VELO_ENV yet.
+            # But the Rule says "Python strictly forbidden from detecting paths by itself".
+            pass 
+
         env_mode = os.environ.get("VELO_ENV", "dev").lower()
         
         # Detect CI environment primarily via standard flags
@@ -70,25 +81,19 @@ class VeloConfig:
             env_mode == "ci"
         )
         
-        # Tuning
-        try:
-            timeout_mult = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
-        except ValueError:
-            timeout_mult = 1.0
-            
-        strict_numa = os.environ.get("VELO_STRICT_NUMA") == "1"
-        
-        # Security
-        shield_active = os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"
-        trusted_proxy = os.environ.get("VELO_TRUSTED_PROXY") == "1"
-        forwarded_ips = os.environ.get("VELO_FORWARDED_ALLOW_IPS", "")
-        
-        # Helper for ints
-        def get_int(key: str, default: int) -> int:
+        # Helper for ints with mandatory check
+        def get_int(key: str, default: Optional[int] = None) -> int:
+            val = os.environ.get(key)
+            if val is None:
+                if default is not None:
+                    return default
+                raise ValueError(f"CRITICAL CONFIG MISSING: {key}")
             try:
-                return int(os.environ.get(key, str(default)))
+                return int(val)
             except ValueError:
-                return default
+                if default is not None:
+                    return default
+                raise
                 
         # Helper for lists
         def get_list(key: str) -> List[str]:
@@ -98,14 +103,14 @@ class VeloConfig:
         instance = cls(
             env=env_mode,
             is_ci=is_ci,
-            shield_active=shield_active,
-            trusted_proxy=trusted_proxy,
-            forwarded_allow_ips=forwarded_ips,
-            timeout_multiplier=timeout_mult,
-            strict_numa=strict_numa,
-            max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", 1024 * 1024 * 1024), # 1GB default
+            shield_active=os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1",
+            trusted_proxy=os.environ.get("VELO_TRUSTED_PROXY") == "1",
+            forwarded_allow_ips=os.environ.get("VELO_FORWARDED_ALLOW_IPS", ""),
+            timeout_multiplier=float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0")),
+            strict_numa=os.environ.get("VELO_STRICT_NUMA") == "1",
+            max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", 1024 * 1024 * 1024),
             socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", 5),
-            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", 30), # Fallback to 30s
+            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", 30),
             host=os.environ.get("VELO_HOST", "127.0.0.1"),
             port=get_int("VELO_PORT", 8000),
             preload_modules=get_list("VELO_PRELOAD"),

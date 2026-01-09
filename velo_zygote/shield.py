@@ -33,7 +33,7 @@ class ImportShield:
 
         # RFC-0012: Resilience Whitelist for Framework Bootstrap
         # We allow anything explicitly in whitelist OR any submodule of a whitelisted package.
-        whitelist = () # Strict Mode (was "velo_zygote")
+        whitelist = ("velo_zygote",) # Restore framework access for bootstrap
         
         if fullname.startswith("velo_zygote"):
             if not any(fullname == w or fullname.startswith(w + ".") for w in whitelist):
