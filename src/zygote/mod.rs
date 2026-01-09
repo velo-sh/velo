@@ -443,6 +443,9 @@ impl ZygoteLauncher {
             cmd.env("VELO_ZYGOTE_SOCKET", val);
         }
 
+        // Identify this as the Zygote process for bootstrap logic (Trap 178.4)
+        cmd.env("VELO_IS_ZYGOTE", "1");
+
         // Also inject boolean flags if necessary (currently none in VeloConfig that aren't implicit)
         // =========================================================================
 
@@ -470,6 +473,13 @@ impl ZygoteLauncher {
         #[cfg(not(feature = "sandbox_disabled"))]
         #[cfg(target_os = "macos")]
         {
+            let socket_dir = self
+                .socket_path
+                .parent()
+                .unwrap_or_else(|| Path::new("/tmp"));
+            let log_path = get_log_path();
+            let log_dir = log_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+
             let profile = format!(
                 r#"(version 1)
 (allow default)
@@ -485,10 +495,12 @@ impl ZygoteLauncher {
     (subpath "/var/folders")
     (subpath "{}")
     (subpath "{}")
+    (subpath "{}")
 )
 "#,
                 std::env::current_dir().unwrap_or_default().display(),
-                ipc::get_socket_dir().display()
+                socket_dir.display(),
+                log_dir.display()
             );
 
             // Enable Sandbox

@@ -160,6 +160,13 @@ class ForkHandler:
         # 2. Environment Setup
         os.environ.update(env)
         
+        # 2.5 Security: Activate ImportShield (Trap 178.5)
+        try:
+            from velo_zygote.shield import ImportShield
+            ImportShield.activate()
+        except ImportError:
+            pass
+        
         # 3. Path Normalization
         if script_path:
             script_dir = os.path.dirname(os.path.abspath(script_path))
