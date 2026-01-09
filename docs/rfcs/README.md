@@ -25,6 +25,13 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0010](./0010-phase-6.1-serve-analyze.md) | Phase 6.1 Serve, Analyze & Polish | ✅ Approved | v0.6.1 |
 | [0011](./0011-zygote-worker-integration.md) | Phase 6.1.1 Zygote Worker Integration | ✅ Approved | v0.6.2 |
 | [0012](./0012-full-armor-security-standard.md) | 'Full Armor' Security Standard | ✅ Audited | v0.6.2 |
+| [0013](./0013-kinetic-protocol.md) | Kinetic Protocol (UDS Optimization) | ✅ Implemented | v0.6.3 |
+| [0014](./0014-cow-venv-architecture.md) | CoW-Venv & Top 100 Framework | ✅ Accepted | v0.7.0 |
+| [0015](./0015-memory-gravity.md) | Memory Gravity (Tensor SHM) | ✅ Implemented | v0.7.0 |
+| [0016](./0016-environment-convergence.md) | Environment Convergence & SSoT | [/] In Progress | v0.7.1 |
+| [0017](./0017-test-tier-discovery.md) | Test Tier Discovery (QA Optimization) | [/] In Progress | v0.7.1 |
+| [0018](./0018-integrated-custody.md) | Integrated Custody (uv / Autopilot) | 📝 Draft | v0.7.2 |
+| [0019](./0019-native-sovereignty.md) | Native Sovereignty (Rust Host) | 📝 Draft | v0.8.0 |
 
 ## Quality Assurance Reports
 
