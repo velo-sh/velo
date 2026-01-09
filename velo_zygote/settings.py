@@ -65,8 +65,11 @@ class VeloConfig:
         Recursive SSOT: Fail-Fast if critical vars are missing.
         """
         # RFC-0012: Boundary convergence requires VELO_ENV.
-        # However, we fallback to 'dev' for unit tests and direct execution probes.
-        env_mode = os.environ.get("VELO_ENV", "dev").lower()
+        # This is now normalized in bootstrap.py. If missing here, it's a critical failure.
+        if "VELO_ENV" not in os.environ:
+            raise ValueError("CRITICAL: VELO_ENV not injected by Rust or Normalized by Bootstrap. Boundary convergence failed.")
+
+        env_mode = os.environ["VELO_ENV"].lower()
         
         # Detect CI environment primarily via standard flags
         is_ci = (
