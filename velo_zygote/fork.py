@@ -94,6 +94,10 @@ class ForkHandler:
                         ImportShield.activate()
                     except: pass
                 
+                # RFC-0012: Hygiene - Restore SIGPIPE to default for worker
+                import signal
+                signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
                 # 2. Execution
                 exit_code = ForkHandler._child_process(
                     script_path=str(script_path) if script_path else "",
@@ -166,6 +170,16 @@ class ForkHandler:
             ImportShield.activate()
         except ImportError:
             pass
+
+        # TITANIUM RULE: No Orphans (macOS)
+        # Activate kqueue monitor in worker
+        # TITANIUM RULE: No Orphans (macOS)
+        # Activate kqueue monitor in worker
+        # TITANIUM RULE: No Orphans (macOS)
+        # Activate monitor in worker to prevent zombies if Zygote dies
+        if sys.platform == "darwin":
+            from velo_zygote.utils import MacOSDeathSigMonitor
+            MacOSDeathSigMonitor.start_monitoring()
         
         # 3. Path Normalization
         if script_path:

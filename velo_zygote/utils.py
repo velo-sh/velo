@@ -61,3 +61,59 @@ class LogUtils:
                 f.write(f"[{time.ctime()}] {msg}\n")
         except:
             pass
+            pass
+
+# Flight Recorder - REMOVED
+# def flight_log(msg): ...
+
+class MacOSDeathSigMonitor:
+    """RFC-0012: macOS alternative to PR_SET_PDEATHSIG using kqueue/kevent (Polling Fallback)."""
+    
+    @staticmethod
+    def start_monitoring():
+        import sys
+        if not sys.platform == "darwin":
+            return
+            
+        import threading
+        import os
+        import time
+        
+        def monitor():
+            try:
+                original_ppid = os.getppid()
+                if original_ppid <= 1:
+                    LogUtils.log(f"Monitor: Already orphaned (Parent {original_ppid})")
+                    return
+                    
+                LogUtils.log(f"Monitor started for Parent {original_ppid} (Polling Mode)")
+                
+                while True:
+                    time.sleep(0.5) # Poll every 500ms
+                    try:
+                        current_ppid = os.getppid()
+                        if current_ppid != original_ppid:
+                            LogUtils.log(f"Parent changed from {original_ppid} to {current_ppid}. Exiting.")
+                            break
+                        
+                        # Double check if process exists (paranoid)
+                        try:
+                            # signal 0 check
+                            os.kill(original_ppid, 0)
+                        except OSError:
+                            LogUtils.log(f"Parent {original_ppid} is dead. Exiting.")
+                            break
+                    except Exception as e:
+                        pass
+                        
+                # Force kill self
+                LogUtils.log("Monitor triggering suicide (SIGKILL to self)")
+                os.kill(os.getpid(), 9)
+            except Exception as e:
+                LogUtils.log(f"Monitor failed: {e}")
+                import traceback
+                traceback.print_exc()
+                
+        t = threading.Thread(target=monitor, daemon=True, name="ParentMonitor")
+        LogUtils.log(f"Starting ParentMonitor thread for parent {os.getppid()}")
+        t.start()
