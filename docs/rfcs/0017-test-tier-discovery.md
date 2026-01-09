@@ -8,6 +8,8 @@
 
 ---
 
+> **TL;DR**: Tests declare their tier via `@pytest.mark.tierN` markers. CI auto-discovers all tests. No more manual file lists. No more sync drift.
+
 ## 1. Problem Statement
 
 The current test infrastructure exhibits **Test Discovery Fragmentation**:
@@ -113,6 +115,44 @@ A pre-commit hook or CI check SHALL verify:
 1. Every test file in `tests/qa/` has at least one tier marker.
 2. No test file is "orphaned" (exists but never collected).
 
+### 3.5 Multi-Marker Conflict Resolution (P1-Council)
+
+**Rule**: A test function/class SHALL have exactly ONE tier marker. Multiple tier markers are forbidden.
+
+| Scenario | Result |
+|---|---|
+| `@tier1 @tier2` on same function | ❌ **ERROR**: Pre-commit hook MUST reject |
+| `@tier1` on class, `@tier2` on method | ✅ OK: Method-level overrides class-level |
+| `@tier1 @linux_only` | ✅ OK: Tier + platform markers are allowed |
+
+**Rationale**: Tier markers represent mutually exclusive categories. A test cannot be both a "unit test" and an "E2E test" simultaneously.
+
+### 3.6 Orphan Test Detection (P1-Council)
+
+CI SHALL run the following check to detect orphaned tests:
+
+```bash
+#!/bin/bash
+# scripts/check-orphan-tests.sh
+set -e
+
+# Count Python test files
+TEST_FILES=$(find tests/qa -name "test_*.py" | wc -l | tr -d ' ')
+
+# Count collected tests (files that pytest actually discovers)
+COLLECTED=$(pytest --collect-only -q tests/qa/ 2>/dev/null | grep -c "test_" || echo 0)
+
+# If files > 0 but collected == 0, something is wrong
+if [[ "$TEST_FILES" -gt 0 && "$COLLECTED" -eq 0 ]]; then
+    echo "❌ ORPHAN TEST DETECTED: $TEST_FILES test files exist but 0 tests collected!"
+    exit 1
+fi
+
+echo "✅ All test files are properly collected ($COLLECTED tests from $TEST_FILES files)"
+```
+
+**Integration**: Add this check to `scripts/ci-common.sh` as a pre-test validation step.
+
 ---
 
 ## 4. Migration Path
@@ -158,7 +198,8 @@ The following documents SHALL be updated once this RFC is approved:
 
 | Date | Decision | Rationale |
 |---|---|---|
-| 2026-01-09 | DRAFT | Initial proposal for review |
+| 2026-01-09 | DRAFT v1 | Initial proposal for review |
+| 2026-01-09 | DRAFT v2 | Addressed P1 observations from Grand Council: multi-marker conflict rules (3.5), orphan detection (3.6), TL;DR added |
 
 ---
 

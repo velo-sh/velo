@@ -98,3 +98,35 @@ No P0 blocking issues identified.
 ---
 
 **Council Session Closed**: 2026-01-09 17:42
+
+---
+
+## Round 2 Review (Post-Revision)
+
+**Date**: 2026-01-09 17:44
+**RFC Version**: DRAFT v2
+
+### Changes Made (Addressing P1)
+
+| P1 Issue | Resolution |
+|---|---|
+| Clarify multi-marker behavior | ✅ Added Section 3.5: Multi-Marker Conflict Resolution |
+| Add orphan test detection | ✅ Added Section 3.6: Orphan Test Detection with script |
+| Add TL;DR | ✅ Added TL;DR at top of RFC |
+
+### Council Re-Validation
+
+| Persona | Status |
+|---|---|
+| QA Lead | ✅ P1 issues resolved. Section 3.5 is clear. |
+| Python Core Dev | ✅ Conflict rules are sensible. Method-override-class is Pythonic. |
+| DevOps/CI Engineer | ✅ Orphan detection script is practical and CI-ready. |
+| Technical Writer | ✅ TL;DR is concise and actionable. |
+
+### 🏛️ VERDICT: **APPROVED FOR IMPLEMENTATION**
+
+All P1 issues have been addressed. The RFC is now ready for Phase 1 implementation.
+
+---
+
+**Council Session Closed**: 2026-01-09 17:44
