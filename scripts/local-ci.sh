@@ -95,8 +95,8 @@ run_local_ci() {
     # Phase 0: FAIL FAST environment check
     check_env_fast
     
-    # Run full CI pipeline
-    run_full_ci ".venv" "tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py"
+    # Run full CI pipeline with SSOT test paths
+    run_full_ci ".venv" "$TEST_PATHS_DOCKER"
 }
 
 run_quick_check() {
