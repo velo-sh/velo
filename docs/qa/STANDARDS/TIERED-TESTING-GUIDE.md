@@ -337,6 +337,7 @@ uv run python -m pytest --cov=. tests/qa/
 | Document | Purpose |
 |----------|---------|
 | **[QA-SOP.md](./QA-SOP.md)** | **Master QA Standard Operating Procedure (1200+ lines)** |
+| **[RFC-0017](../../rfcs/0017-test-tier-discovery.md)** | **pytest Marker-Based Test Discovery Convention** |
 | [DEFINITION_OF_DONE.md](../../DEFINITION_OF_DONE.md) | Quality gate standards |
 | [STANDARDS.md](../../STANDARDS.md) | Project naming conventions |
 | [CHECKLIST-TEMPLATE.md](../TEMPLATES/CHECKLIST-TEMPLATE.md) | Manual checklist |
@@ -344,5 +345,65 @@ uv run python -m pytest --cov=. tests/qa/
 
 ---
 
-**Last Updated**: 2026-01-04
+## 10. pytest Marker-Based Tier Discovery (RFC-0017)
 
+> **Governance**: [RFC-0017](../../rfcs/0017-test-tier-discovery.md)
+> **Status**: APPROVED FOR IMPLEMENTATION (2026-01-09)
+
+### 10.1 Overview
+
+RFC-0017 introduces a **complementary** pytest marker system for auto-discovery. This enables `cargo test`-like behavior where tests declare their tier via markers.
+
+### 10.2 Marker Definitions
+
+| Marker | SLA | Description |
+|---|---|---|
+| `@pytest.mark.tier0` | <30s | Unit tests, no external deps |
+| `@pytest.mark.tier1` | <2min | Integration tests, needs binary |
+| `@pytest.mark.tier2` | <5min | E2E tests, full Zygote runtime |
+| `@pytest.mark.tier3` | <5min | Hardened security/stability tests |
+| `@pytest.mark.linux_only` | - | Linux-specific features |
+| `@pytest.mark.slow` | - | Tests exceeding SLA |
+
+### 10.3 Usage
+
+```python
+# Module-level default
+pytestmark = pytest.mark.tier1
+
+# Class-level
+@pytest.mark.tier2
+class TestGoldenPath:
+    ...
+
+# Method-level override
+@pytest.mark.tier0
+def test_simple_unit(self):
+    ...
+```
+
+### 10.4 CI Commands
+
+```bash
+# Quick (Tier 0 + 1)
+pytest -m "tier0 or tier1" tests/qa/
+
+# Full (all tiers)
+pytest tests/qa/
+
+# Exclude platform-specific
+pytest -m "not linux_only" tests/qa/
+```
+
+### 10.5 Mapping to Legacy Tiers
+
+| RFC-0017 Tier | Legacy Tier | Notes |
+|---|---|---|
+| tier0 | Tier 0 (Smoke) | Pure unit tests |
+| tier1 | Tier 1 (Fast) | Integration with binary |
+| tier2 | Tier 2 (Standard) | E2E with Zygote |
+| tier3 | Tier 3 (Heavy) | Hardened/adversarial |
+
+---
+
+**Last Updated**: 2026-01-09
