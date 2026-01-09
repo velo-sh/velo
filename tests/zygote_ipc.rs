@@ -51,6 +51,7 @@ mod ipc_tests {
             max_bundle_size: None,
             env: Box::new(std::collections::HashMap::new()),
             shm_size: None,
+            request_id: Some("test-fork-msgpack".to_string()),
         };
         let serialized = rmp_serde::to_vec(&fork_cmd).unwrap();
         let deserialized: ZygoteCommand = rmp_serde::from_slice(&serialized).unwrap();
@@ -170,6 +171,7 @@ mod ipc_tests {
                 max_bundle_size: None,
                 env: Box::new(std::collections::HashMap::new()),
                 shm_size: None,
+                request_id: Some("test-roundtrip".to_string()),
             },
             None,
         )

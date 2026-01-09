@@ -4,7 +4,7 @@ Velo Synchronous Transport
 import socket
 import struct
 import traceback
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 try:
     from .serializer import packer, unpacker
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
@@ -22,13 +22,13 @@ class ZygoteTransport:
     def __init__(self, sock: socket.socket):
         self.sock = sock
 
-    def recv(self) -> Optional[Dict]:
+    def recv(self) -> Optional[Dict[str, Any]]:
         """Receive length-prefixed MessagePack message + optional FD."""
         try:
             # 1. Read Length Prefix (4B) + Version Byte (1B)
-            # Use recvmsg to potentially receive FDs
+            # Use recvmsg to potentially receive FDs (ancbufsize required)
             # We need to read exactly 5 bytes first
-            header_data, ancdata, flags, addr = self.sock.recvmsg(5)
+            header_data, ancdata, flags, addr = self.sock.recvmsg(5, socket.CMSG_LEN(4))
             if not header_data:
                 return None
             
@@ -68,7 +68,7 @@ class ZygoteTransport:
                         if fds:
                             msg['shm_fd'] = fds[0]
             
-            return msg
+            return dict(msg)  # Cast to specific dict type for mypy
         except (EOFError, ConnectionResetError, BrokenPipeError):
             return None
         except ProtocolError:
@@ -85,7 +85,7 @@ class ZygoteTransport:
             data += chunk
         return data
 
-    def send(self, msg: Dict):
+    def send(self, msg: Dict[str, Any]) -> None:
         """Send length-prefixed MessagePack message."""
         payload = packer(msg)
         total_len = 1 + len(payload)
@@ -93,7 +93,7 @@ class ZygoteTransport:
         version = bytes([PROTOCOL_VERSION])
         self.sock.sendall(header + version + payload)
 
-    def close(self):
+    def close(self) -> None:
         try:
             self.sock.close()
         except:
