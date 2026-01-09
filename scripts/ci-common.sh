@@ -197,7 +197,25 @@ run_python_tests() {
     
     # Activate and run
     source "$venv_path/bin/activate"
+    
+    set +e # Allow test failure to capture artifacts
     pytest $test_paths -v
+    EXIT_CODE=$?
+    set -e
+
+    # Check for failure bundles
+    if ls failure-*.tar.gz 1> /dev/null 2>&1; then
+        echo ""
+        log_warn "Failure artifacts detected!"
+        mkdir -p artifacts
+        mv failure-*.tar.gz artifacts/
+        log_warn "Artifacts moved to artifacts/ directory"
+    fi
+    
+    if [[ $EXIT_CODE -ne 0 ]]; then
+        log_error "Python tests failed"
+        exit $EXIT_CODE
+    fi
     
     log_success "Python tests passed"
 }
