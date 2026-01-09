@@ -218,7 +218,8 @@ def get_velo_binary() -> str:
     root_dir = Path(__file__).parents[2]
     
     # Priority 1: Environment Variable (explicit override for CI/testing)
-    if env_binary := os.environ.get("VELO_BINARY"):
+    env_binary = os.environ.get("VELO_BINARY")
+    if env_binary:
         env_path = Path(env_binary)
         if env_path.exists():
             return str(env_path.resolve())

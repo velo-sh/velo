@@ -15,9 +15,20 @@ import velo_zygote.constants as py_constants
 
 class TestSSOTParity(unittest.TestCase):
     def setUp(self):
+        # [RITUAL 11.2] Hostile Test Technical Hygiene
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("velo_"):
+                sys.modules.pop(mod, None)
+
         self.toml_path = Path(__file__).parents[3] / "config" / "constants.toml"
         with open(self.toml_path, "rb") as f:
             self.toml_data = tomllib.load(f)
+
+    def tearDown(self):
+        # [RITUAL 11.2] Restoration Checklist
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("velo_"):
+                sys.modules.pop(mod, None)
 
     def test_value_parity(self):
         """Verify python constants match TOML SSOT"""
@@ -49,16 +60,17 @@ class TestSSOTParity(unittest.TestCase):
         py_attrs = dir(py_constants)
         
         if current_os == "darwin":
-            # On macOS, we strictly expect NO LINUX defaults if isolation is perfect.
-            # However, looking at the file content I saw earlier, they ARE there.
-            # So this test is expected to FAIL if I strictly enforce what I saw.
-            # I will assert it and see it fail, then report it.
+            # [TRAP 49] SSOT Platform Contamination
+            # Handoff: "PATH_MACOS_* constants must NOT be present... on Linux"
+            # Reverse: LINUX constants must NOT be present on macOS.
             linux_constants = [x for x in py_attrs if "LINUX" in x]
-            self.assertEqual(len(linux_constants), 0, f"Found LINUX constants on macOS: {linux_constants}")
+            if linux_constants:
+                self.fail(f"🚨 [TRAP 49] SSOT Platform Contamination: Found LINUX constants on macOS: {linux_constants}")
         
         elif current_os == "linux":
             macos_constants = [x for x in py_attrs if "MACOS" in x]
-            self.assertEqual(len(macos_constants), 0, f"Found MACOS constants on Linux: {macos_constants}")
+            if macos_constants:
+                self.fail(f"🚨 [TRAP 49] SSOT Platform Contamination: Found MACOS constants on Linux: {macos_constants}")
 
 if __name__ == "__main__":
     unittest.main()

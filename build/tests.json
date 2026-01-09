@@ -1,34 +1,5 @@
 {
   "contracts": {},
-  "tests": {
-    "tests/qa/phase_6_1_1/test_phase611_smoke.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "FFF",
-      "sha1": "826bd6a29d745956a3c4254c6de0992a5e4b9a70",
-      "txhash": []
-    },
-    "tests/qa/phase_6_1_1/test_sec_shield.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "FF.",
-      "sha1": "bb128bbcd13360e03cfb50a690f281ca40290e81",
-      "txhash": []
-    },
-    "tests/qa/test_phase3_5_hardening.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "........",
-      "sha1": "850c0effb021c3237c8382d9ae6ec59a2abaa358",
-      "txhash": []
-    },
-    "tests/qa/test_phase6_2_agent_d_destroyer.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "...",
-      "sha1": "00f7a6de051407ae77ed9497a6bcc75768a4f9ce",
-      "txhash": []
-    }
-  },
+  "tests": {},
   "tx": {}
 }
