@@ -131,6 +131,27 @@ class VeloTestEnv:
         file_path.write_text(content)
         return file_path
 
+    @property
+    def home(self) -> Path:
+        """Compat property for artifact collection."""
+        return self.path / "home"
+
+    def spawn_velo(self, *args, **kwargs) -> subprocess.Popen:
+        """Spawn Velo binary in the test environment (non-blocking)."""
+        if self.velo_binary is None:
+            pytest.skip("Velo binary not found")
+        
+        # Default text=True unless binary output needed
+        if "text" not in kwargs:
+            kwargs["text"] = True
+            
+        cmd = [str(self.velo_binary)] + list(args)
+        return subprocess.Popen(
+            cmd,
+            cwd=self.path,
+            **kwargs
+        )
+
 
 def find_velo_binary() -> Optional[Path]:
     """Find the velo binary in standard locations."""
