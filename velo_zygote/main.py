@@ -21,6 +21,19 @@ import os
 import sys
 
 
+# Integrity Check (Pre-Flight) - RFC-0012 Defense-in-Depth
+try:
+    from . import integrity
+except (ImportError, ValueError):
+    import integrity
+
+try:
+    # Validate runtime environment, constants, and consistency
+    integrity.validate_runtime()
+except integrity.IntegrityError as e:
+    print(f"\n\033[91m🚨 PRE-FLIGHT CHECK FAILED: {e}\033[0m\n", file=sys.stderr)
+    sys.exit(1)
+
 
 import signal
 import socket
