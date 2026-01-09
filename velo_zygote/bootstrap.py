@@ -9,11 +9,37 @@ def _normalize_environment():
     if "VELO_ENV" not in os.environ:
         # 🟢 Fallback to 'dev' with explicit logging for auditability
         os.environ["VELO_ENV"] = "dev"
-        sys.stderr.write("[BOOTSTRAP-INFO] VELO_ENV missing, normalized to 'dev' for discovery/tests.\n")
-        sys.stderr.flush()
+        # Logged via _log_banner later
     else:
         # Standardize to lowercase
         os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
+
+def _log_banner():
+    """
+    Display a diagnostic startup banner according to the Velo Service Pattern.
+    Standardized service header for transparency.
+    """
+    try:
+        from velo_zygote import constants
+        # RFC-0012: Rely on normalized environment (SSOT)
+        env = os.environ["VELO_ENV"]
+        hash_scm = getattr(constants, "BUILD_SCM_HASH", "unknown")
+        proto = getattr(constants, "PROTOCOL_VERSION", "unknown")
+        
+        # Identity Matrix (Rule 2: Fail-Loud/Transparency)
+        banner = [
+            f"\n\033[1m[Velo Zygote Bootstrap]\033[0m",
+            f"  • PID:      {os.getpid()}",
+            f"  • MODE:     {env.upper()}",
+            f"  • BUILD:    {hash_scm} (v{proto})",
+            f"  • ROOT:     {os.path.dirname(os.path.abspath(__file__))}",
+            f"  • CWD:      {os.getcwd()}\n"
+        ]
+        sys.stderr.write("\n".join(banner))
+        sys.stderr.flush()
+    except Exception as e:
+        # Don't let banner failure crash the service
+        sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
 
 def initialize():
     """
@@ -53,6 +79,9 @@ def initialize():
             sys.stderr.write(f"DEBUG info: __file__={__file__}\n")
             sys.stderr.flush()
         sys.exit(1)
+
+    # 4. Success Banner (Transparency)
+    _log_banner()
 
     # 3. ImportShield and other initialization can be triggered here if needed
     # but usually we want to keep bootstrap minimal and let the entry point decide.
