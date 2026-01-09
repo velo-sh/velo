@@ -56,17 +56,21 @@ def main():
                 os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
                 break
 
-        # 4. Surgical Path Sanitization (RFC-0014)
-        # Prevent the launcher's directory (velo_zygote/) from shadowing user modules (main.py)
-        # by moving it to the end of sys.path.
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if script_dir in sys.path:
-            sys.path.remove(script_dir)
-            sys.path.append(script_dir)
+        # 4. Surgical Path Sanitization (RFC-0014 - SSOT)
+        # Prevent the launcher's directory from shadowing user modules
         
-        # Ensure CWD is at the front (Standard parity with CPython)
-        if os.getcwd() not in sys.path:
-            sys.path.insert(0, os.getcwd())
+        # We need VeloPaths here, but it might not be imported yet if we do it early.
+        # But we do it before uvicorn.run().
+        # Actually, let's keep the import close to usage if possible, or top level.
+        # Since we are inside main(), we can import here or assume top-level (later).
+        # Let's import locally to avoid circular deps if any, though paths/constants are strictly low-level.
+        try:
+            from .paths import VeloPaths
+            VeloPaths.sanitize_sys_path(__file__)
+        except ImportError:
+            # Fallback for direct invocation without package structure
+            pass
+
 
         # 5. Uvicorn Configuration
         # Load app if we need to wrap it for UDS IP preservation
@@ -96,6 +100,7 @@ def main():
         
         # Load Configuration (SSOT)
         from .settings import VeloConfig
+        from .paths import VeloPaths
         velo_config = VeloConfig.load_from_env()
 
         if getattr(args, "proxy_headers", False):

@@ -156,6 +156,22 @@ class VeloPaths:
         """Canonical path to pyproject.toml."""
         return cls.project_file(project_root, PYPROJECT_TOML)
 
+    @staticmethod
+    def sanitize_sys_path(script_file: str):
+        """
+        Surgical Path Sanitization (RFC-0014).
+        
+        1. Prevent the script's directory from shadowing user modules by moving it to the end.
+        2. Ensure CWD is at the front (Standard parity with CPython).
+        """
+        script_dir = os.path.dirname(os.path.abspath(script_file))
+        if script_dir in sys.path:
+            sys.path.remove(script_dir)
+            sys.path.append(script_dir)
+        
+        if os.getcwd() not in sys.path:
+            sys.path.insert(0, os.getcwd())
+
     @classmethod
     def uv_lock(cls, project_root: Path) -> Path:
         """Canonical path to uv.lock."""
