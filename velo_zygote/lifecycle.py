@@ -8,6 +8,24 @@ import signal
 import random
 import threading
 from typing import Dict, Tuple, Any, List, Optional, Set
+from enum import Enum, auto
+
+class ZygoteState(Enum):
+    """
+    Formalized Zygote Service States.
+    RFC-0012: SSOT for protocol state machine.
+    """
+    INIT = auto()         # Bootstrapping environment
+    IDLE = auto()         # Ready to accept connections
+    PRELOADING = auto()   # Currently loading modules
+    READY = auto()        # Warm and ready for high-speed fork
+    SHUTDOWN = auto()     # Graceful exit initiated
+    ERROR = auto()        # Critical failure state
+
+class StateTransitionError(Exception):
+    """Raised when an invalid Zygote state transition is attempted."""
+    pass
+
 try:
     from .utils import LogUtils
 except (ImportError, ValueError):
