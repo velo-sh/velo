@@ -63,14 +63,14 @@ SOCKET_PATH_LIMIT = 104
 try:
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
     from .paths import VeloPaths
-    from .config import VeloConfig
+    from .settings import VeloConfig, velo_config
     # We define ZygoteTransport locally to support FD passing (HEAD/Phase 7 requirement)
     # from .protocol import ZygoteTransport, ProtocolError 
 except (ImportError, ValueError):
     # Fallback when running main.py directly as a script
     from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
     from paths import VeloPaths
-    from config import VeloConfig
+    from settings import VeloConfig, velo_config
 
 
 class ImportShield:
@@ -150,7 +150,8 @@ _BLOCKED_PATHS = [
 ]
 
 # Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
-if VeloConfig().is_ci():
+# Validation Fix: Allow /home in GitHub Actions CI (where runner is in /home/runner)
+if velo_config.is_ci:
     _BLOCKED_PATHS.remove("/home") if "/home" in _BLOCKED_PATHS else None
 else:
     if "/home" not in _BLOCKED_PATHS:
@@ -173,7 +174,7 @@ class ForkRateLimiter:
         self.last_refill = time.time()
         self._lock = threading.Lock()
         # CI bypass: disable rate limiting in test environments
-        self._disabled = VeloConfig().is_ci() or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
+        self._disabled = velo_config.is_ci or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
     
     def acquire(self) -> bool:
         """Try to acquire a token. Returns True if allowed, False if rate limited."""
@@ -1088,7 +1089,7 @@ class ZygoteServer:
     """Layer 2: App Layer - Orchestrates the Zygote service."""
 
     def __init__(self, socket_path: str, preload: List[str] = None, idle_timeout: int = None, worker_ttl: int = None, app_name: str = None, monitor_parent: bool = True):
-        self.config = VeloConfig()
+        self.config = velo_config
         
         # RFC-0011 D.1: Support abstract sockets (@ -> \0)
         self.is_abstract = socket_path.startswith('@')
@@ -1099,7 +1100,7 @@ class ZygoteServer:
             
         self.idle_timeout = idle_timeout or self.config.graceful_shutdown_timeout
         self.worker_registry = WorkerRegistry(worker_ttl or 3600)
-        self.preload = preload or self.config.preload
+        self.preload = preload or self.config.preload_modules
         self._preloaded_modules: List[str] = []
         self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
         self.app_name: Optional[str] = app_name  # RFC-0011 WB-004: App affinity from startup

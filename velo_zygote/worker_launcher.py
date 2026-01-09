@@ -94,23 +94,25 @@ def main():
         if args.port is not None:
             run_kwargs["port"] = args.port
         
+        # Load Configuration (SSOT)
+        from .settings import VeloConfig
+        velo_config = VeloConfig.load_from_env()
+
         if getattr(args, "proxy_headers", False):
             # SEC-P0-004: Unsafe proxy headers bypass protection
             # Require explicit trust AND a non-empty allowlist.
             # RFC-0011/SEC: Never fallback to "*" for security.
-            trusted = os.environ.get("VELO_TRUSTED_PROXY") == "1"
-            allowed_ips = os.environ.get("VELO_FORWARDED_ALLOW_IPS", "")
             
-            if not allowed_ips:
+            if not velo_config.forwarded_allow_ips:
                 print("FATAL: --proxy-headers requires VELO_FORWARDED_ALLOW_IPS list.", file=sys.stderr)
                 sys.exit(1)
             
-            if not trusted:
+            if not velo_config.trusted_proxy:
                 print("FATAL: --proxy-headers requires VELO_TRUSTED_PROXY=1.", file=sys.stderr)
                 sys.exit(1)
             
             run_kwargs["proxy_headers"] = True
-            run_kwargs["forwarded_allow_ips"] = allowed_ips
+            run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
             
         # 6. Execution
         uvicorn.run(**run_kwargs)
