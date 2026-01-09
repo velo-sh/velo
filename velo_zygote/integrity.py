@@ -16,6 +16,7 @@ class IntegrityError(Exception):
     pass
 
 REQUIRED_CONSTANTS = [
+    "BUILD_SCM_HASH",
     "PROTOCOL_VERSION",
     "SOCKET_PATH_LIMIT",
     "MAX_MESSAGE_SIZE",
