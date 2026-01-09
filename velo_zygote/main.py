@@ -12,6 +12,9 @@ if _pkg_root not in sys.path:
 
 from velo_zygote import bootstrap
 bootstrap.initialize()
+
+import os
+# print(f"DEBUG: VELO_IS_ZYGOTE={os.environ.get('VELO_IS_ZYGOTE')}", file=sys.stderr)
 # --------------------
 
 import asyncio
@@ -78,6 +81,10 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
     if server.app_name and client_app and client_app != server.app_name:
         return {"type": "Error", "message": f"App affinity mismatch: expected {server.app_name}, got {client_app}"}
     
+    if not server.app_name and client_app:
+        server.app_name = client_app
+        LogUtils.log(f"Zygote app affinity established: {client_app}")
+
     capabilities_dict = {
         "protocol": "map",
         "preload": server.state.name.lower(),
@@ -89,14 +96,15 @@ async def handle_handshake(server: 'ZygoteServer', cmd: Dict) -> Dict:
     # Zygote Capabilites System (Phase 11.0)
     capabilities_list = ["fork:sync", "fork:async", "shm:v1"]
     capabilities_list.append(f"preload:{server.state.name.lower()}")
+    if server.app_name:
+        capabilities_list.append(f"app:{server.app_name}")
     
-    # 3. Decision Logic
+    # 3. Decision Logic - Wait for preload if necessary (Shadow Preloading Pattern)
     if server.state == ZygoteState.PRELOADING:
         try:
-            # Wait for preload to finish (architectural requirement for deep probe)
             await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
         except asyncio.TimeoutError:
-            return {"type": "Error", "message": "Zygote is preloading (timeout during handshake wait)."}
+            return {"type": "Error", "message": "Handshake Timeout: Zygote still preloading after 30s"}
     
     if server.state == ZygoteState.ERROR:
         return {"type": "Error", "message": "Zygote is in ERROR state."}
@@ -292,6 +300,10 @@ class ZygoteServer:
         LogUtils.log(f"Listening on {self.socket_path}")
         
         loop = asyncio.get_event_loop()
+        # RFC-0012: Ensure enough threads for concurrent blocking IPC (Trap 178.9)
+        from concurrent.futures import ThreadPoolExecutor
+        loop.set_default_executor(ThreadPoolExecutor(max_workers=200))
+        
         while True:
             try:
                 # Use loop.sock_accept for non-blocking accept
@@ -320,7 +332,12 @@ class ZygoteServer:
         transport = ZygoteTransport(sock)
         try:
             # RFC-0011 Requirement: Send Ready greeting immediately upon connection
-            transport.send({"type": "Ready"})
+            try:
+                transport.send({"type": "Ready"})
+            except BrokenPipeError:
+                # Drive-by probe (Trap 178.7) - ignore silently
+                return
+            
             while True:
                 # Use run_in_executor for blocking recvmsg
                 msg = await asyncio.get_event_loop().run_in_executor(None, transport.recv)

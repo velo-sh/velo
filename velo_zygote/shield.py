@@ -29,7 +29,7 @@ class ImportShield:
     def find_spec(self, fullname, path, target=None):
         # 0. Only block if shield is active (via class var or environment)
         # Environment check is the target-safe SSOT for forked children.
-        if not (self._active or os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1"):
+        if not self._active:
             return None
 
         # RFC-0012: Block ALL velo_zygote imports when shield is active.
@@ -58,18 +58,22 @@ class ImportShield:
             
             # Centralized Path Sanitization (RFC-0011 6A.1)
             # Prevent shadowing of user modules by framework modules.
-            try:
-                framework_dir = os.path.dirname(os.path.abspath(__file__))
-                if framework_dir in sys.path:
-                    sys.path.remove(framework_dir)
-            except: pass
+            # Zygote itself needs this path during boot (Trap 178.6)
+            if os.environ.get("VELO_IS_ZYGOTE") != "1":
+                try:
+                    framework_dir = os.path.dirname(os.path.abspath(__file__))
+                    if framework_dir in sys.path:
+                        sys.path.remove(framework_dir)
+                except: pass
 
 
 # RFC-0012 Phase 11.3: Auto-install when environment variable is set.
 # This ensures protection even when Zygote falls back to direct uvicorn mode.
 if os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1":
     ImportShield.install()
-    ImportShield._active = True
+    # Zygote itself must NOT be shielded from its own internal modules (Trap 178.4)
+    if os.environ.get("VELO_IS_ZYGOTE") != "1":
+        ImportShield._active = True
 
 
 class PathValidator:
