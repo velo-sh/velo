@@ -5,14 +5,14 @@ import uvicorn
 import signal
 import traceback
 
-# Fix sys.path to allow importing 'velo_zygote' package modules
-# This is necessary when executed via 'exec' or as a standalone script
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+# --- Velo Bootstrap Start ---
+_pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _pkg_root not in sys.path:
+    sys.path.insert(0, _pkg_root)
 
-# Prioritize package-level import (velo_zygote.x)
-if PARENT_DIR not in sys.path:
-    sys.path.insert(0, PARENT_DIR)
+from velo_zygote import bootstrap
+bootstrap.initialize()
+# --- Velo Bootstrap End ---
 
 class UDSProxyMiddleware:
     """
@@ -54,24 +54,11 @@ def main():
         parser.add_argument("--proxy-headers", action="store_true", dest="proxy_headers")
         args = parser.parse_args()
         
-        # 3. Secure Imports (with Path Fix)
-        try:
-            from velo_zygote.shield import ImportShield
-            from velo_zygote.paths import VeloPaths
-            from velo_zygote.settings import VeloConfig
-            from velo_zygote import integrity
-        except ImportError:
-            # Fallback: Try adding script dir for direct module imports
-            if SCRIPT_DIR not in sys.path:
-                sys.path.insert(0, SCRIPT_DIR)
-            from shield import ImportShield
-            from paths import VeloPaths
-            from settings import VeloConfig
-            import integrity
-
-        # 4. Fail-Fast Integrity Check
-        # Ensure runtime environment matches build time (Git Hash, etc.)
-        integrity.validate_runtime()
+        # 3. Secure Imports
+        from velo_zygote.shield import ImportShield
+        from velo_zygote.paths import VeloPaths
+        from velo_zygote.settings import VeloConfig
+        from velo_zygote import integrity
 
         # 5. ImportShield Activation (Titanium Isolation)
         # SSOT: Import directly from shield module (Phase 10.0)

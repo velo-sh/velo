@@ -429,6 +429,20 @@ impl ZygoteLauncher {
             config.security_hpc_threads.to_string(),
         );
 
+        // --- Bridge of Truth: Inject Environment Context ---
+        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+        cmd.env("VELO_ENV", &env_mode);
+
+        if let Ok(val) = std::env::var("VELO_SOCKET_DIR") {
+            cmd.env("VELO_SOCKET_DIR", val);
+        }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_LOG") {
+            cmd.env("VELO_ZYGOTE_LOG", val);
+        }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_SOCKET") {
+            cmd.env("VELO_ZYGOTE_SOCKET", val);
+        }
+
         // Also inject boolean flags if necessary (currently none in VeloConfig that aren't implicit)
         // =========================================================================
 
