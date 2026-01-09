@@ -539,11 +539,12 @@ def hook_security(keep_fds: Optional[Set[int]] = None):
             default_keep.update(keep_fds)
         
         # Determine all open FDs
+        # Determine all open FDs
         current_fds = set()
-        if os.path.exists('/proc/self/fd'):
-            current_fds = set(int(fd) for fd in os.listdir('/proc/self/fd'))
-        elif os.path.exists('/dev/fd'):
-            current_fds = set(int(fd) for fd in os.listdir('/dev/fd'))
+        if os.path.exists(PATH_LINUX_FD_DIR):
+            current_fds = set(int(fd) for fd in os.listdir(PATH_LINUX_FD_DIR))
+        elif os.path.exists(PATH_MACOS_FD_DIR):
+            current_fds = set(int(fd) for fd in os.listdir(PATH_MACOS_FD_DIR))
         
         # Close everything else (Surgical Cord-Cutting)
         if current_fds:
@@ -1420,7 +1421,8 @@ async def handle_handshake(server: ZygoteServer, cmd: Dict) -> Dict:
 async def handle_fork(server: ZygoteServer, cmd: Dict) -> Dict:
     # DEBUG: Log entry to handle_fork
     try:
-        with open("/tmp/worker_fork_debug.log", "a") as f:
+        # Use SSOT worker log path for debug info
+        with open(VeloPaths.worker_log(), "a") as f:
             f.write(f"[ASYNC HANDLE_FORK] Entry, cmd={cmd}\n")
             f.flush()
     except: pass
