@@ -1,14 +1,41 @@
 FROM velo-ci-ubuntu
 
-# Pre-create virtual environment and install test dependencies
+# 1. Python Optimization: Pre-install test dependencies
 # We use /tmp/.venv-docker to match the test script expectation
 RUN uv venv --python 3.11 /tmp/.venv-docker && \
     . /tmp/.venv-docker/bin/activate && \
     uv pip install fastapi uvicorn pytest requests psutil
 
-# Set environment variables to use the venv by default
 ENV VIRTUAL_ENV=/tmp/.venv-docker
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Set PYTHONPATH to include workspace
+# 2. Rust Optimization: Cache Dependencies Layer
+# Create a dummy project to cache compiled dependencies
+WORKDIR /build_cache
+
+# Copy only dependency definitions first
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy source files to trick Cargo into building dependencies
+# We need both main.rs (for binary) and lib.rs (if mixed crate) structure
+# Creating a dummy bin target "velo" as defined in Cargo.toml
+RUN mkdir src && \
+    echo "fn main() { println!(\"Dummy build\"); }" > src/main.rs && \
+    # Create necessary directories for potential workspaces or modules if needed
+    mkdir -p velo_zygote
+
+# Build release binary to cache all dependencies (crates.io index + compilation)
+# This step takes time ONLY on the first run or when Cargo.toml changes
+RUN cargo build --release || true
+
+# Clean up the dummy source code artifacts but KEEP the compiled dependencies in target/
+# We remove the final binary and the fingerprint of our dummy source
+RUN rm -f target/release/deps/velo* target/release/velo* && \
+    rm -rf src
+
+# 3. Final Environment Setup
+# Point CARGO_TARGET_DIR to our cached directory so future builds use it
+ENV CARGO_TARGET_DIR=/build_cache/target
 ENV PYTHONPATH="/workspace"
+
+WORKDIR /workspace
