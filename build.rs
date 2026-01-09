@@ -11,10 +11,21 @@ fn main() {
     let output = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output();
-    let git_hash = match output {
+    let mut git_hash = match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => "unknown".to_string(),
     };
+
+    // Check for uncommitted changes
+    let is_dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+
+    if is_dirty {
+        git_hash.push_str("-dirty");
+    }
 
     // 2. Read TOML
     let config_path = Path::new("config/constants.toml");
