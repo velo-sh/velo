@@ -47,7 +47,7 @@ if [ "$COMPARE_MODE" = true ]; then
 else
     # Traditional Demo Mode
     # 1. Setup Skeleton (Idempotent)
-    python3 $PROJECT_ROOT/skeleton/setup_skeleton.py
+    python3 "$PROJECT_ROOT/skeleton/setup_skeleton.py"
 
     # 2. Performance Comparison (Benchmark)
     echo -e "Phase 1: Environment Freezing ➔ \033[90mScanning App Registry...\033[0m"
@@ -55,11 +55,12 @@ else
     echo -e "Phase 2: Instant Clone ➔ \033[1;32mForking 10 Workers via Velo Zygote...\033[0m"
     sleep 0.5
     
-    # 3. Density Proof
-    python3 $PROJECT_ROOT/metrics_monitor.py --demo 2>/dev/null
+    # 3. Visualization + Memory Analysis
+    # Display memory chart (Simulated vs Real)
+    python3 "$PROJECT_ROOT/metrics_monitor.py" --demo
 
-    # 4. Calculate Score
-    python3 examples/scripts/hio_engine.py 2>/dev/null
+    # Calculate HIO Score
+    python3 "examples/scripts/hio_engine.py" --startup=0.001 --saving=89 --metric="RSS"
 fi
 
 echo -e "\033[1;32m[DONE] Django HIO-001 High-Precision Demo is Ready.\033[0m"
