@@ -182,9 +182,14 @@ class ForkHandler:
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else 0
         except Exception as e:
-            print(f"Worker Exception: {e}", file=sys.stderr)
-            traceback.print_exc()
+            sys.stderr.write(f"Worker Exception: {e}\n")
+            traceback.print_exc(file=sys.stderr)
             exit_code = 1
+        finally:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except: pass
         
         # 6. Final Cleanup
         ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
