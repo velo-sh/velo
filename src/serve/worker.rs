@@ -18,6 +18,23 @@ pub struct Worker {
     pub socket_path: Option<PathBuf>,
 }
 
+#[allow(clippy::box_collection)]
+fn build_worker_env(
+    config: &crate::config::VeloConfig,
+) -> Box<std::collections::HashMap<String, String>> {
+    let mut env = std::env::vars()
+        .filter(|(k, _)| config.security_env_whitelist.contains(k))
+        .collect::<std::collections::HashMap<String, String>>();
+    env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
+    if !env.contains_key("VELO_FORWARDED_ALLOW_IPS") {
+        env.insert(
+            "VELO_FORWARDED_ALLOW_IPS".to_string(),
+            "127.0.0.1,::1".to_string(),
+        );
+    }
+    Box::new(env)
+}
+
 impl Worker {
     /// Spawn worker via Zygote IPC (UDS mode)
     pub fn spawn_uds_via_zygote(
@@ -27,6 +44,7 @@ impl Worker {
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
+        let config = crate::config::VeloConfig::default();
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
         let launcher_path = crate::zygote::find_worker_launcher()
@@ -66,6 +84,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                env: build_worker_env(&config),
                 shm_size,
             },
             fd_to_pass,
@@ -93,6 +112,7 @@ impl Worker {
         port: u16,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
+        let config = crate::config::VeloConfig::default();
 
         let launcher_path = crate::zygote::find_worker_launcher()
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
@@ -119,6 +139,7 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
+                env: build_worker_env(&config),
                 shm_size: None,
             },
             None,

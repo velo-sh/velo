@@ -1,0 +1,9 @@
+[meta]
+category = "qa"
+description = "Verify RNG/UUID Entropy after fork"
+
+[test]
+entry_point = "test_entropy.py"
+# We expect a UUID, so just match basic structure length
+expected_output = "UUID: .+"
+preload_modules = ["uuid"]

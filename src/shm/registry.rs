@@ -409,6 +409,11 @@ impl MemoryRegistry {
             // This path is taken if:
             // 1. MFD_HUGETLB failed (not supported/disabled)
             // 2. ftruncate failed (quota exceeded, etc)
+            if prefer_huge {
+                eprintln!(
+                    "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
+                );
+            }
             fd = try_create(0);
             is_huge = false;
 
