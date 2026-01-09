@@ -139,7 +139,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             &config,
             cmd.profile,
-            shm_file.as_ref(),
+            shm_file.as_ref().map(|s| &s.file),
         )? {
             if cmd.profile {
                 eprintln!(
@@ -254,6 +254,7 @@ fn try_zygote_run(
             Some(project_dir.to_path_buf()),
             max_size,
             shm_file,
+            config,
         ) {
             Ok(worker) => {
                 if async_enabled && profile {
@@ -317,6 +318,7 @@ fn try_zygote_run(
                             Some(project_dir.to_path_buf()),
                             max_size,
                             shm_file,
+                            config,
                         ) {
                             if async_enabled {
                                 eprintln!(

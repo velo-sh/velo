@@ -192,17 +192,74 @@ def cleanup_zygote_between_modules():
          except: pass
 
 
+# =============================================================================
+# VELO BINARY PATH RESOLUTION (SSOT)
+# =============================================================================
+# Priority Order:
+#   1. VELO_BINARY env var (explicit override)
+#   2. target/release/velo (CI/Prod builds)
+#   3. test_deploy_tmp/bin/velo (test deployment artifacts)
+#   4. target/debug/velo (local development)
+#   5. Auto-build debug binary (fallback)
+#
+# Usage:
+#   from conftest import get_velo_binary
+#   velo = get_velo_binary()
+
+def get_velo_binary() -> str:
+    """Get the path to the Velo binary with consistent priority.
+    
+    Returns:
+        Absolute path to the velo binary.
+        
+    Raises:
+        RuntimeError: If no binary found and auto-build fails.
+    """
+    root_dir = Path(__file__).parents[2]
+    
+    # Priority 1: Environment Variable (explicit override for CI/testing)
+    if env_binary := os.environ.get("VELO_BINARY"):
+        env_path = Path(env_binary)
+        if env_path.exists():
+            return str(env_path.resolve())
+        else:
+            print(f"⚠️ VELO_BINARY={env_binary} does not exist, checking fallbacks...")
+    
+    # Priority 2: Release Binary (CI/Prod)
+    release_bin = (root_dir / "target/release/velo").resolve()
+    if release_bin.exists():
+        return str(release_bin)
+    
+    # Priority 3: Test Deployment Artifact (deployable package)
+    test_deploy_bin = (root_dir / "test_deploy_tmp/bin/velo").resolve()
+    if test_deploy_bin.exists():
+        return str(test_deploy_bin)
+        
+    # Priority 4: Debug Binary (Local Dev)
+    debug_bin = (root_dir / "target/debug/velo").resolve()
+    if debug_bin.exists():
+        return str(debug_bin)
+
+    # Priority 5: Auto-build Debug Binary (Fallback)
+    print("⚠️ Velo binary not found, building (debug)...")
+    result = subprocess.run(
+        ["cargo", "build"], 
+        cwd=root_dir, 
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to build velo: {result.stderr}")
+    
+    if not debug_bin.exists():
+        raise RuntimeError(f"Velo binary not found at {debug_bin} after build")
+    return str(debug_bin)
+
+
 @pytest.fixture(scope="session")
 def velo_binary():
-    """Build and return path to Velo binary."""
-    # RFC-0013: Ensure we use the binary from the current workspace
-    root_dir = Path(__file__).parents[2]
-    subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
-    
-    bin_path = (root_dir / "target/debug/velo").resolve()
-    if not bin_path.exists():
-        raise RuntimeError(f"Velo binary not found at {bin_path}")
-    return str(bin_path)
+    """Pytest fixture: Build and return path to Velo binary."""
+    return get_velo_binary()
 
 # =============================================================================
 # HERMETIC TEST ENVIRONMENT (RFC-0012)

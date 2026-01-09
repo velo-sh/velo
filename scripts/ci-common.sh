@@ -14,6 +14,12 @@
 
 set -euo pipefail
 
+# Get script directory for relative sourcing
+_CI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source test suite configuration (SSOT)
+source "$_CI_COMMON_DIR/test-suites.conf"
+
 # =============================================================================
 # Colors
 # =============================================================================
@@ -216,7 +222,8 @@ run_fmt_check() {
 # =============================================================================
 run_full_ci() {
     local venv_path="${1:-.venv}"
-    local test_paths="${2:-tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py}"
+    # Use SSOT test paths from test-suites.conf
+    local test_paths="${2:-$TEST_PATHS_DOCKER}"
     
     echo ""
     echo "==================== Phase 1: Setup ===================="

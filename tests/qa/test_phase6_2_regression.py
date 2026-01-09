@@ -47,7 +47,7 @@ def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
     assert result.returncode == 0
     assert elapsed < 3, f"Regression: velo serve --dry-run hung for {elapsed:.2f}s (deadlock trap)"
     # Log output goes to stderr in Velo
-    assert "Dry Run" in result.stderr
+    assert "Dry run" in result.stderr
 
 @pytest.mark.regression
 def test_reg_62_002_zygote_guardian_daemon(isolated_env, short_socket):

@@ -28,6 +28,16 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 markers = [
+    # RFC-0017: Tier Markers (SSOT for test discovery)
+    "tier0: Unit tests - no external deps, <30s (RFC-0017)",
+    "tier1: Integration tests - needs binary, <2min (RFC-0017)",
+    "tier2: E2E tests - full Zygote runtime, <5min (RFC-0017)",
+    "tier3: Hardened tests - security/stability (RFC-0017)",
+    # RFC-0017: Platform Markers
+    "linux_only: Linux-specific features (Abstract Sockets, NUMA)",
+    "macos_only: macOS-specific features (sandbox-exec)",
+    "zygote_required: Requires Zygote mode (not fallback uvicorn)",
+    # Legacy Markers (backward compatibility)
     "slow: marks tests as slow (deselect with '-m not slow')",
     "chaos: marks tests as resource-heavy chaos tests",
     "brutal: marks tests as brutal stress tests",

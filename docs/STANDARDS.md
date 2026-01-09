@@ -186,6 +186,25 @@ with tempfile.TemporaryDirectory() as tmpdir:
 ./scripts/qa-fast.sh 3   # Heavy (optional)
 ```
 
+### pytest Marker-Based Discovery (RFC-0017)
+
+> **Governance**: [RFC-0017](./rfcs/0017-test-tier-discovery.md)
+
+```bash
+# Quick local check
+pytest -m "tier0 or tier1" tests/qa/
+
+# Full CI (all tiers)
+pytest tests/qa/
+```
+
+| Marker | SLA | Description |
+|---|---|---|
+| `@tier0` | <30s | Unit tests, no deps |
+| `@tier1` | <2min | Integration with binary |
+| `@tier2` | <5min | E2E with Zygote |
+| `@tier3` | <5min | Hardened/adversarial |
+
 ### CI Pipeline
 
 ```
@@ -198,7 +217,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 4. Sign-off for release
 ```
 
-> See [docs/qa/tiered-testing-guide.md](./qa/tiered-testing-guide.md) for full QA standards.
+> See [docs/qa/STANDARDS/TIERED-TESTING-GUIDE.md](./qa/STANDARDS/TIERED-TESTING-GUIDE.md) for full QA standards.
 
 ---
 
