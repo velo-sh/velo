@@ -4,8 +4,15 @@ import sys
 import uvicorn
 import signal
 import traceback
-import tempfile
-import importlib
+
+# Fix sys.path to allow importing 'velo_zygote' package modules
+# This is necessary when executed via 'exec' or as a standalone script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+
+# Prioritize package-level import (velo_zygote.x)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
 
 class UDSProxyMiddleware:
     """
@@ -47,34 +54,34 @@ def main():
         parser.add_argument("--proxy-headers", action="store_true", dest="proxy_headers")
         args = parser.parse_args()
         
-        # 3. ImportShield Activation (Titanium Isolation)
+        # 3. Secure Imports (with Path Fix)
+        try:
+            from velo_zygote.shield import ImportShield
+            from velo_zygote.paths import VeloPaths
+            from velo_zygote.settings import VeloConfig
+            from velo_zygote import integrity
+        except ImportError:
+            # Fallback: Try adding script dir for direct module imports
+            if SCRIPT_DIR not in sys.path:
+                sys.path.insert(0, SCRIPT_DIR)
+            from shield import ImportShield
+            from paths import VeloPaths
+            from settings import VeloConfig
+            import integrity
+
+        # 4. Fail-Fast Integrity Check
+        # Ensure runtime environment matches build time (Git Hash, etc.)
+        integrity.validate_runtime()
+
+        # 5. ImportShield Activation (Titanium Isolation)
         # SSOT: Import directly from shield module (Phase 10.0)
-        try:
-            from .shield import ImportShield
-            ImportShield.activate()
-        except ImportError:
-            # Fallback if running outside of package context (though unlikely for launcher)
-            # Try to find it if it was installed by main.py (if invoked via main? No, launcher starts first)
-            # Actually, launcher imports shield, shield sets env var.
-            pass
+        ImportShield.activate()
 
-        # 4. Surgical Path Sanitization (RFC-0014 - SSOT)
+        # 6. Surgical Path Sanitization (RFC-0014 - SSOT)
         # Prevent the launcher's directory from shadowing user modules
-        
-        # We need VeloPaths here, but it might not be imported yet if we do it early.
-        # But we do it before uvicorn.run().
-        # Actually, let's keep the import close to usage if possible, or top level.
-        # Since we are inside main(), we can import here or assume top-level (later).
-        # Let's import locally to avoid circular deps if any, though paths/constants are strictly low-level.
-        try:
-            from .paths import VeloPaths
-            VeloPaths.sanitize_sys_path(__file__)
-        except ImportError:
-            # Fallback for direct invocation without package structure
-            pass
+        VeloPaths.sanitize_sys_path(__file__)
 
-
-        # 5. Uvicorn Configuration
+        # 7. Uvicorn Configuration
         # Load app if we need to wrap it for UDS IP preservation
         app = args.app
         if args.uds and getattr(args, "proxy_headers", False):
@@ -84,7 +91,8 @@ def main():
                 app = config.loaded_app
                 app = UDSProxyMiddleware(app)
             except Exception as e:
-                print(f"Warning: Could not wrap app for UDS IP preservation: {e}", file=sys.stderr)
+                # Emergency stderr logging
+                print(f"FATAL: Could not wrap app for UDS IP preservation: {e}", file=sys.stderr)
                 # Fallback to original app string
                 app = args.app
 
@@ -100,9 +108,7 @@ def main():
         if args.port is not None:
             run_kwargs["port"] = args.port
         
-        # Load Configuration (SSOT)
-        from .settings import VeloConfig
-        from .paths import VeloPaths
+        # Load Config for Proxy Headers Check
         velo_config = VeloConfig.load_from_env()
 
         if getattr(args, "proxy_headers", False):
@@ -121,24 +127,13 @@ def main():
             run_kwargs["proxy_headers"] = True
             run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
             
-        # 6. Execution
+        # 8. Execution
         uvicorn.run(**run_kwargs)
         
     except Exception as e:
-        # Emergency logging for startup failures
-        try:
-            # SEC-P0-005: Use tempfile API for secure, restrictive (0600) log creation
-            fd, _log_path = tempfile.mkstemp(prefix="worker_error_", suffix=".log", dir=tempfile.gettempdir())
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, 'w') as f:
-                f.write(f"FATAL: {e}\n")
-                traceback.print_exc(file=f)
-        except Exception as log_exc:
-            # Fallback to stderr if file logging fails
-            print(f"FAILED TO WRITE EMERGENCY LOG: {log_exc}", file=sys.stderr)
-            print(f"ORIGINAL ERROR: {e}", file=sys.stderr)
-            traceback.print_exc()
-            
+        # Emergency logging - Print to stderr for visibility in CI/Tests
+        sys.stderr.write(f"FATAL WORKER CRASH: {e}\n")
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
