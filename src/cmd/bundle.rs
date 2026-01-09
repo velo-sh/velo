@@ -268,6 +268,16 @@ pub enum BundleSubcommand {
         #[arg(long, short, default_value = "bundle.veloc")]
         output: PathBuf,
     },
+    /// Collect failure artifacts (logs, dumps)
+    Collect {
+        /// Output tarball path (default: failure-bundle-<timestamp>.tar.gz)
+        #[arg(long, short)]
+        output: Option<PathBuf>,
+
+        /// Log directory override (optional)
+        #[arg(long)]
+        log_dir: Option<PathBuf>,
+    },
 }
 
 /// Handle 'velo bundle' command (entry point from cli.rs)
@@ -286,7 +296,49 @@ pub fn cmd_bundle(args: &[String]) -> Result<()> {
             project_dir,
             output,
         } => cmd_bundle_build_impl(&project_dir, &output),
+        BundleSubcommand::Collect { output, log_dir } => cmd_bundle_collect_impl(output, log_dir),
     }
+}
+
+fn cmd_bundle_collect_impl(output: Option<PathBuf>, log_dir: Option<PathBuf>) -> Result<()> {
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let default_name = format!("failure-bundle-{}.tar.gz", timestamp);
+    let output_path = output.unwrap_or_else(|| PathBuf::from(default_name));
+
+    // Determine log directory
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp"));
+    let default_log_dir = home.join(".local/state/velo");
+    let target_dir = log_dir.unwrap_or(default_log_dir);
+
+    if !target_dir.exists() {
+        return Err(anyhow!("Log directory not found: {}", target_dir.display()));
+    }
+
+    eprintln!(
+        "📦 Collecting failure bundle from: {}",
+        target_dir.display()
+    );
+
+    // Use system tar
+    let status = Command::new("tar")
+        .arg("-czf")
+        .arg(&output_path)
+        .arg("-C")
+        .arg(&target_dir)
+        .arg(".") // Archive contents, relative to -C
+        .status()?;
+
+    if !status.success() {
+        return Err(anyhow!(
+            "Failed to create tarball (tar exit code: {:?})",
+            status.code()
+        ));
+    }
+
+    eprintln!("✅ Failure bundle created: {}", output_path.display());
+    Ok(())
 }
 
 fn cmd_bundle_build_impl(project_dir: &Path, output_path: &Path) -> Result<()> {

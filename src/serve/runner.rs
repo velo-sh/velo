@@ -176,10 +176,22 @@ fn apply_process_group(cmd: &mut Command) {
 /// Also manages PID file cleanup.
 pub struct ManagedChild {
     child: Child,
+    pgid: Option<i32>,
     pid_file: Option<PathBuf>,
 }
-
 impl ManagedChild {
+    /// Get child process ID.
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Get process group ID (Unix only).
+    #[cfg(unix)]
+    pub fn pgid(&self) -> Option<i32> {
+        self.pgid
+    }
+
+    /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
     /// Spawn a new managed child process.
     ///
     /// # Arguments
@@ -204,7 +216,16 @@ impl ManagedChild {
             return Err(e);
         }
 
-        Ok(Self { child, pid_file })
+        #[cfg(unix)]
+        let pgid = Some(child.id() as i32);
+        #[cfg(not(unix))]
+        let pgid = None;
+
+        Ok(Self {
+            child,
+            pgid,
+            pid_file,
+        })
     }
 
     /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
@@ -271,10 +292,15 @@ impl ManagedChild {
     /// Send SIGTERM to the child process (graceful shutdown).
     #[cfg(unix)]
     pub fn terminate(&mut self) -> Result<(), ServeError> {
-        let pid = self.child.id() as i32;
+        let signal_pid = if let Some(pgid) = self.pgid {
+            -pgid
+        } else {
+            self.child.id() as i32
+        };
+
         // Send SIGTERM to the entire process group (negative PID)
         unsafe {
-            if libc::kill(-pid, libc::SIGTERM) == 0 {
+            if libc::kill(signal_pid, libc::SIGTERM) == 0 {
                 return Ok(());
             }
         }
@@ -291,20 +317,19 @@ impl ManagedChild {
     pub fn kill(&mut self) -> Result<(), ServeError> {
         #[cfg(unix)]
         {
-            let pid = self.child.id() as i32;
+            let signal_pid = if let Some(pgid) = self.pgid {
+                -pgid
+            } else {
+                self.child.id() as i32
+            };
             // Send SIGKILL to the entire process group (negative PID)
             unsafe {
-                if libc::kill(-pid, libc::SIGKILL) == 0 {
+                if libc::kill(signal_pid, libc::SIGKILL) == 0 {
                     return Ok(());
                 }
             }
         }
         self.child.kill().map_err(ServeError::SignalError)
-    }
-
-    /// Get the child's PID.
-    pub fn id(&self) -> u32 {
-        self.child.id()
     }
 }
 
@@ -314,10 +339,14 @@ impl Drop for ManagedChild {
         // This ensures uvicorn workers and other grandchildren are also terminated
         #[cfg(unix)]
         {
-            let pgid = self.child.id() as i32;
+            let signal_pid = if let Some(pgid) = self.pgid {
+                -pgid
+            } else {
+                self.child.id() as i32
+            };
             // Send SIGKILL to the entire process group (negative PID)
             unsafe {
-                libc::kill(-pgid, libc::SIGKILL);
+                libc::kill(signal_pid, libc::SIGKILL);
             }
         }
 
@@ -449,7 +478,7 @@ pub fn run_server(
     use std::time::Instant;
 
     // MANDATE R5: Capture the absolute start including early validation
-    let start_time = Instant::now();
+    // start_time moved inside loop for correct reload timing
 
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
@@ -518,7 +547,11 @@ pub fn run_server(
     }
 
     // Step 4: Check server is installed
-    logger.debug(&format!("Checking if {} is installed...", server));
+    logger.debug(&format!(
+        "Checking if {} is installed (using python_path: {})...",
+        server,
+        python_path.display()
+    ));
     if !check_server_installed(server, python_path) {
         logger.error(&format!("Missing dependency: {}", server));
         eprintln!();
@@ -599,16 +632,12 @@ pub fn run_server(
         }
     }
 
-    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
-    if args.dry_run {
-        let ready_ms = start_time.elapsed().as_millis();
-        logger.log_with_timing("info", "Server ready (Dry Run)", None, Some(ready_ms));
-        logger.info(&format!("App: {}", args.app));
-        return Ok(ServerExit::Shutdown);
-    }
-
-    // Start Zygote if enabled and we have preload modules
-    if args.use_zygote && !preload_modules.is_empty() && crate::zygote::is_supported() {
+    // Start Zygote if enabled and we have preload modules (Skip in Dry Run)
+    if !args.dry_run
+        && args.use_zygote
+        && !preload_modules.is_empty()
+        && crate::zygote::is_supported()
+    {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
@@ -618,6 +647,15 @@ pub fn run_server(
 
             if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
                 logger.warn(&format!("Zygote pre-warm failed: {}", e));
+
+                // DIAGNOSTIC: Dump Zygote log to see why it crashed
+                let log_path = crate::zygote::get_log_path();
+                if let Ok(content) = std::fs::read_to_string(&log_path) {
+                    eprintln!("--- Zygote Log Dump ({}) ---", log_path.display());
+                    eprintln!("{}", content);
+                    eprintln!("-------------------------------------------");
+                }
+
                 if args.log_format == LogFormat::Text {
                     eprintln!("   Continuing without Zygote optimization");
                 }
@@ -635,7 +673,8 @@ pub fn run_server(
                 &socket_path,
                 crate::zygote::ipc::ZygoteCommand::Handshake {
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
-                    capabilities: vec![],
+                    capabilities: vec!["serve:http".to_string()],
+                    request_id: Some(uuid::Uuid::now_v7().to_string()),
                 },
                 None,
             ) {
@@ -661,7 +700,8 @@ pub fn run_server(
     // We use >= 1 because even a single worker must go through the proxy to ensure
     // consistent header injection (X-Forwarded-For) and Scope matching.
     // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
-    if args.workers >= 1
+    if !args.dry_run
+        && args.workers >= 1
         && args.use_zygote
         && !preload_modules.is_empty()
         && _zygote_guard.is_some()
@@ -677,7 +717,7 @@ pub fn run_server(
         // Spawn N workers
         let mut spawn_failed = false;
         for i in 0..args.workers {
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
                 Ok(worker) => {
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
@@ -708,6 +748,7 @@ pub fn run_server(
                 last_failure: Option<Instant>,
                 backoff_secs: u64,
                 consecutive_failures: u32,
+                fail_fast_limit: u32,
             }
             impl RespawnTracker {
                 fn new() -> Self {
@@ -715,10 +756,17 @@ pub fn run_server(
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10);
+                    // VELO_FAIL_FAST_LIMIT sets the maximum consecutive worker startup failures before giving up.
+                    // Default: 5. Typical use: raise for flaky environments, lower for CI.
+                    let fail_fast_limit = std::env::var("VELO_FAIL_FAST_LIMIT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(5);
                     Self {
                         last_failure: None,
                         backoff_secs,
                         consecutive_failures: 0,
+                        fail_fast_limit,
                     }
                 }
                 fn should_respawn(&self) -> bool {
@@ -732,9 +780,19 @@ pub fn run_server(
                     self.consecutive_failures += 1;
                     self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
-                    // RFC-0011 Fail-Fast: If we fail 5 times consecutively at startup,
+                    // RFC-0011 Fail-Fast: If we fail consecutively at startup,
                     // it's a fatal environment issue.
-                    self.consecutive_failures < 5
+                    if self.consecutive_failures >= self.fail_fast_limit {
+                        eprintln!(
+                            "FATAL: Worker failed to start after {}/{} attempts. \
+                             Please check environment configuration, networking, and dependencies. \
+                             To adjust this threshold, set the VELO_FAIL_FAST_LIMIT environment variable (e.g., VELO_FAIL_FAST_LIMIT=10).",
+                            self.consecutive_failures, self.fail_fast_limit
+                        );
+                        false
+                    } else {
+                        true
+                    }
                 }
                 fn reset(&mut self) {
                     // RFC-0011 Stability Fix: "Probation Period".
@@ -889,9 +947,10 @@ pub fn run_server(
                                     );
                                 }
                                 logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (Attempt {}/5)...",
+                                    "A worker died during startup. Retrying in {}s (Attempt {}/{})...",
                                     tracker.backoff_secs,
-                                    tracker.consecutive_failures
+                                    tracker.consecutive_failures,
+                                    tracker.fail_fast_limit
                                 ));
 
                                 // Check if we're still in backoff period
@@ -910,10 +969,10 @@ pub fn run_server(
                                 }
 
                                 logger.warn(&format!(
-                                    "Worker {} (PID: {}) died, respawning (backoff: {}s)...",
-                                    i + 1,
-                                    worker.pid(),
-                                    tracker.backoff_secs
+                                    "A worker died during startup. Retrying in {}s (attempt {}/{})...",
+                                    tracker.backoff_secs,
+                                    tracker.consecutive_failures,
+                                    tracker.fail_fast_limit
                                 ));
 
                                 // Respawn via Zygote
@@ -922,6 +981,7 @@ pub fn run_server(
                                     &args.app,
                                     i as u64,
                                     None,
+                                    config,
                                 ) {
                                     Ok(new_worker) => {
                                         // Update LoadBalancer with new socket
@@ -956,7 +1016,9 @@ pub fn run_server(
                         // P2: Zygote deep probe - verify Zygote is still responding
                         if let Err(e) = crate::zygote::ipc::send_command(
                             &socket_path,
-                            crate::zygote::ipc::ZygoteCommand::Status,
+                            crate::zygote::ipc::ZygoteCommand::Status {
+                                request_id: Some(uuid::Uuid::now_v7().to_string()),
+                            },
                             None,
                         ) {
                             logger.warn(&format!("Zygote health check failed: {}", e));
@@ -972,193 +1034,211 @@ pub fn run_server(
 
         if spawn_failed {
             eprintln!("KINETIC_FALLBACK: Zygote failed, falling back to cold start.");
-            logger.error("KINETIC_FALLBACK: Zygote failed, falling back to cold start.");
-        } else {
-            // Signal received or loop broken - exit Zygote mode cleanly
-            logger.info("Zygote supervisor loop finished gracefully.");
+        }
+    }
+
+    // STB-RS-005: Respawn Loop
+    // Logic: If reload is enabled, we loop here to respawn the server on change events.
+    loop {
+        let start_time = Instant::now();
+
+        // FALLBACK: Standard uvicorn/gunicorn mode
+        // Build server command based on server type
+        logger.debug(&format!("Building command for {}...", server));
+        let mut cmd = Command::new(python_path);
+        cmd.arg("-m").arg(server.module_name());
+
+        match server {
+            Server::Uvicorn => {
+                cmd.arg(&args.app)
+                    .arg("--host")
+                    .arg(&args.host)
+                    .arg("--port")
+                    .arg(args.port.to_string());
+
+                if args.workers > 1 {
+                    cmd.arg("--workers").arg(args.workers.to_string());
+                }
+                if args.reload {
+                    cmd.arg("--reload");
+                }
+                // STB-RS-004: Ensure uvicorn exits quickly on SIGTERM to avoid supervisor hangs
+                cmd.arg("--timeout-graceful-shutdown").arg("1");
+            }
+            Server::Gunicorn => {
+                // Gunicorn uses different arg format
+                cmd.arg("--bind")
+                    .arg(format!("{}:{}", args.host, args.port))
+                    .arg("--workers")
+                    .arg(args.workers.to_string())
+                    .arg("--timeout")
+                    .arg(args.timeout.to_string());
+
+                if args.reload {
+                    cmd.arg("--reload");
+                }
+                cmd.arg(&args.app);
+            }
+        }
+
+        // Set working directory and inherit stdio
+        logger.verbose(&format!("Current directory: {:?}", project_dir));
+        cmd.current_dir(project_dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+        let ready_ms = start_time.elapsed().as_millis();
+        logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
+
+        if args.dry_run {
+            logger.info(&format!(
+                "Dry run: Command would be: {:?} {:?}",
+                cmd.get_program(),
+                cmd.get_args()
+                    .map(|v| v.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
             return Ok(ServerExit::Shutdown);
         }
-    }
 
-    // FALLBACK: Standard uvicorn/gunicorn mode
-    // Build server command based on server type
-    logger.debug(&format!("Building command for {}...", server));
-    let mut cmd = Command::new(python_path);
-    cmd.arg("-m").arg(server.module_name());
-
-    match server {
-        Server::Uvicorn => {
-            cmd.arg(&args.app)
-                .arg("--host")
-                .arg(&args.host)
-                .arg("--port")
-                .arg(args.port.to_string());
-
-            if args.workers > 1 {
-                cmd.arg("--workers").arg(args.workers.to_string());
-            }
+        if args.log_format == LogFormat::Text {
+            eprintln!("   App:       {}", args.app);
+            eprintln!("   Server:    {}", server);
+            eprintln!("   Bind:      {}:{}", args.host, args.port);
+            eprintln!("   Workers:   {}", args.workers);
+            eprintln!("   Timeout:   {}s", args.timeout);
             if args.reload {
-                cmd.arg("--reload");
+                eprintln!("   Reload:    enabled");
             }
         }
-        Server::Gunicorn => {
-            // Gunicorn uses different arg format
-            cmd.arg("--bind")
-                .arg(format!("{}:{}", args.host, args.port))
-                .arg("--workers")
-                .arg(args.workers.to_string())
-                .arg("--timeout")
-                .arg(args.timeout.to_string());
 
-            if args.reload {
-                cmd.arg("--reload");
-            }
-            cmd.arg(&args.app);
+        // RFC-0012: Surgical Environment Management (Whitelist)
+        // Replaces SEC-P0-005 blacklist with robust provenance guard
+        let shield = crate::lifecycle::EnvironmentShield::new(config);
+        if let Err(e) = shield.apply(&mut cmd) {
+            logger.warn(&format!("Environment shield warning: {}", e));
         }
-    }
 
-    // RFC-0012: Surgical Environment Management (Whitelist)
-    // Replaces SEC-P0-005 blacklist with robust provenance guard
-    let shield = crate::lifecycle::EnvironmentShield::new(config);
-    if let Err(e) = shield.apply(&mut cmd) {
-        logger.warn(&format!("Environment shield warning: {}", e));
-    }
+        // Spawn with ManagedChild for RAII cleanup (D2)
+        let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
 
-    // MAC-P0-002: Reset signal handlers in child (ADR D4) and STB-RS-003: Process Group
-    // Handled inside ManagedChild::spawn now, but we keep this as a note
-    // Actually, we should remove this call site as it's now handled by ManagedChild::spawn
+        if let Ok(ref mut child) = child_result {
+            logger.info(&format!("Server started (PID: {})", child.id()));
+            health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // Set working directory and inherit stdio
-    logger.verbose(&format!("Current directory: {:?}", project_dir));
-    cmd.current_dir(project_dir)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-
-    // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
-    let ready_ms = start_time.elapsed().as_millis();
-    logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
-
-    if args.dry_run {
-        logger.info(&format!(
-            "Dry run: Command would be: {:?} {:?}",
-            cmd.get_program(),
-            cmd.get_args()
-                .map(|v| v.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ")
-        ));
-        return Ok(ServerExit::Shutdown);
-    }
-
-    if args.log_format == LogFormat::Text {
-        eprintln!("   App:       {}", args.app);
-        eprintln!("   Server:    {}", server);
-        eprintln!("   Bind:      {}:{}", args.host, args.port);
-        eprintln!("   Workers:   {}", args.workers);
-        eprintln!("   Timeout:   {}s", args.timeout);
-        if args.reload {
-            eprintln!("   Reload:    enabled");
-        }
-    }
-
-    // Spawn with ManagedChild for RAII cleanup (D2)
-    let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
-
-    if let Ok(ref mut child) = child_result {
-        logger.info(&format!("Server started (PID: {})", child.id()));
-        health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        // Main loop: Wait for Events (Zero Busy Wait)
-        loop {
-            // Block until event received
-            match rx.recv() {
-                Ok(ServerEvent::Signal(sig)) => {
-                    match sig {
-                        signal_hook::consts::SIGCHLD => {
-                            // Optimistic: Child might have exited
-                            match child.wait_timeout(Duration::from_millis(0)) {
-                                Ok(Some(status)) => {
-                                    if !status.success() {
+            // Main loop: Wait for Events (Zero Busy Wait)
+            loop {
+                // Block until event received
+                match rx.recv() {
+                    Ok(ServerEvent::Signal(sig)) => {
+                        match sig {
+                            signal_hook::consts::SIGCHLD => {
+                                // Optimistic: Child might have exited
+                                match child.wait_timeout(Duration::from_millis(0)) {
+                                    Ok(Some(status)) => {
                                         let code = status.code().unwrap_or(1);
-                                        if code == 1 {
-                                            eprintln!();
-                                            eprintln!(
-                                                "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
-                                            );
-                                        }
+                                        if !status.success() {
+                                            if code == 1 {
+                                                eprintln!();
+                                                eprintln!(
+                                                    "💡 Tip: If the app failed to import, check for syntax errors or missing dependencies."
+                                                );
+                                            }
 
-                                        // If reload is NOT enabled, exit immediately on failure
+                                            // If reload is NOT enabled, exit immediately on failure
+                                            if !args.reload {
+                                                return Err(anyhow::anyhow!(
+                                                    "Server exited with code {}",
+                                                    code
+                                                ));
+                                            }
+
+                                            // Reload IS enabled: wait for file changes to trigger restart
+                                            logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
+                                            health_ready
+                                                .store(false, std::sync::atomic::Ordering::SeqCst);
+                                            continue;
+                                        }
+                                        // Child exited successfully (code 0)
                                         if !args.reload {
-                                            return Err(anyhow::anyhow!(
-                                                "Server exited with code {}",
-                                                code
-                                            ));
+                                            return Ok(ServerExit::Shutdown);
+                                        } else {
+                                            logger.warn("Server exited (0). Waiting for reload...");
+                                            health_ready
+                                                .store(false, std::sync::atomic::Ordering::SeqCst);
+                                            continue;
                                         }
-
-                                        // Reload IS enabled: wait for file changes to trigger restart
-                                        logger.error(&format!("Server exited with code {}. Waiting for reload or shutdown...", code));
-                                        health_ready
-                                            .store(false, std::sync::atomic::Ordering::SeqCst);
-                                        continue;
                                     }
-                                    return Ok(ServerExit::Shutdown);
-                                }
-                                Ok(None) => continue,
-                                Err(e) => {
-                                    return Err(anyhow::anyhow!("Error waiting for server: {}", e));
+                                    _ => continue,
                                 }
                             }
-                        }
+                            signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
+                                eprintln!();
+                                logger.info(
+                                    "Shutdown signal received, waiting for graceful shutdown...",
+                                );
 
-                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                            eprintln!();
-                            logger
-                                .info("Shutdown signal received, waiting for graceful shutdown...");
-
-                            if let Err(e) = child.terminate() {
-                                logger.warn(&format!("Failed to send SIGTERM: {}", e));
-                            }
-
-                            // Wait with timeout
-                            match child.wait_timeout(Duration::from_secs(args.timeout)) {
-                                Ok(Some(_)) => {
-                                    logger.info("Server stopped gracefully");
-                                    return Ok(ServerExit::Shutdown);
+                                if let Err(e) = child.terminate() {
+                                    logger.warn(&format!("Failed to send SIGTERM: {}", e));
                                 }
-                                Ok(None) => {
-                                    logger.warn("Shutdown timeout expired, force killing...");
-                                    let _ = child.kill();
-                                    return Ok(ServerExit::Shutdown);
+
+                                // Wait with timeout
+                                match child.wait_timeout(Duration::from_secs(args.timeout)) {
+                                    Ok(Some(_)) => {
+                                        logger.info("Server stopped gracefully");
+                                        return Ok(ServerExit::Shutdown);
+                                    }
+                                    _ => {
+                                        logger.warn("Shutdown timeout expired, force killing...");
+                                        let _ = child.kill();
+                                        return Ok(ServerExit::Shutdown);
+                                    }
                                 }
-                                Err(e) => anyhow::bail!("Error during shutdown: {}", e),
                             }
-                        }
-                        _ => {
-                            // CN-P0-002: Forward other signals to child group
-                            let pid = child.id() as i32;
-                            unsafe {
-                                libc::kill(-pid, sig);
+                            _ => {
+                                // CN-P0-002: Forward other signals to child group
+                                #[cfg(unix)]
+                                {
+                                    let target = if let Some(pgid) = child.pgid() {
+                                        -pgid
+                                    } else {
+                                        child.id() as i32
+                                    };
+                                    unsafe {
+                                        libc::kill(target, sig);
+                                    }
+                                }
+                                #[cfg(not(unix))]
+                                {
+                                    let _ = sig; // Suppress unused warning
+                                }
                             }
                         }
                     }
-                }
-                Ok(ServerEvent::Reload) => {
-                    logger.info("Changes detected, restarting server...");
-                    if let Ok(ref mut child) = child_result {
-                        let _ = child.kill();
+                    Ok(ServerEvent::Reload) => {
+                        logger.info("Changes detected, restarting server...");
+                        if let Ok(ref mut child) = child_result {
+                            let _ = child.kill();
+                        }
+                        // Break inner loop to trigger fresh spawn in the caller
+                        break;
                     }
-                    // Break loop to trigger fresh spawn in the caller
-                    return Ok(ServerExit::Reload);
+                    Err(_) => break, // Bus disconnected
+                    _ => {}
                 }
-                Err(_) => break, // Bus disconnected
-                _ => {}
             }
+        } else if let Err(e) = child_result {
+            logger.error(&format!("Failed to start server: {}", e));
+            return Err(anyhow::anyhow!("Server failed to start: {}", e));
         }
-    } else if let Err(e) = child_result {
-        logger.error(&format!("Failed to start server: {}", e));
-        // Return error immediately - no reason to wait for signals on startup failure
-        return Err(anyhow::anyhow!("Server failed to start: {}", e));
+
+        // If we broke out of the inner loop (Reload), valid if args.reload
+        if !args.reload {
+            break;
+        }
     }
 
     Ok(ServerExit::Shutdown)
@@ -1204,7 +1284,12 @@ fn count_python_files(path: &Path) -> usize {
 }
 
 #[cfg(not(unix))]
-pub fn run_server(args: &ServeArgs, python_path: &Path, project_dir: &Path) -> Result<ServerExit> {
+pub fn run_server(
+    args: &ServeArgs,
+    python_path: &Path,
+    project_dir: &Path,
+    _config: &crate::config::VeloConfig,
+) -> Result<ServerExit> {
     // Windows: run uvicorn without Zygote
     eprintln!("🚀 Starting server (Zygote not supported on Windows)...");
     eprintln!("   App:     {}", args.app);

@@ -12,7 +12,7 @@ on:
   pull_request:
     branches: ['**']
   schedule:
-    - cron: '0 2 * * *'  # Run nightly at 2 AM UTC (Performance Canary)
+    - cron: '0 21 * * *'  # Run nightly at 5 AM CST (21:00 UTC)
 
 # Concurrency: Only cancel code CI runs, not docs
 concurrency:
@@ -64,12 +64,16 @@ jobs:
       qa_infra: ${{ steps.filter.outputs.qa_infra }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
           filters: |
             rust:
               - 'src/**/*.rs'
+              - 'tests/**/*.rs'
+              - 'tests/qa/**/*.py'
               - 'Cargo.*'
             loader:
               - 'src/loader/**/*.rs'
@@ -84,6 +88,7 @@ jobs:
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
+              - 'tests/qa/test_preflight.py'
             serve:
               - 'src/serve/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
@@ -150,6 +155,9 @@ jobs:
 
       - name: Run tests
         run: uv run run_tests.py
+
+      - name: "RFC-0020: Pre-Flight Check"
+        run: ./target/release/velo debug zygote --json
 
       - name: Check binary size
         run: |
@@ -620,14 +628,30 @@ jobs:
                -v --tb=short
 
   # ============================================
-  # Phase 6.2: Kinetic Protocol (RFC-0013)
-  # Regression & Corruption Guardrails
+  # Phase 7.0: Memory Gravity (RFC-0015)
   # ============================================
+
+  qa-phase7-0-memory:
+    name: "QA 7.0: Memory Gravity (RFC-0015)"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_7_0 -v --tb=short
+
+
 
   qa-kinetic-regression-gate:
     name: "QA 6.2: Kinetic Regression Gate"
     runs-on: ${{ matrix.os }}
-    needs: [build, changes]
+    needs: [build, build-matrix, changes]
     if: needs.changes.outputs.kinetic == 'true' || needs.changes.outputs.workflow == 'true'
     strategy:
       fail-fast: false

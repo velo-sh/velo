@@ -124,14 +124,27 @@ fn cmd_zygote_stop() {
 
 #[cfg(unix)]
 fn cmd_zygote_status() {
-    let socket_path = zygote::ipc::default_socket_path();
-
     println!("▸ Zygote Status");
-    if socket_path.exists() {
-        println!("├─ Status: Running ✅");
-        println!("└─ Socket: {}", socket_path.display());
-    } else {
-        println!("└─ Status: Not running");
+    match crate::zygote::get_status() {
+        Ok(crate::zygote::ipc::ZygoteResponse::Status { pid, preload, .. }) => {
+            println!("├─ Status: Running ✅ (PID: {})", pid);
+            if preload.is_empty() {
+                println!("└─ Preload: None");
+            } else {
+                println!(
+                    "└─ Preload: ready ({} modules: {})",
+                    preload.len(),
+                    preload.join(", ")
+                );
+            }
+        }
+        Ok(resp) => {
+            println!("├─ Status: Running ✅");
+            println!("└─ Details: {:?}", resp);
+        }
+        Err(e) => {
+            println!("└─ Status: Not running or unresponsive (Error: {})", e);
+        }
     }
 }
 

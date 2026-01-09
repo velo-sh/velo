@@ -77,6 +77,7 @@ except Exception as e:
     let handshake = ZygoteCommand::Handshake {
         version: ipc::PROTOCOL_VERSION,
         capabilities: vec![],
+        request_id: Some("test-handshake".to_string()),
     };
     stream.send_command(&handshake, None)?;
 
@@ -92,7 +93,9 @@ except Exception as e:
         bundle_path: None,
         project_root: None,
         max_bundle_size: None,
+        env: Box::new(std::collections::HashMap::new()),
         shm_size: Some(shm_size),
+        request_id: Some("test-fork".to_string()),
     };
 
     println!("Sending Fork command with FD {}...", fd);
@@ -106,7 +109,13 @@ except Exception as e:
         std::thread::sleep(Duration::from_millis(1000));
 
         // Verify worker is gone (since it exited 0)
-        let status = stream.send_command(&ZygoteCommand::WorkerStatus { worker_pid }, None)?;
+        let status = stream.send_command(
+            &ZygoteCommand::WorkerStatus {
+                worker_pid,
+                request_id: None,
+            },
+            None,
+        )?;
         println!("Worker status: {:?}", status);
         // Note: Zygote reaps workers. If it exited 0, it should be gone from registry.
     } else {

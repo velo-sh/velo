@@ -14,6 +14,12 @@
 
 set -euo pipefail
 
+# Get script directory for relative sourcing
+_CI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source test suite configuration (SSOT)
+source "$_CI_COMMON_DIR/test-suites.conf"
+
 # =============================================================================
 # Colors
 # =============================================================================
@@ -191,7 +197,25 @@ run_python_tests() {
     
     # Activate and run
     source "$venv_path/bin/activate"
+    
+    set +e # Allow test failure to capture artifacts
     pytest $test_paths -v
+    EXIT_CODE=$?
+    set -e
+
+    # Check for failure bundles
+    if ls failure-*.tar.gz 1> /dev/null 2>&1; then
+        echo ""
+        log_warn "Failure artifacts detected!"
+        mkdir -p artifacts
+        mv failure-*.tar.gz artifacts/
+        log_warn "Artifacts moved to artifacts/ directory"
+    fi
+    
+    if [[ $EXIT_CODE -ne 0 ]]; then
+        log_error "Python tests failed"
+        exit $EXIT_CODE
+    fi
     
     log_success "Python tests passed"
 }
@@ -216,7 +240,8 @@ run_fmt_check() {
 # =============================================================================
 run_full_ci() {
     local venv_path="${1:-.venv}"
-    local test_paths="${2:-tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py}"
+    # Use SSOT test paths from test-suites.conf
+    local test_paths="${2:-$TEST_PATHS_DOCKER}"
     
     echo ""
     echo "==================== Phase 1: Setup ===================="

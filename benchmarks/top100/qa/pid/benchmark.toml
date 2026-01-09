@@ -1,0 +1,8 @@
+[meta]
+category = "qa"
+description = "Verify PID distinctness"
+
+[test]
+entry_point = "test_pid.py"
+expected_output = "PID: \\d+"
+preload_modules = ["os"]

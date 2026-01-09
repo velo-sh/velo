@@ -1,0 +1,1019 @@
+﻿2026-01-08T07:52:03.3099235Z Current runner version: '2.330.0'
+2026-01-08T07:52:03.3121515Z ##[group]Runner Image Provisioner
+2026-01-08T07:52:03.3122314Z Hosted Compute Agent
+2026-01-08T07:52:03.3122808Z Version: 20251211.462
+2026-01-08T07:52:03.3123313Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2026-01-08T07:52:03.3123968Z Build Date: 2025-12-11T16:28:49Z
+2026-01-08T07:52:03.3124547Z Worker ID: {2c6c8259-9c14-4584-9629-5ad1f621d39e}
+2026-01-08T07:52:03.3125135Z ##[endgroup]
+2026-01-08T07:52:03.3125628Z ##[group]Operating System
+2026-01-08T07:52:03.3126096Z Ubuntu
+2026-01-08T07:52:03.3126520Z 24.04.3
+2026-01-08T07:52:03.3126905Z LTS
+2026-01-08T07:52:03.3127321Z ##[endgroup]
+2026-01-08T07:52:03.3127742Z ##[group]Runner Image
+2026-01-08T07:52:03.3128243Z Image: ubuntu-24.04
+2026-01-08T07:52:03.3128704Z Version: 20260105.202.1
+2026-01-08T07:52:03.3129567Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260105.202/images/ubuntu/Ubuntu2404-Readme.md
+2026-01-08T07:52:03.3130946Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260105.202
+2026-01-08T07:52:03.3131966Z ##[endgroup]
+2026-01-08T07:52:03.3132967Z ##[group]GITHUB_TOKEN Permissions
+2026-01-08T07:52:03.3134765Z Contents: read
+2026-01-08T07:52:03.3135185Z Metadata: read
+2026-01-08T07:52:03.3135695Z Packages: read
+2026-01-08T07:52:03.3136137Z ##[endgroup]
+2026-01-08T07:52:03.3138319Z Secret source: Actions
+2026-01-08T07:52:03.3138976Z Prepare workflow directory
+2026-01-08T07:52:03.3508348Z Prepare all required actions
+2026-01-08T07:52:03.3545924Z Getting action download info
+2026-01-08T07:52:03.8618855Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-01-08T07:52:03.9379346Z Download action repository 'taiki-e/install-action@cargo-llvm-cov' (SHA:b49dc1819121df87df6401c0b57c45b76da49937)
+2026-01-08T07:52:04.7523963Z Download action repository 'taiki-e/install-action@nextest' (SHA:636f7838fe5dae94c1b6aa8cefac6b184343fb7f)
+2026-01-08T07:52:05.5082673Z Download action repository 'codecov/codecov-action@v4' (SHA:b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238)
+2026-01-08T07:52:06.3196244Z Complete job name: Code Coverage
+2026-01-08T07:52:06.3895589Z ##[group]Run actions/checkout@v4
+2026-01-08T07:52:06.3896095Z with:
+2026-01-08T07:52:06.3896289Z   repository: velo-sh/velo
+2026-01-08T07:52:06.3896729Z   token: ***
+2026-01-08T07:52:06.3896906Z   ssh-strict: true
+2026-01-08T07:52:06.3897098Z   ssh-user: git
+2026-01-08T07:52:06.3897292Z   persist-credentials: true
+2026-01-08T07:52:06.3897528Z   clean: true
+2026-01-08T07:52:06.3897726Z   sparse-checkout-cone-mode: true
+2026-01-08T07:52:06.3897976Z   fetch-depth: 1
+2026-01-08T07:52:06.3898168Z   fetch-tags: false
+2026-01-08T07:52:06.3898366Z   show-progress: true
+2026-01-08T07:52:06.3898554Z   lfs: false
+2026-01-08T07:52:06.3898728Z   submodules: false
+2026-01-08T07:52:06.3898915Z   set-safe-directory: true
+2026-01-08T07:52:06.3899251Z env:
+2026-01-08T07:52:06.3899429Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:06.3899618Z   UV_VERSION: 0.9
+2026-01-08T07:52:06.3899825Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:06.3900043Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:06.3900313Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:06.3900514Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:06.3900719Z ##[endgroup]
+2026-01-08T07:52:06.4924575Z Syncing repository: velo-sh/velo
+2026-01-08T07:52:06.4925887Z ##[group]Getting Git version info
+2026-01-08T07:52:06.4926242Z Working directory is '/home/runner/work/velo/velo'
+2026-01-08T07:52:06.4926784Z [command]/usr/bin/git version
+2026-01-08T07:52:06.4986591Z git version 2.52.0
+2026-01-08T07:52:06.5010354Z ##[endgroup]
+2026-01-08T07:52:06.5023946Z Temporarily overriding HOME='/home/runner/work/_temp/df9d161c-c3a8-4063-8c3c-f5f10e6fa685' before making global git config changes
+2026-01-08T07:52:06.5025312Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-08T07:52:06.5038062Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/velo/velo
+2026-01-08T07:52:06.5073384Z Deleting the contents of '/home/runner/work/velo/velo'
+2026-01-08T07:52:06.5076503Z ##[group]Initializing the repository
+2026-01-08T07:52:06.5080256Z [command]/usr/bin/git init /home/runner/work/velo/velo
+2026-01-08T07:52:06.5181157Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-01-08T07:52:06.5181990Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-01-08T07:52:06.5182623Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-01-08T07:52:06.5183265Z hint: call:
+2026-01-08T07:52:06.5183599Z hint:
+2026-01-08T07:52:06.5184100Z hint: 	git config --global init.defaultBranch <name>
+2026-01-08T07:52:06.5184635Z hint:
+2026-01-08T07:52:06.5185177Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-01-08T07:52:06.5186008Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-01-08T07:52:06.5186614Z hint:
+2026-01-08T07:52:06.5186926Z hint: 	git branch -m <name>
+2026-01-08T07:52:06.5187329Z hint:
+2026-01-08T07:52:06.5187814Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-01-08T07:52:06.5188680Z Initialized empty Git repository in /home/runner/work/velo/velo/.git/
+2026-01-08T07:52:06.5197026Z [command]/usr/bin/git remote add origin https://github.com/velo-sh/velo
+2026-01-08T07:52:06.5228352Z ##[endgroup]
+2026-01-08T07:52:06.5228991Z ##[group]Disabling automatic garbage collection
+2026-01-08T07:52:06.5233661Z [command]/usr/bin/git config --local gc.auto 0
+2026-01-08T07:52:06.5259207Z ##[endgroup]
+2026-01-08T07:52:06.5259549Z ##[group]Setting up auth
+2026-01-08T07:52:06.5266323Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-01-08T07:52:06.5292213Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-01-08T07:52:06.5576323Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-08T07:52:06.5603218Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-01-08T07:52:06.5774848Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-08T07:52:06.5808330Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-01-08T07:52:06.5982135Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-01-08T07:52:06.6010124Z ##[endgroup]
+2026-01-08T07:52:06.6010832Z ##[group]Fetching the repository
+2026-01-08T07:52:06.6019013Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c910c02289a499e502877964aca7d167f1d98e30:refs/remotes/origin/phase-7.0/memory-gravity
+2026-01-08T07:52:07.4244663Z From https://github.com/velo-sh/velo
+2026-01-08T07:52:07.4245414Z  * [new ref]         c910c02289a499e502877964aca7d167f1d98e30 -> origin/phase-7.0/memory-gravity
+2026-01-08T07:52:07.4272286Z ##[endgroup]
+2026-01-08T07:52:07.4272764Z ##[group]Determining the checkout info
+2026-01-08T07:52:07.4274143Z ##[endgroup]
+2026-01-08T07:52:07.4279045Z [command]/usr/bin/git sparse-checkout disable
+2026-01-08T07:52:07.4314989Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-01-08T07:52:07.4335747Z ##[group]Checking out the ref
+2026-01-08T07:52:07.4340181Z [command]/usr/bin/git checkout --progress --force -B phase-7.0/memory-gravity refs/remotes/origin/phase-7.0/memory-gravity
+2026-01-08T07:52:07.4767915Z Switched to a new branch 'phase-7.0/memory-gravity'
+2026-01-08T07:52:07.4768723Z branch 'phase-7.0/memory-gravity' set up to track 'origin/phase-7.0/memory-gravity'.
+2026-01-08T07:52:07.4775199Z ##[endgroup]
+2026-01-08T07:52:07.4808732Z [command]/usr/bin/git log -1 --format=%H
+2026-01-08T07:52:07.4828027Z c910c02289a499e502877964aca7d167f1d98e30
+2026-01-08T07:52:07.4976308Z ##[group]Run rustup show
+2026-01-08T07:52:07.4976663Z [36;1mrustup show[0m
+2026-01-08T07:52:07.4998243Z shell: /usr/bin/bash -e {0}
+2026-01-08T07:52:07.4998487Z env:
+2026-01-08T07:52:07.4998657Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:07.4998855Z   UV_VERSION: 0.9
+2026-01-08T07:52:07.4999040Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:07.4999271Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:07.4999475Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:07.4999692Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:07.4999900Z ##[endgroup]
+2026-01-08T07:52:07.6289933Z Default host: x86_64-unknown-linux-gnu
+2026-01-08T07:52:07.6290402Z rustup home:  /home/runner/.rustup
+2026-01-08T07:52:07.6290613Z 
+2026-01-08T07:52:07.6625084Z info: syncing channel updates for '1.92.0-x86_64-unknown-linux-gnu'
+2026-01-08T07:52:08.0429639Z info: latest update on 2025-12-11, rust version 1.92.0 (ded5c06cf 2025-12-08)
+2026-01-08T07:52:08.0430164Z info: downloading component 'cargo'
+2026-01-08T07:52:08.1849158Z info: downloading component 'clippy'
+2026-01-08T07:52:08.2773421Z info: downloading component 'llvm-tools'
+2026-01-08T07:52:08.5853698Z info: downloading component 'rust-std'
+2026-01-08T07:52:08.9273693Z info: downloading component 'rustc'
+2026-01-08T07:52:09.4619886Z info: downloading component 'rustfmt'
+2026-01-08T07:52:09.5580607Z info: installing component 'cargo'
+2026-01-08T07:52:10.3407973Z info: installing component 'clippy'
+2026-01-08T07:52:10.7455563Z info: installing component 'llvm-tools'
+2026-01-08T07:52:13.2714917Z info: installing component 'rust-std'
+2026-01-08T07:52:15.3742644Z info: installing component 'rustc'
+2026-01-08T07:52:20.4943499Z info: installing component 'rustfmt'
+2026-01-08T07:52:20.8344317Z installed toolchains
+2026-01-08T07:52:20.8344832Z --------------------
+2026-01-08T07:52:20.8345245Z stable-x86_64-unknown-linux-gnu (default)
+2026-01-08T07:52:20.8345663Z 
+2026-01-08T07:52:20.8345791Z active toolchain
+2026-01-08T07:52:20.8346090Z ----------------
+2026-01-08T07:52:20.8346459Z name: 1.92.0-x86_64-unknown-linux-gnu
+2026-01-08T07:52:20.8347155Z active because: overridden by '/home/runner/work/velo/velo/rust-toolchain.toml'
+2026-01-08T07:52:20.8347899Z installed targets:
+2026-01-08T07:52:20.8348275Z   x86_64-unknown-linux-gnu
+2026-01-08T07:52:20.8427072Z ##[group]Run taiki-e/install-action@cargo-llvm-cov
+2026-01-08T07:52:20.8427362Z with:
+2026-01-08T07:52:20.8427529Z   tool: cargo-llvm-cov
+2026-01-08T07:52:20.8427724Z   checksum: true
+2026-01-08T07:52:20.8427901Z   fallback: cargo-binstall
+2026-01-08T07:52:20.8428096Z env:
+2026-01-08T07:52:20.8428242Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:20.8428482Z   UV_VERSION: 0.9
+2026-01-08T07:52:20.8428659Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:20.8428875Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:20.8429087Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:20.8429277Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:20.8429494Z ##[endgroup]
+2026-01-08T07:52:20.8510307Z ##[group]Run set -eu
+2026-01-08T07:52:20.8510552Z [36;1mset -eu[0m
+2026-01-08T07:52:20.8510760Z [36;1mif ! command -v bash >/dev/null; then[0m
+2026-01-08T07:52:20.8511053Z [36;1m  if grep -Eq '^ID=alpine' /etc/os-release; then[0m
+2026-01-08T07:52:20.8511705Z [36;1m    printf '::group::Install packages required for install-action (bash)\n'[0m
+2026-01-08T07:52:20.8512064Z [36;1m    # NB: sync with apk_install in main.sh[0m
+2026-01-08T07:52:20.8512333Z [36;1m    if command -v sudo >/dev/null; then[0m
+2026-01-08T07:52:20.8512585Z [36;1m      sudo apk --no-cache add bash[0m
+2026-01-08T07:52:20.8512840Z [36;1m    elif command -v doas >/dev/null; then[0m
+2026-01-08T07:52:20.8513088Z [36;1m      doas apk --no-cache add bash[0m
+2026-01-08T07:52:20.8513311Z [36;1m    else[0m
+2026-01-08T07:52:20.8513492Z [36;1m      apk --no-cache add bash[0m
+2026-01-08T07:52:20.8513699Z [36;1m    fi[0m
+2026-01-08T07:52:20.8514044Z [36;1m    printf '::endgroup::\n'[0m
+2026-01-08T07:52:20.8514249Z [36;1m  else[0m
+2026-01-08T07:52:20.8514470Z [36;1m    printf '::error::install-action requires bash\n'[0m
+2026-01-08T07:52:20.8514729Z [36;1m    exit 1[0m
+2026-01-08T07:52:20.8514897Z [36;1m  fi[0m
+2026-01-08T07:52:20.8515047Z [36;1mfi[0m
+2026-01-08T07:52:20.8652612Z shell: /usr/bin/sh -e {0}
+2026-01-08T07:52:20.8652859Z env:
+2026-01-08T07:52:20.8653031Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:20.8653228Z   UV_VERSION: 0.9
+2026-01-08T07:52:20.8653407Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:20.8653624Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:20.8653828Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:20.8654036Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:20.8654230Z ##[endgroup]
+2026-01-08T07:52:20.8745925Z ##[group]Run bash --noprofile --norc "${GITHUB_ACTION_PATH:?}/main.sh"
+2026-01-08T07:52:20.8746367Z [36;1mbash --noprofile --norc "${GITHUB_ACTION_PATH:?}/main.sh"[0m
+2026-01-08T07:52:20.8765315Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-01-08T07:52:20.8765608Z env:
+2026-01-08T07:52:20.8765779Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:20.8765970Z   UV_VERSION: 0.9
+2026-01-08T07:52:20.8766160Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:20.8766375Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:20.8766588Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:20.8766822Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:20.8767048Z   INPUT_TOOL: cargo-llvm-cov
+2026-01-08T07:52:20.8767249Z   INPUT_CHECKSUM: true
+2026-01-08T07:52:20.8767437Z   INPUT_FALLBACK: cargo-binstall
+2026-01-08T07:52:20.8767867Z   DEFAULT_GITHUB_TOKEN: ***
+2026-01-08T07:52:20.8768129Z   ACTION_USER_AGENT: taiki-e/install-action (cargo-llvm-cov)
+2026-01-08T07:52:20.8768424Z ##[endgroup]
+2026-01-08T07:52:20.8945063Z info: host platform: x86_64_linux
+2026-01-08T07:52:20.9105383Z info: installing cargo-llvm-cov@latest
+2026-01-08T07:52:20.9260964Z info: downloading https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.6.23/cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz
+2026-01-08T07:52:21.2388967Z info: verifying sha256 checksum for cargo-llvm-cov-x86_64-unknown-linux-musl.tar.gz
+2026-01-08T07:52:21.2878942Z info: cargo-llvm-cov installed at /home/runner/.cargo/bin/cargo-llvm-cov
+2026-01-08T07:52:21.2880966Z + cargo-llvm-cov llvm-cov --version
+2026-01-08T07:52:21.2885761Z cargo-llvm-cov 0.6.23
+2026-01-08T07:52:21.2887632Z 
+2026-01-08T07:52:21.2955728Z ##[group]Run taiki-e/install-action@nextest
+2026-01-08T07:52:21.2955978Z with:
+2026-01-08T07:52:21.2956127Z   tool: nextest
+2026-01-08T07:52:21.2956291Z   checksum: true
+2026-01-08T07:52:21.2956464Z   fallback: cargo-binstall
+2026-01-08T07:52:21.2956656Z env:
+2026-01-08T07:52:21.2956808Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:21.2956993Z   UV_VERSION: 0.9
+2026-01-08T07:52:21.2957162Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:21.2957373Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:21.2957573Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:21.2957786Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:21.2957975Z ##[endgroup]
+2026-01-08T07:52:21.2972225Z ##[group]Run set -eu
+2026-01-08T07:52:21.2972454Z [36;1mset -eu[0m
+2026-01-08T07:52:21.2972656Z [36;1mif ! command -v bash >/dev/null; then[0m
+2026-01-08T07:52:21.2972943Z [36;1m  if grep -Eq '^ID=alpine' /etc/os-release; then[0m
+2026-01-08T07:52:21.2973365Z [36;1m    printf '::group::Install packages required for install-action (bash)\n'[0m
+2026-01-08T07:52:21.2973711Z [36;1m    # NB: sync with apk_install in main.sh[0m
+2026-01-08T07:52:21.2973972Z [36;1m    if command -v sudo >/dev/null; then[0m
+2026-01-08T07:52:21.2974222Z [36;1m      sudo apk --no-cache add bash[0m
+2026-01-08T07:52:21.2974477Z [36;1m    elif command -v doas >/dev/null; then[0m
+2026-01-08T07:52:21.2974724Z [36;1m      doas apk --no-cache add bash[0m
+2026-01-08T07:52:21.2974948Z [36;1m    else[0m
+2026-01-08T07:52:21.2975132Z [36;1m      apk --no-cache add bash[0m
+2026-01-08T07:52:21.2975348Z [36;1m    fi[0m
+2026-01-08T07:52:21.2975659Z [36;1m    printf '::endgroup::\n'[0m
+2026-01-08T07:52:21.2975866Z [36;1m  else[0m
+2026-01-08T07:52:21.2976097Z [36;1m    printf '::error::install-action requires bash\n'[0m
+2026-01-08T07:52:21.2976355Z [36;1m    exit 1[0m
+2026-01-08T07:52:21.2976526Z [36;1m  fi[0m
+2026-01-08T07:52:21.2976683Z [36;1mfi[0m
+2026-01-08T07:52:21.3005947Z shell: /usr/bin/sh -e {0}
+2026-01-08T07:52:21.3006171Z env:
+2026-01-08T07:52:21.3006328Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:21.3006521Z   UV_VERSION: 0.9
+2026-01-08T07:52:21.3006695Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:21.3006913Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:21.3007109Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:21.3007315Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:21.3007506Z ##[endgroup]
+2026-01-08T07:52:21.3065654Z ##[group]Run bash --noprofile --norc "${GITHUB_ACTION_PATH:?}/main.sh"
+2026-01-08T07:52:21.3066067Z [36;1mbash --noprofile --norc "${GITHUB_ACTION_PATH:?}/main.sh"[0m
+2026-01-08T07:52:21.3082414Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-01-08T07:52:21.3082697Z env:
+2026-01-08T07:52:21.3082880Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:21.3083072Z   UV_VERSION: 0.9
+2026-01-08T07:52:21.3083257Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:21.3083464Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:21.3083671Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:21.3083874Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:21.3084078Z   INPUT_TOOL: nextest
+2026-01-08T07:52:21.3084257Z   INPUT_CHECKSUM: true
+2026-01-08T07:52:21.3084447Z   INPUT_FALLBACK: cargo-binstall
+2026-01-08T07:52:21.3084864Z   DEFAULT_GITHUB_TOKEN: ***
+2026-01-08T07:52:21.3085104Z   ACTION_USER_AGENT: taiki-e/install-action (nextest)
+2026-01-08T07:52:21.3085363Z ##[endgroup]
+2026-01-08T07:52:21.3250516Z info: host platform: x86_64_linux
+2026-01-08T07:52:21.3660905Z * Host crates.io:443 was resolved.
+2026-01-08T07:52:21.3662744Z * IPv6: 2600:9000:265c:2c00:c:7ed3:240:93a1, 2600:9000:265c:e600:c:7ed3:240:93a1, 2600:9000:265c:f800:c:7ed3:240:93a1, 2600:9000:265c:2400:c:7ed3:240:93a1, 2600:9000:265c:7a00:c:7ed3:240:93a1, 2600:9000:265c:a000:c:7ed3:240:93a1, 2600:9000:265c:3c00:c:7ed3:240:93a1, 2600:9000:265c:f400:c:7ed3:240:93a1
+2026-01-08T07:52:21.3663929Z * IPv4: 3.163.125.34, 3.163.125.71, 3.163.125.74, 3.163.125.97
+2026-01-08T07:52:21.3664256Z *   Trying 3.163.125.34:443...
+2026-01-08T07:52:21.3768690Z * Connected to crates.io (3.163.125.34) port 443
+2026-01-08T07:52:21.3784887Z * ALPN: curl offers h2,http/1.1
+2026-01-08T07:52:21.3786344Z } [5 bytes data]
+2026-01-08T07:52:21.3786739Z * TLSv1.3 (OUT), TLS handshake, Client hello (1):
+2026-01-08T07:52:21.3787259Z } [512 bytes data]
+2026-01-08T07:52:21.3997251Z *  CAfile: /etc/ssl/certs/ca-certificates.crt
+2026-01-08T07:52:21.3997793Z *  CApath: /etc/ssl/certs
+2026-01-08T07:52:21.3998170Z { [5 bytes data]
+2026-01-08T07:52:21.3998415Z * TLSv1.3 (IN), TLS handshake, Server hello (2):
+2026-01-08T07:52:21.3998709Z { [122 bytes data]
+2026-01-08T07:52:21.3999196Z * TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+2026-01-08T07:52:21.3999715Z { [19 bytes data]
+2026-01-08T07:52:21.4000107Z * TLSv1.3 (IN), TLS handshake, Certificate (11):
+2026-01-08T07:52:21.4000443Z { [3875 bytes data]
+2026-01-08T07:52:21.4006968Z * TLSv1.3 (IN), TLS handshake, CERT verify (15):
+2026-01-08T07:52:21.4007476Z { [264 bytes data]
+2026-01-08T07:52:21.4007880Z * TLSv1.3 (IN), TLS handshake, Finished (20):
+2026-01-08T07:52:21.4008332Z { [36 bytes data]
+2026-01-08T07:52:21.4008784Z * TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+2026-01-08T07:52:21.4009303Z } [1 bytes data]
+2026-01-08T07:52:21.4009689Z * TLSv1.3 (OUT), TLS handshake, Finished (20):
+2026-01-08T07:52:21.4010152Z } [36 bytes data]
+2026-01-08T07:52:21.4010718Z * SSL connection using TLSv1.3 / TLS_AES_128_GCM_SHA256 / X25519 / RSASSA-PSS
+2026-01-08T07:52:21.4011564Z * ALPN: server accepted h2
+2026-01-08T07:52:21.4011963Z * Server certificate:
+2026-01-08T07:52:21.4012219Z *  subject: CN=crates.io
+2026-01-08T07:52:21.4012636Z *  start date: Dec  5 00:00:00 2025 GMT
+2026-01-08T07:52:21.4012915Z *  expire date: Jan  3 23:59:59 2027 GMT
+2026-01-08T07:52:21.4013260Z *  subjectAltName: host "crates.io" matched cert's "crates.io"
+2026-01-08T07:52:21.4013647Z *  issuer: C=US; O=Amazon; CN=Amazon RSA 2048 M01
+2026-01-08T07:52:21.4013944Z *  SSL certificate verify ok.
+2026-01-08T07:52:21.4014418Z *   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+2026-01-08T07:52:21.4015090Z *   Certificate level 1: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+2026-01-08T07:52:21.4015735Z *   Certificate level 2: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+2026-01-08T07:52:21.4016186Z } [5 bytes data]
+2026-01-08T07:52:21.4016381Z * using HTTP/2
+2026-01-08T07:52:21.4016739Z * [HTTP/2] [1] OPENED stream for https://crates.io/api/v1/crates/cargo-nextest
+2026-01-08T07:52:21.4017125Z * [HTTP/2] [1] [:method: GET]
+2026-01-08T07:52:21.4017377Z * [HTTP/2] [1] [:scheme: https]
+2026-01-08T07:52:21.4017645Z * [HTTP/2] [1] [:authority: crates.io]
+2026-01-08T07:52:21.4017952Z * [HTTP/2] [1] [:path: /api/v1/crates/cargo-nextest]
+2026-01-08T07:52:21.4018327Z * [HTTP/2] [1] [user-agent: taiki-e/install-action (nextest)]
+2026-01-08T07:52:21.4018648Z * [HTTP/2] [1] [accept: */*]
+2026-01-08T07:52:21.4018874Z } [5 bytes data]
+2026-01-08T07:52:21.4019063Z > GET /api/v1/crates/cargo-nextest HTTP/2
+2026-01-08T07:52:21.4019295Z > Host: crates.io
+2026-01-08T07:52:21.4019495Z > User-Agent: taiki-e/install-action (nextest)
+2026-01-08T07:52:21.4019732Z > Accept: */*
+2026-01-08T07:52:21.4019897Z > 
+2026-01-08T07:52:21.4112422Z { [5 bytes data]
+2026-01-08T07:52:21.4112875Z * TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+2026-01-08T07:52:21.4113384Z { [157 bytes data]
+2026-01-08T07:52:21.5007427Z < HTTP/2 200 
+2026-01-08T07:52:21.5007861Z < content-type: application/json
+2026-01-08T07:52:21.5008160Z < content-length: 234981
+2026-01-08T07:52:21.5008451Z < access-control-allow-origin: *
+2026-01-08T07:52:21.5010647Z < content-security-policy: default-src 'self'; connect-src 'self' *.ingest.sentry.io https://docs.rs https://play.rust-lang.org https://raw.githubusercontent.com https://static.crates.io; script-src 'self' 'unsafe-eval' 'sha256-n1+BB7Ckjcal1Pr7QNBh/dKRTtBQsIytFodRiIosXdE=' 'sha256-dbf9FMl76C7BnK1CC3eWb3pvsQAUaTYSHAlBy9tNTG0='; style-src 'self' 'unsafe-inline' https://code.cdn.mozilla.net; font-src https://code.cdn.mozilla.net; img-src *; object-src 'none'
+2026-01-08T07:52:21.5012693Z < date: Thu, 08 Jan 2026 07:52:21 GMT
+2026-01-08T07:52:21.5013207Z < nel: {"report_to":"heroku-nel","response_headers":["Via"],"max_age":3600,"success_fraction":0.01,"failure_fraction":0.1}
+2026-01-08T07:52:21.5014382Z < report-to: {"group":"heroku-nel","endpoints":[{"url":"https://nel.heroku.com/reports?s=FsfQ22WLCwrKpvKOWjr7k%2F5HTfCFd%2B364C9sr8sK3bk%3D\u0026sid=af571f24-03ee-46d1-9f90-ab9030c2c74c\u0026ts=1767858741"}],"max_age":3600}
+2026-01-08T07:52:21.5015746Z < reporting-endpoints: heroku-nel="https://nel.heroku.com/reports?s=FsfQ22WLCwrKpvKOWjr7k%2F5HTfCFd%2B364C9sr8sK3bk%3D&sid=af571f24-03ee-46d1-9f90-ab9030c2c74c&ts=1767858741"
+2026-01-08T07:52:21.5016500Z < server: Heroku
+2026-01-08T07:52:21.5016911Z < strict-transport-security: max-age=31536000; includeSubDomains
+2026-01-08T07:52:21.5017463Z < via: 1.1 heroku-router, 1.1 c4f605c2b7a6bf3bd4e0d80ad302a9aa.cloudfront.net (CloudFront)
+2026-01-08T07:52:21.5017914Z < x-content-type-options: nosniff
+2026-01-08T07:52:21.5018192Z < x-frame-options: SAMEORIGIN
+2026-01-08T07:52:21.5018446Z < x-xss-protection: 0
+2026-01-08T07:52:21.5018702Z < vary: Accept,Accept-Encoding,Cookie
+2026-01-08T07:52:21.5018992Z < x-cache: Miss from cloudfront
+2026-01-08T07:52:21.5019252Z < x-amz-cf-pop: LAX54-P1
+2026-01-08T07:52:21.5019643Z < x-amz-cf-id: vkGM2V3-zUoRHiYBEFhY0HSrozE9gBuIER-PRrXVk7dVhkueTSrVaQ==
+2026-01-08T07:52:21.5020038Z < 
+2026-01-08T07:52:21.5020221Z { [6863 bytes data]
+2026-01-08T07:52:21.7562336Z * Connection #0 to host crates.io left intact
+2026-01-08T07:52:21.7800598Z info: installing cargo-nextest@latest
+2026-01-08T07:52:21.7966564Z info: downloading https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.118/cargo-nextest-0.9.118-x86_64-unknown-linux-gnu.tar.gz
+2026-01-08T07:52:22.0670192Z info: verifying sha256 checksum for cargo-nextest-0.9.118-x86_64-unknown-linux-gnu.tar.gz
+2026-01-08T07:52:22.2422156Z info: cargo-nextest installed at /home/runner/.cargo/bin/cargo-nextest
+2026-01-08T07:52:22.2425097Z + cargo-nextest nextest --version
+2026-01-08T07:52:22.2440753Z cargo-nextest 0.9.118 (daa60d57f 2026-01-04)
+2026-01-08T07:52:22.2441097Z release: 0.9.118
+2026-01-08T07:52:22.2441505Z commit-hash: daa60d57f7525ffcc7495bd38cf8ca534cd6b7d3
+2026-01-08T07:52:22.2441779Z commit-date: 2026-01-04
+2026-01-08T07:52:22.2441974Z host: x86_64-unknown-linux-gnu
+2026-01-08T07:52:22.2443144Z 
+2026-01-08T07:52:22.2472064Z ##[group]Run cargo llvm-cov nextest --lcov --output-path lcov.info
+2026-01-08T07:52:22.2472568Z [36;1mcargo llvm-cov nextest --lcov --output-path lcov.info[0m
+2026-01-08T07:52:22.2491115Z shell: /usr/bin/bash -e {0}
+2026-01-08T07:52:22.2492288Z env:
+2026-01-08T07:52:22.2492455Z   CARGO_TERM_COLOR: always
+2026-01-08T07:52:22.2492661Z   UV_VERSION: 0.9
+2026-01-08T07:52:22.2492850Z   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
+2026-01-08T07:52:22.2493073Z   VELO_ZYGOTE_WORKER_TIMEOUT: 60
+2026-01-08T07:52:22.2493270Z   VELO_MAX_BUNDLE_SIZE: 50
+2026-01-08T07:52:22.2493472Z   VELO_TIMEOUT_MULTIPLIER: 6
+2026-01-08T07:52:22.2493676Z ##[endgroup]
+2026-01-08T07:52:22.3724422Z info: cargo-llvm-cov currently setting cfg(coverage); you can opt-out it by passing --no-cfg-coverage
+2026-01-08T07:52:23.1338895Z [1m[92m Downloading[0m crates ...
+2026-01-08T07:52:23.2264116Z [1m[92m  Downloaded[0m anstream v0.6.21
+2026-01-08T07:52:23.2393083Z [1m[92m  Downloaded[0m arrayref v0.3.9
+2026-01-08T07:52:23.2461513Z [1m[92m  Downloaded[0m anstyle-query v1.1.5
+2026-01-08T07:52:23.2497542Z [1m[92m  Downloaded[0m atomic-waker v1.1.2
+2026-01-08T07:52:23.2523233Z [1m[92m  Downloaded[0m munge v0.4.7
+2026-01-08T07:52:23.2541866Z [1m[92m  Downloaded[0m autocfg v1.5.0
+2026-01-08T07:52:23.2555869Z [1m[92m  Downloaded[0m arrayvec v0.7.6
+2026-01-08T07:52:23.2572260Z [1m[92m  Downloaded[0m hostname v0.4.2
+2026-01-08T07:52:23.2589037Z [1m[92m  Downloaded[0m equivalent v1.0.2
+2026-01-08T07:52:23.2597069Z [1m[92m  Downloaded[0m bytecheck_derive v0.8.2
+2026-01-08T07:52:23.2605995Z [1m[92m  Downloaded[0m is_terminal_polyfill v1.70.2
+2026-01-08T07:52:23.2615209Z [1m[92m  Downloaded[0m phf_codegen v0.11.3
+2026-01-08T07:52:23.2623177Z [1m[92m  Downloaded[0m ahash v0.8.12
+2026-01-08T07:52:23.2646586Z [1m[92m  Downloaded[0m ptr_meta v0.3.1
+2026-01-08T07:52:23.2653917Z [1m[92m  Downloaded[0m phf_shared v0.11.3
+2026-01-08T07:52:23.2663049Z [1m[92m  Downloaded[0m pin-utils v0.1.0
+2026-01-08T07:52:23.2671581Z [1m[92m  Downloaded[0m num-integer v0.1.46
+2026-01-08T07:52:23.2683669Z [1m[92m  Downloaded[0m munge_macro v0.4.7
+2026-01-08T07:52:23.2690391Z [1m[92m  Downloaded[0m lalrpop-util v0.20.2
+2026-01-08T07:52:23.2698656Z [1m[92m  Downloaded[0m futures-core v0.3.31
+2026-01-08T07:52:23.2711837Z [1m[92m  Downloaded[0m phf_generator v0.11.3
+2026-01-08T07:52:23.2723581Z [1m[92m  Downloaded[0m ppv-lite86 v0.2.21
+2026-01-08T07:52:23.2741992Z [1m[92m  Downloaded[0m siphasher v1.0.1
+2026-01-08T07:52:23.2753419Z [1m[92m  Downloaded[0m parking_lot_core v0.9.12
+2026-01-08T07:52:23.2771741Z [1m[92m  Downloaded[0m thiserror-impl v1.0.69
+2026-01-08T07:52:23.2782304Z [1m[92m  Downloaded[0m parking_lot v0.12.5
+2026-01-08T07:52:23.2805213Z [1m[92m  Downloaded[0m unic-common v0.9.0
+2026-01-08T07:52:23.2811492Z [1m[92m  Downloaded[0m want v0.3.1
+2026-01-08T07:52:23.2821487Z [1m[92m  Downloaded[0m strsim v0.11.1
+2026-01-08T07:52:23.2834894Z [1m[92m  Downloaded[0m lazy_static v1.5.0
+2026-01-08T07:52:23.2847330Z [1m[92m  Downloaded[0m version_check v0.9.5
+2026-01-08T07:52:23.2856574Z [1m[92m  Downloaded[0m unicode_names2_generator v1.3.0
+2026-01-08T07:52:23.2868954Z [1m[92m  Downloaded[0m getopts v0.2.24
+2026-01-08T07:52:23.2886619Z [1m[92m  Downloaded[0m walkdir v2.5.0
+2026-01-08T07:52:23.2914962Z [1m[92m  Downloaded[0m zmij v1.0.6
+2026-01-08T07:52:23.2934806Z [1m[92m  Downloaded[0m static_assertions v1.1.0
+2026-01-08T07:52:23.2949498Z [1m[92m  Downloaded[0m tracing-core v0.1.36
+2026-01-08T07:52:23.2975726Z [1m[92m  Downloaded[0m tinyvec v1.10.0
+2026-01-08T07:52:23.3001778Z [1m[92m  Downloaded[0m uuid v1.19.0
+2026-01-08T07:52:23.3027045Z [1m[92m  Downloaded[0m tower v0.5.2
+2026-01-08T07:52:23.3085711Z [1m[92m  Downloaded[0m libm v0.2.15
+2026-01-08T07:52:23.3180802Z [1m[92m  Downloaded[0m malachite-q v0.4.22
+2026-01-08T07:52:23.3297370Z [1m[92m  Downloaded[0m tokio-util v0.7.18
+2026-01-08T07:52:23.3344738Z [1m[92m  Downloaded[0m regex v1.12.2
+2026-01-08T07:52:23.3388743Z [1m[92m  Downloaded[0m rustpython-parser v0.4.0
+2026-01-08T07:52:23.3458150Z [1m[92m  Downloaded[0m rkyv v0.8.12
+2026-01-08T07:52:23.3528782Z [1m[92m  Downloaded[0m nix v0.27.1
+2026-01-08T07:52:23.3592654Z [1m[92m  Downloaded[0m zerocopy v0.8.31
+2026-01-08T07:52:23.3727858Z [1m[92m  Downloaded[0m chrono v0.4.42
+2026-01-08T07:52:23.3777995Z [1m[92m  Downloaded[0m unicode-width v0.2.2
+2026-01-08T07:52:23.3820793Z [1m[92m  Downloaded[0m syn v2.0.112
+2026-01-08T07:52:23.3890791Z [1m[92m  Downloaded[0m bstr v1.12.1
+2026-01-08T07:52:23.3947054Z [1m[92m  Downloaded[0m serde_json v1.0.148
+2026-01-08T07:52:23.3991663Z [1m[92m  Downloaded[0m unicode_names2 v1.3.0
+2026-01-08T07:52:23.4038402Z [1m[92m  Downloaded[0m regex-syntax v0.8.8
+2026-01-08T07:52:23.4090483Z [1m[92m  Downloaded[0m blake3 v1.8.2
+2026-01-08T07:52:23.4140495Z [1m[92m  Downloaded[0m futures-util v0.3.31
+2026-01-08T07:52:23.4209336Z [1m[92m  Downloaded[0m clap_builder v4.5.54
+2026-01-08T07:52:23.4251661Z [1m[92m  Downloaded[0m rustix v1.1.3
+2026-01-08T07:52:23.4397716Z [1m[92m  Downloaded[0m tracing v0.1.44
+2026-01-08T07:52:23.4507500Z [1m[92m  Downloaded[0m h2 v0.4.12
+2026-01-08T07:52:23.4548345Z [1m[92m  Downloaded[0m serde v1.0.228
+2026-01-08T07:52:23.4581187Z [1m[92m  Downloaded[0m rand v0.8.5
+2026-01-08T07:52:23.4603975Z [1m[92m  Downloaded[0m hyper v1.8.1
+2026-01-08T07:52:23.4645013Z [1m[92m  Downloaded[0m hashbrown v0.16.1
+2026-01-08T07:52:23.4678505Z [1m[92m  Downloaded[0m hashbrown v0.15.5
+2026-01-08T07:52:23.4714055Z [1m[92m  Downloaded[0m tiny_http v0.12.0
+2026-01-08T07:52:23.4736526Z [1m[92m  Downloaded[0m regex-automata v0.4.13
+2026-01-08T07:52:23.4837588Z [1m[92m  Downloaded[0m signal-hook v0.3.18
+2026-01-08T07:52:23.4857952Z [1m[92m  Downloaded[0m serde_derive v1.0.228
+2026-01-08T07:52:23.4876672Z [1m[92m  Downloaded[0m serde_core v1.0.228
+2026-01-08T07:52:23.4897000Z [1m[92m  Downloaded[0m itertools v0.11.0
+2026-01-08T07:52:23.4934933Z [1m[92m  Downloaded[0m http v1.4.0
+2026-01-08T07:52:23.4958169Z [1m[92m  Downloaded[0m hashbrown v0.14.5
+2026-01-08T07:52:23.4989993Z [1m[92m  Downloaded[0m libc v0.2.178
+2026-01-08T07:52:23.5196338Z [1m[92m  Downloaded[0m malachite-base v0.4.22
+2026-01-08T07:52:23.5592454Z [1m[92m  Downloaded[0m smallvec v1.15.1
+2026-01-08T07:52:23.5605116Z [1m[92m  Downloaded[0m ryu v1.0.22
+2026-01-08T07:52:23.5625415Z [1m[92m  Downloaded[0m rustpython-ast v0.4.0
+2026-01-08T07:52:23.5639971Z [1m[92m  Downloaded[0m tokio v1.49.0
+2026-01-08T07:52:23.5881696Z [1m[92m  Downloaded[0m rmp-serde v1.3.1
+2026-01-08T07:52:23.5892750Z [1m[92m  Downloaded[0m mio v1.1.1
+2026-01-08T07:52:23.5927021Z [1m[92m  Downloaded[0m hyper-util v0.1.19
+2026-01-08T07:52:23.5963380Z [1m[92m  Downloaded[0m mio v0.8.11
+2026-01-08T07:52:23.5996266Z [1m[92m  Downloaded[0m indexmap v2.12.1
+2026-01-08T07:52:23.6022748Z [1m[92m  Downloaded[0m crossbeam-channel v0.5.15
+2026-01-08T07:52:23.6048919Z [1m[92m  Downloaded[0m cc v1.2.51
+2026-01-08T07:52:23.6070005Z [1m[92m  Downloaded[0m bytes v1.11.0
+2026-01-08T07:52:23.6095327Z [1m[92m  Downloaded[0m aho-corasick v1.1.4
+2026-01-08T07:52:23.6132051Z [1m[92m  Downloaded[0m socket2 v0.6.1
+2026-01-08T07:52:23.6146719Z [1m[92m  Downloaded[0m simdutf8 v0.1.5
+2026-01-08T07:52:23.6160401Z [1m[92m  Downloaded[0m rustc-hash v1.1.0
+2026-01-08T07:52:23.6166446Z [1m[92m  Downloaded[0m rmp v0.8.15
+2026-01-08T07:52:23.6187674Z [1m[92m  Downloaded[0m rkyv_derive v0.8.12
+2026-01-08T07:52:23.6199149Z [1m[92m  Downloaded[0m quote v1.0.42
+2026-01-08T07:52:23.6215020Z [1m[92m  Downloaded[0m memchr v2.7.6
+2026-01-08T07:52:23.6246770Z [1m[92m  Downloaded[0m getrandom v0.3.4
+2026-01-08T07:52:23.6268041Z [1m[92m  Downloaded[0m derive_more-impl v1.0.0
+2026-01-08T07:52:23.6295397Z [1m[92m  Downloaded[0m derive_more v1.0.0
+2026-01-08T07:52:23.6343604Z [1m[92m  Downloaded[0m clap v4.5.54
+2026-01-08T07:52:23.6394045Z [1m[92m  Downloaded[0m tokio-macros v2.6.0
+2026-01-08T07:52:23.6401556Z [1m[92m  Downloaded[0m tiny-keccak v2.0.2
+2026-01-08T07:52:23.6416590Z [1m[92m  Downloaded[0m thiserror v1.0.69
+2026-01-08T07:52:23.6444697Z [1m[92m  Downloaded[0m tempfile v3.24.0
+2026-01-08T07:52:23.6460644Z [1m[92m  Downloaded[0m slab v0.4.11
+2026-01-08T07:52:23.6468871Z [1m[92m  Downloaded[0m signal-hook-registry v1.4.8
+2026-01-08T07:52:23.6476737Z [1m[92m  Downloaded[0m shlex v1.3.0
+2026-01-08T07:52:23.6484718Z [1m[92m  Downloaded[0m rand_core v0.6.4
+2026-01-08T07:52:23.6493384Z [1m[92m  Downloaded[0m proc-macro2 v1.0.104
+2026-01-08T07:52:23.6609737Z [1m[92m  Downloaded[0m num-traits v0.2.19
+2026-01-08T07:52:23.6610680Z [1m[92m  Downloaded[0m clap_derive v4.5.49
+2026-01-08T07:52:23.6611856Z [1m[92m  Downloaded[0m unicode-ident v1.0.22
+2026-01-08T07:52:23.6612512Z [1m[92m  Downloaded[0m tinyvec_macros v0.1.1
+2026-01-08T07:52:23.6613086Z [1m[92m  Downloaded[0m rand_chacha v0.3.1
+2026-01-08T07:52:23.6613644Z [1m[92m  Downloaded[0m notify v6.1.1
+2026-01-08T07:52:23.6626327Z [1m[92m  Downloaded[0m log v0.4.29
+2026-01-08T07:52:23.6643157Z [1m[92m  Downloaded[0m ignore v0.4.25
+2026-01-08T07:52:23.6657504Z [1m[92m  Downloaded[0m iana-time-zone v0.1.64
+2026-01-08T07:52:23.6673159Z [1m[92m  Downloaded[0m httparse v1.10.1
+2026-01-08T07:52:23.6689744Z [1m[92m  Downloaded[0m getrandom v0.2.16
+2026-01-08T07:52:23.6708117Z [1m[92m  Downloaded[0m crc32fast v1.5.0
+2026-01-08T07:52:23.6720612Z [1m[92m  Downloaded[0m colored v2.2.0
+2026-01-08T07:52:23.6736229Z [1m[92m  Downloaded[0m bitflags v2.10.0
+2026-01-08T07:52:23.6759201Z [1m[92m  Downloaded[0m find-msvc-tools v0.1.6
+2026-01-08T07:52:23.6769043Z [1m[92m  Downloaded[0m unicode-xid v0.2.6
+2026-01-08T07:52:23.6777171Z [1m[92m  Downloaded[0m rustpython-parser-vendored v0.4.0
+2026-01-08T07:52:23.6785905Z [1m[92m  Downloaded[0m base64 v0.22.1
+2026-01-08T07:52:23.6809011Z [1m[92m  Downloaded[0m crossbeam-epoch v0.9.18
+2026-01-08T07:52:23.6824420Z [1m[92m  Downloaded[0m rustpython-parser-core v0.4.0
+2026-01-08T07:52:23.6829623Z [1m[92m  Downloaded[0m rend v0.5.3
+2026-01-08T07:52:23.6840460Z [1m[92m  Downloaded[0m ipnet v2.11.0
+2026-01-08T07:52:23.6850595Z [1m[92m  Downloaded[0m inotify v0.9.6
+2026-01-08T07:52:23.6861603Z [1m[92m  Downloaded[0m crossbeam-utils v0.8.21
+2026-01-08T07:52:23.6878211Z [1m[92m  Downloaded[0m utf8parse v0.2.2
+2026-01-08T07:52:23.6884455Z [1m[92m  Downloaded[0m unic-ucd-version v0.9.0
+2026-01-08T07:52:23.6890045Z [1m[92m  Downloaded[0m unic-ucd-ident v0.9.0
+2026-01-08T07:52:23.6899549Z [1m[92m  Downloaded[0m unic-emoji-char v0.9.0
+2026-01-08T07:52:23.6907882Z [1m[92m  Downloaded[0m bitflags v1.3.2
+2026-01-08T07:52:23.6925595Z [1m[92m  Downloaded[0m unic-char-range v0.9.0
+2026-01-08T07:52:23.6934352Z [1m[92m  Downloaded[0m unic-char-property v0.9.0
+2026-01-08T07:52:23.6941947Z [1m[92m  Downloaded[0m try-lock v0.2.5
+2026-01-08T07:52:23.6947880Z [1m[92m  Downloaded[0m tower-service v0.3.3
+2026-01-08T07:52:23.6953320Z [1m[92m  Downloaded[0m tower-layer v0.3.3
+2026-01-08T07:52:23.6959234Z [1m[92m  Downloaded[0m same-file v1.0.6
+2026-01-08T07:52:23.6967407Z [1m[92m  Downloaded[0m ptr_meta_derive v0.3.1
+2026-01-08T07:52:23.6973052Z [1m[92m  Downloaded[0m lock_api v0.4.14
+2026-01-08T07:52:23.6982032Z [1m[92m  Downloaded[0m http-body-util v0.1.3
+2026-01-08T07:52:23.6992696Z [1m[92m  Downloaded[0m globset v0.4.18
+2026-01-08T07:52:23.7002870Z [1m[92m  Downloaded[0m futures-channel v0.3.31
+2026-01-08T07:52:23.7014869Z [1m[92m  Downloaded[0m filetime v0.2.26
+2026-01-08T07:52:23.7025072Z [1m[92m  Downloaded[0m crossbeam-deque v0.8.6
+2026-01-08T07:52:23.7034499Z [1m[92m  Downloaded[0m anyhow v1.0.100
+2026-01-08T07:52:23.7056723Z [1m[92m  Downloaded[0m anstyle v1.0.13
+2026-01-08T07:52:23.7068016Z [1m[92m  Downloaded[0m pin-project-lite v0.2.16
+2026-01-08T07:52:23.7097205Z [1m[92m  Downloaded[0m itoa v1.0.17
+2026-01-08T07:52:23.7106462Z [1m[92m  Downloaded[0m httpdate v1.0.3
+2026-01-08T07:52:23.7114113Z [1m[92m  Downloaded[0m heck v0.5.0
+2026-01-08T07:52:23.7121678Z [1m[92m  Downloaded[0m fastrand v2.3.0
+2026-01-08T07:52:23.7130250Z [1m[92m  Downloaded[0m colorchoice v1.0.4
+2026-01-08T07:52:23.7137910Z [1m[92m  Downloaded[0m is-macro v0.3.7
+2026-01-08T07:52:23.7145600Z [1m[92m  Downloaded[0m fnv v1.0.7
+2026-01-08T07:52:23.7151423Z [1m[92m  Downloaded[0m malachite-nz v0.4.22
+2026-01-08T07:52:23.7646474Z [1m[92m  Downloaded[0m scopeguard v1.2.0
+2026-01-08T07:52:23.7653735Z [1m[92m  Downloaded[0m rancor v0.1.1
+2026-01-08T07:52:23.7661791Z [1m[92m  Downloaded[0m phf v0.11.3
+2026-01-08T07:52:23.7670159Z [1m[92m  Downloaded[0m paste v1.0.15
+2026-01-08T07:52:23.7686743Z [1m[92m  Downloaded[0m once_cell v1.21.3
+2026-01-08T07:52:23.7702085Z [1m[92m  Downloaded[0m fs2 v0.4.3
+2026-01-08T07:52:23.7709248Z [1m[92m  Downloaded[0m chunked_transfer v1.5.0
+2026-01-08T07:52:23.7716534Z [1m[92m  Downloaded[0m cfg-if v1.0.4
+2026-01-08T07:52:23.7724236Z [1m[92m  Downloaded[0m futures-sink v0.3.31
+2026-01-08T07:52:23.7729681Z [1m[92m  Downloaded[0m crunchy v0.2.4
+2026-01-08T07:52:23.7734897Z [1m[92m  Downloaded[0m clap_lex v0.7.6
+2026-01-08T07:52:23.7742293Z [1m[92m  Downloaded[0m malachite-bigint v0.2.3
+2026-01-08T07:52:23.7750765Z [1m[92m  Downloaded[0m linux-raw-sys v0.11.0
+2026-01-08T07:52:23.8129419Z [1m[92m  Downloaded[0m hex v0.4.3
+2026-01-08T07:52:23.8137230Z [1m[92m  Downloaded[0m errno v0.3.14
+2026-01-08T07:52:23.8145776Z [1m[92m  Downloaded[0m percent-encoding v2.3.2
+2026-01-08T07:52:23.8151088Z [1m[92m  Downloaded[0m memoffset v0.9.1
+2026-01-08T07:52:23.8158133Z [1m[92m  Downloaded[0m malachite v0.4.22
+2026-01-08T07:52:23.8163532Z [1m[92m  Downloaded[0m http-body v1.0.1
+2026-01-08T07:52:23.8169113Z [1m[92m  Downloaded[0m constant_time_eq v0.3.1
+2026-01-08T07:52:23.8176860Z [1m[92m  Downloaded[0m ascii v1.1.0
+2026-01-08T07:52:23.8188362Z [1m[92m  Downloaded[0m either v1.15.0
+2026-01-08T07:52:23.8197208Z [1m[92m  Downloaded[0m inotify-sys v0.1.5
+2026-01-08T07:52:23.8202588Z [1m[92m  Downloaded[0m futures-task v0.3.31
+2026-01-08T07:52:23.8209265Z [1m[92m  Downloaded[0m bytecheck v0.8.2
+2026-01-08T07:52:23.8215460Z [1m[92m  Downloaded[0m anstyle-parse v0.2.7
+2026-01-08T07:52:23.9728170Z [1m[92m   Compiling[0m cfg-if v1.0.4
+2026-01-08T07:52:23.9728885Z [1m[92m   Compiling[0m proc-macro2 v1.0.104
+2026-01-08T07:52:23.9729526Z [1m[92m   Compiling[0m unicode-ident v1.0.22
+2026-01-08T07:52:23.9730131Z [1m[92m   Compiling[0m quote v1.0.42
+2026-01-08T07:52:24.0010253Z [1m[92m   Compiling[0m libc v0.2.178
+2026-01-08T07:52:24.0347104Z [1m[92m   Compiling[0m zerocopy v0.8.31
+2026-01-08T07:52:24.3760577Z [1m[92m   Compiling[0m once_cell v1.21.3
+2026-01-08T07:52:24.7757377Z [1m[92m   Compiling[0m autocfg v1.5.0
+2026-01-08T07:52:25.2525946Z [1m[92m   Compiling[0m syn v2.0.112
+2026-01-08T07:52:25.8126573Z [1m[92m   Compiling[0m siphasher v1.0.1
+2026-01-08T07:52:25.9499271Z [1m[92m   Compiling[0m getrandom v0.2.16
+2026-01-08T07:52:25.9816858Z [1m[92m   Compiling[0m ppv-lite86 v0.2.21
+2026-01-08T07:52:26.0197155Z [1m[92m   Compiling[0m version_check v0.9.5
+2026-01-08T07:52:26.0799631Z [1m[92m   Compiling[0m rand_core v0.6.4
+2026-01-08T07:52:26.2325202Z [1m[92m   Compiling[0m memchr v2.7.6
+2026-01-08T07:52:26.2562777Z [1m[92m   Compiling[0m ahash v0.8.12
+2026-01-08T07:52:26.3101704Z [1m[92m   Compiling[0m rand_chacha v0.3.1
+2026-01-08T07:52:26.3514053Z [1m[92m   Compiling[0m log v0.4.29
+2026-01-08T07:52:26.4913876Z [1m[92m   Compiling[0m rand v0.8.5
+2026-01-08T07:52:26.7307521Z [1m[92m   Compiling[0m phf_shared v0.11.3
+2026-01-08T07:52:26.8554886Z [1m[92m   Compiling[0m num-traits v0.2.19
+2026-01-08T07:52:26.9396851Z [1m[92m   Compiling[0m libm v0.2.15
+2026-01-08T07:52:27.1453271Z [1m[92m   Compiling[0m phf_generator v0.11.3
+2026-01-08T07:52:27.1955978Z [1m[92m   Compiling[0m pin-project-lite v0.2.16
+2026-01-08T07:52:27.2334149Z [1m[92m   Compiling[0m parking_lot_core v0.9.12
+2026-01-08T07:52:27.2360728Z [1m[92m   Compiling[0m bytes v1.11.0
+2026-01-08T07:52:27.2765280Z [1m[92m   Compiling[0m either v1.15.0
+2026-01-08T07:52:27.3552892Z [1m[92m   Compiling[0m phf_codegen v0.11.3
+2026-01-08T07:52:27.4196760Z [1m[92m   Compiling[0m hashbrown v0.14.5
+2026-01-08T07:52:27.4638983Z [1m[92m   Compiling[0m itertools v0.11.0
+2026-01-08T07:52:28.6215571Z [1m[92m   Compiling[0m errno v0.3.14
+2026-01-08T07:52:28.7057432Z [1m[92m   Compiling[0m itoa v1.0.17
+2026-01-08T07:52:28.7158189Z [1m[92m   Compiling[0m crossbeam-utils v0.8.21
+2026-01-08T07:52:28.8334339Z [1m[92m   Compiling[0m scopeguard v1.2.0
+2026-01-08T07:52:28.8677290Z [1m[92m   Compiling[0m futures-core v0.3.31
+2026-01-08T07:52:28.8746270Z [1m[92m   Compiling[0m smallvec v1.15.1
+2026-01-08T07:52:28.9520074Z [1m[92m   Compiling[0m malachite-nz v0.4.22
+2026-01-08T07:52:29.0269425Z [1m[92m   Compiling[0m ryu v1.0.22
+2026-01-08T07:52:29.1674857Z [1m[92m   Compiling[0m malachite-base v0.4.22
+2026-01-08T07:52:29.2547701Z [1m[92m   Compiling[0m lock_api v0.4.14
+2026-01-08T07:52:29.3727678Z [1m[92m   Compiling[0m signal-hook-registry v1.4.8
+2026-01-08T07:52:29.4443460Z [1m[92m   Compiling[0m crunchy v0.2.4
+2026-01-08T07:52:29.5722847Z [1m[92m   Compiling[0m heck v0.5.0
+2026-01-08T07:52:29.6193876Z [1m[92m   Compiling[0m unicode-width v0.2.2
+2026-01-08T07:52:29.7299334Z [1m[92m   Compiling[0m parking_lot v0.12.5
+2026-01-08T07:52:29.8155706Z [1m[92m   Compiling[0m getopts v0.2.24
+2026-01-08T07:52:30.1688923Z [1m[92m   Compiling[0m http v1.4.0
+2026-01-08T07:52:30.3551697Z [1m[92m   Compiling[0m ptr_meta_derive v0.3.1
+2026-01-08T07:52:30.5602544Z [1m[92m   Compiling[0m tokio-macros v2.6.0
+2026-01-08T07:52:30.6109057Z [1m[92m   Compiling[0m mio v1.1.1
+2026-01-08T07:52:31.0874450Z [1m[92m   Compiling[0m socket2 v0.6.1
+2026-01-08T07:52:31.1390737Z [1m[92m   Compiling[0m anyhow v1.0.100
+2026-01-08T07:52:31.2930540Z [1m[92m   Compiling[0m serde_core v1.0.228
+2026-01-08T07:52:31.3173950Z [1m[92m   Compiling[0m tiny-keccak v2.0.2
+2026-01-08T07:52:31.3951703Z [1m[92m   Compiling[0m paste v1.0.15
+2026-01-08T07:52:31.4603348Z [1m[92m   Compiling[0m unicode-xid v0.2.6
+2026-01-08T07:52:31.5199743Z [1m[92m   Compiling[0m derive_more-impl v1.0.0
+2026-01-08T07:52:31.5671070Z [1m[92m   Compiling[0m tokio v1.49.0
+2026-01-08T07:52:31.6694239Z [1m[92m   Compiling[0m ptr_meta v0.3.1
+2026-01-08T07:52:31.7249577Z [1m[92m   Compiling[0m unicode_names2_generator v1.3.0
+2026-01-08T07:52:32.3554010Z [1m[92m   Compiling[0m aho-corasick v1.1.4
+2026-01-08T07:52:33.6928715Z [1m[92m   Compiling[0m tracing-core v0.1.36
+2026-01-08T07:52:34.9899708Z [1m[92m   Compiling[0m futures-sink v0.3.31
+2026-01-08T07:52:35.0377078Z [1m[92m   Compiling[0m shlex v1.3.0
+2026-01-08T07:52:35.1596146Z [1m[92m   Compiling[0m hashbrown v0.16.1
+2026-01-08T07:52:35.1866719Z [1m[92m   Compiling[0m equivalent v1.0.2
+2026-01-08T07:52:35.2190126Z [1m[92m   Compiling[0m find-msvc-tools v0.1.6
+2026-01-08T07:52:35.3891019Z [1m[92m   Compiling[0m unic-common v0.9.0
+2026-01-08T07:52:35.4350677Z [1m[92m   Compiling[0m unic-char-range v0.9.0
+2026-01-08T07:52:35.4977593Z [1m[92m   Compiling[0m utf8parse v0.2.2
+2026-01-08T07:52:35.5431013Z [1m[92m   Compiling[0m regex-syntax v0.8.8
+2026-01-08T07:52:35.7361742Z [1m[92m   Compiling[0m httparse v1.10.1
+2026-01-08T07:52:35.9409393Z [1m[92m   Compiling[0m tokio-util v0.7.18
+2026-01-08T07:52:36.5917510Z [1m[92m   Compiling[0m indexmap v2.12.1
+2026-01-08T07:52:37.2535619Z [1m[92m   Compiling[0m regex-automata v0.4.13
+2026-01-08T07:52:38.6066221Z [1m[92m   Compiling[0m anstyle-parse v0.2.7
+2026-01-08T07:52:38.7323696Z [1m[92m   Compiling[0m unic-char-property v0.9.0
+2026-01-08T07:52:38.7849234Z [1m[92m   Compiling[0m unic-ucd-version v0.9.0
+2026-01-08T07:52:38.8184046Z [1m[92m   Compiling[0m cc v1.2.51
+2026-01-08T07:52:39.1863175Z [1m[92m   Compiling[0m malachite-q v0.4.22
+2026-01-08T07:52:40.2029823Z [1m[92m   Compiling[0m malachite v0.4.22
+2026-01-08T07:52:40.2344414Z [1m[92m   Compiling[0m tracing v0.1.44
+2026-01-08T07:52:40.4149708Z [1m[92m   Compiling[0m derive_more v1.0.0
+2026-01-08T07:52:40.6103722Z [1m[92m   Compiling[0m unicode_names2 v1.3.0
+2026-01-08T07:52:40.7576835Z [1m[92m   Compiling[0m rancor v0.1.1
+2026-01-08T07:52:41.5382520Z [1m[92m   Compiling[0m http-body v1.0.1
+2026-01-08T07:52:41.6131967Z [1m[92m   Compiling[0m is-macro v0.3.7
+2026-01-08T07:52:41.6176806Z [1m[92m   Compiling[0m bytecheck_derive v0.8.2
+2026-01-08T07:52:41.9997133Z [1m[92m   Compiling[0m num-integer v0.1.46
+2026-01-08T07:52:42.0607254Z [1m[92m   Compiling[0m rustpython-parser-vendored v0.4.0
+2026-01-08T07:52:42.2892563Z [1m[92m   Compiling[0m memoffset v0.9.1
+2026-01-08T07:52:42.3179003Z [1m[92m   Compiling[0m getrandom v0.3.4
+2026-01-08T07:52:42.3305747Z [1m[92m   Compiling[0m same-file v1.0.6
+2026-01-08T07:52:42.3799388Z [1m[92m   Compiling[0m simdutf8 v0.1.5
+2026-01-08T07:52:42.4229636Z [1m[92m   Compiling[0m slab v0.4.11
+2026-01-08T07:52:42.4988967Z [1m[92m   Compiling[0m anstyle-query v1.1.5
+2026-01-08T07:52:42.5012524Z [1m[92m   Compiling[0m zmij v1.0.6
+2026-01-08T07:52:42.5392955Z [1m[92m   Compiling[0m httpdate v1.0.3
+2026-01-08T07:52:42.5444875Z [1m[92m   Compiling[0m fnv v1.0.7
+2026-01-08T07:52:42.5809088Z [1m[92m   Compiling[0m serde v1.0.228
+2026-01-08T07:52:42.6368615Z [1m[92m   Compiling[0m rustix v1.1.3
+2026-01-08T07:52:42.7165465Z [1m[92m   Compiling[0m anstyle v1.0.13
+2026-01-08T07:52:42.7418382Z [1m[92m   Compiling[0m colorchoice v1.0.4
+2026-01-08T07:52:42.7899901Z [1m[92m   Compiling[0m bitflags v2.10.0
+2026-01-08T07:52:42.8442207Z [1m[92m   Compiling[0m atomic-waker v1.1.2
+2026-01-08T07:52:42.8941089Z [1m[92m   Compiling[0m try-lock v0.2.5
+2026-01-08T07:52:42.8989310Z [1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+2026-01-08T07:52:42.9359499Z [1m[92m   Compiling[0m pin-utils v0.1.0
+2026-01-08T07:52:42.9398522Z [1m[92m   Compiling[0m want v0.3.1
+2026-01-08T07:52:42.9634055Z [1m[92m   Compiling[0m anstream v0.6.21
+2026-01-08T07:52:42.9668373Z [1m[92m   Compiling[0m h2 v0.4.12
+2026-01-08T07:52:43.1607997Z [1m[92m   Compiling[0m bytecheck v0.8.2
+2026-01-08T07:52:43.1971878Z [1m[92m   Compiling[0m walkdir v2.5.0
+2026-01-08T07:52:43.2795629Z [1m[92m   Compiling[0m phf v0.11.3
+2026-01-08T07:52:43.3388099Z [1m[92m   Compiling[0m malachite-bigint v0.2.3
+2026-01-08T07:52:43.3846127Z [1m[92m   Compiling[0m rustpython-parser-core v0.4.0
+2026-01-08T07:52:43.5025987Z [1m[92m   Compiling[0m rustpython-parser v0.4.0
+2026-01-08T07:52:43.7919676Z [1m[92m   Compiling[0m blake3 v1.8.2
+2026-01-08T07:52:44.2536747Z [1m[92m   Compiling[0m crossbeam-epoch v0.9.18
+2026-01-08T07:52:44.5486797Z [1m[92m   Compiling[0m munge_macro v0.4.7
+2026-01-08T07:52:44.9404594Z [1m[92m   Compiling[0m serde_derive v1.0.228
+2026-01-08T07:52:44.9663418Z [1m[92m   Compiling[0m futures-channel v0.3.31
+2026-01-08T07:52:45.1098468Z [1m[92m   Compiling[0m bstr v1.12.1
+2026-01-08T07:52:45.6084891Z [1m[92m   Compiling[0m inotify-sys v0.1.5
+2026-01-08T07:52:45.6597980Z [1m[92m   Compiling[0m futures-task v0.3.31
+2026-01-08T07:52:45.7187764Z [1m[92m   Compiling[0m strsim v0.11.1
+2026-01-08T07:52:45.9328890Z [1m[92m   Compiling[0m tower-layer v0.3.3
+2026-01-08T07:52:46.0470661Z [1m[92m   Compiling[0m tower-service v0.3.3
+2026-01-08T07:52:46.0609665Z [1m[92m   Compiling[0m crc32fast v1.5.0
+2026-01-08T07:52:46.0852462Z [1m[92m   Compiling[0m signal-hook v0.3.18
+2026-01-08T07:52:46.1603810Z [1m[92m   Compiling[0m thiserror v1.0.69
+2026-01-08T07:52:46.1992858Z [1m[92m   Compiling[0m linux-raw-sys v0.11.0
+2026-01-08T07:52:46.3199141Z [1m[92m   Compiling[0m clap_lex v0.7.6
+2026-01-08T07:52:46.4976028Z [1m[92m   Compiling[0m bitflags v1.3.2
+2026-01-08T07:52:46.5287577Z [1m[92m   Compiling[0m serde_json v1.0.148
+2026-01-08T07:52:46.5522339Z [1m[92m   Compiling[0m static_assertions v1.1.0
+2026-01-08T07:52:46.5847671Z [1m[92m   Compiling[0m rustpython-ast v0.4.0
+2026-01-08T07:52:46.6173626Z [1m[92m   Compiling[0m inotify v0.9.6
+2026-01-08T07:52:46.8987153Z [1m[92m   Compiling[0m clap_builder v4.5.54
+2026-01-08T07:52:48.8297225Z [1m[92m   Compiling[0m futures-util v0.3.31
+2026-01-08T07:52:48.8352858Z [1m[92m   Compiling[0m globset v0.4.18
+2026-01-08T07:52:49.7499661Z [1m[92m   Compiling[0m hyper v1.8.1
+2026-01-08T07:52:50.0126200Z [1m[92m   Compiling[0m munge v0.4.7
+2026-01-08T07:52:50.0282286Z [1m[92m   Compiling[0m crossbeam-deque v0.8.6
+2026-01-08T07:52:50.1643870Z [1m[92m   Compiling[0m rend v0.5.3
+2026-01-08T07:52:51.4460616Z [1m[92m   Compiling[0m unic-ucd-ident v0.9.0
+2026-01-08T07:52:51.5286350Z [1m[92m   Compiling[0m unic-emoji-char v0.9.0
+2026-01-08T07:52:51.5541056Z [1m[92m   Compiling[0m crossbeam-channel v0.5.15
+2026-01-08T07:52:51.6439617Z [1m[92m   Compiling[0m thiserror-impl v1.0.69
+2026-01-08T07:52:52.0019943Z [1m[92m   Compiling[0m clap_derive v4.5.49
+2026-01-08T07:52:52.6538869Z [1m[92m   Compiling[0m rkyv_derive v0.8.12
+2026-01-08T07:52:53.1333904Z [1m[92m   Compiling[0m rmp v0.8.15
+2026-01-08T07:52:53.3804922Z [1m[92m   Compiling[0m mio v0.8.11
+2026-01-08T07:52:53.3876280Z [1m[92m   Compiling[0m filetime v0.2.26
+2026-01-08T07:52:53.5167487Z [1m[92m   Compiling[0m lalrpop-util v0.20.2
+2026-01-08T07:52:53.6126488Z [1m[92m   Compiling[0m lazy_static v1.5.0
+2026-01-08T07:52:53.6149491Z [1m[92m   Compiling[0m rustc-hash v1.1.0
+2026-01-08T07:52:53.6484085Z [1m[92m   Compiling[0m arrayvec v0.7.6
+2026-01-08T07:52:53.6496371Z [1m[92m   Compiling[0m arrayref v0.3.9
+2026-01-08T07:52:53.6756585Z [1m[92m   Compiling[0m constant_time_eq v0.3.1
+2026-01-08T07:52:53.7103938Z [1m[92m   Compiling[0m percent-encoding v2.3.2
+2026-01-08T07:52:53.7894497Z [1m[92m   Compiling[0m iana-time-zone v0.1.64
+2026-01-08T07:52:53.8250295Z [1m[92m   Compiling[0m ipnet v2.11.0
+2026-01-08T07:52:53.9703729Z [1m[92m   Compiling[0m chunked_transfer v1.5.0
+2026-01-08T07:52:53.9798266Z [1m[92m   Compiling[0m ascii v1.1.0
+2026-01-08T07:52:54.0424737Z [1m[92m   Compiling[0m velo v0.1.0 (/home/runner/work/velo/velo)
+2026-01-08T07:52:54.2543856Z [1m[92m   Compiling[0m base64 v0.22.1
+2026-01-08T07:52:54.2695190Z [1m[92m   Compiling[0m fastrand v2.3.0
+2026-01-08T07:52:54.3322799Z [1m[92m   Compiling[0m hashbrown v0.15.5
+2026-01-08T07:52:54.4323660Z [1m[92m   Compiling[0m hyper-util v0.1.19
+2026-01-08T07:52:54.4978464Z [1m[92m   Compiling[0m tempfile v3.24.0
+2026-01-08T07:52:54.8150089Z [1m[92m   Compiling[0m rkyv v0.8.12
+2026-01-08T07:52:54.9251899Z [1m[92m   Compiling[0m tiny_http v0.12.0
+2026-01-08T07:52:55.9814235Z [1m[92m   Compiling[0m chrono v0.4.42
+2026-01-08T07:52:56.8337527Z [1m[92m   Compiling[0m colored v2.2.0
+2026-01-08T07:52:57.1311442Z [1m[92m   Compiling[0m notify v6.1.1
+2026-01-08T07:52:57.4125855Z [1m[92m   Compiling[0m clap v4.5.54
+2026-01-08T07:52:57.4358114Z [1m[92m   Compiling[0m rmp-serde v1.3.1
+2026-01-08T07:52:58.3707130Z [1m[92m   Compiling[0m nix v0.27.1
+2026-01-08T07:52:58.8610598Z [1m[92m   Compiling[0m ignore v0.4.25
+2026-01-08T07:53:00.2757495Z [1m[92m   Compiling[0m tower v0.5.2
+2026-01-08T07:53:00.3138399Z [1m[92m   Compiling[0m http-body-util v0.1.3
+2026-01-08T07:53:00.4079809Z [1m[92m   Compiling[0m regex v1.12.2
+2026-01-08T07:53:00.4841141Z [1m[92m   Compiling[0m hostname v0.4.2
+2026-01-08T07:53:00.5541671Z [1m[92m   Compiling[0m fs2 v0.4.3
+2026-01-08T07:53:00.6413063Z [1m[92m   Compiling[0m hex v0.4.3
+2026-01-08T07:53:12.7167115Z [1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 48.86s
+2026-01-08T07:53:12.7514584Z ────────────
+2026-01-08T07:53:12.7515695Z [32;1m Nextest run[0m ID [1m8dab2de9-7b5e-4ff7-800d-61a27a5795c9[0m with nextest profile: [1mdefault[0m
+2026-01-08T07:53:12.7516878Z [32;1m    Starting[0m [1m277[0m tests across [1m9[0m binaries ([1m1[0m test [33;1mskipped[0m)
+2026-01-08T07:53:12.7590085Z [32;1m        PASS[0m [   0.006s] (  1/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_abi_compatibility_same[0m
+2026-01-08T07:53:12.7591741Z [32;1m        PASS[0m [   0.006s] (  2/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_new_sets_metadata[0m
+2026-01-08T07:53:12.7592972Z [32;1m        PASS[0m [   0.006s] (  3/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_abi_compatibility_different[0m
+2026-01-08T07:53:12.7594202Z [32;1m        PASS[0m [   0.006s] (  4/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_fingerprint_mismatch[0m
+2026-01-08T07:53:12.7635942Z [32;1m        PASS[0m [   0.006s] (  5/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_version_compatibility[0m
+2026-01-08T07:53:12.7642960Z [32;1m        PASS[0m [   0.006s] (  6/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_drift_detection_no_hash[0m
+2026-01-08T07:53:12.7644332Z [32;1m        PASS[0m [   0.006s] (  7/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_cache_save_load[0m
+2026-01-08T07:53:12.7663406Z [32;1m        PASS[0m [   0.008s] (  8/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_capture_critical_env_vars[0m
+2026-01-08T07:53:12.7699176Z [32;1m        PASS[0m [   0.006s] (  9/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_fingerprint_computation[0m
+2026-01-08T07:53:12.7703118Z [32;1m        PASS[0m [   0.006s] ( 10/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_default[0m
+2026-01-08T07:53:12.7707050Z [32;1m        PASS[0m [   0.007s] ( 11/277) [35;1mvelo[0m [36mcache::tests[0m[36m::[0m[34;1mtest_env_var_struct[0m
+2026-01-08T07:53:12.7723180Z [32;1m        PASS[0m [   0.006s] ( 12/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_equals_syntax[0m
+2026-01-08T07:53:12.7755592Z [32;1m        PASS[0m [   0.006s] ( 13/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_fix_implies_suggest[0m
+2026-01-08T07:53:12.7758789Z [32;1m        PASS[0m [   0.006s] ( 14/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_output_equals_syntax[0m
+2026-01-08T07:53:12.7778766Z [32;1m        PASS[0m [   0.007s] ( 15/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_with_file[0m
+2026-01-08T07:53:12.7792281Z [32;1m        PASS[0m [   0.007s] ( 16/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_parse_args_with_threshold[0m
+2026-01-08T07:53:12.7825615Z [32;1m        PASS[0m [   0.006s] ( 17/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_truncate_str[0m
+2026-01-08T07:53:12.7828137Z [32;1m        PASS[0m [   0.006s] ( 18/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_dev_null[0m
+2026-01-08T07:53:12.7853709Z [32;1m        PASS[0m [   0.006s] ( 19/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_null_byte[0m
+2026-01-08T07:53:12.7855192Z [32;1m        PASS[0m [   0.007s] ( 20/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_empty[0m
+2026-01-08T07:53:12.7903239Z [32;1m        PASS[0m [   0.006s] ( 21/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_relative_traversal[0m
+2026-01-08T07:53:12.7905052Z [32;1m        PASS[0m [   0.006s] ( 22/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_relative_traversal_nested[0m
+2026-01-08T07:53:12.7906618Z [32;1m        PASS[0m [   0.006s] ( 23/277) [35;1mvelo[0m [36mcmd::analyze::tests[0m[36m::[0m[34;1mtest_validate_path_valid[0m
+2026-01-08T07:53:12.7917393Z [32;1m        PASS[0m [   0.006s] ( 24/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_missing_inspect_path_error[0m
+2026-01-08T07:53:12.7941711Z [32;1m        PASS[0m [   0.006s] ( 25/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_parse_build_default[0m
+2026-01-08T07:53:12.7949182Z [32;1m        PASS[0m [   0.008s] ( 26/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_missing_subcommand_error[0m
+2026-01-08T07:53:12.7966637Z [32;1m        PASS[0m [   0.006s] ( 27/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_parse_build_with_args[0m
+2026-01-08T07:53:12.7981410Z [32;1m        PASS[0m [   0.006s] ( 28/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_parse_inspect_subcommand[0m
+2026-01-08T07:53:12.8013546Z [32;1m        PASS[0m [   0.006s] ( 29/277) [35;1mvelo[0m [36mcmd::bundle::tests[0m[36m::[0m[34;1mtest_parse_inspect_with_all_flags[0m
+2026-01-08T07:53:12.8021709Z [32;1m        PASS[0m [   0.005s] ( 30/277) [35;1mvelo[0m [36mcmd::graph::tests[0m[36m::[0m[34;1mtest_missing_project_dir_error[0m
+2026-01-08T07:53:12.8024725Z [32;1m        PASS[0m [   0.007s] ( 31/277) [35;1mvelo[0m [36mcmd::graph::tests[0m[36m::[0m[34;1mtest_missing_output_error[0m
+2026-01-08T07:53:12.8055098Z [32;1m        PASS[0m [   0.007s] ( 32/277) [35;1mvelo[0m [36mcmd::graph::tests[0m[36m::[0m[34;1mtest_parse_generate_subcommand[0m
+2026-01-08T07:53:12.8074732Z [32;1m        PASS[0m [   0.006s] ( 33/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_missing_script_error[0m
+2026-01-08T07:53:12.8081839Z [32;1m        PASS[0m [   0.006s] ( 34/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_parse_basic[0m
+2026-01-08T07:53:12.8092843Z [32;1m        PASS[0m [   0.007s] ( 35/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_parse_with_async[0m
+2026-01-08T07:53:12.8123560Z [32;1m        PASS[0m [   0.007s] ( 36/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_parse_with_fast[0m
+2026-01-08T07:53:12.8136910Z [32;1m        PASS[0m [   0.006s] ( 37/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_parse_with_profile[0m
+2026-01-08T07:53:12.8146962Z [32;1m        PASS[0m [   0.006s] ( 38/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_parse_with_zygote[0m
+2026-01-08T07:53:12.8152898Z [32;1m        PASS[0m [   0.006s] ( 39/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_project_dir_detection_relative_path[0m
+2026-01-08T07:53:12.8186138Z [32;1m        PASS[0m [   0.006s] ( 40/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_unknown_option_error[0m
+2026-01-08T07:53:12.8211002Z [32;1m        PASS[0m [   0.007s] ( 41/277) [35;1mvelo[0m [36mcmd::run::tests[0m[36m::[0m[34;1mtest_validate_async_profile_mutual_exclusion[0m
+2026-01-08T07:53:12.8212377Z [32;1m        PASS[0m [   0.006s] ( 42/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_missing_app_ok[0m
+2026-01-08T07:53:12.8243200Z [32;1m        PASS[0m [   0.006s] ( 43/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_parse_basic[0m
+2026-01-08T07:53:12.8260927Z [32;1m        PASS[0m [   0.007s] ( 44/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_parse_bind_shorthand[0m
+2026-01-08T07:53:12.8279867Z [32;1m        PASS[0m [   0.007s] ( 45/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_parse_prod_mode[0m
+2026-01-08T07:53:12.8282081Z [32;1m        PASS[0m [   0.007s] ( 46/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_parse_no_zygote[0m
+2026-01-08T07:53:12.8283889Z [32;1m        PASS[0m [   0.007s] ( 47/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_parse_with_options[0m
+2026-01-08T07:53:12.8336566Z [32;1m        PASS[0m [   0.007s] ( 48/277) [35;1mvelo[0m [36mcmd::serve::tests[0m[36m::[0m[34;1mtest_unknown_option_error[0m
+2026-01-08T07:53:12.8344274Z [32;1m        PASS[0m [   0.006s] ( 49/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_parse_auto_config_subcommand[0m
+2026-01-08T07:53:12.8348233Z [32;1m        PASS[0m [   0.006s] ( 50/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_parse_start_subcommand[0m
+2026-01-08T07:53:12.8353569Z [32;1m        PASS[0m [   0.007s] ( 51/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_missing_subcommand_error[0m
+2026-01-08T07:53:12.8402854Z [32;1m        PASS[0m [   0.007s] ( 52/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_parse_start_with_preload[0m
+2026-01-08T07:53:12.8405434Z [32;1m        PASS[0m [   0.006s] ( 53/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_parse_status_subcommand[0m
+2026-01-08T07:53:12.8409433Z [32;1m        PASS[0m [   0.006s] ( 54/277) [35;1mvelo[0m [36mcmd::zygote::tests[0m[36m::[0m[34;1mtest_parse_stop_subcommand[0m
+2026-01-08T07:53:12.8423931Z [32;1m        PASS[0m [   0.006s] ( 55/277) [35;1mvelo[0m [36mconfig::tests[0m[36m::[0m[34;1mtest_parse_toml_basic[0m
+2026-01-08T07:53:12.8463705Z [32;1m        PASS[0m [   0.006s] ( 56/277) [35;1mvelo[0m [36mgraph::builder::tests[0m[36m::[0m[34;1mtest_get_package_name[0m
+2026-01-08T07:53:12.8467737Z [32;1m        PASS[0m [   0.006s] ( 57/277) [35;1mvelo[0m [36mconfig::tests[0m[36m::[0m[34;1mtest_security_profile_selection[0m
+2026-01-08T07:53:12.8476130Z [32;1m        PASS[0m [   0.006s] ( 58/277) [35;1mvelo[0m [36mgraph::builder::tests[0m[36m::[0m[34;1mtest_topological_order[0m
+2026-01-08T07:53:12.8485468Z [32;1m        PASS[0m [   0.007s] ( 59/277) [35;1mvelo[0m [36mgraph::builder::tests[0m[36m::[0m[34;1mtest_resolve_relative_imports[0m
+2026-01-08T07:53:12.8521588Z [32;1m        PASS[0m [   0.006s] ( 60/277) [35;1mvelo[0m [36mgraph::cycle::tests[0m[36m::[0m[34;1mtest_diamond_no_cycle[0m
+2026-01-08T07:53:12.8531729Z [32;1m        PASS[0m [   0.005s] ( 61/277) [35;1mvelo[0m [36mgraph::cycle::tests[0m[36m::[0m[34;1mtest_simple_cycle[0m
+2026-01-08T07:53:12.8538587Z [32;1m        PASS[0m [   0.006s] ( 62/277) [35;1mvelo[0m [36mgraph::cycle::tests[0m[36m::[0m[34;1mtest_two_sccs[0m
+2026-01-08T07:53:12.8560604Z [32;1m        PASS[0m [   0.007s] ( 63/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_combined_l0_1[0m
+2026-01-08T07:53:12.8579181Z [32;1m        PASS[0m [   0.006s] ( 64/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_multiple_imports_one_line[0m
+2026-01-08T07:53:12.8582520Z [32;1m        PASS[0m [   0.006s] ( 65/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_hard_dependency[0m
+2026-01-08T07:53:12.8615973Z [32;1m        PASS[0m [   0.008s] ( 66/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_relative_import_scanner[0m
+2026-01-08T07:53:12.8635512Z [32;1m        PASS[0m [   0.005s] ( 67/277) [35;1mvelo[0m [36mgraph::serializer::tests[0m[36m::[0m[34;1mtest_arch_mismatch[0m
+2026-01-08T07:53:12.8637135Z [32;1m        PASS[0m [   0.008s] ( 68/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_soft_dependency_in_func[0m
+2026-01-08T07:53:12.8641751Z [32;1m        PASS[0m [   0.006s] ( 69/277) [35;1mvelo[0m [36mgraph::dependency::tests[0m[36m::[0m[34;1mtest_type_checking_dependency[0m
+2026-01-08T07:53:12.9844652Z [32;1m        PASS[0m [   0.121s] ( 70/277) [35;1mvelo[0m [36mhardware::tests[0m[36m::[0m[34;1mtest_hardware_format[0m
+2026-01-08T07:53:12.9847886Z [32;1m        PASS[0m [   0.120s] ( 71/277) [35;1mvelo[0m [36mhardware_k8s::tests[0m[36m::[0m[34;1mtest_parse_cgroup_cpu_max_exact[0m
+2026-01-08T07:53:12.9854966Z [32;1m        PASS[0m [   0.123s] ( 72/277) [35;1mvelo[0m [36mgraph::serializer::tests[0m[36m::[0m[34;1mtest_benchmark_deserialization[0m
+2026-01-08T07:53:12.9905125Z [32;1m        PASS[0m [   0.006s] ( 73/277) [35;1mvelo[0m [36mhardware_k8s::tests[0m[36m::[0m[34;1mtest_parse_cgroup_cpu_max_small_fraction[0m
+2026-01-08T07:53:12.9912713Z [32;1m        PASS[0m [   0.006s] ( 74/277) [35;1mvelo[0m [36mhardware_k8s::tests[0m[36m::[0m[34;1mtest_parse_cgroup_cpu_max_fractional_round_up[0m
+2026-01-08T07:53:12.9914281Z [32;1m        PASS[0m [   0.006s] ( 75/277) [35;1mvelo[0m [36mhardware_k8s::tests[0m[36m::[0m[34;1mtest_parse_cgroup_cpu_max_unlimited[0m
+2026-01-08T07:53:12.9957741Z [32;1m        PASS[0m [   0.005s] ( 76/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_generate_abstract_socket_name_linux[0m
+2026-01-08T07:53:12.9962903Z [32;1m        PASS[0m [   0.006s] ( 77/277) [35;1mvelo[0m [36mhardware_k8s::tests[0m[36m::[0m[34;1mtest_parse_cgroup_invalid_format[0m
+2026-01-08T07:53:12.9970745Z [32;1m        PASS[0m [   0.006s] ( 78/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_environment_shield_config_override[0m
+2026-01-08T07:53:13.0004160Z [32;1m        PASS[0m [   0.005s] ( 79/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_generate_worker_socket_path[0m
+2026-01-08T07:53:13.0020766Z [32;1m        PASS[0m [   0.006s] ( 80/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_set_cloexec_on_fd[0m
+2026-01-08T07:53:13.0025145Z [32;1m        PASS[0m [   0.005s] ( 81/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_supports_abstract_sockets[0m
+2026-01-08T07:53:13.0049730Z [32;1m        PASS[0m [   0.004s] ( 82/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_unlink_socket_if_exists_sync_is_socket[0m
+2026-01-08T07:53:13.0077231Z [32;1m        PASS[0m [   0.006s] ( 83/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_unlink_socket_if_exists_sync_not_exists[0m
+2026-01-08T07:53:13.0082849Z [32;1m        PASS[0m [   0.006s] ( 84/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_unlink_socket_if_exists_sync_not_socket[0m
+2026-01-08T07:53:13.0095265Z [32;1m        PASS[0m [   0.005s] ( 85/277) [35;1mvelo[0m [36mlifecycle::safety::tests[0m[36m::[0m[34;1mtest_variable_expansion[0m
+2026-01-08T07:53:13.0135310Z [32;1m        PASS[0m [   0.006s] ( 86/277) [35;1mvelo[0m [36mloader::entry::tests[0m[36m::[0m[34;1mtest_module_entry_hash[0m
+2026-01-08T07:53:13.0137104Z [32;1m        PASS[0m [   0.004s] ( 87/277) [35;1mvelo[0m [36mloader::header::tests[0m[36m::[0m[34;1mtest_page_size_constant[0m
+2026-01-08T07:53:13.0141541Z [32;1m        PASS[0m [   0.006s] ( 88/277) [35;1mvelo[0m [36mloader::header::tests[0m[36m::[0m[34;1mtest_magic_constant[0m
+2026-01-08T07:53:13.0184648Z [32;1m        PASS[0m [   0.004s] ( 89/277) [35;1mvelo[0m [36mloader::verify::tests[0m[36m::[0m[34;1mtest_blake3_calculation[0m
+2026-01-08T07:53:13.0190982Z [32;1m        PASS[0m [   0.005s] ( 90/277) [35;1mvelo[0m [36mloader::security::tests[0m[36m::[0m[34;1mtest_max_bundle_size_constant[0m
+2026-01-08T07:53:13.0192375Z [32;1m        PASS[0m [   0.006s] ( 91/277) [35;1mvelo[0m [36mloader::header::tests[0m[36m::[0m[34;1mtest_version_constant[0m
+2026-01-08T07:53:13.0235790Z [32;1m        PASS[0m [   0.004s] ( 92/277) [35;1mvelo[0m [36mloader::verify::tests[0m[36m::[0m[34;1mtest_structural_guard_recursion[0m
+2026-01-08T07:53:13.0238833Z [32;1m        PASS[0m [   0.005s] ( 93/277) [35;1mvelo[0m [36mloader::verify::tests[0m[36m::[0m[34;1mtest_structural_guard_custom_offset[0m
+2026-01-08T07:53:13.0246077Z [32;1m        PASS[0m [   0.005s] ( 94/277) [35;1mvelo[0m [36mloader::verify::tests[0m[36m::[0m[34;1mtest_structural_guard_tags[0m
+2026-01-08T07:53:13.0283126Z [32;1m        PASS[0m [   0.005s] ( 95/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_format_table[0m
+2026-01-08T07:53:13.0297568Z [32;1m        PASS[0m [   0.006s] ( 96/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_optimization_suggestions[0m
+2026-01-08T07:53:13.0305889Z [32;1m        PASS[0m [   0.006s] ( 97/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_profile_data_from_json[0m
+2026-01-08T07:53:13.0329204Z [32;1m        PASS[0m [   0.005s] ( 98/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_sitecustomize_contains_import_hook[0m
+2026-01-08T07:53:13.0360365Z [32;1m        PASS[0m [   0.006s] ( 99/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_top_imports_sorted[0m
+2026-01-08T07:53:13.0362998Z [32;1m        PASS[0m [   0.005s] (100/277) [35;1mvelo[0m [36mprofile::tests[0m[36m::[0m[34;1mtest_truncate_string[0m
+2026-01-08T07:53:13.0384519Z [32;1m        PASS[0m [   0.005s] (101/277) [35;1mvelo[0m [36mproxy::config::tests[0m[36m::[0m[34;1mtest_proxy_config_custom[0m
+2026-01-08T07:53:13.2225038Z [32;1m        PASS[0m [   0.186s] (102/277) [35;1mvelo[0m [36mproxy::config::tests[0m[36m::[0m[34;1mtest_proxy_config_default_values[0m
+2026-01-08T07:53:13.2235094Z [32;1m        PASS[0m [   0.187s] (103/277) [35;1mvelo[0m [36mproxy::config::tests[0m[36m::[0m[34;1mtest_proxy_config_lenient[0m
+2026-01-08T07:53:13.2236423Z [32;1m        PASS[0m [   0.185s] (104/277) [35;1mvelo[0m [36mproxy::config::tests[0m[36m::[0m[34;1mtest_proxy_config_strict[0m
+2026-01-08T07:53:13.2248789Z [32;1m        PASS[0m [   0.361s] (105/277) [35;1mvelo[0m [36mhardware::tests[0m[36m::[0m[34;1mtest_hardware_detection[0m
+2026-01-08T07:53:13.2290570Z [32;1m        PASS[0m [   0.007s] (106/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_add_worker_increases_count[0m
+2026-01-08T07:53:13.2299771Z [32;1m        PASS[0m [   0.007s] (107/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_connection_guard_raii[0m
+2026-01-08T07:53:13.2828305Z [32;1m        PASS[0m [   0.054s] (108/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_load_balancer_least_connections[0m
+2026-01-08T07:53:13.2840138Z [32;1m        PASS[0m [   0.054s] (109/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_load_balancer_no_healthy_workers[0m
+2026-01-08T07:53:13.2873847Z [32;1m        PASS[0m [   0.062s] (110/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_graceful_shutdown_timeout[0m
+2026-01-08T07:53:13.2875477Z [32;1m        PASS[0m [   0.063s] (111/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_graceful_shutdown_waits_for_connections[0m
+2026-01-08T07:53:13.2897558Z [32;1m        PASS[0m [   0.007s] (112/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_load_balancer_unhealthy_worker[0m
+2026-01-08T07:53:13.2908152Z [32;1m        PASS[0m [   0.007s] (113/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_remove_worker_decreases_count[0m
+2026-01-08T07:53:13.2925872Z [32;1m        PASS[0m [   0.006s] (114/277) [35;1mvelo[0m [36mproxy::load_balancer::tests[0m[36m::[0m[34;1mtest_worker_node_connection_tracking[0m
+2026-01-08T07:53:13.2936754Z [32;1m        PASS[0m [   0.007s] (115/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_ensure_trace_context_generates_new[0m
+2026-01-08T07:53:13.2960044Z [32;1m        PASS[0m [   0.006s] (116/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_ensure_trace_context_preserves_existing[0m
+2026-01-08T07:53:13.2973054Z [32;1m        PASS[0m [   0.006s] (117/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_for_appends_to_existing[0m
+2026-01-08T07:53:13.3000162Z [32;1m        PASS[0m [   0.007s] (118/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_for_from_client_addr[0m
+2026-01-08T07:53:13.3311921Z [32;1m        PASS[0m [   0.035s] (119/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_port[0m
+2026-01-08T07:53:13.3324671Z [32;1m        PASS[0m [   0.034s] (120/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_proto_default_http[0m
+2026-01-08T07:53:13.3326710Z [32;1m        PASS[0m [   0.037s] (121/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_host_from_host_header[0m
+2026-01-08T07:53:13.3328285Z [32;1m        PASS[0m [   0.032s] (122/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_inject_x_forwarded_proto_preserves_existing[0m
+2026-01-08T07:53:13.3377923Z [32;1m        PASS[0m [   0.007s] (123/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_proxy_service_creation[0m
+2026-01-08T07:53:13.3383151Z [32;1m        PASS[0m [   0.006s] (124/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_recommended_buffer_size_constant[0m
+2026-01-08T07:53:13.3386061Z [32;1m        PASS[0m [   0.007s] (125/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_strip_connection_listed_headers[0m
+2026-01-08T07:53:13.3401094Z [32;1m        PASS[0m [   0.007s] (126/277) [35;1mvelo[0m [36mproxy::service::tests[0m[36m::[0m[34;1mtest_strip_hop_by_hop_headers[0m
+2026-01-08T07:53:13.3444494Z [32;1m        PASS[0m [   0.006s] (127/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_socket_target_from_pathbuf[0m
+2026-01-08T07:53:13.3446772Z [32;1m        PASS[0m [   0.006s] (128/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_socket_target_authority_unique_per_worker[0m
+2026-01-08T07:53:13.3782941Z [32;1m        PASS[0m [   0.034s] (129/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_socket_target_new_with_worker_id[0m
+2026-01-08T07:53:13.3793847Z [32;1m        PASS[0m [   0.034s] (130/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_uds_connector_connects_to_real_socket[0m
+2026-01-08T07:53:13.3797440Z [32;1m        PASS[0m [   0.038s] (131/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_socket_target_from_string[0m
+2026-01-08T07:53:13.3798711Z [32;1m        PASS[0m [   0.041s] (132/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_set_and_get_socket_buffer_sizes[0m
+2026-01-08T07:53:13.3849713Z [32;1m        PASS[0m [   0.006s] (133/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_uds_connector_set_target[0m
+2026-01-08T07:53:13.3855595Z [32;1m        PASS[0m [   0.007s] (134/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_uds_connector_fails_on_nonexistent_socket[0m
+2026-01-08T07:53:13.3863248Z [32;1m        PASS[0m [   0.007s] (135/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_uds_target_creation[0m
+2026-01-08T07:53:13.3864556Z [32;1m        PASS[0m [   0.008s] (136/277) [35;1mvelo[0m [36mproxy::upstream::tests[0m[36m::[0m[34;1mtest_uds_connector_with_target[0m
+2026-01-08T07:53:13.3916213Z [32;1m        PASS[0m [   0.007s] (137/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_abi_compatibility_different[0m
+2026-01-08T07:53:13.3917580Z [32;1m        PASS[0m [   0.006s] (138/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_abi_compatibility_same[0m
+2026-01-08T07:53:13.3925347Z [32;1m        PASS[0m [   0.006s] (139/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_display_format[0m
+2026-01-08T07:53:13.3972573Z [32;1m        PASS[0m [   0.006s] (140/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_python_version_parse_invalid[0m
+2026-01-08T07:53:13.4276415Z [32;1m        PASS[0m [   0.036s] (141/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_python_version_parse_full[0m
+2026-01-08T07:53:13.4280550Z [32;1m        PASS[0m [   0.031s] (142/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_python_version_parse_with_whitespace[0m
+2026-01-08T07:53:13.4294270Z [32;1m        PASS[0m [   0.035s] (143/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_python_version_parse_major_minor_only[0m
+2026-01-08T07:53:13.4342186Z [32;1m        PASS[0m [   0.007s] (144/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_python_version_to_string[0m
+2026-01-08T07:53:13.4343683Z [32;1m        PASS[0m [   0.006s] (145/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_version_compatibility[0m
+2026-01-08T07:53:13.4351369Z [32;1m        PASS[0m [   0.049s] (146/277) [35;1mvelo[0m [36mpython_info::tests[0m[36m::[0m[34;1mtest_detect_from_system_python[0m
+2026-01-08T07:53:13.4365651Z [32;1m        PASS[0m [   0.008s] (147/277) [35;1mvelo[0m [36mserve::config::tests[0m[36m::[0m[34;1mtest_validate_app_target_invalid[0m
+2026-01-08T07:53:13.4406570Z [32;1m        PASS[0m [   0.006s] (148/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_all_error_variants_have_exit_codes[0m
+2026-01-08T07:53:13.4413422Z [32;1m        PASS[0m [   0.006s] (149/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display[0m
+2026-01-08T07:53:13.4416240Z [32;1m        PASS[0m [   0.007s] (150/277) [35;1mvelo[0m [36mserve::config::tests[0m[36m::[0m[34;1mtest_validate_app_target_valid[0m
+2026-01-08T07:53:13.4724829Z [32;1m        PASS[0m [   0.031s] (151/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display_pid_file_exists[0m
+2026-01-08T07:53:13.4727281Z [32;1m        PASS[0m [   0.032s] (152/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display_path_traversal[0m
+2026-01-08T07:53:13.4728855Z [32;1m        PASS[0m [   0.031s] (153/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display_shell_metacharacters[0m
+2026-01-08T07:53:13.4730328Z [32;1m        PASS[0m [   0.036s] (154/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display_invalid_app_format[0m
+2026-01-08T07:53:13.4792795Z [32;1m        PASS[0m [   0.006s] (155/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_exit_code_server_start_failed_propagates[0m
+2026-01-08T07:53:13.4794244Z [32;1m        PASS[0m [   0.007s] (156/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_exit_code_python_not_found[0m
+2026-01-08T07:53:13.4797462Z [32;1m        PASS[0m [   0.007s] (157/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_exit_code_port_in_use[0m
+2026-01-08T07:53:13.4803076Z [32;1m        PASS[0m [   0.007s] (158/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_error_display_shutdown_timeout[0m
+2026-01-08T07:53:13.4851917Z [32;1m        PASS[0m [   0.006s] (159/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_has_hint[0m
+2026-01-08T07:53:13.4853933Z [32;1m        PASS[0m [   0.006s] (160/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_exit_codes[0m
+2026-01-08T07:53:13.4855149Z [32;1m        PASS[0m [   0.006s] (161/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_exit_code_timeout[0m
+2026-01-08T07:53:13.4862592Z [32;1m        PASS[0m [   0.007s] (162/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_has_hint_app_not_detected[0m
+2026-01-08T07:53:13.5365716Z [32;1m        PASS[0m [   0.051s] (163/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_app_not_detected_shows_path[0m
+2026-01-08T07:53:13.5370091Z [32;1m        PASS[0m [   0.051s] (164/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_no_hint_for_security_errors[0m
+2026-01-08T07:53:13.5377366Z [32;1m        PASS[0m [   0.051s] (165/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_has_hint_invalid_app_format[0m
+2026-01-08T07:53:13.5379060Z [32;1m        PASS[0m [   0.050s] (166/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_contains_error_header[0m
+2026-01-08T07:53:13.5432717Z [32;1m        PASS[0m [   0.007s] (167/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_invalid_app_format_shows_help[0m
+2026-01-08T07:53:13.5433595Z [32;1m        PASS[0m [   0.007s] (168/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_missing_dependency_shows_fix[0m
+2026-01-08T07:53:13.5434926Z [32;1m        PASS[0m [   0.006s] (169/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_port_in_use_suggests_alternative[0m
+2026-01-08T07:53:13.5443063Z [32;1m        PASS[0m [   0.006s] (170/277) [35;1mvelo[0m [36mserve::error::tests[0m[36m::[0m[34;1mtest_source_pointed_shell_metacharacters_security_note[0m
+2026-01-08T07:53:13.5493028Z [32;1m        PASS[0m [   0.006s] (171/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_detect_django_from_requirements[0m
+2026-01-08T07:53:13.5501873Z [32;1m        PASS[0m [   0.006s] (172/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_detect_fastapi_from_pyproject[0m
+2026-01-08T07:53:13.5506528Z [32;1m        PASS[0m [   0.006s] (173/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_detect_flask[0m
+2026-01-08T07:53:13.5509031Z [32;1m        PASS[0m [   0.006s] (174/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_detect_unknown[0m
+2026-01-08T07:53:13.5547156Z [32;1m        PASS[0m [   0.006s] (175/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_get_server_type_django_returns_gunicorn[0m
+2026-01-08T07:53:13.5557622Z [32;1m        PASS[0m [   0.005s] (176/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_get_server_type_fastapi_returns_uvicorn[0m
+2026-01-08T07:53:13.5659047Z [32;1m        PASS[0m [   0.015s] (177/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_get_server_type_flask_returns_gunicorn[0m
+2026-01-08T07:53:13.5660790Z [32;1m        PASS[0m [   0.011s] (178/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_get_server_type_unknown_defaults_to_uvicorn[0m
+2026-01-08T07:53:13.5662672Z [32;1m        PASS[0m [   0.015s] (179/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_get_server_type_starlette_returns_uvicorn[0m
+2026-01-08T07:53:13.5692448Z [32;1m        PASS[0m [   0.011s] (180/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_preload_modules_django[0m
+2026-01-08T07:53:13.5720872Z [32;1m        PASS[0m [   0.006s] (181/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_preload_modules_unknown[0m
+2026-01-08T07:53:13.5725790Z [32;1m        PASS[0m [   0.006s] (182/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_preload_modules_fastapi[0m
+2026-01-08T07:53:13.5729949Z [32;1m        PASS[0m [   0.007s] (183/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_preload_modules_flask[0m
+2026-01-08T07:53:13.5733668Z [32;1m        PASS[0m [   0.006s] (184/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_preload_modules_starlette[0m
+2026-01-08T07:53:13.5837258Z [32;1m        PASS[0m [   0.011s] (185/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_install_hint_uvicorn[0m
+2026-01-08T07:53:13.5838870Z [32;1m        PASS[0m [   0.011s] (186/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_display_gunicorn[0m
+2026-01-08T07:53:13.5840152Z [32;1m        PASS[0m [   0.011s] (187/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_display_uvicorn[0m
+2026-01-08T07:53:13.5841589Z [32;1m        PASS[0m [   0.011s] (188/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_install_hint_gunicorn[0m
+2026-01-08T07:53:13.5901038Z [32;1m        PASS[0m [   0.006s] (189/277) [35;1mvelo[0m [36mserve::health::tests[0m[36m::[0m[34;1mtest_handle_not_found[0m
+2026-01-08T07:53:13.5933692Z [32;1m        PASS[0m [   0.006s] (190/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_module_name_uvicorn[0m
+2026-01-08T07:53:13.5937041Z [32;1m        PASS[0m [   0.007s] (191/277) [35;1mvelo[0m [36mserve::framework::tests[0m[36m::[0m[34;1mtest_server_module_name_gunicorn[0m
+2026-01-08T07:53:13.5939209Z [32;1m        PASS[0m [   0.007s] (192/277) [35;1mvelo[0m [36mserve::health::tests[0m[36m::[0m[34;1mtest_handle_healthz[0m
+2026-01-08T07:53:13.5959364Z [32;1m        PASS[0m [   0.006s] (193/277) [35;1mvelo[0m [36mserve::health::tests[0m[36m::[0m[34;1mtest_handle_readyz_ready[0m
+2026-01-08T07:53:13.5964394Z [32;1m        PASS[0m [   0.006s] (194/277) [35;1mvelo[0m [36mserve::health::tests[0m[36m::[0m[34;1mtest_sec_p0_004_no_metadata[0m
+2026-01-08T07:53:13.6319805Z [32;1m        PASS[0m [   0.042s] (195/277) [35;1mvelo[0m [36mserve::health::tests[0m[36m::[0m[34;1mtest_handle_readyz_not_ready[0m
+2026-01-08T07:53:13.6332554Z [32;1m        PASS[0m [   0.041s] (196/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_event_channel_multiple_signals[0m
+2026-01-08T07:53:13.6334212Z [32;1m        PASS[0m [   0.036s] (197/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_event_channel_send_receive[0m
+2026-01-08T07:53:13.6370348Z [32;1m        PASS[0m [   0.005s] (198/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_event_channel_sender_dropped[0m
+2026-01-08T07:53:13.6390432Z [32;1m        PASS[0m [   0.007s] (199/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_id[0m
+2026-01-08T07:53:13.6400853Z [32;1m        PASS[0m [   0.007s] (200/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_creates_pid_file[0m
+2026-01-08T07:53:13.6433351Z [32;1m        PASS[0m [   0.006s] (201/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_kill[0m
+2026-01-08T07:53:13.6442876Z [32;1m        PASS[0m [   0.005s] (202/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_spawn_success[0m
+2026-01-08T07:53:13.6453438Z [32;1m        PASS[0m [   0.006s] (203/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_removes_pid_file_on_drop[0m
+2026-01-08T07:53:13.6494142Z [32;1m        PASS[0m [   0.004s] (204/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_server_event_signal_debug_format[0m
+2026-01-08T07:53:13.6779336Z [32;1m        PASS[0m [   0.082s] (205/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_event_channel_receiver_timeout[0m
+2026-01-08T07:53:13.6797792Z [32;1m        PASS[0m [   0.030s] (206/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_server_event_worker_exit_debug_format[0m
+2026-01-08T07:53:13.6844939Z [32;1m        PASS[0m [   0.005s] (207/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_spawn_signal_forwarder_success[0m
+2026-01-08T07:53:13.6888051Z [32;1m        PASS[0m [   0.004s] (208/277) [35;1mvelo[0m [36mserve::worker::tests[0m[36m::[0m[34;1mtest_validate_app_path_invalid[0m
+2026-01-08T07:53:13.6931484Z [32;1m        PASS[0m [   0.004s] (209/277) [35;1mvelo[0m [36mserve::worker::tests[0m[36m::[0m[34;1mtest_validate_app_path_valid[0m
+2026-01-08T07:53:13.6972652Z [32;1m        PASS[0m [   0.004s] (210/277) [35;1mvelo[0m [36mshm::alignment::tests[0m[36m::[0m[34;1mtest_align_up[0m
+2026-01-08T07:53:13.6987623Z [32;1m        PASS[0m [   0.055s] (211/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_terminate[0m
+2026-01-08T07:53:13.7016110Z [32;1m        PASS[0m [   0.004s] (212/277) [35;1mvelo[0m [36mshm::alignment::tests[0m[36m::[0m[34;1mtest_huge_page_alignment[0m
+2026-01-08T07:53:13.7029333Z [32;1m        PASS[0m [   0.004s] (213/277) [35;1mvelo[0m [36mshm::alignment::tests[0m[36m::[0m[34;1mtest_padding_calculations[0m
+2026-01-08T07:53:13.7059300Z [32;1m        PASS[0m [   0.004s] (214/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_h29_padding_logic[0m
+2026-01-08T07:53:13.7071799Z [32;1m        PASS[0m [   0.004s] (215/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_numa_constants[0m
+2026-01-08T07:53:13.7263335Z [32;1m        PASS[0m [   0.019s] (216/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_qa_boundary_limits[0m
+2026-01-08T07:53:13.7271899Z [31;1m        FAIL[0m [   0.021s] (217/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_qa_alignment_scheme_b_integration[0m
+2026-01-08T07:53:13.7274165Z [31;1m [0m [31;1mstdout[0m [31;1m───[0m
+2026-01-08T07:53:13.7274598Z 
+2026-01-08T07:53:13.7274945Z     running 1 test
+2026-01-08T07:53:13.7276065Z     ⚠️ QA INFO: HugePage fallback detected (Standard 4KB page used). This is acceptable in resource-constrained environments.
+2026-01-08T07:53:13.7276786Z     test shm::tests_titanium::tests::test_qa_alignment_scheme_b_integration ... FAILED
+2026-01-08T07:53:13.7277056Z 
+2026-01-08T07:53:13.7277149Z     failures:
+2026-01-08T07:53:13.7277247Z 
+2026-01-08T07:53:13.7277314Z     failures:
+2026-01-08T07:53:13.7277574Z         shm::tests_titanium::tests::test_qa_alignment_scheme_b_integration
+2026-01-08T07:53:13.7277802Z 
+2026-01-08T07:53:13.7278023Z     test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 232 filtered out; finished in 0.00s
+2026-01-08T07:53:13.7278413Z     [0m
+2026-01-08T07:53:13.7278629Z [31;1m [0m [31;1mstderr[0m [31;1m───[0m
+2026-01-08T07:53:13.7279061Z     ⚠️ H-20 Warning: HugePages mmap RW failed with ENOMEM, falling back to standard pages.
+2026-01-08T07:53:13.7279575Z     ⚠️ H-20 Warning: HugePages mmap RW failed with ENOMEM, falling back to standard pages.
+2026-01-08T07:53:13.7279841Z 
+2026-01-08T07:53:13.7280330Z     [0m[31;1mthread 'shm::tests_titanium::tests::test_qa_alignment_scheme_b_integration' (6595) panicked at src/shm/tests_titanium.rs:158:13:[0m
+2026-01-08T07:53:13.7281048Z     [31;1massertion `left == right` failed: QA FAILURE: Just over 2MB should align to 4MB, got 2101248 bytes[0m
+2026-01-08T07:53:13.7281674Z       left: 2101248
+2026-01-08T07:53:13.7281846Z      right: 4194304
+2026-01-08T07:53:13.7282195Z     note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+2026-01-08T07:53:13.7282460Z 
+2026-01-08T07:53:13.7282684Z [31;1m  Cancelling[0m due to [31;1mtest failure[0m: [1m3[0m tests still running
+2026-01-08T07:53:13.7313875Z [32;1m        PASS[0m [   0.005s] (218/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_validate_source_logic[0m
+2026-01-08T07:53:13.7498502Z [32;1m        PASS[0m [   0.106s] (219/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_managed_child_wait_timeout_returns_none_for_running[0m
+2026-01-08T07:53:14.6914578Z [32;1m        PASS[0m [   1.013s] (220/277) [35;1mvelo[0m [36mserve::runner::tests[0m[36m::[0m[34;1mtest_spawn_signal_forwarder_exits_when_sender_dropped[0m
+2026-01-08T07:53:14.6915758Z ────────────
+2026-01-08T07:53:14.6917115Z [31;1m     Summary[0m [   1.940s] [1m220[0m/[1m277[0m tests run: [1m219[0m [32;1mpassed[0m, [1m1[0m [31;1mfailed[0m, [1m1[0m [33;1mskipped[0m
+2026-01-08T07:53:14.6918948Z [31;1m        FAIL[0m [   0.021s] (217/277) [35;1mvelo[0m [36mshm::tests_titanium::tests[0m[36m::[0m[34;1mtest_qa_alignment_scheme_b_integration[0m
+2026-01-08T07:53:14.6920875Z [33;1mwarning[0m: [1m57[0m/[1m277[0m tests were not run due to [33;1mtest failure[0m (run with [1m--no-fail-fast[0m to run all tests, or run with [1m--max-fail[0m)
+2026-01-08T07:53:14.6926936Z [31;1merror[0m: test run failed
+2026-01-08T07:53:14.6933826Z error: process didn't exit successfully: `/home/runner/.rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo nextest run --manifest-path /home/runner/work/velo/velo/Cargo.toml --target-dir /home/runner/work/velo/velo/target/llvm-cov-target` (exit status: 100)
+2026-01-08T07:53:14.6948404Z ##[error]Process completed with exit code 1.
+2026-01-08T07:53:14.7022975Z Post job cleanup.
+2026-01-08T07:53:14.7866946Z [command]/usr/bin/git version
+2026-01-08T07:53:14.7898378Z git version 2.52.0
+2026-01-08T07:53:14.7934971Z Temporarily overriding HOME='/home/runner/work/_temp/69645e54-b9d0-422e-9be8-59b73ce1cc1e' before making global git config changes
+2026-01-08T07:53:14.7936130Z Adding repository directory to the temporary git global config as a safe directory
+2026-01-08T07:53:14.7946993Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/velo/velo
+2026-01-08T07:53:14.7974553Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-01-08T07:53:14.7999941Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-01-08T07:53:15.8102283Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-01-08T07:53:15.8124413Z http.https://github.com/.extraheader
+2026-01-08T07:53:15.8136995Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-01-08T07:53:15.8165108Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-01-08T07:53:15.8343874Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-01-08T07:53:15.8369400Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-01-08T07:53:15.8627233Z Cleaning up orphan processes
