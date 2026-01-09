@@ -148,14 +148,21 @@ class ForkHandler:
             if script_path:
                 # Standard script execution
                 sys.argv = [script_path] + args
+                p = Path(script_path)
                 
                 # SHM Hand-off (Phase 7.3)
                 if shm_fd is not None:
                     os.environ["VELO_SHM_FD"] = str(shm_fd)
                     os.environ["VELO_SHM_SIZE"] = str(shm_size)
                 
+                if not p.exists():
+                    raise FileNotFoundError(f"Forensic Execution Failure: Script '{script_path}' vanished before execution start.")
+                
                 with open(script_path, "rb") as f:
-                    code = compile(f.read(), script_path, "exec")
+                    try:
+                        code = compile(f.read(), script_path, "exec")
+                    except Exception as e:
+                        raise RuntimeError(f"Compilation Intent Failure: Target '{script_path}' is not a valid Python script: {e}")
                     exec(code, {"__name__": "__main__"})
             elif fast_mode:
                 # Already handled in _activate_fast_mode
@@ -174,9 +181,15 @@ class ForkHandler:
     @staticmethod
     def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
         if stdout_path:
-            sys.stdout = open(stdout_path, "a")
+            try:
+                sys.stdout = open(stdout_path, "a")
+            except OSError as e:
+                print(f"Forensic IO Warning: Failed to redirect stdout to '{stdout_path}': {e}", file=sys.stderr)
         if stderr_path:
-            sys.stderr = open(stderr_path, "a")
+            try:
+                sys.stderr = open(stderr_path, "a")
+            except OSError as e:
+                print(f"Forensic IO Warning: Failed to redirect stderr to '{stderr_path}': {e}", file=sys.stderr)
 
     @staticmethod
     def _activate_fast_mode(bundle_path: str, project_root: Optional[str], max_size: Optional[int]):

@@ -101,11 +101,12 @@ async def handle_fork(server: 'ZygoteServer', cmd: Dict) -> Dict:
     
     script_path = cmd.get("script_path", "")
     if script_path:
-        if not Path(script_path).exists():
-            return {"type": "Error", "message": f"Script not found: {script_path}"}
+        p = Path(script_path)
+        if not p.exists():
+            return {"type": "Error", "message": f"Execution Intent Failure: Script not found at '{script_path}'. The Zygote cannot fork a non-existent target."}
         valid, err = PathValidator.validate(script_path)
         if not valid:
-            return {"type": "Error", "message": err}
+            return {"type": "Error", "message": f"Security Intent Violation: Target '{script_path}' failed shield validation: {err}"}
 
     if not server.app_name and script_path:
         server.app_name = Path(script_path).name
@@ -222,12 +223,23 @@ class ZygoteServer:
         
         # 1. Open Socket
         if not self.is_abstract and os.path.exists(self.socket_path):
-            os.unlink(self.socket_path)
+            try:
+                os.unlink(self.socket_path)
+            except OSError as e:
+                LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
             
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server_sock.bind(self.socket_path)
+        try:
+            server_sock.bind(self.socket_path)
+        except OSError as e:
+            LogUtils.log(f"Zygote Bootstrap Failure: Cannot bind to {self.socket_path}. Ensure parent directory exists and permissions are correct. Detail: {e}")
+            sys.exit(1)
+            
         if not self.is_abstract:
-            os.chmod(self.socket_path, 0o600)
+            try:
+                os.chmod(self.socket_path, 0o600)
+            except OSError as e:
+                LogUtils.log(f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}")
         server_sock.listen(128)
         server_sock.setblocking(False)
         
