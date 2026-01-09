@@ -647,6 +647,15 @@ pub fn run_server(
 
             if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
                 logger.warn(&format!("Zygote pre-warm failed: {}", e));
+
+                // DIAGNOSTIC: Dump Zygote log to see why it crashed
+                let log_path = crate::zygote::get_log_path();
+                if let Ok(content) = std::fs::read_to_string(&log_path) {
+                    eprintln!("--- Zygote Log Dump ({}) ---", log_path.display());
+                    eprintln!("{}", content);
+                    eprintln!("-------------------------------------------");
+                }
+
                 if args.log_format == LogFormat::Text {
                     eprintln!("   Continuing without Zygote optimization");
                 }
