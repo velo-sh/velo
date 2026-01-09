@@ -9,22 +9,26 @@ class TestImportShieldHostile(unittest.TestCase):
     
     def setUp(self):
         # [RITUAL 11.2] Hostile Test Technical Hygiene
-        # Environment Clearing: Always manually clear sys.modules
-        for mod in ['os', 'sys', 'subprocess', 'builtins']:
-            sys.modules.pop(mod, None)
+        # 1. Environment Clearing: Always manually clear sys.modules for target packages
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("velo_") or mod in ['os', 'subprocess', 'builtins']:
+                sys.modules.pop(mod, None)
             
-        # Also re-install the shield to ensure it's the first finder
-        # (Simulating fresh bootstrap)
+        # 2. Reset singleton active flags
         if hasattr(shield.ImportShield, "_active"):
              shield.ImportShield._active = False
-        # Remove from meta_path if present
+             
+        # 3. Finder Synchronization: Ensure meta_path is clean before start
         sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
         
     def tearDown(self):
-        # Reset shield so other tests aren't blocked
-        if hasattr(shield.ImportShield, "_active"):
-             shield.ImportShield._active = False
+        # [RITUAL 11.2] Restoration Checklist
+        shield.ImportShield._active = False
         sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
+        # Re-clear to prevent poisoning subsequent tests
+        for mod in list(sys.modules.keys()):
+            if mod.startswith("velo_"):
+                sys.modules.pop(mod, None)
         # Restore os/subprocess if they were popped (optional but good)
         importlib.invalidate_caches()
 
@@ -38,9 +42,11 @@ class TestImportShieldHostile(unittest.TestCase):
         # 1. Enforce Mode (Default)
         os.environ["VELO_SHIELD_MODE"] = "enforce"
         
-        # Try to import a sub-module of velo_zygote that hasn't been imported yet
-        # or just check find_spec directly to avoid interpreter caching issues
-        finder = [x for x in sys.meta_path if isinstance(x, shield.ImportShield)][0]
+        # [RITUAL 11.2] Finder Synchronization Verification
+        self.assertIsInstance(sys.meta_path[0], shield.ImportShield, 
+                             "CRITICAL: ImportShield is NOT at the top of sys.meta_path (Ritual 11.2 Violation)")
+        
+        finder = sys.meta_path[0]
         
         # Should raise ImportError in find_spec
         with self.assertRaises(ImportError) as cm:
@@ -60,7 +66,9 @@ class TestImportShieldHostile(unittest.TestCase):
         self.assertIsNone(spec) # Should allow
         
     def test_shield_logic_os(self):
-        """Verify if shield blocks 'os' as per QA Handoff Requirements"""
+        """Verify if shield blocks 'os' as per QA Handoff Requirements (P0)"""
+        # REQUIRED BY: docs/qa/handover_qa_phase_1_5.md §3.E
+        # REQUIREMENT: Worker imports os -> Assertion: Import FAILS (ImportError)
         
         shield.ImportShield.install()
         shield.ImportShield._active = True
