@@ -92,12 +92,17 @@ class BenchmarkRunner:
             self.mpl_cache_dir = tempfile.mkdtemp(prefix="velo_mpl_")
             self.env["MPLCONFIGDIR"] = self.mpl_cache_dir
             
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            self.env["CUDA_VISIBLE_DEVICES"] = ""
+            logger.info("🛡️ [CI Mode] Masking GPU devices via CUDA_VISIBLE_DEVICES=''")
+
         cmd = [str(VELO_BIN), "zygote", "start"]
         if preload_modules:
             cmd.extend(["--preload", ",".join(preload_modules)])
             
         self.zygote_process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env, cwd=BENCHMARKS_DIR
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env, cwd=BENCHMARKS_DIR,
+            text=True
         )
         
         # ✅ Poll until Zygote is fully ready (IPC handshake, not just socket exists)
@@ -112,12 +117,16 @@ class BenchmarkRunner:
     def _wait_for_zygote_ready(self, timeout: int = 60) -> bool:
         """Poll until Zygote is fully initialized and preloading is complete."""
         start = time.time()
+        # Increased initial wait for CI environment stability
+        initial_wait = 1.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 0.2
+        time.sleep(initial_wait)
+        
         while time.time() - start < timeout:
             try:
                 result = subprocess.run(
                     [str(VELO_BIN), "zygote", "status"],
                     capture_output=True,
-                    timeout=2,
+                    timeout=5,  # Increased timeout for status check in CI
                     text=True,
                     env=self.env,
                     cwd=BENCHMARKS_DIR
@@ -125,15 +134,16 @@ class BenchmarkRunner:
                 if result.returncode == 0:
                     stdout = result.stdout.lower()
                     if "running" in stdout and ("preload: ready" in stdout or "preload: none" in stdout):
+                        logger.info(f"✅ Zygote Ready (Handshake OK) after {time.time() - start:.1f}s")
                         return True
                     if time.time() - start > 10: # Only log if it's taking too long
-                        logger.info(f"   ⌛ Waiting for Zygote... Current Status: {stdout.strip()}")
+                        logger.info(f"   ⌛ Waiting for Zygote... Status: {stdout.strip()}")
                 else:
-                    if time.time() - start > 5:
-                        logger.warning(f"   ⚠️ Zygote status check failed (RC={result.returncode}): {result.stderr.strip()}")
+                    if time.time() - start > 15:
+                        logger.warning(f"   ⚠️ Zygote status check RC={result.returncode}. Stderr: {result.stderr.strip()}")
             except subprocess.TimeoutExpired:
                 pass
-            time.sleep(0.2)
+            time.sleep(1.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 0.5)
         return False
 
     def __del__(self):
@@ -299,6 +309,10 @@ class BenchmarkRunner:
             
             # logger.info(f"   Debug: Shared={using_shared_env}, VenvDir={venv_dir}")
             
+            # 0. Check for unexpected write attempts in Ro env
+            if using_shared_env and os.access(venv_dir, os.W_OK) is False:
+                logger.info("🔒 [CI Mode] Detected Read-Only Shared Venv. Proceeding with CoW isolation.")
+
             # 1. Install Project & Deps (Skip if Shared)
             install_pkg = config.get("meta", {}).get("package", pkg_name)
             
@@ -480,7 +494,7 @@ def main():
         target_pkg=args.package, 
         runs=args.runs, 
         drop_cache=args.drop_cache,
-        use_zygote=args.use_zygote
+        use_zygote=args.use_zygote or args.fleet
     )
     configs = runner.discover()
     logger.info(f"Found {len(configs)} benchmarks.")
