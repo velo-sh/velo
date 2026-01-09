@@ -404,6 +404,34 @@ impl ZygoteLauncher {
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
 
+        // =========================================================================
+        // Phase 8.0: The Bridge of Truth (Configuration Injection)
+        // =========================================================================
+        // Explicitly inject the resolved configuration as VELO_* environment variables.
+        // This ensures Python shares the exact same "Brain" (configuration) as Rust.
+        // These are injected AFTER EnvironmentShield::apply() so they are not scrubbed.
+
+        cmd.env(
+            "VELO_GRACEFUL_SHUTDOWN_TIMEOUT",
+            config.graceful_shutdown_timeout.to_string(),
+        );
+        cmd.env(
+            "VELO_SOCKET_STARTUP_TIMEOUT",
+            config.zygote_socket_timeout.to_string(),
+        );
+        cmd.env("VELO_MAX_BUNDLE_SIZE", config.max_bundle_size.to_string());
+        cmd.env(
+            "VELO_SLOW_THRESHOLD_MS",
+            config.slow_threshold_ms.to_string(),
+        );
+        cmd.env(
+            "VELO_SECURITY_HPC_THREADS",
+            config.security_hpc_threads.to_string(),
+        );
+
+        // Also inject boolean flags if necessary (currently none in VeloConfig that aren't implicit)
+        // =========================================================================
+
         // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
         let socket_arg = {
             #[cfg(target_os = "linux")]
