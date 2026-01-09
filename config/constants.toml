@@ -33,7 +33,7 @@ default_port = 8000
 
 # Level 0: Global Base
 security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib"
-security_base_env_whitelist = "PATH,HOME,USER,TMPDIR,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE"
+security_base_env_whitelist = "PATH,HOME,USER,TMPDIR,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE"
 
 # Level 1: macOS Defaults
 security_macos_base_trusted_prefixes = "${BASE},/opt/homebrew,/opt/local"
