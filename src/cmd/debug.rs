@@ -157,9 +157,14 @@ fn run_python_preflight(
         cmd.arg("--json");
     }
 
-    // Force VELO_ENV to 'dev' if not set, to allow check to run
+    // Force VELO_ENV to 'dev' if not set, unless we are in CI (where we set 'ci')
+    // This ensures VeloConfig (settings.py) always receives a VELO_ENV.
     if std::env::var("VELO_ENV").is_err() {
-        cmd.env("VELO_ENV", "dev");
+        if std::env::var("CI").is_ok() {
+            cmd.env("VELO_ENV", "ci");
+        } else {
+            cmd.env("VELO_ENV", "dev");
+        }
     }
 
     // Inherit stdout/stderr so output is visible
