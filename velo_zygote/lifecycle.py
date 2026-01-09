@@ -117,7 +117,8 @@ def hook_security(keep_fds: Optional[Set[int]] = None):
                     os.close(fd)
             except (ValueError, OSError):
                 continue
-    except:
+    except OSError as e:
+        LogUtils.log(f"Forensic Cleanup Warning: Failed to list descriptors in '{fd_dir}': {e}. Falling back to range scan.")
         # Fallback for systems without /proc or /dev/fd
         for fd in range(3, 1024):
             if keep_fds is None or fd not in keep_fds:
