@@ -377,9 +377,10 @@ pub fn apply_standard_hygiene(cmd: &mut Command) {
             libc::sigemptyset(&mut mask);
             libc::pthread_sigmask(libc::SIG_SETMASK, &mask, std::ptr::null_mut());
 
-            // 2. Reset SIGINT/SIGTERM to default (MAC-P0-002)
+            // 2. Reset SIGINT/SIGTERM/SIGPIPE to default (MAC-P0-002)
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
 
             // 3. FD Purge (SEC-FS-002)
             let mut rl = libc::rlimit {

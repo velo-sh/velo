@@ -259,6 +259,18 @@ class ZygoteServer:
 
     async def start(self) -> None:
         """Start the Zygote server using asyncio."""
+        try:
+            from velo_zygote.utils import MacOSDeathSigMonitor
+        except ImportError:
+            try:
+                from utils import MacOSDeathSigMonitor 
+            except ImportError:
+                 # Last resort relative import (but usually fails in script mode)
+                 from .utils import MacOSDeathSigMonitor
+
+        if self._monitor_parent:
+            MacOSDeathSigMonitor.start_monitoring()
+        
         LogUtils.log(f"Zygote initializing (PID: {os.getpid()})")
         
         # 1. Open Socket
