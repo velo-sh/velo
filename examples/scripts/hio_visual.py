@@ -53,7 +53,7 @@ def print_header(project: str, slogan: str):
         print("=" * 50)
 
 
-def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm Cache", memory_data: tuple = None):
+def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm Cache", memory_data: Optional[Tuple] = None):
     """Print A/B comparison results (supports time and memory dimensions)"""
     if IS_QUIET:
         mem_str = ""
@@ -97,7 +97,6 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
             table.add_section()
             c_mbar = "█" * c_mem_width + "░" * (30 - c_mem_width)
             v_mbar = "█" * v_mem_width + "░" * (30 - v_mem_width)
-            mem_saving = c_mem / max(v_mem, 0.1)
             
             table.add_row("RSS Memory", "CPython", f"[red]{c_mbar}[/]", f"{c_mem:.1f}MB")
             table.add_row("", "Velo", f"[green]{v_mbar}[/]", f"{v_mem:.1f}MB (CoW) 📉")
@@ -120,6 +119,7 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
             print(f" [Time] Velo:     [{v_bar}]  {velo_time:.2f}s [FAST]")
             
             if memory_data:
+                c_mem, v_mem = memory_data
                 c_mbar = "#" * c_mem_width + "." * (30 - c_mem_width)
                 v_mbar = "#" * v_mem_width + "." * (30 - v_mem_width)
                 print("-" * 60)

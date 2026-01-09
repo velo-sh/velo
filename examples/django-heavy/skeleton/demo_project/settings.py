@@ -12,7 +12,7 @@ ALLOWED_HOSTS = ['*']
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.auth',
-    'heavy_app',  # Heavy app containing 50+ models
+    'heavy_app',  # Heavy app containing 200+ models
 ]
 
 DATABASES = {

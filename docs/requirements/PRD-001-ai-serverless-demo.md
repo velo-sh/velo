@@ -186,13 +186,15 @@ import os
 # In Phase 7.1, it must consume 500MB of simulated weight memory via SHM.
 time.sleep(0.3)
 
+_SIMULATED_WEIGHTS = object() # Simulated weights memory
+
 def embed(text):
     # Proof of Sharing: Return memory addresses to the client
     return {
         "vector": [0.1, 0.2, 0.3],
         "debug": {
             "pid": os.getpid(),
-            "weights_ptr": hex(id(text)) # Placeholder for real SHM ptr
+            "weights_ptr": hex(id(_SIMULATED_WEIGHTS)) # Points to the shared weights object
         }
     }
 ```

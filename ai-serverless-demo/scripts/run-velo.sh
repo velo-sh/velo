@@ -25,7 +25,7 @@ $VELO_BIN run app.py &
 PID=$!
 
 # Wait for server to be ready (max 5s)
-for i in {1..50}; do
+for _ in {1..50}; do
     if nc -z localhost 8000 2>/dev/null; then
         break
     fi
