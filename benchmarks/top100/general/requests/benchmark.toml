@@ -1,0 +1,7 @@
+[meta]
+package = "requests"
+
+[test]
+entry_point = "test_requests.py"
+expected_output = "Done"
+preload_modules = ["requests"]

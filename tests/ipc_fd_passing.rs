@@ -92,6 +92,7 @@ except Exception as e:
         bundle_path: None,
         project_root: None,
         max_bundle_size: None,
+        env: Box::new(std::collections::HashMap::new()),
         shm_size: Some(shm_size),
     };
 

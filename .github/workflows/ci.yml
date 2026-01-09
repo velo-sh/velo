@@ -12,7 +12,7 @@ on:
   pull_request:
     branches: ['**']
   schedule:
-    - cron: '0 2 * * *'  # Run nightly at 2 AM UTC (Performance Canary)
+    - cron: '0 21 * * *'  # Run nightly at 5 AM CST (21:00 UTC)
 
 # Concurrency: Only cancel code CI runs, not docs
 concurrency:
@@ -64,6 +64,8 @@ jobs:
       qa_infra: ${{ steps.filter.outputs.qa_infra }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:

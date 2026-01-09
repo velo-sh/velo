@@ -63,23 +63,22 @@ class TestPhase61DXHardened:
         try:
             time.sleep(1)  # Wait for startup
             proc.terminate()  # Graceful shutdown
-            stdout, _ = proc.communicate(timeout=3)  # Short timeout after terminate
+            _, stderr = proc.communicate(timeout=3)  # Short timeout after terminate
         except subprocess.TimeoutExpired:
             proc.kill()  # Force kill if terminate didn't work
-            stdout, _ = proc.communicate(timeout=1)
+            _, stderr = proc.communicate(timeout=1)
         finally:
             if proc.poll() is None:
                 proc.kill()
         
         # Verify JSON validity - allow empty if server didn't start
-        lines = [line for line in stdout.splitlines() if line.strip().startswith("{")]
+        lines = [line for line in stderr.splitlines() if line.strip().startswith("{")]
         if len(lines) >= 1:
             log_entry = json.loads(lines[0])
             assert "timestamp" in log_entry or "ts" in log_entry, "No timestamp field"
             # Relax assertions for CI environment
         else:
             pytest.skip("Server did not produce JSON logs in time (CI environment)")
-
 
 if __name__ == "__main__":
     pytest.main([__file__])

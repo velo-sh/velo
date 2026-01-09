@@ -1,31 +1,22 @@
-# Velo Local CI Simulation
-# =========================
-# Simulates the GitHub Actions Ubuntu environment locally on macOS.
-#
-# Usage:
-#   docker build -t velo-ci-ubuntu -f Dockerfile.ci .
-#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu
-#
-# For interactive debugging:
-#   docker run --rm -it -v $(pwd):/workspace velo-ci-ubuntu bash
-#
-# BEST PRACTICES:
-# 1. FAIL FAST: Environment checks run FIRST before any builds
-# 2. DRY: Uses scripts/ci-common.sh shared library
-# 3. ISOLATED: Uses /tmp for venv to not overwrite host .venv
-
 FROM ubuntu:22.04
 
-# Prevent interactive prompts
+# Environment variables to mimic GitHub Actions
+ENV GITHUB_ACTIONS=true
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
 
-# Install system dependencies (matches ubuntu-latest on GitHub Actions)
+# Install strict dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
     curl \
     git \
+    build-essential \
     pkg-config \
     libssl-dev \
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Key libraries for Velo
+    libseccomp-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust (same as actions-rs/toolchain)
@@ -34,18 +25,16 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup component add clippy rustfmt llvm-tools-preview
 
-# Install uv (same as astral-sh/setup-uv)
+# Install uv (Modern Python Manager)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Install Python 3.11 via uv (same as CI)
-RUN uv python install 3.11
-
-# Set working directory
+# Create CI workspace
 WORKDIR /workspace
 
-# Use /tmp for Docker venv to avoid destroying host .venv
-ENV UV_PROJECT_ENVIRONMENT=/tmp/.venv-docker
+# Pre-install dependencies (optional optimization)
+# COPY Cargo.toml Cargo.lock ./
+# RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
 
 # Default command: run full CI check with FAIL FAST
 CMD ["bash", "-c", "\

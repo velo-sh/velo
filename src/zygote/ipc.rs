@@ -56,6 +56,9 @@ pub enum ZygoteCommand {
         /// Max bundle size limit
         #[serde(default)]
         max_bundle_size: Option<u64>,
+        /// Environment variables to inject into the worker
+        #[serde(default)]
+        env: Box<std::collections::HashMap<String, String>>,
         /// Size of the shared memory segment (if shm_fd is passed)
         #[serde(default)]
         shm_size: Option<usize>,
@@ -95,6 +98,9 @@ pub enum ZygoteResponse {
         pid: u32,
         /// List of preloaded modules
         preload: Vec<String>,
+        /// Preload state (e.g., "READY", "LOADING")
+        #[serde(default)]
+        state: String,
     },
     /// A worker was successfully forked
     Forked {
@@ -242,7 +248,7 @@ pub fn cleanup_stale_sockets() {
                     // Red Line #3: Atomic cleanup with proper error handling
                     match std::fs::remove_file(&path) {
                         Ok(_) => {
-                            eprintln!("🔄 Cleaned stale socket: {}", name);
+                            // println!("🔄 Cleaned stale socket: {}", name);
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             // Ignore - socket already removed (race condition)
@@ -318,7 +324,9 @@ fn write_message<T: Serialize + std::fmt::Debug>(
 
     // ADV-2: TRACE logging (decode to readable format)
     #[cfg(debug_assertions)]
-    eprintln!("[IPC SEND] {:?}", msg);
+    {
+        log::debug!("[IPC SEND] {:?}", msg);
+    }
 
     // Frame: [Length 4B] [Version 1B] [Payload]
     let total_len = 1 + payload.len(); // version byte + payload
@@ -546,6 +554,7 @@ mod tests {
         let resp = ZygoteResponse::Status {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
+            state: "READY".to_string(),
         };
 
         // Test MessagePack roundtrip
@@ -553,9 +562,15 @@ mod tests {
         let decoded: ZygoteResponse =
             rmp_serde::from_slice(&bytes).expect("Deserialization failed");
 
-        if let ZygoteResponse::Status { pid, preload } = decoded {
+        if let ZygoteResponse::Status {
+            pid,
+            preload,
+            state,
+        } = decoded
+        {
             assert_eq!(pid, 1234);
             assert_eq!(preload, vec!["numpy", "pandas"]);
+            assert_eq!(state, "READY");
         } else {
             panic!("Decoded wrong variant");
         }
@@ -574,6 +589,7 @@ mod tests {
             bundle_path: None,
             project_root: None,
             max_bundle_size: None,
+            env: Box::new(std::collections::HashMap::new()),
             shm_size: None,
         };
 
@@ -606,6 +622,7 @@ mod tests {
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
             project_root: Some(PathBuf::from("/home/user/project")),
             max_bundle_size: Some(1024 * 1024),
+            env: Box::new(std::collections::HashMap::new()),
             shm_size: Some(4096),
         };
 
