@@ -123,8 +123,30 @@ class ForkHandler:
         shm_fd: Optional[int] = None,
         shm_size: Optional[int] = None
     ):
+        # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
+        #    Ensure THIS child dies if Zygote (Parent) dies.
+        #    Ported from main branch commit e10380a.
+        if sys.platform.startswith("linux"):
+            try:
+                import ctypes
+                try:
+                    libc = ctypes.CDLL("libc.so.6")
+                except:
+                    libc = ctypes.CDLL(None)
+                
+                PR_SET_PDEATHSIG = 1
+                SIGKILL = 9
+                res = libc.prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)
+                if res != 0:
+                    LogUtils.log(f"PDEATHSIG Failed (code {res})")
+                else:
+                    LogUtils.log("PDEATHSIG Set")
+            except Exception as e:
+                LogUtils.log(f"PDEATHSIG Exception: {e}")
+
         # 1. IO Redirection
         ForkHandler._redirect_io(stdout_path, stderr_path)
+
         
         # 2. Environment Setup
         os.environ.update(env)
