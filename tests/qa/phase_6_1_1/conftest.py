@@ -248,13 +248,26 @@ class VeloServeFactory:
 
 @pytest.fixture(scope="session")
 def velo_binary() -> str:
-    """Find the velo binary for this workspace (forcing debug to match edits)."""
+    """Find the velo binary for this workspace.
+    
+    CI downloads a release binary; local dev uses debug binary.
+    This fixture prefers existing binaries to avoid unnecessary builds.
+    """
     repo_root = Path(__file__).parents[3]
     
-    # Force rebuild debug binary
+    # 1. Check for CI-downloaded release binary (primary for CI environments)
+    release_bin = repo_root / "target" / "release" / "velo"
+    if release_bin.exists():
+        return str(release_bin.resolve())
+    
+    # 2. Check for existing debug binary (common for local dev)
+    debug_bin = repo_root / "target" / "debug" / "velo"
+    if debug_bin.exists():
+        return str(debug_bin.resolve())
+    
+    # 3. No binary exists - build debug binary for local development
     subprocess.run(["cargo", "build"], cwd=repo_root, check=True)
     
-    debug_bin = repo_root / "target" / "debug" / "velo"
     if debug_bin.exists():
         return str(debug_bin.resolve())
     
