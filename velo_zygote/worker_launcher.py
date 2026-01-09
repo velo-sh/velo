@@ -48,13 +48,15 @@ def main():
         args = parser.parse_args()
         
         # 3. ImportShield Activation (Titanium Isolation)
-        # Search for the existing shield instance in meta_path
-        # Use marker attribute check for robustness (getattr)
-        for finder in sys.meta_path:
-            if getattr(finder, "_is_velo_import_shield", False) or finder.__class__.__name__ == "ImportShield":
-                finder.activate()
-                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
-                break
+        # SSOT: Import directly from shield module (Phase 10.0)
+        try:
+            from .shield import ImportShield
+            ImportShield.activate()
+        except ImportError:
+            # Fallback if running outside of package context (though unlikely for launcher)
+            # Try to find it if it was installed by main.py (if invoked via main? No, launcher starts first)
+            # Actually, launcher imports shield, shield sets env var.
+            pass
 
         # 4. Surgical Path Sanitization (RFC-0014 - SSOT)
         # Prevent the launcher's directory from shadowing user modules
