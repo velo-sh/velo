@@ -12,7 +12,7 @@ on:
   pull_request:
     branches: ['**']
   schedule:
-    - cron: '0 2 * * *'  # Run nightly at 2 AM UTC (Performance Canary)
+    - cron: '0 21 * * *'  # Run nightly at 5 AM CST (21:00 UTC)
 
 # Concurrency: Only cancel code CI runs, not docs
 concurrency:
