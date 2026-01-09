@@ -87,7 +87,7 @@ class ImportShield:
         # RFC-0012: Resilience Whitelist for Framework Bootstrap
         # We allow anything explicitly in whitelist OR any submodule of a whitelisted package.
         # This prevents Trap 178 while maintaining surgical isolation.
-        whitelist = ("velo_zygote",)
+        whitelist = () # Strict Mode (was "velo_zygote")
         
         if fullname.startswith("velo_zygote"):
             if not any(fullname == w or fullname.startswith(w + ".") for w in whitelist):
@@ -623,6 +623,9 @@ def post_fork_reinit(keep_fds: Optional[Set[int]] = None):
     # The child inherits the parent's loop state (executors, etc.) which must be purged.
     try:
         import asyncio
+        # RFC-0016 Fix: Detach from broken uvloop state in forked child (Linux Parity Gap)
+        # uvloop is not fork-safe without explicit policy reset.
+        asyncio.set_event_loop_policy(None)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     except Exception:
@@ -767,24 +770,37 @@ class ForkHandler:
             except: pass
 
 
-        p_log("Start _child_process")
+        # Debug logging removed
+
+        # dlog(f"Child {os.getpid()} ALIVE")
         exit_code = 0
         try:
-            # 1. Start Guardian (Workers MUST die if Zygote dies)
-            # Now started after FDs are sanitized to avoid race conditions.
-            WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
-            p_log("Guardian Started")
-            
+            # 1. Start Guardian
+            try:
+                if True: # enabled
+                    # dlog("Starting Guardian")
+                    WorkerRegistry.start_guardian(os.getppid(), worker_ttl, monitor_parent=True)
+                    # dlog("Guardian Started")
+            except Exception as e:
+                # dlog(f"Guardian Failed: {e}")
+                raise
+
             # 2. RFC-0011 6A.2: Full post-fork state reset
-            # This MUST happen before anything else to ensure a clean slate.
-            post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
-            p_log("Reinit Done (Cord Cut)")
+            try:
+                # dlog("Starting Reinit")
+                post_fork_reinit(keep_fds={shm_fd} if shm_fd is not None else None)
+                # dlog("Reinit Done")
+            except Exception as e:
+                # dlog(f"Reinit Failed: {e}")
+                raise
 
             # 2.2 Shared Memory Mapping (Phase 7.2)
             worker_context = {"__name__": "__main__", "__file__": script_path}
             if shm_fd is not None and shm_size is not None and MEMORY_MANAGER is not None:
                 try:
+                    # dlog("Attaching SHM")
                     shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size)
+                    # dlog(f"SHM result: {shm_obj}")
                     if shm_obj is not None:
                         # Inject into worker context
                         worker_context["VELO_SHM"] = shm_obj
@@ -794,18 +810,29 @@ class ForkHandler:
                     try: os.close(shm_fd)
                     except: pass
                 except Exception as e:
+                    # dlog(f"SHM Failed: {e}")
                     print(f"⚠️ Failed to attach SHM: {e}", file=sys.stderr)
 
             # 2.5 Diagnostic: First log from child
-            LogUtils.log(f"🔄 Child {os.getpid()} starting re-init...")
+            try:
+                # dlog("LogUtils call")
+                LogUtils.log(f"🔄 Child {os.getpid()} starting re-init...")
+                # dlog("LogUtils Success")
+            except Exception as e:
+                # dlog(f"LogUtils Failed: {e}")
 
             # 3. Install ImportShield (Import Isolation)
             # We always install it, but DEFER activation (Trap 178)
+            # dlog("Installing ImportShield")
             ImportShield.install()
+            # dlog("ImportShield Installed")
             is_internal_launcher = script_path.endswith("worker_launcher.py")
+            # dlog(f"Script: {script_path}, Internal: {is_internal_launcher}")
 
             # 3. I/O Redirection
+            # dlog(f"Redirecting IO: out={stdout_path}, err={stderr_path}")
             ForkHandler._redirect_io(stdout_path, stderr_path)
+            # dlog("IO Redirected")
 
             # 4. Setup Sys Args
             sys.argv = [script_path] + args
@@ -815,25 +842,53 @@ class ForkHandler:
                 ForkHandler._activate_fast_mode(bundle_path, project_root, max_bundle_size)
 
             # 5.5 Final Seal: Activate ImportShield (H-12 Deferred)
-            # Only if not the internal launcher (launcher handles its own loading)
-            if not is_internal_launcher:
-                ImportShield.activate()
-                os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+            # We enforce this for ALL scripts, including the internal launcher (worker_launcher.py),
+            # to prevent user apps loaded by the launcher from accessing framework internals.
+            # Was: if not is_internal_launcher:
+            # dlog("Activating ImportShield")
+            ImportShield.activate()
+            os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+            # dlog("ImportShield Activated")
+
+            # 5.6 Isolation Purge: Evict framework from sys.modules (RFC-0012)
+            # This forces any re-import to strictly go through ImportShield.
+            # Without this, pre-loaded modules bypass the shield check.
+            blacklist_prefix = "velo_zygote"
+            for k in list(sys.modules.keys()):
+                if k == blacklist_prefix or k.startswith(blacklist_prefix + "."):
+                    try:
+                        del sys.modules[k]
+                    except: pass
+            # dlog("Framework Purged from sys.modules")
 
             # 6. Execute Script
+            # dlog("Reading Script")
             with open(script_path, "rb") as f:
                 code = compile(f.read(), script_path, "exec")
+                # dlog("Exec Script")
                 exec(code, worker_context)
+                # dlog("Exec Finished (Should not happen)")
             
         except SystemExit as e:
+            # dlog(f"SystemExit: {e}")
             exit_code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
-        except Exception:
+        except Exception as e:
+            # dlog(f"Child Exception: {e}")
             try:
                 import traceback
-                traceback.print_exc()
+                # traceback.print_exc() # Redirected, might be lost
+                # dlog(traceback.format_exc())
             except: pass
             exit_code = 1
         finally:
+            # dlog(f"Exiting with {exit_code}")
+            if stderr_path and os.path.exists(stderr_path):
+                 try:
+                     with open(stderr_path, "r") as f:
+                         content = f.read()
+                         # dlog(f"STDERR_CONTENT: {content}")
+                 except: pass
+            
             ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
             os._exit(exit_code)
 

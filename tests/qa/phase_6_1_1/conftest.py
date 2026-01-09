@@ -234,8 +234,21 @@ class VeloServeFactory:
         # Explicitly set Zygote path to current workspace 
         root_dir = Path(__file__).parents[3]
         env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/main.py")
+
+        # RFC-0012: Resilience Whitelist for Framework Bootstrap
+        # We must explicitly trust /workspace so sys.path isn't scrubbed by the Rust binary's EnvironmentShield
+        # Using a comprehensive list to override defaults while keeping safety
+        trusted_paths = [
+            "/usr", "/bin", "/sbin", "/lib", "/lib64", 
+            "/etc/ssl/certs", 
+            "/opt/hostedtoolcache", "/home/runner", 
+            "${CWD}", 
+            "/workspace"
+        ]
+        env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
         
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+        env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
         proc = subprocess.Popen(
             cmd,

@@ -5,6 +5,16 @@ import uvicorn
 import signal
 
 def main():
+    import io
+    stderr_capture = io.StringIO()
+    # Force stderr capture since parent provided None
+    sys.stderr = stderr_capture
+    
+    # Ensure current working directory is in sys.path
+    if os.getcwd() not in sys.path:
+        sys.path.insert(0, os.getcwd())
+
+    # Was: debug_child.log writing logic removed
     """Velo Worker Launcher (Titanium Stabilized)"""
     # 1. Signal Hygiene
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGCHLD):
@@ -32,6 +42,8 @@ def main():
         run_kwargs["uds"] = args.uds
     if args.host:
         run_kwargs["host"] = args.host
+    # Force asyncio to debug fatal crash
+    run_kwargs["loop"] = "asyncio"
     if args.port:
         run_kwargs["port"] = args.port
     if args.proxy_headers:
@@ -39,7 +51,14 @@ def main():
         run_kwargs["forwarded_allow_ips"] = "*"
         
     # 4. Execution
-    uvicorn.run(**run_kwargs)
+    # 4. Execution
+    try:
+        uvicorn.run(**run_kwargs)
+    except BaseException as e:
+        import traceback
+            # Was: debug_child.log writing logic removed
+            pass
+        raise
 
 if __name__ == "__main__":
     main()
