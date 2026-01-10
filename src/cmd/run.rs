@@ -14,7 +14,6 @@ use crate::python_info::{PythonInfo, PythonVersion};
 use crate::runner;
 use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
-use colored::Colorize;
 
 /// Run a Python script
 #[derive(Parser, Debug)]
@@ -156,23 +155,20 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         }
 
         // If we reach here, try_zygote_run returned None (Fallback triggered)
+        let signal = crate::common::governance::GovernanceSignal::new(
+            crate::common::governance::SignalComponent::ZygoteIPC,
+            "Zygote process failed to initialize or spawn worker",
+            "Performance degradation (Cold Start latency added)",
+            "Check Zygote logs with 'velo zygote status' and verify socket permissions.",
+        );
+
         // H-Gov (Heightened Governance): Determine fallback behavior
         if config.strict_optimizations {
-            // RFC-0015: In Memory Gravity mode, fallback is always ILLEGAL in strict mode.
-            if cmd.shm.is_some() {
-                bail!(
-                    "🚨 {} SHM mode requested but Zygote protocol failed to initialize.\n\
-                     Fallback to normal mode is blocked (strict_optimizations=true) to prevent silent performance degradation.",
-                    "H-GOV CRITICAL:".red().bold()
-                );
-            }
+            // In Strict mode, any component failure that isn't handled is a fatal regression
+            bail!("{}", signal.format_critical());
         } else {
             // Production/Relaxed Mode: Audit the fallback but proceed (Graceful Degradation)
-            eprintln!(
-                "⚠️ {} Optimization 'Zygote/SHM' failed to initialize. Falling back to standard execution.\n\
-                 📊 Audit Signal: PERFORMANCE_REGRESSION_RISK (Fallback Governance)",
-                "H-GOV AUDIT:".yellow().bold()
-            );
+            signal.report_audit();
         }
     }
 
