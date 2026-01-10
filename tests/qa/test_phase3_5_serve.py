@@ -35,10 +35,7 @@ class TestServeHelpAndValidation:
         """Verify serve command appears in help."""
         velo = get_velo_binary()
         result = subprocess.run(
-            [velo, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            [velo, "--help"], capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0
         assert "serve" in result.stdout
@@ -48,15 +45,16 @@ class TestServeHelpAndValidation:
         """Verify error when app argument is missing."""
         velo = get_velo_binary()
         result = subprocess.run(
-            [velo, "serve"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            [velo, "serve"], capture_output=True, text=True, timeout=30
         )
         assert result.returncode != 0
         # clap uses "required arguments were not provided"
         stderr_lower = result.stderr.lower()
-        assert "required" in stderr_lower or "missing" in stderr_lower or "app" in stderr_lower
+        assert (
+            "required" in stderr_lower
+            or "missing" in stderr_lower
+            or "app" in stderr_lower
+        )
 
     def test_serve_invalid_app_format(self):
         """Verify error for invalid app format (no colon)."""
@@ -65,12 +63,14 @@ class TestServeHelpAndValidation:
             [velo, "serve", "invalid_format"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode != 0
         # clap uses "Invalid app format" (case varies)
         stderr_lower = result.stderr.lower()
-        assert "invalid" in stderr_lower and ("app" in stderr_lower or "format" in stderr_lower)
+        assert "invalid" in stderr_lower and (
+            "app" in stderr_lower or "format" in stderr_lower
+        )
 
     def test_serve_unknown_option_error(self):
         """Verify error for unknown options."""
@@ -79,12 +79,16 @@ class TestServeHelpAndValidation:
             [velo, "serve", "main:app", "--unknown-option"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode != 0
         # clap uses "unexpected argument"
         stderr_lower = result.stderr.lower()
-        assert "unexpected" in stderr_lower or "unknown" in stderr_lower or "unrecognized" in stderr_lower
+        assert (
+            "unexpected" in stderr_lower
+            or "unknown" in stderr_lower
+            or "unrecognized" in stderr_lower
+        )
 
 
 class FastAPITestEnv:
@@ -100,26 +104,30 @@ class FastAPITestEnv:
         # Install fastapi and uvicorn
         subprocess.run(
             ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
-            cwd=self.path, 
-            check=True
+            cwd=self.path,
+            check=True,
         )
         # Create uv.lock for velo
         (self.path / "uv.lock").write_text("{}")
         # Create pyproject.toml
-        (self.path / "pyproject.toml").write_text('''
+        (self.path / "pyproject.toml").write_text(
+            """
 [project]
 name = "test-app"
 dependencies = ["fastapi", "uvicorn"]
-''')
+"""
+        )
         # Create FastAPI app
-        (self.path / "main.py").write_text('''
+        (self.path / "main.py").write_text(
+            """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
-''')
+"""
+        )
         return self
 
     def run_serve(self, args: list, timeout: float = 5) -> tuple:
@@ -129,7 +137,7 @@ def health():
             cwd=self.path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
         return proc
 
@@ -168,8 +176,11 @@ class TestServeStartup:
 
                 # Try to connect
                 import urllib.request
+
                 try:
-                    resp = urllib.request.urlopen("http://127.0.0.1:19876/health", timeout=5)
+                    resp = urllib.request.urlopen(
+                        "http://127.0.0.1:19876/health", timeout=5
+                    )
                     data = resp.read().decode()
                     assert "ok" in data
                 except Exception as e:
@@ -186,9 +197,13 @@ class TestServeStartup:
                 time.sleep(2)
                 proc.terminate()
                 _, stderr = proc.communicate(timeout=15)
-                
+
                 # Should show startup info
-                assert "Starting server" in stderr or "FastAPI" in stderr or "uvicorn" in stderr.lower()
+                assert (
+                    "Starting server" in stderr
+                    or "FastAPI" in stderr
+                    or "uvicorn" in stderr.lower()
+                )
             except Exception:
                 proc.kill()
                 raise
@@ -205,7 +220,7 @@ class TestServeOptions:
             [velo, "serve", "main:app", "--port", "not_a_number"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode != 0
         # clap uses "invalid value" or "invalid digit"
@@ -219,7 +234,7 @@ class TestServeOptions:
             [velo, "serve", "main:app", "--workers", "not_a_number"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode != 0
         # clap uses "invalid value" or "invalid digit"
@@ -235,25 +250,25 @@ class TestZygoteIntegration:
         with FastAPITestEnv() as env:
             # Kill any existing Zygote first
             subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
-            
+
             proc = env.run_serve(["main:app", "--port", "19878"])
             try:
                 time.sleep(2)
                 proc.terminate()
                 _, stderr = proc.communicate(timeout=15)
-                
+
                 # Should show Zygote pre-warming or using existing Zygote
                 zygote_mentioned = (
-                    "Zygote" in stderr or 
-                    "Pre-warming" in stderr or 
-                    "FastAPI" in stderr
+                    "Zygote" in stderr or "Pre-warming" in stderr or "FastAPI" in stderr
                 )
                 assert zygote_mentioned or "uvicorn" in stderr.lower()
             except Exception:
                 proc.kill()
                 raise
             finally:
-                subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
+                subprocess.run(
+                    ["pkill", "-9", "-f", "velo_zygote"], capture_output=True
+                )
 
     def test_no_zygote_flag(self):
         """Verify --no-zygote flag disables Zygote."""
@@ -263,7 +278,7 @@ class TestZygoteIntegration:
                 time.sleep(1)
                 proc.terminate()
                 _, stderr = proc.communicate(timeout=15)
-                
+
                 # Should NOT mention pre-warming when --no-zygote is used
                 assert "Pre-warming" not in stderr
             except Exception:
@@ -282,7 +297,7 @@ class TestFrameworkDetection:
                 time.sleep(2)
                 proc.terminate()
                 _, stderr = proc.communicate(timeout=15)
-                
+
                 # Should detect FastAPI
                 assert "FastAPI" in stderr or "Starting server" in stderr
             except Exception:
@@ -298,11 +313,15 @@ class TestFrameworkDetection:
             [velo, "serve", "django.core.wsgi:application", "--port", "19881"],
             capture_output=True,
             text=True,
-            timeout=15
+            timeout=15,
         )
         # May mention Django or fail finding Django
         # Just verify command was processed
-        assert result.returncode != 0 or "Django" in result.stderr or "Error" in result.stderr
+        assert (
+            result.returncode != 0
+            or "Django" in result.stderr
+            or "Error" in result.stderr
+        )
 
 
 class TestServePerformance:
@@ -318,11 +337,13 @@ class TestServePerformance:
                 # Wait for process to start or fail quickly
                 time.sleep(2)
                 elapsed = time.time() - start
-                
+
                 # Should start reasonably fast (< 5 seconds)
                 if proc.poll() is None:
                     # Still running - good
-                    assert elapsed < 5.0, f"Server took too long to start: {elapsed:.2f}s"
+                    assert (
+                        elapsed < 5.0
+                    ), f"Server took too long to start: {elapsed:.2f}s"
                 else:
                     # Exited - check why
                     _, stderr = proc.communicate()
@@ -334,4 +355,3 @@ class TestServePerformance:
                     proc.wait(timeout=5)
                 except:
                     proc.kill()
-

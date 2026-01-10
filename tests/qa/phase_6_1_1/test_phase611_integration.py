@@ -93,7 +93,9 @@ class TestPhase611Integration:
             while continue_load:
                 requests_count.append(1)
                 try:
-                    r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+                    r = requests.get(
+                        f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
+                    )
                     if r.status_code != 200:
                         errors.append(f"Status {r.status_code}")
                 except Exception as e:
@@ -128,7 +130,9 @@ class TestPhase611Integration:
         # Allow some errors during kill (CI jitter may cause higher drops)
         total_requests = len(requests_count)
         error_rate = len(errors) / total_requests if total_requests > 0 else 0
-        assert error_rate < 0.15, f"Error rate {error_rate:.1%} too high ({len(errors)}/{total_requests})"
+        assert (
+            error_rate < 0.15
+        ), f"Error rate {error_rate:.1%} too high ({len(errors)}/{total_requests})"
 
     def test_INT_3_header_flow_through_proxy(self, velo_serve_fixture):
         """INT-3: Header flow from client → proxy → worker → response.
@@ -174,7 +178,9 @@ class TestPhase611Integration:
         # Verify client info
         response = requests.get(f"http://127.0.0.1:{proc.port}/client-ip")
         data = response.json()
-        assert data.get("client_host") or data.get("x_forwarded_for"), "Client info lost"
+        assert data.get("client_host") or data.get(
+            "x_forwarded_for"
+        ), "Client info lost"
 
     def test_INT_3b_unique_uri_per_worker(self, velo_serve_fixture):
         """INT-3b: Unique URI authority per worker.
@@ -204,7 +210,9 @@ class TestPhase611Integration:
         worker_responses = set()
         for _ in range(20):
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM)
+                r = requests.get(
+                    f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM
+                )
                 if r.status_code == 200:
                     worker_responses.add(r.json().get("pid"))
             except Exception:
@@ -252,9 +260,9 @@ class TestPhase611Integration:
                 elif (mode & 0o070) != 0:
                     print(f"Warning: Socket dir {oct(mode)} allows group access")
 
-
         # Either way, server works
         import requests
+
         response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 

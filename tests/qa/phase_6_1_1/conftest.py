@@ -26,7 +26,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 
-
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
 
@@ -55,17 +54,23 @@ class VeloServeProcess:
                 exit_code = self.proc.returncode
                 # Give stderr a moment to flush (CI buffer delay)
                 time.sleep(0.2)
-                print(f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}")
+                print(
+                    f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}"
+                )
                 print(f"    PID: {self.pid}, Port: {self.port}")
                 print(f"    Socket: {self.socket_path}")
                 print(f"    Elapsed: {time.time() - start:.2f}s")
                 # RFC-0011: Print Zygote log if it exists
-                log_path = Path(os.environ.get("HOME", "/tmp")) / ".local/state/velo/zygote.log"
+                log_path = (
+                    Path(os.environ.get("HOME", "/tmp"))
+                    / ".local/state/velo/zygote.log"
+                )
                 if log_path.exists():
                     print(f"\n📄 [ZYGOTE LOG] {log_path}")
                     print(log_path.read_text())
                 # Force stderr flush for visibility
                 import sys
+
                 sys.stderr.flush()
                 sys.stdout.flush()
                 raise RuntimeError(f"Server process died (exit code: {exit_code})")
@@ -77,7 +82,7 @@ class VeloServeProcess:
             except Exception:
                 pass
             time.sleep(0.1)
-        
+
         # On timeout, try to read what happened
         print("Timeout reached.")
         self.proc.terminate()
@@ -103,7 +108,7 @@ class VeloServeProcess:
         """Find the Zygote process PID by checking children of Velo supervisor."""
         if self.zygote_pid:
             return
-            
+
         try:
             supervisor = psutil.Process(self.pid)
             for child in supervisor.children(recursive=True):
@@ -127,25 +132,27 @@ class VeloServeProcess:
 
     def get_worker_pids(self) -> List[int]:
         """Get list of worker PIDs.
-        
+
         Workers are forked from the Zygote, so they are children of the Zygote PID.
         Includes a short retry loop to account for fork latency.
         """
         for _ in range(10):
             if not self.zygote_pid:
                 self._detect_zygote_pid()
-            
+
             if self.zygote_pid:
                 try:
                     zygote_proc = psutil.Process(self.zygote_pid)
-                    workers = [child.pid for child in zygote_proc.children(recursive=True)]
+                    workers = [
+                        child.pid for child in zygote_proc.children(recursive=True)
+                    ]
                     if workers:
                         return workers
                 except psutil.NoSuchProcess:
                     self.zygote_pid = None
-            
-            time.sleep(0.5) # Increased sleep for macOS/CI
-        
+
+            time.sleep(0.5)  # Increased sleep for macOS/CI
+
         return []
 
     def get_metrics(self) -> dict:
@@ -156,7 +163,7 @@ class VeloServeProcess:
         """Find the Zygote socket path by inspecting Zygote command line."""
         if not self.zygote_pid:
             self._detect_zygote_pid()
-        
+
         if self.zygote_pid:
             try:
                 proc = psutil.Process(self.zygote_pid)
@@ -186,7 +193,7 @@ class VeloServeFactory:
 
     def __init__(self, test_env, velo_binary: str):
         self.test_env = test_env
-        self.tmp_path = test_env.root # Compatibility
+        self.tmp_path = test_env.root  # Compatibility
         self.velo_binary = velo_binary
         self.processes: List[VeloServeProcess] = []
 
@@ -194,7 +201,7 @@ class VeloServeFactory:
         self,
         app: str,
         workers: int = 1,
-        zygote: bool = True, # Default to True as per new Velo default
+        zygote: bool = True,  # Default to True as per new Velo default
         port: Optional[int] = None,
         extra_args: Optional[List[str]] = None,
     ) -> VeloServeProcess:
@@ -202,8 +209,9 @@ class VeloServeFactory:
         if port is None:
             # Find a free port
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', 0))
+                s.bind(("", 0))
                 port = s.getsockname()[1]
 
         cmd = [
@@ -215,27 +223,28 @@ class VeloServeFactory:
             "--port",
             str(port),
         ]
-        
+
         # In new version, Zygote is default. We only use --no-zygote to disable.
         if not zygote:
             cmd.append("--no-zygote")
-        
+
         if extra_args:
             cmd.extend(extra_args)
 
         # RFC-0012: Use hermetic environment
         env = self.test_env.env.copy()
-        
+
         # RFC-0011/0012: Ensure socket path does NOT exceed 104 chars (macOS limit)
         # We prioritize a short, stable path in /tmp for tests to avoid deep nesting issues.
         import hashlib
+
         h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
         socket_dir = Path("/tmp") / f"velo-test-{h}"
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
-        
+
         # RFC-0013 Phase 6.1.1: Prevent Workspace Pollution
-        # Explicitly set Zygote path to current workspace 
+        # Explicitly set Zygote path to current workspace
         root_dir = Path(__file__).parents[3]
         env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/main.py")
 
@@ -243,21 +252,26 @@ class VeloServeFactory:
         # We must explicitly trust /workspace so sys.path isn't scrubbed by the Rust binary's EnvironmentShield
         # Using a comprehensive list to override defaults while keeping safety
         trusted_paths = [
-            "/usr", "/bin", "/sbin", "/lib", "/lib64", 
-            "/etc/ssl/certs", 
-            "/opt/hostedtoolcache", "/home/runner", 
-            "${CWD}", 
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/etc/ssl/certs",
+            "/opt/hostedtoolcache",
+            "/home/runner",
+            "${CWD}",
             "/workspace",
-            "${VIRTUAL_ENV}"
+            "${VIRTUAL_ENV}",
         ]
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
-        
+
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
         # env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1" # Breaks Zygote startup
 
         proc = subprocess.Popen(
             cmd,
-            cwd=self.tmp_path, # Execute in test root
+            cwd=self.tmp_path,  # Execute in test root
             env=env,
             # Use None to inherit from parent, so -s shows it
             stdout=None,
@@ -279,28 +293,28 @@ class VeloServeFactory:
 @pytest.fixture(scope="session")
 def velo_binary() -> str:
     """Find the velo binary for this workspace.
-    
+
     CI downloads a release binary; local dev uses debug binary.
     This fixture prefers existing binaries to avoid unnecessary builds.
     """
     repo_root = Path(__file__).parents[3]
-    
+
     # 1. Check for CI-downloaded release binary (primary for CI environments)
     release_bin = repo_root / "target" / "release" / "velo"
     if release_bin.exists():
         return str(release_bin.resolve())
-    
+
     # 2. Check for existing debug binary (common for local dev)
     debug_bin = repo_root / "target" / "debug" / "velo"
     if debug_bin.exists():
         return str(debug_bin.resolve())
-    
+
     # 3. No binary exists - build debug binary for local development
     subprocess.run(["cargo", "build"], cwd=repo_root, check=True)
-    
+
     if debug_bin.exists():
         return str(debug_bin.resolve())
-    
+
     raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}")
 
 
@@ -318,9 +332,6 @@ def velo_serve_fixture(velo_test_env, velo_binary: str):
     factory = VeloServeFactory(velo_test_env, velo_binary)
     yield factory
     factory.cleanup()
-
-
-
 
 
 # Helper functions
@@ -528,4 +539,3 @@ async def show_scope(request: Request):
         "headers_count": len(request.scope.get("headers", [])),
     }
 '''
-

@@ -50,11 +50,12 @@ MARSHAL_RECURSION_LIMIT = 500
 def safe_marshal_loads(data: bytes) -> object:
     """
     Load marshalled data with recursion depth protection.
-    
+
     RFC-0006 §3.5: Deeply nested bytecode can cause Stack Overflow.
     This function temporarily lowers the recursion limit during marshal.loads().
     """
     import sys
+
     old_limit = sys.getrecursionlimit()
     try:
         sys.setrecursionlimit(MARSHAL_RECURSION_LIMIT)
@@ -65,11 +66,17 @@ def safe_marshal_loads(data: bytes) -> object:
 
 class ModuleEntry:
     """Module entry from bundle index"""
-    
-    __slots__ = ('name', 'offset', 'size', 'hash', 'is_package')
-    
-    def __init__(self, name: str, offset: int, size: int, 
-                 hash_bytes: bytes, is_package: bool = False):
+
+    __slots__ = ("name", "offset", "size", "hash", "is_package")
+
+    def __init__(
+        self,
+        name: str,
+        offset: int,
+        size: int,
+        hash_bytes: bytes,
+        is_package: bool = False,
+    ):
         self.name = name
         self.offset = offset
         self.size = size
@@ -80,15 +87,15 @@ class ModuleEntry:
 class VeloBundle:
     """
     Velo bundle (.veloc) reader with BLAKE3 verification
-    
+
     RFC-0006 Section 2.7: Single read + memoryview (no mmap for Phase 5.0)
-    
+
     Security:
     - 256MB size limit (DoS prevention)
     - BLAKE3 verification per module
     - Atomic read before any parsing
     """
-    
+
     def __init__(self, path: Path, max_size: Optional[int] = None):
         self.path = path
         self.max_size = max_size or DEFAULT_MAX_BUNDLE_SIZE
@@ -97,11 +104,11 @@ class VeloBundle:
         self.index: Dict[str, ModuleEntry] = {}
         self._content_hash: Optional[bytes] = None
         self._index_offset: int = 0
-    
+
     def open(self) -> None:
         """
         Load bundle into memory (atomic read)
-        
+
         RFC-0006 Section 3.1: Read → Verify → Load sequence
         """
         # Security: Size check before read
@@ -110,15 +117,15 @@ class VeloBundle:
             raise ValueError(
                 f"Bundle too large: {file_size} bytes > {self.max_size} bytes"
             )
-        
+
         # Atomic read entire file
         self.data = self.path.read_bytes()
         self.view = memoryview(self.data)
-        
+
         # Parse and verify
         self._read_header()
         self._verify_content_hash()
-    
+
     def close(self) -> None:
         """Release resources"""
         if self.view:
@@ -126,123 +133,125 @@ class VeloBundle:
         self.data = None
         self.view = None
         self.index.clear()
-    
+
     def _read_header(self) -> None:
         """Parse bundle header and module index"""
         if len(self.data) < 20:
             raise ValueError("Bundle too small")
-        
+
         # Verify magic
         magic = bytes(self.view[:4])
         if magic != MAGIC:
             raise ValueError(f"Invalid bundle magic: {magic!r}")
-        
+
         # Read header fields
         version, module_count, index_offset = struct.unpack(
             "<IIQ", bytes(self.view[4:20])
         )
-        
+
         if version != VERSION:
             raise ValueError(f"Unsupported bundle version: {version}")
-        
+
         # RFC-0009 §2.1: Graph Offset at byte 60 (to avoid RFC-0006 hash_algo collision)
         self._graph_offset = 0
         if len(self.data) > 68:
             self._graph_offset = struct.unpack("<Q", bytes(self.view[60:68]))[0]
-            
+
         # RFC-0009 v2.0: Security Header Offset at byte 68
         self._security_offset = 28
         if len(self.data) > 68:
             self._security_offset = self.view[68]
-            
+
         # Store index offset for hash verification
         self._index_offset = index_offset
-        
+
         # Read content hash (bytes 20-52)
         self._content_hash = bytes(self.view[20:52])
-        
+
         # Parse module index
         pos = index_offset
         for _ in range(module_count):
             entry = self._read_index_entry(pos)
             self.index[entry.name] = entry
             # Calculate next entry position
-            name_len = struct.unpack("<H", bytes(self.view[pos:pos+2]))[0]
-            pos += 2 + name_len + 8 + 8 + 32 + 1  # name_len + name + offset + size + hash + is_pkg
-    
+            name_len = struct.unpack("<H", bytes(self.view[pos : pos + 2]))[0]
+            pos += (
+                2 + name_len + 8 + 8 + 32 + 1
+            )  # name_len + name + offset + size + hash + is_pkg
+
     def _read_index_entry(self, pos: int) -> ModuleEntry:
         """Read a single module entry from index"""
         # Read name length and name
-        name_len = struct.unpack("<H", bytes(self.view[pos:pos+2]))[0]
+        name_len = struct.unpack("<H", bytes(self.view[pos : pos + 2]))[0]
         pos += 2
-        name = bytes(self.view[pos:pos+name_len]).decode("utf-8")
+        name = bytes(self.view[pos : pos + name_len]).decode("utf-8")
         pos += name_len
-        
+
         # Read offset, size
-        offset, size = struct.unpack("<QQ", bytes(self.view[pos:pos+16]))
+        offset, size = struct.unpack("<QQ", bytes(self.view[pos : pos + 16]))
         pos += 16
-        
+
         # Read BLAKE3 hash
-        hash_bytes = bytes(self.view[pos:pos+32])
+        hash_bytes = bytes(self.view[pos : pos + 32])
         pos += 32
-        
+
         # Read is_package flag
         is_package = bool(self.view[pos])
-        
+
         return ModuleEntry(name, offset, size, hash_bytes, is_package)
-    
+
     def _verify_content_hash(self) -> None:
         """
         Verify bundle integrity using Global Hash scheme (H-1)
-        
+
         RFC-0008: Hash covers Identity Prefix [0..20] and Content [52..EOF]
         """
         if self._content_hash is None:
             return
-        
+
         # H-1 Global Hash: Cover Identity Prefix + Rest (Skips hash field)
         hasher = blake3_module.blake3()
         hasher.update(bytes(self.view[0:20]))  # Identity Prefix
-        hasher.update(bytes(self.view[52:]))   # Content (header suffix + data + index)
+        hasher.update(bytes(self.view[52:]))  # Content (header suffix + data + index)
         actual = hasher.digest()
-        
+
         if actual != self._content_hash:
             raise ValueError(
                 f"Bundle content hash verification failed\n"
                 f"Expected: {self._content_hash.hex()}\n"
                 f"Actual:   {actual.hex()}"
             )
-    
+
     def get_code(self, name: str) -> Optional[bytes]:
         """
         Get marshalled bytecode for a module
-        
+
         Returns None if module not in bundle (triggers fallback)
         """
         if name not in self.index:
             return None
-        
+
         entry = self.index[name]
-        return bytes(self.view[entry.offset:entry.offset + entry.size])
-    
+        return bytes(self.view[entry.offset : entry.offset + entry.size])
+
     def verify_module(self, name: str, data: bytes) -> bool:
         """
         Verify module integrity using BLAKE3
-        
+
         Called before marshal.loads() for security
         """
         if name not in self.index:
             return False
-        
+
         entry = self.index[name]
-        
+
         actual = blake3_module.blake3(data).digest()
-        
+
         return actual == entry.hash
-    
+
     def __contains__(self, name: str) -> bool:
         return name in self.index
-    
+
     def __len__(self) -> int:
         return len(self.index)
 
@@ -250,24 +259,21 @@ class VeloBundle:
 class VeloFinder(importlib.abc.MetaPathFinder):
     """
     Import hook that finds modules in Velo bundle
-    
+
     RFC-0006 Section 2.9: Fallback Mechanism
     - Returns ModuleSpec for bundled modules
     - Returns None for non-bundled (fallback to standard import)
     """
-    
+
     def __init__(self, bundle: VeloBundle, project_root: Optional[Path] = None):
         self.bundle = bundle
         self.project_root = project_root or Path.cwd()
-        self.metrics = {
-            "graph_hits": 0,
-            "graph_misses": 0,
-            "fallback_reasons": {}
-        }
-        
+        self.metrics = {"graph_hits": 0, "graph_misses": 0, "fallback_reasons": {}}
+
         # Register atexit report (Passive mode debugging)
         import atexit
         import os
+
         if os.environ.get("VELO_DEBUG_GRAPH") == "1":
             atexit.register(self._report_metrics)
 
@@ -275,17 +281,17 @@ class VeloFinder(importlib.abc.MetaPathFinder):
         """Find module spec for import"""
         # RFC-0009 Step 3: Passive verification
         self._check_graph_passive(fullname)
-        
+
         if fullname not in self.bundle:
             return None
-        
+
         entry = self.bundle.index[fullname]
-        
+
         return importlib.machinery.ModuleSpec(
             fullname,
             VeloLoader(self.bundle, fullname, self.project_root),
             is_package=entry.is_package,
-            origin=f"<velo-bundle:{self.bundle.path}:{fullname}>"
+            origin=f"<velo-bundle:{self.bundle.path}:{fullname}>",
         )
 
     def _check_graph_passive(self, fullname: str) -> None:
@@ -304,7 +310,7 @@ class VeloFinder(importlib.abc.MetaPathFinder):
         """Report metrics at process exit (Passive Mode)"""
         hits = self.metrics["graph_hits"]
         misses = self.metrics["graph_misses"]
-        
+
         if hits > 0 or misses > 0:
             sys.stderr.write("\n📊 Velo Static Graph Metrics (Passive Mode)\n")
             sys.stderr.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -316,90 +322,92 @@ class VeloFinder(importlib.abc.MetaPathFinder):
 class VeloLoader(importlib.abc.Loader):
     """
     Loader that loads modules from Velo bundle
-    
+
     RFC-0006 Section 5 (Handover):
     - BLAKE3 verification before marshal.loads()
     - Set __file__ to original source path
     - Handle __path__ for packages (disk plugin support)
     """
-    
-    def __init__(self, bundle: VeloBundle, name: str, 
-                 project_root: Optional[Path] = None):
+
+    def __init__(
+        self, bundle: VeloBundle, name: str, project_root: Optional[Path] = None
+    ):
         self.bundle = bundle
         self.name = name
         self.project_root = project_root or Path.cwd()
-    
+
     def create_module(self, spec):
         """Use default module creation"""
         return None
-    
+
     def exec_module(self, module) -> None:
         """Execute module code from bundle"""
         # Get marshalled bytecode
         code_data = self.bundle.get_code(self.name)
         if code_data is None:
             raise ImportError(f"Cannot find {self.name} in bundle")
-        
+
         # BLAKE3 verification before marshal.loads()
         # RFC-0006 Section 3.1: Mandatory security check
         if not self.bundle.verify_module(self.name, code_data):
-            raise ImportError(
-                f"Module {self.name} failed integrity verification"
-            )
-        
+            raise ImportError(f"Module {self.name} failed integrity verification")
+
         # Load code object with recursion protection
         # RFC-0006 §3.5: Use safe_marshal_loads() to prevent stack overflow
         code = safe_marshal_loads(code_data)
-        
+
         # Set __file__ to original source path
         # RFC-0006: Point to real file for debugging/tracebacks
         module.__file__ = self._get_original_path()
-        
+
         # Handle __path__ for packages
         # RFC-0006 Section 5: Allow disk plugins to be discovered
         entry = self.bundle.index[self.name]
         if entry.is_package:
             self._setup_package_path(module)
-        
+
         # Execute module code
         exec(code, module.__dict__)
-    
+
     def _get_original_path(self) -> str:
         """Get original source file path for __file__"""
         # Convert module name to path
         parts = self.name.split(".")
-        
+
         # Try common patterns
         for suffix in [".py", "/__init__.py"]:
-            candidate = self.project_root / Path(*parts).with_suffix("").parent / (parts[-1] + suffix)
+            candidate = (
+                self.project_root
+                / Path(*parts).with_suffix("").parent
+                / (parts[-1] + suffix)
+            )
             if candidate.exists():
                 return str(candidate)
-        
+
         # Fallback: virtual path
         return f"<velo-bundle:{self.bundle.path}:{self.name}>"
-    
+
     def _setup_package_path(self, module) -> None:
         """
         Set up __path__ for package modules
-        
+
         RFC-0006 Section 5: Allow disk extensions (plugins) to be found
         """
         if not hasattr(module, "__path__"):
             module.__path__ = []
-        
+
         # Find package directory on disk
         parts = self.name.split(".")
         disk_path = self.project_root / Path(*parts)
-        
+
         if disk_path.is_dir() and str(disk_path) not in module.__path__:
             module.__path__.append(str(disk_path))
 
 
-def install_hook(bundle: VeloBundle, 
-                 project_root: Optional[Path] = None) -> VeloFinder:
+def install_hook(bundle: VeloBundle, project_root: Optional[Path] = None) -> VeloFinder:
     """
     Install Velo import hook at sys.meta_path[0]
-    
+
     Returns the finder instance for later removal if needed.
     """
     finder = VeloFinder(bundle, project_root)
@@ -414,12 +422,14 @@ def uninstall_hook(finder: VeloFinder) -> None:
 
 
 # Convenience function for velo run --fast
-def activate_fast_mode(bundle_path: Path, 
-                        project_root: Optional[Path] = None,
-                        max_size: Optional[int] = None) -> VeloBundle:
+def activate_fast_mode(
+    bundle_path: Path,
+    project_root: Optional[Path] = None,
+    max_size: Optional[int] = None,
+) -> VeloBundle:
     """
     Activate fast loader mode
-    
+
     Called from sitecustomize.py injected by velo run --fast
     """
     bundle = VeloBundle(bundle_path, max_size=max_size)
@@ -431,18 +441,19 @@ def activate_fast_mode(bundle_path: Path,
 if __name__ == "__main__":
     # Simple test
     import sys
+
     if len(sys.argv) < 2:
         print("Usage: python velo_loader.py <bundle.veloc>")
         sys.exit(1)
-    
+
     bundle_path = Path(sys.argv[1])
     bundle = VeloBundle(bundle_path)
     bundle.open()
-    
+
     print(f"Bundle: {bundle_path}")
     print(f"Modules: {len(bundle)}")
     for name, entry in bundle.index.items():
         pkg = " [pkg]" if entry.is_package else ""
         print(f"  - {name}: {entry.size} bytes @ {entry.offset}{pkg}")
-    
+
     bundle.close()

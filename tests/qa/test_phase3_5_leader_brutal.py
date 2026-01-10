@@ -49,7 +49,9 @@ class BrutalTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(
+            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
+        )
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -66,7 +68,7 @@ class BrutalTestEnv:
             capture_output=True,
             text=True,
             timeout=timeout,
-            env=run_env
+            env=run_env,
         )
         return result.returncode, result.stdout, result.stderr
 
@@ -87,13 +89,16 @@ class BrutalTestEnv:
 # CHAOS TESTS - Resource Exhaustion and Timing Attacks
 # =============================================================================
 
+
 class TestChaosResourceExhaustion:
     """CHAOS-RES-xxx: Try to exhaust system resources."""
 
     def test_chaos_res_001_fd_exhaustion(self):
         """CHAOS-RES-001: Try to exhaust file descriptors."""
         with BrutalTestEnv() as env:
-            env.create_script("fd_bomb.py", """
+            env.create_script(
+                "fd_bomb.py",
+                """
 import os
 fds = []
 try:
@@ -105,7 +110,8 @@ except OSError:
 print(f'opened:{len(fds)}')
 for fd in fds:
     os.close(fd)
-""")
+""",
+            )
             code, stdout, stderr = env.run_velo(["run", "fd_bomb.py"], timeout=30)
             # Should not crash the parent process
             assert "opened:" in stdout or code != 0 or "Falling back" in stderr
@@ -113,7 +119,9 @@ for fd in fds:
     def test_chaos_res_002_memory_bomb(self):
         """CHAOS-RES-002: Try to allocate massive memory."""
         with BrutalTestEnv() as env:
-            env.create_script("mem_bomb.py", """
+            env.create_script(
+                "mem_bomb.py",
+                """
 import sys
 try:
     data = []
@@ -123,7 +131,8 @@ except MemoryError:
     print('OOM:caught')
     sys.exit(0)
 print('MEM:survived')
-""")
+""",
+            )
             code, stdout, stderr = env.run_velo(["run", "mem_bomb.py"], timeout=60)
             # Should handle OOM gracefully (not crash main process)
             # Process may be killed by OS, that's OK
@@ -132,7 +141,9 @@ print('MEM:survived')
     def test_chaos_res_003_fork_bomb_attempt(self):
         """CHAOS-RES-003: Try a fork bomb (should be contained)."""
         with BrutalTestEnv() as env:
-            env.create_script("fork_bomb.py", """
+            env.create_script(
+                "fork_bomb.py",
+                """
 import os
 import sys
 # Attempt to fork bomb (should be limited)
@@ -148,7 +159,8 @@ try:
 except Exception as e:
     print(f'BLOCKED:{e}')
 print(f'FORKS:{count}')
-""")
+""",
+            )
             code, stdout, stderr = env.run_velo(["run", "fork_bomb.py"], timeout=30)
             # Should complete without hanging or crashing parent
             assert True
@@ -156,7 +168,9 @@ print(f'FORKS:{count}')
     def test_chaos_res_004_thread_bomb(self):
         """CHAOS-RES-004: Try to create thousands of threads."""
         with BrutalTestEnv() as env:
-            env.create_script("thread_bomb.py", """
+            env.create_script(
+                "thread_bomb.py",
+                """
 import threading
 import time
 threads = []
@@ -170,7 +184,8 @@ except Exception as e:
 print(f'THREADS:{len(threads)}')
 for t in threads:
     t.join(timeout=0.1)
-""")
+""",
+            )
             code, stdout, stderr = env.run_velo(["run", "thread_bomb.py"], timeout=60)
             assert True  # Survived
 
@@ -181,7 +196,7 @@ class TestChaosTiming:
     def test_chaos_time_001_rapid_start_stop(self):
         """CHAOS-TIME-001: Rapidly start/stop serve commands."""
         velo = get_velo_binary()
-        
+
         for _ in range(20):
             proc = subprocess.Popen(
                 [velo, "serve", "main:app", "--port", "19999"],
@@ -195,7 +210,7 @@ class TestChaosTiming:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
-        
+
         # Should not leave zombie processes or leaked resources
         assert True
 
@@ -203,7 +218,7 @@ class TestChaosTiming:
         """CHAOS-TIME-002: Multiple processes try same port."""
         velo = get_velo_binary()
         procs = []
-        
+
         for _ in range(5):
             proc = subprocess.Popen(
                 [velo, "serve", "main:app", "--port", "19998"],
@@ -211,16 +226,16 @@ class TestChaosTiming:
                 stderr=subprocess.PIPE,
             )
             procs.append(proc)
-        
+
         time.sleep(1)
-        
+
         for proc in procs:
             proc.terminate()
             try:
                 proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        
+
         # At most one should succeed (if any)
         assert True
 
@@ -229,13 +244,14 @@ class TestChaosTiming:
 # INJECTION TESTS - All Forms of Input Injection
 # =============================================================================
 
+
 class TestInjectionAttacks:
     """INJECT-xxx: All injection attack vectors."""
 
     def test_inject_001_shell_metacharacters(self):
         """INJECT-001: Shell metacharacters in all inputs."""
         velo = get_velo_binary()
-        
+
         payloads = [
             "`id`",
             "$(whoami)",
@@ -249,13 +265,13 @@ class TestInjectionAttacks:
             "$(cat /etc/passwd)",
             "`cat /etc/passwd`",
         ]
-        
+
         for payload in payloads:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             # Should NEVER execute shell commands
             assert "uid=" not in result.stdout
@@ -265,20 +281,20 @@ class TestInjectionAttacks:
     def test_inject_002_python_code_injection(self):
         """INJECT-002: Python code in module name."""
         velo = get_velo_binary()
-        
+
         payloads = [
             "__import__('os').system('id')",
             "eval('1+1')",
             "exec('import os')",
             "compile('x=1','','eval')",
         ]
-        
+
         for payload in payloads:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             # Should never execute
             assert "uid=" not in result.stdout
@@ -286,19 +302,19 @@ class TestInjectionAttacks:
     def test_inject_003_sql_injection_style(self):
         """INJECT-003: SQL injection patterns (shouldn't apply but test)."""
         velo = get_velo_binary()
-        
+
         payloads = [
             "'; DROP TABLE users; --",
             "1' OR '1'='1",
             "1; SELECT * FROM users",
         ]
-        
+
         for payload in payloads:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             # Should just fail gracefully
             assert result.returncode != 0
@@ -306,7 +322,7 @@ class TestInjectionAttacks:
     def test_inject_004_path_traversal_variants(self):
         """INJECT-004: All path traversal variants."""
         velo = get_velo_binary()
-        
+
         payloads = [
             "../../../etc/passwd",
             "..\\..\\..\\windows\\system32",
@@ -317,13 +333,13 @@ class TestInjectionAttacks:
             "....//etc/passwd",
             "..;/etc/passwd",
         ]
-        
+
         for payload in payloads:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             # Should not access system files
             assert "root:" not in result.stdout
@@ -334,30 +350,28 @@ class TestInjectionAttacks:
 # CRASH TESTS - Inputs Designed to Crash
 # =============================================================================
 
+
 class TestCrashAttempts:
     """CRASH-xxx: Inputs designed to crash the process."""
 
     def test_crash_001_null_bytes_everywhere(self):
         """CRASH-001: Null bytes in all string positions.
-        
+
         NOTE: Python subprocess cannot pass null bytes - they're rejected
         at the OS level. This tests that the protection is in place.
         """
         velo = get_velo_binary()
-        
+
         # Test control chars that CAN be passed
         safe_payloads = [
             "\x01\x02\x03",  # Control chars
             "main\x1f:app",  # Unit separator
         ]
-        
+
         for payload in safe_payloads:
             try:
                 result = subprocess.run(
-                    [velo, "serve", payload],
-                    capture_output=True,
-                    text=True,
-                    timeout=30
+                    [velo, "serve", payload], capture_output=True, text=True, timeout=30
                 )
                 # Should not crash (SIGSEGV = -11)
                 assert result.returncode != -11
@@ -368,7 +382,7 @@ class TestCrashAttempts:
     def test_crash_002_format_strings(self):
         """CRASH-002: Format string attack vectors."""
         velo = get_velo_binary()
-        
+
         payloads = [
             "%s%s%s%s%s%s%s%s%s%s",
             "%n%n%n%n%n",
@@ -377,39 +391,39 @@ class TestCrashAttempts:
             "%99999$s",
             "{0}{1}{2}{3}",
         ]
-        
+
         for payload in payloads:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             # Should not crash
             assert result.returncode != -11
 
     def test_crash_003_unicode_bombs(self):
         """CRASH-003: Unicode edge cases.
-        
+
         NOTE: Some unicode chars (like null) cannot be passed via subprocess.
         """
         velo = get_velo_binary()
-        
+
         # Safe unicode payloads (no null)
         payloads = [
             "\uFEFF",  # BOM
             "\u202E",  # RTL override
             "\uFFFF",  # Max BMP
-            "𐀀",      # Surrogate pair
+            "𐀀",  # Surrogate pair
         ]
-        
+
         for payload in payloads:
             try:
                 result = subprocess.run(
                     [velo, "serve", f"{payload}main:app"],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
                 )
                 assert result.returncode != -11
             except (UnicodeEncodeError, ValueError):
@@ -418,7 +432,7 @@ class TestCrashAttempts:
     def test_crash_004_extremely_long_inputs(self):
         """CRASH-004: Extremely long inputs for buffer overflow."""
         velo = get_velo_binary()
-        
+
         for size in [1000, 10000, 100000, 1000000]:
             payload = "A" * size
             try:
@@ -426,7 +440,7 @@ class TestCrashAttempts:
                     [velo, "serve", f"{payload}:app"],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
                 )
                 # Should not crash
                 assert result.returncode != -11
@@ -437,6 +451,7 @@ class TestCrashAttempts:
 # =============================================================================
 # HANG TESTS - Inputs Designed to Hang Forever
 # =============================================================================
+
 
 class TestHangAttempts:
     """HANG-xxx: Inputs designed to cause infinite loops or deadlocks."""
@@ -449,7 +464,7 @@ class TestHangAttempts:
                 (env.path / "loop2.py").symlink_to(env.path / "loop1")
             except OSError:
                 pytest.skip("Cannot create symlinks")
-            
+
             # Should not hang forever
             try:
                 code, stdout, stderr = env.run_velo(["run", "loop1"], timeout=30)
@@ -459,16 +474,16 @@ class TestHangAttempts:
     def test_hang_002_regex_catastrophic_backtracking(self):
         """HANG-002: Input that might cause regex backtracking."""
         velo = get_velo_binary()
-        
+
         # Classic ReDoS pattern
         payload = "a" * 50 + "!"
-        
+
         try:
             result = subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
         except subprocess.TimeoutExpired:
             pytest.fail("Possible ReDoS vulnerability")
@@ -476,16 +491,16 @@ class TestHangAttempts:
     def test_hang_003_deeply_nested_path(self):
         """HANG-003: Deeply nested directory path."""
         velo = get_velo_binary()
-        
+
         # Deep path
         deep_path = "/".join(["a"] * 100)
-        
+
         try:
             result = subprocess.run(
                 [velo, "serve", f"{deep_path}:app"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
         except subprocess.TimeoutExpired:
             pytest.fail("Process hung on deep path")
@@ -495,59 +510,60 @@ class TestHangAttempts:
 # INFORMATION LEAK TESTS
 # =============================================================================
 
+
 class TestInformationLeak:
     """LEAK-xxx: Try to leak sensitive information."""
 
     def test_leak_001_error_message_info(self):
         """LEAK-001: Error messages should not leak internal paths."""
         velo = get_velo_binary()
-        
-        # Determine project root from velo binary location  
+
+        # Determine project root from velo binary location
         # e.g., /path/to/velo/target/release/velo -> /path/to/velo
         project_root = str(Path(velo).parent.parent.parent)
-        
+
         result = subprocess.run(
             [velo, "serve", "nonexistent_module:app"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
-        
+
         # Should not leak sensitive info (but project paths are OK):
         leak_patterns = [
             ".cargo",
-            "rustup", 
+            "rustup",
             "/root/",
             "password",
             "secret",
             "token",
             "api_key",
         ]
-        
+
         output = result.stdout + result.stderr
         for pattern in leak_patterns:
             if pattern in output.lower():
                 pytest.fail(f"Potential info leak: {pattern}")
-        
+
         # Note: home directories like /home/ or /Users/ are OK if they're
         # part of the project path (e.g., /home/runner/work/velo/velo)
 
     def test_leak_002_env_var_exposure(self):
         """LEAK-002: Error should not expose env vars."""
         velo = get_velo_binary()
-        
+
         env = os.environ.copy()
         env["SECRET_API_KEY"] = "super_secret_12345"
         env["DATABASE_PASSWORD"] = "db_pass_67890"
-        
+
         result = subprocess.run(
             [velo, "serve", "crash_module:app"],
             capture_output=True,
             text=True,
             timeout=30,
-            env=env
+            env=env,
         )
-        
+
         # Secrets should not appear in output
         output = result.stdout + result.stderr
         assert "super_secret_12345" not in output
@@ -556,16 +572,16 @@ class TestInformationLeak:
     def test_leak_003_stack_trace_exposure(self):
         """LEAK-003: Internal stack traces should not be exposed."""
         velo = get_velo_binary()
-        
+
         result = subprocess.run(
             [velo, "serve", "definitely_broken:app"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
-        
+
         output = result.stdout + result.stderr
-        
+
         # Should not show:
         assert "thread 'main' panicked" not in output
         assert "RUST_BACKTRACE" not in output
@@ -577,15 +593,16 @@ class TestInformationLeak:
 # COMBINED MEGA ATTACK
 # =============================================================================
 
+
 class TestMegaAttack:
     """MEGA-xxx: Combined simultaneous attacks."""
 
     def test_mega_001_everything_at_once(self):
         """MEGA-001: Multiple attack vectors simultaneously."""
         import concurrent.futures
-        
+
         velo = get_velo_binary()
-        
+
         attacks = [
             [velo, "serve", "`id`:app"],
             [velo, "serve", "../../../etc/passwd:app"],
@@ -594,26 +611,21 @@ class TestMegaAttack:
             [velo, "serve", "main:app", "--port", "-1"],
             [velo, "serve", "main:app", "--workers", "99999"],
         ]
-        
+
         def run_attack(cmd):
             try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 return result.returncode
             except Exception as e:
                 return str(e)
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(run_attack, cmd) for cmd in attacks * 3]
             results = [f.result() for f in futures]
-        
+
         # All should complete (not hang)
         assert len(results) == len(attacks) * 3
-        
+
         # None should be SIGSEGV
         for r in results:
             if isinstance(r, int):
@@ -622,11 +634,11 @@ class TestMegaAttack:
     def test_mega_002_stress_under_resource_pressure(self):
         """MEGA-002: Attacks while system is under resource pressure."""
         velo = get_velo_binary()
-        
+
         # Create some background load
         load_threads = []
         stop_flag = threading.Event()
-        
+
         def create_load():
             data = []
             while not stop_flag.is_set():
@@ -637,12 +649,12 @@ class TestMegaAttack:
                 except MemoryError:
                     data = []
                 time.sleep(0.001)
-        
+
         for _ in range(4):
             t = threading.Thread(target=create_load)
             t.start()
             load_threads.append(t)
-        
+
         try:
             # Run attacks under load
             for _ in range(10):
@@ -650,7 +662,7 @@ class TestMegaAttack:
                     [velo, "serve", "test:app"],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
                 )
                 assert result.returncode != -11
         finally:

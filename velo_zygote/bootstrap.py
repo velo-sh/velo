@@ -7,6 +7,7 @@ try:
 except (ImportError, ValueError):
     from env_profile import ENV_PROFILE
 
+
 def _normalize_environment():
     """
     Ensure critical environment variables are set and normalized.
@@ -19,9 +20,9 @@ def _normalize_environment():
             from .env_profile import EnvProfile, RunContext
         except (ImportError, ValueError):
             from env_profile import EnvProfile, RunContext
-            
+
         profile = EnvProfile.detect()
-        
+
         # Map RunContext back to VELO_ENV convention
         if profile.run_context == RunContext.CI:
             os.environ["VELO_ENV"] = "ci"
@@ -30,9 +31,10 @@ def _normalize_environment():
         else:
             # 🟢 Default to 'dev' only if no other context detected
             os.environ["VELO_ENV"] = "dev"
-            
+
     # Standardize to lowercase
     os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
+
 
 def _log_banner():
     """
@@ -41,11 +43,12 @@ def _log_banner():
     """
     try:
         from velo_zygote import constants
+
         # RFC-0012: Rely on normalized environment (SSOT)
         env = os.environ["VELO_ENV"]
         hash_scm = getattr(constants, "BUILD_SCM_HASH", "unknown")
         proto = getattr(constants, "PROTOCOL_VERSION", "unknown")
-        
+
         # Identity Matrix (Rule 2: Fail-Loud/Transparency)
         banner = [
             f"\n\033[1m[Velo Zygote Bootstrap]\033[0m",
@@ -53,7 +56,7 @@ def _log_banner():
             f"  • ENV:      {ENV_PROFILE.describe()}",
             f"  • BUILD:    {hash_scm} (v{proto})",
             f"  • ROOT:     {os.path.dirname(os.path.abspath(__file__))}",
-            f"  • CWD:      {os.getcwd()}\n"
+            f"  • CWD:      {os.getcwd()}\n",
         ]
         sys.stderr.write("\n".join(banner))
         sys.stderr.flush()
@@ -61,11 +64,12 @@ def _log_banner():
         # Don't let banner failure crash the service
         sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
 
+
 def initialize():
     """
     Standardize the Velo Python environment.
     This must be called at the very beginning of any entry point.
-    
+
     Rule 1: Explicit Bootstrap
     Rule 3: Boot-Validation
     """
@@ -77,11 +81,11 @@ def initialize():
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     # PKG_ROOT is the directory containing velo_zygote/
     _pkg_root = os.path.dirname(_script_dir)
-    
+
     # Ensure package root is in sys.path
     if _pkg_root not in sys.path:
         sys.path.insert(0, _pkg_root)
-    
+
     # Ensure CWD is at the front (Standard parity with CPython)
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
@@ -89,6 +93,7 @@ def initialize():
     # 3. Pre-flight Integrity Check (Fail-Fast)
     try:
         from velo_zygote import integrity
+
         integrity.validate_runtime()
     except Exception as e:
         # Rule 2: Fail-Loud Principle

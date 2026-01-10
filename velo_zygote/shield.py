@@ -9,12 +9,12 @@ except (ImportError, ValueError):
     from settings import velo_config
 
 
-
 class ImportShield:
     """
     RFC-0012: Resilience Whitelist for Framework Bootstrap.
     Prevents unauthorized access to internal framework modules.
     """
+
     _active = False
     _is_velo_import_shield = True
 
@@ -37,17 +37,20 @@ class ImportShield:
         # so any subsequent import of velo_zygote.* is from untrusted user code.
         if fullname.startswith("velo_zygote"):
             msg = f"Unauthorized access to internal framework module: {fullname}"
-            
+
             # Check mode
             mode = os.environ.get("VELO_SHIELD_MODE", "enforce")
-            
+
             if mode == "dry_run":
                 try:
-                    sys.stderr.write(f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n")
+                    sys.stderr.write(
+                        f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n"
+                    )
                     sys.stderr.flush()
-                except: pass
+                except:
+                    pass
                 return None  # Allow the import
-            
+
             if mode == "disabled":
                 return None
 
@@ -55,24 +58,25 @@ class ImportShield:
                 # Log to stderr for visibility in CI logs (Trap 178.2/3)
                 sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
                 sys.stderr.flush()
-            except: pass
+            except:
+                pass
             raise ImportError(msg)
-        
+
         # 1. Block Sensitive Standard Library Modules (Defect-01)
         # Workers should not spawn subprocesses or access valid OS functions directly.
         if fullname in ("os", "subprocess"):
             msg = f"Unauthorized access to sensitive module: {fullname}"
-            
+
             # Check mode (DRY RUN logic applied here too)
             mode = os.environ.get("VELO_SHIELD_MODE", "enforce")
             if mode == "dry_run":
-                 return None
+                return None
 
             if mode == "disabled":
-                 return None
-                 
+                return None
+
             raise ImportError(msg)
-        
+
         # 2. Shadowing Protection: main.py
         # This finder is installed at the top of sys.meta_path.
         # If it returns None, Python falls back to standard finders (PathFinder).
@@ -84,7 +88,7 @@ class ImportShield:
         # Use name check instead of isinstance to avoid potential ABC issues or hangs
         if not any(type(f).__name__ == "ImportShield" for f in sys.meta_path):
             sys.meta_path.insert(0, ImportShield())
-            
+
             # Centralized Path Sanitization (RFC-0011 6A.1)
             # Prevent shadowing of user modules by framework modules.
             # Zygote itself needs this path during boot (Trap 178.6)
@@ -93,7 +97,8 @@ class ImportShield:
                     framework_dir = os.path.dirname(os.path.abspath(__file__))
                     if framework_dir in sys.path:
                         sys.path.remove(framework_dir)
-                except: pass
+                except:
+                    pass
 
 
 # RFC-0012 Phase 11.3: Auto-install when environment variable is set.
@@ -117,11 +122,14 @@ class PathValidator:
         try:
             script = Path(script_path).resolve()
             script_str = str(script)
-            
+
             for blocked in velo_config.blocked_paths:
                 if script_str.startswith(blocked + "/") or script_str == blocked:
-                    return False, f"Access denied: script in protected system path '{blocked}'"
-            
+                    return (
+                        False,
+                        f"Access denied: script in protected system path '{blocked}'",
+                    )
+
             return True, ""
         except Exception as e:
             return False, f"Invalid script path: {e}"

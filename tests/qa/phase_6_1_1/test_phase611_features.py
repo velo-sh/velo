@@ -13,7 +13,6 @@ Following QA SOP v2.2.
 import pytest
 
 
-
 class TestL1Features:
     """L1: Feature tests for Zygote Worker Integration."""
 
@@ -67,7 +66,9 @@ class TestL1Features:
         # Should see multiple workers responding
         # print(f"DEBUG: PIDs seen: {pids_seen}")
         # print(f"DEBUG: First 10 responses: {responses_seen[:10]}")
-        assert len(pids_seen) >= 2, f"Only {len(pids_seen)} worker(s) seen ({pids_seen}), expected distribution. Sequential trace: {responses_seen[:10]}..."
+        assert (
+            len(pids_seen) >= 2
+        ), f"Only {len(pids_seen)} worker(s) seen ({pids_seen}), expected distribution. Sequential trace: {responses_seen[:10]}..."
 
     def test_L1_3_uds_socket_created(self, velo_serve_fixture):
         """L1-3: UDS socket created and accessible.
@@ -100,6 +101,7 @@ class TestL1Features:
 
         # Either way, server should respond
         import requests
+
         response = requests.get(f"http://127.0.0.1:{proc.port}/health")
         assert response.status_code == 200
 
@@ -171,14 +173,17 @@ class TestL1Features:
         3. Verify X-Forwarded-For is present
         """
         import requests
+
         # ARCH-GUARD: Ensure proxy is active even for single worker
         proc = velo_serve_fixture.start("main:app", workers=1, zygote=True)
         proc.wait_ready()
 
         response = requests.get(f"http://127.0.0.1:{proc.port}/headers")
         data = response.json()
-        
+
         # Headers are returned as a dict, keys might be case-sensitive depending on app
         xff = next((v for k, v in data.items() if k.lower() == "x-forwarded-for"), None)
-        assert xff is not None, f"X-Forwarded-For missing in workers=1 mode. Headers: {data}"
+        assert (
+            xff is not None
+        ), f"X-Forwarded-For missing in workers=1 mode. Headers: {data}"
         assert xff == "127.0.0.1"

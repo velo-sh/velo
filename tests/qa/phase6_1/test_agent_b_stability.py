@@ -60,12 +60,15 @@ class TestAgentBStability:
     def test_CORE_61_007_create_app_factory(self, isolated_env):
         """Detects `def create_app()` factory pattern."""
         env = isolated_env
-        env.create_app("main.py", """
+        env.create_app(
+            "main.py",
+            """
 from fastapi import FastAPI
 
 def create_app():
     return FastAPI()
-""")
+""",
+        )
         result = env.run_velo("serve", "--dry-run", timeout=2)
         assert result.returncode == 0 or "factory" in result.stderr.lower()
 
@@ -95,7 +98,9 @@ def create_app():
     def test_CORE_61_011_asgi_lifespan_shutdown(self, isolated_env):
         """[GAP-01] ASGI Lifespan: shutdown waits for lifespan event."""
         env = isolated_env
-        env.create_app("main.py", '''
+        env.create_app(
+            "main.py",
+            """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
@@ -106,7 +111,8 @@ async def lifespan(app):
     print("SHUTDOWN")  # This MUST be reached on graceful shutdown
 
 app = FastAPI(lifespan=lifespan)
-''')
+""",
+        )
         # Would verify SHUTDOWN appears in output after SIGTERM
 
     # ===== GAP-02: Gunicorn Config Override =====
@@ -144,7 +150,6 @@ app = FastAPI(lifespan=lifespan)
         pass
 
     # ===== REG-61: Regression Tests =====
-
 
     def test_REG_61_001_velo_run_unchanged(self, isolated_env):
         """velo run still works after serve changes."""

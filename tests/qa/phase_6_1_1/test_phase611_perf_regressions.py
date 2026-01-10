@@ -61,7 +61,9 @@ class TestL5Performance:
 
             print(f"Worker respawn: {respawn_time * 1000:.1f}ms")
             # This should be < 20ms
-            assert respawn_time < 0.020, f"Cold start {respawn_time * 1000:.1f}ms > 20ms"
+            assert (
+                respawn_time < 0.020
+            ), f"Cold start {respawn_time * 1000:.1f}ms > 20ms"
 
     def test_PERF_602_proxy_latency_overhead(self, velo_serve_fixture):
         """PERF-602: L7 Proxy latency overhead < 1ms.
@@ -143,7 +145,9 @@ class TestL5Performance:
             print(f"Memory sharing efficiency: {efficiency:.1f}%")
 
             # PSS should be < 50% of RSS with good COW sharing
-            assert sharing_ratio < 0.80, f"COW sharing ratio {sharing_ratio:.2f} too high (expected < 0.80)"
+            assert (
+                sharing_ratio < 0.80
+            ), f"COW sharing ratio {sharing_ratio:.2f} too high (expected < 0.80)"
 
     def test_PERF_604_zygote_speedup(self, velo_serve_fixture):
         """PERF-604: Zygote speedup vs CPython > 10x.

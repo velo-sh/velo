@@ -7,6 +7,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
+
 try:
     from .lifecycle import post_fork_reinit, WorkerRegistry
     from .utils import LogUtils
@@ -14,8 +15,10 @@ except (ImportError, ValueError):
     from lifecycle import post_fork_reinit, WorkerRegistry  # type: ignore[no-redef, import-not-found]
     from utils import LogUtils  # type: ignore[no-redef, import-not-found]
 
+
 class InboundSharedMemory:
     """Encapsulates validation and handling of inbound shared memory FDs."""
+
     def __init__(self, fd: int, expected_size: int):
         self.fd = fd
         self.expected_size = expected_size
@@ -24,12 +27,15 @@ class InboundSharedMemory:
         """Validate the FD is a regular file with correct size."""
         try:
             import stat as stat_mod
+
             st = os.fstat(self.fd)
             if not stat_mod.S_ISREG(st.st_mode):
                 LogUtils.log(f"Security Violation: FD {self.fd} is not a regular file")
                 return False
             if self.expected_size and st.st_size < self.expected_size:
-                LogUtils.log(f"Security Violation: SHM size mismatch ({st.st_size} < {self.expected_size})")
+                LogUtils.log(
+                    f"Security Violation: SHM size mismatch ({st.st_size} < {self.expected_size})"
+                )
                 return False
             return True
         except Exception as e:
@@ -43,12 +49,13 @@ class InboundSharedMemory:
             pass
 
     @classmethod
-    def from_command(cls, cmd: Dict[str, Any]) -> Optional['InboundSharedMemory']:
-        fd = cmd.get('shm_fd')
-        size = cmd.get('shm_size')
+    def from_command(cls, cmd: Dict[str, Any]) -> Optional["InboundSharedMemory"]:
+        fd = cmd.get("shm_fd")
+        size = cmd.get("shm_size")
         if fd is not None:
             return cls(int(fd), int(size) if size else 0)
         return None
+
 
 class ForkHandler:
     """Handles the forking logic and child process environment setup."""
@@ -57,7 +64,7 @@ class ForkHandler:
     def handle_fork(
         cmd: Dict[str, Any],
         worker_registry: WorkerRegistry,
-        preloaded_modules: List[str]
+        preloaded_modules: List[str],
     ) -> int:
         """Fork and execute script."""
         script_path = cmd.get("script_path")
@@ -67,7 +74,7 @@ class ForkHandler:
         stderr_path = cmd.get("stderr_path")
         exit_code_path = cmd.get("exit_code_path")
         worker_ttl = cmd.get("worker_ttl", 3600)
-        
+
         # Memory Gravity (SHM Support)
         shm = InboundSharedMemory.from_command(cmd)
         shm_fd = shm.fd if shm else None
@@ -80,22 +87,27 @@ class ForkHandler:
                 # 1. Cord-Cutting (Security)
                 # Keep stdout/stderr/shm_fd if we have them
                 keep = {0, 1, 2}
-                if shm_fd is not None: keep.add(shm_fd)
-                
+                if shm_fd is not None:
+                    keep.add(shm_fd)
+
                 post_fork_reinit(keep_fds=keep)
-                
+
                 # RFC-0012: Activate security shield in worker after fork
                 try:
                     from .shield import ImportShield
+
                     ImportShield.activate()
                 except (ImportError, ValueError):
                     try:
                         from shield import ImportShield  # type: ignore[no-redef, import-not-found]
+
                         ImportShield.activate()
-                    except: pass
-                
+                    except:
+                        pass
+
                 # RFC-0012: Hygiene - Restore SIGPIPE to default for worker
                 import signal
+
                 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
                 # 2. Execution
@@ -112,7 +124,7 @@ class ForkHandler:
                     max_bundle_size=cmd.get("max_bundle_size"),
                     worker_ttl=worker_ttl,
                     shm_fd=shm_fd,
-                    shm_size=shm_size
+                    shm_size=shm_size,
                 )
                 os._exit(exit_code)
             except Exception as e:
@@ -129,12 +141,19 @@ class ForkHandler:
 
     @staticmethod
     def _child_process(
-        script_path: str, args: List[str], env: Dict[str, str], stdout_path: Optional[str],
-        stderr_path: Optional[str], exit_code_path: Optional[str],
-        fast_mode: bool, bundle_path: Optional[str], project_root: Optional[str],
-        max_bundle_size: Optional[int], worker_ttl: int,
+        script_path: str,
+        args: List[str],
+        env: Dict[str, str],
+        stdout_path: Optional[str],
+        stderr_path: Optional[str],
+        exit_code_path: Optional[str],
+        fast_mode: bool,
+        bundle_path: Optional[str],
+        project_root: Optional[str],
+        max_bundle_size: Optional[int],
+        worker_ttl: int,
         shm_fd: Optional[int] = None,
-        shm_size: Optional[int] = None
+        shm_size: Optional[int] = None,
     ) -> int:
         # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
         #    Ensure THIS child dies if Zygote (Parent) dies.
@@ -142,11 +161,12 @@ class ForkHandler:
         if sys.platform.startswith("linux"):
             try:
                 import ctypes
+
                 try:
                     libc = ctypes.CDLL("libc.so.6")
                 except:
                     libc = ctypes.CDLL(None)
-                
+
                 PR_SET_PDEATHSIG = 1
                 SIGKILL = 9
                 res = libc.prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)
@@ -160,13 +180,13 @@ class ForkHandler:
         # 1. IO Redirection
         ForkHandler._redirect_io(stdout_path, stderr_path)
 
-        
         # 2. Environment Setup
         os.environ.update(env)
-        
+
         # 2.5 Security: Activate ImportShield (Trap 178.5)
         try:
             from velo_zygote.shield import ImportShield
+
             ImportShield.activate()
         except ImportError:
             pass
@@ -179,8 +199,9 @@ class ForkHandler:
         # Activate monitor in worker to prevent zombies if Zygote dies
         if sys.platform == "darwin":
             from velo_zygote.utils import MacOSDeathSigMonitor
+
             MacOSDeathSigMonitor.start_monitoring()
-        
+
         # 3. Path Normalization
         if script_path:
             script_dir = os.path.dirname(os.path.abspath(script_path))
@@ -196,26 +217,30 @@ class ForkHandler:
         try:
             if not script_path and not fast_mode:
                 raise ValueError("Neither script_path nor fast_mode provided")
-            
+
             if script_path:
                 # Standard script execution
                 sys.argv = [script_path] + args
                 p = Path(script_path)
-                
+
                 # SHM Hand-off (Phase 7.3)
                 if shm_fd is not None:
                     os.environ["VELO_SHM_FD"] = str(shm_fd)
                     os.environ["VELO_SHM_SIZE"] = str(shm_size)
-                
+
                 if not p.exists():
-                    raise FileNotFoundError(f"Forensic Execution Failure: Script '{script_path}' vanished before execution start.")
-                
+                    raise FileNotFoundError(
+                        f"Forensic Execution Failure: Script '{script_path}' vanished before execution start."
+                    )
+
                 with open(script_path, "rb") as f:
                     try:
                         code = compile(f.read(), script_path, "exec")
                     except Exception as e:
-                        raise RuntimeError(f"Compilation Intent Failure: Target '{script_path}' is not a valid Python script: {e}")
-                    
+                        raise RuntimeError(
+                            f"Compilation Intent Failure: Target '{script_path}' is not a valid Python script: {e}"
+                        )
+
                     # Prepare execution environment
                     child_globals = {
                         "__name__": "__main__",
@@ -226,7 +251,7 @@ class ForkHandler:
                         "__loader__": None,
                         "__spec__": None,
                     }
-                    
+
                     # Inject VELO_SHM if available
                     if shm_fd is not None:
                         try:
@@ -242,10 +267,12 @@ class ForkHandler:
                                     from memory import MEMORY_MANAGER  # type: ignore[no-redef]
                                 except ImportError:
                                     MEMORY_MANAGER = None  # type: ignore[assignment]
-                                    
+
                         if MEMORY_MANAGER:
                             try:
-                                shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size if shm_size else 0)
+                                shm_obj = MEMORY_MANAGER.attach(
+                                    shm_fd, shm_size if shm_size else 0
+                                )
                                 if shm_obj is not None:
                                     child_globals["VELO_SHM"] = shm_obj
                             except Exception as e:
@@ -255,7 +282,7 @@ class ForkHandler:
             elif fast_mode:
                 # Already handled in _activate_fast_mode
                 pass
-                
+
         except SystemExit as e:
             exit_code = e.code if isinstance(e.code, int) else 0
         except Exception as e:
@@ -266,11 +293,12 @@ class ForkHandler:
             try:
                 sys.stdout.flush()
                 sys.stderr.flush()
-            except: pass
-        
+            except:
+                pass
+
         # 6. Final Cleanup
         ForkHandler._cleanup_child(stdout_path, stderr_path, exit_code_path, exit_code)
-        
+
         return exit_code
 
     @staticmethod
@@ -279,23 +307,37 @@ class ForkHandler:
             try:
                 sys.stdout = open(stdout_path, "a")
             except OSError as e:
-                print(f"Forensic IO Warning: Failed to redirect stdout to '{stdout_path}': {e}", file=sys.stderr)
+                print(
+                    f"Forensic IO Warning: Failed to redirect stdout to '{stdout_path}': {e}",
+                    file=sys.stderr,
+                )
         if stderr_path:
             try:
                 sys.stderr = open(stderr_path, "a")
             except OSError as e:
-                print(f"Forensic IO Warning: Failed to redirect stderr to '{stderr_path}': {e}", file=sys.stderr)
+                print(
+                    f"Forensic IO Warning: Failed to redirect stderr to '{stderr_path}': {e}",
+                    file=sys.stderr,
+                )
 
     @staticmethod
-    def _activate_fast_mode(bundle_path: Optional[str], project_root: Optional[str], max_size: Optional[int]) -> None:
+    def _activate_fast_mode(
+        bundle_path: Optional[str], project_root: Optional[str], max_size: Optional[int]
+    ) -> None:
         """Specialized loading for pre-compiled or bundled apps."""
         # Implementation details...
         pass
 
     @staticmethod
-    def _cleanup_child(stdout_path: Optional[str], stderr_path: Optional[str], exit_code_path: Optional[str], exit_code: int) -> None:
+    def _cleanup_child(
+        stdout_path: Optional[str],
+        stderr_path: Optional[str],
+        exit_code_path: Optional[str],
+        exit_code: int,
+    ) -> None:
         if exit_code_path:
             try:
                 with open(exit_code_path, "w") as f:
                     f.write(str(exit_code))
-            except: pass
+            except:
+                pass
