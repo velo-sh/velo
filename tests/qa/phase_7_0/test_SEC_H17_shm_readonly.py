@@ -36,9 +36,13 @@ class TestSecH17ShmReadonly:
         env = shm_test_env
         env.create_file("main.py", "import time, sys; print('READY', flush=True); sys.stderr.flush(); time.sleep(10)")
         
-        # Create a dummy SHM file
+        # Create a dummy SHM file (valid safetensors format)
+        import struct
         shm_file = env.path / "model.safetensors"
-        shm_file.write_bytes(b"A" * 4096)
+        header = b'{"test": [0, 1024]}'
+        header_len = len(header)
+        # Pad header to 8-byte alignment (Required by some loaders, though Velo handles it)
+        shm_file.write_bytes(struct.pack("<Q", header_len) + header + b"\x00" * 4096)
         
         # Launch Velo with SHM using spawn_velo (non-blocking)
         proc = env.spawn_velo("run", "--shm", str(shm_file), "main.py", 
@@ -114,10 +118,13 @@ class TestSecH17ShmReadonly:
         print(f"\n[RITUAL 30] Architecturally Reported Page Size: {actual_page_size} bytes")
         
         # 2. Create a synthetic safetensors file
+        import struct
         shm_file = env.path / "identity_check.safetensors"
+        header = b'{"data": [0, 8192]}'
+        header_len = len(header)
         # We write exactly 1MB (not aligned to 2MB HugePage if present, but aligned to 4KB)
         file_size = 1024 * 1024
-        shm_file.write_bytes(b"B" * file_size)
+        shm_file.write_bytes(struct.pack("<Q", header_len) + header + b"B" * file_size)
         
         # 3. The Assertion: assert_eq!(size % actual_page_size, 0)
         # RFC-0015 H-30/H-33: Even in fallback, the segment must be page-aligned.
