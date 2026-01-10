@@ -53,7 +53,6 @@ CMD ["bash", "-c", "\
     echo '==================== Phase 1: Setup ====================' && \
     echo '' && \
     echo '▶ Setting up Python environment...' && \
-    uv venv --python 3.11 /tmp/.venv-docker && \
     uv sync --extra dev && \
     echo '✅ Python environment ready' && \
     echo '' && \
@@ -70,7 +69,7 @@ CMD ["bash", "-c", "\
     echo '✅ Rust tests passed' && \
     echo '' && \
     echo '▶ Running Python tests...' && \
-    . /tmp/.venv-docker/bin/activate && \
+    . .venv/bin/activate && \
     echo '' && \
     echo '--- QA: Basic Harness ---' && \
     pytest tests/qa/test_harness.py tests/qa/test_fingerprint.py -v --tb=short && \
