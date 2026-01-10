@@ -143,6 +143,7 @@ pub fn set_socket_buffer_sizes<S: AsRawFd>(stream: &S, buffer_size: usize) -> io
     let size = buffer_size as libc::c_int;
 
     // Set send buffer (SO_SNDBUF)
+    // SECURITY: setsockopt SOL_SOCKET is safe on valid fds (RFC-0011 D.3).
     let result = unsafe {
         libc::setsockopt(
             fd,
@@ -183,6 +184,7 @@ pub fn get_socket_buffer_sizes<S: AsRawFd>(stream: &S) -> io::Result<(usize, usi
     let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
 
     // Get send buffer size
+    // SECURITY: getsockopt SOL_SOCKET is safe on valid fds (RFC-0011 D.3).
     let result = unsafe {
         libc::getsockopt(
             fd,
