@@ -34,6 +34,9 @@ class TestHGovEnforcement(unittest.TestCase):
         env.update(env_vars)
         # Ensure we don't pick up local dev config unless intended
         env["VELO_IS_ZYGOTE"] = "0"
+        # Force colors for signal verification (Ritual 70.1)
+        env["CLICOLOR_FORCE"] = "1"
+        env["FORCE_COLOR"] = "1"
         
         return subprocess.run(
             [VELO_BIN] + args,
@@ -64,7 +67,8 @@ class TestHGovEnforcement(unittest.TestCase):
         self.assertIn("Healing:", stderr)
         
         # ANSI check: \x1b[ is the CSI (Control Sequence Introducer)
-        self.assertIn("\x1b[", stderr, "Output should contain ANSI color codes")
+        # We need to make sure the binary is actually outputting them
+        self.assertIn("\x1b[", stderr, "Output should contain ANSI color codes (forced via CLICOLOR_FORCE)")
         
         print("\n[HOSTILE] Ritual 70.1 PASSED: Audit signals are compliant.")
 
@@ -122,6 +126,51 @@ class TestHGovEnforcement(unittest.TestCase):
         
         self.assertIn("H-GOV AUDIT", res_prod.stderr)
         print("\n[HOSTILE] Ritual 70.3 PASSED: SHM fallback gracefully degrades in Prod.")
+
+    def test_SEC_H70_ritual_70_4_fast_loader_fallback(self):
+        """Verify Ritual 70.4: Fast Loader Fallback (Corrupted Bundle)"""
+        
+        # Create a corrupted bundle.veloc
+        bundle_file = self.work_dir / "bundle.veloc"
+        bundle_file.write_text("NOT_A_VALID_BUNDLE")
+        
+        # Prod Mode: Should fallback to normal imports
+        res = self.run_velo(
+            {"VELO_ENV": "prod"},
+            ["run", "--fast", "simple.py"]
+        )
+        
+        # PROBE: run_with_fast_loader uses '?' during canonicalize/verify
+        if res.returncode != 0:
+            print(f"\n🚨 [H-GOV DEFECT] Fast Loader failure causes crash in PROD! RC={res.returncode}")
+            print(f"STDERR: {res.stderr}")
+            self.fail("Fast Loader failure must fallback to standard execution in Prod mode")
+        
+        self.assertIn("HEARTBEAT_ACK", res.stdout)
+        print("\n[HOSTILE] Ritual 70.4 PASSED: Fast Loader fallback is functional.")
+
+    def test_SEC_H70_ritual_70_5_invalid_shm_path(self):
+        """Verify Ritual 70.5: Validation Boundary (Non-existent SHM)"""
+        
+        # 1. Dev Mode (Strict) - Should crash early
+        res_dev = self.run_velo(
+            {"VELO_ENV": "dev"},
+            ["run", "--shm", "/tmp/non_existent_path_999.safetensors", "simple.py"]
+        )
+        self.assertNotEqual(res_dev.returncode, 0)
+        
+        # 2. Prod Mode (Relaxed) - Should fallback
+        res_prod = self.run_velo(
+            {"VELO_ENV": "prod"},
+            ["run", "--shm", "/tmp/non_existent_path_999.safetensors", "simple.py"]
+        )
+        
+        if res_prod.returncode != 0:
+            print(f"\n🚨 [H-GOV DEFECT] Invalid SHM path causes crash in PROD! RC={res_prod.returncode}")
+            print(f"STDERR: {res_prod.stderr}")
+            self.fail("Invalid SHM path must fallback to standard execution in Prod mode")
+            
+        print("\n[HOSTILE] Ritual 70.5 PASSED: Invalid SHM path handles gracefully.")
 
     def test_SEC_H70_chaos_env_fail_closed(self):
         """Verify Environmental Fail-Closed: Unknown VELO_ENV should be strict"""
