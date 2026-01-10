@@ -61,7 +61,7 @@ class TestSecH17ShmReadonly:
             while time.time() - start_time < T_SHORT:
                 if proc.poll() is not None:
                     stdout, stderr = proc.communicate()
-                    pytest.fail(f"Velo died prematurely! RC={proc.returncode} STDERR={stderr}")
+                    pytest.fail(f"Velo died prematurely! RC={proc.returncode} STDOUT={stdout} STDERR={stderr}")
                 
                 pid = proc.pid
                 maps_path = Path(f"/proc/{pid}/maps")
