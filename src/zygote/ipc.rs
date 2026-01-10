@@ -590,7 +590,7 @@ mod tests {
             exit_code_path: Some(PathBuf::from("/tmp/exit.txt")),
             fast_mode: true,
             bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
-            project_root: Some(PathBuf::from("/home/user/project")),
+            project_root: Some(PathBuf::from("${HOME}/project")),
             max_bundle_size: Some(1024 * 1024),
             env: Box::new(std::collections::HashMap::new()),
             shm_size: Some(4096),

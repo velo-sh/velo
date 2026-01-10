@@ -119,7 +119,8 @@ pub async fn ensure_socket_directory(path: &Path) -> std::io::Result<()> {
 /// Uses libc::fcntl which is safe for valid file descriptors.
 #[cfg(unix)]
 pub fn set_cloexec(fd: std::os::unix::io::RawFd) -> std::io::Result<()> {
-    // Get existing flags
+    // SECURITY: fcntl F_GETFD/F_SETFD are safe operations on valid descriptors.
+    // This ensures FDs are not leaked to children via EXEC (RFC-0011 C.1).
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0 {
         return Err(std::io::Error::last_os_error());
@@ -370,6 +371,8 @@ impl EnvironmentShield {
 #[cfg(unix)]
 pub fn apply_standard_hygiene(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
+    // SECURITY: pre_exec is required for low-level process hygiene (signals, FDs)
+    // following RFC-0012 §3.6 guidelines.
     unsafe {
         cmd.pre_exec(|| {
             // 1. Reset Signal Mask (SEC-FS-002)
