@@ -110,6 +110,8 @@ jobs:
             workflow:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-velo/**'
+              - 'Dockerfile.*'
+              - 'scripts/**'
             qa_infra:
               - 'tests/qa/conftest.py'
               - 'tests/qa/utils/**'
