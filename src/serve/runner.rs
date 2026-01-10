@@ -632,12 +632,8 @@ pub fn run_server(
         }
     }
 
-    // Start Zygote if enabled and we have preload modules (Skip in Dry Run)
-    if !args.dry_run
-        && args.use_zygote
-        && !preload_modules.is_empty()
-        && crate::zygote::is_supported()
-    {
+    // Start Zygote if enabled
+    if args.use_zygote && crate::zygote::is_supported() {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
@@ -646,18 +642,16 @@ pub fn run_server(
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
             if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
-                logger.warn(&format!("Zygote pre-warm failed: {}", e));
-
-                // DIAGNOSTIC: Dump Zygote log to see why it crashed
-                let log_path = crate::zygote::get_log_path();
-                if let Ok(content) = std::fs::read_to_string(&log_path) {
-                    eprintln!("--- Zygote Log Dump ({}) ---", log_path.display());
-                    eprintln!("{}", content);
-                    eprintln!("-------------------------------------------");
-                }
-
-                if args.log_format == LogFormat::Text {
-                    eprintln!("   Continuing without Zygote optimization");
+                let signal = crate::common::governance::GovernanceSignal::new(
+                    crate::common::governance::SignalComponent::ZygoteIPC,
+                    format!("Zygote pre-warm failed: {}", e),
+                    "Continuing without Zygote optimization",
+                    "Check Zygote logs and socket permissions.",
+                );
+                if config.strict_optimizations {
+                    return Err(anyhow::anyhow!(signal.format_critical()));
+                } else {
+                    signal.report_audit();
                 }
             } else {
                 logger.info("Zygote ready");
@@ -689,9 +683,33 @@ pub fn run_server(
                     let _ = std::fs::remove_file(&socket_path);
                 }
                 Err(e) => {
-                    logger.error(&format!("Existing Zygote not responding: {}", e));
-                    let _ = std::fs::remove_file(&socket_path);
+                    let signal = crate::common::governance::GovernanceSignal::new(
+                        crate::common::governance::SignalComponent::ZygoteIPC,
+                        format!("Existing Zygote not responding: {}", e),
+                        "Continuing without Zygote optimization",
+                        "Check for stale socket files in /tmp.",
+                    );
+                    if config.strict_optimizations {
+                        return Err(anyhow::anyhow!(signal.format_critical()));
+                    } else {
+                        signal.report_audit();
+                        let _ = std::fs::remove_file(&socket_path);
+                    }
                 }
+            }
+        } else {
+            // Socket exists but is dead (is_socket_alive returned false)
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::ZygoteIPC,
+                "Existing Zygote socket is dead",
+                "Continuing without Zygote optimization",
+                "Clean up stale socket file.",
+            );
+            if config.strict_optimizations {
+                return Err(anyhow::anyhow!(signal.format_critical()));
+            } else {
+                signal.report_audit();
+                let _ = std::fs::remove_file(&socket_path);
             }
         }
     }
