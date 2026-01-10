@@ -156,12 +156,22 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         }
 
         // If we reach here, try_zygote_run returned None (Fallback triggered)
-        // RFC-0015: In Memory Gravity mode, fallback is ILLEGAL as it breaks custody.
-        if cmd.shm.is_some() {
-            bail!(
-                "🚨 {} SHM mode requested but Zygote protocol failed to initialize.\n\
-                 Fallback to normal mode is blocked to prevent silent performance degradation (Memory Gravity Protection).",
-                "CRITICAL:".red().bold()
+        // H-Gov (Heightened Governance): Determine fallback behavior
+        if config.strict_optimizations {
+            // RFC-0015: In Memory Gravity mode, fallback is always ILLEGAL in strict mode.
+            if cmd.shm.is_some() {
+                bail!(
+                    "🚨 {} SHM mode requested but Zygote protocol failed to initialize.\n\
+                     Fallback to normal mode is blocked (strict_optimizations=true) to prevent silent performance degradation.",
+                    "H-GOV CRITICAL:".red().bold()
+                );
+            }
+        } else {
+            // Production/Relaxed Mode: Audit the fallback but proceed (Graceful Degradation)
+            eprintln!(
+                "⚠️ {} Optimization 'Zygote/SHM' failed to initialize. Falling back to standard execution.\n\
+                 📊 Audit Signal: PERFORMANCE_REGRESSION_RISK (Fallback Governance)",
+                "H-GOV AUDIT:".yellow().bold()
             );
         }
     }
