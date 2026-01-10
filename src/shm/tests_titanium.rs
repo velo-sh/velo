@@ -86,7 +86,10 @@ mod tests {
         tmp.write_all(&[0u8; 10]).unwrap(); // 10 bytes content
         tmp.flush().unwrap();
 
-        let registry = MemoryRegistry::new(VeloConfig::default()); // Defaults to strict_numa=false in tests usually unless env set
+        let registry = MemoryRegistry::new(VeloConfig {
+            strict_optimizations: false,
+            ..VeloConfig::default()
+        });
 
         let segment = registry
             .create_segment("qa_test_alignment_underflow", tmp.path())
@@ -182,7 +185,10 @@ mod tests {
 
         // We use a safe wrapper to avoid actual checking if OS fails set_len on massive sizes
         if tmp_limit.as_file().set_len(huge_size).is_ok() {
-            let registry = MemoryRegistry::new(VeloConfig::default());
+            let registry = MemoryRegistry::new(VeloConfig {
+                strict_optimizations: false,
+                ..VeloConfig::default()
+            });
             let res = registry.create_segment("qa_test_limit", tmp_limit.path());
 
             assert!(res.is_err());
