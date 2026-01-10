@@ -49,33 +49,44 @@ class TestSecH17ShmReadonly:
         shm_file.write_bytes(struct.pack("<Q", header_len) + header + b"\x00" * 4096)
         
         # Launch Velo with SHM using spawn_velo (non-blocking)
+        # Use text=True for string output
         proc = env.spawn_velo("run", "--shm", str(shm_file), "main.py", 
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         
         try:
-            # Wait for readiness using Ritual 43 (Retry-and-Accumulate)
+            # Phase 1: Wait for READY signal (Ritual 43.1: Synchronous Readiness)
+            # This ensures the worker has started and mapped the SHM (or tried to)
+            ready_line = proc.stdout.readline()
+            if "READY" not in ready_line:
+                stdout_rem, stderr = proc.communicate(timeout=5)
+                pytest.fail(f"Velo failed to reach READY state! STDOUT={ready_line}{stdout_rem} STDERR={stderr}")
+            
+            print(f"✅ Velo reported READY: {ready_line.strip()}")
+
+            # Phase 2: Map Audit (Ritual 21: Forensic Invariant Verification)
             import time
             start_time = time.time()
-            ready = False
+            mapped = False
             
             while time.time() - start_time < T_SHORT:
                 if proc.poll() is not None:
-                    stdout, stderr = proc.communicate()
-                    pytest.fail(f"Velo died prematurely! RC={proc.returncode} STDOUT={stdout} STDERR={stderr}")
+                    stdout_rem, stderr = proc.communicate()
+                    pytest.fail(f"Velo died prematurely after READY! RC={proc.returncode} STDOUT={stdout_rem} STDERR={stderr}")
                 
                 pid = proc.pid
                 maps_path = Path(f"/proc/{pid}/maps")
                 if maps_path.exists():
                     content = maps_path.read_text()
                     # RFC-0015: In cold start, it's a file mapping. In SHM mode, it's a memfd.
-                    if str(shm_file.name) in content or f"memfd:shm-" in content:
-                        ready = True
+                    if str(shm_file.name) in content or "memfd:shm-" in content:
+                        mapped = True
                         break
-                time.sleep(0.1)
-
-            if not ready:
-                proc.kill()
-                pytest.fail("Timeout waiting for SHM mapping to appear in /proc/{pid}/maps")
+                time.sleep(0.5)
+            
+            if not mapped:
+                stdout_rem, stderr = proc.communicate()
+                maps_info = Path(f"/proc/{proc.pid}/maps").read_text() if Path(f"/proc/{proc.pid}/maps").exists() else "N/A"
+                pytest.fail(f"Timeout waiting for SHM mapping in /proc/{proc.pid}/maps. CONTENT:\n{maps_info}\nSTDOUT={stdout_rem} STDERR={stderr}")
 
             pid = proc.pid
             
