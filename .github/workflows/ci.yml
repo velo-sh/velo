@@ -654,7 +654,11 @@ jobs:
     name: "QA 6.2: Kinetic Regression Gate"
     runs-on: ${{ matrix.os }}
     needs: [build, build-matrix, changes]
-    if: needs.changes.outputs.kinetic == 'true' || needs.changes.outputs.workflow == 'true'
+    if: |
+      needs.changes.outputs.kinetic == 'true' || 
+      needs.changes.outputs.workflow == 'true' ||
+      needs.changes.outputs.rust == 'true' ||
+      needs.changes.outputs.qa_infra == 'true'
     strategy:
       fail-fast: false
       matrix:
