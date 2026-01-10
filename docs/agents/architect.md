@@ -157,8 +157,13 @@ Velo uses process isolation - it doesn't modify the user's Python interpreter:
 
 ---
 
-## 🔗 Related Documents
+### Architectural Standards (SOPs)
+- [SOP-001: Master Architecture Lifecycle](../architecture/SOP-001-master-lifecycle.md)
+- [SOP-002: Mission Protocol](../architecture/SOP-002-mission-protocol.md)
+- [SOP-003: Knowledge Treasury](../architecture/SOP-003-knowledge-treasury.md)
+- [SOP-004: Fallback Governance (H-Gov)](../architecture/SOP-004-h-gov-standard.md)
 
+### Project Standards
 - [AGENTS.md](../../AGENTS.md) - Top-level configuration
 - [RFCs](../rfcs/README.md) - Design documents
 - [TEST_ARCHITECTURE.md](../TEST_ARCHITECTURE.md) - Test isolation
