@@ -204,7 +204,14 @@ impl LoadBalancer {
 
         // Use round-robin to select among candidates with equal connections
         let rr_index = self.round_robin_counter.fetch_add(1, Ordering::Relaxed);
-        let selected = candidates[rr_index % candidates.len()];
+
+        // Race condition protection: if connection counts shifted between min_connections
+        // calculation and filtering, candidates might be empty. Fall back to healthy list.
+        let selected = if !candidates.is_empty() {
+            candidates[rr_index % candidates.len()]
+        } else {
+            healthy[rr_index % healthy.len()]
+        };
 
         Some(ConnectionGuard::new(Arc::clone(selected)))
     }
