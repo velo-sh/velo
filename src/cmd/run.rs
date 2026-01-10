@@ -14,6 +14,7 @@ use crate::python_info::{PythonInfo, PythonVersion};
 use crate::runner;
 use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
+use colored::Colorize;
 
 /// Run a Python script
 #[derive(Parser, Debug)]
@@ -131,7 +132,8 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         } else {
             None
         };
-        if let Some(()) = try_zygote_run(
+
+        let zygote_result = try_zygote_run(
             &python_path,
             &cmd.script,
             cmd.async_mode,
@@ -140,7 +142,9 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &config,
             cmd.profile,
             shm_file.as_ref().map(|s| &s.file),
-        )? {
+        )?;
+
+        if let Some(()) = zygote_result {
             if cmd.profile {
                 eprintln!(
                     "[VELO] Zygote Total: {:.1}ms, Total E2E: {:.1}ms",
@@ -149,6 +153,16 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
                 );
             }
             return Ok(());
+        }
+
+        // If we reach here, try_zygote_run returned None (Fallback triggered)
+        // RFC-0015: In Memory Gravity mode, fallback is ILLEGAL as it breaks custody.
+        if cmd.shm.is_some() {
+            bail!(
+                "🚨 {} SHM mode requested but Zygote protocol failed to initialize.\n\
+                 Fallback to normal mode is blocked to prevent silent performance degradation (Memory Gravity Protection).",
+                "CRITICAL:".red().bold()
+            );
         }
     }
 
