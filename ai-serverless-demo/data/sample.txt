@@ -1,0 +1,5 @@
+Hello, this is a sample text for embedding.
+Machine learning models are transforming industries.
+Python is the language of AI research and production.
+Cold starts in serverless environments are a real pain point.
+Velo eliminates redundant initialization overhead.
