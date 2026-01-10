@@ -3,7 +3,7 @@
 //! Analyzes Python project import times and suggests optimizations.
 //! Uses runtime profiling (not hardcoded framework lists) per RFC-0004.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -177,8 +177,19 @@ pub fn cmd_analyze(args: &[String]) -> Result<()> {
     // This allows detecting invalid/malicious SHM files before finding the entry point script
     if let Some(ref shm_path) = parsed.shm {
         // We use MemoryRegistry's validation logic which handles 1PB checks etc.
-        MemoryRegistry::validate_source(shm_path)
-            .with_context(|| format!("InvalidSourceFile: {}", shm_path.display()))?;
+        if let Err(e) = MemoryRegistry::validate_source(shm_path) {
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::MemoryGravity,
+                format!("Invalid SHM source for analysis: {}", e),
+                "Sub-optimal performance (Non-SHM fallback)",
+                "Verify file permissions and SHM limits.",
+            );
+            if config.strict_optimizations {
+                bail!("{}", signal.format_critical());
+            } else {
+                signal.report_audit();
+            }
+        }
     }
 
     // Find entry point script
@@ -411,62 +422,83 @@ fn run_with_profile(
     if let Some(shm_path) = shm_path {
         // USE ZYGOTE for Memory Gravity analysis
         use crate::zygote;
-        if !zygote::is_supported() {
-            anyhow::bail!(
-                "Memory Gravity (--shm) requires Zygote which is not supported on this platform"
+
+        let res = (|| -> Result<()> {
+            if !zygote::is_supported() {
+                anyhow::bail!(
+                    "Memory Gravity (--shm) requires Zygote which is not supported on this platform"
+                );
+            }
+
+            let socket_path = zygote::ipc::default_socket_path();
+            let mut launcher =
+                ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
+
+            // Ensure Zygote is running
+            if !socket_path.exists() {
+                eprintln!("🚀 Starting Zygote for SHM analysis...");
+                launcher
+                    .start(&[], None, false, config)
+                    .context("Failed to start Zygote")?;
+            }
+
+            // Create SHM segment
+            let registry = MemoryRegistry::new(config.clone());
+            let segment_name = format!("shm-analyze-{}", std::process::id());
+            let shm_file = registry
+                .create_segment(&segment_name, shm_path)
+                .context("Failed to create SHM segment")?;
+
+            // Write wrapper to a temporary file because Zygote needs a Path
+            let wrapper_path = temp_dir.path().join("velo_analyze_wrapper.py");
+            std::fs::write(&wrapper_path, &wrapper_content)
+                .context("Failed to write wrapper script")?;
+
+            // Spawn worker via Zygote
+            let worker = launcher
+                .spawn_worker(
+                    &wrapper_path,
+                    &[],
+                    false, // async_mode
+                    false, // fast_mode
+                    None,  // bundle_path
+                    Some(project_dir.to_path_buf()),
+                    None, // max_bundle_size
+                    Some(&shm_file.file),
+                    config,
+                )
+                .context("Failed to spawn analysis worker via Zygote")?;
+
+            // wait for worker
+            let _ = worker.wait();
+            Ok(())
+        })();
+
+        if let Err(e) = res {
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::ZygoteIPC,
+                format!("Zygote Analysis failure: {}", e),
+                "Standard Profiling (Cold Start profiling)",
+                "Check Zygote status and SHM file integrity.",
             );
+            if config.strict_optimizations {
+                bail!("{}", signal.format_critical());
+            } else {
+                signal.report_audit();
+                // ⚠️ Fallback to normal mode
+                Command::new(python_path)
+                    .arg("-c")
+                    .arg(&wrapper_content)
+                    .current_dir(project_dir)
+                    .env("PYTHONPATH", &pythonpath_dir)
+                    .env(
+                        "VELO_PROFILE_OUTPUT",
+                        profile_output_path.to_string_lossy().as_ref(),
+                    )
+                    .output()
+                    .context("Failed to run Python script (fallback from Zygote)")?;
+            }
         }
-
-        let socket_path = zygote::ipc::default_socket_path();
-        let mut launcher =
-            ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
-
-        // Ensure Zygote is running
-        if !socket_path.exists() {
-            eprintln!("🚀 Starting Zygote for SHM analysis...");
-            launcher
-                .start(&[], None, false, config)
-                .context("Failed to start Zygote")?;
-        }
-
-        // Create SHM segment
-        let registry = MemoryRegistry::new(config.clone());
-        let segment_name = format!("shm-analyze-{}", std::process::id());
-        let shm_file = registry
-            .create_segment(&segment_name, shm_path)
-            .context("Failed to create SHM segment")?;
-
-        // Write wrapper to a temporary file because Zygote needs a Path
-        let wrapper_path = temp_dir.path().join("velo_analyze_wrapper.py");
-        std::fs::write(&wrapper_path, &wrapper_content)
-            .context("Failed to write wrapper script")?;
-
-        // Spawn worker via Zygote
-        let worker = launcher
-            .spawn_worker(
-                &wrapper_path,
-                &[],
-                false, // async_mode
-                false, // fast_mode
-                None,  // bundle_path
-                Some(project_dir.to_path_buf()),
-                None, // max_bundle_size
-                Some(&shm_file.file),
-                config,
-            )
-            .context("Failed to spawn analysis worker via Zygote")?;
-
-        // Set environment variable for profiling output path
-        // Note: Zygote doesn't inherit environment from CLI, so we must ensure
-        // the worker knows where to write the JSON.
-        // Actually, ZygoteLauncher::spawn_worker currently doesn't support custom env vars.
-        // But WAIT: sitecustomize._velo_write_profile() uses VELO_PROFILE_OUTPUT env var.
-
-        // TODO: Update spawn_worker to support environment variables if needed.
-        // For now, we'll rely on the default behavior or fix sitecustomize.
-
-        // wait for worker
-        let _ = worker.wait();
     } else {
         // NORMAL MODE: run fresh process
         Command::new(python_path)
