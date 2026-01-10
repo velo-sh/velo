@@ -149,7 +149,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             None
         };
 
-        let zygote_result = try_zygote_run(
+        let zygote_result = match try_zygote_run(
             &python_path,
             &cmd.script,
             cmd.async_mode,
@@ -158,7 +158,23 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &config,
             cmd.profile,
             shm_file.as_ref().map(|s| &s.file),
-        )?;
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let signal = crate::common::governance::GovernanceSignal::new(
+                    crate::common::governance::SignalComponent::ZygoteIPC,
+                    format!("Zygote fundamental failure: {}", e),
+                    "Performance degradation (Cold Start fallback)",
+                    "Check Zygote status and socket permissions.",
+                );
+                if config.strict_optimizations {
+                    bail!("{}", signal.format_critical());
+                } else {
+                    signal.report_audit();
+                    None
+                }
+            }
+        };
 
         if let Some(()) = zygote_result {
             if cmd.profile {
@@ -179,12 +195,9 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             "Check Zygote logs with 'velo zygote status' and verify socket permissions.",
         );
 
-        // H-Gov (Heightened Governance): Determine fallback behavior
         if config.strict_optimizations {
-            // In Strict mode, any component failure that isn't handled is a fatal regression
             bail!("{}", signal.format_critical());
         } else {
-            // Production/Relaxed Mode: Audit the fallback but proceed (Graceful Degradation)
             signal.report_audit();
         }
     }
@@ -194,14 +207,27 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
     // Fast mode: inject sitecustomize to activate bundle loader
     if cmd.fast {
-        run_with_fast_loader(
+        if let Err(e) = run_with_fast_loader(
             &python_path,
             &cmd.script,
             &project_dir,
             pythonpath,
             Some(config.max_bundle_size as u64),
             &config,
-        )?;
+        ) {
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::FastLoader,
+                format!("Fast loader initialization failed: {}", e),
+                "Slow Startup (Standard imports used)",
+                "Verify bundle integrity with 'velo bundle verify'.",
+            );
+            if config.strict_optimizations {
+                bail!("{}", signal.format_critical());
+            } else {
+                signal.report_audit();
+                runner::run_script(&python_path, &cmd.script, None, &config)?;
+            }
+        }
     } else if cmd.profile {
         runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
     } else {

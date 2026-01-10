@@ -23,8 +23,14 @@ class TestSSOTParity(unittest.TestCase):
                 sys.modules.pop(mod, None)
 
         self.toml_path = Path(__file__).parents[3] / "config" / "constants.toml"
-        with open(self.toml_path, "rb") as f:
-            self.toml_data = tomllib.load(f)
+        # [RITUAL 11.2] Handle TOML parity (Python 3.11+ tomllib vs fallback)
+        try:
+            with open(self.toml_path, "rb") as f:
+                self.toml_data = tomllib.load(f)
+        except (TypeError, AttributeError):
+            # Fallback for toml library which expects str
+            with open(self.toml_path, "r") as f:
+                self.toml_data = tomllib.load(f)
 
     def tearDown(self):
         # [RITUAL 11.2] Restoration Checklist
