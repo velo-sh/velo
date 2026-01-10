@@ -50,6 +50,18 @@ RFC-0012 establishes the **Surgical Shielding Standard** to resolve regressions 
 - **FD Purge**: `close_range(3, ~0)` on Linux; otherwise loop 3..RLIMIT_NOFILE.
 - **Signal Mask**: Reset signal mask in `pre_exec` to ensure responsiveness to `SIGTERM`.
 
+### 2.5 ImportShield Dependency Risks (SEC-D3-001)
+
+While `ImportShield` prevents unauthorized module access (e.g., `os`, `subprocess`), it introduces a risk of **Runtime Import Suffocation**.
+
+- **Risk**: Complex frameworks (FastAPI, Django, Flask) or libraries using **Lazy Imports** may crash if they attempt to load a blocked module after shield activation.
+- **Current Observation**: 100% compatibility is the target, but current implementation may break dynamic dependency chains.
+- **Mitigation**: Use `VELO_SHIELD_MODE=dry_run` for auditing in production environments with complex dependencies.
+- **Systematic Goal**: 
+    1. **Pre-spawn Analysis**: Static analysis of requirements to identify required sensitive modules.
+    2. **Trusted Profiles**: Pre-loading verified framework dependencies into `sys.modules` before shield lock-in.
+    3. **Capability Injection**: Replacing raw `os` functions with security-proxied versions instead of total blocking.
+
 ## 3. The 4-Layer Velo Fortress Model
 
 ```mermaid
