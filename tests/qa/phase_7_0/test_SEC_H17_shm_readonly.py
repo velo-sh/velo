@@ -38,7 +38,18 @@ class TestSecH17ShmReadonly:
 
         # 1. Start a worker process that loads a model (simulated)
         env = shm_test_env
-        env.create_file("main.py", "import time, sys; print('READY', flush=True); sys.stderr.flush(); time.sleep(10)")
+        # Ritual 21: In-process Maps Audit to avoid race conditions and /proc access issues
+        env.create_file("main.py", """
+import time, sys, os
+with open('/proc/self/maps') as f:
+    maps = f.read()
+print(f'READY PID:{os.getpid()}', flush=True)
+print('---MAPS_START---', flush=True)
+print(maps, flush=True)
+print('---MAPS_END---', flush=True)
+sys.stdout.flush()
+time.sleep(10)
+""")
         
         # Create a dummy SHM file (valid safetensors format)
         import struct
@@ -56,59 +67,47 @@ class TestSecH17ShmReadonly:
         try:
             # Phase 1: Wait for READY signal (Ritual 43.1: Synchronous Readiness)
             # This ensures the worker has started and mapped the SHM (or tried to)
-            ready_line = proc.stdout.readline()
-            if "READY" not in ready_line:
+            line = proc.stdout.readline()
+            while line and "READY" not in line:
+                line = proc.stdout.readline()
+
+            if not line:
                 stdout_rem, stderr = proc.communicate(timeout=5)
-                pytest.fail(f"Velo failed to reach READY state! STDOUT={ready_line}{stdout_rem} STDERR={stderr}")
+                pytest.fail(f"Velo failed to reach READY state! STDERR={stderr}")
             
-            print(f"✅ Velo reported READY: {ready_line.strip()}")
-
-            # Phase 2: Map Audit (Ritual 21: Forensic Invariant Verification)
-            import time
-            start_time = time.time()
-            mapped = False
+            print(f"✅ Velo reported READY: {line.strip()}")
             
-            while time.time() - start_time < T_SHORT:
-                if proc.poll() is not None:
-                    stdout_rem, stderr = proc.communicate()
-                    pytest.fail(f"Velo died prematurely after READY! RC={proc.returncode} STDOUT={stdout_rem} STDERR={stderr}")
-                
-                pid = proc.pid
-                maps_path = Path(f"/proc/{pid}/maps")
-                if maps_path.exists():
-                    content = maps_path.read_text()
-                    # RFC-0015: In cold start, it's a file mapping. In SHM mode, it's a memfd.
-                    if str(shm_file.name) in content or "memfd:shm-" in content:
-                        mapped = True
+            # Phase 2: Read Maps Dump from stdout
+            maps_content = ""
+            line = proc.stdout.readline()
+            if "---MAPS_START---" in line:
+                while True:
+                    line = proc.stdout.readline()
+                    if "---MAPS_END---" in line or not line:
                         break
-                time.sleep(0.5)
+                    maps_content += line
             
-            if not mapped:
-                stdout_rem, stderr = proc.communicate()
-                maps_info = Path(f"/proc/{proc.pid}/maps").read_text() if Path(f"/proc/{proc.pid}/maps").exists() else "N/A"
-                pytest.fail(f"Timeout waiting for SHM mapping in /proc/{proc.pid}/maps. CONTENT:\n{maps_info}\nSTDOUT={stdout_rem} STDERR={stderr}")
+            if not maps_content:
+                stdout_rem, stderr = proc.communicate(timeout=5)
+                pytest.fail(f"Failed to capture maps dump from worker! STDOUT={maps_content} STDERR={stderr}")
 
-            pid = proc.pid
-            
-            # 2. Map Audit: Execute grep "velo_shm" /proc/{pid}/maps
-            maps_path = Path(f"/proc/{pid}/maps")
-            maps_content = maps_path.read_text()
-            
-            target_pattern = str(shm_file.name)
+            # Phase 3: Forensic Audit of the maps content
+            # RFC-0015: Support both file-backed (cold start) and memfd-backed (SHM)
+            patterns = [str(shm_file.name), "/memfd:shm-"]
             
             found = False
             for line in maps_content.splitlines():
-                if target_pattern in line:
+                if any(p in line for p in patterns):
                     found = True
                     # 3. Permission Assertion: Verify r--p (or r--s for shared)
                     perms = line.split()[1]
                     if "w" in perms:
                         pytest.fail(f"🚨 [RITUAL 21 FAILURE] SHM Segment is WRITABLE! Perms: {perms} Line: {line}")
                     
-                    print(f"✅ [RITUAL 21] Verified Read-Only mapping: {perms} for {target_pattern}")
+                    print(f"✅ [RITUAL 21] Verified Read-Only mapping: {perms} for {line}")
 
             if not found:
-                 pytest.fail(f"Mapping '{target_pattern}' disappeared during audit!")
+                 pytest.fail(f"Mapping matching patterns {patterns} not found in worker maps!\nMAPS CONTENT:\n{maps_content}")
 
         finally:
             if proc.poll() is None:
