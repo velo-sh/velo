@@ -67,7 +67,8 @@ class TestSecH17ShmReadonly:
                 maps_path = Path(f"/proc/{pid}/maps")
                 if maps_path.exists():
                     content = maps_path.read_text()
-                    if str(shm_file.name) in content:
+                    # RFC-0015: In cold start, it's a file mapping. In SHM mode, it's a memfd.
+                    if str(shm_file.name) in content or f"memfd:shm-" in content:
                         ready = True
                         break
                 time.sleep(0.1)
