@@ -86,6 +86,15 @@ Prefer OS-level verification over application-layer HMAC where available.
 - **Windows**: Use Named Pipe Security Descriptors + `GetNamedPipeClientProcessId`.
 - **Fallback**: Challenge-Response HMAC(Nonce, Secret) if kernel-level peer IDs are unavailable.
 
+### 3.8 Runtime Import Suffocation Risk (Advisory)
+While `ImportShield` is critical for preventing unauthorized access to `os` and `subprocess`, it introduces a potential compatibility regression known as **Runtime Import Suffocation**.
+
+- **Mechanism**: Blocks `meta_path` lookups for sensitive modules after Worker activation.
+- **Impact**: Frameworks relying on **Lazy Imports** (importing dependencies only when needed) will fail.
+- **Systematic Resolution Roadmap**:
+    - [ ] Implementation of **Trusted Framework Profiles** (automatic pre-loading).
+    - [ ] **Capability-Based Proxies** (providing a restricted `os` module instead of blocking).
+
 ---
 
 ## 4. Failure Policy: Fail-Closed
