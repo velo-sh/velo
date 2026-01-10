@@ -120,17 +120,34 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         );
     }
 
-    // 4. Zygote/Fast/Normal run
-    if cmd.zygote_enabled() {
-        let _zygote_start = std::time::Instant::now();
-        // Create SHM segment if requested
-        let shm_file = if let Some(ref shm_path) = cmd.shm {
-            let registry = MemoryRegistry::new(config.clone());
-            let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
-            Some(registry.create_segment(&segment_name, shm_path)?)
-        } else {
-            None
-        };
+        // 4. Zygote/Fast/Normal run
+        if cmd.zygote_enabled() {
+            let _zygote_start = std::time::Instant::now();
+            // Create SHM segment if requested
+            let shm_file = if let Some(ref shm_path) = cmd.shm {
+                let registry = MemoryRegistry::new(config.clone());
+                let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
+                match registry.create_segment(&segment_name, shm_path) {
+                    Ok(seg) => Some(seg),
+                    Err(e) => {
+                        let signal = crate::common::governance::GovernanceSignal::new(
+                            crate::common::governance::SignalComponent::MemoryGravity,
+                            format!("SHM Segment creation failed: {}", e),
+                            "Sub-optimal performance (Disk-loading fallback)",
+                            "Verify file permissions and SHM limits (max_shm_size).",
+                        );
+
+                        if config.strict_optimizations {
+                            bail!("{}", signal.format_critical());
+                        } else {
+                            signal.report_audit();
+                            None
+                        }
+                    }
+                }
+            } else {
+                None
+            };
 
         let zygote_result = try_zygote_run(
             &python_path,

@@ -62,6 +62,20 @@ def test_h_gov_resilience():
     assert "Note: Fallback is blocked (strict_optimizations=true)" in res3.stderr
     print("✅ Verified: Strict SHM mode correctly blocks fallback.")
 
+    # 4. Prod Mode: Relaxed Memory Gravity (SHM Creation Failure)
+    print("\n[Scenario 4] VELO_ENV=prod (Relaxed) + SHM Creation Failure")
+    # Passing a directory instead of a file to trigger open error
+    res4 = run_velo(
+        {"VELO_ENV": "prod"},
+        ["run", "--shm", "tests/qa/governance", SIMPLE_PY]
+    )
+    assert res4.returncode == 0
+    assert "H-GOV AUDIT" in res4.stderr
+    assert "MemoryGravity/SHM" in res4.stderr
+    assert "SHM Segment creation failed" in res4.stderr
+    assert "Success" in res4.stdout
+    print("✅ Verified: Prod mode gracefully degrades on SHM creation failure.")
+
     print("\n✨ H-Gov Chaos Verification Ritual Completed Successfully!")
 
 if __name__ == "__main__":
