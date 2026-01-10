@@ -83,6 +83,13 @@ class VeloTestEnv:
     path: Path
     velo_binary: Optional[Path]
     python_path: Path
+    env: dict = None
+
+    def __post_init__(self):
+        if self.env is None:
+            self.env = os.environ.copy()
+        self.env["VELO_STRICT_OPTIMIZATIONS"] = "false"
+        self.env["VELO_TEST_MODE"] = "1"
     
     def run_velo(self, *args, timeout: float = None, **kwargs) -> subprocess.CompletedProcess:
         """Run velo command in the test environment.
@@ -102,6 +109,7 @@ class VeloTestEnv:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=self.env,
             **kwargs
         )
     
@@ -149,6 +157,7 @@ class VeloTestEnv:
         return subprocess.Popen(
             cmd,
             cwd=self.path,
+            env=self.env,
             **kwargs
         )
 

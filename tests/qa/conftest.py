@@ -304,6 +304,7 @@ class VeloTestEnv:
             "VELO_ZYGOTE_SOCKET": "", 
             "VELO_BACKOFF_SECS": "0",
             "VELO_TEST_MODE": "1",
+            "VELO_STRICT_OPTIMIZATIONS": "false",
             "PYTHONUNBUFFERED": "1"
         })
 
