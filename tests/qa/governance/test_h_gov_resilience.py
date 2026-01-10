@@ -18,6 +18,10 @@ def run_velo(env, args):
         capture_output=True,
         text=True
     )
+    if result.returncode != 0:
+        print(f"--- FAILURE DETAILS ---")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
     return result
 
 def test_h_gov_resilience():
