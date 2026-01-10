@@ -160,6 +160,7 @@ PHASE 2: EXECUTE
 
 PHASE 3: VERIFY
 ├─ Check EVERY acceptance criterion: ✅ or ❌
+├─ **PRIVACY AUDIT**: No absolute paths, user names, or secrets? ✅
 └─ Compare result against original goal
 
 PHASE 4: DELIVER
@@ -225,6 +226,7 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ Use runtime analysis over hardcoding
 - ✅ Run `cargo fmt && cargo clippy --all-targets --all-features -- -D warnings` before commit
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
+- ✅ **Zero Sensitive Information**: No absolute local paths, usernames, or secrets in code or docs
 - ✅ **Write ALL code and documentation in English only (no Chinese characters)**
 - ✅ **Ensure local checks match CI** (see `.github/workflows/ci.yml` for exact commands)
 
