@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+use crate::common::governance::{GovernanceSignal, SignalComponent};
+use crate::config::VeloConfig;
 use crate::shm::alignment;
 use crate::shm::constants::*;
 use crate::shm::error::MemoryError;
@@ -14,6 +17,7 @@ pub struct ShmSegment {
 }
 
 pub struct MemoryRegistry {
+    pub config: VeloConfig,
     #[allow(dead_code)]
     strict_numa: bool,
     #[allow(dead_code)] // Used only on Linux in mbind()
@@ -22,12 +26,12 @@ pub struct MemoryRegistry {
 
 impl Default for MemoryRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(VeloConfig::default())
     }
 }
 
 impl MemoryRegistry {
-    pub fn new() -> Self {
+    pub fn new(config: VeloConfig) -> Self {
         // H-30: Strict NUMA Check
         let strict_numa = std::env::var(ENV_STRICT_NUMA).unwrap_or_default() == "1";
         // H-32: Configurable NUMA mask (defaults to node 0)
@@ -36,13 +40,8 @@ impl MemoryRegistry {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_NUMA_MASK);
 
-        if strict_numa {
-            eprintln!(
-                "🔥 {} enabled. NUMA mask: 0x{:x}",
-                ENV_STRICT_NUMA, numa_mask
-            );
-        }
         Self {
+            config,
             strict_numa,
             numa_mask,
         }
@@ -147,9 +146,20 @@ impl MemoryRegistry {
             && _is_huge
             && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOMEM)
         {
-            eprintln!(
-                "⚠️ H-20 Warning: HugePages mmap RW failed with ENOMEM, falling back to standard pages."
+            let signal = GovernanceSignal::new(
+                SignalComponent::MemoryGravity,
+                "HugePages mmap failed (ENOMEM)",
+                "Sub-optimal performance (Standard 4KB Page fallback)",
+                "Verify hugepage availability: 'grep HugePages /proc/meminfo' and 'nr_hugepages' sysctl.",
             );
+
+            if self.config.strict_optimizations {
+                let _ = unsafe { libc::close(fd) };
+                return Err(MemoryError::MmapFailed(signal.format_critical()));
+            }
+
+            signal.report_audit();
+
             unsafe { libc::close(fd) };
             let (new_fd, new_is_huge) = self.create_shm_fd(name, size as usize, false)?;
             fd = new_fd;
@@ -215,9 +225,20 @@ impl MemoryRegistry {
                 }
             } else {
                 // Fallback path (Standard Pages): Skip strict mbind to avoid Deadlock
-                eprintln!(
-                    "⚠️ H-30 Warning: Skipping strict NUMA mbind on standard pages to prevent container deadlock."
+                let signal = GovernanceSignal::new(
+                    SignalComponent::NumaAffinity,
+                    "Skipping strict mbind on standard pages (H-30)",
+                    "Potential cross-node latency (NUMA Affinity loss)",
+                    "Enable HugePages to safely support strict NUMA binding in containerized environments.",
                 );
+
+                if self.config.strict_optimizations {
+                    let _ = unsafe { libc::munmap(ptr, size as usize) };
+                    let _ = unsafe { libc::close(fd) };
+                    return Err(MemoryError::NumaBindFailed(signal.format_critical()));
+                }
+
+                signal.report_audit();
             }
         }
 
