@@ -4,6 +4,10 @@ import sys
 import subprocess
 from pathlib import Path
 import re
+try:
+    from tests.qa.phase_7_0.conftest import T_SHORT
+except ImportError:
+    T_SHORT = 5
 
 # SOP Ritual 11.3: Hostile Verification Discipline
 # SOP Ritual 30: Identity-Based Alignment Assertion
@@ -54,7 +58,7 @@ class TestSecH17ShmReadonly:
             start_time = time.time()
             ready = False
             
-            while time.time() - start_time < 5:
+            while time.time() - start_time < T_SHORT:
                 if proc.poll() is not None:
                     stdout, stderr = proc.communicate()
                     pytest.fail(f"Velo died prematurely! RC={proc.returncode} STDERR={stderr}")

@@ -171,6 +171,13 @@ class VeloTestEnv:
 
 def find_velo_binary() -> Optional[Path]:
     """Find the velo binary in standard locations."""
+    # Priority 0: Explicit environment variable
+    env_bin = os.environ.get("VELO_BINARY")
+    if env_bin:
+        p = Path(env_bin)
+        if p.exists():
+            return p
+
     # Search order: release > debug > PATH
     cwd = Path.cwd()
     candidates = [
