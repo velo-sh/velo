@@ -125,7 +125,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let _zygote_start = std::time::Instant::now();
         // Create SHM segment if requested
         let shm_file = if let Some(ref shm_path) = cmd.shm {
-            let registry = MemoryRegistry::new();
+            let registry = MemoryRegistry::new(config.clone());
             let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
             Some(registry.create_segment(&segment_name, shm_path)?)
         } else {
