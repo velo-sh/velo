@@ -1,12 +1,16 @@
 use std::io::Write;
 use std::os::unix::io::AsRawFd;
 use tempfile::NamedTempFile;
+use velo::config::VeloConfig;
 // use velo::shm::alignment; (Removed unused import)
 use velo::shm::registry::MemoryRegistry;
 
 #[test]
 fn test_registry_create_segment() {
-    let registry = MemoryRegistry::new(velo::config::VeloConfig::default());
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     // Create valid dummy safetensors file (8 bytes len + header)
     // If we passed random text, H-29 parser would interpret first 8 bytes as huge length
@@ -41,7 +45,10 @@ fn test_alignment_logic() {
 #[test]
 fn test_registry_enforces_padding() {
     // H-29 Red Phase: Write a test that expects the Registry to align data.
-    let registry = MemoryRegistry::new(velo::config::VeloConfig::default());
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     let mut buffer = Vec::new();
     // 8 bytes length (u64 little endian, say length=1)
@@ -108,7 +115,10 @@ fn test_shm_alignment_rounding() {
 
     // Note: We can only truly test this if the kernel supports HugePages and we get is_huge=true.
     // However, on standard pages, the same logic would just result in a larger file, which is valid.
-    let registry = MemoryRegistry::new(velo::config::VeloConfig::default());
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     // 1. Small file (should be 2MB aligned if HugePages active, or at least succeed)
     let mut buffer = Vec::new();
@@ -131,7 +141,10 @@ fn test_shm_huge_allocation_patterns() {
     // H-system Integration Tests
     // Verify that we can allocate File objects for various sizes.
     // This tests ftruncate interaction with the kernel.
-    let registry = MemoryRegistry::new(velo::config::VeloConfig::default());
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
     let huge_size = 2 * 1024 * 1024; // 2MB
 
     // 1. Exact 2MB Allocation
