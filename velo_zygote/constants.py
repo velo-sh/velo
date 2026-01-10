@@ -15,7 +15,7 @@ DEFAULT_PORT = 8000
 # VELO_ZYGOTE_LOG: Override log file path
 
 # Level 0: Global Base (Universal)
-SECURITY_BASE_TRUSTED_PREFIXES = "/usr,/bin,/sbin,/lib,/Library/Developer/CommandLineTools,/Users/gjwang/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,/Users/gjwang/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
+SECURITY_BASE_TRUSTED_PREFIXES = "/usr,/bin,/sbin,/lib,/Library/Developer/CommandLineTools,${HOME}/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
 SECURITY_BASE_ENV_WHITELIST = "PATH,HOME,USER,TMPDIR,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VIRTUAL_ENV,CI,GITHUB_ACTIONS"
 PATH_SOCKET_DIR_NAME = "velo-${UID}"
 PATH_LOG_DIR_RELATIVE = ".local/state/velo"

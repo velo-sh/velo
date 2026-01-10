@@ -33,7 +33,7 @@ default_port = 8000
 # Placeholders: ${CWD}, ${HOME}, ${EXE_DIR}, ${VIRTUAL_ENV}, ${CONDA_PREFIX}, ${BASE}, ${OS_BASE}
 
 # Level 0: Global Base
-security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Developer/CommandLineTools,/Users/gjwang/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,/Users/gjwang/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
+security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Developer/CommandLineTools,${HOME}/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
 security_base_env_whitelist = "PATH,HOME,USER,TMPDIR,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VIRTUAL_ENV,CI,GITHUB_ACTIONS"
 
 # Level 1: macOS Defaults

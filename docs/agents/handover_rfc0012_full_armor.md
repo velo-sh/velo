@@ -6,7 +6,7 @@
 - **Next Step**: Conduct final Phase 6.2 Sign-off or proceed to performance/feature extensions.
 
 ## 2. Technical State (TITANIUM Engine)
-- **Centralized Safety**: All hygiene and environment shielding logic is in [safety.rs](file:///Users/gjwang/eclipse-workspace/rust_source/velo/src/lifecycle/safety.rs).
+- **Centralized Safety**: All hygiene and environment shielding logic is in [safety.rs](../../src/lifecycle/safety.rs).
 - **Cross-Platform Parity**:
     - **macOS**: Uses Atomic Socket Creation with `umask(077)` in randomized/project-hashed temp dirs.
     - **Linux**: Uses Abstract Namespace Sockets (`@velo-zygote...`) with mandatory `SO_PEERCRED` mutual authentication.
