@@ -430,7 +430,7 @@ fn run_with_profile(
         }
 
         // Create SHM segment
-        let registry = MemoryRegistry::new();
+        let registry = MemoryRegistry::new(config.clone());
         let segment_name = format!("shm-analyze-{}", std::process::id());
         let shm_file = registry
             .create_segment(&segment_name, shm_path)
