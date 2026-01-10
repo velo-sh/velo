@@ -92,9 +92,19 @@ To prevent Path Traversal, Velo implements a tiered validation pattern:
 2. **Root Anchoring**: Ensure path starts with the project root.
 3. **Early Rejection**: Validate before any I/O or subprocess spawn.
 
-## 5. Certification History
+## 5. The Sin of Leakage (Privacy Invariant)
+
+AI Agents often inadvertently leak sensitive information through hardcoded absolute paths or local environment details. 
+
+**Mandatory Invariants**:
+- **SEC-L01 (No Absolute Paths)**: All file references in code or docs MUST be relative to the project root or use placeholders (e.g., `${HOME}`, `${CWD}`).
+- **SEC-L02 (No Usernames)**: Personal system usernames (e.g., `gjwang`, `root`) MUST NOT appear in any committed artifact.
+- **SEC-L03 (No Secrets)**: Zero hardcoded tokens, keys, or PII.
+
+## 6. Certification History
 - **2026-01-06**: Reached **TITANIUM Certification**. Verified defense against the "Three Sins".
 - **2026-01-06**: Rectified `velo serve` security divergence by replacing environment blacklist with `EnvironmentShield` whitelist.
+- **2026-01-10**: Institutionalized **SEC-L01/L02/L03** (The Sin of Leakage) following a critical path leakage incident.
 
 ---
-*Conversation references: 5feed919-71ef-413d-a2bc-8d35dad5f505 (Certification), Phase 6.1.1 Audit*
+*Conversation references: 5feed919-71ef-413d-a2bc-8d35dad5f505 (Certification), Phase 6.1.1 Audit, c3049c7e (Leakage Fix)*
