@@ -40,6 +40,8 @@ Before making any changes, AI agents MUST read:
 |----------|---------|
 | [README.md](./README.md) | Project overview and quick start |
 | [docs/STANDARDS.md](./docs/STANDARDS.md) | Naming conventions and directory structure |
+| [SOP-001: Master Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md) | **CRITICAL**: Architectural governance & reviews |
+| [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md) | **CRITICAL**: Forensic task methodology |
 | [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) | **CRITICAL**: Test environment isolation |
 | [docs/DEFINITION_OF_DONE.md](./docs/DEFINITION_OF_DONE.md) | Quality gate standards |
 
@@ -271,6 +273,12 @@ I will review/implement with [ROLE]'s perspective.
 - `/start-mission`: [SOP-002 Mission Protocol](./.agent/workflows/start-mission.md)
 - `/ask-council`: [SOP-001 Expert Review](./.agent/workflows/ask-council.md)
 - `/audit-security`: [TITANIUM Security Scan](./.agent/workflows/audit-security.md)
+
+### Architectural Standards (SOPs)
+- [SOP-001: Master Architecture Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md)
+- [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md)
+- [SOP-003: Knowledge Treasury](./docs/architecture/SOP-003-knowledge-treasury.md)
+- [SOP-004: Fallback Governance (H-Gov)](./docs/architecture/SOP-004-h-gov-standard.md)
 
 ### Project Standards
 - [STANDARDS.md](./docs/STANDARDS.md) - Naming conventions
