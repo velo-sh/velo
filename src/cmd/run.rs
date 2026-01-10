@@ -57,9 +57,9 @@ impl RunCmd {
         Ok(())
     }
 
-    /// Check if Zygote should be enabled (explicitly or via --async)
+    /// Check if Zygote should be enabled (explicitly, via --async, or for --shm)
     pub fn zygote_enabled(&self) -> bool {
-        self.zygote || self.async_mode
+        self.zygote || self.async_mode || self.shm.is_some()
     }
 }
 
