@@ -1,3 +1,4 @@
+pub mod governance;
 pub mod paths;
 
 // Import generated constants from OUT_DIR
