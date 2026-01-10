@@ -436,7 +436,16 @@ impl ZygoteLauncher {
         );
 
         // --- Bridge of Truth: Inject Environment Context ---
-        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+        let github_actions = std::env::var("GITHUB_ACTIONS")
+            .map(|v| v.to_lowercase())
+            .unwrap_or_default();
+        let velo_env_current = std::env::var("VELO_ENV").ok();
+
+        let env_mode = match (velo_env_current, github_actions.as_str()) {
+            (Some(env), _) => env,
+            (None, "true") => "ci".to_string(),
+            (None, _) => "dev".to_string(),
+        };
         cmd.env("VELO_ENV", &env_mode);
 
         if let Ok(val) = std::env::var("VELO_SOCKET_DIR") {
