@@ -35,9 +35,9 @@ The behavior of the H-Gov system is governed by the `strict_optimizations` flag,
 | **Prod** | **Disabled (`false`)** | **Graceful**: Audit Log + Fallback | `AUDIT/WARN` | Production stability, Legacy mode |
 
 ### Reference Implementation
-- [constants.toml:L22](file:///Users/gjwang/eclipse-workspace/rust_source/velo/config/constants.toml#L22): Default SSOT value.
-- [src/config.rs:L31](file:///Users/gjwang/eclipse-workspace/rust_source/velo/src/config.rs#L31): `VeloConfig` field definition.
-- [src/config.rs:L89-92](file:///Users/gjwang/eclipse-workspace/rust_source/velo/src/config.rs#L89-L92): Logic for automatic `prod` relaxation.
+- [constants.toml](../config/constants.toml#L22): Default SSOT value.
+- [src/config.rs](../src/config.rs#L31): `VeloConfig` field definition.
+- [src/config.rs](../src/config.rs#L89-L92): Logic for automatic `prod` relaxation.
 
 ---
 
@@ -72,7 +72,7 @@ A valid governance signal must contain:
 `⚠️ H-GOV AUDIT: [Component] [Reason] -> [Action]`
 
 ### Reference Code
-- [src/common/governance.rs](file:///Users/gjwang/eclipse-workspace/rust_source/velo/src/common/governance.rs): Implementation of `GovernanceSignal` and `SignalComponent`.
+- [src/common/governance.rs](../src/common/governance.rs): Implementation of `GovernanceSignal` and `SignalComponent`.
 
 ---
 
