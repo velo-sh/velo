@@ -32,7 +32,7 @@ from conftest import (
 class TestScalability:
     """
     Tier 2: Scalability Tests
-    
+
     Tests per QA-SOP §3.3: Run Daily, SHOULD PASS or XFAIL.
     """
 
@@ -41,17 +41,17 @@ class TestScalability:
     def test_L2_SHM_03_multi_model_scalability(self, shm_test_env: VeloTestEnv):
         """
         L2-SHM-03: Verify 10 workers × 3 models scale correctly.
-        
+
         RFC-0015 §6 Tier 2:
         "Multi-model, multi-worker scalability test (10 workers, 3 models)"
-        
+
         Acceptance Criteria:
         - All 10 workers complete inference
         - No SIGBUS/SIGSEGV
         - RSS remains bounded
         """
         env = shm_test_env
-        
+
         test_script = '''
 import mmap
 import os
@@ -152,10 +152,12 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=60)
-        
-        assert result.returncode == 0, f"Multi-model scalability test failed: {result.stderr}"
+
+        assert (
+            result.returncode == 0
+        ), f"Multi-model scalability test failed: {result.stderr}"
         assert "PASS" in result.stdout, f"Not all workers succeeded: {result.stdout}"
 
     @pytest.mark.tier2
@@ -163,19 +165,19 @@ if __name__ == "__main__":
     def test_L2_SHM_04_attach_detach_storm(self, shm_test_env: VeloTestEnv):
         """
         L2-SHM-04: High-frequency attach/detach stability test (H-21).
-        
+
         RFC-0015 §6 Tier 2:
         "High-frequency attach/detach stability (1000 cycles)"
-        
+
         This verifies H-21 (Liveness Guard) - no SIGBUS during rapid cycling.
-        
+
         Acceptance Criteria:
         - Zero FD leak
         - Zero memory leak
         - No SIGBUS
         """
         env = shm_test_env
-        
+
         test_script = '''
 import mmap
 import os
@@ -253,9 +255,9 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=60)
-        
+
         assert result.returncode == 0, f"Attach/detach storm failed: {result.stderr}"
         assert "PASS" in result.stdout or "cycles completed" in result.stdout
 
@@ -265,19 +267,19 @@ if __name__ == "__main__":
     def test_L2_SHM_05_hugepage_tlb_profiling(self, shm_test_env: VeloTestEnv):
         """
         L2-SHM-05: TLB miss profiling with/without HugePages (H-20, H-25, H-28).
-        
+
         RFC-0015 §6 Tier 2:
         "TLB miss and cache locality profiling (with/without HugePages)"
-        
+
         This verifies:
         - H-20: HugePage Optimization
         - H-25: HugePage Safety Guard (optional, environment-gated)
         - H-28: Runtime Revertability (fallback on failure)
-        
+
         Note: Full profiling requires `perf` tool, this test verifies the fallback logic.
         """
         env = shm_test_env
-        
+
         test_script = '''
 import mmap
 import os
@@ -355,9 +357,9 @@ def test_hugepage_fallback():
 if __name__ == "__main__":
     sys.exit(test_hugepage_fallback())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         # This test should pass even without HugePages (tests fallback)
         assert result.returncode == 0, f"HugePage/fallback test failed: {result.stderr}"
         assert "PASS" in result.stdout
@@ -373,19 +375,19 @@ class TestLifecycle:
     def test_L2_SHM_07_worker_crash_recovery(self, shm_test_env: VeloTestEnv):
         """
         L2-SHM-07: Worker crash recovery test (H-24).
-        
+
         RFC-0015 §6 Tier 2:
         "Worker crash recovery test (no SHM orphan leaks)"
-        
+
         Verifies H-24: Host-Only Lifecycle Authority
-        
+
         Acceptance Criteria:
         - No SHM orphan leak
         - Host remains stable
         - Next worker can attach
         """
         env = shm_test_env
-        
+
         test_script = '''
 import mmap
 import os
@@ -476,9 +478,9 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         assert result.returncode == 0, f"Worker crash recovery failed: {result.stderr}"
         assert "PASS" in result.stdout
 
@@ -488,20 +490,20 @@ if __name__ == "__main__":
     def test_L2_SHM_08_host_restart_survivability(self, shm_test_env: VeloTestEnv):
         """
         L2-SHM-08: Host Restart Survivability (H-26).
-        
+
         RFC-0015 §6 Tier 2:
         "Host Restart Survivability - Kill host, ensure SHM cleanup, no stale memfd survives"
-        
+
         Verifies H-26: Host Death Containment (PID Namespace)
-        
+
         Note: Full test requires PID namespace or container environment.
         This simplified test verifies basic cleanup behavior.
-        
+
         Acceptance Criteria:
         - No stale memfd survives after Host death
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -552,9 +554,11 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         # This test is informational on simple setups
-        assert result.returncode == 0, f"Host survivability test failed: {result.stderr}"
+        assert (
+            result.returncode == 0
+        ), f"Host survivability test failed: {result.stderr}"
         assert "PASS" in result.stdout or "Test completed" in result.stdout

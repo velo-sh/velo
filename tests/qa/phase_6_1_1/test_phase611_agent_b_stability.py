@@ -48,7 +48,9 @@ class TestL3Stress:
 
         def make_request():
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
+                r = requests.get(
+                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
+                )
                 return r.status_code
             except Exception as e:
                 return str(e)
@@ -74,7 +76,6 @@ class TestL3Stress:
         4. Verify memory growth < 20%
         """
         import requests
-
 
         proc = velo_serve_fixture.start("main:app", workers=4)
         proc.wait_ready()
@@ -138,7 +139,9 @@ class TestL3Stress:
 
         # Verify server still responds to valid requests
         try:
-            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+            response = requests.get(
+                f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
+            )
             assert response.status_code == 200, "Server blocked by slowloris"
         finally:
             # Cleanup slow connections

@@ -87,7 +87,9 @@ class TestL0Smoke:
                         break
                     if parent.pid <= 1:
                         break
-                assert found_zygote, f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
+                assert (
+                    found_zygote
+                ), f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
             except psutil.NoSuchProcess:
                 pytest.skip(f"Worker {worker_pid} died during verification")
 

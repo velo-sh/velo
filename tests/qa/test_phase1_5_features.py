@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Velo QA: Phase 1.5 Feature Tests
 ================================
@@ -40,10 +41,10 @@ class TestVeloInfo:
         try:
             env.create_venv()
             env.create_uv_lock()
-            
+
             # Corrupt cache
             env.corrupt_cache("random")
-            
+
             result = run_velo(["info"], cwd=env.path)
             assert_no_crash(result)
             # Should still show Hardware section
@@ -59,8 +60,10 @@ class TestVeloInfo:
             # Create broken .venv with no executable
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
-            
-            result = run_velo(["info"], cwd=env.path, env={"VELO_PYTHON": "/nonexistent"})
+
+            result = run_velo(
+                ["info"], cwd=env.path, env={"VELO_PYTHON": "/nonexistent"}
+            )
             assert_no_crash(result)
         finally:
             env.cleanup()
@@ -71,7 +74,7 @@ class TestVeloInfo:
         try:
             env.create_venv()
             env.create_uv_lock()
-            
+
             result = run_velo(["info"], cwd=env.path)
             assert_no_crash(result)
             assert result.success
@@ -91,7 +94,7 @@ class TestProfile:
             env.create_venv()
             env.create_uv_lock()
             env.create_script("simple.py", "print('hello')")
-            
+
             result = run_velo(["run", "--profile", "simple.py"], cwd=env.path)
             assert_no_crash(result)
             assert result.success
@@ -107,7 +110,7 @@ class TestProfile:
             env.create_venv()
             env.create_uv_lock()
             env.create_script("imports.py", "import os\nimport sys\nprint('done')")
-            
+
             result = run_velo(["run", "--profile", "imports.py"], cwd=env.path)
             assert_no_crash(result)
             assert result.success
@@ -121,7 +124,7 @@ class TestProfile:
             env.create_venv()
             env.create_uv_lock()
             env.create_script("crash.py", "raise RuntimeError('boom')")
-            
+
             result = run_velo(["run", "--profile", "crash.py"], cwd=env.path)
             assert_no_crash(result)
             # Script fails but velo should not crash
@@ -136,7 +139,7 @@ class TestProfile:
             env.create_venv()
             env.create_uv_lock()
             env.create_script("empty.py", "")
-            
+
             result = run_velo(["run", "--profile", "empty.py"], cwd=env.path)
             assert_no_crash(result)
             assert result.success
@@ -150,7 +153,7 @@ class TestProfile:
             env.create_venv()
             env.create_uv_lock()
             env.create_script("output.py", "print('MARKER_12345')")
-            
+
             result = run_velo(["run", "--profile", "output.py"], cwd=env.path)
             assert_no_crash(result)
             # Script output should be present
@@ -169,11 +172,11 @@ class TestABIMismatch:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # First run to create cache
             result1 = run_velo(["run", "test.py"], cwd=env.path)
             assert result1.success
-            
+
             # Manually corrupt the cache to simulate ABI change
             # (since we can't easily switch Python versions in test)
             if env.cache_file.exists():
@@ -182,7 +185,7 @@ class TestABIMismatch:
                 # Replace cpython version in cache (simplified test)
                 modified = content.replace(b"311", b"310")
                 env.cache_file.write_bytes(modified)
-            
+
             # Second run should handle gracefully
             result2 = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result2)

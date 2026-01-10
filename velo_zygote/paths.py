@@ -16,6 +16,7 @@ try:
 except (ImportError, ValueError):
     from constants import *
 
+
 class VeloPaths:
     """Centralized Path Resolver for Velo (Python Parity)."""
 
@@ -32,10 +33,10 @@ class VeloPaths:
     def _expand_placeholders(path_str: str) -> str:
         """Expand placeholders to match Rust implementation."""
         result = path_str
-        
+
         if "${HOME}" in result:
             result = result.replace("${HOME}", os.environ.get("HOME", "/tmp"))
-            
+
         if "${XDG_RUNTIME_DIR}" in result:
             xdg = os.environ.get("XDG_RUNTIME_DIR")
             if xdg:
@@ -43,13 +44,13 @@ class VeloPaths:
             else:
                 # Fallback to /tmp if XDG_RUNTIME_DIR not set (matching Rust)
                 result = result.replace("${XDG_RUNTIME_DIR}", "/tmp")
-                
+
         if "${TMPDIR}" in result:
             result = result.replace("${TMPDIR}", tempfile.gettempdir())
-            
+
         if "${UID}" in result:
             result = result.replace("${UID}", str(os.getuid()))
-            
+
         return result
 
     @staticmethod
@@ -73,35 +74,44 @@ class VeloPaths:
         if not env_mode:
             # Rule 2: Never Guess. If Rust didn't inject it, the boundary is breached.
             from .integrity import IntegrityError
-            raise IntegrityError("CRITICAL: VELO_ENV not injected. Python boundary convergence failed.")
-        
+
+            raise IntegrityError(
+                "CRITICAL: VELO_ENV not injected. Python boundary convergence failed."
+            )
+
         # 3. Resolve using Matrix
         env_key = f"PATH_{os_name}_{env_mode.lower()}_SOCKET_PARENT"
         base_key = f"PATH_{os_name}_BASE_SOCKET_PARENT"
-        
+
         parent_path = VeloPaths._get_path_config(env_key)
         if not parent_path:
             parent_path = VeloPaths._get_path_config(base_key)
-            
+
         if not parent_path:
             # Rule 2: Throw IntegrityError instead of guessing /tmp
             from .integrity import IntegrityError
-            raise IntegrityError(f"CRITICAL: Socket path matrix resolution failed for {os_name}/{env_mode}. "
-                                 f"Missing {env_key} or {base_key} in constants.py")
+
+            raise IntegrityError(
+                f"CRITICAL: Socket path matrix resolution failed for {os_name}/{env_mode}. "
+                f"Missing {env_key} or {base_key} in constants.py"
+            )
 
         # 4. Expand Placeholders
         expanded_parent = VeloPaths._expand_placeholders(parent_path)
-        
+
         # 5. Append Dir Name
         dir_name = VeloPaths._expand_placeholders(PATH_SOCKET_DIR_NAME)
-        
+
         socket_path = Path(expanded_parent) / dir_name
-        
+
         # 6. Check Length Limit
         if len(str(socket_path)) + 30 > SOCKET_PATH_LIMIT:
-             # Rule 2: Throw IntegrityError if path is too long
-             from .integrity import IntegrityError
-             raise IntegrityError(f"CRITICAL: Resolved socket path is too long ({len(str(socket_path))} chars): {socket_path}")
+            # Rule 2: Throw IntegrityError if path is too long
+            from .integrity import IntegrityError
+
+            raise IntegrityError(
+                f"CRITICAL: Resolved socket path is too long ({len(str(socket_path))} chars): {socket_path}"
+            )
 
         return socket_path
 
@@ -113,8 +123,11 @@ class VeloPaths:
             if len(path_str) <= SOCKET_PATH_LIMIT:
                 return Path(path_str)
             else:
-                print(f"⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long. Falling back to default.", file=sys.stderr)
-            
+                print(
+                    f"⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long. Falling back to default.",
+                    file=sys.stderr,
+                )
+
         directory = VeloPaths.socket_dir()
         ensure_socket_dir(directory)
         return directory / f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
@@ -131,14 +144,14 @@ class VeloPaths:
         """Get the log path for the Zygote."""
         if os.environ.get("VELO_ZYGOTE_LOG"):
             return Path(os.environ["VELO_ZYGOTE_LOG"])
-            
+
         # Use SSOT constants
         os_name = "macos" if sys.platform == "darwin" else "linux"
         base_key = f"PATH_{os_name.upper()}_BASE_LOG_PARENT"
-        
+
         parent_tmpl = VeloPaths._get_path_config(base_key) or "${HOME}"
         expanded_parent = VeloPaths._expand_placeholders(parent_tmpl)
-        
+
         return Path(expanded_parent) / PATH_LOG_DIR_RELATIVE / "zygote.log"
 
     @staticmethod
@@ -147,10 +160,10 @@ class VeloPaths:
         # Use SSOT constants parity with zygote_log
         os_name = "macos" if sys.platform == "darwin" else "linux"
         base_key = f"PATH_{os_name.upper()}_BASE_LOG_PARENT"
-        
+
         parent_tmpl = VeloPaths._get_path_config(base_key) or "${HOME}"
         expanded_parent = VeloPaths._expand_placeholders(parent_tmpl)
-        
+
         return Path(expanded_parent) / PATH_LOG_DIR_RELATIVE / "worker.log"
 
     @staticmethod
@@ -167,7 +180,7 @@ class VeloPaths:
     def sanitize_sys_path(script_file: str):
         """
         Surgical Path Sanitization (RFC-0014).
-        
+
         1. Prevent the script's directory from shadowing user modules by moving it to the end.
         2. Ensure CWD is at the front (Standard parity with CPython).
         """
@@ -175,7 +188,7 @@ class VeloPaths:
         if script_dir in sys.path:
             sys.path.remove(script_dir)
             sys.path.append(script_dir)
-        
+
         if os.getcwd() not in sys.path:
             sys.path.insert(0, os.getcwd())
 
@@ -184,13 +197,16 @@ class VeloPaths:
         """Canonical path to uv.lock."""
         return cls.project_file(project_root, UV_LOCK)
 
+
 def get_socket_dir() -> Path:
     """Legacy wrapper."""
     return VeloPaths.socket_dir()
 
+
 def get_socket_path() -> Path:
     """Legacy wrapper."""
     return VeloPaths.zygote_socket()
+
 
 def ensure_socket_dir(path: Path) -> bool:
     """Ensure socket directory exists with 0700 permissions."""
@@ -201,16 +217,17 @@ def ensure_socket_dir(path: Path) -> bool:
                 path.mkdir(parents=True, exist_ok=True)
             finally:
                 os.umask(old_mask)
-        
+
         path.chmod(0o700)
         # Verify
         try:
-             mode = path.stat().st_mode & 0o777
-             if mode != 0o700:
-                 # Attempt to fix it
-                 path.chmod(0o700)
-        except: pass
-             
+            mode = path.stat().st_mode & 0o777
+            if mode != 0o700:
+                # Attempt to fix it
+                path.chmod(0o700)
+        except:
+            pass
+
         return True
     except Exception as e:
         print(f"Failed to ensure socket dir: {e}", file=sys.stderr)

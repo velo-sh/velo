@@ -33,11 +33,11 @@ from conftest import (
 # Linux-specific constants for memfd and sealing
 if IS_LINUX:
     import ctypes.util
-    
+
     # memfd_create flags
     MFD_CLOEXEC = 0x0001
     MFD_ALLOW_SEALING = 0x0002
-    
+
     # Seal flags
     F_ADD_SEALS = 1033
     F_GET_SEALS = 1034
@@ -45,7 +45,7 @@ if IS_LINUX:
     F_SEAL_SHRINK = 0x0002
     F_SEAL_GROW = 0x0004
     F_SEAL_WRITE = 0x0008
-    
+
     # Load libc
     libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 
@@ -53,7 +53,7 @@ if IS_LINUX:
 class TestSecurityInvariants:
     """
     Tier 3: Security Tests (MUST PASS on every release)
-    
+
     These tests verify critical security invariants from RFC-0015.
     """
 
@@ -64,21 +64,21 @@ class TestSecurityInvariants:
     def test_L3_SHM_06_mprotect_bypass_after_sealing(self, shm_test_env: VeloTestEnv):
         """
         L3-SHM-06: Verify sealed SHM cannot be made writable via mprotect.
-        
+
         RFC-0015 §6 Tier 3:
         "Attempt mprotect() bypass after F_SEAL_WRITE (must fail)"
-        
+
         Verifies:
         - H-17: Immutability
         - H-19: Write-Sealing (Linux)
-        
+
         Acceptance Criteria:
         - mprotect() returns EPERM
         - Memory remains read-only
         """
         env = shm_test_env
-        
-        test_script = '''
+
+        test_script = """
 import os
 import sys
 import ctypes
@@ -190,10 +190,10 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-'''
-        
+"""
+
         result = env.run_python(test_script, timeout=30)
-        
+
         assert result.returncode == 0, f"mprotect bypass test failed: {result.stderr}"
         assert "PASS" in result.stdout or "SKIP" in result.stdout
 
@@ -204,7 +204,7 @@ if __name__ == "__main__":
     def test_L3_SHM_09_seal_ordering_verification(self, shm_test_env: VeloTestEnv):
         """
         L3-SHM-09: Verify exact 8-step seal sequence is followed (H-23).
-        
+
         RFC-0015 §4 (H-23):
         "Host MUST follow this EXACT sequence:
          1. memfd_create()
@@ -215,15 +215,15 @@ if __name__ == "__main__":
          6. VERIFY no writable VMAs exist
          7. F_ADD_SEALS
          8. ONLY THEN pass FD to workers"
-        
+
         This is a whitebox test verifying the ordering.
-        
+
         Acceptance Criteria:
         - Steps 4-6 occur BEFORE step 7
         - No writable VMA exists at sealing time
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -358,9 +358,9 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         assert result.returncode == 0, f"Seal ordering test failed: {result.stderr}"
         assert "PASS" in result.stdout or "SKIP" in result.stdout
 
@@ -371,12 +371,12 @@ if __name__ == "__main__":
     def test_L3_SHM_10_malicious_worker_simulation(self, shm_test_env: VeloTestEnv):
         """
         L3-SHM-10: Malicious worker attack simulation (H-27).
-        
+
         RFC-0015 §6 Tier 3:
         "Malicious Worker Test (FD dup, PROT_WRITE, ptrace attempts)"
-        
+
         Verifies H-27: FD Capability Containment
-        
+
         Test Steps:
         1. Host creates sealed SHM
         2. Fork "attacker" worker
@@ -384,13 +384,13 @@ if __name__ == "__main__":
            - mprotect(PROT_WRITE) → MUST FAIL
            - write(fd, data, len) → MUST FAIL
            - ftruncate(fd, 0) → MUST FAIL
-        
+
         Acceptance Criteria:
         - ALL write attempts return EPERM or EACCES
         - Memory integrity preserved
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -570,8 +570,8 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         assert result.returncode == 0, f"Malicious worker test failed: {result.stderr}"
         assert "PASS" in result.stdout or "SKIP" in result.stdout

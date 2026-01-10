@@ -10,6 +10,7 @@ from pathlib import Path
 # QA Agent B: Stability & Platform
 # Focus: Process Lifecycle, Signals, OS Specifics
 
+
 class TestPhase61Stability(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
@@ -24,14 +25,14 @@ class TestPhase61Stability(unittest.TestCase):
         L2-RAII: ManagedChild Orphan Check
         Requirement: ENG-P0-001 (Subprocess Model)
         Goal: If Parent (velo) is killed with SIGKILL (-9), Child (uvicorn) MUST die.
-        
-        Note: This is hard to test directly without an external supervisor, 
+
+        Note: This is hard to test directly without an external supervisor,
         but we can simulate the 'Drop' trait behavior in Rust unit tests.
         For Integration, we check if `velo serve` cleans up children on SIGTERM.
         """
         if not shutil.which("velo"):
             self.skipTest("Velo binary not found")
-            
+
         # 1. Start velo serve (mock)
         # 2. Get Child PID
         # 3. Send SIGTERM to Parent
@@ -58,5 +59,6 @@ class TestPhase61Stability(unittest.TestCase):
             self.skipTest("Velo binary not found")
         pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

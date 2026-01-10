@@ -10,31 +10,38 @@ import threading
 from typing import Dict, Tuple, Any, List, Optional, Set
 from enum import Enum, auto
 
+
 class ZygoteState(Enum):
     """
     Formalized Zygote Service States.
     RFC-0012: SSOT for protocol state machine.
     """
-    INIT = auto()         # Bootstrapping environment
-    IDLE = auto()         # Ready to accept connections
-    PRELOADING = auto()   # Currently loading modules
-    READY = auto()        # Warm and ready for high-speed fork
-    SHUTDOWN = auto()     # Graceful exit initiated
-    ERROR = auto()        # Critical failure state
+
+    INIT = auto()  # Bootstrapping environment
+    IDLE = auto()  # Ready to accept connections
+    PRELOADING = auto()  # Currently loading modules
+    READY = auto()  # Warm and ready for high-speed fork
+    SHUTDOWN = auto()  # Graceful exit initiated
+    ERROR = auto()  # Critical failure state
+
 
 class StateTransitionError(Exception):
     """Raised when an invalid Zygote state transition is attempted."""
+
     pass
+
 
 try:
     from .utils import LogUtils
 except (ImportError, ValueError):
     from utils import LogUtils  # type: ignore[no-redef, import-not-found]
 
+
 class WorkerRegistry:
     """Layer 3: State Management - Tracks worker lifecycle."""
+
     def __init__(self, worker_ttl: int = 3600):
-        self.workers: Dict[int, Tuple[float, Any]] = {} # pid -> (start_time, metadata)
+        self.workers: Dict[int, Tuple[float, Any]] = {}  # pid -> (start_time, metadata)
         self.worker_ttl = worker_ttl
 
     def add(self, pid: int, metadata: Any = None) -> None:
@@ -54,14 +61,12 @@ class WorkerRegistry:
             return False
 
     def get_stats(self) -> Dict:
-        return {
-            "worker_count": len(self.workers),
-            "pids": list(self.workers.keys())
-        }
+        return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
     @staticmethod
     def start_guardian(parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
+
         def guardian():
             while True:
                 time.sleep(10)
@@ -72,9 +77,9 @@ class WorkerRegistry:
                     except ProcessLookupError:
                         LogUtils.log("Parent process died. Zygote exiting.")
                         os._exit(0)
-                
+
                 # Check for kill signal file or other termination conditions if needed
-        
+
         t = threading.Thread(target=guardian, daemon=True)
         t.start()
 
@@ -83,7 +88,8 @@ class WorkerRegistry:
         for pid in list(self.workers.keys()):
             try:
                 os.kill(pid, signal.SIGKILL)
-            except: pass
+            except:
+                pass
         self.workers.clear()
 
     def reap_stale(self) -> None:
@@ -93,13 +99,16 @@ class WorkerRegistry:
             if now - start_time > self.worker_ttl:
                 try:
                     os.kill(pid, signal.SIGKILL)
-                except: pass
+                except:
+                    pass
                 self.remove(pid)
             elif not self.is_alive(pid):
                 self.remove(pid)
 
+
 class ReinitHooks:
     """Layer 3: Hook-based Re-initialization system."""
+
     def __init__(self) -> None:
         self.hooks = []
 
@@ -113,8 +122,10 @@ class ReinitHooks:
             except Exception as e:
                 LogUtils.log(f"Hook Failure: {hook.__name__}: {e}")
 
+
 # Global hooks registry
 reinit_hooks = ReinitHooks()
+
 
 def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
     """Industrial Grade Cord-Cutting."""
@@ -123,8 +134,8 @@ def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
         from .constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
     except (ImportError, ValueError):
         from constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR  # type: ignore[no-redef, import-not-found]
-    
-    fd_dir = PATH_MACOS_FD_DIR if sys.platform == 'darwin' else PATH_LINUX_FD_DIR
+
+    fd_dir = PATH_MACOS_FD_DIR if sys.platform == "darwin" else PATH_LINUX_FD_DIR
     try:
         fds = os.listdir(fd_dir)
         for fd_str in fds:
@@ -136,43 +147,57 @@ def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
             except (ValueError, OSError):
                 continue
     except OSError as e:
-        LogUtils.log(f"Forensic Cleanup Warning: Failed to list descriptors in '{fd_dir}': {e}. Falling back to range scan.")
+        LogUtils.log(
+            f"Forensic Cleanup Warning: Failed to list descriptors in '{fd_dir}': {e}. Falling back to range scan."
+        )
         # Fallback for systems without /proc or /dev/fd
         for fd in range(3, 1024):
             if keep_fds is None or fd not in keep_fds:
-                try: os.close(fd)
-                except: pass
+                try:
+                    os.close(fd)
+                except:
+                    pass
 
     # 2. Reset signal handlers
     for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD]:
-        try: signal.signal(sig, signal.SIG_DFL)
-        except: pass
+        try:
+            signal.signal(sig, signal.SIG_DFL)
+        except:
+            pass
 
     # 3. Re-seed random number generators
     random.seed()
-    if 'numpy' in sys.modules:
+    if "numpy" in sys.modules:
         try:
             import numpy as np
+
             np.random.seed()
-        except: pass
+        except:
+            pass
+
 
 def hook_computing(**kwargs: Any) -> None:
     """OpenMP and CUDA reset."""
-    if 'torch' in sys.modules:
+    if "torch" in sys.modules:
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        except: pass
+        except:
+            pass
+
 
 def hook_telemetry(**kwargs: Any) -> None:
     """Reset spans/trace context."""
     # Placeholder for OpenTelemetry re-init
     pass
 
+
 reinit_hooks.register(hook_security)
 reinit_hooks.register(hook_computing)
 reinit_hooks.register(hook_telemetry)
+
 
 def post_fork_reinit(keep_fds: Optional[Set[int]] = None) -> None:
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""

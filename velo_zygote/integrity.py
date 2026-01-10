@@ -11,9 +11,12 @@ except ImportError:
     # Fallback for direct execution
     import constants
 
+
 class IntegrityError(Exception):
     """Raised when the runtime environment is corrupt or misconfigured."""
+
     pass
+
 
 REQUIRED_CONSTANTS = [
     "BUILD_SCM_HASH",
@@ -34,10 +37,11 @@ REQUIRED_CONSTANTS_MACOS = [
     "PATH_MACOS_BASE_SOCKET_PARENT",
 ]
 
+
 def check_constants():
     """Verify that constants.py contains all necessary configuration."""
     missing = []
-    
+
     # Check Base
     for key in REQUIRED_CONSTANTS:
         if not hasattr(constants, key):
@@ -55,14 +59,19 @@ def check_constants():
                 missing.append(key)
 
     if missing:
-        raise IntegrityError(f"Missing Critical Constants: {', '.join(missing)}. "
-                             "Your 'constants.py' is likely out of sync with 'build.rs'. "
-                             "Please run 'cargo build' to regenerate it.")
+        raise IntegrityError(
+            f"Missing Critical Constants: {', '.join(missing)}. "
+            "Your 'constants.py' is likely out of sync with 'build.rs'. "
+            "Please run 'cargo build' to regenerate it."
+        )
 
     # Check Logic
     if not constants.DEFAULT_BLOCKED_PATHS:
         # Empty list is dangerous (regression risk)
-        raise IntegrityError("DEFAULT_BLOCKED_PATHS is empty! Security regression detected.")
+        raise IntegrityError(
+            "DEFAULT_BLOCKED_PATHS is empty! Security regression detected."
+        )
+
 
 def validate_runtime():
     """

@@ -1,9 +1,10 @@
 import sys
 import os
+
 try:
     import tomllib
 except ImportError:
-    import toml as tomllib # Fallback if someone installs it, but 3.11 has tomllib
+    import toml as tomllib  # Fallback if someone installs it, but 3.11 has tomllib
 import unittest
 import importlib.util
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parents[3]))
 
 import velo_zygote.constants as py_constants
+
 
 class TestSSOTParity(unittest.TestCase):
     def setUp(self):
@@ -32,17 +34,21 @@ class TestSSOTParity(unittest.TestCase):
 
     def test_value_parity(self):
         """Verify python constants match TOML SSOT"""
-        # Mapping logic needs to match what build.rs does. 
+        # Mapping logic needs to match what build.rs does.
         # Based on file view, lower_snake_case in TOML -> UPPER_SNAKE_CASE in Python
-        
+
         for key, value in self.toml_data.items():
             if isinstance(value, dict):
-                continue # Nested tables might be handled differently or flatter attributes
-            
+                continue  # Nested tables might be handled differently or flatter attributes
+
             py_key = key.upper()
             if hasattr(py_constants, py_key):
                 py_val = getattr(py_constants, py_key)
-                self.assertEqual(py_val, value, f"Mismatch for {py_key}: TOML={value} vs Python={py_val}")
+                self.assertEqual(
+                    py_val,
+                    value,
+                    f"Mismatch for {py_key}: TOML={value} vs Python={py_val}",
+                )
             else:
                 # Some keys might not be exported or named differently, checking if they should be
                 # The handoff says "diff must be ZERO".
@@ -54,23 +60,28 @@ class TestSSOTParity(unittest.TestCase):
         # Handoff: "Assertion: PATH_MACOS_* constants must NOT be present or used... on Linux"
         # Since we are on Mac, we reverse the logic: PATH_LINUX_* should NOT be present?
         # Or at least we verify what IS present.
-        
+
         current_os = sys.platform
-        
+
         py_attrs = dir(py_constants)
-        
+
         if current_os == "darwin":
             # [TRAP 49] SSOT Platform Contamination
             # Handoff: "PATH_MACOS_* constants must NOT be present... on Linux"
             # Reverse: LINUX constants must NOT be present on macOS.
             linux_constants = [x for x in py_attrs if "LINUX" in x]
             if linux_constants:
-                self.fail(f"🚨 [TRAP 49] SSOT Platform Contamination: Found LINUX constants on macOS: {linux_constants}")
-        
+                self.fail(
+                    f"🚨 [TRAP 49] SSOT Platform Contamination: Found LINUX constants on macOS: {linux_constants}"
+                )
+
         elif current_os == "linux":
             macos_constants = [x for x in py_attrs if "MACOS" in x]
             if macos_constants:
-                self.fail(f"🚨 [TRAP 49] SSOT Platform Contamination: Found MACOS constants on Linux: {macos_constants}")
+                self.fail(
+                    f"🚨 [TRAP 49] SSOT Platform Contamination: Found MACOS constants on Linux: {macos_constants}"
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

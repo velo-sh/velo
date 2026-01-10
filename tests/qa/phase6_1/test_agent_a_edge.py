@@ -54,12 +54,15 @@ class TestAgentAEdge:
     def test_EDGE_61_DETECT_001_multiple_apps(self, isolated_env):
         """Multiple FastAPI instances in one file."""
         env = isolated_env
-        env.create_app("main.py", """
+        env.create_app(
+            "main.py",
+            """
 from fastapi import FastAPI
 app1 = FastAPI()
 app2 = FastAPI()
 app3 = FastAPI()
-""")
+""",
+        )
         result = env.run_velo("serve", "--dry-run", timeout=2)
         # Should detect first or report ambiguity
         assert result.returncode == 0 or "ambiguous" in result.stderr.lower()
@@ -77,13 +80,16 @@ app3 = FastAPI()
     def test_EDGE_61_DETECT_003_nested_factory(self, isolated_env):
         """create_app() inside a class."""
         env = isolated_env
-        env.create_app("main.py", """
+        env.create_app(
+            "main.py",
+            """
 from fastapi import FastAPI
 
 class AppFactory:
     def create_app(self):
         return FastAPI()
-""")
+""",
+        )
         result = env.run_velo("serve", "--dry-run", timeout=2)
         # Factory detection is limited to module scope
         assert result.returncode != 0 or "factory" in result.stderr.lower()
@@ -92,13 +98,16 @@ class AppFactory:
     def test_EDGE_61_DETECT_004_conditional_app(self, isolated_env):
         """App created inside conditional."""
         env = isolated_env
-        env.create_app("main.py", """
+        env.create_app(
+            "main.py",
+            """
 from fastapi import FastAPI
 import os
 
 if os.environ.get('DEBUG'):
     app = FastAPI()
-""")
+""",
+        )
         result = env.run_velo("serve", "--dry-run", timeout=2)
         # Static analysis may not find this
         assert result.returncode != 0 or "conditional" in result.stderr.lower()
@@ -141,7 +150,9 @@ if os.environ.get('DEBUG'):
         """--relod → 'Did you mean --reload?'"""
         result = isolated_env.run_velo("serve", "--relod", timeout=2)
         assert result.returncode != 0
-        assert "did you mean" in result.stderr.lower() or "reload" in result.stderr.lower()
+        assert (
+            "did you mean" in result.stderr.lower() or "reload" in result.stderr.lower()
+        )
 
     @pytest.mark.skip(reason="Awaiting D12: Source-pointing diagnostics")
     def test_EDGE_61_DX_002_source_pointing_error(self, isolated_env):
@@ -162,4 +173,3 @@ if os.environ.get('DEBUG'):
         # Should not contain box-drawing characters
         assert "─" not in result.stdout
         assert "│" not in result.stdout
-
