@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM
+from conftest_utils import T_SHORT, T_MEDIUM
 
 
 def get_velo_binary():

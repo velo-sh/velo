@@ -26,7 +26,7 @@ import pytest
 import requests
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 def get_velo_binary():

@@ -19,25 +19,15 @@ from pathlib import Path
 from typing import Optional, Generator
 from dataclasses import dataclass
 
-# Import CI-aware timeout constants from parent conftest (main branch pattern)
-# These are automatically scaled for CI environments (3x multiplier)
-try:
-    from tests.qa.conftest import (
-        T_SHORT,  # 5s local, 15s CI
-        T_MEDIUM,  # 15s local, 45s CI
-        T_LONG,  # 60s local, 180s CI
-        ci_timeout,  # Function to scale custom timeouts
-        TIMEOUT_MULTIPLIER,
-    )
-except ImportError:
-    # Fallback for standalone execution
-    T_SHORT = 5
-    T_MEDIUM = 15
-    T_LONG = 60
-    TIMEOUT_MULTIPLIER = 1.0
-
-    def ci_timeout(base: float) -> float:
-        return base
+# Import CI-aware timeout constants from centralized utils
+sys.path.append(str(Path(__file__).parent.parent))
+from conftest_utils import (
+    T_SHORT,
+    T_MEDIUM,
+    T_LONG,
+    ci_timeout,
+    TIMEOUT_MULTIPLIER,
+)
 
 
 # =============================================================================

@@ -21,9 +21,17 @@ from typing import List, Optional
 import psutil
 import pytest
 
-# Import CI-aware timeout constants from parent conftest
+# Import CI-aware timeout constants from centralized utils
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import (
+    T_SHORT,
+    T_MEDIUM,
+    T_LONG,
+    get_timeout_multiplier,
+    get_rss,
+    get_pss,
+    get_ppid,
+)
 
 
 class VeloServeProcess:
@@ -334,37 +342,7 @@ def velo_serve_fixture(velo_test_env, velo_binary: str):
     factory.cleanup()
 
 
-# Helper functions
-
-
-def get_rss(pid: int) -> int:
-    """Get Resident Set Size in bytes."""
-    try:
-        return psutil.Process(pid).memory_info().rss
-    except psutil.NoSuchProcess:
-        return 0
-
-
-def get_pss(pid: int) -> int:
-    """Get Proportional Set Size in bytes (Linux only)."""
-    if sys.platform != "linux":
-        return get_rss(pid)
-    try:
-        with open(f"/proc/{pid}/smaps_rollup") as f:
-            for line in f:
-                if line.startswith("Pss:"):
-                    return int(line.split()[1]) * 1024
-    except FileNotFoundError:
-        return get_rss(pid)
-    return 0
-
-
-def get_ppid(pid: int) -> int:
-    """Get parent process ID."""
-    try:
-        return psutil.Process(pid).ppid()
-    except psutil.NoSuchProcess:
-        return 0
+# Helper functions are imported from conftest_utils
 
 
 # Sample app code for testing
