@@ -123,10 +123,15 @@ impl VeloPaths {
     }
 
     /// Generate a standardized, short path for a worker socket.
+    /// Uses UUID to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
         let dir = Self::socket_dir();
         ensure_socket_dir(&dir);
-        dir.join(format!("w-{}.s", worker_id))
+
+        // RFC-0011: Use short UUID suffix to prevent socket collisions on respawn
+        // Format: w-{id}-{short_uuid}.s (e.g., w-0-a1b2c3d4.s)
+        let short_uuid = &uuid::Uuid::now_v7().to_string()[..8];
+        dir.join(format!("w-{}-{}.s", worker_id, short_uuid))
     }
 
     /// Get the log path for the Zygote.
