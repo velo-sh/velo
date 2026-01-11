@@ -22,6 +22,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   UV_VERSION: "0.9" # Centralized uv version
+  VELO_ENV: ci # RFC-0012: CI environment profile (disables strict_optimizations)
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
   VELO_ZYGOTE_WORKER_TIMEOUT: 60
