@@ -13,7 +13,7 @@ The **High-Inertia Optimization (HIO)** program targets the "Big Three" performa
 | **HIO-001** | **[Django Heavyweight](./django-heavy)** | App Registry & DB Setup | **~600x** (0.6s → <1ms) |
 | **HIO-002** | **[LangChain Fast-path](./langchain-fast)** | Schema Gen & Imports | **~13x** (1.1s → 0.08s) |
 | **HIO-003** | **[FastAPI Instant](./fastapi-instant)** | Test State Rollback | **~17x** (5s → 0.3s) |
-| **HIO-004** | **[Serverless Instant](./serverless-instant)** | Cold Start Latency | **~500x** (0.4s → <1ms) |
+| **HIO-004** | **[Serverless Instant](./serverless-instant)** | Cold Start Latency | **~450x** (0.45s → <1ms) |
 
 ---
 

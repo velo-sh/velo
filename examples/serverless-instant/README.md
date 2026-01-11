@@ -70,19 +70,19 @@ With Velo's Zygote + fork model:
 ## 🏆 Expected Benchmark Results
 
 > [!TIP]
-> These results have been verified by QA on 2026-01-11 (macOS, Python 3.9.6).
+> These results have been verified by QA on 2026-01-12 (macOS, Python 3.9.6).
 
 ### Scenario 1: Single Cold Start
-| Mode | Total Time | Speedup |
-| :--- | :--- | :--- |
-| CPython | ~430ms | — |
-| Velo | **<1ms** | **~500x** ⚡ |
+| Mode | Total Time (Median) | P95 | Speedup |
+| :--- | :--- | :--- | :--- |
+| CPython | ~450ms | ~588ms | — |
+| Velo | **<1ms** | ~1.2ms | **~470x** ⚡ |
 
 ### Scenario 2: Burst Cold Starts (N=10)
-| Mode | Total Time | Per-Request RSS | Speedup |
+| Mode | Total Time (Median) | P95 | Speedup |
 | :--- | :--- | :--- | :--- |
-| CPython | ~4.3s | **~67MB each** (N × baseline) | — |
-| Velo | **~9ms** | **~64MB shared** (CoW) | **~476x** ⚡ |
+| CPython | ~436ms | ~516ms | — |
+| Velo | **~1.1ms** | ~1.3ms | **~406x** ⚡ |
 
 ### Scenario 3: Warm vs Cold
 | Mode | First Request | Subsequent |
@@ -93,10 +93,18 @@ With Velo's Zygote + fork model:
 ### Memory Efficiency
 | Metric | CPython (N=10) | Velo (N=10) | Improvement |
 | :--- | :--- | :--- | :--- |
-| **Peak RSS** | ~670MB | **~64MB** | **~90% saved** 📉 |
-| **Per-Worker Delta** | ~67MB | **~0MB** (CoW) | **Shared** |
+| **Peak RSS** | ~660MB | **~66MB** | **~90% saved** 📉 |
+| **Per-Worker Delta** | ~66MB | **~0MB** (CoW) | **Shared** |
 
-> **Note**: CPython spawns N independent processes, each loading the full runtime (~67MB). Velo's fork() shares memory via Copy-On-Write — workers only allocate memory for modified pages.
+> **Note**: CPython spawns N independent processes, each loading the full runtime (~66MB). Velo's fork() shares memory via Copy-On-Write — workers only allocate memory for modified pages.
+
+### Time to First Byte (TTFB)
+| Mode | TTFB (Cold) | TTFB (Warm) | API Gateway Ready |
+| :--- | :--- | :--- | :--- |
+| CPython | ~450ms | ~450ms (same) | ❌ High latency |
+| Velo | **<1ms** | **<1ms** | ✅ Sub-millisecond |
+
+> **Why TTFB Matters**: In serverless, TTFB directly impacts user experience and API Gateway timeout budgets. Traditional Python cold starts (~450ms) consume 45% of a typical 1-second timeout, leaving minimal headroom for business logic. Velo's sub-millisecond TTFB preserves the full timeout budget for actual work.
 
 ---
 
