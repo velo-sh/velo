@@ -13,7 +13,7 @@ The **High-Inertia Optimization (HIO)** program targets the "Big Three" performa
 | **HIO-001** | **[Django Heavyweight](./django-heavy)** | App Registry & DB Setup | **~600x** (0.6s → <1ms) |
 | **HIO-002** | **[LangChain Fast-path](./langchain-fast)** | Schema Gen & Imports | **~13x** (1.1s → 0.08s) |
 | **HIO-003** | **[FastAPI Instant](./fastapi-instant)** | Test State Rollback | **~17x** (5s → 0.3s) |
-| **HIO-004** | **[AI Serverless](./ai-serverless)** | Model Cold Start | **~160x** (2.5s → 0.01s) |
+| **HIO-004** | **[Serverless Instant](./serverless-instant)** | Cold Start Latency | **~500x** (0.4s → <1ms) |
 
 ---
 
@@ -34,10 +34,10 @@ The **High-Inertia Optimization (HIO)** program targets the "Big Three" performa
 **The Fix:** Use process destruction as the rollback mechanism. Each test runs in a fresh fork; when it dies, the state "snaps back" instantly.
 - **Key Tech:** Kernel-level state reset via `fork()`.
 
-### 4. [AI Serverless (HIO-004)](./ai-serverless)
-**The Problem:** Scale-to-zero function execution suffers from massive cold-start latency when loading ML models.
-**The Fix:** Keep the model loaded in the Zygote. Serve requests via lightweight forks that share the model memory.
-- **Key Tech:** Shared memory inference.
+### 4. [Serverless Instant (HIO-004)](./serverless-instant)
+**The Problem:** Python serverless functions pay full interpreter and import costs on every cold start.
+**The Fix:** Velo's Zygote pre-warms the runtime once. Workers fork instantly, bypassing interpreter and import overhead.
+- **Key Tech:** fork() + Copy-On-Write memory sharing.
 
 ---
 
