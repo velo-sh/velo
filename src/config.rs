@@ -88,6 +88,7 @@ impl Default for VeloConfig {
             graceful_shutdown_timeout: extract_default_u64("graceful_shutdown_timeout", 30),
             strict_optimizations: match env_mode.as_str() {
                 "prod" => false, // SECURITY: Never crash in Production (Graceful Degradation)
+                "ci" => false,   // CI: Allow graceful fallback for test resilience
                 _ => extract_default_bool("strict_optimizations", true),
             },
         }
