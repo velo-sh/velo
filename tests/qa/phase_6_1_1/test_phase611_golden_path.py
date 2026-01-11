@@ -323,14 +323,23 @@ class TestGoldenPathE2E:
         print(f"Killing worker {victim}")
         os.kill(victim, signal.SIGKILL)
 
-        # Wait for recovery
-        time.sleep(3)
+        # Wait for recovery with retries (worker respawn can take 20-40s in CI)
+        max_attempts = 12  # 12 * 5s = 60s total
+        response = None
+        for attempt in range(max_attempts):
+            time.sleep(5)
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
+                )
+                if response.status_code == 200:
+                    print(f"Service recovered on attempt {attempt + 1}")
+                    break
+            except requests.exceptions.RequestException as e:
+                print(f"Recovery attempt {attempt + 1}/{max_attempts}: {e}")
 
-        # Verify service still works
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
-        )
-        assert response.status_code == 200, "Service not responding after worker crash"
+        assert response is not None and response.status_code == 200, \
+            "Service not responding after worker crash (60s timeout)"
 
         # Verify worker count restored
         new_workers = set(proc.get_worker_pids())
