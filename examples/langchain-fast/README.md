@@ -45,7 +45,9 @@ The script will display the **"Schema Locking"** process in real-time, demonstra
 ### Scenario: 500 Complex Pydantic Models
 | Metric | CPython (Standard) | Velo (Zygote) | Improvement |
 | :--- | :--- | :--- | :--- |
-| **Schema Gen** | 1.09s | **0.08s** | **12.9x Speedup** ⚡ |
+| **Schema Gen** | 1.17s | **0.07s** | **16x Speedup** ⚡ |
+| **Peak RSS** | 60.0MB | **31.9MB** | **47% Saved** 📉 |
 
 ### Core Advantage
-In AI engineering, schema validation is CPU-intensive. Velo pre-computes valid schemas in the Zygote, so every worker starts with a **ready-to-use** validation graph.
+In AI engineering, schema validation is CPU-intensive. Velo pre-computes valid schemas in the Zygote, so every worker starts with a **ready-to-use** validation graph and **shared memory** via Copy-On-Write.
+
