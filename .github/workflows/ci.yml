@@ -76,6 +76,8 @@ jobs:
               - 'tests/**/*.rs'
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
+              - 'build.rs'
+              - 'config/**'
             loader:
               - 'src/loader/**/*.rs'
               - 'python/velo_loader.py'
