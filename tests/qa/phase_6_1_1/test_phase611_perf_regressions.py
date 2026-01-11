@@ -117,7 +117,7 @@ class TestL5Performance:
         2. Measure RSS and PSS
         3. Calculate sharing efficiency
         """
-        from conftest import get_pss, get_rss
+        from conftest_utils import get_pss, get_rss
 
         proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
         proc.wait_ready()

@@ -27,7 +27,7 @@ import traceback
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 # Mark all tests in this module as expert review tests

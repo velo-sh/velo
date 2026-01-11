@@ -19,8 +19,33 @@ from pathlib import Path
 from typing import Optional
 
 # Test configuration
-VELO_BINARY = Path(__file__).parent.parent.parent / "target" / "release" / "velo"
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+def get_velo_binary_path() -> Path:
+    """Find the velo binary in various possible locations."""
+    # 1. Environment variable
+    if "VELO_BINARY" in os.environ:
+        return Path(os.environ["VELO_BINARY"])
+    
+    # 2. Relative to PROJECT_ROOT (target/release)
+    native_release = PROJECT_ROOT / "target" / "release" / "velo"
+    if native_release.exists():
+        return native_release
+        
+    # 3. Docker build cache location
+    docker_cache = Path("/build_cache/target/release/velo")
+    if docker_cache.exists():
+        return docker_cache
+        
+    # 4. Standard dev locations
+    for p in ["target/debug/velo", "test_deploy_tmp/bin/velo"]:
+        path = PROJECT_ROOT / p
+        if path.exists():
+            return path
+            
+    return native_release # Fallback to default
+
+VELO_BINARY = get_velo_binary_path()
 
 
 @dataclass

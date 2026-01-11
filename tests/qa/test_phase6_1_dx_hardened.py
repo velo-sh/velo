@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM
+from conftest_utils import T_SHORT, T_MEDIUM
 
 
 # QA Agent A: DX/UX & Error Fidelity

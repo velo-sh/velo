@@ -29,12 +29,12 @@ from unittest.mock import patch, MagicMock
 
 # Import the actual implementation from velo_zygote
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "velo_zygote"))
-from main import (
+from paths import (
     get_socket_dir,
     get_versioned_socket_path,
     ensure_socket_dir,
-    PROTOCOL_VERSION,
 )
+from constants import PROTOCOL_VERSION
 
 
 # ============================================================================

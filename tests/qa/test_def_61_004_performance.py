@@ -21,7 +21,8 @@ from pathlib import Path
 
 # Import the actual implementation from velo_zygote
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "velo_zygote"))
-from main import get_socket_dir, ensure_socket_dir
+from paths import get_socket_dir, ensure_socket_dir
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 
 # ============================================================================

@@ -169,7 +169,7 @@ class TestL2EdgeCases:
         4. Check memory efficiency (COW)
         """
         import requests
-        from conftest import get_rss
+        from conftest_utils import get_rss
 
         proc = velo_serve_fixture.start("main:app", workers=100, zygote=True)
         proc.wait_ready()

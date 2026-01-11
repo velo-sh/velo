@@ -208,6 +208,11 @@ def get_socket_path() -> Path:
     return VeloPaths.zygote_socket()
 
 
+def get_versioned_socket_path() -> Path:
+    """Legacy wrapper for versioned paths."""
+    return VeloPaths.zygote_socket()
+
+
 def ensure_socket_dir(path: Path) -> bool:
     """Ensure socket directory exists with 0700 permissions."""
     try:

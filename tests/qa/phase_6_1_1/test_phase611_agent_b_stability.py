@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier, get_rss
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier, get_rss
 
 
 # Mark all tests in this module as stress tests

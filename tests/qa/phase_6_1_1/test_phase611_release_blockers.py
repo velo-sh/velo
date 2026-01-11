@@ -23,7 +23,7 @@ import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 
 # RFC-0011 is now implemented (at least partially)

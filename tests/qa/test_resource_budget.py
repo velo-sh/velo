@@ -1,7 +1,7 @@
 import pytest
 import psutil
 import time
-from conftest import T_SHORT, T_MEDIUM
+from conftest_utils import T_SHORT, T_MEDIUM
 
 
 @pytest.mark.tier1

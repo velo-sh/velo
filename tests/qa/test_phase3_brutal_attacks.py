@@ -18,7 +18,7 @@ import threading
 import time
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 from pathlib import Path
 
