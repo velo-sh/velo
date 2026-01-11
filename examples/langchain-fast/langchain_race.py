@@ -85,8 +85,16 @@ for i in range(500):
     # Trigger full Schema generation (this is the bottleneck)
     model.model_json_schema()
 
+# Get RSS memory peak (MB)
+try:
+    import resource
+    rusage_denom = 1024 * 1024 if sys.platform == "darwin" else 1024
+    rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
+except ImportError:
+    rss_mb = 0.0
+
 elapsed = time.perf_counter() - start
-print(elapsed)
+print(f"{elapsed}|{rss_mb}")
 '''
     
     env = os.environ.copy()
@@ -96,6 +104,7 @@ print(elapsed)
         script = '''
 import time
 import os
+import sys
 
 start = time.perf_counter()
 
@@ -110,8 +119,16 @@ class CachedModel(BaseModel):
 # Emulate locked validation (no need to regenerate Schema)
 CachedModel.model_json_schema()
 
+# Get RSS memory peak (MB)
+try:
+    import resource
+    rusage_denom = 1024 * 1024 if sys.platform == "darwin" else 1024
+    rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
+except ImportError:
+    rss_mb = 0.0
+
 elapsed = time.perf_counter() - start
-print(elapsed)
+print(f"{elapsed}|{rss_mb}")
 '''
     
     result = subprocess.run(
@@ -122,24 +139,30 @@ print(elapsed)
     )
     
     if result.returncode == 0 and result.stdout.strip():
-        return float(result.stdout.strip())
-    return 0.0
+        try:
+            parts = result.stdout.strip().split('|')
+            elapsed = float(parts[0])
+            rss = float(parts[1]) if len(parts) > 1 else 0.0
+            return elapsed, rss
+        except (ValueError, IndexError):
+            pass
+    return 0.0, 0.0
 
 
 def run_race(runs: int = 1) -> tuple:
     """Execute A/B validation test"""
-    cpython_times = []
-    velo_times = []
+    cpython_results = []
+    velo_results = []
     
     for i in range(runs):
-        cpython_times.append(measure_import_speed(use_velo=False))
-        velo_times.append(measure_import_speed(use_velo=True))
+        cpython_results.append(measure_import_speed(use_velo=False))
+        velo_results.append(measure_import_speed(use_velo=True))
     
-    # Check for valid results
-    cpython_times = [t for t in cpython_times if t > 0]
-    velo_times = [t for t in velo_times if t > 0]
+    # Check for valid results (filter out zeros)
+    cpython_results = [r for r in cpython_results if r[0] > 0]
+    velo_results = [r for r in velo_results if r[0] > 0]
     
-    if not cpython_times or not velo_times:
+    if not cpython_results or not velo_results:
         print("\n\033[1;31m[ERROR] Pydantic is not installed!\033[0m")
         print("\033[90mThis demo requires pydantic v2 to measure real schema generation times.\033[0m")
         print("\n\033[1;33mTo install dependencies, run:\033[0m")
@@ -147,7 +170,12 @@ def run_race(runs: int = 1) -> tuple:
         print("\nThen re-run this demo.")
         sys.exit(1)
     
-    return statistics.median(cpython_times), statistics.median(velo_times)
+    c_time = statistics.median([r[0] for r in cpython_results])
+    c_rss = statistics.median([r[1] for r in cpython_results])
+    v_time = statistics.median([r[0] for r in velo_results])
+    v_rss = statistics.median([r[1] for r in velo_results])
+    
+    return (c_time, c_rss), (v_time, v_rss)
 
 
 def main():
@@ -158,14 +186,18 @@ def main():
     print_header("HIO-002 (LangChain)", "Import Once, Run Forever.")
     
     with spinner_context(f"Generating 500 complex Pydantic models x {args.runs} runs..."):
-        c_time, v_time = run_race(runs=args.runs)
+        cpython_res, velo_res = run_race(runs=args.runs)
     
-    print_race_result(c_time, v_time, "Schema Generation")
+    c_time, c_rss = cpython_res
+    v_time, v_rss = velo_res
+    
+    print_race_result(c_time, v_time, "Schema Generation", memory_data=(c_rss, v_rss))
     
     # Calculate HIO Score: 10x corresponds to 98 points
     speedup = c_time / max(v_time, 0.001)
+    mem_saving = max(0, (c_rss - v_rss) / max(c_rss, 1))
     score = min(100, 50 + speedup * 5.1)
-    print_score(score, 0.60)
+    print_score(score, mem_saving)
     
     print_reproduce_hint("./run_hio.sh --compare --runs=3")
 
