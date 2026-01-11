@@ -5,6 +5,7 @@ Supports CI auto-downgrade, accessibility mode, and quiet mode
 """
 import os
 import sys
+from typing import Optional, Tuple, Any
 
 # Environment Detection
 IS_TTY = sys.stdout.isatty()
