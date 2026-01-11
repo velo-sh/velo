@@ -37,9 +37,15 @@ Demonstrating the ultimate test feedback loop after high-frequency code changes.
 ### Scenario: N=10 Full Environment Resets
 | Metric | Traditional (Process-level) | Velo (Fork-level) | Improvement |
 | :--- | :--- | :--- | :--- |
-| **Total Time** | 4.95s | **0.29s** | **17x Speedup** ⚡ |
-| **Per Reset** | 0.495s | **0.029s** | **Kernel-Speed** |
+| **Total Time** | 4.97s | **0.31s** | **16x Speedup** ⚡ |
+| **Per Reset** | 0.497s | **0.031s** | **Kernel-Speed** |
+| **Total RSS (N=10)** | 491.6MB (10 × 49.2MB) | **50.0MB** (CoW) | **90% Saved** 📉 |
 
 ### Core Advantage
 Velo leverages the OS kernel to perform the "reset" (via `fork`) in **~1ms**. This is orders of magnitude faster than Python's user-space cleanup or database `TRUNCATE` commands.
 
+### Memory Efficiency
+With Copy-On-Write (CoW), forked workers share the parent's memory pages:
+- **Traditional**: Each of N resets spawns an independent process, each allocating ~49MB
+- **Velo**: One Zygote (~50MB) shared across all N workers via CoW
+- **Total memory**: 490MB vs 50MB = **~90% reduction**
