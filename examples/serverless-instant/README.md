@@ -79,10 +79,10 @@ With Velo's Zygote + fork model:
 | Velo | **<1ms** | **~500x** ⚡ |
 
 ### Scenario 2: Burst Cold Starts (N=10)
-| Mode | Total Time | Peak RSS | Speedup |
+| Mode | Total Time | Per-Request RSS | Speedup |
 | :--- | :--- | :--- | :--- |
-| CPython | ~4.5s | ~10 × baseline | — |
-| Velo | **~10ms** | ~1 × baseline (CoW) | **~500x** ⚡ |
+| CPython | ~4.3s | **~67MB each** (N × baseline) | — |
+| Velo | **~9ms** | **~64MB shared** (CoW) | **~476x** ⚡ |
 
 ### Scenario 3: Warm vs Cold
 | Mode | First Request | Subsequent |
@@ -90,6 +90,13 @@ With Velo's Zygote + fork model:
 | CPython | slow | slow |
 | Velo | slow (Zygote warmup, amortized) | **near-zero (<1ms)** |
 
+### Memory Efficiency
+| Metric | CPython (N=10) | Velo (N=10) | Improvement |
+| :--- | :--- | :--- | :--- |
+| **Peak RSS** | ~670MB | **~64MB** | **~90% saved** 📉 |
+| **Per-Worker Delta** | ~67MB | **~0MB** (CoW) | **Shared** |
+
+> **Note**: CPython spawns N independent processes, each loading the full runtime (~67MB). Velo's fork() shares memory via Copy-On-Write — workers only allocate memory for modified pages.
 
 ---
 
