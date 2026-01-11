@@ -92,9 +92,9 @@ path_linux_fd_dir = "/proc/self/fd"
 path_macos_fd_dir = "/dev/fd"
 
 # Level 2: Environment Overlays
-# CI: Use /tmp for simpler debugging and shorter paths
-path_macos_ci_socket_parent = "/tmp"
-path_linux_ci_socket_parent = "/tmp"
+# CI: Use XDG_RUNTIME_DIR for test isolation (falling back to /tmp if unset)
+path_macos_ci_socket_parent = "/tmp"  # macOS usually uses /tmp, let's keep it simple unless we specifically export XDG
+path_linux_ci_socket_parent = "${XDG_RUNTIME_DIR}"
 
 # Prod: Same as base (no override needed)
 # path_macos_prod_socket_parent = (inherits from base)
