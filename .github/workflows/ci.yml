@@ -130,7 +130,7 @@ jobs:
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.analyze == 'true' ||
       needs.changes.outputs.qa_infra == 'true' ||
-      needs.changes.outputs.kinetic == "true"
+      needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -179,7 +179,7 @@ jobs:
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.analyze == 'true' ||
       needs.changes.outputs.qa_infra == 'true' ||
-      needs.changes.outputs.kinetic == "true"
+      needs.changes.outputs.kinetic == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
