@@ -128,9 +128,10 @@ impl VeloPaths {
         let dir = Self::socket_dir();
         ensure_socket_dir(&dir);
 
-        // RFC-0011: Use short UUID suffix to prevent socket collisions on respawn
-        // Format: w-{id}-{short_uuid}.s (e.g., w-0-a1b2c3d4.s)
-        let short_uuid = &uuid::Uuid::now_v7().to_string()[..8];
+        // RFC-0011: Use UUIDv4 (random) for socket uniqueness
+        // UUIDv7 has millisecond resolution which can collide in fast tests
+        // Format: w-{id}-{uuid8}.s (e.g., w-0-a1b2c3d4.s)
+        let short_uuid = &uuid::Uuid::new_v4().to_string()[..8];
         dir.join(format!("w-{}-{}.s", worker_id, short_uuid))
     }
 
