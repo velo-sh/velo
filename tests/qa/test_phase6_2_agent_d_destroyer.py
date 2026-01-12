@@ -131,15 +131,17 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
     env = isolated_env
     socket_path = Path("/tmp") / f"chaos_zygote_exhaust_{os.getpid()}.sock"
 
+    # Create app FIRST so module check can find it when starting zygote
+    env.create_app("main.py", "app = lambda s, r, se: None")
+
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-    proc = subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env)
+    # Use cwd=env.path so module validation can find main.py
+    proc = subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env, cwd=env.path)
     # Wait for socket
     timeout = time.time() + 30
     while not socket_path.exists() and time.time() < timeout:
         time.sleep(0.1)
-
-    env.create_app("main.py", "app = lambda s, r, se: None")
 
     sockets = []
     try:
@@ -156,6 +158,7 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
         res = subprocess.run(
             [env.velo, "serve", "main:app", "--dry-run"],
             env=cmd_env,
+            cwd=env.path,  # Required for module validation to find main.py
             capture_output=True,
             timeout=30,
         )
