@@ -16,8 +16,7 @@ velo - The high-performance Python runtime for the AI era
 USAGE:
     velo run [OPTIONS] <script.py>
     velo serve <app> [OPTIONS]
-    velo python <args>               # RFC-0018: Shadow command
-    velo pip <args>                  # RFC-0018: Shadow command
+    velo python <args>               # Managed Python (RFC-0018)
     velo analyze [OPTIONS] [file.py]
     velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
@@ -28,8 +27,7 @@ USAGE:
 COMMANDS:
     run      Run a Python script
     serve    Serve a Python ASGI/WSGI application
-    python   Run Python via managed toolchain (RFC-0018)
-    pip      Run pip via managed toolchain (RFC-0018)
+    python   Run Python via managed uv toolchain
     analyze  Analyze import times and suggest optimizations
     bundle   Bundle management (inspect, build)
     zygote   Manage Zygote pre-warming daemon
