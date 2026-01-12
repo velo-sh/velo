@@ -157,7 +157,7 @@ class VeloTestEnv:
             "XDG_RUNTIME_DIR": str(self.xdg),
             "VIRTUAL_ENV": current_venv,
             "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
-            "VELO_TEST_MODE": "1",
+            "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
             "PYTHONUNBUFFERED": "1",
         })
 

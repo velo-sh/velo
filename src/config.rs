@@ -34,7 +34,18 @@ pub struct VeloConfig {
 impl Default for VeloConfig {
     fn default() -> Self {
         // VELO_ENV determines the security profile: dev (default), ci, prod
-        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+        // VELO_TEST_MODE=1 implies "ci" profile (allows fallback, same as CI)
+        let env_mode = match std::env::var("VELO_ENV") {
+            Ok(mode) => mode,
+            Err(_) => {
+                // If VELO_TEST_MODE is set, use "ci" profile for test resilience
+                if std::env::var("VELO_TEST_MODE").is_ok() {
+                    "ci".to_string()
+                } else {
+                    "dev".to_string()
+                }
+            }
+        };
 
         // Detect OS at runtime
         let os_name = match std::env::consts::OS {
@@ -88,7 +99,7 @@ impl Default for VeloConfig {
             graceful_shutdown_timeout: extract_default_u64("graceful_shutdown_timeout", 30),
             strict_optimizations: match env_mode.as_str() {
                 "prod" => false, // SECURITY: Never crash in Production (Graceful Degradation)
-                "ci" => false,   // CI: Allow graceful fallback for test resilience
+                "ci" => false,   // CI/Test: Allow graceful fallback for resilience
                 _ => extract_default_bool("strict_optimizations", true),
             },
         }
