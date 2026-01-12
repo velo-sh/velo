@@ -60,7 +60,7 @@ Python 不仅仅是代码；它是 **被提纯过的逻辑思维**。它是人�
 
 我们提议在关键路径上 **彻底消除 Python Event Loop**。取而代之的是，用 Python 的 `async/await` 语法直接驱动 **Tokio 调度器**。
 
-### 4.1 核心技术 I: 锈化包装器 (The Rusty Wrapper - `velo.spawn`)
+### 4.1 核心技术 I: Rust化包装器 (The Rusty Wrapper - `velo.spawn`)
 **目标**: 将 Python 协程作为原生的 Tokio Task 运行。
 
 #### 开发者体验
