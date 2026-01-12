@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Velo QA: Python Detection Tests (PYDET-xxx)
 ============================================
@@ -35,15 +36,15 @@ class TestPythonDetectionSYMLINKS:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create .venv/bin directory
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
-            
+
             # Create symlink loop: python -> python (itself)
             python_link = venv_bin / "python"
             python_link.symlink_to(python_link)
-            
+
             # Run should timeout or fail gracefully, not hang forever
             # Note: Velo correctly falls back to system Python, which is acceptable
             result = run_velo(["run", "test.py"], cwd=env.path, timeout=5)
@@ -63,14 +64,14 @@ class TestPythonDetectionFAKE:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create fake python as shell script
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
             fake_python = venv_bin / "python"
             fake_python.write_text("#!/bin/bash\necho 'I am fake python'\nexit 0\n")
             fake_python.chmod(0o755)
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path, timeout=10)
             assert_no_crash(result)
             # Behavior is acceptable: either works or fails gracefully
@@ -83,13 +84,13 @@ class TestPythonDetectionFAKE:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Try to use python2 if it exists (usually /usr/bin/python2)
             if os.path.exists("/usr/bin/python2"):
                 result = run_velo(
                     ["run", "test.py"],
                     cwd=env.path,
-                    env={"VELO_PYTHON": "/usr/bin/python2"}
+                    env={"VELO_PYTHON": "/usr/bin/python2"},
                 )
                 assert_no_crash(result)
                 # Should either fail gracefully or warn about Python 2
@@ -103,10 +104,10 @@ class TestPythonDetectionFAKE:
         env = VeloTestEnv()
         try:
             env.create_uv_lock()
-            
+
             # Create script that hangs
             env.create_script(content="import time; time.sleep(3600)")
-            
+
             # Velo should either timeout or we can at least kill it
             result = run_velo(["run", "test.py"], cwd=env.path, timeout=5)
             # Timeout is expected
@@ -120,17 +121,15 @@ class TestPythonDetectionFAKE:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create fake python that outputs binary garbage
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
             fake_python = venv_bin / "python"
             # Shell script that outputs random bytes
-            fake_python.write_text(
-                '#!/bin/bash\nhead -c 1000 /dev/urandom\nexit 0\n'
-            )
+            fake_python.write_text("#!/bin/bash\nhead -c 1000 /dev/urandom\nexit 0\n")
             fake_python.chmod(0o755)
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path, timeout=10)
             assert_no_crash(result)
         finally:
@@ -146,12 +145,12 @@ class TestPythonDetectionSECURITY:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Try path traversal
             result = run_velo(
                 ["run", "test.py"],
                 cwd=env.path,
-                env={"VELO_PYTHON": "../../../../../../etc/passwd"}
+                env={"VELO_PYTHON": "../../../../../../etc/passwd"},
             )
             assert_no_crash(result)
             # Should fail because /etc/passwd is not an executable
@@ -165,7 +164,7 @@ class TestPythonDetectionSECURITY:
         try:
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create non-executable file
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
@@ -173,7 +172,7 @@ class TestPythonDetectionSECURITY:
             python_file.write_text("#!/usr/bin/env python3\nprint('hello')")
             # Explicitly remove execute permission
             python_file.chmod(0o644)
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result)
             # Should fail with permission error
@@ -192,7 +191,7 @@ class TestPythonDetectionFALLBACK:
             env.create_uv_lock()
             env.create_script()
             # Note: NOT creating venv
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result)
             # May succeed if system python3 exists
@@ -206,13 +205,12 @@ class TestPythonDetectionFALLBACK:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Use system python instead of venv
             import sys
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"VELO_PYTHON": sys.executable}
+                ["run", "test.py"], cwd=env.path, env={"VELO_PYTHON": sys.executable}
             )
             assert_no_crash(result)
             assert result.success

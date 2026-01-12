@@ -22,12 +22,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   UV_VERSION: "0.9" # Centralized uv version
+  VELO_ENV: ci # RFC-0012: CI environment profile (disables strict_optimizations)
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
   VELO_ZYGOTE_SOCKET_TIMEOUT: 60
   VELO_ZYGOTE_WORKER_TIMEOUT: 60
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
+  # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
   performance-canary:
     name: 🐤 Performance Canary (Nightly)
@@ -62,6 +64,7 @@ jobs:
       analyze: ${{ steps.filter.outputs.analyze }}
       workflow: ${{ steps.filter.outputs.workflow }}
       qa_infra: ${{ steps.filter.outputs.qa_infra }}
+      kinetic: ${{ steps.filter.outputs.kinetic }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,7 +75,11 @@ jobs:
           filters: |
             rust:
               - 'src/**/*.rs'
+              - 'tests/**/*.rs'
+              - 'tests/qa/**/*.py'
               - 'Cargo.*'
+              - 'build.rs'
+              - 'config/**'
             loader:
               - 'src/loader/**/*.rs'
               - 'python/velo_loader.py'
@@ -86,6 +93,7 @@ jobs:
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
+              - 'tests/qa/test_preflight.py'
             serve:
               - 'src/serve/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
@@ -107,6 +115,8 @@ jobs:
             workflow:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-velo/**'
+              - 'Dockerfile.*'
+              - 'scripts/**'
             qa_infra:
               - 'tests/qa/conftest.py'
               - 'tests/qa/utils/**'
@@ -123,7 +133,8 @@ jobs:
       needs.changes.outputs.zygote == 'true' || 
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.analyze == 'true' ||
-      needs.changes.outputs.qa_infra == 'true'
+      needs.changes.outputs.qa_infra == 'true' ||
+      needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -153,6 +164,9 @@ jobs:
       - name: Run tests
         run: uv run run_tests.py
 
+      - name: "RFC-0020: Pre-Flight Check"
+        run: ./target/release/velo debug zygote --json
+
       - name: Check binary size
         run: |
           echo "Binary size:"
@@ -168,7 +182,8 @@ jobs:
       needs.changes.outputs.zygote == 'true' || 
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.analyze == 'true' ||
-      needs.changes.outputs.qa_infra == 'true'
+      needs.changes.outputs.qa_infra == 'true' ||
+      needs.changes.outputs.kinetic == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -622,15 +637,35 @@ jobs:
                -v --tb=short
 
   # ============================================
-  # Phase 6.2: Kinetic Protocol (RFC-0013)
-  # Regression & Corruption Guardrails
+  # Phase 7.0: Memory Gravity (RFC-0015)
   # ============================================
+
+  qa-phase7-0-memory:
+    name: "QA 7.0: Memory Gravity (RFC-0015)"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_7_0 -v --tb=short
+
+
 
   qa-kinetic-regression-gate:
     name: "QA 6.2: Kinetic Regression Gate"
     runs-on: ${{ matrix.os }}
-    needs: [build, changes]
-    if: needs.changes.outputs.kinetic == 'true' || needs.changes.outputs.workflow == 'true'
+    needs: [build, build-matrix, changes]
+    if: |
+      needs.changes.outputs.kinetic == 'true' || 
+      needs.changes.outputs.workflow == 'true' ||
+      needs.changes.outputs.rust == 'true' ||
+      needs.changes.outputs.qa_infra == 'true'
     strategy:
       fail-fast: false
       matrix:

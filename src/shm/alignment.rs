@@ -38,25 +38,27 @@ pub fn calculate_padding(header_len: usize) -> Result<usize, AlignmentError> {
     }
 }
 
-/// Aligns a size up to the next HugePage (2MB) boundary.
-///
-/// H-20 Invariant: `ftruncate` on hugetlbfs requires size to be a multiple of the page size.
-///
-/// Algorithm:
-/// - If `size % HUGE_PAGE_SIZE == 0`: return `size`.
-/// - Otherwise: return `((size / HUGE_PAGE_SIZE) + 1) * HUGE_PAGE_SIZE`.
+/// Aligns a size up to the next provided boundary.
 #[inline]
-pub fn align_to_huge_page(size: usize) -> usize {
-    use crate::shm::constants::HUGE_PAGE_SIZE;
-    if size == 0 {
-        return 0;
+pub fn align_up(size: usize, boundary: usize) -> usize {
+    if boundary == 0 || size == 0 {
+        return size;
     }
-    let remainder = size % HUGE_PAGE_SIZE;
+    let remainder = size % boundary;
     if remainder == 0 {
         size
     } else {
-        (size / HUGE_PAGE_SIZE + 1) * HUGE_PAGE_SIZE
+        (size / boundary + 1) * boundary
     }
+}
+
+/// Aligns a size up to the next HugePage (2MB) boundary.
+///
+/// H-20 Invariant: `ftruncate` on hugetlbfs requires size to be a multiple of the page size.
+#[inline]
+pub fn align_to_huge_page(size: usize) -> usize {
+    use crate::shm::constants::HUGE_PAGE_SIZE;
+    align_up(size, HUGE_PAGE_SIZE)
 }
 
 #[cfg(test)]
@@ -101,5 +103,14 @@ mod tests {
         // If size % H == 0, returns size. So 0 returns 0.
         // If the file is empty, we probably shouldn't allocate hugepages or minimal 2MB.
         assert_eq!(align_to_huge_page(0), 0);
+    }
+
+    #[test]
+    fn test_align_up() {
+        assert_eq!(align_up(0, 4096), 0);
+        assert_eq!(align_up(1, 4096), 4096);
+        assert_eq!(align_up(4096, 4096), 4096);
+        assert_eq!(align_up(4097, 4096), 8192);
+        assert_eq!(align_up(100, 0), 100);
     }
 }

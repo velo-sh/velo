@@ -60,17 +60,33 @@ impl ModuleEntry {
         let mut cursor = 0;
 
         // Read name length and name
-        let name_len = u32::from_le_bytes(data[cursor..cursor + 4].try_into().unwrap()) as usize;
+        if data.len() < cursor + 4 {
+            return Err(crate::loader::error::LoaderError::InsecureBundle(
+                "Incomplete ModuleEntry header".into(),
+            ));
+        }
+        let name_len = u32::from_le_bytes(data[cursor..cursor + 4].try_into().map_err(|_| {
+            crate::loader::error::LoaderError::InsecureBundle("Invalid name length".into())
+        })?) as usize;
         cursor += 4;
 
         let name = String::from_utf8_lossy(&data[cursor..cursor + name_len]).to_string();
         cursor += name_len;
 
         // Read fixed fields
-        let offset = u64::from_le_bytes(data[cursor..cursor + 8].try_into().unwrap());
+        if data.len() < cursor + 16 {
+            return Err(crate::loader::error::LoaderError::InsecureBundle(
+                "Incomplete ModuleEntry fields".into(),
+            ));
+        }
+        let offset = u64::from_le_bytes(data[cursor..cursor + 8].try_into().map_err(|_| {
+            crate::loader::error::LoaderError::InsecureBundle("Invalid offset".into())
+        })?);
         cursor += 8;
 
-        let size = u64::from_le_bytes(data[cursor..cursor + 8].try_into().unwrap());
+        let size = u64::from_le_bytes(data[cursor..cursor + 8].try_into().map_err(|_| {
+            crate::loader::error::LoaderError::InsecureBundle("Invalid size".into())
+        })?);
         cursor += 8;
 
         let mut hash = [0u8; 32];

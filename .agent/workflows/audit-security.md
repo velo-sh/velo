@@ -28,6 +28,10 @@ Search for specific "Sins".
 3.  **Sin of Parsing**:
     - `grep_search "unwrap()"` (Forbidden in production).
     - `grep_search "expect()"` (Forbidden in production).
+4.  **Sin of Leakage**:
+    - `grep_search "/Users/"` (Check for local path leaks).
+    - `grep_search "/home/"` (Check for local path leaks).
+    - `grep_search "file:///"` (Absolute references are forbidden).
 
 ## 3. 🚨 Phase III: The Indictment
 

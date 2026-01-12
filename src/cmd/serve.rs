@@ -101,6 +101,10 @@ pub struct ServeCmd {
     #[arg(long)]
     pub prod: bool,
 
+    /// Enable Zygote pre-warming (default)
+    #[arg(long, conflicts_with = "no_zygote")]
+    pub zygote: bool,
+
     /// Disable Zygote pre-warming
     #[arg(long)]
     pub no_zygote: bool,

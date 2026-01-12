@@ -5,6 +5,7 @@
 pub mod analyze;
 pub mod bench;
 pub mod bundle;
+pub mod debug;
 pub mod graph;
 pub mod info;
 pub mod run;
@@ -14,6 +15,7 @@ pub mod zygote;
 pub use analyze::cmd_analyze;
 pub use bench::cmd_bench;
 pub use bundle::cmd_bundle;
+pub use debug::cmd_debug;
 pub use graph::cmd_graph;
 pub use info::cmd_info;
 pub use run::cmd_run;

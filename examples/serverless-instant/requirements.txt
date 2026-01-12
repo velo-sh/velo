@@ -1,0 +1,7 @@
+# HIO-004 Serverless Instant Dependencies
+# These represent real Python serverless workload import costs
+
+fastapi>=0.100.0
+pydantic>=2.0.0
+sqlalchemy>=2.0.0
+numpy>=1.24.0

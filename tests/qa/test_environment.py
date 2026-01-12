@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Velo QA: Environment Pollution Tests (ENV-xxx)
 ==============================================
@@ -34,14 +35,12 @@ class VeloTestEnvPOLLUTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create 1MB PYTHONPATH
             giant_path = ":".join(["/fake/path"] * 50000)  # ~600KB
-            
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"PYTHONPATH": giant_path}
+                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": giant_path}
             )
             assert_no_crash(result)
             # Should work despite huge PYTHONPATH
@@ -55,14 +54,12 @@ class VeloTestEnvPOLLUTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # PYTHONPATH with various special chars
             special_path = "/path/with spaces:/path/with:colons:/unicode/路径"
-            
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"PYTHONPATH": special_path}
+                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": special_path}
             )
             assert_no_crash(result)
         finally:
@@ -79,15 +76,16 @@ class VeloTestEnvCONFLICT:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             import sys
+
             result = run_velo(
                 ["run", "test.py"],
                 cwd=env.path,
                 env={
                     "VELO_PYTHON": sys.executable,
                     "PYTHONHOME": "/nonexistent/path",
-                }
+                },
             )
             assert_no_crash(result)
             # VELO_PYTHON should take precedence
@@ -105,11 +103,9 @@ class VeloTestEnvUNICODE:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"PYTHONPATH": "/路径/测试:/경로/테스트"}
+                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": "/路径/测试:/경로/테스트"}
             )
             assert_no_crash(result)
             assert result.success
@@ -127,11 +123,9 @@ class VeloTestEnvMISSING:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"HOME": "/nonexistent/home"}
+                ["run", "test.py"], cwd=env.path, env={"HOME": "/nonexistent/home"}
             )
             assert_no_crash(result)
             # Should still work - Velo doesn't require HOME
@@ -145,11 +139,9 @@ class VeloTestEnvMISSING:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             result = run_velo(
-                ["run", "test.py"],
-                cwd=env.path,
-                env={"TMPDIR": "/nonexistent/tmp"}
+                ["run", "test.py"], cwd=env.path, env={"TMPDIR": "/nonexistent/tmp"}
             )
             assert_no_crash(result)
         finally:
@@ -166,11 +158,11 @@ class VeloTestEnvCLEAN:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             result = run_velo(
                 ["run", "test.py"],
                 cwd=env.path,
-                env={"PATH": "/usr/bin:/bin"}  # Minimal PATH
+                env={"PATH": "/usr/bin:/bin"},  # Minimal PATH
             )
             assert_no_crash(result)
         finally:

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::zygote::ipc;
+use uuid::Uuid;
 
 pub struct Worker {
     pub pid: u32,
@@ -42,12 +43,12 @@ impl Worker {
         app: &str,
         worker_id: u64,
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
+        config: &crate::config::VeloConfig,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
-        let config = crate::config::VeloConfig::default();
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
-        let launcher_path = crate::zygote::find_worker_launcher()
+        let launcher_path = crate::zygote::find_worker_launcher(config)
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
 
         // 1. Determine a unique UDS path (Industrial Grade - Standardized)
@@ -84,8 +85,9 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
-                env: build_worker_env(&config),
+                env: build_worker_env(config),
                 shm_size,
+                request_id: Some(Uuid::now_v7().to_string()),
             },
             fd_to_pass,
         )?;
@@ -110,11 +112,11 @@ impl Worker {
         app: &str,
         host: &str,
         port: u16,
+        config: &crate::config::VeloConfig,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
-        let config = crate::config::VeloConfig::default();
 
-        let launcher_path = crate::zygote::find_worker_launcher()
+        let launcher_path = crate::zygote::find_worker_launcher(config)
             .map_err(|e| anyhow::anyhow!("Zygote launcher error: {}", e))?;
 
         let args = vec![
@@ -139,8 +141,9 @@ impl Worker {
                 bundle_path: None,
                 project_root: None,
                 max_bundle_size: None,
-                env: build_worker_env(&config),
+                env: build_worker_env(config),
                 shm_size: None,
+                request_id: Some(Uuid::now_v7().to_string()),
             },
             None,
         )?;
@@ -199,13 +202,11 @@ impl Worker {
     }
 
     pub fn is_running(&self) -> bool {
-        match ipc::send_command(
-            &self.zygote_socket,
-            ipc::ZygoteCommand::WorkerStatus {
-                worker_pid: self.pid,
-            },
-            None,
-        ) {
+        let cmd = ipc::ZygoteCommand::WorkerStatus {
+            worker_pid: self.pid,
+            request_id: Some(Uuid::now_v7().to_string()),
+        };
+        match ipc::send_command(&self.zygote_socket, cmd, None) {
             Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
             _ => false,
         }
@@ -233,35 +234,29 @@ impl Worker {
     }
 
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
-        let _ = ipc::send_command(
-            &self.zygote_socket,
-            ipc::ZygoteCommand::SignalWorker {
-                worker_pid: self.pid,
-                signal: 15, // SIGTERM
-            },
-            None,
-        );
+        let cmd = ipc::ZygoteCommand::SignalWorker {
+            worker_pid: self.pid,
+            signal: 15, // SIGTERM
+            request_id: Some(Uuid::now_v7().to_string()),
+        };
+        let _ = ipc::send_command(&self.zygote_socket, cmd, None);
 
-        let response = ipc::send_command(
-            &self.zygote_socket,
-            ipc::ZygoteCommand::WaitWorker {
-                worker_pid: self.pid,
-                timeout_secs: Some(timeout.as_secs()),
-            },
-            None,
-        );
+        let cmd = ipc::ZygoteCommand::WaitWorker {
+            worker_pid: self.pid,
+            timeout_secs: Some(timeout.as_secs()),
+            request_id: Some(Uuid::now_v7().to_string()),
+        };
+        let response = ipc::send_command(&self.zygote_socket, cmd, None);
 
         match response {
             Ok(ipc::ZygoteResponse::WorkerExited { .. }) => Ok(()),
             _ => {
-                let _ = ipc::send_command(
-                    &self.zygote_socket,
-                    ipc::ZygoteCommand::SignalWorker {
-                        worker_pid: self.pid,
-                        signal: 9, // SIGKILL
-                    },
-                    None,
-                );
+                let kill_cmd = ipc::ZygoteCommand::SignalWorker {
+                    worker_pid: self.pid,
+                    signal: 9, // SIGKILL
+                    request_id: Some(Uuid::now_v7().to_string()),
+                };
+                let _ = ipc::send_command(&self.zygote_socket, kill_cmd, None);
                 Ok(())
             }
         }

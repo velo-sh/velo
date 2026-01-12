@@ -178,13 +178,34 @@ wait $PID
 ### `model.py` (Intentionally slow)
 ```python
 import time
+import sys
+import os
+
+# Architectural Instruction: 
+# This file MUST simulate a 'heavy' native extension.
+# In Phase 7.1, it must consume 500MB of simulated weight memory via SHM.
 time.sleep(0.3)
 
+_SIMULATED_WEIGHTS = object() # Simulated weights memory
+
 def embed(text):
-    return {"vector": [0.1, 0.2, 0.3]}
+    # Proof of Sharing: Return memory addresses to the client
+    return {
+        "vector": [0.1, 0.2, 0.3],
+        "debug": {
+            "pid": os.getpid(),
+            "weights_ptr": hex(id(_SIMULATED_WEIGHTS)) # Points to the shared weights object
+        }
+    }
 ```
 
 ---
+
+## 9. Architectural Invariants (Architect's Red Lines)
+
+1.  **H-26 Enforcement**: The demo script MUST verify that `ps -o ppid` for all workers matches the Host binary PID.
+2.  **Sensory Shock Requirement**: Any startup time > 150ms for Velo is a FAILURE. The goal is "Sensorial Immediacy."
+3.  **Density Proof**: The demo environment MUST include a `verify-density.sh` that proves 10 workers consume < 1.1x memory of 1 worker.
 
 ## Demo Internals (hidden, but honest)
 

@@ -1,67 +1,47 @@
 # Handover: Developer (Phase 7.1 - AI Serverless Demo)
 
-> **Mission**: Set up the local AI Serverless Demo environment as defined by the marketing narrative.
+> **Mission**: Deliver the **Sensory Shock** of Velo performance.
 > **Role**: Developer (ID-LOCK-002)
 > **SOP**: [SOP-001-master-lifecycle.md](../../docs/architecture/SOP-001-master-lifecycle.md)
 
-## 1. Deliverables
+## 1. The Strategy: "Instant AI"
+The goal is to prove that Python cold start is an architectural choice, not a language limitation.
 
-Create a new directory `demo/ai-serverless/` and populate it with the following files:
+### 1.1 Mandatory Deliverables
+Create the `demo/ai-serverless/` directory with the following **Brand-Aligned** files:
 
-### 1.1 `demo/ai-serverless/model.py`
+#### `model.py` (The Weight Simulation)
+Must simulate the 0.3s delay of a native model initialization. In "Velo mode", this init cost should be eliminated via Zygote pre-warming.
 ```python
 import time
-# Simulating the cost of loading heavy native extensions/tensors
+import os
+
+# ARCHITECT'S MANDATE: 
+# Simulation of heavy native init. Must sleep for 300ms in baseline.
 time.sleep(0.3)
 
 def embed(text):
-    return {"vector": [0.1, 0.2, 0.3]}
+    return {
+        "vector": [0.1, 0.2, 0.3],
+        "debug": {"pid": os.getpid(), "addr": hex(id(text))}
+    }
 ```
 
-### 1.2 `demo/ai-serverless/app.py`
-```python
-from model import embed
+#### `app.py` (The Handler)
+A simple JSON API that returns the embedding and the memory address (Proof of Zero-Copy).
 
-def handler():
-    return embed("hello world")
+#### `run-python.sh` & `run-velo.sh`
+Benchmark scripts that measure the time from **invoking the binary** to the **first response**. 
+- **P0 Requirement**: Velo startup MUST be < 100ms.
+- **P0 Requirement**: Output must calculate the "Velo Advantage" (X times faster).
 
-if __name__ == "__main__":
-    import json
-    print(json.dumps(handler()))
-```
+## 2. TITANIUM Invariants (The Red Lines)
+1. **H-26 (PID Namespace)**: `run-velo.sh` must verify all spawned workers share the Host's PID namespace via `ps -o ppid`.
+2. **H-34 (Density Proof)**: You must provide a `verify-density.py` script that proves 10 concurrent requests use < 1.1x total RSS memory vs a single request.
+3. **No Cheats**: No pre-warmed container pools or external caching. Validates the **Runtime Shape** only.
 
-### 1.3 `demo/ai-serverless/run-python.sh`
-```bash
-#!/usr/bin/env bash
-echo "🐍 Starting Python server..."
-START=$(date +%s%3N)
-# Simulating a server startup or single invocation
-python3 app.py &
-PID=$!
-sleep 1
-END=$(date +%s%3N)
-echo "⏱ Startup time: $((END-START))ms"
-kill $PID
-```
-
-### 1.4 `demo/ai-serverless/run-velo.sh`
-```bash
-#!/usr/bin/env bash
-echo "⚡ Starting Velo runtime..."
-# Use the local build of velo
-VELO_BIN="../../target/debug/velo"
-START=$(date +%s%3N)
-$VELO_BIN run app.py &
-PID=$!
-sleep 0.1
-END=$(date +%s%3N)
-echo "⏱ Startup time: $((END-START))ms"
-kill $PID
-```
-
-## 2. Invariants
-1. **No Cheats**: Do not use caches or pre-warmed pools.
-2. **Path Integrity**: Ensure scripts are executable (`chmod +x`).
-
-## 3. Verification
-- Running `./run-velo.sh` should show a startup time significantly lower (<150ms) than `./run-python.sh` (>1000ms).
+## 3. Verification Criteria
+- [ ] `./run-python.sh` cold start > 2.0s.
+- [ ] `./run-velo.sh` cold start < 100ms.
+- [ ] `verify-density.py` shows flat-line memory scaling.
+- [ ] Output uses ANSI colors for the "Wow" effect.

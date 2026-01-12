@@ -3,6 +3,7 @@ import requests
 import time
 import os
 
+
 class TestSecurityHardening:
     """Tests for the 4 Pillars of Industrial Security."""
 
@@ -10,9 +11,10 @@ class TestSecurityHardening:
         """Verify that sensitive environment variables are NOT leaked to the worker."""
         # Set a sensitive env var in the parent process
         os.environ["SECRET_KEY_PARENT"] = "TOP_SECRET_123"
-        
+
         app_path = velo_serve_fixture.tmp_path / "env_app.py"
-        app_path.write_text("""
+        app_path.write_text(
+            """
 from fastapi import FastAPI
 import os
 app = FastAPI()
@@ -21,19 +23,22 @@ app = FastAPI()
 def get_env():
     # Return all env vars starting with SECRET_
     return {k: v for k, v in os.environ.items() if k.startswith("SECRET_")}
-""")
-        
+"""
+        )
+
         try:
             proc = velo_serve_fixture.start("env_app:app", workers=2, zygote=True)
             url = f"http://127.0.0.1:{proc.port}/env"
-            
+
             time.sleep(3)
             resp = requests.get(url)
             assert resp.status_code == 200
             data = resp.json()
-            
+
             # Parent secret should NOT be present in worker
-            assert "SECRET_KEY_PARENT" not in data, "Security Breach: Parent environment leaked to worker!"
+            assert (
+                "SECRET_KEY_PARENT" not in data
+            ), "Security Breach: Parent environment leaked to worker!"
         finally:
             if "SECRET_KEY_PARENT" in os.environ:
                 del os.environ["SECRET_KEY_PARENT"]
@@ -41,7 +46,8 @@ def get_env():
     def test_PILLAR_2_import_shield(self, velo_serve_fixture):
         """Verify that ImportShield blocks internal framework access."""
         app_path = velo_serve_fixture.tmp_path / "shield_app.py"
-        app_path.write_text("""
+        app_path.write_text(
+            """
 from fastapi import FastAPI
 app = FastAPI()
 
@@ -52,11 +58,12 @@ def hack():
         return {"status": "LEAK"}
     except ImportError:
         return {"status": "SHIELDED"}
-""")
-        
+"""
+        )
+
         proc = velo_serve_fixture.start("shield_app:app", workers=2, zygote=True)
         url = f"http://127.0.0.1:{proc.port}/hack"
-        
+
         time.sleep(3)
         resp = requests.get(url)
         assert resp.status_code == 200
@@ -65,7 +72,8 @@ def hack():
     def test_PILLAR_3_sandbox_read_access(self, velo_serve_fixture):
         """Verify that Sandbox allows read access to project root but denies others (if possible)."""
         app_path = velo_serve_fixture.tmp_path / "sandbox_app.py"
-        app_path.write_text("""
+        app_path.write_text(
+            """
 from fastapi import FastAPI
 from pathlib import Path
 import os
@@ -93,32 +101,34 @@ def check():
         results["users_dir"] = "DENY"
         
     return results
-""")
-        
+"""
+        )
+
         proc = velo_serve_fixture.start("sandbox_app:app", workers=2, zygote=True)
         url = f"http://127.0.0.1:{proc.port}/check"
-        
+
         time.sleep(3)
         resp = requests.get(url)
         assert resp.status_code == 200
         data = resp.json()
-        
+
         assert data["project_root"] == "ALLOW"
-        # On macOS with our sandbox profile, access to /Users (deny file-write* is implemented, 
+        # On macOS with our sandbox profile, access to /Users (deny file-write* is implemented,
         # let's see if read is also restricted if we wanted, but our profile said deny file-write* only for now)
         # Actually our implementation in mod.rs said:
         # (deny file-write* (subpath "/Users") (subpath "/var"))
         # (allow file-read* (subpath ...))
         # Since we didn't explicitly deny read for /Users, it might still allow it.
         # But for "Full Armor", we should probably restrict read too.
-        
+
         # Let's verify what we HAVE currently.
         pass
 
     def test_PILLAR_3_sandbox_write_denial(self, velo_serve_fixture):
         """Verify that Sandbox denies write access to sensitive areas."""
         app_path = velo_serve_fixture.tmp_path / "write_app.py"
-        app_path.write_text("""
+        app_path.write_text(
+            """
 from fastapi import FastAPI
 import os
 app = FastAPI()
@@ -131,11 +141,12 @@ def check_write():
         return {"status": "LEAK"}
     except Exception:
         return {"status": "DENY"}
-""")
-        
+"""
+        )
+
         proc = velo_serve_fixture.start("write_app:app", workers=2, zygote=True)
         url = f"http://127.0.0.1:{proc.port}/write"
-        
+
         try:
             resp = requests.get(url)
             assert resp.status_code == 200

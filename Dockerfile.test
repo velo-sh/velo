@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1
+FROM velo-ci-ubuntu
+
+# 1. Python Optimization: Pre-install test dependencies
+RUN uv venv --python 3.11 /tmp/.venv-docker && \
+    . /tmp/.venv-docker/bin/activate && \
+    uv pip install fastapi uvicorn pytest requests psutil
+
+ENV VIRTUAL_ENV=/tmp/.venv-docker
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV PYTHONPATH="/workspace"
+
+# 2. Rust Optimization: Cache Dependencies Layer (Registry + Compilation)
+# Explicitly set CARGO_HOME to ensure we cache the right directory
+ENV CARGO_HOME=/usr/local/cargo
+WORKDIR /build_cache
+
+# Copy only dependency definitions first
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy source files
+RUN mkdir src && \
+    echo "fn main() { println!(\"Dummy build\"); }" > src/main.rs && \
+    mkdir -p velo_zygote
+
+# Build release binary to cache dependencies
+# OPTIMIZATION: Use BuildKit cache mounts to persist downloaded crates (registry/git)
+# across builds, ensuring we skip downloads even if Cargo.toml changes.
+# We also cache the target dir so we can potentially reuse artifacts if config matches.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build_cache/target \
+    cargo build --release || true
+
+# Clean up source code but KEEP the compiled dependencies in target/
+# Note: target/ is in the build_cache dir, which was mounted in the previous step?
+# NO. In the previous step we mounted /build_cache/target. Changes happen in the mount.
+# They are NOT persisted to the image layer unless we copy them out.
+# So for Layer Caching (CI push/pull), we actually WANT to write to the layer.
+# But for Local Dev (User Request), we want to avoid downloads.
+
+# Hybrid Strategy:
+# 1. Mount Registry/Git (Persist Downloads on Host) -> Solves "Download" issue
+# 2. Do NOT mount target (Persist Artifacts in Image Layer) -> Solves "Rebuild" issue
+# This gives us best of both worlds:
+# - If Cargo.toml changes: Layer invalidates. Cache Mount (Registry) saves re-download. 
+# - If Cargo.toml same: Layer cache hit. Instant.
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release || true
+
+# Clean up dummy artifacts
+RUN rm -f target/release/deps/velo* target/release/velo* && \
+    rm -rf src
+
+# 3. Final Environment Setup
+ENV CARGO_TARGET_DIR=/build_cache/target
+
+WORKDIR /workspace

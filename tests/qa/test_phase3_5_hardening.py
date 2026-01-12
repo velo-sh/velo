@@ -19,7 +19,7 @@ def get_velo_binary():
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     debug = repo_root / "target" / "debug" / "velo"
-    
+
     if release.exists():
         return str(release)
     elif debug.exists():
@@ -30,38 +30,38 @@ def get_velo_binary():
 
 class RealUserEnv:
     """Simulates a REAL user project directory."""
-    
+
     def __init__(self):
         self.path = Path(tempfile.mkdtemp(prefix="user_project_"))
         self.velo = get_velo_binary()
-    
+
     def setup(self):
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
         (self.path / "uv.lock").write_text("{}")
         return self
-    
+
     def create_script(self, name: str, content: str):
         (self.path / name).write_text(content)
-    
+
     def run_velo(self, args: list, timeout: float = 30) -> tuple:
         result = subprocess.run(
             [self.velo] + args,
             cwd=self.path,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
         )
         return result.returncode, result.stdout, result.stderr
-    
+
     def cleanup(self):
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
-    
+
     def __enter__(self):
         return self.setup()
-    
+
     def __exit__(self, *args):
         self.cleanup()
 
@@ -121,7 +121,9 @@ class TestSecurityPathValidation:
         with RealUserEnv() as env:
             code, _, stderr = env.run_velo(["run", "--zygote", "nonexistent.py"])
             # Should fail but not crash
-            assert code != 0 or "not found" in stderr.lower() or "Falling back" in stderr
+            assert (
+                code != 0 or "not found" in stderr.lower() or "Falling back" in stderr
+            )
 
 
 class TestStderrCapture:
@@ -130,10 +132,13 @@ class TestStderrCapture:
     def test_stderr_output(self):
         """stderr should be captured."""
         with RealUserEnv() as env:
-            env.create_script("stderr_test.py", '''
+            env.create_script(
+                "stderr_test.py",
+                """
 import sys
 print("error message", file=sys.stderr)
-''')
+""",
+            )
             code, _, stderr = env.run_velo(["run", "--zygote", "stderr_test.py"])
             # Either captured or script succeeded
             assert code == 0 or "error message" in stderr or "Falling back" in stderr

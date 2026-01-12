@@ -6,6 +6,7 @@ import json
 import signal
 from pathlib import Path
 
+
 @pytest.mark.tier1
 def test_kinetic_prng_re_randomization(isolated_env):
     """RFC-0013 §5.2: Verify PRNG re-seeding after fork."""
@@ -30,29 +31,33 @@ def get_random():
     env.create_app("main.py", app_code)
     # MANDATORY: Add pyproject.toml so Velo detects FastAPI and enables Zygote
     (env.path / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
-    
+
     # Start velo serve in background
     port = 8087
     repo_root = Path(__file__).parent.parent.parent
     velo_bin = str(repo_root / "target" / "debug" / "velo")
-    
+
     cmd = [
-        velo_bin, "serve", 
-        "main:app", 
-        "--workers", "4",
-        "--port", str(port),
-        "--host", "127.0.0.1"
+        velo_bin,
+        "serve",
+        "main:app",
+        "--workers",
+        "4",
+        "--port",
+        str(port),
+        "--host",
+        "127.0.0.1",
     ]
-    
+
     proc = subprocess.Popen(
-        cmd, 
-        cwd=env.path, 
-        stdout=subprocess.PIPE, 
+        cmd,
+        cwd=env.path,
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        preexec_fn=os.setsid
+        preexec_fn=os.setsid,
     )
-    
+
     try:
         # Wait for "All workers ready"
         start_time = time.time()
@@ -63,17 +68,19 @@ def get_random():
                 ready = True
                 break
             time.sleep(0.1)
-        
+
         if not ready:
             pytest.fail("Server failed to start within 20s")
-        
+
         # Collect random numbers from different workers
         samples = {}
         for _ in range(30):
             try:
                 res = subprocess.run(
                     ["curl", "-s", f"http://127.0.0.1:{port}/random"],
-                    capture_output=True, text=True, timeout=2
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
                 )
                 data = json.loads(res.stdout)
                 pid = data["pid"]
@@ -83,16 +90,22 @@ def get_random():
             except:
                 pass
             time.sleep(0.1)
-        
+
         # 1. Verify we hit multiple workers
-        assert len(samples) >= 2, f"Only hit {len(samples)} workers, need at least 2 for comparison"
-        
+        assert (
+            len(samples) >= 2
+        ), f"Only hit {len(samples)} workers, need at least 2 for comparison"
+
         # 2. Verify uniqueness across workers
         all_randoms = [s["random"] for p in samples for s in samples[p]]
-        assert len(set(all_randoms)) == len(all_randoms), "Detected duplicate random values across workers!"
-        
+        assert len(set(all_randoms)) == len(
+            all_randoms
+        ), "Detected duplicate random values across workers!"
+
         all_secrets = [s["secrets"] for p in samples for s in samples[p]]
-        assert len(set(all_secrets)) == len(all_secrets), "Detected duplicate secrets across workers!"
+        assert len(set(all_secrets)) == len(
+            all_secrets
+        ), "Detected duplicate secrets across workers!"
 
     finally:
         # Cleanup

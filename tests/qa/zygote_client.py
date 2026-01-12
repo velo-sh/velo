@@ -3,9 +3,10 @@ import socket
 from typing import Dict, Optional, Any
 from velo_zygote.protocol import ZygoteTransport, ProtocolError
 
+
 class ZygoteClient:
     """A reusable high-level client for interacting with the Velo Zygote."""
-    
+
     def __init__(self, socket_path: str):
         self.socket_path = socket_path
         self._reader: Optional[asyncio.StreamReader] = None
@@ -17,18 +18,21 @@ class ZygoteClient:
         try:
             # Connect via Unix Socket
             self._reader, self._writer = await asyncio.wait_for(
-                asyncio.open_unix_connection(self.socket_path),
-                timeout=timeout
+                asyncio.open_unix_connection(self.socket_path), timeout=timeout
             )
             self._transport = ZygoteTransport(self._reader, self._writer)
-            
+
             # Wait for greeting
             ready = await self.recv()
             if not ready or ready.get("type") != "Ready":
-                raise ProtocolError(f"Protocol Handshake Failed: Expected 'Ready', got {ready}")
+                raise ProtocolError(
+                    f"Protocol Handshake Failed: Expected 'Ready', got {ready}"
+                )
             return True
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to Zygote at {self.socket_path}: {e}")
+            raise ConnectionError(
+                f"Failed to connect to Zygote at {self.socket_path}: {e}"
+            )
 
     async def send(self, cmd: Dict[str, Any]):
         """Send a command to the Zygote."""

@@ -27,7 +27,7 @@ import traceback
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 # Mark all tests in this module as expert review tests
@@ -62,7 +62,9 @@ class TestHPCConcerns:
         import requests
 
         for _ in range(10):
-            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+            response = requests.get(
+                f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
+            )
             assert response.status_code == 200
 
     def test_HPC_2_cuda_context_detection(self, velo_serve_fixture):
@@ -79,6 +81,7 @@ class TestHPCConcerns:
         # Skip on non-CUDA systems
         try:
             import torch
+
             if not torch.cuda.is_available():
                 pytest.skip("CUDA not available")
         except ImportError:
@@ -252,7 +255,9 @@ class TestK8sConcerns:
 
         def make_slow_request():
             try:
-                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
+                r = requests.get(
+                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
+                )
                 return r.status_code
             except Exception as e:
                 in_flight_errors.append(str(e))
@@ -311,14 +316,19 @@ class TestK8sConcerns:
         # or if the proxy is handling the disconnect.
         start_time = time.time()
         final_status = None
-        
+
         while time.time() - start_time < 5:
             try:
-                response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
+                response = requests.get(
+                    f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
+                )
                 final_status = response.status_code
                 if response.status_code in [200, 503]:
                     break
-            except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+            except (
+                requests.ConnectionError,
+                requests.exceptions.ChunkedEncodingError,
+            ) as e:
                 print(f"DEBUG: Health check retry caught expected error: {e}")
                 time.sleep(0.5)
             except Exception as e:
@@ -326,9 +336,12 @@ class TestK8sConcerns:
                 print(f"DEBUG: Health check retry caught unexpected error: {e}")
                 traceback.print_exc()
                 time.sleep(0.5)
-        
+
         # Depending on implementation, might be 200 or 503
-        assert final_status in [200, 503], f"Health check failed (status={final_status}) after worker kill"
+        assert final_status in [
+            200,
+            503,
+        ], f"Health check failed (status={final_status}) after worker kill"
 
 
 class TestO11yConcerns:
@@ -377,7 +390,9 @@ class TestO11yConcerns:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/headers", timeout=T_SHORT)
+        response = requests.get(
+            f"http://127.0.0.1:{proc.port}/headers", timeout=T_SHORT
+        )
         assert response.status_code == 200
 
         headers = response.json()

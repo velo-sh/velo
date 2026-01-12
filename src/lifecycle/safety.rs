@@ -119,7 +119,8 @@ pub async fn ensure_socket_directory(path: &Path) -> std::io::Result<()> {
 /// Uses libc::fcntl which is safe for valid file descriptors.
 #[cfg(unix)]
 pub fn set_cloexec(fd: std::os::unix::io::RawFd) -> std::io::Result<()> {
-    // Get existing flags
+    // SECURITY: fcntl F_GETFD/F_SETFD are safe operations on valid descriptors.
+    // This ensures FDs are not leaked to children via EXEC (RFC-0011 C.1).
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0 {
         return Err(std::io::Error::last_os_error());
@@ -370,6 +371,8 @@ impl EnvironmentShield {
 #[cfg(unix)]
 pub fn apply_standard_hygiene(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
+    // SECURITY: pre_exec is required for low-level process hygiene (signals, FDs)
+    // following RFC-0012 §3.6 guidelines.
     unsafe {
         cmd.pre_exec(|| {
             // 1. Reset Signal Mask (SEC-FS-002)
@@ -377,9 +380,10 @@ pub fn apply_standard_hygiene(cmd: &mut Command) {
             libc::sigemptyset(&mut mask);
             libc::pthread_sigmask(libc::SIG_SETMASK, &mask, std::ptr::null_mut());
 
-            // 2. Reset SIGINT/SIGTERM to default (MAC-P0-002)
+            // 2. Reset SIGINT/SIGTERM/SIGPIPE to default (MAC-P0-002)
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
 
             // 3. FD Purge (SEC-FS-002)
             let mut rl = libc::rlimit {
@@ -417,8 +421,12 @@ mod tests {
         let path1 = crate::common::paths::generate_worker_socket_path(1);
         let path2 = crate::common::paths::generate_worker_socket_path(2);
 
-        assert!(path1.to_string_lossy().contains("w-1.s"));
-        assert!(path2.to_string_lossy().contains("w-2.s"));
+        // Format is now: w-{id}-{uuid8}.s (e.g., w-1-a1b2c3d4.s)
+        assert!(path1.to_string_lossy().contains("w-1-"));
+        assert!(path2.to_string_lossy().contains("w-2-"));
+        assert!(path1.to_string_lossy().ends_with(".s"));
+        assert!(path2.to_string_lossy().ends_with(".s"));
+        // Different worker IDs should produce different paths
         assert_ne!(path1, path2);
     }
 

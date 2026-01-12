@@ -13,24 +13,20 @@ TARGETS = [
     ("ml", "scikit-learn"),
     ("ml", "matplotlib"),
     ("ml", "scipy"),
-    
     # Web
     ("web", "django"),
     ("web", "flask"),
-    
     # Library
     ("library", "sqlalchemy"),
     ("library", "pydantic"),
     ("library", "boto3"),
     ("library", "pyyaml"),
     ("library", "pillow"),
-    
     # CLI
     ("cli", "pytest"),
     ("cli", "click"),
     ("cli", "typer"),
     ("cli", "rich"),
-
     # Batch 3
     ("library", "six"),
     ("library", "python-dateutil"),
@@ -52,7 +48,6 @@ TARGETS = [
     ("library", "setuptools"),
     ("library", "wheel"),
     ("cli", "pip"),
-
     # Batch 4
     ("library", "charset-normalizer"),
     ("library", "typing-extensions"),
@@ -74,7 +69,6 @@ TARGETS = [
     ("library", "google-auth"),
     ("library", "googleapis-common-protos"),
     ("library", "soupsieve"),
-
     # Batch 5
     ("ml", "opencv-python"),
     ("ml", "pyarrow"),
@@ -96,7 +90,6 @@ TARGETS = [
     ("library", "dnspython"),
     ("library", "cachetools"),
     ("library", "markupsafe"),
-
     # Batch 6
     ("library", "zipp"),
     ("library", "importlib-metadata"),
@@ -126,7 +119,7 @@ TEMPLATES = {
         "web": 'import {pkg}\n# Framework init only\napp = {pkg}.APP_CLASS()\nprint(f"{pkg} app created")',
         "cli": 'import sys\nimport {pkg}\n# CLI tool verification\nprint(f"{pkg} imported")',
     },
-    "benchmark.toml": '''
+    "benchmark.toml": """
 [meta]
 category = "{category}"
 package = "{pkg}"
@@ -136,40 +129,45 @@ entry_point = "hello.py"
 expected_output = ".*"
 preload_modules = ["{pkg}"]
 timeout = 30
-'''
+""",
 }
+
 
 def scaffold():
     for category, pkg in TARGETS:
-        pkg_slug = pkg.replace("-", "_") # Python import safety
+        pkg_slug = pkg.replace("-", "_")  # Python import safety
         target_dir = ROOT_DIR / category / pkg
-        
+
         if target_dir.exists():
             print(f"Skipping existing: {category}/{pkg}")
             continue
-            
+
         print(f"Scaffolding: {category}/{pkg}")
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # 1. hello.py
         hello_path = target_dir / "hello.py"
         if category == "web":
             # Rough guess, user must fix
             content = TEMPLATES["hello.py"]["web"].replace("{pkg}", pkg_slug)
         elif category == "cli":
-             content = TEMPLATES["hello.py"]["cli"].replace("{pkg}", pkg_slug)
+            content = TEMPLATES["hello.py"]["cli"].replace("{pkg}", pkg_slug)
         else:
             content = TEMPLATES["hello.py"]["common"].replace("{pkg}", pkg_slug)
-            
+
         with open(hello_path, "w") as f:
             f.write(content)
-            
+
         # 2. benchmark.toml
         toml_path = target_dir / "benchmark.toml"
-        toml_content = TEMPLATES["benchmark.toml"].replace("{category}", category)\
-                                                  .replace("{pkg}", pkg)
+        toml_content = (
+            TEMPLATES["benchmark.toml"]
+            .replace("{category}", category)
+            .replace("{pkg}", pkg)
+        )
         with open(toml_path, "w") as f:
             f.write(toml_content)
+
 
 if __name__ == "__main__":
     scaffold()

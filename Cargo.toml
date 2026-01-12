@@ -43,6 +43,7 @@ rustpython-parser = "0.4"
 rustpython-ast = "0.4"
 ignore = "0.4"
 log = "0.4"
+env_logger = "0.11"      # RFC-0020: Global structured logging
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching
@@ -55,6 +56,7 @@ clap = { version = "4.5.54", features = ["derive"] }
 rmp-serde = "1.3"        # MessagePack for high-perf IPC
 
 # RFC-0011: L7 Proxy + UDS Worker architecture
+uuid = { version = "1.7", features = ["v4", "v7"] }
 hyper = { version = "1.4", features = ["full", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["full", "tokio"] }
 tokio = { version = "1", features = ["full", "net"] }
