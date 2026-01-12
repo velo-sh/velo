@@ -99,7 +99,7 @@ async def heavy_compute(data: bytes):
 ```mermaid
 graph TD
     A[User Code: Python] -->|velo.spawn| B(Rusty Wrapper)
-    A -->|@velo.compile| C(WASM Module)
+    A -->|"@velo.compile"| C(WASM Module)
     
     subgraph "Velo Runtime (Rust)"
         B -->|Poll| D{Tokio Scheduler}
