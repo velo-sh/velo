@@ -53,6 +53,116 @@ This RFC proposes a unified supervision strategy for all critical Velo component
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Fault Isolation Strategy
+
+### Problem: Thread Crash Propagation
+
+| Scenario | Rust Behavior | Impact |
+|----------|---------------|--------|
+| Thread panic (uncaught) | Thread terminates | Other threads continue, but feature is lost |
+| Thread panic + `unwrap()` on mutex | **Mutex poisoning** | Other threads accessing mutex will panic |
+| Main thread panic | Process exits | Everything dies |
+
+### Isolation Model Comparison
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      Process/Thread Isolation Models                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐       │
+│  │   Thread    │   │  Tokio Task │   │ fork() COW  │   │   Process   │       │
+│  │  (Fastest)  │   │  (Async)    │   │  (Shared)   │   │  (Isolated) │       │
+│  └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘       │
+│         │                 │                 │                 │              │
+│  Isolation: ❌       Isolation: ❌       Isolation: ⚠️      Isolation: ✅     │
+│  Overhead:  Minimal   Overhead:  Minimal   Overhead:  Low    Overhead:  High │
+│  Memory:   Shared     Memory:   Shared     Memory:   COW     Memory:  Separate│
+│                                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Layered Isolation Architecture (Recommended)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Velo Process (Main)                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Critical Threads (with panic boundary)                     ││
+│  │  • Signal Forwarder   → catch_unwind, respawn on panic     ││
+│  │  • File Watcher       → catch_unwind, respawn on panic     ││
+│  │  • Health Server      → catch_unwind, respawn on panic     ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Tokio Runtime (async isolation)                            ││
+│  │  • L7 Proxy           → JoinHandle monitor, respawn task   ││
+│  │  • LB Health Check    → JoinHandle monitor, respawn task   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  Child Processes (full isolation via fork)                       │
+│  • Zygote        → SIGCHLD + respawn                            │
+│  • Workers       → SIGCHLD + respawn (via Zygote COW)           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation: Panic Boundary Pattern
+
+```rust
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
+fn spawn_with_panic_boundary<F, T>(name: &'static str, f: F) -> JoinHandle<Result<T, String>>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            match catch_unwind(AssertUnwindSafe(f)) {
+                Ok(result) => Ok(result),
+                Err(panic) => {
+                    let msg = if let Some(s) = panic.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "Unknown panic".to_string()
+                    };
+                    log::error!("[SUPERVISOR] {} panicked: {}", name, msg);
+                    Err(msg)
+                }
+            }
+        })
+        .expect("Failed to spawn thread")
+}
+```
+
+### Component Isolation Matrix
+
+| Component      | Isolation Level | Strategy | Respawn Method |
+|----------------|-----------------|----------|----------------|
+| **Workers**    | Process (COW)   | fork()   | Zygote IPC     |
+| **Zygote**     | Process         | fork()   | Full restart   |
+| **L7 Proxy**   | Task            | Tokio    | tokio::spawn   |
+| **Signal Fwd** | Thread + Panic  | catch_unwind | thread::spawn |
+| **LB Health**  | Task            | Tokio    | tokio::spawn   |
+| **Health Srv** | Thread + Panic  | catch_unwind | thread::spawn |
+| **File Watch** | Thread + Panic  | catch_unwind | thread::spawn |
+
+### Why Not All Processes?
+
+| Approach | Latency | Memory | IPC Overhead | Use Case |
+|----------|---------|--------|--------------|----------|
+| fork() COW | ~50-100μs | Low (shared) | High | Workers (need Python) |
+| Thread + Panic | ~1μs | Shared | None | Signal/Health (pure Rust) |
+| Tokio Task | ~0.1μs | Shared | None | Async I/O (Proxy) |
+
+**Principle**: Use the lightest isolation that provides sufficient safety.
+
 ## Component Supervision Strategies
 
 ### 1. Workers (SIGCHLD + Polling)
