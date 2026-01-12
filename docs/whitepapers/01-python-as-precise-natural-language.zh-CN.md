@@ -14,7 +14,7 @@
 ### 1.1 语言的黄金分割 (The Golden Ratio of Language)
 传统观点将语言二元对立为 "自然语言" (模糊但灵活) 和 "机器语言" (精确但僵化)。Python 占据了这两个世界之间的 **黄金分割点**：
 *   **消除歧义 (Eliminates Ambiguity)**: 与英语不同，它拥有严格定义的语法和执行语义。
-*   **保留语义密度 (Retains Semantic Density)**: 与 C++/Rust 不同，它读起来像散文，完整保留了思维的意图。
+*   **保留语义密度 (Retains Semantic Density)**: 与 C++/Rust 不同，它读起来像自然语言，完整保留了思维的意图。
 *   **结论**: 它读写起来像自然语言，同时提供了计算机语言所必需的精确性。
 
 ### 1.2 智能的锚点 (The AI Anchor)
