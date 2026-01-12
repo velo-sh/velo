@@ -37,7 +37,68 @@ The Velo binary becomes the **Master Execution Host**, integrating a customized 
 [ Velo Worker (Python/Zygote) ] <───────┘
 ```
 
-### 3.2 RSGI-Velo Protocol Specification
+### 3.2 Velo / Granian / FastAPI Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        User Perspective                             │
+│                                                                     │
+│   Developer only cares:  velo run main:app  (FastAPI just works)   │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                 Layer 1: VELO (Runtime Controller)                  │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  • Zygote Engine: Python pre-warm + Fork (ms-level startup) │    │
+│  │  • Autopilot: Auto-detect torch/pandas heavy imports        │    │
+│  │  • Custodian: Manage embedded uv toolchain                  │    │
+│  │  • Memory Gravity: SHM shared model weights (SafeTensors)   │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                    │                                │
+│                        RSGI-Velo Protocol (MessagePack over UDS)    │
+│                                    ▼                                │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │           Granian Core (L7 Engine - Vendored)                │    │
+│  │  • Hyper (Rust HTTP): TCP Accept, SSL Termination           │    │
+│  │  • ASGI State Machine: Scope/Receive/Send event loop        │    │
+│  │  • Marshalling: Rust Dict -> Python Dict (Zero-copy)        │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                          ASGI 3.0 Interface
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               Layer 2: FASTAPI / STARLETTE (Your App)               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  • Routing: @app.get("/predict")                            │    │
+│  │  • Pydantic Validation: class Item(BaseModel)               │    │
+│  │  • Dependency Injection: Depends(get_db)                    │    │
+│  │  • Middleware: CORSMiddleware, AuthMiddleware               │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                          Python async/await
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               Layer 3: ML/AI Workloads (Your Logic)                 │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  • torch.load("model.pt")                                   │    │
+│  │  • model.predict(input)                                     │    │
+│  │  • pandas.read_parquet("data.parquet")                      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 Component Responsibilities
+
+| Component | Role | Analogy |
+|:---|:---|:---|
+| **Velo** | Runtime Controller | Like JVM for Java |
+| **Granian Core** | L7 Protocol Engine | Like Netty for Spring |
+| **FastAPI** | Business Framework | Like Spring MVC |
+
+### 3.4 RSGI-Velo Protocol Specification
 The protocol defines the binary exchange between the Rust Host and Python Worker.
 
 *   **Core Engine**: Hyper-based Granian ASGI core.
