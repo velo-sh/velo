@@ -19,6 +19,8 @@ TYPE_RES_BODY = 0x04
 TYPE_KEEPALIVE = 0x09
 TYPE_READY = 0x10
 TYPE_AUTH_OK = 0x11
+# Gate J: Graceful shutdown
+TYPE_LIFESPAN_SHUTDOWN = 0x20
 
 class RSGIWorker:
     def __init__(self, app: Any, socket_path: str):

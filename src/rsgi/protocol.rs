@@ -13,6 +13,8 @@ pub const TYPE_RES_BODY: u8 = 0x04;
 pub const TYPE_KEEPALIVE: u8 = 0x09;
 pub const TYPE_READY: u8 = 0x10;
 pub const TYPE_AUTH_OK: u8 = 0x11;
+/// Gate J: Host -> Worker: Initiate graceful shutdown
+pub const TYPE_LIFESPAN_SHUTDOWN: u8 = 0x20;
 
 /// Host -> Worker: Start a new request
 /// [0x01, request_id, method, path, headers, has_body]
@@ -74,6 +76,23 @@ pub struct Ready(
 /// [0x11, session_id, max_request_size]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthOk(pub u8, pub String, pub u64);
+
+/// Gate J: Host -> Worker: Initiate graceful shutdown
+/// [0x20]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LifespanShutdown(pub u8);
+
+impl LifespanShutdown {
+    pub fn new() -> Self {
+        Self(TYPE_LIFESPAN_SHUTDOWN)
+    }
+}
+
+impl Default for LifespanShutdown {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Message framing helpers
 pub mod framing {
