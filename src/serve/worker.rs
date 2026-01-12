@@ -44,6 +44,7 @@ impl Worker {
         worker_id: u64,
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
         config: &crate::config::VeloConfig,
+        rsgi: bool,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
 
@@ -55,13 +56,16 @@ impl Worker {
         let socket_path = crate::common::paths::generate_worker_socket_path(worker_id);
         let socket_path_str = socket_path.to_string_lossy().to_string();
 
-        let args = vec![
+        let mut args = vec![
             "--app".to_string(),
             app.to_string(),
             "--uds".to_string(),
             socket_path_str,
             "--proxy-headers".to_string(),
         ];
+        if rsgi {
+            args.push("--rsgi".to_string());
+        }
 
         let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
             use std::os::unix::prelude::AsRawFd;
@@ -169,6 +173,7 @@ impl Worker {
         python_path: &Path,
         project_dir: &Path,
         config: &crate::config::VeloConfig,
+        rsgi: bool,
     ) -> Result<Self> {
         Self::validate_app_path(app)?;
 
@@ -184,15 +189,27 @@ impl Worker {
             cmd.env(k, v);
         }
 
-        // Use uvicorn directly if possible, or fall back to velo-managed launcher
-        cmd.args([
-            "-m",
-            "uvicorn",
-            app,
-            "--uds",
-            &socket_path_str,
-            "--proxy-headers",
-        ]);
+        // Use uvicorn directly if possible, or use RSGI mode
+        if rsgi {
+            cmd.args([
+                "-m",
+                "velo_zygote.worker_launcher",
+                "--app",
+                app,
+                "--uds",
+                &socket_path_str,
+                "--rsgi",
+            ]);
+        } else {
+            cmd.args([
+                "-m",
+                "uvicorn",
+                app,
+                "--uds",
+                &socket_path_str,
+                "--proxy-headers",
+            ]);
+        }
 
         let child = cmd
             .spawn()
@@ -248,11 +265,12 @@ impl Worker {
         python_path: &Path,
         project_dir: &Path,
         config: &crate::config::VeloConfig,
+        rsgi: bool,
     ) -> Result<Self> {
         if let Some(ref zygote) = self.zygote_socket {
-            Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config)
+            Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config, rsgi)
         } else {
-            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config)
+            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         }
     }
 

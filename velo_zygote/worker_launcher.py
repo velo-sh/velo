@@ -62,6 +62,7 @@ def main() -> None:
         parser.add_argument(
             "--proxy-headers", action="store_true", dest="proxy_headers"
         )
+        parser.add_argument("--rsgi", action="store_true")
         args = parser.parse_args()
 
         # 3. Secure Imports
@@ -136,7 +137,11 @@ def main() -> None:
             run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
 
         # 8. Execution
-        uvicorn.run(**run_kwargs)
+        if args.rsgi:
+            from velo_zygote.rsgi import run_rsgi
+            run_rsgi(args.app, args.uds)
+        else:
+            uvicorn.run(**run_kwargs)
 
     except Exception as e:
         # Emergency logging - Print to stderr for visibility in CI/Tests

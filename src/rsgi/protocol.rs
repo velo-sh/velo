@@ -60,11 +60,50 @@ pub struct ResStart(pub u8, pub u64, pub u16, pub Vec<(String, String)>);
 pub struct ResBody(pub u8, pub u64, pub Vec<u8>, pub bool);
 
 /// Both: Ready to receive requests
-/// [0x10, version, worker_id, capabilities]
+/// [0x10, version, worker_id, capabilities, marshall_hints]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Ready(pub u8, pub String, pub String, pub serde_json::Value);
+pub struct Ready(
+    pub u8,
+    pub String,
+    pub String,
+    pub serde_json::Value,
+    pub serde_json::Value,
+);
 
 /// Both: Authentication/Handshake OK
 /// [0x11, session_id, max_request_size]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthOk(pub u8, pub String, pub u64);
+
+/// Message framing helpers
+pub mod framing {
+    use super::*;
+    use crate::rsgi::{RSGIError, Result};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    pub async fn send_msg<T: Serialize, W: AsyncWriteExt + Unpin>(
+        writer: &mut W,
+        msg: &T,
+    ) -> Result<()> {
+        let payload = rmp_serde::to_vec(msg)?;
+        let len = payload.len() as u32;
+        writer.write_all(&len.to_be_bytes()).await?;
+        writer.write_all(&payload).await?;
+        Ok(())
+    }
+
+    pub async fn recv_msg<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<Vec<u8>> {
+        let mut len_buf = [0u8; 4];
+        reader.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+
+        if len > 10 * 1024 * 1024 {
+            // 10MB limit
+            return Err(RSGIError::Protocol(format!("Message too large: {}", len)));
+        }
+
+        let mut payload = vec![0u8; len];
+        reader.read_exact(&mut payload).await?;
+        Ok(payload)
+    }
+}
