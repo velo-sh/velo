@@ -5,10 +5,17 @@
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 PROJECT_ROOT=$(pwd)/examples/langchain-fast
+VELO_ROOT=$(pwd)
 
-# Dependency Pre-check
+# RFC-0018: Velo binary path (use built binary by default)
+VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
+if [ ! -x "$VELO_BIN" ]; then
+    VELO_BIN="$VELO_ROOT/target/debug/velo"
+fi
+
+# Dependency Pre-check (RFC-0018: via Velo Integrated Python)
 check_deps() {
-    python3 -c "import rich" 2>/dev/null
+    $VELO_BIN python -c "import rich" 2>/dev/null
     if [ $? -ne 0 ]; then
         echo "[INFO] 'rich' not installed, using fallback mode."
     fi
@@ -34,21 +41,21 @@ check_deps
 echo -e "\033[38;5;33m[Velo HIO] Initializing LangChain Fast-path Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Time Trial Mode
-    python3 $PROJECT_ROOT/langchain_race.py --runs=$RUNS 2>/dev/null
+    # A/B Time Trial Mode (RFC-0018: via Velo)
+    $VELO_BIN run $PROJECT_ROOT/langchain_race.py --runs=$RUNS 2>/dev/null
 else
     # Traditional Demo Mode
     echo -e "\nPhase 1: Zygote Warm-up ➔ \033[90mImporting LangChain & Pydantic...\033[0m"
     echo -e "Phase 2: Schema Locking ➔ \033[1;32mFreezing 100+ Pydantic Schemas...\033[0m"
 
-    # Execute synthetic load and capture time
-    RESULT=$(python3 -W ignore:NotOpenSSLWarning $PROJECT_ROOT/simulate_load.py 2>/dev/null)
+    # Execute synthetic load and capture time (RFC-0018: via Velo)
+    RESULT=$($VELO_BIN python -W ignore:NotOpenSSLWarning $PROJECT_ROOT/simulate_load.py 2>/dev/null)
     echo "$RESULT"
 
     # Extract time and calculate HIO Score
     TIME_MS=$(echo "$RESULT" | grep -oE '[0-9]+\.[0-9]+ms' | head -1 | sed 's/ms//')
     if [ -n "$TIME_MS" ]; then
-        python3 examples/scripts/hio_engine.py \
+        $VELO_BIN python examples/scripts/hio_engine.py \
             --project "HIO-002 (LangChain)" \
             --slogan "Schema Locking: Import Once, Run Forever." \
             --baseline 2000 2100 1950 \
