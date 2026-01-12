@@ -36,7 +36,7 @@ runs:
       shell: bash
       run: |
         uv venv --python ${{ inputs.python-version }}
-        uv sync --extra dev
+        uv sync
 
     - name: Determine artifact name
       if: inputs.download-binary == 'true'

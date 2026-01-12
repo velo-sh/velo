@@ -53,7 +53,7 @@ CMD ["bash", "-c", "\
     echo '==================== Phase 1: Setup ====================' && \
     echo '' && \
     echo '▶ Setting up Python environment...' && \
-    uv sync --extra dev && \
+    uv sync && \
     echo '✅ Python environment ready' && \
     echo '' && \
     echo '==================== Phase 2: Build ====================' && \
