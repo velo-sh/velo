@@ -47,7 +47,8 @@ impl Future for HyperWebsocket {
             Poll::Ready(x) => x,
         };
 
-        let upgraded = upgraded.map_err(|_| TungsteniteError::Protocol(ProtocolError::HandshakeIncomplete))?;
+        let upgraded =
+            upgraded.map_err(|_| TungsteniteError::Protocol(ProtocolError::HandshakeIncomplete))?;
 
         let io = hyper_util::rt::TokioIo::new(upgraded);
         let stream = WebSocketStream::from_raw_socket(io, Role::Server, this.config.take());

@@ -64,12 +64,32 @@ macro_rules! build_scope_common {
                 _ => "1",
             }
         );
-        scope_set!($py, $scope, "server", ($server.ip(), $server.port().to_string()));
-        scope_set!($py, $scope, "client", ($client.ip(), $client.port().to_string()));
+        scope_set!(
+            $py,
+            $scope,
+            "server",
+            ($server.ip(), $server.port().to_string())
+        );
+        scope_set!(
+            $py,
+            $scope,
+            "client",
+            ($client.ip(), $client.port().to_string())
+        );
         scope_set!($py, $scope, "scheme", $scheme);
         scope_set!($py, $scope, "path", &path);
-        scope_set!($py, $scope, "raw_path", PyBytes::new($py, raw_path.as_bytes()));
-        scope_set!($py, $scope, "query_string", PyBytes::new($py, query_string.as_bytes()));
+        scope_set!(
+            $py,
+            $scope,
+            "raw_path",
+            PyBytes::new($py, raw_path.as_bytes())
+        );
+        scope_set!(
+            $py,
+            $scope,
+            "query_string",
+            PyBytes::new($py, query_string.as_bytes())
+        );
 
         let headers = PyList::empty($py);
         for (key, value) in &$req.headers {
@@ -80,7 +100,13 @@ macro_rules! build_scope_common {
         }
         if !$req.headers.contains_key(header::HOST) {
             let host = $req.uri.authority().map_or("", Authority::as_str);
-            headers.insert(0, (PyBytes::new($py, b"host"), PyBytes::new($py, host.as_bytes())))?;
+            headers.insert(
+                0,
+                (
+                    PyBytes::new($py, b"host"),
+                    PyBytes::new($py, host.as_bytes()),
+                ),
+            )?;
         }
         scope_set!($py, $scope, "headers", headers);
     };

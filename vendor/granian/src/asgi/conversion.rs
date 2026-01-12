@@ -14,7 +14,10 @@ pub(crate) fn message_into_py(py: Python, message: ASGIMessageType) -> PyResult<
     let dict = PyDict::new(py);
     match message {
         ASGIMessageType::HTTPDisconnect => {
-            dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.disconnect"))?;
+            dict.set_item(
+                pyo3::intern!(py, "type"),
+                pyo3::intern!(py, "http.disconnect"),
+            )?;
         }
         ASGIMessageType::HTTPRequestBody((bytes, more)) => {
             dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "http.request"))?;
@@ -22,7 +25,10 @@ pub(crate) fn message_into_py(py: Python, message: ASGIMessageType) -> PyResult<
             dict.set_item(pyo3::intern!(py, "more_body"), more)?;
         }
         ASGIMessageType::WSConnect => {
-            dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.connect"))?;
+            dict.set_item(
+                pyo3::intern!(py, "type"),
+                pyo3::intern!(py, "websocket.connect"),
+            )?;
         }
         _ => unreachable!(),
     }
@@ -34,13 +40,19 @@ pub(crate) fn ws_message_into_py(py: Python, message: Message) -> PyResult<Bound
     match message {
         Message::Binary(message) => {
             let dict = PyDict::new(py);
-            dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.receive"))?;
+            dict.set_item(
+                pyo3::intern!(py, "type"),
+                pyo3::intern!(py, "websocket.receive"),
+            )?;
             dict.set_item(pyo3::intern!(py, "bytes"), PyBytes::new(py, &message[..]))?;
             Ok(dict.into_any())
         }
         Message::Text(message) => {
             let dict = PyDict::new(py);
-            dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.receive"))?;
+            dict.set_item(
+                pyo3::intern!(py, "type"),
+                pyo3::intern!(py, "websocket.receive"),
+            )?;
             dict.set_item(pyo3::intern!(py, "text"), Utf8BytesToPy(message))?;
             Ok(dict.into_any())
         }
@@ -50,7 +62,10 @@ pub(crate) fn ws_message_into_py(py: Python, message: Message) -> PyResult<Bound
                 _ => 1005,
             };
             let dict = PyDict::new(py);
-            dict.set_item(pyo3::intern!(py, "type"), pyo3::intern!(py, "websocket.disconnect"))?;
+            dict.set_item(
+                pyo3::intern!(py, "type"),
+                pyo3::intern!(py, "websocket.disconnect"),
+            )?;
             dict.set_item(pyo3::intern!(py, "code"), close_code)?;
             Ok(dict.into_any())
         }

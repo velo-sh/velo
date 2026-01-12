@@ -13,7 +13,11 @@ use tokio_util::io::ReaderStream;
 use crate::http::{HTTPResponse, HV_SERVER, response_404};
 
 #[inline(always)]
-pub(crate) fn match_static_file(uri_path: &str, prefix: &str, mount_point: &str) -> Option<Result<String>> {
+pub(crate) fn match_static_file(
+    uri_path: &str,
+    prefix: &str,
+    mount_point: &str,
+) -> Option<Result<String>> {
     let decoded_uri_path = percent_decode_str(uri_path).decode_utf8_lossy();
     if let Some(file_path) = decoded_uri_path.strip_prefix(prefix) {
         #[cfg(not(windows))]
@@ -46,9 +50,12 @@ pub(crate) async fn serve_static_file(path: String, expires: Option<String>) -> 
         Ok(file) => {
             let mime = mime_guess::from_path(path).first();
             let stream = ReaderStream::with_capacity(file, 131_072);
-            let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+            let stream_body =
+                http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
             let mut headers = HeaderMap::new();
-            let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+            let mut res = hyper::Response::new(
+                BodyExt::map_err(stream_body, std::convert::Into::into).boxed(),
+            );
 
             headers.insert(HK_SERVER, HV_SERVER);
             if let Some(expires) = expires {

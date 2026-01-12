@@ -73,7 +73,11 @@ impl RuntimeWrapper {
     }
 
     pub fn handler(&self) -> RuntimeRef {
-        RuntimeRef::new(self.inner.handle().clone(), self.br.clone(), self.pr.clone())
+        RuntimeRef::new(
+            self.inner.handle().clone(),
+            self.br.clone(),
+            self.pr.clone(),
+        )
     }
 }
 
@@ -85,7 +89,11 @@ pub struct RuntimeRef {
 }
 
 impl RuntimeRef {
-    pub fn new(rt: tokio::runtime::Handle, br: Arc<BlockingRunner>, pyloop: Arc<Py<PyAny>>) -> Self {
+    pub fn new(
+        rt: tokio::runtime::Handle,
+        br: Arc<BlockingRunner>,
+        pyloop: Arc<Py<PyAny>>,
+    ) -> Self {
         Self {
             inner: rt,
             innerb: br,
@@ -160,7 +168,12 @@ pub(crate) fn init_runtime_st(
     py_threads_idle_timeout: u64,
     py_loop: Arc<Py<PyAny>>,
 ) -> RuntimeWrapper {
-    RuntimeWrapper::new(blocking_threads, py_threads, py_threads_idle_timeout, py_loop)
+    RuntimeWrapper::new(
+        blocking_threads,
+        py_threads,
+        py_threads_idle_timeout,
+        py_loop,
+    )
 }
 
 #[inline(always)]
@@ -169,7 +182,10 @@ pub(crate) fn empty_future_into_py(py: Python) -> PyResult<Bound<PyAny>> {
 }
 
 #[inline(always)]
-pub(crate) fn done_future_into_py(py: Python, result: PyResult<Py<PyAny>>) -> PyResult<Bound<PyAny>> {
+pub(crate) fn done_future_into_py(
+    py: Python,
+    result: PyResult<Py<PyAny>>,
+) -> PyResult<Bound<PyAny>> {
     PyDoneAwaitable::new(result).into_bound_py_any(py)
 }
 
@@ -279,7 +295,11 @@ where
 }
 
 #[allow(unused_must_use)]
-pub(crate) fn run_until_complete<F>(rt: RuntimeWrapper, event_loop: Bound<PyAny>, fut: F) -> PyResult<()>
+pub(crate) fn run_until_complete<F>(
+    rt: RuntimeWrapper,
+    event_loop: Bound<PyAny>,
+    fut: F,
+) -> PyResult<()>
 where
     F: Future<Output = PyResult<()>> + Send + 'static,
 {

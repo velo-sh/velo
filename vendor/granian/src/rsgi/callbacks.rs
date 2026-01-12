@@ -3,8 +3,14 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::{Notify, oneshot};
 
 use super::{
-    io::{RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
-    types::{PyResponse, PyResponseBody, RSGIHTTPScope as HTTPScope, RSGIWebsocketScope as WebsocketScope},
+    io::{
+        RSGIHTTPProtocol as HTTPProtocol, RSGIWebsocketProtocol as WebsocketProtocol,
+        WebsocketDetachedTransport,
+    },
+    types::{
+        PyResponse, PyResponseBody, RSGIHTTPScope as HTTPScope,
+        RSGIWebsocketScope as WebsocketScope,
+    },
 };
 use crate::{
     callbacks::ArcCBScheduler,

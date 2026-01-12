@@ -1,7 +1,17 @@
 use pyo3::{create_exception, exceptions::PyRuntimeError};
 
-create_exception!(_granian, RSGIProtocolError, PyRuntimeError, "RSGIProtocolError");
-create_exception!(_granian, RSGIProtocolClosed, PyRuntimeError, "RSGIProtocolClosed");
+create_exception!(
+    _granian,
+    RSGIProtocolError,
+    PyRuntimeError,
+    "RSGIProtocolError"
+);
+create_exception!(
+    _granian,
+    RSGIProtocolClosed,
+    PyRuntimeError,
+    "RSGIProtocolClosed"
+);
 
 macro_rules! error_proto {
     () => {

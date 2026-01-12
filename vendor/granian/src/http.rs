@@ -54,5 +54,7 @@ pub(crate) fn response_500() -> HTTPResponse {
 
 #[inline(always)]
 pub(crate) fn empty_body() -> HTTPResponseBody {
-    http_body_util::Empty::<Bytes>::new().map_err(|e| match e {}).boxed()
+    http_body_util::Empty::<Bytes>::new()
+        .map_err(|e| match e {})
+        .boxed()
 }

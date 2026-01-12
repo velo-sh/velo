@@ -26,7 +26,10 @@ impl SockAddr {
         match self {
             Self::TCP(addr) => addr.ip().to_string(),
             #[cfg(unix)]
-            Self::UDS(addr) => addr.as_pathname().map_or("", |v| v.to_str().unwrap()).to_string(),
+            Self::UDS(addr) => addr
+                .as_pathname()
+                .map_or("", |v| v.to_str().unwrap())
+                .to_string(),
         }
     }
 
@@ -43,7 +46,10 @@ impl SockAddr {
         match self {
             Self::TCP(addr) => addr.to_string(),
             #[cfg(unix)]
-            Self::UDS(addr) => addr.as_pathname().map_or("", |v| v.to_str().unwrap()).to_string(),
+            Self::UDS(addr) => addr
+                .as_pathname()
+                .map_or("", |v| v.to_str().unwrap())
+                .to_string(),
         }
     }
 }
@@ -188,13 +194,15 @@ impl SocketHolder {
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {
-        let listener = unsafe { TcpListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
+        let listener =
+            unsafe { TcpListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
         Ok(listener)
     }
 
     #[allow(clippy::unnecessary_wraps)]
     pub fn as_unix_listener(&self) -> Result<UnixListener> {
-        let listener = unsafe { UnixListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
+        let listener =
+            unsafe { UnixListener::from_raw_fd(self.socket.as_ref().unwrap().as_raw_fd()) };
         Ok(listener)
     }
 }
@@ -224,7 +232,12 @@ impl SocketHolder {
     }
 
     pub fn get_fd(&self, py: Python) -> Py<PyAny> {
-        self.socket.as_ref().unwrap().as_raw_fd().into_py_any(py).unwrap()
+        self.socket
+            .as_ref()
+            .unwrap()
+            .as_raw_fd()
+            .into_py_any(py)
+            .unwrap()
     }
 
     pub fn is_uds(&self) -> bool {
@@ -301,7 +314,12 @@ impl SocketHolder {
     }
 
     pub fn get_fd(&self, py: Python) -> Py<PyAny> {
-        self.socket.as_ref().unwrap().as_raw_fd().into_py_any(py).unwrap()
+        self.socket
+            .as_ref()
+            .unwrap()
+            .as_raw_fd()
+            .into_py_any(py)
+            .unwrap()
     }
 
     pub fn is_uds(&self) -> bool {
@@ -319,7 +337,9 @@ pub struct SocketHolder {
 impl SocketHolder {
     fn from_spec(spec: &ListenerSpec) -> Result<Self> {
         let socket = spec.as_socket()?;
-        Ok(Self { socket: socket.into() })
+        Ok(Self {
+            socket: socket.into(),
+        })
     }
 
     pub fn as_tcp_listener(&self) -> Result<TcpListener> {

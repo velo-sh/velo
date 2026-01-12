@@ -4,7 +4,10 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::{Notify, oneshot};
 
 use super::{
-    io::{ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol, WebsocketDetachedTransport},
+    io::{
+        ASGIHTTPProtocol as HTTPProtocol, ASGIWebsocketProtocol as WebsocketProtocol,
+        WebsocketDetachedTransport,
+    },
     utils::{build_scope_http, build_scope_ws},
 };
 use crate::{

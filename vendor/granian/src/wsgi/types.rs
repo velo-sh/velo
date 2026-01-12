@@ -126,7 +126,12 @@ impl WSGIBody {
                     let inner = self.inner.clone();
                     py.detach(|| {
                         self.rt.inner.block_on(async move {
-                            WSGIBody::fill_buffer(inner, self.buffer.clone(), WSGIBodyBuffering::Size(size)).await;
+                            WSGIBody::fill_buffer(
+                                inner,
+                                self.buffer.clone(),
+                                WSGIBodyBuffering::Size(size),
+                            )
+                            .await;
                         });
                     });
 
@@ -145,7 +150,11 @@ impl WSGIBody {
     }
 
     #[pyo3(signature = (_hint=None))]
-    fn readlines<'p>(&self, py: Python<'p>, _hint: Option<Py<PyAny>>) -> PyResult<Bound<'p, PyList>> {
+    fn readlines<'p>(
+        &self,
+        py: Python<'p>,
+        _hint: Option<Py<PyAny>>,
+    ) -> PyResult<Bound<'p, PyList>> {
         let inner = self.inner.clone();
         let data = py.detach(|| {
             self.rt.inner.block_on(async move {

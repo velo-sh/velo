@@ -24,7 +24,10 @@ macro_rules! environ_set {
 
 macro_rules! environ_set_header {
     ($py:expr, $env:expr, $key:expr, $val:expr) => {
-        $env.set_item(format!("HTTP_{}", $key.as_str().replace('-', "_").to_uppercase()), $val)?
+        $env.set_item(
+            format!("HTTP_{}", $key.as_str().replace('-', "_").to_uppercase()),
+            $val,
+        )?
     };
 }
 
@@ -42,7 +45,8 @@ fn build_wsgi(
         || (String::new(), String::new()),
         |pq| {
             (
-                encoding_rs::mem::decode_latin1(&percent_decode_str(pq.path()).collect_vec()).into_owned(),
+                encoding_rs::mem::decode_latin1(&percent_decode_str(pq.path()).collect_vec())
+                    .into_owned(),
                 encoding_rs::mem::decode_latin1(pq.query().unwrap_or("").as_bytes()).into_owned(),
             )
         },
@@ -72,10 +76,20 @@ fn build_wsgi(
     environ_set!(py, environ, "wsgi.input", body);
 
     if let Some(content_type) = req.headers.remove(header::CONTENT_TYPE) {
-        environ_set!(py, environ, "CONTENT_TYPE", content_type.to_str().unwrap_or_default());
+        environ_set!(
+            py,
+            environ,
+            "CONTENT_TYPE",
+            content_type.to_str().unwrap_or_default()
+        );
     }
     if let Some(content_len) = req.headers.remove(header::CONTENT_LENGTH) {
-        environ_set!(py, environ, "CONTENT_LENGTH", content_len.to_str().unwrap_or_default());
+        environ_set!(
+            py,
+            environ,
+            "CONTENT_LENGTH",
+            content_len.to_str().unwrap_or_default()
+        );
     }
 
     // cookies can't be joined by commas
@@ -85,7 +99,8 @@ fn build_wsgi(
             py,
             environ,
             hk,
-            hv.map(|v| v.to_str().unwrap_or_default().to_owned()).join(";")
+            hv.map(|v| v.to_str().unwrap_or_default().to_owned())
+                .join(";")
         );
     }
 
@@ -128,7 +143,9 @@ pub(crate) fn call_http(
     let body = WSGIBody::new(rt.clone(), body);
 
     rt.spawn_blocking(move |py| {
-        if let Ok((proto, environ)) = build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body) {
+        if let Ok((proto, environ)) =
+            build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body)
+        {
             if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
                 log_application_callable_exception(py, &err);
                 if let Some(tx) = proto.get().tx() {
