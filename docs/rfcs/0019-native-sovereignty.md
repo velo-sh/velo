@@ -308,3 +308,69 @@ opt-level = 3
 |:---|:---|:---|
 | **Sonic-rs** | 7.2 or 8.x | ⭐⭐⭐ High (easy integration) |
 | **Monoio** | 8.x+ | ⭐⭐ Medium (runtime replacement) |
+
+### 8.9 Additional Async Runtimes (Research 2025-2026)
+**Status**: 🟡 WATCHING
+
+#### Glommio (DataDog)
+| Aspect | Details |
+|:---|:---|
+| **Repository** | `DataDog/glommio` |
+| **Architecture** | Thread-per-core + native io_uring |
+| **Target Usage** | I/O-bound workloads, databases |
+| **License** | Apache 2.0 ✅ |
+| **vs Monoio** | More mature, production-tested at DataDog |
+
+#### smol (Community)
+| Aspect | Details |
+|:---|:---|
+| **Repository** | `smol-rs/smol` |
+| **Architecture** | Minimal, lightweight runtime |
+| **Target Usage** | Simple applications, prototyping |
+| **Note** | Official successor for async-std users |
+
+### 8.10 Extended Memory Allocator Comparison
+**Status**: 🟢 EVALUATION COMPLETE
+
+| Allocator | Source | Best For | Performance Gain |
+|:---|:---|:---|:---|
+| **jemalloc** | FreeBSD/Redis | Long-running servers, fragmentation resistance | 30-50% |
+| **mimalloc** | Microsoft | Low-latency, real-time async | 5x+ multithreaded |
+| **snmalloc** | Microsoft Research | Security-first, capability design | Similar to mimalloc |
+
+> [!TIP]
+> **Recommendation**: Start with `jemalloc` for stability, evaluate `mimalloc` for latency-critical paths.
+
+### 8.11 Security Considerations for Advanced IO
+
+> [!WARNING]
+> **io_uring Security Advisory**
+> - io_uring has a large kernel attack surface
+> - **Default blocked** in Docker and cloud sandboxes (GKE, EKS)
+> - Requires explicit enablement: `--security-opt seccomp=unconfined`
+> - Evaluate security vs. performance trade-offs carefully
+
+| Environment | io_uring Status | Recommendation |
+|:---|:---|:---|
+| Bare metal | ✅ Available | Full performance |
+| Docker (default) | ❌ Blocked | Use epoll |
+| Kubernetes | ⚠️ Varies by provider | Test explicitly |
+| Cloud Functions | ❌ Blocked | Not applicable |
+
+### 8.12 Deprecated Technologies (Avoid)
+
+> [!CAUTION]
+> The following technologies are deprecated or discontinued. Do NOT use in new development.
+
+| Technology | Status | Alternative |
+|:---|:---|:---|
+| **async-std** | ❌ Discontinued (March 2025) | smol or Tokio |
+| **actix-web 3.x** | ⚠️ Legacy | actix-web 4.x |
+
+### 8.13 Protocol Evolution Radar
+
+| Protocol | Status | Notes |
+|:---|:---|:---|
+| **HTTP/2** | 🟢 STABLE | Granian full support |
+| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 9.x |
+| **WebTransport** | 🔮 RESEARCH | Future real-time applications |
