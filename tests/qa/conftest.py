@@ -110,46 +110,44 @@ def cleanup_zygote_between_modules():
     This prevents test pollution where one module's Zygote affects another.
     """
     import tempfile
-
-    # Safe cleanup: rely on socket unlinking and test-local teardown.
-    # Avoiding pkill -f to prevent killing IDE language servers (User Rule).
-
-    import os
-
-    uid = os.getuid()
-    sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
-    sock_path = sock_dir / "velo-zygote-v01.sock"
     import shutil
 
-    if sock_path.exists():
-        try:
-            sock_path.unlink()
-        except:
-            pass
+    uid = os.getuid()
+    
+    # All possible socket locations
+    socket_paths = [
+        # Legacy temp-based path
+        Path(tempfile.gettempdir()) / f"velo-{uid}" / "velo-zygote-v01.sock",
+        # XDG state path
+        Path.home() / ".local" / "state" / "velo" / "zygote.sock",
+        # Direct zygote socket
+        Path.home() / ".local" / "state" / "velo" / "velo-zygote-v01.sock",
+    ]
+    
+    def cleanup_sockets():
+        for sock_path in socket_paths:
+            if sock_path.exists():
+                try:
+                    sock_path.unlink()
+                except OSError:
+                    pass
+            # Also clean parent directory if it's a velo socket dir
+            parent = sock_path.parent
+            if parent.exists() and parent.name in ("velo", f"velo-{uid}"):
+                # Only remove socket file, not the entire dir
+                pass
+        
+        # Clean temp-based socket dir completely
+        sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+        if sock_dir.exists() and sock_dir.name.startswith("velo-"):
+            try:
+                shutil.rmtree(str(sock_dir))
+            except OSError:
+                pass
 
-    # Also remove the directory to force fresh creation with correct permissions (0700)
-    if sock_dir.exists() and sock_dir.name.startswith("velo-"):
-        try:
-            shutil.rmtree(str(sock_dir))
-        except:
-            pass
-
+    cleanup_sockets()
     yield
-
-    # Clean after module completes
-    # RFC-0012: We rely on hermetic isolation (unique TMPDIR/sockets)
-    # and the Zygote Guardian thread to prevent leaks.
-    # Blind pkill is avoided to support parallel test execution.
-    if sock_path.exists():
-        try:
-            sock_path.unlink()
-        except:
-            pass
-    if sock_dir.exists() and sock_dir.name.startswith("velo-"):
-        try:
-            shutil.rmtree(str(sock_dir))
-        except:
-            pass
+    cleanup_sockets()
 
 
 @pytest.fixture(scope="session")
