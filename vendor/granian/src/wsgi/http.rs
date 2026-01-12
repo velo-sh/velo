@@ -11,7 +11,11 @@ use crate::{
 };
 
 #[inline(always)]
-fn build_response(status: u16, pyheaders: hyper::HeaderMap, body: HTTPResponseBody) -> HTTPResponse {
+fn build_response(
+    status: u16,
+    pyheaders: hyper::HeaderMap,
+    body: HTTPResponseBody,
+) -> HTTPResponse {
     let mut res = Response::new(body);
     *res.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
     *res.headers_mut() = pyheaders;
@@ -29,7 +33,9 @@ pub(crate) async fn handle(
     scheme: HTTPProto,
 ) -> HTTPResponse {
     let (parts, body) = req.into_parts();
-    if let Ok((status, headers, body)) = call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await {
+    if let Ok((status, headers, body)) =
+        call_http(rt, callback, server_addr, client_addr, scheme, parts, body).await
+    {
         return build_response(status, headers, body);
     }
 

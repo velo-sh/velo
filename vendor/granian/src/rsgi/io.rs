@@ -110,7 +110,9 @@ impl RSGIHTTPProtocol {
 
     fn __anext__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
         if self.body_stream.blocking_lock().is_none() {
-            return Err(pyo3::exceptions::PyStopAsyncIteration::new_err("stream exhausted"));
+            return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                "stream exhausted",
+            ));
         }
 
         let body_stream = self.body_stream.clone();
@@ -153,7 +155,12 @@ impl RSGIHTTPProtocol {
     }
 
     #[pyo3(signature = (status=200, headers=vec![], body=vec![].into()))]
-    fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
+    fn response_bytes(
+        &self,
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: Cow<[u8]>,
+    ) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
             _ = tx.send(PyResponse::Body(PyResponseBody::from_bytes(
                 status,
@@ -166,7 +173,9 @@ impl RSGIHTTPProtocol {
     #[pyo3(signature = (status=200, headers=vec![], body=String::new()))]
     fn response_str(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) {
         if let Some(tx) = self.tx.lock().unwrap().take() {
-            _ = tx.send(PyResponse::Body(PyResponseBody::from_string(status, headers, body)));
+            _ = tx.send(PyResponse::Body(PyResponseBody::from_string(
+                status, headers, body,
+            )));
         }
     }
 

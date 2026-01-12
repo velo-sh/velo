@@ -35,5 +35,9 @@ pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
 #[cfg(PyPy)]
 #[inline(always)]
 pub(crate) fn copy_context(py: Python) -> Py<PyAny> {
-    contextvars(py).unwrap().call_method0("copy_context").unwrap().unbind()
+    contextvars(py)
+        .unwrap()
+        .call_method0("copy_context")
+        .unwrap()
+        .unbind()
 }

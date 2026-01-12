@@ -191,23 +191,29 @@ impl WorkerConfig {
                 }
                 let crls = tls_load_crls(opts.crl.iter());
                 let verifier = match opts.client_verify {
-                    true => tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
-                        .with_crls(crls)
-                        .build()
-                        .unwrap(),
-                    false => {
-                        tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(client_auth_cas.into())
-                            .with_crls(crls)
-                            .allow_unauthenticated()
-                            .build()
-                            .unwrap()
-                    }
+                    true => tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(
+                        client_auth_cas.into(),
+                    )
+                    .with_crls(crls)
+                    .build()
+                    .unwrap(),
+                    false => tls_listener::rustls::rustls::server::WebPkiClientVerifier::builder(
+                        client_auth_cas.into(),
+                    )
+                    .with_crls(crls)
+                    .allow_unauthenticated()
+                    .build()
+                    .unwrap(),
                 };
-                tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
-                    .with_client_cert_verifier(verifier)
+                tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(
+                    &tls_protos,
+                )
+                .with_client_cert_verifier(verifier)
             }
-            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(&tls_protos)
-                .with_no_client_auth(),
+            None => tls_listener::rustls::rustls::ServerConfig::builder_with_protocol_versions(
+                &tls_protos,
+            )
+            .with_no_client_auth(),
         };
         let mut cfg = cfg_builder
             .with_single_cert(
@@ -255,7 +261,10 @@ pub(crate) struct WorkerCTXFiles {
 }
 
 impl WorkerCTXFiles {
-    pub fn new(callback: crate::callbacks::PyCBScheduler, files: Option<(String, String, Option<String>)>) -> Self {
+    pub fn new(
+        callback: crate::callbacks::PyCBScheduler,
+        files: Option<(String, String, Option<String>)>,
+    ) -> Self {
         let (static_prefix, static_mount, static_expires) = files.unwrap();
         Self {
             callback: Arc::new(callback),
@@ -315,7 +324,8 @@ struct WorkerSvc<F, C, P> {
 
 macro_rules! service_impl {
     ($marker:ty, $proto:expr) => {
-        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXBase, $marker>
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXBase, $marker>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -350,7 +360,8 @@ macro_rules! service_impl {
             }
         }
 
-        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest> for WorkerSvc<F, WorkerCTXFiles, $marker>
+        impl<F, Ret> hyper::service::Service<crate::http::HTTPRequest>
+            for WorkerSvc<F, WorkerCTXFiles, $marker>
         where
             F: Fn(
                     crate::runtime::RuntimeRef,
@@ -372,15 +383,21 @@ macro_rules! service_impl {
             type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
             fn call(&self, req: crate::http::HTTPRequest) -> Self::Future {
-                if let Some(static_match) =
-                    crate::files::match_static_file(req.uri().path(), &self.ctx.static_prefix, &self.ctx.static_mount)
-                {
+                if let Some(static_match) = crate::files::match_static_file(
+                    req.uri().path(),
+                    &self.ctx.static_prefix,
+                    &self.ctx.static_mount,
+                ) {
                     if static_match.is_err() {
-                        return Box::pin(async move { Ok::<_, hyper::Error>(crate::http::response_404()) });
+                        return Box::pin(async move {
+                            Ok::<_, hyper::Error>(crate::http::response_404())
+                        });
                     }
                     let expires = self.ctx.static_expires.clone();
                     return Box::pin(async move {
-                        Ok::<_, hyper::Error>(crate::files::serve_static_file(static_match.unwrap(), expires).await)
+                        Ok::<_, hyper::Error>(
+                            crate::files::serve_static_file(static_match.unwrap(), expires).await,
+                        )
                     });
                 }
 
@@ -460,10 +477,13 @@ trait WorkerHandleBuilder<I, S> {
     fn handle(&self, guard: Arc<tokio::sync::Notify>) -> impl WorkerHandle<I, S>;
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades>, F>
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S>
+    for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnNoUpgrades>, F>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -476,10 +496,13 @@ where
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnUpgrades>, F>
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S>
+    for Worker<C, A, WorkerHandlerH1<WorkerMarkerConnUpgrades>, F>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -495,7 +518,9 @@ where
 impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerH2, F>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -507,10 +532,13 @@ where
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnNoUpgrades>, F>
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S>
+    for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnNoUpgrades>, F>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -524,10 +552,13 @@ where
     }
 }
 
-impl<C, A, F, I, S> WorkerHandleBuilder<I, S> for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnUpgrades>, F>
+impl<C, A, F, I, S> WorkerHandleBuilder<I, S>
+    for Worker<C, A, WorkerHandlerHA<WorkerMarkerConnUpgrades>, F>
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -593,7 +624,8 @@ macro_rules! conn_handle_ha {
             sig: Arc<tokio::sync::Notify>,
         ) {
             let mut done = false;
-            let mut connb = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+            let mut connb =
+                hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
             connb
                 .http1()
                 .timer(hyper_util::rt::tokio::TokioTimer::new())
@@ -640,7 +672,11 @@ macro_rules! conn_handle_impl {
         impl<I, S> WorkerHandle<I, S> for $handle
         where
             I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S: hyper::service::Service<
+                    crate::http::HTTPRequest,
+                    Response = crate::http::HTTPResponse,
+                > + Send
+                + 'static,
             S::Future: Send + 'static,
             S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         {
@@ -651,7 +687,11 @@ macro_rules! conn_handle_impl {
         impl<I, S> WorkerHandle<I, S> for $handle
         where
             I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-            S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+            S: hyper::service::Service<
+                    crate::http::HTTPRequest,
+                    Response = crate::http::HTTPResponse,
+                > + Send
+                + 'static,
             S::Future: Send + 'static,
             S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         {
@@ -668,11 +708,19 @@ conn_handle_impl!(ha WorkerHandleHA<WorkerMarkerConnUpgrades>, serve_connection_
 impl<I, S> WorkerHandle<I, S> for WorkerHandleH2
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse> + Send + 'static,
+    S: hyper::service::Service<crate::http::HTTPRequest, Response = crate::http::HTTPResponse>
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
-    async fn call(self, svc: S, stream: I, permit: tokio::sync::OwnedSemaphorePermit, sig: Arc<tokio::sync::Notify>) {
+    async fn call(
+        self,
+        svc: S,
+        stream: I,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        sig: Arc<tokio::sync::Notify>,
+    ) {
         let mut done = false;
         let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
             .timer(hyper_util::rt::tokio::TokioTimer::new())
@@ -753,7 +801,8 @@ macro_rules! acceptor_impl {
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
             C: Clone + Send + Sync + 'static,
             H: Send + Sync + 'static,
-            Worker<C, $target_plain, H, F>: WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
+            Worker<C, $target_plain, H, F>:
+                WorkerHandleBuilder<$stream, WorkerSvc<F, C, WorkerMarkerPlain>> + Clone,
         {
             async fn listen(
                 &self,
@@ -829,8 +878,10 @@ macro_rules! acceptor_impl {
             Ret: Future<Output = crate::http::HTTPResponse> + 'static,
             C: Clone + Send + Sync + 'static,
             H: Send + Sync + 'static,
-            Worker<C, $target_tls, H, F>:
-                WorkerHandleBuilder<tls_listener::rustls::server::TlsStream<$stream>, WorkerSvc<F, C, WorkerMarkerTls>> + Clone,
+            Worker<C, $target_tls, H, F>: WorkerHandleBuilder<
+                    tls_listener::rustls::server::TlsStream<$stream>,
+                    WorkerSvc<F, C, WorkerMarkerTls>,
+                > + Clone,
         {
             async fn listen(
                 &self,
@@ -959,17 +1010,18 @@ macro_rules! serve_fn {
             let tasks = wrk.tasks.clone();
             let srx = signal.get().rx.lock().unwrap().take().unwrap();
 
-            let main_loop = crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
-                wrk.listen(srx, listener, backpressure).await;
+            let main_loop =
+                crate::runtime::run_until_complete(rt, event_loop.clone(), async move {
+                    wrk.listen(srx, listener, backpressure).await;
 
-                log::info!("Stopping worker-{worker_id}");
+                    log::info!("Stopping worker-{worker_id}");
 
-                tasks.close();
-                tasks.wait().await;
+                    tasks.close();
+                    tasks.wait().await;
 
-                Python::attach(|_| drop(wrk));
-                Ok(())
-            });
+                    Python::attach(|_| drop(wrk));
+                    Ok(())
+                });
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
@@ -1032,8 +1084,12 @@ macro_rules! serve_fn {
                 let srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt =
-                        crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
+                    let rt = crate::runtime::init_runtime_st(
+                        blocking_threads,
+                        py_threads,
+                        py_threads_idle_timeout,
+                        py_loop,
+                    );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                     let local = tokio::task::LocalSet::new();
@@ -1054,17 +1110,19 @@ macro_rules! serve_fn {
                 }));
             }
 
-            let rtm = crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()));
+            let rtm =
+                crate::runtime::init_runtime_mt(1, 1, 0, 0, Arc::new(event_loop.clone().unbind()));
             let mut pyrx = signal.get().rx.lock().unwrap().take().unwrap();
-            let main_loop = crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
-                let _ = pyrx.changed().await;
-                stx.send(true).unwrap();
-                log::info!("Stopping worker-{worker_id}");
-                while let Some(worker) = workers.pop() {
-                    worker.join().unwrap();
-                }
-                Ok(())
-            });
+            let main_loop =
+                crate::runtime::run_until_complete(rtm, event_loop.clone(), async move {
+                    let _ = pyrx.changed().await;
+                    stx.send(true).unwrap();
+                    log::info!("Stopping worker-{worker_id}");
+                    while let Some(worker) = workers.pop() {
+                        worker.join().unwrap();
+                    }
+                    Ok(())
+                });
 
             if let Err(err) = main_loop {
                 log::error!("{err}");
@@ -1118,8 +1176,12 @@ macro_rules! serve_fn {
             let pyloop_r2 = pyloop_r1.clone();
 
             let worker = std::thread::spawn(move || {
-                let rt =
-                    crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, pyloop_r1);
+                let rt = crate::runtime::init_runtime_st(
+                    blocking_threads,
+                    py_threads,
+                    py_threads_idle_timeout,
+                    pyloop_r1,
+                );
                 let rth = rt.handler();
                 let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                 let tasks = wrk.tasks.clone();

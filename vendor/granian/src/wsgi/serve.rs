@@ -311,8 +311,12 @@ macro_rules! serve_fn {
                 let srx = srx.clone();
 
                 workers.push(std::thread::spawn(move || {
-                    let rt =
-                        crate::runtime::init_runtime_st(blocking_threads, py_threads, py_threads_idle_timeout, py_loop);
+                    let rt = crate::runtime::init_runtime_st(
+                        blocking_threads,
+                        py_threads,
+                        py_threads_idle_timeout,
+                        py_loop,
+                    );
                     let rth = rt.handler();
                     let wrk = crate::workers::Worker::new(ctx, acceptor, handler, rth, target);
                     let local = tokio::task::LocalSet::new();

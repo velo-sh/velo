@@ -247,7 +247,11 @@ macro_rules! headers_from_py {
 }
 
 impl PyResponseBody {
-    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: HTTPResponseBody) -> Self {
+    pub fn new(
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: HTTPResponseBody,
+    ) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -263,7 +267,11 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_bytes(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Box<[u8]>) -> Self {
+    pub fn from_bytes(
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: Box<[u8]>,
+    ) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -273,7 +281,11 @@ impl PyResponseBody {
         }
     }
 
-    pub fn from_string(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: String) -> Self {
+    pub fn from_string(
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: String,
+    ) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -306,8 +318,11 @@ impl PyResponseFile {
         match File::open(&self.file_path).await {
             Ok(file) => {
                 let stream = ReaderStream::with_capacity(file, 131_072);
-                let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
-                let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                let stream_body =
+                    http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                let mut res = hyper::Response::new(
+                    BodyExt::map_err(stream_body, std::convert::Into::into).boxed(),
+                );
                 *res.status_mut() = self.status;
                 *res.headers_mut() = self.headers;
                 res
@@ -321,7 +336,13 @@ impl PyResponseFile {
 }
 
 impl PyResponseFileRange {
-    pub fn new(status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, file_path: String, start: u64, end: u64) -> Self {
+    pub fn new(
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        file_path: String,
+        start: u64,
+        end: u64,
+    ) -> Self {
         Self {
             status: status.try_into().unwrap(),
             headers: headers_from_py!(headers),
@@ -339,13 +360,20 @@ impl PyResponseFileRange {
         match File::open(&self.file_path).await {
             Ok(mut file) => {
                 if file.seek(SeekFrom::Start(self.start)).await.is_err() {
-                    log::error!("Cannot seek to position {} in file {}", self.start, &self.file_path);
+                    log::error!(
+                        "Cannot seek to position {} in file {}",
+                        self.start,
+                        &self.file_path
+                    );
                     return response_500();
                 }
                 let take = file.take(self.end - self.start);
                 let stream = ReaderStream::with_capacity(take, 131_072);
-                let stream_body = http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
-                let mut res = hyper::Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                let stream_body =
+                    http_body_util::StreamBody::new(stream.map_ok(hyper::body::Frame::data));
+                let mut res = hyper::Response::new(
+                    BodyExt::map_err(stream_body, std::convert::Into::into).boxed(),
+                );
                 *res.status_mut() = self.status;
                 *res.headers_mut() = self.headers;
                 res

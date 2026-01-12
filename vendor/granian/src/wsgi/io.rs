@@ -48,7 +48,12 @@ macro_rules! headers_from_py {
 
 #[pymethods]
 impl WSGIProtocol {
-    fn response_bytes(&self, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Cow<[u8]>) {
+    fn response_bytes(
+        &self,
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: Cow<[u8]>,
+    ) {
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
             let data: Box<[u8]> = body.into();
             let txbody = http_body_util::Full::new(body::Bytes::from(data))
@@ -58,7 +63,13 @@ impl WSGIProtocol {
         }
     }
 
-    fn response_iter(&self, py: Python, status: u16, headers: Vec<(PyBackedStr, PyBackedStr)>, body: Bound<PyAny>) {
+    fn response_iter(
+        &self,
+        py: Python,
+        status: u16,
+        headers: Vec<(PyBackedStr, PyBackedStr)>,
+        body: Bound<PyAny>,
+    ) {
         if let Some(tx) = self.tx.lock().map_or(None, |mut v| v.take()) {
             let (body_tx, body_rx) = mpsc::unbounded_channel::<body::Bytes>();
 

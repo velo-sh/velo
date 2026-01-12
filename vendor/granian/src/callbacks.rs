@@ -51,7 +51,8 @@ impl CallbackScheduler {
             pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
 
             let mut pres = std::ptr::null_mut::<pyo3::ffi::PyObject>();
-            let gres = pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &raw mut pres);
+            let gres =
+                pyo3::ffi::PyIter_Send(state.coro.as_ptr(), self.pynone.as_ptr(), &raw mut pres);
 
             if gres == pyo3::ffi::PySendResult::PYGEN_NEXT {
                 if pres == self.pynone.as_ptr() {
@@ -62,8 +63,17 @@ impl CallbackScheduler {
                         .map(|v| v.extract::<bool>().unwrap_or(false))
                         .unwrap_or(false)
                     {
-                        pyo3::ffi::PyObject_SetAttr(pres, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
-                        CallbackSchedulerState::add_waker(state, py, pres, self.pyname_futcb.as_ptr());
+                        pyo3::ffi::PyObject_SetAttr(
+                            pres,
+                            self.pyname_aioblock.as_ptr(),
+                            self.pyfalse.as_ptr(),
+                        );
+                        CallbackSchedulerState::add_waker(
+                            state,
+                            py,
+                            pres,
+                            self.pyname_futcb.as_ptr(),
+                        );
                     }
                 }
             }
@@ -97,7 +107,11 @@ impl CallbackScheduler {
             } {
                 let resp = res.as_ptr();
                 unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                    pyo3::ffi::PyObject_SetAttr(
+                        resp,
+                        self.pyname_aioblock.as_ptr(),
+                        self.pyfalse.as_ptr(),
+                    );
                     CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
                 }
             } else {
@@ -116,7 +130,11 @@ impl CallbackScheduler {
 
         unsafe {
             pyo3::ffi::PyObject_CallOneArg(self.aio_tenter.as_ptr(), aiotask);
-            pyo3::ffi::PyObject_CallMethodOneArg(state.coro.as_ptr(), self.pyname_aiothrow.as_ptr(), err.into_ptr());
+            pyo3::ffi::PyObject_CallMethodOneArg(
+                state.coro.as_ptr(),
+                self.pyname_aiothrow.as_ptr(),
+                err.into_ptr(),
+            );
             pyo3::ffi::PyErr_Clear();
             pyo3::ffi::PyObject_CallOneArg(self.aio_texit.as_ptr(), aiotask);
         }
@@ -161,7 +179,11 @@ impl CallbackScheduler {
                 let resp = res.as_ptr();
 
                 unsafe {
-                    pyo3::ffi::PyObject_SetAttr(resp, self.pyname_aioblock.as_ptr(), self.pyfalse.as_ptr());
+                    pyo3::ffi::PyObject_SetAttr(
+                        resp,
+                        self.pyname_aioblock.as_ptr(),
+                        self.pyfalse.as_ptr(),
+                    );
                     CallbackSchedulerState::add_waker(state, py, resp, self.pyname_futcb.as_ptr());
                 }
             } else {
@@ -204,7 +226,9 @@ impl CallbackScheduler {
         aio_texit: Py<PyAny>,
     ) -> Self {
         let ctx = copy_context(py);
-        let pym_lcs = event_loop.getattr(py, pyo3::intern!(py, "call_soon")).unwrap();
+        let pym_lcs = event_loop
+            .getattr(py, pyo3::intern!(py, "call_soon"))
+            .unwrap();
 
         Self {
             _loop: event_loop,
@@ -220,11 +244,15 @@ impl CallbackScheduler {
             pyfalse: false.into_py_any(py).unwrap(),
             pynone: py.None(),
             pym_lcs,
-            pyname_aioblock: pyo3::intern!(py, "_asyncio_future_blocking").into_py_any(py).unwrap(),
+            pyname_aioblock: pyo3::intern!(py, "_asyncio_future_blocking")
+                .into_py_any(py)
+                .unwrap(),
             #[cfg(any(not(Py_3_10), PyPy))]
             pyname_aiosend: pyo3::intern!(py, "send").into_py_any(py).unwrap(),
             pyname_aiothrow: pyo3::intern!(py, "throw").into_py_any(py).unwrap(),
-            pyname_futcb: pyo3::intern!(py, "add_done_callback").into_py_any(py).unwrap(),
+            pyname_futcb: pyo3::intern!(py, "add_done_callback")
+                .into_py_any(py)
+                .unwrap(),
         }
     }
 
@@ -275,8 +303,19 @@ pub(crate) struct CallbackSchedulerState {
 
 impl CallbackSchedulerState {
     #[allow(unsafe_op_in_unsafe_fn)]
-    unsafe fn add_waker(self: Arc<Self>, py: Python, fut: *mut pyo3::ffi::PyObject, fut_cbm: *mut pyo3::ffi::PyObject) {
-        let waker = Py::new(py, CallbackSchedulerWaker { state: self.clone() }).unwrap();
+    unsafe fn add_waker(
+        self: Arc<Self>,
+        py: Python,
+        fut: *mut pyo3::ffi::PyObject,
+        fut_cbm: *mut pyo3::ffi::PyObject,
+    ) {
+        let waker = Py::new(
+            py,
+            CallbackSchedulerWaker {
+                state: self.clone(),
+            },
+        )
+        .unwrap();
         let ctxd = PyDict::new(py);
         ctxd.set_item(pyo3::intern!(py, "context"), self.ctx.clone_ref(py))
             .unwrap();
@@ -289,13 +328,23 @@ impl CallbackSchedulerState {
     }
 
     fn reschedule(self: Arc<Self>, py: Python, loop_m: *mut pyo3::ffi::PyObject) {
-        let step = Py::new(py, CallbackSchedulerStep { state: self.clone() }).unwrap();
+        let step = Py::new(
+            py,
+            CallbackSchedulerStep {
+                state: self.clone(),
+            },
+        )
+        .unwrap();
         let ctxd = PyDict::new(py);
         ctxd.set_item(pyo3::intern!(py, "context"), self.ctx.clone_ref(py))
             .unwrap();
 
         unsafe {
-            pyo3::ffi::PyObject_Call(loop_m, (step,).into_py_any(py).unwrap().as_ptr(), ctxd.as_ptr());
+            pyo3::ffi::PyObject_Call(
+                loop_m,
+                (step,).into_py_any(py).unwrap().as_ptr(),
+                ctxd.as_ptr(),
+            );
         }
     }
 }
@@ -310,11 +359,12 @@ impl CallbackSchedulerWaker {
     fn __call__(&self, py: Python, fut: Py<PyAny>) {
         match fut.call_method0(py, pyo3::intern!(py, "result")) {
             Ok(_) => self.state.sched.get().send(py, self.state.clone()),
-            Err(err) => self
-                .state
-                .sched
-                .get()
-                .throw(py, self.state.clone(), err.into_py_any(py).unwrap()),
+            Err(err) => {
+                self.state
+                    .sched
+                    .get()
+                    .throw(py, self.state.clone(), err.into_py_any(py).unwrap())
+            }
         }
     }
 }
@@ -418,7 +468,10 @@ impl PyIterAwaitable {
 
     #[inline]
     pub(crate) fn set_result(pyself: Py<Self>, py: Python, result: FutureResultToPy) {
-        _ = pyself.get().result.set(result.into_pyobject(py).map(Bound::unbind));
+        _ = pyself
+            .get()
+            .result
+            .set(result.into_pyobject(py).map(Bound::unbind));
         pyself.drop_ref(py);
     }
 }
@@ -484,7 +537,9 @@ impl PyFutureAwaitable {
     pub(crate) fn set_result(pyself: Py<Self>, py: Python, result: FutureResultToPy) {
         let rself = pyself.get();
 
-        _ = rself.result.set(result.into_pyobject(py).map(Bound::unbind));
+        _ = rself
+            .result
+            .set(result.into_pyobject(py).map(Bound::unbind));
         if rself
             .state
             .compare_exchange(
@@ -553,7 +608,11 @@ impl PyFutureAwaitable {
     }
 
     #[pyo3(signature = (cb, context=None))]
-    fn add_done_callback(pyself: PyRef<'_, Self>, cb: Py<PyAny>, context: Option<Py<PyAny>>) -> PyResult<()> {
+    fn add_done_callback(
+        pyself: PyRef<'_, Self>,
+        cb: Py<PyAny>,
+        context: Option<Py<PyAny>>,
+    ) -> PyResult<()> {
         let py = pyself.py();
         let kwctx = pyo3::types::PyDict::new(py);
         kwctx.set_item(pyo3::intern!(py, "context"), context)?;
@@ -564,7 +623,12 @@ impl PyFutureAwaitable {
             *ack = Some((cb, kwctx.unbind()));
         } else {
             let event_loop = pyself.event_loop.clone_ref(py);
-            event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(&kwctx))?;
+            event_loop.call_method(
+                py,
+                pyo3::intern!(py, "call_soon"),
+                (cb, pyself),
+                Some(&kwctx),
+            )?;
         }
 
         Ok(())
@@ -606,7 +670,12 @@ impl PyFutureAwaitable {
             let ctx = ctx.clone_ref(py);
             drop(ack);
 
-            let _ = event_loop.call_method(py, pyo3::intern!(py, "call_soon"), (cb, pyself), Some(ctx.bind(py)));
+            let _ = event_loop.call_method(
+                py,
+                pyo3::intern!(py, "call_soon"),
+                (cb, pyself),
+                Some(ctx.bind(py)),
+            );
         }
 
         true
@@ -677,7 +746,13 @@ impl PyFutureDoneCallback {
     pub fn __call__(&self, fut: Bound<PyAny>) -> PyResult<()> {
         let py = fut.py();
 
-        if { fut.getattr(pyo3::intern!(py, "cancelled"))?.call0()?.is_truthy() }.unwrap_or(false) {
+        if {
+            fut.getattr(pyo3::intern!(py, "cancelled"))?
+                .call0()?
+                .is_truthy()
+        }
+        .unwrap_or(false)
+        {
             self.cancel_tx.notify_one();
         }
 

@@ -7,8 +7,8 @@ use tls_listener::{
         rustls::{
             SupportedProtocolVersion,
             pki_types::{
-                CertificateDer as Certificate, CertificateRevocationListDer as CRL, PrivateKeyDer as PrivateKey,
-                pem::PemObject,
+                CertificateDer as Certificate, CertificateRevocationListDer as CRL,
+                PrivateKeyDer as PrivateKey, pem::PemObject,
             },
             server::ServerConfig,
             version as tls_version,
@@ -18,7 +18,9 @@ use tls_listener::{
 
 use crate::net::SockAddr;
 
-pub(crate) fn resolve_protocol_versions(min_version: &str) -> Vec<&'static SupportedProtocolVersion> {
+pub(crate) fn resolve_protocol_versions(
+    min_version: &str,
+) -> Vec<&'static SupportedProtocolVersion> {
     match min_version {
         "tls1.2" => vec![&tls_version::TLS12, &tls_version::TLS13],
         "tls1.3" => vec![&tls_version::TLS13],
@@ -54,7 +56,9 @@ pub(crate) fn load_certs(filename: String) -> Vec<Certificate<'static>> {
         .collect()
 }
 
-pub(crate) fn load_crls(filenames: impl Iterator<Item = impl AsRef<std::path::Path>>) -> Vec<CRL<'static>> {
+pub(crate) fn load_crls(
+    filenames: impl Iterator<Item = impl AsRef<std::path::Path>>,
+) -> Vec<CRL<'static>> {
     filenames
         .map(|filename| CRL::from_pem_file(filename).expect("cannot read CRL file"))
         .collect()

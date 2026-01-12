@@ -25,7 +25,8 @@ use crate::{
     conversion::FutureResultToPy,
     http::{HTTPResponse, HTTPResponseBody, HV_SERVER, response_404},
     runtime::{
-        Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py, future_into_py_futlike,
+        Runtime, RuntimeRef, done_future_into_py, empty_future_into_py, err_future_into_py,
+        future_into_py_futlike,
     },
     ws::{HyperWebsocket, UpgradeData, WSRxStream, WSTxStream},
 };
@@ -80,7 +81,8 @@ impl ASGIHTTPProtocol {
             *res.status_mut() = hyper::StatusCode::from_u16(status).unwrap();
             *res.headers_mut() = headers;
             let _ = tx.send(res);
-            self.sent_response_code.store(status, atomic::Ordering::Relaxed);
+            self.sent_response_code
+                .store(status, atomic::Ordering::Relaxed);
         }
     }
 
@@ -120,7 +122,8 @@ impl ASGIHTTPProtocol {
         if self.flow_rx_closed.load(atomic::Ordering::Acquire) {
             return done_future_into_py(
                 py,
-                super::conversion::message_into_py(py, ASGIMessageType::HTTPDisconnect).map(Bound::unbind),
+                super::conversion::message_into_py(py, ASGIMessageType::HTTPDisconnect)
+                    .map(Bound::unbind),
             );
         }
 
@@ -167,7 +170,9 @@ impl ASGIHTTPProtocol {
             }
 
             match chunk {
-                Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((data, more_body))),
+                Some(data) => FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPRequestBody((
+                    data, more_body,
+                ))),
                 _ => {
                     guard_tx.notify_one();
                     FutureResultToPy::ASGIMessage(ASGIMessageType::HTTPDisconnect)
@@ -181,7 +186,12 @@ impl ASGIHTTPProtocol {
             Ok(ASGIMessageType::HTTPResponseStart(intent)) => {
                 if self
                     .response_started
-                    .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+                    .compare_exchange(
+                        false,
+                        true,
+                        atomic::Ordering::Relaxed,
+                        atomic::Ordering::Relaxed,
+                    )
                     .is_err()
                 {
                     return error_flow!("Response already started");
@@ -272,14 +282,18 @@ impl ASGIHTTPProtocol {
                     let (status, headers) = self.response_intent.lock().unwrap().take().unwrap();
                     // FIXME: to store the actual status in case of 404 this should be re-implemented taking
                     //        into account the following async flow (we return empty future to avoid waiting)
-                    self.sent_response_code.store(status, atomic::Ordering::Relaxed);
+                    self.sent_response_code
+                        .store(status, atomic::Ordering::Relaxed);
                     self.rt.spawn(async move {
                         let res = match File::open(&file_path).await {
                             Ok(file) => {
                                 let stream = ReaderStream::with_capacity(file, 131_072);
-                                let stream_body = http_body_util::StreamBody::new(stream.map_ok(body::Frame::data));
-                                let mut res =
-                                    Response::new(BodyExt::map_err(stream_body, std::convert::Into::into).boxed());
+                                let stream_body = http_body_util::StreamBody::new(
+                                    stream.map_ok(body::Frame::data),
+                                );
+                                let mut res = Response::new(
+                                    BodyExt::map_err(stream_body, std::convert::Into::into).boxed(),
+                                );
                                 *res.status_mut() = StatusCode::from_u16(status).unwrap();
                                 *res.headers_mut() = headers;
                                 res
@@ -432,7 +446,11 @@ impl ASGIWebsocketProtocol {
     }
 
     #[inline(always)]
-    fn close<'p>(&self, py: Python<'p>, frame: Option<wsframe::CloseFrame>) -> PyResult<Bound<'p, PyAny>> {
+    fn close<'p>(
+        &self,
+        py: Python<'p>,
+        frame: Option<wsframe::CloseFrame>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         let closed = self.closed.clone();
         let ws_rx = self.ws_rx.clone();
         let ws_tx = self.ws_tx.clone();
@@ -473,12 +491,18 @@ impl ASGIWebsocketProtocol {
         // if it's the first `receive` call, return the connect message
         if self
             .init_rx
-            .compare_exchange(false, true, atomic::Ordering::Relaxed, atomic::Ordering::Relaxed)
+            .compare_exchange(
+                false,
+                true,
+                atomic::Ordering::Relaxed,
+                atomic::Ordering::Relaxed,
+            )
             .is_ok()
         {
             return done_future_into_py(
                 py,
-                super::conversion::message_into_py(py, ASGIMessageType::WSConnect).map(Bound::unbind),
+                super::conversion::message_into_py(py, ASGIMessageType::WSConnect)
+                    .map(Bound::unbind),
             );
         }
 
@@ -525,7 +549,10 @@ impl ASGIWebsocketProtocol {
 }
 
 #[inline(never)]
-fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
+fn adapt_message_type(
+    py: Python,
+    message: &Bound<PyDict>,
+) -> Result<ASGIMessageType, UnsupportedASGIMessage> {
     match message.get_item(pyo3::intern!(py, "type")) {
         Ok(Some(item)) => {
             let message_type: &str = item.extract()?;
@@ -534,23 +561,29 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                     adapt_status_code(py, message)?,
                     adapt_headers(py, message).map_err(|_| UnsupportedASGIMessage)?,
                 ))),
-                "http.response.body" => Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message))),
-                "http.response.pathsend" => Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?)),
+                "http.response.body" => {
+                    Ok(ASGIMessageType::HTTPResponseBody(adapt_body(py, message)))
+                }
+                "http.response.pathsend" => {
+                    Ok(ASGIMessageType::HTTPResponseFile(adapt_file(py, message)?))
+                }
                 "websocket.accept" => {
-                    let subproto: Option<String> = match message.get_item(pyo3::intern!(py, "subprotocol")) {
-                        Ok(Some(item)) => item.extract::<String>().map(Some).unwrap_or(None),
-                        _ => None,
-                    };
+                    let subproto: Option<String> =
+                        match message.get_item(pyo3::intern!(py, "subprotocol")) {
+                            Ok(Some(item)) => item.extract::<String>().map(Some).unwrap_or(None),
+                            _ => None,
+                        };
                     Ok(ASGIMessageType::WSAccept(subproto))
                 }
                 "websocket.close" => {
-                    let code: wsframe::coding::CloseCode = match message.get_item(pyo3::intern!(py, "code")) {
-                        Ok(Some(item)) => item
-                            .extract::<u16>()
-                            .map(std::convert::Into::into)
-                            .unwrap_or(wsframe::coding::CloseCode::Normal),
-                        _ => wsframe::coding::CloseCode::Normal,
-                    };
+                    let code: wsframe::coding::CloseCode =
+                        match message.get_item(pyo3::intern!(py, "code")) {
+                            Ok(Some(item)) => item
+                                .extract::<u16>()
+                                .map(std::convert::Into::into)
+                                .unwrap_or(wsframe::coding::CloseCode::Normal),
+                            _ => wsframe::coding::CloseCode::Normal,
+                        };
                     let reason: String = match message.get_item(pyo3::intern!(py, "reason")) {
                         Ok(Some(item)) => item.extract::<String>().unwrap_or(String::new()),
                         _ => String::new(),
@@ -560,7 +593,9 @@ fn adapt_message_type(py: Python, message: &Bound<PyDict>) -> Result<ASGIMessage
                         reason: reason.into(),
                     })))
                 }
-                "websocket.send" => Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?)),
+                "websocket.send" => {
+                    Ok(ASGIMessageType::WSMessage(ws_message_into_rs(py, message)?))
+                }
                 _ => error_message!(),
             }
         }
@@ -589,7 +624,10 @@ fn adapt_headers(py: Python, message: &Bound<PyDict>) -> Result<HeaderMap> {
         if htup.len() != 2 {
             return error_message!();
         }
-        ret.append(HeaderName::from_bytes(&htup[0])?, HeaderValue::from_bytes(&htup[1])?);
+        ret.append(
+            HeaderName::from_bytes(&htup[0])?,
+            HeaderValue::from_bytes(&htup[1])?,
+        );
     }
     ret.entry(HK_SERVER).or_insert(HV_SERVER);
     Ok(ret)
@@ -627,7 +665,9 @@ fn ws_message_into_rs(py: Python, message: &Bound<PyDict>) -> PyResult<Message> 
             let data: Cow<[u8]> = item.extract().unwrap_or(EMPTY_BYTES);
             Ok(data[..].into())
         }
-        (None, Some(item)) => Ok(Message::Text(item.extract::<String>().unwrap_or(EMPTY_STRING).into())),
+        (None, Some(item)) => Ok(Message::Text(
+            item.extract::<String>().unwrap_or(EMPTY_STRING).into(),
+        )),
         (Some(itemb), Some(itemt)) => match (itemb.is_none(), itemt.is_none()) {
             (false, true) => {
                 let data: Box<[u8]> = itemb.extract::<Cow<[u8]>>()?.into();
