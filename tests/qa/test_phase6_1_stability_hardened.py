@@ -417,8 +417,8 @@ time.sleep(60)
 
 
     @pytest.mark.xfail(
-        os.environ.get(\"GITHUB_ACTIONS\") == \"true\",
-        reason=\"File watcher on CI uses poll mode without inotify support; starvation behavior differs\",
+        os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="File watcher on CI uses poll mode without inotify support; starvation behavior differs",
     )
     def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
 
