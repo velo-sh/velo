@@ -248,8 +248,8 @@ class TestL1HappyPath:
         print(f"Cold: {time_cold:.3f}s, Warm: {time_warm:.3f}s")
 
         # Warm should be at least as fast as cold
-        # Increased to 1.3x to avoid CI jitter (Virtualization overhead)
-        assert time_warm <= time_cold * 1.3, f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s"
+        # Strict 1.1x threshold to catch regressions (e.g. Graph generation failure)
+        assert time_warm <= time_cold * 1.1, f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s"
 
     @pytest.mark.happy_path
     def test_100_module_project(self, large_project, velo_binary):
