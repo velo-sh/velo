@@ -374,3 +374,89 @@ opt-level = 3
 | **HTTP/2** | 🟢 STABLE | Granian full support |
 | **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 9.x |
 | **WebTransport** | 🔮 RESEARCH | Future real-time applications |
+
+### 8.14 Memory Management Strategy (Stability-First)
+
+> [!IMPORTANT]
+> **Core Principle**: Prioritize STABILITY first, then adopt highest-performance mature technologies.
+> Rust-internal memory is safe by design; Rust↔Python boundary requires defensive architecture.
+
+#### 8.14.1 Safety Zones
+
+| Zone | Risk Level | Technology Freedom |
+|:---|:---|:---|
+| **Rust Internal** | 🟢 Low | Full freedom: arenas, pools, ring buffers |
+| **Rust↔Python Boundary** | 🔴 High | Defensive: explicit ownership, reference counting |
+| **Python Internal** | 🟡 Medium | Managed by GC, minimize allocations |
+
+#### 8.14.2 Rust-Internal Memory (Safe Zone)
+
+These techniques are safe within Rust's ownership model:
+
+| Technique | Crate | Use Case | Phase |
+|:---|:---|:---|:---|
+| **Buffer Pool** | `object-pool` | Pre-allocated IO buffers | 7.2 |
+| **SPSC Ring Buffer** | `rtrb`, `ringbuf` | Lock-free request queuing | 8.x |
+| **Memory Arena** | `bumpalo` | Per-request allocations | 8.x |
+| **Slab Allocator** | `slab` | Fixed-size worker slots | 8.x |
+
+**Safety Guarantees**:
+- Rust's borrow checker prevents use-after-free
+- No runtime overhead for memory safety
+- Compile-time guarantee of no data races
+
+#### 8.14.3 Rust↔Python Boundary (Danger Zone)
+
+> [!CAUTION]
+> This boundary requires explicit defensive design. Memory lifetime crosses language runtimes.
+
+**Potential Hazards**:
+| Hazard | Cause | Mitigation |
+|:---|:---|:---|
+| **Memory Leak** | Python holds Rust reference too long | Timeout + explicit drop |
+| **Use-After-Free** | Rust frees while Python holds view | Reference counting via PyO3 |
+| **GIL Deadlock** | Rust waits for Python, Python waits for Rust | Async handoff, never block |
+| **Double-Free** | Both Rust and Python try to free | Single ownership boundary |
+
+**Defensive Architecture**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 Rust (Owns All Memory)                      │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Buffer Pool: [64KB] [64KB] [64KB]                  │    │
+│  │  ↓                                                  │    │
+│  │  Request arrives → borrow buffer                   │    │
+│  │  ↓                                                  │    │
+│  │  [BOUNDARY] PyBytes::new(py, &buffer)              │    │  ← View only, Rust owns
+│  │  ↓                                                  │    │
+│  │  Python processes (read-only view)                 │    │
+│  │  ↓                                                  │    │
+│  │  Response done → buffer returned to pool           │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Boundary Rules**:
+1. **Rust Owns, Python Borrows**: All buffers live in Rust; Python receives views only
+2. **Explicit Lifetime**: Each request buffer has a bounded lifetime (timeout)
+3. **Reference Count Audit**: Log PyO3 reference count at boundary crossing
+4. **Panic Boundary**: Rust panics must NOT propagate to Python
+
+#### 8.14.4 Adoption Roadmap
+
+| Technique | Zone | Phase | Priority | Risk |
+|:---|:---|:---|:---|:---|
+| **Object Pool (buffers)** | Rust | 7.2 | ⭐⭐⭐ | Low |
+| **PyBytes views** | Boundary | 7.2 | ⭐⭐⭐ | Medium |
+| **SPSC Ring Buffer** | Rust | 8.x | ⭐⭐ | Low |
+| **Memory Arena** | Rust | 8.x | ⭐⭐ | Low |
+| **Zero-copy mmap** | Boundary | 9.x | ⭐ | High |
+
+#### 8.14.5 Verification Strategy
+
+| Check | Method | Frequency |
+|:---|:---|:---|
+| **Memory Leak** | Valgrind / ASAN | CI (weekly) |
+| **Use-After-Free** | Miri (Rust) | CI (PR) |
+| **Reference Count** | PyO3 debug logging | Debug builds |
+| **Stress Test** | 10K QPS for 1 hour | Release validation |
