@@ -71,9 +71,22 @@ To eliminate the overhead of socket creation for every worker-host link, Velo us
 
 ## 4. Architectural Quality Gates
 
+### Security Gates
 *   **Gate D (Protocol)**: Any MessagePack payload > 1MB MUST be rejected unless explicitly negotiated.
-*   **Gate E (Lifecycle)**: A worker that doesn't send `READY` within 500ms MUST be SIGKILL'd.
 *   **Gate F (Security)**: All UDS paths MUST reside in a `0o700` restricted directory created via `mkdtemp`.
 *   **Gate G (Atomic IPC) [REMEDIATED SEC-07-001]**: On Linux, the Host and Worker MUST communicate via **Abstract Namespace Sockets**.
 *   **Gate H (Peer Auth) [RFC-0019 MANDATORY]**: The Host MUST perform **Peer Authentication** (`SO_PEERCRED` / `getpeereid`) on the RSGI link. Handshake MUST NOT proceed if the peer UID/PID does not match the launched worker.
+
+### Lifecycle Gates
+*   **Gate E (Lifecycle)**: A worker that doesn't send `READY` within 500ms MUST be SIGKILL'd.
+*   **Gate J (Signal Hygiene) [Cloud Native Expert]**: SIGTERM received by Host MUST be translated to `{"type": "lifespan.shutdown"}` and sent to all Workers via RSGI. Workers MUST complete in-flight requests before exiting.
+
+### Performance Gates (HPC Engineer Recommendations)
 *   **Gate I (Marshalling Efficiency)**: Payloads arriving via Granian-core MUST use `PyBytes` views in `conversion.rs` to ensure **True Zero-Copy** delivery to the Python stack.
+*   **Gate K (Rust-Side Decoding) [MANDATORY]**: All MessagePack decoding MUST happen in Rust (`rmp_serde::from_slice`). Python MUST receive pre-decoded `dict` objects via PyO3, NOT raw bytes.
+*   **Gate L (GIL Minimization)**: HTTP parsing, TLS termination, and protocol framing MUST execute entirely in Rust (zero GIL). GIL acquisition is ONLY permitted for ASGI dispatch and user code execution.
+
+### Runtime Integration Gates (Rust Core Dev Recommendations)
+*   **Gate M (Tokio Runtime Sharing) [P1 CRITICAL]**: Velo MUST pass its global `tokio::Runtime` to Granian Core. Granian MUST NOT create its own Runtime. Violation causes thread pool explosion.
+*   **Gate N (Executor Boundary)**: Granian's async Python bridge MUST use the provided Velo Runtime for all IO operations. Blocking Python code MUST be offloaded via `tokio::task::spawn_blocking`.
+
