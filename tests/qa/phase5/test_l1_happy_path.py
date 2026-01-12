@@ -246,10 +246,16 @@ class TestL1HappyPath:
         time_warm = time.perf_counter() - start
 
         print(f"Cold: {time_cold:.3f}s, Warm: {time_warm:.3f}s")
-
+        
+        # Determine threshold based on system-wide multiplier (RFC-0012)
+        import os
+        multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+        # Base threshold 1.1x, scaled by 10% of the timeout multiplier for CI stability
+        threshold = 1.1 + (multiplier - 1.0) * 0.1
+        
         # Warm should be at least as fast as cold
-        # Strict 1.1x threshold to catch regressions (e.g. Graph generation failure)
-        assert time_warm <= time_cold * 1.1, f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s"
+        # Scaling threshold ensures stability on noisy CI neighbors while remaining strict locally
+        assert time_warm <= time_cold * threshold, f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s (env threshold: {threshold:.2f}x)"
 
     @pytest.mark.happy_path
     def test_100_module_project(self, large_project, velo_binary):

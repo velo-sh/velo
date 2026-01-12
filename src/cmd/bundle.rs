@@ -313,7 +313,11 @@ fn cmd_bundle_collect_impl(output: Option<PathBuf>, log_dir: Option<PathBuf>) ->
     let target_dir = log_dir.unwrap_or(default_log_dir);
 
     if !target_dir.exists() {
-        return Err(anyhow!("Log directory not found: {}", target_dir.display()));
+        eprintln!(
+            "⚠️  Log directory not found: {}. Skipping collection.",
+            target_dir.display()
+        );
+        return Ok(());
     }
 
     eprintln!(

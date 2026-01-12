@@ -1,12 +1,4 @@
-"""
-Velo QA: Serverless Test Environment
-=====================================
-Simulates real client scenario:
-- Client provides: uv.lock + pyproject.toml + app code
-- Velo handles: environment init + server start
-
-Each test is ATOMIC and starts from CLEAN STATE.
-"""
+from __future__ import annotations
 
 import json
 import os
@@ -16,7 +8,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, List, Any
 
 import pytest
 
@@ -65,7 +57,7 @@ def wait_for_port(port: int, timeout: float = 30) -> bool:
 
 def wait_for_server_ready(
     port: int, timeout: float = 60, path: str = "/"
-) -> tuple[bool, Optional[str]]:
+) -> Tuple[bool, Optional[str]]:
     """
     Wait for server to be truly ready to handle HTTP requests.
     
