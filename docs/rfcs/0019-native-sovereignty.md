@@ -269,3 +269,42 @@ opt-level = 3
 | **GIL Wait Time** | Python contention detection |
 | **Allocation Rate** | Memory pressure indicator |
 | **Syscall Count** | io_uring effectiveness |
+
+### 8.8 ByteDance Open Source Technologies
+**Status**: 🟡 EVALUATION
+
+#### Monoio (Thread-per-Core Async Runtime)
+| Aspect | Details |
+|:---|:---|
+| **Repository** | `bytedance/monoio` |
+| **Architecture** | Thread-per-Core (no cross-thread scheduling) |
+| **IO Backend** | io_uring (Linux) / kqueue (macOS) |
+| **License** | Apache 2.0 ✅ |
+| **vs Tokio** | Lower latency, no work-stealing overhead |
+
+**Adoption Criteria**:
+1. Monoio reaches 1.0 stable
+2. Benchmark shows >15% latency reduction vs Tokio
+3. macOS kqueue backend is production-ready
+
+#### Sonic-rs (SIMD-Accelerated JSON)
+| Aspect | Details |
+|:---|:---|
+| **Repository** | `bytedance/sonic-rs` |
+| **Performance** | 2-3x faster than serde_json |
+| **SIMD** | AVX2 (x86) / NEON (ARM) |
+| **API** | serde-compatible |
+| **License** | Apache 2.0 ✅ |
+
+**Use Case**: Replace `serde_json` for HTTP body serialization in Granian Core.
+
+**Adoption Criteria**:
+1. Verify serde compatibility with existing codebase
+2. Benchmark JSON-heavy workloads (API responses)
+3. Confirm ARM (Apple Silicon) NEON support
+
+#### Adoption Priority
+| Technology | Phase | Priority |
+|:---|:---|:---|
+| **Sonic-rs** | 7.2 or 8.x | ⭐⭐⭐ High (easy integration) |
+| **Monoio** | 8.x+ | ⭐⭐ Medium (runtime replacement) |
