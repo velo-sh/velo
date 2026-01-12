@@ -27,13 +27,17 @@
 //! ```
 
 pub mod asset;
+pub mod autopilot;
 pub mod custodian;
 pub mod error;
 pub mod fingerprint;
+pub mod sync;
 
+pub use autopilot::{AutopilotDecision, AutopilotEngine};
 pub use custodian::{Custodian, UvCustodian};
 pub use error::{CustodyError, Result};
 pub use fingerprint::EnvironmentFingerprint;
+pub use sync::EnvironmentSync;
 
 /// Get the Velo build hash for versioned extraction paths
 pub fn velo_build_hash() -> &'static str {
