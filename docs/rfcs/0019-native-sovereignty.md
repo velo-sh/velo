@@ -132,6 +132,37 @@ To ensure TITANIUM-grade stability, the boundary is strictly defined:
 *   **Throughput**: 1.2x - 1.5x of standard Uvicorn/uvloop.
 *   **Memory**: 30% reduction in worker RSS by removing the Python networking stack.
 
+## 6.1 Python Runtime Configuration
+
+### Event Loop Policy (Performance-First Default)
+Velo defaults to the **highest-performance mature technology** while maintaining broad compatibility.
+
+| Priority | Event Loop | Condition | Fallback |
+|:---|:---|:---|:---|
+| 1 | `uvloop` | Linux/macOS + Python 3.9+ | If unavailable → 2 |
+| 2 | `asyncio` | All platforms | Always available |
+
+### Configuration
+```toml
+# pyproject.toml
+[tool.velo]
+event_loop = "auto"  # "auto" | "uvloop" | "asyncio"
+```
+
+### Compatibility Matrix
+| Python Version | uvloop Support | Velo Default |
+|:---|:---|:---|
+| 3.8 (EOL) | ⚠️ Limited | `asyncio` |
+| 3.9 - 3.12 | ✅ Full | `uvloop` (auto) |
+| 3.13+ (free-threading) | 🧪 Experimental | `asyncio` + monitor |
+
+### Drop-in Guarantee
+> [!IMPORTANT]
+> **Default Strategy**: Sacrifice compatibility with Python < 3.9 to maximize performance for 95%+ of users.
+> **High-version Priority**: Python 3.9+ users get `uvloop` by default with zero configuration.
+> **Graceful Fallback**: If `uvloop` is not installed, Velo silently falls back to `asyncio` without error.
+
+
 ## 7. Strict Security Invariants (RFC-0012/0013 Alignment)
 Native Sovereignty establishes a "Zero-Trust" host-worker boundary:
 *   **SEC-FS-002 (FD Hygiene)**: The Rust Host performs a mandatory `close_range(3, ~0)` before spawning workers to prevent sensitive FD leakage.
