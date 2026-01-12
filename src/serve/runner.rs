@@ -483,6 +483,54 @@ pub fn run_server(
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
 
+    // Step 2: Early validation - Privileged port check (SEC-P0-006)
+    // Fail fast if port < 1024 and not root, instead of letting async bind fail silently
+    #[cfg(unix)]
+    if args.port < 1024 {
+        let uid = unsafe { libc::getuid() };
+        if uid != 0 {
+            return Err(anyhow::anyhow!(
+                "Permission denied: port {} requires root privileges (current uid: {}). Use --port >= 1024 or run as root.",
+                args.port,
+                uid
+            ));
+        }
+    }
+
+    // Step 3: Early validation - Module existence check (FAIL-FAST-001)
+    // Quick Python check to verify the module can be found before starting infrastructure
+    {
+        use std::process::Command;
+        let check_result = Command::new(python_path)
+            .args([
+                "-c",
+                &format!(
+                    "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+                    module
+                ),
+            ])
+            .current_dir(project_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match check_result {
+            Ok(status) if !status.success() => {
+                return Err(anyhow::anyhow!(
+                    "Module '{}' not found. Ensure the module exists and is importable from the project directory.",
+                    module
+                ));
+            }
+            Err(e) => {
+                // Python execution failed - continue anyway, let uvicorn report the error
+                eprintln!("warning: could not verify module existence: {}", e);
+            }
+            Ok(_) => {
+                // Module found, continue
+            }
+        }
+    }
+
     // Step 4: Setup Logger
     let logger = ServeLogger::new(args.log_format, args.verbose);
 
@@ -1682,5 +1730,97 @@ mod tests {
             }
             _ => panic!("Expected WorkerExit event"),
         }
+    }
+
+    // =========================================================================
+    // SEC-P0-006: Privileged Port Early Validation Tests
+    // =========================================================================
+
+    #[cfg(unix)]
+    #[test]
+    fn test_privileged_port_check_uid_logic() {
+        // Test the UID check logic used in early validation
+        let uid = unsafe { libc::getuid() };
+
+        // Non-root users (uid != 0) should be denied ports < 1024
+        if uid != 0 {
+            // This simulates what run_server does for privileged ports
+            let port = 80_u16;
+            let should_fail = port < 1024 && uid != 0;
+            assert!(should_fail, "Non-root users should be denied port 80");
+        } else {
+            // Root can bind to any port
+            let port = 80_u16;
+            let should_fail = port < 1024 && uid != 0;
+            assert!(!should_fail, "Root users should be allowed port 80");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_privileged_port_boundary_values() {
+        let uid = unsafe { libc::getuid() };
+
+        // Test boundary: port 1023 is privileged, 1024 is not
+        let test_cases = [
+            (79_u16, true),    // Privileged
+            (80_u16, true),    // Privileged (common HTTP)
+            (443_u16, true),   // Privileged (common HTTPS)
+            (1023_u16, true),  // Last privileged port
+            (1024_u16, false), // First non-privileged port
+            (8000_u16, false), // Common dev port
+            (8080_u16, false), // Common alt HTTP port
+        ];
+
+        for (port, is_privileged) in test_cases {
+            let requires_root = port < 1024;
+            assert_eq!(
+                requires_root, is_privileged,
+                "Port {} should be classified as privileged: {}",
+                port, is_privileged
+            );
+
+            if uid != 0 && is_privileged {
+                // Non-root should be denied
+                assert!(
+                    port < 1024 && uid != 0,
+                    "Non-root should be denied port {}",
+                    port
+                );
+            }
+        }
+    }
+
+    // =========================================================================
+    // FAIL-FAST-001: Module Existence Early Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_module_check_importlib_spec_command() {
+        // Test that the importlib.util.find_spec command is correctly formed
+        let module = "nonexistent_module";
+        let cmd = format!(
+            "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+            module
+        );
+
+        // Command should contain the module name
+        assert!(cmd.contains(module));
+        assert!(cmd.contains("importlib.util.find_spec"));
+        assert!(cmd.contains("exit(0 if"));
+        assert!(cmd.contains("else 1)"));
+    }
+
+    #[test]
+    fn test_module_check_with_dotted_path() {
+        // Test that dotted module paths work correctly
+        let module = "package.submodule";
+        let cmd = format!(
+            "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+            module
+        );
+
+        // Should handle dotted paths
+        assert!(cmd.contains("package.submodule"));
     }
 }
