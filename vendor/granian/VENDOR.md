@@ -55,6 +55,16 @@ cp -r /tmp/granian-new/src vendor/granian/
 cargo check
 ```
 
+## Integration Strategy (Option B: Hybrid)
+
+Granian's `RSGIHTTPProtocol` is designed for **in-process** PyO3 interaction.
+Velo uses **multi-process** architecture (Rust Host → UDS → Python Worker/Zygote).
+
+**Decision**: Keep Velo's Zygote architecture, adopt Granian's patterns:
+1. Preserve MessagePack framing over UDS
+2. Use Granian's `pyo3::intern!` string patterns as reference
+3. Apply `PyBytes` zero-copy patterns in Python Worker
+
 ## Integration with Velo
 This vendored code is used by `src/rsgi/` for RFC-0019 Native Sovereignty.
-Granian provides the ASGI/RSGI state machines and zero-copy conversion.
+Granian provides ASGI/RSGI state machines as design reference.
