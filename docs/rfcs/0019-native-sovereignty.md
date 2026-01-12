@@ -259,10 +259,51 @@ opt-level = 3
 | Optimization | Description | ROI | Complexity |
 |:---|:---|:---|:---|
 | **Worker NUMA Affinity** | Bind workers to NUMA nodes | ⭐⭐ | Medium |
-| **mmap Body Passing** | SCM_RIGHTS for large request bodies | ⭐⭐⭐ | High |
 | **Huge Pages (SHM)** | 2MB pages for model weights | ⭐⭐⭐ | Medium |
 | **Hot Path Inlining** | `#[inline(always)]` critical paths | ⭐⭐ | Low |
 | **Branch Prediction Hints** | `likely()`/`unlikely()` annotations | ⭐ | Low |
+
+#### Zero-Copy Large Body Passing (memfd + mmap)
+**Status**: 🟡 CONSIDERATION (Not Committed)
+
+> [!WARNING]
+> **Stability-First Principle**: This technology is documented as a research consideration only.
+> If stability issues arise during evaluation, it SHOULD NOT be adopted.
+
+**Mechanism**:
+```
+Rust Host:
+  1. memfd_create("body") → fd
+  2. mmap(fd) → write body data
+  3. SCM_RIGHTS → send fd to worker
+
+Python Worker:
+  4. recv fd via SCM_RIGHTS
+  5. mmap.mmap(fd) → zero-copy read
+  6. Pass to FastAPI as bytes-like
+```
+
+**Applicable Scenarios**:
+| Body Size | Strategy | Reason |
+|:---|:---|:---|
+| < 64KB | MessagePack (Phase 7.2) | mmap syscall overhead > copy |
+| 64KB - 10MB | **memfd + mmap** | True zero-copy |
+| > 10MB | Streaming + mmap | Chunked transfer |
+
+**Stability Concerns**:
+| Risk | Description | Mitigation |
+|:---|:---|:---|
+| **Lifecycle Management** | When to munmap? | Explicit close in `finally` |
+| **Python GC** | mmap object dangling | `with` context manager |
+| **SCM_RIGHTS Complexity** | fd passing error handling | Fallback to MessagePack |
+| **Platform Variance** | macOS vs Linux behavior | Extensive QA testing |
+
+**Adoption Criteria (All MUST be met)**:
+1. ✅ Benchmark shows >50% improvement for 1MB+ bodies
+2. ✅ Zero stability issues in 4-hour soak test
+3. ✅ Fallback path implemented and tested
+4. ✅ macOS and Linux both verified
+
 
 ### 8.7 Observability for Performance
 | Metric | Purpose |
