@@ -812,6 +812,7 @@ pub fn run_server(
                         true
                     }
                 }
+                #[allow(dead_code)] // Part of RespawnTracker API, may be used in future
                 fn reset(&mut self) {
                     // RFC-0011 Stability Fix: "Probation Period".
                     // Only reset if the system has been stable for at least 30 seconds.
@@ -958,23 +959,11 @@ pub fn run_server(
                             if !worker.is_alive() {
                                 let tracker = &mut respawn_trackers[i];
 
-                                // RFC-0011 Fail-Fast: If a worker dies during startup, track consecutive failures
-                                if !tracker.record_failure() {
-                                    anyhow::bail!(
-                                        "FATAL: Workers are failing to start consistently. Check logs for permission/dependency issues."
-                                    );
-                                }
-                                logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (Attempt {}/{})...",
-                                    tracker.backoff_secs,
-                                    tracker.consecutive_failures,
-                                    tracker.fail_fast_limit
-                                ));
-
-                                // Check if we're still in backoff period
+                                // Check if we're still in backoff period FIRST
+                                // Don't record failure until we actually try to respawn
                                 if !tracker.should_respawn() {
                                     logger.debug(&format!(
-                                        "Worker {} in backoff ({}s remaining)",
+                                        "Worker {} dead, in backoff ({}s remaining)",
                                         i + 1,
                                         tracker.backoff_secs.saturating_sub(
                                             tracker
@@ -987,11 +976,15 @@ pub fn run_server(
                                 }
 
                                 logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (attempt {}/{})...",
-                                    tracker.backoff_secs,
-                                    tracker.consecutive_failures,
+                                    "Worker {} died. Attempting respawn (attempt {}/{})...",
+                                    i + 1,
+                                    tracker.consecutive_failures + 1,
                                     tracker.fail_fast_limit
                                 ));
+
+                                // Record this respawn attempt (sets last_failure timestamp)
+                                // This enables proper backoff timing, but don't fail-fast yet
+                                tracker.last_failure = Some(std::time::Instant::now());
 
                                 // Respawn via Zygote
                                 match Worker::spawn_uds_via_zygote(
@@ -1016,16 +1009,22 @@ pub fn run_server(
                                             new_worker.pid()
                                         ));
                                         *worker = new_worker;
-                                        tracker.reset(); // Success - reset backoff
+                                        // Don't reset immediately - let 30s stability period apply
                                     }
                                     Err(e) => {
+                                        // IPC failure is a hard failure - increment counter
+                                        if !tracker.record_failure() {
+                                            anyhow::bail!(
+                                                "FATAL: Worker respawn IPC failing consistently. Check Zygote health."
+                                            );
+                                        }
                                         logger.error(&format!(
-                                        "  ❌ Respawn failed for worker {}: {} (next retry in {}s)",
-                                        i + 1,
-                                        e,
-                                        tracker.backoff_secs * 2
-                                    ));
-                                        tracker.record_failure(); // Double backoff
+                                            "  ❌ Respawn IPC failed for worker {}: {} (attempt {}/{})",
+                                            i + 1,
+                                            e,
+                                            tracker.consecutive_failures,
+                                            tracker.fail_fast_limit
+                                        ));
                                     }
                                 }
                             }

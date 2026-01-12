@@ -38,10 +38,6 @@ except ImportError:
 class TestAgentDChaos:
     """Agent D: Chaos and Robustness Testing."""
 
-    @pytest.mark.xfail(
-        os.environ.get("GITHUB_ACTIONS") == "true",
-        reason="Worker respawn after chaos requires resources unavailable in CI"
-    )
     def test_CHAOS_001_signal_hurricane(self, velo_serve_fixture):
         """CHAOS-001: Signal Hurricane (STORM).
 
