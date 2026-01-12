@@ -55,6 +55,8 @@ markers = [
     "tier4: Heavy chaos/stress tests",
     "heavy: Resource-intensive tests",
     "timeout: Tests with custom timeout requirements",
+    "happy_path: Level 1 happy path journey tests",
+    "cli: CLI-specific integration tests",
 ]
 
 [tool.mypy]
