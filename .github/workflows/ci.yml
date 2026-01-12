@@ -39,17 +39,16 @@ jobs:
       VELO_TIMEOUT_MULTIPLIER: 1.0  # STRICT: Must pass with 1x timeout
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-      - name: Install Python 3.11
-        run: uv python install 3.11
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          uv-version: ${{ env.UV_VERSION }}
       - name: Build Velo (Release)
         run: cargo build --release
       - name: Run Total War Suite (Strict)
         run: |
-          uv venv
-          uv pip install pytest psutil requests
-          # Run everything with strict timeouts
+          # Use the environment prepared by setup-velo
           uv run pytest tests/qa
 
 
@@ -236,6 +235,11 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          uv-version: ${{ env.UV_VERSION }}
       - name: Run Clippy (Single Source of Truth)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -250,6 +254,11 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          uv-version: ${{ env.UV_VERSION }}
       - run: cargo fmt --all -- --check
 
   # ============================================
@@ -794,6 +803,12 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
       
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: '3.11'
+          uv-version: ${{ env.UV_VERSION }}
+
       - name: Run tests with coverage
         run: cargo llvm-cov nextest --lcov --output-path lcov.info
       
