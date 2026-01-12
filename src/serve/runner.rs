@@ -737,7 +737,7 @@ pub fn run_server(
         for i in 0..args.workers {
             match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
                 Ok(worker) => {
-                    eprintln!(
+                    logger.info(&format!(
                         "[WORKER] event=spawn worker_id={} pid={} socket={}",
                         i,
                         worker.pid,
@@ -746,12 +746,15 @@ pub fn run_server(
                             .as_ref()
                             .map(|p| p.to_string_lossy())
                             .unwrap_or_default()
-                    );
+                    ));
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
                 }
                 Err(e) => {
-                    eprintln!("[WORKER] event=spawn_failed worker_id={} error={}", i, e);
+                    logger.error(&format!(
+                        "[WORKER] event=spawn_failed worker_id={} error={}",
+                        i, e
+                    ));
                     // RFC-0013: Silent Fallback to cold start on IPC failure
                     logger.warn(&format!(
                         "  ⚠️ Zygote worker spawn failed: {}. Falling back to cold start...",
@@ -1071,18 +1074,17 @@ pub fn run_server(
                                 let count = HEALTH_LOG_COUNTER
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 if count.is_multiple_of(10) {
-                                    eprintln!(
+                                    logger.debug(&format!(
                                         "[HEALTH] workers_alive={}/{} zygote=ok",
                                         healthy_workers, total_workers
-                                    );
+                                    ));
                                 }
                             }
                             Err(e) => {
-                                eprintln!(
+                                logger.warn(&format!(
                                     "[HEALTH] workers_alive={}/{} zygote=error error={}",
                                     healthy_workers, total_workers, e
-                                );
-                                logger.warn(&format!("Zygote health check failed: {}", e));
+                                ));
                             }
                         }
                     }
