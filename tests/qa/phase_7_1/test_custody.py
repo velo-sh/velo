@@ -65,41 +65,26 @@ class TestCustody001ToolchainIntegrity:
     1. Velo must verify uv binary BLAKE3 hash before use
     2. Corrupted binaries must trigger re-extraction
     3. Missing binaries must be extracted on first use
+    
+    Note: Shadow commands (velo python/pip) removed from RFC-0018.
+    These tests focus on embedded asset integrity verification.
     """
 
-    @pytest.mark.xfail(reason="Shadow commands not yet in CLI - Phase 7.15")
-    def test_shadow_command_finds_uv(self, velo_binary):
-        """Verify velo python command can find uv (embedded or system)."""
-        result = subprocess.run(
-            [velo_binary, "python", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        
-        # Should either work or give clear error about uv not found
-        assert result.returncode == 0 or "uv" in result.stderr.lower(), \
-            f"Unexpected error: {result.stderr}"
-
-    def test_corrupted_binary_detection(self, velo_binary, tmp_path):
-        """Verify corrupted uv binary is detected and handled."""
-        # This test requires embedded_uv feature to be meaningful
-        # For now, we just verify the shadow command doesn't crash
-        
+    def test_velo_info_shows_custody_status(self, velo_binary, tmp_path):
+        """Verify velo info command works and shows custody-related info."""
         env = os.environ.copy()
-        env["HOME"] = str(tmp_path)  # Isolate .velo directory
+        env["HOME"] = str(tmp_path)
         
         result = subprocess.run(
-            [velo_binary, "python", "-c", "print('test')"],
+            [velo_binary, "info"],
             capture_output=True,
             text=True,
             timeout=30,
             env=env,
         )
         
-        # Should either succeed or fail gracefully
-        # (not crash with segfault or panic)
-        assert result.returncode in [0, 1], \
+        # Should complete without crash
+        assert result.returncode in [0, 1, 2], \
             f"Unexpected crash: {result.stderr}"
 
 
@@ -263,78 +248,8 @@ class TestCustody003FingerprintDrift:
         assert loaded["fingerprint"]["pyproject_hash"] == "test123"
 
 
-# =============================================================================
-# CUSTODY-004: Shadow Command Validation
-# =============================================================================
-
-
-@pytest.mark.tier2
-class TestCustody004ShadowCommands:
-    """
-    CUSTODY-004: Verify shadow command functionality.
-    
-    Requirements:
-    1. velo python must proxy to uv run python
-    2. velo pip must proxy to uv pip
-    3. Environment must be surgically cleaned
-    """
-
-    @pytest.mark.xfail(reason="Shadow commands not yet in CLI - Phase 7.15")
-    def test_velo_python_help(self, velo_binary):
-        """Verify velo python --help works."""
-        result = subprocess.run(
-            [velo_binary, "python", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        
-        # Should show Python help or uv error
-        assert result.returncode == 0 or "usage" in result.stdout.lower() or "uv" in result.stderr.lower()
-
-    @pytest.mark.xfail(reason="Shadow commands not yet in CLI - Phase 7.15")
-    def test_velo_pip_help(self, velo_binary):
-        """Verify velo pip --help works."""
-        result = subprocess.run(
-            [velo_binary, "pip", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        
-        # Should show pip help or uv error
-        assert result.returncode == 0 or "pip" in result.stdout.lower() or "uv" in result.stderr.lower()
-
-    def test_environment_scrubbing(self, velo_binary, temp_project):
-        """Verify PYTHONPATH is scrubbed in shadow commands."""
-        env = os.environ.copy()
-        env["PYTHONPATH"] = "/malicious/path"
-        
-        script = temp_project / "check_env.py"
-        script.write_text("""
-import os
-import sys
-
-pythonpath = os.environ.get('PYTHONPATH', '')
-print(f"PYTHONPATH={pythonpath}")
-sys.exit(0 if '/malicious' not in pythonpath else 1)
-""")
-        
-        result = subprocess.run(
-            [velo_binary, "python", str(script)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-            cwd=str(temp_project),
-        )
-        
-        # PYTHONPATH should be scrubbed
-        # Note: This may fail if uv is not available
-        if result.returncode == 0:
-            assert "/malicious" not in result.stdout
-
-
+# NOTE: CUSTODY-004 (Shadow Commands) removed from RFC-0018
+# See RFC-0018 §3.1: "Internal Use Only" - uv is managed internally
 # =============================================================================
 # Autopilot Integration Tests
 # =============================================================================

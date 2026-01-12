@@ -30,7 +30,7 @@ Velo will treat the Python package manager as a private, managed asset.
     2.  If missing, extract to temporary location, verify BLAKE3 hash.
     3.  Set `0o755` permissions.
     4.  Symlink/Atomic rename to the permanent cache path.
-*   **Shadow Command**: `velo python ...` and `velo pip ...` will be proxied through the embedded `uv` context.
+*   **Internal Use Only**: The embedded `uv` is used internally by `velo run` and `velo serve` for environment management. Users interact with Velo commands, not `uv` directly.
 
 ### 3.2 Environment Convergence (The "SSoT" Model)
 Velo becomes the Single Source of Truth for the project environment.
