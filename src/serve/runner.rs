@@ -985,10 +985,12 @@ pub fn run_server(
                                 }
 
                                 logger.warn(&format!(
-                                    "Worker {} died. Attempting respawn (attempt {}/{})...",
-                                    i + 1,
+                                    "[RESPAWN] worker_id={} attempt={}/{} backoff={}s reason=process_exit old_pid={}",
+                                    i,
                                     tracker.consecutive_failures + 1,
-                                    tracker.fail_fast_limit
+                                    tracker.fail_fast_limit,
+                                    tracker.backoff_secs,
+                                    worker.pid()
                                 ));
 
                                 // Record this respawn attempt (sets last_failure timestamp)
@@ -1013,9 +1015,10 @@ pub fn run_server(
                                         }
 
                                         logger.info(&format!(
-                                            "  ✅ Respawned worker {} (new PID: {})",
-                                            i + 1,
-                                            new_worker.pid()
+                                            "[RESPAWN] worker_id={} status=success new_pid={} socket={}",
+                                            i,
+                                            new_worker.pid(),
+                                            new_worker.socket_path.as_ref().map(|p| p.to_string_lossy()).unwrap_or_default()
                                         ));
                                         *worker = new_worker;
                                         // Don't reset immediately - let 30s stability period apply
@@ -1028,11 +1031,11 @@ pub fn run_server(
                                             );
                                         }
                                         logger.error(&format!(
-                                            "  ❌ Respawn IPC failed for worker {}: {} (attempt {}/{})",
-                                            i + 1,
-                                            e,
+                                            "[RESPAWN] worker_id={} status=failed attempt={}/{} error={}",
+                                            i,
                                             tracker.consecutive_failures,
-                                            tracker.fail_fast_limit
+                                            tracker.fail_fast_limit,
+                                            e
                                         ));
                                     }
                                 }
