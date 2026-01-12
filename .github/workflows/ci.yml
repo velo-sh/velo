@@ -29,9 +29,7 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
-  # Worker respawn settings for CI (higher tolerance for resource-constrained environments)
-  VELO_BACKOFF_SECS: 2            # Slightly longer backoff to reduce spawn frequency
-  VELO_FAIL_FAST_LIMIT: 20        # Much more attempts before giving up in CI
+  # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
   performance-canary:
     name: 🐤 Performance Canary (Nightly)

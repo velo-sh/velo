@@ -770,16 +770,25 @@ pub fn run_server(
             }
             impl RespawnTracker {
                 fn new() -> Self {
+                    // SSOT: Read timeout multiplier (CI uses 6x)
+                    let timeout_multiplier: f64 = std::env::var("VELO_TIMEOUT_MULTIPLIER")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1.0);
+
                     let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10);
-                    // VELO_FAIL_FAST_LIMIT sets the maximum consecutive worker startup failures before giving up.
-                    // Default: 5. Typical use: raise for flaky environments, lower for CI.
-                    let fail_fast_limit = std::env::var("VELO_FAIL_FAST_LIMIT")
+
+                    // VELO_FAIL_FAST_LIMIT: base limit, scaled by timeout multiplier
+                    // Default: 5, but in CI (6x multiplier) becomes 5*6=30
+                    let base_limit: u32 = std::env::var("VELO_FAIL_FAST_LIMIT")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(5);
+                    let fail_fast_limit = (base_limit as f64 * timeout_multiplier) as u32;
+
                     Self {
                         last_failure: None,
                         backoff_secs,
