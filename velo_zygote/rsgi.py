@@ -170,8 +170,15 @@ class RSGIWorker:
 
 def run_rsgi(app_str: str, uds_path: str):
     """Entry point for RSGI worker."""
-    # Import app
     import importlib
+    import random
+
+    # P0-2 (RFC-0019): Taint Re-randomization Contract
+    # MUST be executed immediately before sending READY
+    random.seed()
+    os.urandom(16)  # Force kernel entropy refresh
+    
+    # Import app
     module_name, app_name = app_str.split(":")
     module = importlib.import_module(module_name)
     app = getattr(module, app_name)
