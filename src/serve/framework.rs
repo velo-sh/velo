@@ -156,6 +156,8 @@ pub enum Server {
     Uvicorn,
     /// Gunicorn for WSGI apps (Django, Flask)
     Gunicorn,
+    /// RSGI for Rust-native high-performance orchestration (RFC-0019)
+    RSGI,
 }
 
 impl std::fmt::Display for Server {
@@ -163,6 +165,7 @@ impl std::fmt::Display for Server {
         match self {
             Server::Uvicorn => write!(f, "uvicorn"),
             Server::Gunicorn => write!(f, "gunicorn"),
+            Server::RSGI => write!(f, "rsgi"),
         }
     }
 }
@@ -173,6 +176,7 @@ impl Server {
         match self {
             Server::Uvicorn => "uvicorn",
             Server::Gunicorn => "gunicorn",
+            Server::RSGI => "rsgi",
         }
     }
 
@@ -181,6 +185,7 @@ impl Server {
         match self {
             Server::Uvicorn => "uv add uvicorn",
             Server::Gunicorn => "uv add gunicorn",
+            Server::RSGI => "",
         }
     }
 }

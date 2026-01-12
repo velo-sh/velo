@@ -889,6 +889,7 @@ pub fn run_server(
                 i as u64,
                 None,
                 config,
+                args.rsgi,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -930,6 +931,7 @@ pub fn run_server(
                 python_path,
                 project_dir,
                 config,
+                args.rsgi,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -1047,6 +1049,7 @@ pub fn run_server(
                                 python_path,
                                 project_dir,
                                 config,
+                                args.rsgi,
                             ) {
                                 Ok(new_worker) => {
                                     if let Some(ref old) = worker.socket_path {
@@ -1123,6 +1126,9 @@ pub fn run_server(
                     cmd.arg("--reload");
                 }
                 cmd.arg(&args.app);
+            }
+            Server::RSGI => {
+                anyhow::bail!("RSGI mode is not supported in legacy fallback mode");
             }
         }
 

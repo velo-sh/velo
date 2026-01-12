@@ -45,6 +45,8 @@ pub struct ServeArgs {
     pub log_format: LogFormat,
     /// Production mode (no reload, auto workers)
     pub prod: bool,
+    /// Force RSGI mode (RFC-0019)
+    pub rsgi: bool,
     /// Dry run mode (log command and exit)
     pub dry_run: bool,
     /// Verbosity level (0-3)
@@ -65,6 +67,7 @@ impl Default for ServeArgs {
             pid_file: None,
             log_format: LogFormat::Text,
             prod: false,
+            rsgi: false,
             dry_run: false,
             verbose: 0,
         }
