@@ -212,3 +212,60 @@ Native Sovereignty establishes a "Zero-Trust" host-worker boundary:
 │  io_uring - WATCHING                │  ← Phase 8.x Target
 └─────────────────────────────────────┘
 ```
+
+### 8.4 Memory Allocator Strategy
+**Status**: 🟢 READY (Phase 7.2 Implementation)
+
+| Allocator | Characteristics | Recommendation |
+|:---|:---|:---|
+| **jemalloc** | Multi-threaded, low fragmentation | ✅ Default |
+| **mimalloc** | Microsoft, ultra-fast small allocs | 🧪 Alternative |
+| **system** | Platform default | Fallback |
+
+**Implementation**:
+```toml
+# Cargo.toml
+[features]
+default = ["jemalloc"]
+jemalloc = ["tikv-jemallocator"]
+```
+
+### 8.5 Compiler Optimization Profile
+**Status**: 🟢 READY (Release Build)
+
+| Optimization | Config | Expected Gain |
+|:---|:---|:---|
+| **LTO (Fat)** | `lto = "fat"` | 5-15% |
+| **Single Codegen Unit** | `codegen-units = 1` | 2-5% |
+| **Abort on Panic** | `panic = "abort"` | Binary size |
+| **Native CPU** | `-C target-cpu=native` | 5-10% |
+| **PGO** | Profile-Guided Optimization | 10-20% (CI) |
+
+**Production Profile**:
+```toml
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3
+```
+
+### 8.6 Advanced Optimizations (Phase 8.x+)
+**Status**: 🟡 RESEARCH
+
+| Optimization | Description | ROI | Complexity |
+|:---|:---|:---|:---|
+| **Worker NUMA Affinity** | Bind workers to NUMA nodes | ⭐⭐ | Medium |
+| **mmap Body Passing** | SCM_RIGHTS for large request bodies | ⭐⭐⭐ | High |
+| **Huge Pages (SHM)** | 2MB pages for model weights | ⭐⭐⭐ | Medium |
+| **Hot Path Inlining** | `#[inline(always)]` critical paths | ⭐⭐ | Low |
+| **Branch Prediction Hints** | `likely()`/`unlikely()` annotations | ⭐ | Low |
+
+### 8.7 Observability for Performance
+| Metric | Purpose |
+|:---|:---|
+| **P50/P95/P99 Latency** | Distribution analysis |
+| **GIL Wait Time** | Python contention detection |
+| **Allocation Rate** | Memory pressure indicator |
+| **Syscall Count** | io_uring effectiveness |
