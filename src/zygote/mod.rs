@@ -782,8 +782,8 @@ impl ZygoteLauncher {
         Ok(())
     }
 
-    /// Check if the Zygote process is running
-    /// Either we own the process (zygote_pid set) or socket exists (external Zygote)
+    /// Check if the Zygote process is running.
+    /// Either we own the process (zygote_pid set) or socket exists (external Zygote).
     pub fn is_running(&self) -> bool {
         self.zygote_pid.is_some() || self.socket_path.exists()
     }

@@ -855,14 +855,16 @@ pub fn run_server(
             let signal = crate::common::governance::GovernanceSignal::new(
                 crate::common::governance::SignalComponent::ZygoteIPC,
                 "Existing Zygote socket is dead",
-                "Continuing without Zygote optimization",
+                "Continuing without Zygote optimization after cleanup",
                 "Clean up stale socket file.",
             );
+            // Always remove dead socket to prevent blocking future runs
+            let _ = std::fs::remove_file(&socket_path);
+
             if config.strict_optimizations {
                 return Err(anyhow::anyhow!(signal.format_critical()));
             } else {
                 signal.report_audit();
-                let _ = std::fs::remove_file(&socket_path);
             }
         }
     }
@@ -1037,18 +1039,23 @@ pub fn run_server(
         }
 
         loop {
+            let mut self_check_needed = false;
             // Periodic health check & signal handling
             match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(ServerEvent::Signal(
-                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM,
-                )) => {
-                    eprintln!("\n🛑 Received shutdown signal, stopping workers...");
-                    for w in &workers {
-                        let _ = w.shutdown(Duration::from_secs(args.timeout));
+                Ok(ServerEvent::Signal(sig)) => {
+                    use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
+                    if sig == SIGINT || sig == SIGTERM {
+                        eprintln!("\n🛑 Received shutdown signal, stopping workers...");
+                        for w in &workers {
+                            let _ = w.shutdown(Duration::from_secs(args.timeout));
+                        }
+                        return Ok(ServerExit::Shutdown);
+                    } else if sig == SIGCHLD {
+                        // Immediate liveness check on child exit
+                        self_check_needed = true;
                     }
-                    return Ok(ServerExit::Shutdown);
                 }
-                Ok(ServerEvent::Signal(_)) => {}
+
                 Ok(ServerEvent::Reload) => {
                     logger.info("Changes detected (Proxy Mode), restarting workers...");
                     for w in &workers {
@@ -1057,58 +1064,63 @@ pub fn run_server(
                     return Ok(ServerExit::Reload);
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    for (i, worker) in workers.iter_mut().enumerate() {
-                        if !worker.is_alive() {
-                            let tracker = &mut respawn_trackers[i];
-                            if !tracker.should_respawn() {
-                                continue;
+                    self_check_needed = true;
+                }
+                Ok(ServerEvent::WorkerExit) => {
+                    self_check_needed = true;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Ok(ServerExit::Shutdown);
+                }
+            }
+
+            if self_check_needed {
+                for (i, worker) in workers.iter_mut().enumerate() {
+                    if !worker.is_alive() {
+                        let tracker = &mut respawn_trackers[i];
+                        if !tracker.should_respawn() {
+                            continue;
+                        }
+
+                        logger.warn(&format!(
+                            "[RESPAWN] worker_id={} attempt={} old_pid={}",
+                            i,
+                            tracker.consecutive_failures + 1,
+                            worker.pid
+                        ));
+                        tracker.last_failure = Some(Instant::now());
+
+                        match worker.respawn(
+                            &args.app,
+                            i as u64,
+                            python_path,
+                            project_dir,
+                            config,
+                            args.rsgi,
+                        ) {
+                            Ok(new_worker) => {
+                                if let Some(ref old) = worker.socket_path {
+                                    lb.remove_backend(&old.to_string_lossy());
+                                }
+                                if let Some(ref new) = new_worker.socket_path {
+                                    lb.add_backend(&new.to_string_lossy());
+                                }
+                                *worker = new_worker;
                             }
 
-                            logger.warn(&format!(
-                                "[RESPAWN] worker_id={} attempt={} old_pid={}",
-                                i,
-                                tracker.consecutive_failures + 1,
-                                worker.pid
-                            ));
-                            tracker.last_failure = Some(Instant::now());
-
-                            match worker.respawn(
-                                &args.app,
-                                i as u64,
-                                python_path,
-                                project_dir,
-                                config,
-                                args.rsgi,
-                            ) {
-                                Ok(new_worker) => {
-                                    if let Some(ref old) = worker.socket_path {
-                                        lb.remove_backend(&old.to_string_lossy());
-                                    }
-                                    if let Some(ref new) = new_worker.socket_path {
-                                        lb.add_backend(&new.to_string_lossy());
-                                    }
-                                    *worker = new_worker;
+                            Err(e) => {
+                                if !tracker.record_failure() {
+                                    anyhow::bail!("FATAL: Worker respawn failing consistently.");
                                 }
-                                Err(e) => {
-                                    if !tracker.record_failure() {
-                                        anyhow::bail!(
-                                            "FATAL: Worker respawn failing consistently."
-                                        );
-                                    }
-                                    logger.error(&format!("[RESPAWN] worker_id={} error={}", i, e));
-                                }
+                                logger.error(&format!("[RESPAWN] worker_id={} error={}", i, e));
                             }
                         }
                     }
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                _ => {}
             }
         }
 
-        // IMPORTANT: If we are in proxy mode, we handled everything above.
-        // We MUST return here if the loop finished without an exit variant.
-        return Ok(ServerExit::Shutdown);
+        // Loop handles all exit paths
     }
 
     // STB-RS-005: Respawn Loop

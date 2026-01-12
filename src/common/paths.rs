@@ -15,10 +15,14 @@ pub struct VeloPaths;
 pub const PYPROJECT_TOML: &str = "pyproject.toml";
 pub const UV_LOCK: &str = "uv.lock";
 pub const REQUIREMENTS_TXT: &str = "requirements.txt";
+pub use std::sync::atomic::{AtomicU64, Ordering};
 pub const SITE_CUSTOMIZE: &str = "sitecustomize.py";
 pub const VELO_LOADER: &str = "velo_loader.py";
 pub const VELO_CACHE_DIR: &str = ".velo/cache";
 pub const VELO_PROFILE_JSON: &str = "velo_profile.json";
+
+/// Global sequence for worker sockets to ensure uniqueness across respawns.
+static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl VeloPaths {
     /// Get the canonical socket directory using hierarchical path resolution.
@@ -124,16 +128,20 @@ impl VeloPaths {
     /// Generate a standardized, short path for a worker socket.
     /// Uses atomic counter to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
-
         let dir = Self::socket_dir();
         ensure_socket_dir(&dir);
 
         // Monotonic counter - never repeats in same supervisor lifetime
         // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
         let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-        dir.join(format!("w-{}-{}.s", worker_id, seq))
+        let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
+        eprintln!(
+            "[PATHS] Generated worker socket: {} (id={}, seq={})",
+            path.display(),
+            worker_id,
+            seq
+        );
+        path
     }
 
     /// Get the log path for the Zygote.
