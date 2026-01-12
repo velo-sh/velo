@@ -50,7 +50,12 @@ impl UvCustodian {
     pub fn new() -> Self {
         let base_dir = dirs::home_dir()
             .map(|h| h.join(".velo"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/.velo"));
+            .unwrap_or_else(|| {
+                // RFC-0018 Phase 7.1: Predictable path hardening (DEF-71-006)
+                // Fallback to /tmp/.velo-<uid> to prevent symlink attacks in multi-user envs
+                let uid = unsafe { libc::getuid() };
+                PathBuf::from(format!("/tmp/.velo-{}", uid))
+            });
 
         Self {
             base_dir,
@@ -199,7 +204,10 @@ impl Custodian for UvCustodian {
 
         let bin_dir = self.bin_dir();
         let target = self.uv_path();
-        let temp_path = bin_dir.join("uv.tmp");
+
+        // RFC-0018 Phase 7.1: Extractions TOCTOU hardening (DEF-71-008)
+        // Use randomized/PID-based temp file to avoid collisions between concurrent extractions
+        let temp_path = bin_dir.join(format!("uv.{}.tmp", std::process::id()));
 
         // Atomic extraction protocol (RFC-0018 §3.1):
         // 1. Create directory with restricted permissions
