@@ -5,12 +5,19 @@
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 PROJECT_ROOT=$(pwd)/examples/django-heavy
+VELO_ROOT=$(pwd)
 
-# Dependency Pre-check
+# RFC-0018: Velo binary path (use built binary by default)
+VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
+if [ ! -x "$VELO_BIN" ]; then
+    VELO_BIN="$VELO_ROOT/target/debug/velo"
+fi
+
+# Dependency Pre-check (RFC-0018: via Velo Integrated Python)
 check_deps() {
-    python3 -c "import rich" 2>/dev/null
+    $VELO_BIN python -c "import rich" 2>/dev/null
     if [ $? -ne 0 ]; then
-        echo "[INFO] 'rich' not installed, using fallback mode. Install with: pip install rich"
+        echo "[INFO] 'rich' not installed, using fallback mode. Install with: uv pip install rich"
     fi
 }
 
@@ -38,16 +45,16 @@ check_deps
 echo -e "\033[38;5;33m[Velo HIO] Initializing Django Heavyweight Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Comparison Mode
+    # A/B Comparison Mode (RFC-0018: via Velo)
     COLD_FLAG=""
     if [ "$COLD" = true ]; then
         COLD_FLAG="--cold"
     fi
-    python3 $PROJECT_ROOT/startup_race.py --runs=$RUNS $COLD_FLAG
+    $VELO_BIN run $PROJECT_ROOT/startup_race.py --runs=$RUNS $COLD_FLAG
 else
     # Traditional Demo Mode
     # 1. Setup Skeleton (Idempotent)
-    python3 "$PROJECT_ROOT/skeleton/setup_skeleton.py"
+    $VELO_BIN python "$PROJECT_ROOT/skeleton/setup_skeleton.py"
 
     # 2. Performance Comparison (Benchmark)
     echo -e "Phase 1: Environment Freezing ➔ \033[90mScanning App Registry...\033[0m"
@@ -57,10 +64,10 @@ else
     
     # 3. Visualization + Memory Analysis
     # Display memory chart (Simulated vs Real)
-    python3 "$PROJECT_ROOT/metrics_monitor.py" --demo
+    $VELO_BIN python "$PROJECT_ROOT/metrics_monitor.py" --demo
 
     # Calculate HIO Score
-    python3 "examples/scripts/hio_engine.py" --startup=0.001 --saving=89 --metric="RSS"
+    $VELO_BIN python "examples/scripts/hio_engine.py" --startup=0.001 --saving=89 --metric="RSS"
 fi
 
 echo -e "\033[1;32m[DONE] Django HIO-001 High-Precision Demo is Ready.\033[0m"
