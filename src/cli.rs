@@ -16,6 +16,8 @@ velo - The high-performance Python runtime for the AI era
 USAGE:
     velo run [OPTIONS] <script.py>
     velo serve <app> [OPTIONS]
+    velo python <args>               # RFC-0018: Shadow command
+    velo pip <args>                  # RFC-0018: Shadow command
     velo analyze [OPTIONS] [file.py]
     velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
@@ -26,6 +28,8 @@ USAGE:
 COMMANDS:
     run      Run a Python script
     serve    Serve a Python ASGI/WSGI application
+    python   Run Python via managed toolchain (RFC-0018)
+    pip      Run pip via managed toolchain (RFC-0018)
     analyze  Analyze import times and suggest optimizations
     bundle   Bundle management (inspect, build)
     zygote   Manage Zygote pre-warming daemon
@@ -64,7 +68,7 @@ OPTIONS:
 
 fn suggest_command(target: &str) -> Option<&'static str> {
     const COMMANDS: &[&str] = &[
-        "run", "serve", "analyze", "bench", "bundle", "info", "zygote", "graph",
+        "run", "serve", "python", "pip", "analyze", "bench", "bundle", "info", "zygote", "graph",
     ];
     let mut best_match = None;
     let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
@@ -99,6 +103,8 @@ pub fn run() -> Result<()> {
         }
         "run" => cmd::cmd_run(&args),
         "serve" => cmd::cmd_serve(&args),
+        "python" => cmd::cmd_python(&args), // RFC-0018
+        "pip" => cmd::cmd_pip(&args),       // RFC-0018
         "analyze" => cmd::cmd_analyze(&args),
         "bench" => cmd::cmd_bench(&args),
         "bundle" => cmd::cmd_bundle(&args),

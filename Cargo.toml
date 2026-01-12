@@ -44,6 +44,9 @@ rustpython-ast = "0.4"
 ignore = "0.4"
 log = "0.4"
 env_logger = "0.11"      # RFC-0020: Global structured logging
+tracing = "0.1"          # RFC-0018: Structured tracing for custody
+dirs = "5.0"             # RFC-0018: Cross-platform home directory
+which = "6.0"            # RFC-0018: System binary lookup
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching

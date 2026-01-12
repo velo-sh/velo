@@ -9,6 +9,7 @@ pub mod cli;
 pub mod cmd;
 pub mod common;
 pub mod config;
+pub mod custody; // RFC-0018: Integrated Custody
 pub mod graph;
 pub mod hardware;
 pub mod hardware_k8s; // RFC-0011: K8s Cgroup Quota
