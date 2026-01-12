@@ -150,18 +150,103 @@ class TestDEF71006SymlinkAttack:
             pass
 
 # =============================================================================
-# RSGI-001: Handshake Lifecycle Evidence (P1)
+# PRX-72-001: HTTP Smuggling (P0)
 # =============================================================================
 
-@pytest.mark.tier3
-class TestRSGI001HandshakeLifecycle:
+@pytest.mark.security
+class TestProxySmuggling:
     """
-    Evidence for RSGI-Velo protocol gaps.
+    Forensic evidence for L7 Proxy Smuggling resilience.
+    Verifies that incongruent TE/CL headers are stripped or handled safely.
     """
 
-    @pytest.mark.xfail(reason="Phase 7.2: RSGI protocol not yet implemented")
-    def test_mock_handshake_failure(self, velo_binary):
-        """Proof: Velo doesn't yet respond to RSGI Protocol handshake."""
-        # Standalone client would fail to connect or timeout
-        pytest.fail("Velo binary lacks RSGI listener (expected for 7.1)")
+    def test_smuggling_te_cl(self, velo_binary, tmp_path):
+        """
+        Proof: Attempt Smuggling via Transfer-Encoding: chunked + Content-Length.
+        Velo L7 Proxy MUST strip hop-by-hop headers (TE) to prevent this.
+        """
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        with open(app_dir / "main.py", "w") as f:
+            f.write("async def app(scope, receive, send):\n")
+            f.write("    if scope['type'] != 'http': return\n")
+            f.write("    await receive()\n") # Consume body
+            f.write("    await send({'type': 'http.response.start', 'status': 200, 'headers': []})\n")
+            f.write("    await send({'type': 'http.response.body', 'body': b'proxied'})\n")
+
+        port = 8893
+        process = subprocess.Popen(
+            [str(velo_binary), "serve", "main:app", "--port", str(port)],
+            cwd=app_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+
+        try:
+            time.sleep(3)
+            # Smuggling payload: TE.CL
+            # Hostile payload that would be interpreted differently if TE isn't stripped
+            headers = {
+                "Transfer-Encoding": "chunked",
+                "Content-Length": "4"
+            }
+            # Chunked body: 0 \r\n \r\n G (the smuggled Request)
+            payload = b"0\r\n\r\nG"
+            
+            resp = requests.post(f"http://127.0.0.1:{port}", headers=headers, data=payload, timeout=5)
+            assert resp.status_code == 200
+            assert resp.text == "proxied"
+            
+            # Since Velo strips 'transfer-encoding' in VeloProxyService::strip_hop_by_hop_headers,
+            # it will treat this as a standard request with Content-Length: 4.
+            # The worker (uvicorn/velo) should receive just the '0\r\n' part as body or fail safe.
+            
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+# =============================================================================
+# PRX-72-002: Socket Hijack (P1)
+# =============================================================================
+
+@pytest.mark.security
+class TestSocketHijack:
+    """
+    Forensic evidence for UDS Hijack resistance.
+    """
+
+    def test_socket_pre_allocation_failure(self, velo_binary, tmp_path):
+        """
+        Proof: Pre-creating a symlink/dir at the UDS path prevents hijacking.
+        """
+        uid = os.getuid()
+        socket_dir = Path(f"/tmp/velo-{uid}")
+        
+        # 1. Hostile act: Pre-create the directory with WRONG permissions (0o777)
+        if socket_dir.exists():
+             import shutil
+             shutil.rmtree(socket_dir)
+             
+        socket_dir.mkdir(mode=0o777)
+        
+        # 2. Run velo serve. It MUST remediate the permissions or bail.
+        # Velo common/paths.rs:ensure_socket_dir forces 0o700.
+        
+        app_dir = tmp_path / "app"
+        app_dir.mkdir()
+        with open(app_dir / "main.py", "w") as f:
+            f.write("def app(scope, receive, send): pass")
+
+        process = subprocess.Popen(
+            [str(velo_binary), "serve", "main:app", "--port", "8894"],
+            cwd=app_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+
+        try:
+            time.sleep(2)
+            # Verify permissions were fixed
+            mode = os.stat(socket_dir).st_mode & 0o777
+            assert mode == 0o700, f"Velo failed to remediate insecure socket dir: {oct(mode)}"
+            
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
 

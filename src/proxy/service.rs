@@ -23,16 +23,14 @@ use tokio::net::UnixStream;
 /// Headers that MUST be stripped before forwarding (RFC 2616, Section 13.5.1).
 ///
 /// RFC-0011 C.4 & 6A.3: These hop-by-hop headers could cause request smuggling if forwarded.
-const HOP_BY_HOP_HEADERS: &[&str] = &[
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "proxy-connection", // RFC-0011 6A.3
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
+const HOP_BY_HOP_HEADERS: &[header::HeaderName] = &[
+    header::CONNECTION,
+    header::PROXY_AUTHENTICATE,
+    header::PROXY_AUTHORIZATION,
+    header::TE,
+    header::TRAILER,
+    header::TRANSFER_ENCODING,
+    header::UPGRADE,
 ];
 
 /// Error type for proxy operations.
@@ -93,21 +91,16 @@ impl VeloProxyService {
         // 3. Inject X-Forwarded-* headers (RFC C.3)
         Self::inject_forwarded_headers(&mut req, client_addr);
 
-        // 4. Inject X-Request-ID (RFC A.3)
+        // 4. Inject correlation headers (RFC A.3, B.3)
         Self::inject_request_id(&mut req);
-
-        // 5. Ensure W3C Trace Context (RFC B.3)
         Self::ensure_trace_context(&mut req);
 
-        // 6. Add X-Velo-Worker header for debugging
+        // 5. Add X-Velo-Worker header for debugging/QA verification (Worker side)
         let socket_path = guard.socket_path();
         req.headers_mut().insert(
             "x-velo-worker",
-            HeaderValue::from_str(socket_path).unwrap_or_else(|_| HeaderValue::from_static("")),
+            HeaderValue::from_str(&socket_path).unwrap_or_else(|_| HeaderValue::from_static("")),
         );
-
-        // 5. RFC-0011 O11y Review: Inject X-Request-ID for correlation
-        let _request_id = Self::inject_request_id(&mut req);
 
         Ok((guard, req))
     }
@@ -127,14 +120,25 @@ impl VeloProxyService {
             })
             .unwrap_or_default();
 
-        // Remove standard hop-by-hop headers
+        // 1. Remove standard hop-by-hop headers
         for header_name in HOP_BY_HOP_HEADERS {
-            headers.remove(*header_name);
+            if headers.remove(header_name).is_some() {
+                eprintln!("[PROXY] Stripped standard hop-by-hop: {:?}", header_name);
+            }
         }
 
-        // Remove any headers listed in Connection header
-        for header_name in &connection_headers {
-            headers.remove(header_name.as_str());
+        // 2. Remove non-standard or missing Hyper constants
+        for h in ["keep-alive", "proxy-connection"] {
+            if let Ok(hn) = header::HeaderName::from_bytes(h.as_bytes()) {
+                headers.remove(hn);
+            }
+        }
+
+        // 3. Remove any headers listed in Connection header
+        for header_name_str in &connection_headers {
+            if let Ok(hn) = header::HeaderName::from_bytes(header_name_str.as_bytes()) {
+                headers.remove(hn);
+            }
         }
     }
 
@@ -272,33 +276,23 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
-        let lb = self.inner.lb.clone();
+        let proxy = self.inner.clone();
         let client_addr = self.client_addr;
 
         Box::pin(async move {
-            // RFC-0011 §6A.7: Per-Worker Client - select worker PER REQUEST
-            let guard = lb.select_worker().ok_or(ProxyError::NoHealthyWorkers)?;
+            // Use standardized preparation logic (RFC-0011 §6A.7)
+            let (guard, proxy_req) = proxy.prepare_request(req, Some(client_addr))?;
+            let worker_socket_path = guard.socket_path().to_string();
 
-            // Get the CURRENT socket path from guard (handles respawn)
-            let socket_path = guard.socket_path().to_string();
-            // Prepare request headers
-            let mut proxy_req = req;
-            VeloProxyService::strip_hop_by_hop_headers(proxy_req.headers_mut());
-            VeloProxyService::inject_forwarded_headers(&mut proxy_req, Some(client_addr));
-            VeloProxyService::inject_request_id(&mut proxy_req);
-            VeloProxyService::ensure_trace_context(&mut proxy_req);
-
-            // Add X-Velo-Worker header for debugging
-            proxy_req.headers_mut().insert(
-                "x-velo-worker",
-                HeaderValue::from_str(&socket_path)
-                    .unwrap_or_else(|_| HeaderValue::from_static("")),
-            );
-
-            // Connect directly to worker socket (no pre-created clients)
-            let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
-                ProxyError::Connection(format!("UDS connect failed to {}: {}", socket_path, e))
-            })?;
+            // Connect directly to worker socket (Standardized UDS path)
+            let stream = UnixStream::connect(&worker_socket_path)
+                .await
+                .map_err(|e| {
+                    ProxyError::Connection(format!(
+                        "UDS connect failed to {}: {}",
+                        worker_socket_path, e
+                    ))
+                })?;
 
             let io = TokioIo::new(stream);
 
@@ -310,7 +304,7 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
             // Spawn connection driver
             tokio::spawn(async move {
                 if let Err(_e) = conn.await {
-                    // Connection closed, this is normal
+                    // Connection closed
                 }
             });
 
@@ -318,8 +312,14 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
             let result = sender.send_request(proxy_req).await;
 
             match result {
-                Ok(res) => {
+                Ok(mut res) => {
                     guard.record_success();
+                    // Inject diagnostic header into RESPONSE for QA verification (Client side)
+                    res.headers_mut().insert(
+                        "x-velo-worker",
+                        HeaderValue::from_str(&worker_socket_path)
+                            .unwrap_or_else(|_| HeaderValue::from_static("error")),
+                    );
                     Ok(res)
                 }
                 Err(e) => {
@@ -337,32 +337,23 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
-        let lb = self.lb.clone();
+        let proxy = self.clone();
 
         Box::pin(async move {
-            // RFC-0011 §6A.7: Per-Worker Client - select worker PER REQUEST
-            let guard = lb.select_worker().ok_or(ProxyError::NoHealthyWorkers)?;
+            // Use standardized preparation logic (RFC-0011 §6A.7)
+            let (guard, proxy_req) = proxy.prepare_request(req, None)?;
+            let worker_socket_path = guard.socket_path().to_string();
+            eprintln!("[PROXY] call: routing to {}", worker_socket_path);
 
-            // Get the CURRENT socket path from guard (handles respawn)
-            let socket_path = guard.socket_path().to_string();
-
-            // Prepare request headers
-            let mut proxy_req = req;
-            VeloProxyService::strip_hop_by_hop_headers(proxy_req.headers_mut());
-            VeloProxyService::inject_request_id(&mut proxy_req);
-            VeloProxyService::ensure_trace_context(&mut proxy_req);
-
-            // Add X-Velo-Worker header for debugging
-            proxy_req.headers_mut().insert(
-                "x-velo-worker",
-                HeaderValue::from_str(&socket_path)
-                    .unwrap_or_else(|_| HeaderValue::from_static("")),
-            );
-
-            // Connect directly to worker socket (no pre-created clients)
-            let stream = UnixStream::connect(&socket_path).await.map_err(|e| {
-                ProxyError::Connection(format!("UDS connect failed to {}: {}", socket_path, e))
-            })?;
+            // Connect directly to worker socket (Standardized UDS path)
+            let stream = UnixStream::connect(&worker_socket_path)
+                .await
+                .map_err(|e| {
+                    ProxyError::Connection(format!(
+                        "UDS connect failed to {}: {}",
+                        worker_socket_path, e
+                    ))
+                })?;
 
             let io = TokioIo::new(stream);
 
@@ -374,7 +365,7 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
             // Spawn connection driver
             tokio::spawn(async move {
                 if let Err(_e) = conn.await {
-                    // Connection closed, this is normal
+                    // Connection closed
                 }
             });
 
@@ -382,8 +373,14 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
             let result = sender.send_request(proxy_req).await;
 
             match result {
-                Ok(res) => {
+                Ok(mut res) => {
                     guard.record_success();
+                    // Inject diagnostic header into RESPONSE for QA verification (Client side)
+                    res.headers_mut().insert(
+                        "x-velo-worker",
+                        HeaderValue::from_str(&worker_socket_path)
+                            .unwrap_or_else(|_| HeaderValue::from_static("error")),
+                    );
                     Ok(res)
                 }
                 Err(e) => {
