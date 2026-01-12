@@ -81,6 +81,7 @@ embedded_uv = []  # RFC-0018: Embed uv binary at build time
 
 [build-dependencies]
 blake3 = "1.5"    # RFC-0018: Hash generation for uv verification
+toml = "0.8"      # RFC-0018: Parse embedded_assets.toml config
 
 [dev-dependencies]
 
