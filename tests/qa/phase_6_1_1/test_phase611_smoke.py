@@ -19,7 +19,7 @@ import requests
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 # Smoke tests are now verified to pass with the new implementation
@@ -87,7 +87,9 @@ class TestL0Smoke:
                         break
                     if parent.pid <= 1:
                         break
-                assert found_zygote, f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
+                assert (
+                    found_zygote
+                ), f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
             except psutil.NoSuchProcess:
                 pytest.skip(f"Worker {worker_pid} died during verification")
 

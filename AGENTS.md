@@ -40,6 +40,8 @@ Before making any changes, AI agents MUST read:
 |----------|---------|
 | [README.md](./README.md) | Project overview and quick start |
 | [docs/STANDARDS.md](./docs/STANDARDS.md) | Naming conventions and directory structure |
+| [SOP-001: Master Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md) | **CRITICAL**: Architectural governance & reviews |
+| [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md) | **CRITICAL**: Forensic task methodology |
 | [docs/TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) | **CRITICAL**: Test environment isolation |
 | [docs/DEFINITION_OF_DONE.md](./docs/DEFINITION_OF_DONE.md) | Quality gate standards |
 
@@ -158,6 +160,7 @@ PHASE 2: EXECUTE
 
 PHASE 3: VERIFY
 ├─ Check EVERY acceptance criterion: ✅ or ❌
+├─ **PRIVACY AUDIT**: No absolute paths, user names, or secrets? ✅
 └─ Compare result against original goal
 
 PHASE 4: DELIVER
@@ -213,6 +216,7 @@ I will review/implement with [ROLE]'s perspective.
 - ❌ Skip `uv sync` when testing user projects
 - ❌ Commit without running pre-commit hooks
 - ❌ Use different lint/check flags than CI (causes silent failures)
+- ❌ **NO DIRECT REBASE**: Do not use `git rebase` to "beautify" logs. Aesthetic purity is not worth the risk of code loss. Use **Squash Merge** on the branch entry point (main/master) instead. Commit early and often locally; the squash merge will ensure a clean history on the shared trunk.
 
 > [!TIP]
 > Run `scripts/setup-dev.sh` once to install pre-commit hooks that automatically check `cargo fmt` before each commit. This prevents most style-related CI failures.
@@ -223,6 +227,7 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ Use runtime analysis over hardcoding
 - ✅ Run `cargo fmt && cargo clippy --all-targets --all-features -- -D warnings` before commit
 - ✅ Read TEST_ARCHITECTURE.md before writing tests
+- ✅ **Zero Sensitive Information**: No absolute local paths, usernames, or secrets in code or docs
 - ✅ **Write ALL code and documentation in English only (no Chinese characters)**
 - ✅ **Ensure local checks match CI** (see `.github/workflows/ci.yml` for exact commands)
 
@@ -272,6 +277,12 @@ I will review/implement with [ROLE]'s perspective.
 - `/ask-council`: [SOP-001 Expert Review](./.agent/workflows/ask-council.md)
 - `/audit-security`: [TITANIUM Security Scan](./.agent/workflows/audit-security.md)
 
+### Architectural Standards (SOPs)
+- [SOP-001: Master Architecture Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md)
+- [SOP-002: Mission Protocol](./docs/architecture/SOP-002-mission-protocol.md)
+- [SOP-003: Knowledge Treasury](./docs/architecture/SOP-003-knowledge-treasury.md)
+- [SOP-004: Fallback Governance (H-Gov)](./docs/architecture/SOP-004-h-gov-standard.md)
+
 ### Project Standards
 - [STANDARDS.md](./docs/STANDARDS.md) - Naming conventions
 - [TEST_ARCHITECTURE.md](./docs/TEST_ARCHITECTURE.md) - Test isolation
@@ -286,4 +297,4 @@ I will review/implement with [ROLE]'s perspective.
 
 ---
 
-*Last Updated: 2026-01-02*
+*Last Updated: 2026-01-08*

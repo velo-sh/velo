@@ -1,12 +1,24 @@
+#[cfg(target_os = "linux")]
+use crate::common::governance::{GovernanceSignal, SignalComponent};
+use crate::config::VeloConfig;
 use crate::shm::alignment;
 use crate::shm::constants::*;
 use crate::shm::error::MemoryError;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 
+/// TITANIUM: Segment Metadata for RFC-0015 (Memory Gravity)
+#[derive(Debug)]
+pub struct ShmSegment {
+    pub file: File,
+    pub actual_page_size: usize,
+}
+
 pub struct MemoryRegistry {
+    pub config: VeloConfig,
+    #[allow(dead_code)]
     strict_numa: bool,
     #[allow(dead_code)] // Used only on Linux in mbind()
     numa_mask: u64,
@@ -14,12 +26,12 @@ pub struct MemoryRegistry {
 
 impl Default for MemoryRegistry {
     fn default() -> Self {
-        Self::new()
+        Self::new(VeloConfig::default())
     }
 }
 
 impl MemoryRegistry {
-    pub fn new() -> Self {
+    pub fn new(config: VeloConfig) -> Self {
         // H-30: Strict NUMA Check
         let strict_numa = std::env::var(ENV_STRICT_NUMA).unwrap_or_default() == "1";
         // H-32: Configurable NUMA mask (defaults to node 0)
@@ -28,13 +40,8 @@ impl MemoryRegistry {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_NUMA_MASK);
 
-        if strict_numa {
-            eprintln!(
-                "🔥 {} enabled. NUMA mask: 0x{:x}",
-                ENV_STRICT_NUMA, numa_mask
-            );
-        }
         Self {
+            config,
             strict_numa,
             numa_mask,
         }
@@ -81,34 +88,34 @@ impl MemoryRegistry {
         Ok((file_size + padding_needed) as u64)
     }
 
-    pub fn create_segment(&self, name: &str, file_path: &Path) -> Result<File, MemoryError> {
-        // Validate and get size
-        let total_size = Self::validate_source(file_path)? as usize;
+    pub fn create_segment(
+        &self,
+        name: &str,
+        source_path: &Path,
+    ) -> Result<ShmSegment, MemoryError> {
+        let size = Self::validate_source(source_path)?;
+        let prefer_huge = true; // RFC-0015: Scheme B always prefers HugePages
 
-        let file =
-            File::open(file_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
+        // 1. Create SHM FD
+        #[allow(unused_mut)]
+        let (mut fd, mut _is_huge) = self.create_shm_fd(name, size as usize, prefer_huge)?;
+
+        // We need to re-read header len for population
+        let mut file =
+            File::open(source_path).map_err(|e| MemoryError::InvalidSourceFile(e.to_string()))?;
         let mut header_len_bytes = [0u8; HEADER_LEN_SIZE];
-        // We need to re-read header len to proceed with mapping logic if we want to reuse code structure
-        // Or we can trust validation.
-
-        // Re-open for the mapping flow (robustness > perf for initialization)
-        let mut file = file;
         file.read_exact(&mut header_len_bytes)
             .map_err(|e| MemoryError::HeaderParseFailed(e.to_string()))?;
         let header_len = u64::from_le_bytes(header_len_bytes) as usize;
         let padding_needed = alignment::calculate_padding(header_len)?;
 
         // DEF-70-004: Protection against 1PB allocation DoS/Deadlock
-        if total_size > MAX_SHM_SIZE {
+        if size > MAX_SHM_SIZE as u64 {
             return Err(MemoryError::InvalidSourceFile(format!(
                 "SHM size exceeds safety limit of 1TB: {} bytes",
-                total_size
+                size
             )));
         }
-
-        // 1. Create SHM FD (Optimistically target HugePages if possible)
-        #[allow(unused)]
-        let (mut fd, mut is_huge) = self.create_shm_fd(name, total_size, true)?;
 
         // 2. Map RW
         // SECURITY: mmap is used to create a shared memory mapping for the registry.
@@ -117,7 +124,7 @@ impl MemoryRegistry {
         #[allow(unused_mut)]
         let mut flags = libc::MAP_SHARED;
         #[cfg(target_os = "linux")]
-        if is_huge {
+        if _is_huge {
             flags |= linux::MAP_HUGETLB;
         }
 
@@ -125,7 +132,7 @@ impl MemoryRegistry {
         let mut ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
-                total_size,
+                size as usize,
                 libc::PROT_READ | libc::PROT_WRITE,
                 flags,
                 fd,
@@ -133,34 +140,36 @@ impl MemoryRegistry {
             )
         };
 
-        // H-20 Fix: If HugePages mapping fails with ENOMEM (no pool available),
-        // fallback to standard pages.
-        // IMPORTANT: We MUST recreate the FD without MFD_HUGETLB because the kernel
-        // will reject standard mmap on an MFD_HUGETLB FD with ENOMEM.
+        // H-20: Robust Fallback for HugePage mmap failure (ENOMEM)
         #[cfg(target_os = "linux")]
         if ptr == libc::MAP_FAILED
-            && is_huge
+            && _is_huge
             && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOMEM)
         {
-            eprintln!(
-                "⚠️ H-20: HugePages mmap failed (ENOMEM). Re-creating FD and falling back to standard pages."
+            let signal = GovernanceSignal::new(
+                SignalComponent::MemoryGravity,
+                "HugePages mmap failed (ENOMEM)",
+                "Sub-optimal performance (Standard 4KB Page fallback)",
+                "Verify hugepage availability: 'grep HugePages /proc/meminfo' and 'nr_hugepages' sysctl.",
             );
 
-            // Close the HugePage-backed FD
+            if self.config.strict_optimizations {
+                let _ = unsafe { libc::close(fd) };
+                return Err(MemoryError::MmapFailed(signal.format_critical()));
+            }
+
+            signal.report_audit();
+
             unsafe { libc::close(fd) };
-
-            // Re-create WITHOUT HugePages
-            let (new_fd, new_is_huge) = self.create_shm_fd(name, total_size, false)?;
+            let (new_fd, new_is_huge) = self.create_shm_fd(name, size as usize, false)?;
             fd = new_fd;
-            is_huge = new_is_huge;
-
-            flags &= !linux::MAP_HUGETLB;
+            _is_huge = new_is_huge;
             ptr = unsafe {
                 libc::mmap(
                     std::ptr::null_mut(),
-                    total_size,
+                    size as usize,
                     libc::PROT_READ | libc::PROT_WRITE,
-                    flags,
+                    libc::MAP_SHARED,
                     fd,
                     0,
                 )
@@ -168,22 +177,29 @@ impl MemoryRegistry {
         }
 
         if ptr == libc::MAP_FAILED {
+            let _ = unsafe { libc::close(fd) };
             return Err(MemoryError::MmapFailed(format!(
                 "Failed to mmap RW: {}",
                 std::io::Error::last_os_error()
             )));
         }
 
+        // Calculate page_size AFTER potential fallback to ensure accuracy
+        let page_size = if _is_huge {
+            HUGE_PAGE_SIZE
+        } else {
+            unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+        };
+
         // H-30: NUMA Binding (Strict Mode)
         // DEF-70-004: Only attempt strict mbind if we successfully allocated HugePages.
         // Strict mbind on standard 4KB pages in Docker/Container environments causes kernel hangs.
+        #[cfg(target_os = "linux")]
         if self.strict_numa {
-            #[cfg(target_os = "linux")]
-            if is_huge {
+            let nodemask = self.numa_mask;
+            let maxnode = 64; // Simple fallback
+            if _is_huge {
                 // H-32: Use configurable NUMA mask instead of hardcoded node 0
-                let nodemask = self.numa_mask;
-                let maxnode = linux::NUMA_MAX_NODES;
-
                 // SECURITY: mbind is used to enforce NUMA affinity in strict mode (H-30).
                 // This prevents cross-node latency by pinning memory to the configured nodes.
                 // Using raw syscall to avoid libc version compatibility issues.
@@ -191,7 +207,7 @@ impl MemoryRegistry {
                     libc::syscall(
                         libc::SYS_mbind,
                         ptr,
-                        total_size as libc::c_ulong,
+                        size as libc::c_ulong,
                         linux::MPOL_BIND,
                         &nodemask as *const u64,
                         maxnode,
@@ -199,6 +215,8 @@ impl MemoryRegistry {
                     )
                 };
                 if ret < 0 {
+                    let _ = unsafe { libc::munmap(ptr, size as usize) };
+                    let _ = unsafe { libc::close(fd) };
                     return Err(MemoryError::NumaBindFailed(format!(
                         "H-30 Violation: mbind failed with mask 0x{:x}: {:?}",
                         nodemask,
@@ -207,9 +225,20 @@ impl MemoryRegistry {
                 }
             } else {
                 // Fallback path (Standard Pages): Skip strict mbind to avoid Deadlock
-                eprintln!(
-                    "⚠️ H-30 Warning: Skipping strict NUMA mbind on standard pages to prevent container deadlock."
+                let signal = GovernanceSignal::new(
+                    SignalComponent::NumaAffinity,
+                    "Skipping strict mbind on standard pages (H-30)",
+                    "Potential cross-node latency (NUMA Affinity loss)",
+                    "Enable HugePages to safely support strict NUMA binding in containerized environments.",
                 );
+
+                if self.config.strict_optimizations {
+                    let _ = unsafe { libc::munmap(ptr, size as usize) };
+                    let _ = unsafe { libc::close(fd) };
+                    return Err(MemoryError::NumaBindFailed(signal.format_critical()));
+                }
+
+                signal.report_audit();
             }
         }
 
@@ -232,11 +261,13 @@ impl MemoryRegistry {
                     src_size,
                     libc::PROT_READ,
                     libc::MAP_PRIVATE,
-                    std::os::unix::io::AsRawFd::as_raw_fd(&src_file),
+                    src_file.as_raw_fd(),
                     0,
                 )
             };
             if src_ptr == libc::MAP_FAILED {
+                let _ = unsafe { libc::munmap(ptr, size as usize) };
+                let _ = unsafe { libc::close(fd) };
                 return Err(MemoryError::MmapFailed(format!(
                     "Failed to mmap source file: {}",
                     std::io::Error::last_os_error()
@@ -247,13 +278,10 @@ impl MemoryRegistry {
             // SECURITY: Copying from source-mmap to shm-mmap. Guaranteed disjoint memory regions.
             // Bounds checked via header_len and file size.
             unsafe {
-                let dst = ptr as *mut u8;
-                let src = src_ptr as *const u8;
-
                 let header_section_len = HEADER_LEN_SIZE + header_len;
                 if header_section_len > src_size {
                     libc::munmap(src_ptr, src_size);
-                    libc::munmap(ptr, total_size);
+                    libc::munmap(ptr, size as usize);
                     let _ = libc::close(fd);
                     return Err(MemoryError::HeaderParseFailed(
                         "Safetensors header_len > file size".to_string(),
@@ -261,66 +289,61 @@ impl MemoryRegistry {
                 }
 
                 // Copy [Len + Header]
-                std::ptr::copy_nonoverlapping(src, dst, header_section_len);
+                std::ptr::copy_nonoverlapping(
+                    src_ptr as *const u8,
+                    ptr as *mut u8,
+                    header_section_len,
+                );
 
                 // Zero out padding (H-29 alignment)
                 if padding_needed > 0 {
-                    std::ptr::write_bytes(dst.add(header_section_len), 0, padding_needed);
-                }
-
-                // Copy [Data]
-                let data_len = src_size - header_section_len;
-                if data_len > 0 {
-                    std::ptr::copy_nonoverlapping(
-                        src.add(header_section_len),
-                        dst.add(header_section_len + padding_needed),
-                        data_len,
+                    std::ptr::write_bytes(
+                        (ptr as *mut u8).add(header_section_len),
+                        0,
+                        padding_needed,
                     );
                 }
-            }
 
-            // H-29 Alignment Check: Verify the target tensor alignment (Data Offset)
-            // This is a Day 2 verification check (Directive 3)
-            let header_section_len = HEADER_LEN_SIZE + header_len;
-            let data_offset = ptr as usize + header_section_len + padding_needed;
-            let alignment_check = data_offset % VELO_ALIGNMENT;
+                // Copy Body (after padding)
+                let body_offset_src = header_section_len;
+                let body_offset_dst = header_section_len + padding_needed;
+                let body_len = src_size - header_section_len;
 
-            if alignment_check != 0 {
-                // We log this but don't fail yet, as padding implementation (Directive 1) is future work.
-                eprintln!(
-                    "⚠️ H-29 Alignment Warning: SHM tensor data is not {}-byte aligned (offset={}, data_start={})",
-                    VELO_ALIGNMENT, alignment_check, data_offset
+                if body_offset_dst + body_len > size as usize {
+                    libc::munmap(src_ptr, src_size);
+                    libc::munmap(ptr, size as usize);
+                    let _ = libc::close(fd);
+                    return Err(MemoryError::ResizeFailed(
+                        "Logic error: Segment overflow during population".to_string(),
+                    ));
+                }
+
+                std::ptr::copy_nonoverlapping(
+                    (src_ptr as *const u8).add(body_offset_src),
+                    (ptr as *mut u8).add(body_offset_dst),
+                    body_len,
                 );
-            }
 
-            // 4. Verification Check (In-place)
-            if alignment_check == 0 {
-                // Simple checksum or verify some bytes to ensure copy was correct.
-                // This preserves H-29 Zero-Copy Verification.
-            }
-
-            // Clean up source mmap
-            unsafe {
                 libc::munmap(src_ptr, src_size);
             }
         }
 
-        // 6. Unmap RW mapping (CRITICAL BARRIER)
+        // 4. Unmap RW
         // SECURITY: Unmapping the RW pointer before returning or sealing.
         // On Linux, F_SEAL_WRITE requires no active writable mappings.
         unsafe {
-            libc::munmap(ptr, total_size);
+            libc::munmap(ptr, size as usize);
         }
 
         // 5. Apply Seals (Linux specific)
         self.apply_seals(fd)?;
 
-        // Final verification map (RO) to ensure seal works and data is intact
+        // 6. Verify (RO)
         // SECURITY: Temporary RO mapping to verify integrity.
         let verify_ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
-                total_size,
+                size as usize,
                 libc::PROT_READ,
                 libc::MAP_SHARED,
                 fd,
@@ -329,6 +352,7 @@ impl MemoryRegistry {
         };
 
         if verify_ptr == libc::MAP_FAILED {
+            let _ = unsafe { libc::close(fd) };
             return Err(MemoryError::MmapFailed(format!(
                 "Failed to mmap verified RO: {}",
                 std::io::Error::last_os_error()
@@ -338,12 +362,15 @@ impl MemoryRegistry {
         // Cleanup verify mapping
         // SECURITY: Unmapping verification pointer.
         unsafe {
-            libc::munmap(verify_ptr, total_size);
+            libc::munmap(verify_ptr, size as usize);
         }
 
-        // 7. Return the File object (which owns the FD)
+        // 7. Success
         // SECURITY: from_raw_fd is safe here as the FD was just created and validated by this process.
-        Ok(unsafe { File::from_raw_fd(fd) })
+        Ok(ShmSegment {
+            file: unsafe { File::from_raw_fd(fd) },
+            actual_page_size: page_size,
+        })
     }
 
     #[cfg(target_os = "linux")]
@@ -351,7 +378,7 @@ impl MemoryRegistry {
         &self,
         name: &str,
         size: usize,
-        allow_huge: bool,
+        prefer_huge: bool,
     ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;
@@ -371,15 +398,13 @@ impl MemoryRegistry {
         };
 
         // H-20: Optimistic HugePages Attempt (MFD_HUGETLB)
-        // We try with hugepages first. If explicit HugePages are blocked/unavailable (Docker default),
-        // we fallback to standard pages to prevent startup failure.
-        let mut fd = -1;
-        let mut is_huge = false;
-
-        if allow_huge {
-            fd = try_create(linux::MFD_HUGETLB);
-            is_huge = true;
-        }
+        // We try with hugepages first if preferred.
+        let mut fd = if prefer_huge {
+            try_create(linux::MFD_HUGETLB)
+        } else {
+            -1
+        };
+        let mut is_huge = fd >= 0;
 
         if fd >= 0 {
             // H-20: Alignment Requirement (Verified Logic)
@@ -405,7 +430,7 @@ impl MemoryRegistry {
             // This path is taken if:
             // 1. MFD_HUGETLB failed (not supported/disabled)
             // 2. ftruncate failed (quota exceeded, etc)
-            if allow_huge {
+            if prefer_huge {
                 eprintln!(
                     "⚠️ H-20 Warning: HugePages unavailable, falling back to standard 4KB pages."
                 );
@@ -413,7 +438,14 @@ impl MemoryRegistry {
             fd = try_create(0);
             is_huge = false;
 
-            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, size as i64) } < 0 {
+            #[cfg(target_os = "linux")]
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+            #[cfg(not(target_os = "linux"))]
+            let page_size = 4096;
+
+            let aligned_size = alignment::align_up(size, page_size);
+
+            if fd >= 0 && unsafe { libc::ftruncate(fd as RawFd, aligned_size as i64) } < 0 {
                 let err = std::io::Error::last_os_error();
                 unsafe { libc::close(fd as RawFd) };
                 return Err(MemoryError::ResizeFailed(format!(
@@ -441,7 +473,7 @@ impl MemoryRegistry {
         &self,
         name: &str,
         size: usize,
-        _allow_huge: bool,
+        _prefer_huge: bool,
     ) -> Result<(RawFd, bool), MemoryError> {
         use std::ffi::CString;
         let c_name = CString::new(name).map_err(|e| MemoryError::InvalidName(e.to_string()))?;

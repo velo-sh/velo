@@ -35,7 +35,7 @@ from conftest import (
 class TestHFTPerformance:
     """
     Tier 4: HFT Performance Tests
-    
+
     These tests verify RFC-0015's HFT-grade performance requirements
     for alignment (H-29) and NUMA affinity (H-30).
     """
@@ -45,26 +45,26 @@ class TestHFTPerformance:
     def test_L4_SHM_11_alignment_verification(self, shm_test_env: VeloTestEnv):
         """
         L4-SHM-11: Verify all tensor offsets are 64-byte aligned (H-29).
-        
+
         RFC-0015 §4 (H-29):
-        "Velo Host MUST ensure that within the SHM segment, every Tensor's 
+        "Velo Host MUST ensure that within the SHM segment, every Tensor's
         start offset is aligned to at least 64 bytes (cache line size)"
-        
+
         RFC-0015 Appendix A (The Padding Paradox):
         "We need (sizeof(u64) + header_len) % 64 == 0"
         "Since sizeof(u64) is 8, we need header_len % 64 == 56"
-        
+
         Test Steps:
         1. Generate safetensors with varying header lengths
         2. Apply Velo alignment algorithm
         3. Verify all tensor offsets are 64-byte aligned
-        
+
         Acceptance Criteria:
         - Result is 0 for ALL tensors
         - No silent PyTorch copy detected
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -151,9 +151,9 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         assert result.returncode == 0, f"Alignment verification failed: {result.stderr}"
         assert "PASS" in result.stdout
 
@@ -162,11 +162,11 @@ if __name__ == "__main__":
     def test_L4_SHM_11_alignment_with_real_safetensors(self, shm_test_env: VeloTestEnv):
         """
         L4-SHM-11 (Extended): Test alignment with actual safetensors file format.
-        
+
         Creates synthetic safetensors files and verifies alignment.
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -286,10 +286,12 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
-        assert result.returncode == 0, f"Real safetensors alignment test failed: {result.stderr}"
+
+        assert (
+            result.returncode == 0
+        ), f"Real safetensors alignment test failed: {result.stderr}"
         assert "PASS" in result.stdout
 
     @pytest.mark.tier4
@@ -298,25 +300,25 @@ if __name__ == "__main__":
     def test_L4_SHM_12_numa_locality(self, shm_test_env: VeloTestEnv):
         """
         L4-SHM-12: NUMA locality test (H-30).
-        
+
         RFC-0015 §4 (H-30):
         "Host MUST support pinning SHM allocation to specific NUMA nodes (mbind())"
-        "Workers MUST be spawned with CPU affinity (sched_setaffinity()) 
+        "Workers MUST be spawned with CPU affinity (sched_setaffinity())
          matching the NUMA node of their SHM segment"
-        
+
         Environment: Dual-socket machine OR numactl simulation
-        
+
         Test Steps:
         1. Detect NUMA topology
         2. If multi-node: verify pinning works
         3. If single-node: verify degradation handling
-        
+
         Acceptance Criteria:
         - Worker CPU Node == SHM Page Node
         - Zero cross-socket memory access (on multi-socket systems)
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -434,9 +436,9 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         # NUMA test may skip on single-node systems
         assert result.returncode == 0, f"NUMA locality test failed: {result.stderr}"
         assert "PASS" in result.stdout or "SKIP" in result.stdout
@@ -446,17 +448,17 @@ class TestPerformanceBaseline:
     """
     Performance baseline tests for RFC-0015.
     """
-    
+
     @pytest.mark.tier4
     @pytest.mark.shm
     def test_mmap_vs_file_read_baseline(self, shm_test_env: VeloTestEnv):
         """
         Baseline performance comparison: mmap vs traditional file read.
-        
+
         This establishes the performance baseline for Memory Gravity claims.
         """
         env = shm_test_env
-        
+
         test_script = '''
 import os
 import sys
@@ -549,8 +551,10 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=60)
-        
-        assert result.returncode == 0, f"Performance baseline test failed: {result.stderr}"
+
+        assert (
+            result.returncode == 0
+        ), f"Performance baseline test failed: {result.stderr}"
         assert "PASS" in result.stdout or "Speedup" in result.stdout

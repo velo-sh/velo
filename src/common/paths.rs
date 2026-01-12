@@ -123,10 +123,18 @@ impl VeloPaths {
     }
 
     /// Generate a standardized, short path for a worker socket.
+    /// Uses atomic counter to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
+
         let dir = Self::socket_dir();
         ensure_socket_dir(&dir);
-        dir.join(format!("w-{}.s", worker_id))
+
+        // Monotonic counter - never repeats in same supervisor lifetime
+        // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
+        let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
+        dir.join(format!("w-{}-{}.s", worker_id, seq))
     }
 
     /// Get the log path for the Zygote.

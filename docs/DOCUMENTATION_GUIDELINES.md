@@ -116,6 +116,21 @@ Draft → RFC → Approved → Implemented
 
 ---
 
+## Privacy & Security Compliance
+
+> **The "No Leakage" Rule (TITANIUM Standard)**
+
+Every document created or modified MUST pass the following audit:
+
+1. **No Absolute Paths**: Forbid `file:///Users/username/...`. Use relative links or `${PLACEHOLDERS}`.
+2. **No Usernames**: Ensure no local system usernames (e.g., `gjwang`) are present.
+3. **No Secrets**: Zero hardcoded keys, tokens, or passwords.
+4. **No Environment Leakage**: Use `${HOME}`, `${CWD}`, or `${VIRTUAL_ENV}` instead of actual resolved paths.
+
+**Audit Failure = P0 Blocker**.
+
+---
+
 ## Archive Process
 
 After each phase release:
@@ -138,6 +153,7 @@ mv docs/qa/phase-3-defect-report.md docs/archive/phase-3.0/
 **Dev Pre-Commit:**
 - [ ] RFC status updated
 - [ ] Changelog updated
+- [ ] **Privacy Audit**: No local absolute paths or usernames?
 - [ ] Tests passing
 
 **QA Sign-Off:**

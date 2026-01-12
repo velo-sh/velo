@@ -1,12 +1,16 @@
 use std::io::Write;
 use std::os::unix::io::AsRawFd;
 use tempfile::NamedTempFile;
+use velo::config::VeloConfig;
 // use velo::shm::alignment; (Removed unused import)
 use velo::shm::registry::MemoryRegistry;
 
 #[test]
 fn test_registry_create_segment() {
-    let registry = MemoryRegistry::new();
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     // Create valid dummy safetensors file (8 bytes len + header)
     // If we passed random text, H-29 parser would interpret first 8 bytes as huge length
@@ -23,12 +27,12 @@ fn test_registry_create_segment() {
     tmp.write_all(&buffer).unwrap();
 
     // Create segment
-    let file = registry
+    let segment = registry
         .create_segment("test_seg", tmp.path())
         .expect("Failed to create segment");
 
     // Verify file is valid
-    assert!(file.as_raw_fd() > 0);
+    assert!(segment.file.as_raw_fd() > 0);
 }
 
 #[test]
@@ -41,7 +45,10 @@ fn test_alignment_logic() {
 #[test]
 fn test_registry_enforces_padding() {
     // H-29 Red Phase: Write a test that expects the Registry to align data.
-    let registry = MemoryRegistry::new();
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     let mut buffer = Vec::new();
     // 8 bytes length (u64 little endian, say length=1)
@@ -55,8 +62,8 @@ fn test_registry_enforces_padding() {
     tmp.write_all(&buffer).unwrap();
 
     // This assumes create_segment parses and pads.
-    let file = registry.create_segment("padded_seg", tmp.path()).unwrap();
-    let fd = file.as_raw_fd();
+    let segment = registry.create_segment("padded_seg", tmp.path()).unwrap();
+    let fd = segment.file.as_raw_fd();
 
     // Verify content logic using mmap (safe across macOS/Linux)
     // We expect: [8 bytes len] [1 byte header] [55 bytes zero padding] [4 bytes DATA]
@@ -108,7 +115,10 @@ fn test_shm_alignment_rounding() {
 
     // Note: We can only truly test this if the kernel supports HugePages and we get is_huge=true.
     // However, on standard pages, the same logic would just result in a larger file, which is valid.
-    let registry = MemoryRegistry::new();
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
 
     // 1. Small file (should be 2MB aligned if HugePages active, or at least succeed)
     let mut buffer = Vec::new();
@@ -119,10 +129,10 @@ fn test_shm_alignment_rounding() {
     let mut tmp = NamedTempFile::new().unwrap();
     tmp.write_all(&buffer).unwrap();
 
-    let file = registry
+    let segment = registry
         .create_segment("align_small", tmp.path())
         .expect("Small create failed");
-    let meta = file.metadata().unwrap();
+    let meta = segment.file.metadata().unwrap();
     println!("Small segment size: {}", meta.len());
 }
 
@@ -131,7 +141,10 @@ fn test_shm_huge_allocation_patterns() {
     // H-system Integration Tests
     // Verify that we can allocate File objects for various sizes.
     // This tests ftruncate interaction with the kernel.
-    let registry = MemoryRegistry::new();
+    let registry = MemoryRegistry::new(VeloConfig {
+        strict_optimizations: false,
+        ..VeloConfig::default()
+    });
     let huge_size = 2 * 1024 * 1024; // 2MB
 
     // 1. Exact 2MB Allocation
@@ -145,10 +158,10 @@ fn test_shm_huge_allocation_patterns() {
     let mut tmp_exact = NamedTempFile::new().unwrap();
     tmp_exact.write_all(&buffer_exact).unwrap();
 
-    let file_exact = registry
+    let segment_exact = registry
         .create_segment("align_exact", tmp_exact.path())
         .expect("Exact 2MB create failed");
-    assert!(file_exact.as_raw_fd() > 0);
+    assert!(segment_exact.file.as_raw_fd() > 0);
 
     // 2. Overflow Allocation (2MB + 1 byte) -> Should align to 4MB
     let mut buffer_over = Vec::with_capacity(huge_size + 1);
@@ -159,9 +172,9 @@ fn test_shm_huge_allocation_patterns() {
     let mut tmp_over = NamedTempFile::new().unwrap();
     tmp_over.write_all(&buffer_over).unwrap();
 
-    let file_over = registry
+    let segment_over = registry
         .create_segment("align_overflow", tmp_over.path())
         .expect("Overflow 2MB+1 create failed");
-    assert!(file_over.as_raw_fd() > 0);
+    assert!(segment_over.file.as_raw_fd() > 0);
     // Note: We can't easily assert physical size without stat/ioctl, but success means kernel accepted it.
 }

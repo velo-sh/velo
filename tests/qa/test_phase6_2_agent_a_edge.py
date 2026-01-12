@@ -6,13 +6,16 @@ import time
 import pytest
 from pathlib import Path
 
+
 def send_msgpack(conn, data):
     import msgpack
+
     payload = msgpack.packb(data, use_bin_type=True)
     version = b"\x01"
     total_len = len(version) + len(payload)
     header = struct.pack("<I", total_len)
     conn.sendall(header + version + payload)
+
 
 class DeletingZygote:
     def __init__(self, socket_path):
@@ -36,11 +39,11 @@ class DeletingZygote:
                     conn, _ = self.server.accept()
                 except socket.timeout:
                     continue
-                
+
                 # Delete socket path immediately upon connection
                 if os.path.exists(self.socket_path):
                     os.unlink(self.socket_path)
-                
+
                 # Delay slightly before sending Ready
                 time.sleep(0.01)
                 send_msgpack(conn, {"type": "Ready"})
@@ -54,6 +57,7 @@ class DeletingZygote:
         self.stop_event.set()
         self.thread.join()
 
+
 @pytest.mark.tier2
 def test_EDGE_621_socket_deleted_mid_handshake(isolated_env):
     """EDGE-621: Verify resilience when socket is deleted mid-handshake.
@@ -61,22 +65,22 @@ def test_EDGE_621_socket_deleted_mid_handshake(isolated_env):
     """
     env = isolated_env
     socket_path = Path("/tmp") / f"deleting_zygote_{os.getpid()}.sock"
-    
+
     zygote = DeletingZygote(socket_path)
     zygote.start()
-    
+
     env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
     (env.path / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
-    
+
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
     repo_root = Path(__file__).parent.parent.parent
     env.velo = str(repo_root / "target" / "debug" / "velo")
-    
+
     proc = env.run_velo("serve", "main:app", "--workers", "1", env=cmd_env, timeout=10)
-    
+
     zygote.stop()
-    
+
     # Verification: Must have fallen back and started the server
     assert "Zygote" in proc.stderr
     assert "Server ready" in proc.stderr or "Uvicorn running on" in proc.stderr

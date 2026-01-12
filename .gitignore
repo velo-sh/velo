@@ -25,6 +25,7 @@ target
 
 /target
 .velo_cache/
+.velo/
 __pycache__/
 velo_zygote/velo_zygote
 test_large_bundle/
@@ -32,3 +33,4 @@ test_large_bundle/
 build/
 .venv/
 benchmarks/top100/top100_v2_results.json
+failure-bundle-*.tar.gz

@@ -1,0 +1,175 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Velo Zygote IPC Protocol",
+    "description": "JSON Schema for Velo Zygote IPC commands and responses",
+    "definitions": {
+        "RequestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID v7 Correlation ID"
+        },
+        "ZygoteCommand": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Handshake"
+                        },
+                        "version": {
+                            "type": "integer"
+                        },
+                        "capabilities": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "request_id": {
+                            "$ref": "#/definitions/RequestId"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "version",
+                        "capabilities",
+                        "request_id"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Status"
+                        },
+                        "request_id": {
+                            "$ref": "#/definitions/RequestId"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "request_id"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Fork"
+                        },
+                        "script_path": {
+                            "type": "string"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        },
+                        "async_mode": {
+                            "type": "boolean"
+                        },
+                        "request_id": {
+                            "$ref": "#/definitions/RequestId"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "script_path",
+                        "request_id"
+                    ]
+                }
+            ]
+        },
+        "ZygoteResponse": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Handshake"
+                        },
+                        "version": {
+                            "type": "integer"
+                        },
+                        "capabilities": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "version",
+                        "capabilities"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Status"
+                        },
+                        "pid": {
+                            "type": "integer"
+                        },
+                        "state": {
+                            "type": "string"
+                        },
+                        "preload": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "pid",
+                        "state"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Ack"
+                        },
+                        "pid": {
+                            "type": "integer"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "pid"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "const": "Error"
+                        },
+                        "message": {
+                            "type": "string"
+                        },
+                        "details": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "message"
+                    ]
+                }
+            ]
+        }
+    }
+}

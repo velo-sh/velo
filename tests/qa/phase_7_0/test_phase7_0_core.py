@@ -29,7 +29,7 @@ from conftest import (
 class TestCoreFunctionality:
     """
     Tier 0: Core Functionality Tests
-    
+
     These tests MUST PASS on every commit (QA-SOP §3.3).
     """
 
@@ -38,19 +38,19 @@ class TestCoreFunctionality:
     def test_L0_SHM_01_rss_footprint_verification(self, shm_test_env: VeloTestEnv):
         """
         L0-SHM-01: Verify RSS footprint of N workers is NOT N × Model_Size.
-        
+
         RFC-0015 §6 Tier 0:
         "Verify RSS footprint of 4 workers is Model_Size + Overheads (not 4 * Model_Size)"
-        
+
         Acceptance Criteria:
         - Total RSS < Model_Size * 1.5 (allowing for overhead)
         - NOT 4 * Model_Size
-        
+
         Note: This test uses Python's mmap as a proxy for Memory Gravity behavior
         since the full Rust implementation may not be available during QA.
         """
         env = shm_test_env
-        
+
         # Create a test Python script that simulates shared memory scenario
         test_script = '''
 import mmap
@@ -135,29 +135,29 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         # Assertions
         assert result.returncode == 0, f"RSS test failed: {result.stderr}"
         assert "SUCCESS" in result.stdout, f"Workers failed to spawn: {result.stdout}"
         assert "Workers spawned and attached without crash" in result.stdout
-    
+
     @pytest.mark.tier1
     @pytest.mark.shm
     def test_L1_SHM_02_cold_start_benchmark(self, shm_test_env: VeloTestEnv):
         """
         L1-SHM-02: Verify cold-start time is sub-50ms for SHM attachment.
-        
+
         RFC-0015 §6 Tier 0:
         "Benchmark 'Time to Token' for forked workers vs. fresh workers"
-        
+
         Acceptance Criteria:
         - Attachment time < 50ms
         - vs. traditional torch.load() baseline (~5s for 1GB)
         """
         env = shm_test_env
-        
+
         # Test script measuring mmap attachment time
         test_script = '''
 import mmap
@@ -219,30 +219,32 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 '''
-        
+
         result = env.run_python(test_script, timeout=30)
-        
+
         # Assertions
         assert result.returncode == 0, f"Cold-start benchmark failed: {result.stderr}"
-        assert "PASS" in result.stdout, f"Attachment time exceeded target: {result.stdout}"
+        assert (
+            "PASS" in result.stdout
+        ), f"Attachment time exceeded target: {result.stdout}"
 
 
 class TestCoreValidation:
     """
     Additional core validation tests for H-22 (Offset Validation).
     """
-    
+
     @pytest.mark.tier0
     @pytest.mark.shm
     def test_L0_offset_validation_bounds_check(self, shm_test_env: VeloTestEnv):
         """
         Verify that offset validation prevents out-of-bounds access.
-        
+
         RFC-0015 §4 (H-22):
         "Rust MUST validate offset/size before mapping to prevent out-of-bounds access"
         """
         env = shm_test_env
-        
+
         test_script = '''
 import mmap
 import sys
@@ -287,9 +289,9 @@ def test_bounds_checking():
 if __name__ == "__main__":
     sys.exit(test_bounds_checking())
 '''
-        
+
         result = env.run_python(test_script, timeout=10)
-        
+
         assert result.returncode == 0, f"Offset validation test failed: {result.stderr}"
         assert "PASS" in result.stdout
 
@@ -298,28 +300,29 @@ if __name__ == "__main__":
 # Pytest Collection Hooks
 # =============================================================================
 
+
 def pytest_collection_modifyitems(config, items):
     """
     Modify test collection to enforce fail-fast tier ordering.
-    
+
     Per QA-SOP §3.4: If Tier N fails, do NOT run Tier N+1.
     """
     # Sort tests by tier marker
     tier_order = {"tier0": 0, "tier1": 1, "tier2": 2, "tier3": 3, "tier4": 4}
-    
+
     def get_tier_order(item):
         for marker in item.iter_markers():
             if marker.name in tier_order:
                 return tier_order[marker.name]
         return 999  # Unmarked tests run last
-    
+
     items.sort(key=get_tier_order)
 
 
 class TestIntegration:
     """
     Integration tests with actual velo binary.
-    
+
     Per RUST-1: Add integration test with actual velo analyze --shm command.
     """
 
@@ -328,14 +331,14 @@ class TestIntegration:
     def test_velo_analyze_shm_flag(self, shm_test_env: VeloTestEnv):
         """
         Integration test: Verify velo analyze --shm command works.
-        
+
         This test requires the velo binary to be built for the current platform.
         """
         env = shm_test_env
-        
+
         if env.velo_binary is None:
             pytest.skip("Velo binary not found - build with 'cargo build --release'")
-        
+
         # Test 1: Check --help includes shm option
         try:
             result = env.run_velo("analyze", "--help", timeout=10)
@@ -344,11 +347,11 @@ class TestIntegration:
             if e.errno == 8:  # Exec format error
                 pytest.skip(f"Binary architecture mismatch: {e}")
             raise
-        
+
         # If analyze subcommand doesn't exist yet, skip
         if result.returncode != 0 and "no such subcommand" in result.stderr.lower():
             pytest.skip("velo analyze subcommand not implemented yet")
-        
+
         # Verify shm flag is documented
         if "--shm" in result.stdout or "shm" in result.stdout.lower():
             assert True, "--shm flag is documented"

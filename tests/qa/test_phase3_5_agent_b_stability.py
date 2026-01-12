@@ -26,12 +26,13 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 # Try to import requests, skip tests if not available
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -84,7 +85,9 @@ class StabilityTestEnv:
 
     def setup(self):
         # Create venv
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(
+            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
+        )
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -93,7 +96,7 @@ class StabilityTestEnv:
         subprocess.run(
             ["uv", "pip", "install", "--quiet"] + list(packages),
             cwd=self.path,
-            capture_output=True
+            capture_output=True,
         )
 
     def create_app(self, name: str, content: str):
@@ -107,7 +110,7 @@ class StabilityTestEnv:
             cwd=self.path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
         self.procs.append(proc)
         return proc
@@ -138,6 +141,7 @@ class StabilityTestEnv:
 # LEVEL 0: SMOKE TESTS - Does it even start?
 # =============================================================================
 
+
 class TestLevel0Smoke:
     """SMOKE-xxx: The most basic tests. If these fail, nothing else matters."""
 
@@ -151,10 +155,7 @@ class TestLevel0Smoke:
         """SMOKE-002: 'serve' is a valid subcommand."""
         velo = get_velo_binary()
         result = subprocess.run(
-            [velo, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=T_MEDIUM
+            [velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM
         )
         assert "serve" in result.stdout.lower(), "serve command not in help"
 
@@ -162,54 +163,62 @@ class TestLevel0Smoke:
         """SMOKE-003: velo serve at least prints a startup message."""
         with StabilityTestEnv() as env:
             env.create_app("main.py", "app = None")
-            
+
             proc = env.start_serve("main:app", 18100)
             time.sleep(2)
-            
+
             # Check stderr for startup message
             proc.terminate()
             proc.wait(timeout=T_SHORT)
-            
+
             stderr = proc.stderr.read()
             # Should show SOMETHING about starting
-            assert "Starting" in stderr or "serve" in stderr.lower() or "app" in stderr.lower(), \
-                f"No startup message. stderr: {stderr}"
+            assert (
+                "Starting" in stderr
+                or "serve" in stderr.lower()
+                or "app" in stderr.lower()
+            ), f"No startup message. stderr: {stderr}"
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests not installed")
     def test_smoke_004_server_binds_to_port(self):
         """SMOKE-004: Server actually binds to the specified port.
-        
+
         THIS IS THE CRITICAL TEST THAT WAS MISSING!
         If the server doesn't bind to a port, nothing else matters.
         """
         with StabilityTestEnv() as env:
             # Create minimal FastAPI app
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"status": "ok"}
-""")
+""",
+            )
             env.install_deps("fastapi", "uvicorn")
-            
+
             port = 18101
             proc = env.start_serve("main:app", port)
-            
+
             # Wait for port to open
             if not wait_for_port(port, timeout=T_MEDIUM):
                 stderr = proc.stderr.read() if proc.stderr else ""
                 stdout = proc.stdout.read() if proc.stdout else ""
                 # If uvicorn dependency check, skip this test
-                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
+                if "uvicorn" in stderr.lower() and (
+                    "missing" in stderr.lower() or "dependency" in stderr.lower()
+                ):
                     pytest.skip("velo serve checks project venv for uvicorn")
                 pytest.fail(
                     f"CRITICAL: Server did not bind to port {port}!\n"
                     f"stderr: {stderr}\n"
                     f"stdout: {stdout}"
                 )
-            
+
             # Success!
             assert is_port_open(port)
 
@@ -218,33 +227,37 @@ def root():
 # LEVEL 1: HAPPY PATH - Basic user journey
 # =============================================================================
 
+
 class TestLevel1HappyPath:
     """HAPPY-xxx: The basic user journey should work."""
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests not installed")
     def test_happy_001_start_request_stop(self):
         """HAPPY-001: Start server → Make request → Stop server.
-        
+
         This is THE fundamental happy path. If this doesn't work,
         the feature is not functional.
         """
         with StabilityTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"message": "Hello from Velo!"}
-""")
+""",
+            )
             env.install_deps("fastapi", "uvicorn")
-            
+
             port = 18102
             proc = env.start_serve("main:app", port)
-            
+
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start - see SMOKE-004")
-            
+
             # Make request
             try:
                 response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
@@ -252,7 +265,7 @@ def root():
                 assert response.json()["message"] == "Hello from Velo!"
             except requests.exceptions.RequestException as e:
                 pytest.fail(f"Could not make request: {e}")
-            
+
             # Graceful stop
             proc.terminate()
             exit_code = proc.wait(timeout=T_MEDIUM)
@@ -263,22 +276,25 @@ def root():
     def test_happy_002_health_endpoint(self):
         """HAPPY-002: Health check endpoint works."""
         with StabilityTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/health")
 def health():
     return {"healthy": True}
-""")
+""",
+            )
             env.install_deps("fastapi", "uvicorn")
-            
+
             port = 18103
             proc = env.start_serve("main:app", port)
-            
+
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
-            
+
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["healthy"] == True
@@ -287,7 +303,9 @@ def health():
     def test_happy_003_post_request(self):
         """HAPPY-003: POST requests work."""
         with StabilityTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -299,19 +317,18 @@ class Item(BaseModel):
 @app.post("/items")
 def create_item(item: Item):
     return {"created": item.name}
-""")
+""",
+            )
             env.install_deps("fastapi", "uvicorn", "pydantic")
-            
+
             port = 18104
             proc = env.start_serve("main:app", port)
-            
+
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
-            
+
             response = requests.post(
-                f"http://127.0.0.1:{port}/items",
-                json={"name": "test"},
-                timeout=T_SHORT
+                f"http://127.0.0.1:{port}/items", json={"name": "test"}, timeout=T_SHORT
             )
             assert response.status_code == 200
             assert response.json()["created"] == "test"
@@ -320,6 +337,7 @@ def create_item(item: Item):
 # =============================================================================
 # LEVEL 2: SAD PATH - Error handling
 # =============================================================================
+
 
 class TestLevel2SadPath:
     """SAD-xxx: When things go wrong, errors should be clear."""
@@ -331,9 +349,9 @@ class TestLevel2SadPath:
             [velo, "serve", "nonexistent_module_xyz:app"],
             capture_output=True,
             text=True,
-            timeout=T_MEDIUM
+            timeout=T_MEDIUM,
         )
-        
+
         assert result.returncode != 0
         # Error should mention the module or "not found"
         error = result.stderr.lower()
@@ -343,15 +361,15 @@ class TestLevel2SadPath:
         """SAD-002: Module exists but 'app' doesn't."""
         with StabilityTestEnv() as env:
             env.create_app("no_app.py", "x = 1")  # No 'app'
-            
+
             result = subprocess.run(
                 [env.velo, "serve", "no_app:app"],
                 cwd=env.path,
                 capture_output=True,
                 text=True,
-                timeout=T_MEDIUM
+                timeout=T_MEDIUM,
             )
-            
+
             # Should fail with clear error
             assert result.returncode != 0
             error = result.stderr.lower()
@@ -360,39 +378,42 @@ class TestLevel2SadPath:
     def test_sad_003_port_already_in_use(self):
         """SAD-003: Port conflict gives clear error."""
         with StabilityTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"ok": True}
-""")
+""",
+            )
             env.install_deps("fastapi", "uvicorn")
-            
+
             port = 18105
-            
+
             # First server
             proc1 = env.start_serve("main:app", port)
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("First server did not start")
-            
+
             # Second server on same port
             proc2 = subprocess.Popen(
                 [env.velo, "serve", "main:app", "--port", str(port)],
                 cwd=env.path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
             env.procs.append(proc2)
-            
+
             # Should fail quickly
             try:
                 proc2.wait(timeout=T_MEDIUM)
             except subprocess.TimeoutExpired:
                 proc2.kill()
-            
+
             stderr = proc2.stderr.read() if proc2.stderr else ""
             # Should mention port conflict
             # (or second server may have just failed silently)
@@ -402,6 +423,7 @@ def root():
 # LEVEL 3: REGRESSION - Old features still work
 # =============================================================================
 
+
 class TestLevel3Regression:
     """REG-xxx: Existing features should not break."""
 
@@ -409,15 +431,15 @@ class TestLevel3Regression:
         """REG-001: velo run command still works after serve was added."""
         with StabilityTestEnv() as env:
             env.create_app("hello.py", "print('hello_from_velo')")
-            
+
             result = subprocess.run(
                 [env.velo, "run", "hello.py"],
                 cwd=env.path,
                 capture_output=True,
                 text=True,
-                timeout=T_MEDIUM
+                timeout=T_MEDIUM,
             )
-            
+
             # Should work
             assert "hello_from_velo" in result.stdout or "Falling back" in result.stderr
 
@@ -425,14 +447,14 @@ class TestLevel3Regression:
         """REG-002: Script exit codes are preserved."""
         with StabilityTestEnv() as env:
             env.create_app("exit42.py", "import sys; sys.exit(42)")
-            
+
             result = subprocess.run(
                 [env.velo, "run", "exit42.py"],
                 cwd=env.path,
                 capture_output=True,
-                timeout=T_MEDIUM
+                timeout=T_MEDIUM,
             )
-            
+
             # Exit code 42 or fallback mode (1)
             assert result.returncode == 42 or result.returncode == 1
 
@@ -440,10 +462,7 @@ class TestLevel3Regression:
         """REG-003: velo info command still works."""
         velo = get_velo_binary()
         result = subprocess.run(
-            [velo, "info"],
-            capture_output=True,
-            text=True,
-            timeout=T_MEDIUM
+            [velo, "info"], capture_output=True, text=True, timeout=T_MEDIUM
         )
         # Should output something
         assert len(result.stdout) > 0 or len(result.stderr) > 0

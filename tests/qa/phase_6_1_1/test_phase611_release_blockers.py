@@ -23,7 +23,7 @@ import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 
 # RFC-0011 is now implemented (at least partially)
@@ -71,7 +71,6 @@ class TestReleaseBlockers:
         # Give system time to clean up
         time.sleep(1 * get_timeout_multiplier())
 
-
         # Verify NO zombie/orphan workers remain
         for worker_pid in workers_before:
             try:
@@ -80,7 +79,9 @@ class TestReleaseBlockers:
                 if status == psutil.STATUS_ZOMBIE:
                     pytest.fail(f"Worker {worker_pid} is ZOMBIE - Release Blocker!")
                 else:
-                    pytest.fail(f"Worker {worker_pid} still running (status={status}) - orphan detected!")
+                    pytest.fail(
+                        f"Worker {worker_pid} still running (status={status}) - orphan detected!"
+                    )
             except psutil.NoSuchProcess:
                 pass  # Expected - worker is properly cleaned up
 
@@ -102,7 +103,6 @@ class TestReleaseBlockers:
 
         # Wait for orphan adoption and cleanup
         time.sleep(3 * get_timeout_multiplier())
-
 
         # Check workers are gone
         orphans = []
@@ -144,14 +144,20 @@ class TestReleaseBlockers:
         proc.wait_ready()
 
         # Make a request to a non-existent endpoint (should 404)
-        response = requests.get(f"http://127.0.0.1:{proc.port}/nonexistent-endpoint-for-test")
+        response = requests.get(
+            f"http://127.0.0.1:{proc.port}/nonexistent-endpoint-for-test"
+        )
 
         # Check response headers for request ID
         request_id = response.headers.get("x-request-id")
 
         # If no request ID header, check logs
         # For now, just verify the server handles the request consistently
-        assert response.status_code in [404, 500, 422], f"Unexpected status: {response.status_code}"
+        assert response.status_code in [
+            404,
+            500,
+            422,
+        ], f"Unexpected status: {response.status_code}"
 
         # Note: Full implementation would verify logs contain matching IDs
         # This requires access to stdout/stderr of the process
@@ -220,7 +226,6 @@ class TestReleaseBlockers:
         # Note: Worker PID verification is handled by test_L0_2_worker_is_zygote_child
         # This test focuses on concurrent request handling parity across platforms
 
-
         # Make concurrent requests
         import concurrent.futures
 
@@ -232,4 +237,6 @@ class TestReleaseBlockers:
             results = list(pool.map(lambda _: make_request(), range(20)))
 
         success_rate = sum(1 for r in results if r == 200) / len(results)
-        assert success_rate >= 0.95, f"Success rate {success_rate:.1%} too low on {sys.platform}"
+        assert (
+            success_rate >= 0.95
+        ), f"Success rate {success_rate:.1%} too low on {sys.platform}"

@@ -364,8 +364,18 @@ pub fn load_and_verify(path: &std::path::Path, limit: Option<u64>) -> Result<Ver
         }
         pos += name_len;
 
-        let m_offset = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()) as usize;
-        let m_size = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().unwrap()) as usize;
+        let m_offset = u64::from_le_bytes(data[pos..pos + 8].try_into().map_err(|_| {
+            LoaderError::BundleCorrupted {
+                expected: "8-byte offset".to_string(),
+                actual: "invalid slice".to_string(),
+            }
+        })?) as usize;
+        let m_size = u64::from_le_bytes(data[pos + 8..pos + 16].try_into().map_err(|_| {
+            LoaderError::BundleCorrupted {
+                expected: "8-byte size".to_string(),
+                actual: "invalid slice".to_string(),
+            }
+        })?) as usize;
         pos += 16 + 32 + 1; // skip hash and is_pkg
 
         if m_offset + m_size > data.len() {

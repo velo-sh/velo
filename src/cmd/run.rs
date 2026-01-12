@@ -57,9 +57,9 @@ impl RunCmd {
         Ok(())
     }
 
-    /// Check if Zygote should be enabled (explicitly or via --async)
+    /// Check if Zygote should be enabled (explicitly, via --async, or for --shm)
     pub fn zygote_enabled(&self) -> bool {
-        self.zygote || self.async_mode
+        self.zygote || self.async_mode || self.shm.is_some()
     }
 }
 
@@ -125,13 +125,31 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let _zygote_start = std::time::Instant::now();
         // Create SHM segment if requested
         let shm_file = if let Some(ref shm_path) = cmd.shm {
-            let registry = MemoryRegistry::new();
+            let registry = MemoryRegistry::new(config.clone());
             let segment_name = format!("shm-{}-{}", std::process::id(), 0); // TODO: unique name?
-            Some(registry.create_segment(&segment_name, shm_path)?)
+            match registry.create_segment(&segment_name, shm_path) {
+                Ok(seg) => Some(seg),
+                Err(e) => {
+                    let signal = crate::common::governance::GovernanceSignal::new(
+                        crate::common::governance::SignalComponent::MemoryGravity,
+                        format!("SHM Segment creation failed: {}", e),
+                        "Sub-optimal performance (Disk-loading fallback)",
+                        "Verify file permissions and SHM limits (max_shm_size).",
+                    );
+
+                    if config.strict_optimizations {
+                        bail!("{}", signal.format_critical());
+                    } else {
+                        signal.report_audit();
+                        None
+                    }
+                }
+            }
         } else {
             None
         };
-        if let Some(()) = try_zygote_run(
+
+        let zygote_result = match try_zygote_run(
             &python_path,
             &cmd.script,
             cmd.async_mode,
@@ -139,8 +157,26 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             &project_dir,
             &config,
             cmd.profile,
-            shm_file.as_ref(),
-        )? {
+            shm_file.as_ref().map(|s| &s.file),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                let signal = crate::common::governance::GovernanceSignal::new(
+                    crate::common::governance::SignalComponent::ZygoteIPC,
+                    format!("Zygote fundamental failure: {}", e),
+                    "Performance degradation (Cold Start fallback)",
+                    "Check Zygote status and socket permissions.",
+                );
+                if config.strict_optimizations {
+                    bail!("{}", signal.format_critical());
+                } else {
+                    signal.report_audit();
+                    None
+                }
+            }
+        };
+
+        if let Some(()) = zygote_result {
             if cmd.profile {
                 eprintln!(
                     "[VELO] Zygote Total: {:.1}ms, Total E2E: {:.1}ms",
@@ -150,6 +186,20 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             }
             return Ok(());
         }
+
+        // If we reach here, try_zygote_run returned None (Fallback triggered)
+        let signal = crate::common::governance::GovernanceSignal::new(
+            crate::common::governance::SignalComponent::ZygoteIPC,
+            "Zygote process failed to initialize or spawn worker",
+            "Performance degradation (Cold Start latency added)",
+            "Check Zygote logs with 'velo zygote status' and verify socket permissions.",
+        );
+
+        if config.strict_optimizations {
+            bail!("{}", signal.format_critical());
+        } else {
+            signal.report_audit();
+        }
     }
 
     // Normal mode (or fallback)
@@ -157,14 +207,27 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
     // Fast mode: inject sitecustomize to activate bundle loader
     if cmd.fast {
-        run_with_fast_loader(
+        if let Err(e) = run_with_fast_loader(
             &python_path,
             &cmd.script,
             &project_dir,
             pythonpath,
             Some(config.max_bundle_size as u64),
             &config,
-        )?;
+        ) {
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::FastLoader,
+                format!("Fast loader initialization failed: {}", e),
+                "Slow Startup (Standard imports used)",
+                "Verify bundle integrity with 'velo bundle verify'.",
+            );
+            if config.strict_optimizations {
+                bail!("{}", signal.format_critical());
+            } else {
+                signal.report_audit();
+                runner::run_script(&python_path, &cmd.script, None, &config)?;
+            }
+        }
     } else if cmd.profile {
         runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
     } else {
@@ -254,6 +317,7 @@ fn try_zygote_run(
             Some(project_dir.to_path_buf()),
             max_size,
             shm_file,
+            config,
         ) {
             Ok(worker) => {
                 if async_enabled && profile {
@@ -317,6 +381,7 @@ fn try_zygote_run(
                             Some(project_dir.to_path_buf()),
                             max_size,
                             shm_file,
+                            config,
                         ) {
                             if async_enabled {
                                 eprintln!(

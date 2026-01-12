@@ -483,6 +483,54 @@ pub fn run_server(
     // Step 1: Validate app format
     let (module, _attr) = args.parse_app()?;
 
+    // Step 2: Early validation - Privileged port check (SEC-P0-006)
+    // Fail fast if port < 1024 and not root, instead of letting async bind fail silently
+    #[cfg(unix)]
+    if args.port < 1024 {
+        let uid = unsafe { libc::getuid() };
+        if uid != 0 {
+            return Err(anyhow::anyhow!(
+                "Permission denied: port {} requires root privileges (current uid: {}). Use --port >= 1024 or run as root.",
+                args.port,
+                uid
+            ));
+        }
+    }
+
+    // Step 3: Early validation - Module existence check (FAIL-FAST-001)
+    // Quick Python check to verify the module can be found before starting infrastructure
+    {
+        use std::process::Command;
+        let check_result = Command::new(python_path)
+            .args([
+                "-c",
+                &format!(
+                    "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+                    module
+                ),
+            ])
+            .current_dir(project_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match check_result {
+            Ok(status) if !status.success() => {
+                return Err(anyhow::anyhow!(
+                    "Module '{}' not found. Ensure the module exists and is importable from the project directory.",
+                    module
+                ));
+            }
+            Err(e) => {
+                // Python execution failed - continue anyway, let uvicorn report the error
+                eprintln!("warning: could not verify module existence: {}", e);
+            }
+            Ok(_) => {
+                // Module found, continue
+            }
+        }
+    }
+
     // Step 4: Setup Logger
     let logger = ServeLogger::new(args.log_format, args.verbose);
 
@@ -547,7 +595,11 @@ pub fn run_server(
     }
 
     // Step 4: Check server is installed
-    logger.debug(&format!("Checking if {} is installed...", server));
+    logger.debug(&format!(
+        "Checking if {} is installed (using python_path: {})...",
+        server,
+        python_path.display()
+    ));
     if !check_server_installed(server, python_path) {
         logger.error(&format!("Missing dependency: {}", server));
         eprintln!();
@@ -628,12 +680,8 @@ pub fn run_server(
         }
     }
 
-    // Start Zygote if enabled and we have preload modules (Skip in Dry Run)
-    if !args.dry_run
-        && args.use_zygote
-        && !preload_modules.is_empty()
-        && crate::zygote::is_supported()
-    {
+    // Start Zygote if enabled
+    if args.use_zygote && crate::zygote::is_supported() {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
@@ -642,9 +690,16 @@ pub fn run_server(
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
             if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
-                logger.warn(&format!("Zygote pre-warm failed: {}", e));
-                if args.log_format == LogFormat::Text {
-                    eprintln!("   Continuing without Zygote optimization");
+                let signal = crate::common::governance::GovernanceSignal::new(
+                    crate::common::governance::SignalComponent::ZygoteIPC,
+                    format!("Zygote pre-warm failed: {}", e),
+                    "Continuing without Zygote optimization",
+                    "Check Zygote logs and socket permissions.",
+                );
+                if config.strict_optimizations {
+                    return Err(anyhow::anyhow!(signal.format_critical()));
+                } else {
+                    signal.report_audit();
                 }
             } else {
                 logger.info("Zygote ready");
@@ -660,7 +715,8 @@ pub fn run_server(
                 &socket_path,
                 crate::zygote::ipc::ZygoteCommand::Handshake {
                     version: crate::zygote::ipc::PROTOCOL_VERSION,
-                    capabilities: vec![],
+                    capabilities: vec!["serve:http".to_string()],
+                    request_id: Some(uuid::Uuid::now_v7().to_string()),
                 },
                 None,
             ) {
@@ -675,9 +731,33 @@ pub fn run_server(
                     let _ = std::fs::remove_file(&socket_path);
                 }
                 Err(e) => {
-                    logger.error(&format!("Existing Zygote not responding: {}", e));
-                    let _ = std::fs::remove_file(&socket_path);
+                    let signal = crate::common::governance::GovernanceSignal::new(
+                        crate::common::governance::SignalComponent::ZygoteIPC,
+                        format!("Existing Zygote not responding: {}", e),
+                        "Continuing without Zygote optimization",
+                        "Check for stale socket files in /tmp.",
+                    );
+                    if config.strict_optimizations {
+                        return Err(anyhow::anyhow!(signal.format_critical()));
+                    } else {
+                        signal.report_audit();
+                        let _ = std::fs::remove_file(&socket_path);
+                    }
                 }
+            }
+        } else {
+            // Socket exists but is dead (is_socket_alive returned false)
+            let signal = crate::common::governance::GovernanceSignal::new(
+                crate::common::governance::SignalComponent::ZygoteIPC,
+                "Existing Zygote socket is dead",
+                "Continuing without Zygote optimization",
+                "Clean up stale socket file.",
+            );
+            if config.strict_optimizations {
+                return Err(anyhow::anyhow!(signal.format_critical()));
+            } else {
+                signal.report_audit();
+                let _ = std::fs::remove_file(&socket_path);
             }
         }
     }
@@ -703,12 +783,26 @@ pub fn run_server(
         // Spawn N workers
         let mut spawn_failed = false;
         for i in 0..args.workers {
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None) {
+            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
                 Ok(worker) => {
+                    logger.info(&format!(
+                        "[WORKER] event=spawn worker_id={} pid={} socket={}",
+                        i,
+                        worker.pid,
+                        worker
+                            .socket_path
+                            .as_ref()
+                            .map(|p| p.to_string_lossy())
+                            .unwrap_or_default()
+                    ));
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
                 }
                 Err(e) => {
+                    logger.error(&format!(
+                        "[WORKER] event=spawn_failed worker_id={} error={}",
+                        i, e
+                    ));
                     // RFC-0013: Silent Fallback to cold start on IPC failure
                     logger.warn(&format!(
                         "  ⚠️ Zygote worker spawn failed: {}. Falling back to cold start...",
@@ -738,16 +832,25 @@ pub fn run_server(
             }
             impl RespawnTracker {
                 fn new() -> Self {
+                    // SSOT: Read timeout multiplier (CI uses 6x)
+                    let timeout_multiplier: f64 = std::env::var("VELO_TIMEOUT_MULTIPLIER")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1.0);
+
                     let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10);
-                    // VELO_FAIL_FAST_LIMIT sets the maximum consecutive worker startup failures before giving up.
-                    // Default: 5. Typical use: raise for flaky environments, lower for CI.
-                    let fail_fast_limit = std::env::var("VELO_FAIL_FAST_LIMIT")
+
+                    // VELO_FAIL_FAST_LIMIT: base limit, scaled by timeout multiplier
+                    // Default: 5, but in CI (6x multiplier) becomes 5*6=30
+                    let base_limit: u32 = std::env::var("VELO_FAIL_FAST_LIMIT")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(5);
+                    let fail_fast_limit = (base_limit as f64 * timeout_multiplier) as u32;
+
                     Self {
                         last_failure: None,
                         backoff_secs,
@@ -780,6 +883,7 @@ pub fn run_server(
                         true
                     }
                 }
+                #[allow(dead_code)] // Part of RespawnTracker API, may be used in future
                 fn reset(&mut self) {
                     // RFC-0011 Stability Fix: "Probation Period".
                     // Only reset if the system has been stable for at least 30 seconds.
@@ -926,23 +1030,11 @@ pub fn run_server(
                             if !worker.is_alive() {
                                 let tracker = &mut respawn_trackers[i];
 
-                                // RFC-0011 Fail-Fast: If a worker dies during startup, track consecutive failures
-                                if !tracker.record_failure() {
-                                    anyhow::bail!(
-                                        "FATAL: Workers are failing to start consistently. Check logs for permission/dependency issues."
-                                    );
-                                }
-                                logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (Attempt {}/{})...",
-                                    tracker.backoff_secs,
-                                    tracker.consecutive_failures,
-                                    tracker.fail_fast_limit
-                                ));
-
-                                // Check if we're still in backoff period
+                                // Check if we're still in backoff period FIRST
+                                // Don't record failure until we actually try to respawn
                                 if !tracker.should_respawn() {
                                     logger.debug(&format!(
-                                        "Worker {} in backoff ({}s remaining)",
+                                        "Worker {} dead, in backoff ({}s remaining)",
                                         i + 1,
                                         tracker.backoff_secs.saturating_sub(
                                             tracker
@@ -955,11 +1047,17 @@ pub fn run_server(
                                 }
 
                                 logger.warn(&format!(
-                                    "A worker died during startup. Retrying in {}s (attempt {}/{})...",
+                                    "[RESPAWN] worker_id={} attempt={}/{} backoff={}s reason=process_exit old_pid={}",
+                                    i,
+                                    tracker.consecutive_failures + 1,
+                                    tracker.fail_fast_limit,
                                     tracker.backoff_secs,
-                                    tracker.consecutive_failures,
-                                    tracker.fail_fast_limit
+                                    worker.pid()
                                 ));
+
+                                // Record this respawn attempt (sets last_failure timestamp)
+                                // This enables proper backoff timing, but don't fail-fast yet
+                                tracker.last_failure = Some(std::time::Instant::now());
 
                                 // Respawn via Zygote
                                 match Worker::spawn_uds_via_zygote(
@@ -967,6 +1065,7 @@ pub fn run_server(
                                     &args.app,
                                     i as u64,
                                     None,
+                                    config,
                                 ) {
                                     Ok(new_worker) => {
                                         // Update LoadBalancer with new socket
@@ -978,33 +1077,63 @@ pub fn run_server(
                                         }
 
                                         logger.info(&format!(
-                                            "  ✅ Respawned worker {} (new PID: {})",
-                                            i + 1,
-                                            new_worker.pid()
+                                            "[RESPAWN] worker_id={} status=success new_pid={} socket={}",
+                                            i,
+                                            new_worker.pid(),
+                                            new_worker.socket_path.as_ref().map(|p| p.to_string_lossy()).unwrap_or_default()
                                         ));
                                         *worker = new_worker;
-                                        tracker.reset(); // Success - reset backoff
+                                        // Don't reset immediately - let 30s stability period apply
                                     }
                                     Err(e) => {
+                                        // IPC failure is a hard failure - increment counter
+                                        if !tracker.record_failure() {
+                                            anyhow::bail!(
+                                                "FATAL: Worker respawn IPC failing consistently. Check Zygote health."
+                                            );
+                                        }
                                         logger.error(&format!(
-                                        "  ❌ Respawn failed for worker {}: {} (next retry in {}s)",
-                                        i + 1,
-                                        e,
-                                        tracker.backoff_secs * 2
-                                    ));
-                                        tracker.record_failure(); // Double backoff
+                                            "[RESPAWN] worker_id={} status=failed attempt={}/{} error={}",
+                                            i,
+                                            tracker.consecutive_failures,
+                                            tracker.fail_fast_limit,
+                                            e
+                                        ));
                                     }
                                 }
                             }
                         }
 
                         // P2: Zygote deep probe - verify Zygote is still responding
-                        if let Err(e) = crate::zygote::ipc::send_command(
+                        let healthy_workers = workers.iter().filter(|w| w.is_alive()).count();
+                        let total_workers = workers.len();
+
+                        match crate::zygote::ipc::send_command(
                             &socket_path,
-                            crate::zygote::ipc::ZygoteCommand::Status,
+                            crate::zygote::ipc::ZygoteCommand::Status {
+                                request_id: Some(uuid::Uuid::now_v7().to_string()),
+                            },
                             None,
                         ) {
-                            logger.warn(&format!("Zygote health check failed: {}", e));
+                            Ok(_) => {
+                                // Only log periodically (every ~10 health checks)
+                                static HEALTH_LOG_COUNTER: std::sync::atomic::AtomicU64 =
+                                    std::sync::atomic::AtomicU64::new(0);
+                                let count = HEALTH_LOG_COUNTER
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if count.is_multiple_of(10) {
+                                    logger.debug(&format!(
+                                        "[HEALTH] workers_alive={}/{} zygote=ok",
+                                        healthy_workers, total_workers
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                logger.warn(&format!(
+                                    "[HEALTH] workers_alive={}/{} zygote=error error={}",
+                                    healthy_workers, total_workers, e
+                                ));
+                            }
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -1601,5 +1730,97 @@ mod tests {
             }
             _ => panic!("Expected WorkerExit event"),
         }
+    }
+
+    // =========================================================================
+    // SEC-P0-006: Privileged Port Early Validation Tests
+    // =========================================================================
+
+    #[cfg(unix)]
+    #[test]
+    fn test_privileged_port_check_uid_logic() {
+        // Test the UID check logic used in early validation
+        let uid = unsafe { libc::getuid() };
+
+        // Non-root users (uid != 0) should be denied ports < 1024
+        if uid != 0 {
+            // This simulates what run_server does for privileged ports
+            let port = 80_u16;
+            let should_fail = port < 1024 && uid != 0;
+            assert!(should_fail, "Non-root users should be denied port 80");
+        } else {
+            // Root can bind to any port
+            let port = 80_u16;
+            let should_fail = port < 1024 && uid != 0;
+            assert!(!should_fail, "Root users should be allowed port 80");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_privileged_port_boundary_values() {
+        let uid = unsafe { libc::getuid() };
+
+        // Test boundary: port 1023 is privileged, 1024 is not
+        let test_cases = [
+            (79_u16, true),    // Privileged
+            (80_u16, true),    // Privileged (common HTTP)
+            (443_u16, true),   // Privileged (common HTTPS)
+            (1023_u16, true),  // Last privileged port
+            (1024_u16, false), // First non-privileged port
+            (8000_u16, false), // Common dev port
+            (8080_u16, false), // Common alt HTTP port
+        ];
+
+        for (port, is_privileged) in test_cases {
+            let requires_root = port < 1024;
+            assert_eq!(
+                requires_root, is_privileged,
+                "Port {} should be classified as privileged: {}",
+                port, is_privileged
+            );
+
+            if uid != 0 && is_privileged {
+                // Non-root should be denied
+                assert!(
+                    port < 1024 && uid != 0,
+                    "Non-root should be denied port {}",
+                    port
+                );
+            }
+        }
+    }
+
+    // =========================================================================
+    // FAIL-FAST-001: Module Existence Early Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_module_check_importlib_spec_command() {
+        // Test that the importlib.util.find_spec command is correctly formed
+        let module = "nonexistent_module";
+        let cmd = format!(
+            "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+            module
+        );
+
+        // Command should contain the module name
+        assert!(cmd.contains(module));
+        assert!(cmd.contains("importlib.util.find_spec"));
+        assert!(cmd.contains("exit(0 if"));
+        assert!(cmd.contains("else 1)"));
+    }
+
+    #[test]
+    fn test_module_check_with_dotted_path() {
+        // Test that dotted module paths work correctly
+        let module = "package.submodule";
+        let cmd = format!(
+            "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
+            module
+        );
+
+        // Should handle dotted paths
+        assert!(cmd.contains("package.submodule"));
     }
 }

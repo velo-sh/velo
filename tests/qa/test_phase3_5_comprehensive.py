@@ -30,11 +30,12 @@ from typing import Optional
 import pytest
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
 
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -101,18 +102,23 @@ class ComprehensiveTestEnv:
         return self._port_counter
 
     def setup(self, with_project=True):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(
+            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
+        )
         if with_project:
-            (self.path / "pyproject.toml").write_text("""[project]
+            (self.path / "pyproject.toml").write_text(
+                """[project]
 name = "test-app"
 version = "0.1.0"
-dependencies = ["fastapi", "uvicorn"]""")
+dependencies = ["fastapi", "uvicorn"]"""
+            )
         return self
 
     def install(self, *packages):
         subprocess.run(
             ["uv", "pip", "install", "-q"] + list(packages),
-            cwd=self.path, capture_output=True
+            cwd=self.path,
+            capture_output=True,
         )
 
     def create_app(self, name: str, code: str):
@@ -124,16 +130,29 @@ dependencies = ["fastapi", "uvicorn"]""")
         env = os.environ.copy()
         if "VIRTUAL_ENV" in env:
             del env["VIRTUAL_ENV"]
-            
+
         # FIX: Add --offline --no-sync to prevent CI hangs (uv 0.9+)
-        cmd = ["uv", "run", "--offline", "--no-sync", self.velo, "serve", app, "--port", str(port)]
+        cmd = [
+            "uv",
+            "run",
+            "--offline",
+            "--no-sync",
+            self.velo,
+            "serve",
+            app,
+            "--port",
+            str(port),
+        ]
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
-        
+
         proc = subprocess.Popen(
-            cmd, cwd=self.path,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            env=env
+            cmd,
+            cwd=self.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
         )
         self.procs.append(proc)
         return proc
@@ -154,7 +173,7 @@ dependencies = ["fastapi", "uvicorn"]""")
             pass
 
     def __enter__(self):
-        # By default, setup with project metadata. 
+        # By default, setup with project metadata.
         # Individual tests like l0_003 can override if they call setup(False) manually.
         return self.setup()
 
@@ -170,6 +189,7 @@ L0_PASSED = False
 # LEVEL 0: SMOKE TESTS
 # =============================================================================
 
+
 @pytest.mark.order(1)
 class TestL0Smoke:
     """L0: Most basic tests. If these fail, everything else is blocked."""
@@ -183,7 +203,9 @@ class TestL0Smoke:
     def test_l0_002_serve_in_help(self):
         """'serve' appears in --help."""
         velo = get_velo_binary()
-        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
+        result = subprocess.run(
+            [velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM
+        )
         assert "serve" in result.stdout.lower()
 
     def test_l0_003_uvicorn_dependency_message(self):
@@ -205,21 +227,24 @@ class TestL0Smoke:
     def test_l0_004_server_binds_port(self):
         """CRITICAL: Server actually binds to the port."""
         global L0_PASSED
-        
+
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"ok": True}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if wait_for_port(port, timeout=T_MEDIUM):
                 L0_PASSED = True
                 assert True
@@ -227,14 +252,19 @@ def root():
                 stderr = proc.stderr.read() if proc.stderr else ""
                 # If velo reports uvicorn missing, this is expected behavior
                 # velo checks the project's venv, not our test's installed packages
-                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
-                    pytest.skip("velo serve checks project venv for uvicorn - test env issue")
+                if "uvicorn" in stderr.lower() and (
+                    "missing" in stderr.lower() or "dependency" in stderr.lower()
+                ):
+                    pytest.skip(
+                        "velo serve checks project venv for uvicorn - test env issue"
+                    )
                 pytest.fail(f"CRITICAL: Server did not bind to port!\n{stderr}")
 
 
 # =============================================================================
 # LEVEL 1: HAPPY PATH
 # =============================================================================
+
 
 @pytest.mark.order(2)
 class TestL1HappyPath:
@@ -244,25 +274,28 @@ class TestL1HappyPath:
     def test_l1_001_get_request(self):
         """GET request returns 200."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"message": "hello"}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port):
                 pytest.skip("Server did not start (L0 issue)")
-            
+
             # Settle time for workers to connect to proxy
             time.sleep(1)
-            
+
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["message"] == "hello"
@@ -271,28 +304,29 @@ def root():
     def test_l1_002_post_request(self):
         """POST request works."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.post("/echo")
 def echo(data: dict):
     return {"received": data}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
-            
+
             time.sleep(1)
-            
+
             response = requests.post(
-                f"http://127.0.0.1:{port}/echo",
-                json={"test": "value"},
-                timeout=T_SHORT
+                f"http://127.0.0.1:{port}/echo", json={"test": "value"}, timeout=T_SHORT
             )
             assert response.status_code == 200
 
@@ -300,7 +334,9 @@ def echo(data: dict):
     def test_l1_003_multiple_requests(self):
         """Server handles 100 sequential requests."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 counter = 0
@@ -310,26 +346,31 @@ def count():
     global counter
     counter += 1
     return {"count": counter}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
-            
+
             time.sleep(1)
-            
+
             for i in range(100):
-                response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
+                response = requests.get(
+                    f"http://127.0.0.1:{port}/count", timeout=T_SHORT
+                )
                 assert response.status_code == 200
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_l1_004_graceful_shutdown(self):
         """SIGTERM causes graceful shutdown."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import atexit
 
@@ -343,22 +384,23 @@ def root():
 def on_exit():
     with open("shutdown.txt", "w") as f:
         f.write("graceful")
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
-            
+
             # Make a request to ensure it's working
             requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
-            
+
             # Send SIGTERM
             proc.terminate()
             exit_code = proc.wait(timeout=T_MEDIUM)
-            
+
             # Check graceful shutdown
             shutdown_file = env.path / "shutdown.txt"
             if shutdown_file.exists():
@@ -369,6 +411,7 @@ def on_exit():
 # LEVEL 2: SAD PATH
 # =============================================================================
 
+
 @pytest.mark.order(3)
 class TestL2SadPath:
     """L2: Error handling."""
@@ -378,21 +421,28 @@ class TestL2SadPath:
         velo = get_velo_binary()
         result = subprocess.run(
             [velo, "serve", "nonexistent_xyz:app"],
-            capture_output=True, text=True, timeout=T_SHORT
+            capture_output=True,
+            text=True,
+            timeout=T_SHORT,
         )
         assert result.returncode != 0
         # Accept various error indicators (may be uvicorn missing or module not found)
         stderr_lower = result.stderr.lower()
-        assert any(x in stderr_lower for x in ["error", "not found", "missing", "dependency"])
+        assert any(
+            x in stderr_lower for x in ["error", "not found", "missing", "dependency"]
+        )
 
     def test_l2_002_app_not_found(self):
         """Clear error when app attribute doesn't exist."""
         with ComprehensiveTestEnv() as env:
             env.create_app("noapp.py", "x = 1")  # No 'app'
-            
+
             result = subprocess.run(
                 [env.velo, "serve", "noapp:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
+                cwd=env.path,
+                capture_output=True,
+                text=True,
+                timeout=T_SHORT,
             )
             assert result.returncode != 0
 
@@ -401,44 +451,58 @@ class TestL2SadPath:
         with ComprehensiveTestEnv() as env:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
             env.install("uvicorn")  # Install uvicorn so we test syntax check
-            
+
             result = subprocess.run(
                 [env.velo, "serve", "broken:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
+                cwd=env.path,
+                capture_output=True,
+                text=True,
+                timeout=T_SHORT,
             )
             assert result.returncode != 0
             # Should mention syntax, error, or uvicorn missing
-            assert "syntax" in result.stderr.lower() or "error" in result.stderr.lower() or "uvicorn" in result.stderr.lower()
+            assert (
+                "syntax" in result.stderr.lower()
+                or "error" in result.stderr.lower()
+                or "uvicorn" in result.stderr.lower()
+            )
 
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
             env.install("uvicorn")  # Install uvicorn so we test crash handling
-            
+
             result = subprocess.run(
                 [env.velo, "serve", "crasher:app"],
-                cwd=env.path, capture_output=True, text=True, timeout=T_SHORT
+                cwd=env.path,
+                capture_output=True,
+                text=True,
+                timeout=T_SHORT,
             )
             assert result.returncode != 0
             # Should show the actual error or dependency message
-            assert "CRASH" in result.stderr or "RuntimeError" in result.stderr or "error" in result.stderr.lower() or "uvicorn" in result.stderr.lower()
+            assert (
+                "CRASH" in result.stderr
+                or "RuntimeError" in result.stderr
+                or "error" in result.stderr.lower()
+                or "uvicorn" in result.stderr.lower()
+            )
 
     def test_l2_005_invalid_app_format(self):
         """Clear error for invalid app format."""
         velo = get_velo_binary()
-        
+
         invalid_formats = [
             "nocolon",
             ":app",
             "main:",
             "path:to:much:app",
         ]
-        
+
         for fmt in invalid_formats:
             result = subprocess.run(
-                [velo, "serve", fmt],
-                capture_output=True, text=True, timeout=T_SHORT
+                [velo, "serve", fmt], capture_output=True, text=True, timeout=T_SHORT
             )
             assert result.returncode != 0, f"{fmt} should fail"
 
@@ -446,6 +510,7 @@ class TestL2SadPath:
 # =============================================================================
 # LEVEL 3: CONFIG OPTIONS
 # =============================================================================
+
 
 @pytest.mark.order(4)
 class TestL3Config:
@@ -455,27 +520,30 @@ class TestL3Config:
     def test_l3_001_port_option_works(self):
         """--port actually changes binding port."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"port": "custom"}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             # Use specific port
             port = 19500
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
-            
+
             # Verify it's on the right port
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
-            
+
             # Verify it's NOT on default port
             # Verify it's NOT on some other port we don't expect
             assert not is_port_open(19501)
@@ -484,7 +552,9 @@ def root():
     def test_l3_002_workers_spawn_multiple(self):
         """--workers=N spawns N worker processes."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 import os
 from fastapi import FastAPI
 app = FastAPI()
@@ -492,25 +562,28 @@ app = FastAPI()
 @app.get("/pid")
 def get_pid():
     return {"pid": os.getpid()}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port, workers=4)
-            
+
             if not wait_for_port(port, timeout=30):
                 pytest.skip("Server did not start")
-            
+
             # Make requests and collect PIDs
             pids = set()
             for _ in range(50):
                 try:
-                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
+                    response = requests.get(
+                        f"http://127.0.0.1:{port}/pid", timeout=T_SHORT
+                    )
                     if response.status_code == 200:
                         pids.add(response.json()["pid"])
                 except:
                     pass
-            
+
             # With 4 workers, should see multiple PIDs
             if len(pids) == 1:
                 print(f"Warning: Only 1 PID seen - load balancing may not work")
@@ -520,6 +593,7 @@ def get_pid():
 # LEVEL 4: LIFECYCLE
 # =============================================================================
 
+
 @pytest.mark.order(5)
 class TestL4Lifecycle:
     """L4: Process lifecycle management."""
@@ -527,24 +601,27 @@ class TestL4Lifecycle:
     def test_l4_001_sigint_stops_server(self):
         """SIGINT (Ctrl+C) stops server."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"ok": True}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
-            
+
             proc.send_signal(signal.SIGINT)
-            
+
             try:
                 exit_code = proc.wait(timeout=T_MEDIUM)
                 # SIGINT should cause clean exit
@@ -555,32 +632,35 @@ def root():
     def test_l4_002_no_zombie_processes(self):
         """No zombie processes after shutdown."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"ok": True}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
             main_pid = proc.pid
-            
+
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
-            
+
             # Get child PIDs before shutdown
             child_pids = get_child_pids(main_pid)
-            
+
             # Shutdown
             proc.terminate()
             proc.wait(timeout=T_MEDIUM)
-            
+
             time.sleep(1)
-            
+
             # Check no zombies
             for pid in child_pids:
                 try:
@@ -595,6 +675,7 @@ def root():
 # LEVEL 5: INTEGRATION
 # =============================================================================
 
+
 @pytest.mark.order(6)
 class TestL5Integration:
     """L5: Integration with Zygote and frameworks."""
@@ -603,25 +684,28 @@ class TestL5Integration:
     def test_l5_001_framework_detected(self):
         """FastAPI is detected as framework."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"framework": "fastapi"}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port = env.next_port()
             proc = env.serve("main:app", port)
-            
+
             time.sleep(3)
             # Terminate first to avoid blocking read()
             proc.terminate()
             proc.wait(timeout=T_SHORT)
             stderr = proc.stderr.read() if proc.stderr else ""
-            
+
             # Banner should show framework
             # Currently shows "Unknown" - this is a bug
             if "FastAPI" in stderr or "fastapi" in stderr.lower():
@@ -632,40 +716,43 @@ def root():
     def test_l5_002_warm_start_benefit(self):
         """Second start should be faster (Zygote benefit)."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("main.py", """
+            env.create_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/")
 def root():
     return {"ok": True}
-""")
+""",
+            )
             env.install("fastapi", "uvicorn")
-            
+
             port1 = env.next_port()
             port2 = env.next_port()
-            
+
             # Cold start
             start1 = time.perf_counter()
             proc1 = env.serve("main:app", port1)
             cold_started = wait_for_port(port1, timeout=T_MEDIUM)
             cold_time = time.perf_counter() - start1
-            
+
             if not cold_started:
                 pytest.skip("Server did not start")
-            
+
             proc1.terminate()
             proc1.wait(timeout=T_SHORT)
             time.sleep(1)
-            
+
             # Warm start
             start2 = time.perf_counter()
             proc2 = env.serve("main:app", port2)
             warm_started = wait_for_port(port2, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
-            
+
             print(f"Cold: {cold_time:.2f}s, Warm: {warm_time:.2f}s")
-            
+
             if warm_started:
                 # Warm should be faster if Zygote is working
                 if warm_time > cold_time:

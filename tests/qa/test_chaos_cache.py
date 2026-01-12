@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Velo QA: Cache Chaos Tests (CHAOS-xxx)
 ======================================
@@ -36,14 +37,14 @@ class TestCacheChaosCORRUPTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # First run to create valid cache
             result1 = run_velo(["run", "test.py"], cwd=env.path)
             assert result1.success, f"First run failed: {result1.stderr}"
-            
+
             # Corrupt the cache with random bytes
             env.corrupt_cache("random")
-            
+
             # Second run should recover gracefully
             result2 = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result2)
@@ -59,13 +60,13 @@ class TestCacheChaosCORRUPTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             result1 = run_velo(["run", "test.py"], cwd=env.path)
             assert result1.success
-            
+
             # Truncate the cache
             env.corrupt_cache("truncated")
-            
+
             result2 = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result2)
             assert result2.success
@@ -79,10 +80,10 @@ class TestCacheChaosCORRUPTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create empty cache file
             env.corrupt_cache("empty")
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result)
             assert result.success
@@ -96,14 +97,14 @@ class TestCacheChaosCORRUPTION:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create a file where cache directory should be
             cache_path = env.cache_path
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             # Write a file (not directory) at .velo_cache path
-            with open(cache_path, 'w') as f:
+            with open(cache_path, "w") as f:
                 f.write("I am a file, not a directory")
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result)
             # May fail but should not crash
@@ -121,10 +122,10 @@ class TestCacheChaosRESOURCES:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create and make cache dir read-only
             env.make_cache_readonly()
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path)
             assert_no_crash(result)
             # Should succeed even without caching
@@ -139,10 +140,10 @@ class TestCacheChaosRESOURCES:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             # Create 10MB cache file
             env.corrupt_cache("huge")
-            
+
             result = run_velo(["run", "test.py"], cwd=env.path, timeout=10)
             assert_no_crash(result)
             # Should either succeed or fail gracefully
@@ -160,29 +161,29 @@ class TestCacheChaosRACE:
             env.create_venv()
             env.create_uv_lock()
             env.create_script()
-            
+
             results = []
             errors = []
-            
+
             def run_velo_thread():
                 try:
                     result = run_velo(["run", "test.py"], cwd=env.path, timeout=30)
                     results.append(result)
                 except Exception as e:
                     errors.append(e)
-            
+
             # Launch 5 parallel velo processes
             threads = [threading.Thread(target=run_velo_thread) for _ in range(5)]
             for t in threads:
                 t.start()
             for t in threads:
                 t.join()
-            
+
             # All should complete without crashing
             assert not errors, f"Thread errors: {errors}"
             for result in results:
                 assert_no_crash(result)
-            
+
             # At least one should succeed
             successes = sum(1 for r in results if r.success)
             assert successes >= 1, "At least one parallel run should succeed"
@@ -195,5 +196,6 @@ class TestCacheChaosRACE:
 def check_velo_binary():
     """Ensure velo binary exists before running tests."""
     from test_harness import VELO_BINARY
+
     if not VELO_BINARY.exists():
         pytest.skip(f"Velo binary not found. Run 'cargo build --release' first.")

@@ -6,15 +6,15 @@ import time
 from pathlib import Path
 
 # Import CI-aware timeout constants
-from conftest import T_SHORT, T_MEDIUM
+from conftest_utils import T_SHORT, T_MEDIUM
 
 
 # QA Agent A: DX/UX & Error Fidelity
 # Requirements: RFC-0010 §3.3, §4.7.3, §4.12 (DX-01 to DX-02, CN-P0-003)
 
+
 @pytest.mark.tier1
 class TestPhase61DXHardened:
-
     def test_dx_01_source_pointing_errors(self, isolated_env):
         """
         DX-01: Source-Pointing Errors
@@ -22,10 +22,12 @@ class TestPhase61DXHardened:
         """
         env = isolated_env
         # Create a file with a syntax error or a missing app detection case
-        env.create_app("main.py", "from fastapi import FastAPI\n# app = FastAPI() (Commented out)")
-        
+        env.create_app(
+            "main.py", "from fastapi import FastAPI\n# app = FastAPI() (Commented out)"
+        )
+
         result = env.run_velo("serve", "main", timeout=T_SHORT)
-        
+
         # Benchmark: Rust-style source-pointing
         assert "error: invalid app format" in result.stderr.lower()
         assert "--> main" in result.stderr
@@ -39,10 +41,10 @@ class TestPhase61DXHardened:
         """
         env = isolated_env
         env.create_app("main.py", "app = None")
-        
+
         # typo: --relod instead of --reload
         result = env.run_velo("serve", "main:app", "--relod", timeout=T_SHORT)
-        
+
         assert "error: unexpected argument" in result.stderr.lower()
         assert "tip: a similar argument exists: '--reload'" in result.stderr.lower()
 
@@ -53,13 +55,16 @@ class TestPhase61DXHardened:
         """
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
-        
+
         # Start serve with json logs
         proc = subprocess.Popen(
             [env.velo, "serve", "main:app", "--log-format", "json"],
-            cwd=env.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cwd=env.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
-        
+
         try:
             time.sleep(1)  # Wait for startup
             proc.terminate()  # Graceful shutdown
@@ -70,7 +75,7 @@ class TestPhase61DXHardened:
         finally:
             if proc.poll() is None:
                 proc.kill()
-        
+
         # Verify JSON validity - allow empty if server didn't start
         lines = [line for line in stderr.splitlines() if line.strip().startswith("{")]
         if len(lines) >= 1:
@@ -79,6 +84,7 @@ class TestPhase61DXHardened:
             # Relax assertions for CI environment
         else:
             pytest.skip("Server did not produce JSON logs in time (CI environment)")
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

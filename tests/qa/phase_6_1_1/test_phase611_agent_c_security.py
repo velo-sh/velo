@@ -23,7 +23,7 @@ import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
 
 
 # Mark all tests in this module as security tests
@@ -70,11 +70,22 @@ class TestL4Security:
                     # Check for potential leaks (non-standard FDs)
                     if "zygote" in line.lower():
                         # UDS to Zygote is OK. Also ignore pipes, anon_inode, and expected files like logs/launchers
-                        is_expected = any(x in line.lower() for x in ["unix", "pipe", "anon_inode", "zygote.log", "worker_launcher.py"])
+                        is_expected = any(
+                            x in line.lower()
+                            for x in [
+                                "unix",
+                                "pipe",
+                                "anon_inode",
+                                "zygote.log",
+                                "worker_launcher.py",
+                            ]
+                        )
                         if not is_expected:
                             unexpected.append(line)
 
-                assert len(unexpected) == 0, f"Unexpected FDs in worker {worker_pid}: {unexpected}"
+                assert (
+                    len(unexpected) == 0
+                ), f"Unexpected FDs in worker {worker_pid}: {unexpected}"
 
             except FileNotFoundError:
                 pytest.skip("lsof not available")
@@ -104,11 +115,19 @@ class TestL4Security:
 
         # SIGINT and SIGTERM should be reset
         # Acceptable values: SIG_DFL, SIG_IGN, or explicit worker handler
-        valid_sigint = any(x in signals.get("SIGINT", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
-        valid_sigterm = any(x in signals.get("SIGTERM", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
+        valid_sigint = any(
+            x in signals.get("SIGINT", "")
+            for x in ["SIG_DFL", "SIG_IGN", "handler", "function"]
+        )
+        valid_sigterm = any(
+            x in signals.get("SIGTERM", "")
+            for x in ["SIG_DFL", "SIG_IGN", "handler", "function"]
+        )
 
         # At minimum, should not contain uvloop or asyncio pollution markers
-        assert "uvloop" not in str(signals).lower(), f"uvloop pollution detected: {signals}"
+        assert (
+            "uvloop" not in str(signals).lower()
+        ), f"uvloop pollution detected: {signals}"
 
     def test_SEC_603_http_request_smuggling(self, velo_serve_fixture):
         """SEC-603: HTTP Request Smuggling prevention (CL.TE).
@@ -147,7 +166,9 @@ class TestL4Security:
             # 2. Accept and handle safely (200)
             # 3. Safe connection closure (b"")
             # Should NOT allow request smuggling
-            assert b"400" in response or b"200" in response or response == b"", f"Unexpected response: {response[:100]}"
+            assert (
+                b"400" in response or b"200" in response or response == b""
+            ), f"Unexpected response: {response[:100]}"
 
         finally:
             s.close()
@@ -185,13 +206,22 @@ class TestL4Security:
         header_keys = [k.lower() for k in received_headers.keys()]
 
         # These hop-by-hop headers should NOT reach the backend
-        hop_by_hop = ["connection", "keep-alive", "te", "transfer-encoding", "proxy-connection"]
+        hop_by_hop = [
+            "connection",
+            "keep-alive",
+            "te",
+            "transfer-encoding",
+            "proxy-connection",
+        ]
 
         leaked = [h for h in hop_by_hop if h in header_keys]
         # Note: Some headers might be re-added by the backend. Check for suspicious values.
         # For now, we verify at least "connection" is stripped
-        assert "connection" not in header_keys or received_headers.get("connection", "").lower() != "keep-alive, transfer-encoding", \
-            f"Hop-by-hop headers leaked: {leaked}"
+        assert (
+            "connection" not in header_keys
+            or received_headers.get("connection", "").lower()
+            != "keep-alive, transfer-encoding"
+        ), f"Hop-by-hop headers leaked: {leaked}"
 
     def test_SEC_605_uds_permission(self, velo_serve_fixture):
         """SEC-605: UDS socket permission verification.
@@ -218,7 +248,7 @@ class TestL4Security:
 
         # Use /tmp to ensure short path and predictable location
         tmp_dir = Path("/tmp")
-        
+
         # Clean up any stale sockets first
         uid = os.getuid()
         for p in tmp_dir.glob(f"velo-{uid}"):
@@ -230,16 +260,19 @@ class TestL4Security:
         # Prepare environment
         env = os.environ.copy()
         env.pop("VELO_ZYGOTE_SOCKET", None)
-        env.pop("XDG_RUNTIME_DIR", None) # Ensure fallback to TMPDIR
+        env.pop("XDG_RUNTIME_DIR", None)  # Ensure fallback to TMPDIR
         env["TMPDIR"] = str(tmp_dir)
 
         # Create a dummy app manually since isolated_env is just a path here
         app_code = "from fastapi import FastAPI\napp = FastAPI()"
         (isolated_env.root / "main.py").write_text(app_code)
-        (isolated_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
+        (isolated_env.root / "pyproject.toml").write_text(
+            '[project]\ndependencies = ["fastapi"]'
+        )
 
         # Find free port
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
             port = s.getsockname()[1]
@@ -251,7 +284,7 @@ class TestL4Security:
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
 
         try:
@@ -260,11 +293,11 @@ class TestL4Security:
             start = time.time()
             ready = False
             socket_dir = None
-            
+
             while time.time() - start < 10:
                 if proc.poll() is not None:
                     break
-                
+
                 # Check for socket directory existence
                 # RFC-0012: Standardized naming "velo-{uid}" without project hash
                 matches = list(tmp_dir.glob(f"velo-{uid}"))
@@ -292,7 +325,7 @@ class TestL4Security:
                 # Verify directory permissions
                 dir_stat = socket_dir.stat()
                 dir_mode = dir_stat.st_mode & 0o777
-                
+
                 # Soften for CI/macOS: 0700 is required behavior of ensure_socket_dir
                 if dir_mode != 0o700:
                     pytest.fail(f"Socket dir {oct(dir_mode)} != 0o700")
@@ -306,7 +339,7 @@ class TestL4Security:
                     # Usually we want 755 or 700. If 755, world can connect? No, write required.
                     # Just ensure existence for now as proof of life.
                     pass
-                
+
                 if not found_sock:
                     pytest.fail("Socket file not found in directory")
 
@@ -316,6 +349,3 @@ class TestL4Security:
                 proc.wait(timeout=5)
             except:
                 proc.kill()
-
-
-

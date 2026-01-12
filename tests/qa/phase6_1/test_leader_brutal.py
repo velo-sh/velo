@@ -56,10 +56,10 @@ class TestLeaderBrutal:
     @pytest.mark.skip(reason="Awaiting D2: ManagedChild RAII implementation")
     def test_MEGA_61_003_zombie_hunt(self, isolated_env):
         """[GAP-03] Q12: Panic → verify 0 orphan/zombie processes.
-        
+
         CRITICAL: This validates the RAII ManagedChild ensures
         subprocess cleanup even during Rust panic stack unwinding.
-        
+
         Test sequence:
         1. Start velo serve
         2. Trigger panic in Rust code (via test signal or special flag)
@@ -75,10 +75,10 @@ class TestLeaderBrutal:
         """[GAP-11] NO_COLOR=1 disables ANSI escape codes."""
         env = isolated_env
         env.create_fastapi_app()
-        
+
         env_vars = os.environ.copy()
         env_vars["NO_COLOR"] = "1"
-        
+
         result = env.run_velo("serve", "--dry-run", env=env_vars, timeout=2)
         # No ANSI escape codes
         assert "\x1b[" not in result.stdout
@@ -89,13 +89,15 @@ class TestLeaderBrutal:
         """[GAP-12] Success uses both icon AND text label."""
         env = isolated_env
         env.create_fastapi_app()
-        
+
         result = env.run_velo("serve", "--dry-run", timeout=2)
         # Should have both visual indicator and text
         # e.g., "✓ OK" or "✔ Success" - not just an icon
         output = result.stdout + result.stderr
         # Must contain a text status word, not just icon
-        assert any(word in output.lower() for word in ["ok", "success", "ready", "detected"])
+        assert any(
+            word in output.lower() for word in ["ok", "success", "ready", "detected"]
+        )
 
 
 @pytest.mark.tier2

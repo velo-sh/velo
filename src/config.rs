@@ -25,12 +25,27 @@ pub struct VeloConfig {
     pub security_env_whitelist: Vec<String>,
     /// Max threads for HPC libraries (OpenMP, MKL, etc)
     pub security_hpc_threads: usize,
+    /// Graceful shutdown timeout in seconds
+    pub graceful_shutdown_timeout: u64,
+    /// H-Gov: Whether optimizations must be strictly enforced (bail on failure)
+    pub strict_optimizations: bool,
 }
 
 impl Default for VeloConfig {
     fn default() -> Self {
         // VELO_ENV determines the security profile: dev (default), ci, prod
-        let env_mode = std::env::var("VELO_ENV").unwrap_or_else(|_| "dev".to_string());
+        // VELO_TEST_MODE=1 implies "ci" profile (allows fallback, same as CI)
+        let env_mode = match std::env::var("VELO_ENV") {
+            Ok(mode) => mode,
+            Err(_) => {
+                // If VELO_TEST_MODE is set, use "ci" profile for test resilience
+                if std::env::var("VELO_TEST_MODE").is_ok() {
+                    "ci".to_string()
+                } else {
+                    "dev".to_string()
+                }
+            }
+        };
 
         // Detect OS at runtime
         let os_name = match std::env::consts::OS {
@@ -81,6 +96,12 @@ impl Default for VeloConfig {
             security_trusted_prefixes: Self::parse_string_array(&raw_prefixes),
             security_env_whitelist: Self::parse_string_array(&raw_envs),
             security_hpc_threads: extract_default_u64("security_hpc_threads", 1) as usize,
+            graceful_shutdown_timeout: extract_default_u64("graceful_shutdown_timeout", 30),
+            strict_optimizations: match env_mode.as_str() {
+                "prod" => false, // SECURITY: Never crash in Production (Graceful Degradation)
+                "ci" => false,   // CI/Test: Allow graceful fallback for resilience
+                _ => extract_default_bool("strict_optimizations", true),
+            },
         }
     }
 }
@@ -111,6 +132,22 @@ fn extract_default_u64(key: &str, default: u64) -> u64 {
             let val = line
                 .split_once('=')
                 .and_then(|(_, v)| v.trim().parse().ok());
+            if let Some(v) = val {
+                return v;
+            }
+        }
+    }
+    default
+}
+
+/// Extract a bool default from the embedded TOML
+fn extract_default_bool(key: &str, default: bool) -> bool {
+    for line in CONSTANTS_TOML.lines() {
+        let line = line.trim();
+        if line.starts_with(key) {
+            let val = line
+                .split_once('=')
+                .and_then(|(_, v)| v.split_whitespace().next().and_then(|t| t.parse().ok()));
             if let Some(v) = val {
                 return v;
             }
@@ -168,6 +205,18 @@ impl VeloConfig {
             .and_then(|v| v.parse::<usize>().ok())
         {
             self.security_hpc_threads = n;
+        }
+        if let Some(secs) = std::env::var("VELO_GRACEFUL_SHUTDOWN_TIMEOUT")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            self.graceful_shutdown_timeout = secs;
+        }
+        if let Some(b) = std::env::var("VELO_STRICT_OPTIMIZATIONS")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+        {
+            self.strict_optimizations = b;
         }
     }
 
@@ -245,6 +294,16 @@ impl VeloConfig {
                     "security_hpc_threads" => {
                         if let Ok(n) = value.parse::<usize>() {
                             config.security_hpc_threads = n;
+                        }
+                    }
+                    "graceful_shutdown_timeout" => {
+                        if let Ok(secs) = value.parse::<u64>() {
+                            config.graceful_shutdown_timeout = secs;
+                        }
+                    }
+                    "strict_optimizations" => {
+                        if let Ok(b) = value.parse::<bool>() {
+                            config.strict_optimizations = b;
                         }
                     }
                     _ => {}
