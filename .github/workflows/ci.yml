@@ -151,6 +151,9 @@ jobs:
           python-version: '3.11'
           uv-version: ${{ env.UV_VERSION }}
 
+      - name: Configure PYO3
+        run: echo "PYO3_PYTHON=${{ github.workspace }}/.venv/bin/python" >> $GITHUB_ENV
+
       - name: Build
         run: cargo build --release
 
@@ -206,6 +209,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           uv-version: ${{ env.UV_VERSION }}
+
+      - name: Configure PYO3
+        run: echo "PYO3_PYTHON=${{ github.workspace }}/.venv/bin/python" >> $GITHUB_ENV
 
       - name: Build
         run: cargo build --release
