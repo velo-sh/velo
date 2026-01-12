@@ -232,3 +232,52 @@ pub fn ensure_socket_dir(dir: &Path) -> bool {
 pub fn generate_worker_socket_path(worker_id: u64) -> PathBuf {
     VeloPaths::worker_socket(worker_id)
 }
+
+// =============================================================================
+// Gate G: Abstract Namespace Sockets (RFC-0019 SEC-07-001)
+// =============================================================================
+
+/// Check if abstract namespace sockets are supported (Linux only).
+/// Abstract sockets eliminate TOCTOU race conditions by avoiding filesystem.
+#[inline]
+pub fn is_abstract_socket_supported() -> bool {
+    cfg!(target_os = "linux")
+}
+
+/// Generate an abstract socket name for a worker (Linux only).
+/// Format: `\0velo-{uid}-w-{worker_id}-{seq}`
+///
+/// On non-Linux systems, returns None (use filesystem paths instead).
+#[cfg(target_os = "linux")]
+pub fn worker_abstract_socket_name(worker_id: u64) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static ABSTRACT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let uid = unsafe { libc::getuid() };
+    let seq = ABSTRACT_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    // Note: The actual \0 prefix is added when creating SocketAddr
+    format!("velo-{}-w-{}-{}", uid, worker_id, seq)
+}
+
+/// Generate an abstract socket name for the Zygote (Linux only).
+/// Format: `\0velo-{uid}-zygote-v{version}`
+#[cfg(target_os = "linux")]
+pub fn zygote_abstract_socket_name() -> String {
+    let uid = unsafe { libc::getuid() };
+    format!("velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
+}
+
+/// Create a SocketAddr for abstract namespace socket (Linux).
+#[cfg(target_os = "linux")]
+pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::SocketAddr> {
+    std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes())
+}
+
+/// Bind to an abstract namespace socket (Linux).
+#[cfg(target_os = "linux")]
+pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::UnixListener> {
+    use std::os::unix::net::UnixListener;
+    let addr = abstract_socket_addr(name)?;
+    UnixListener::bind_addr(&addr)
+}
