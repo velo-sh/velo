@@ -19,7 +19,7 @@ pub use bundle::cmd_bundle;
 pub use debug::cmd_debug;
 pub use graph::cmd_graph;
 pub use info::cmd_info;
-pub use python::{cmd_pip, cmd_python}; // RFC-0018
+pub use python::cmd_python; // RFC-0018: managed Python
 pub use run::cmd_run;
 pub use serve::cmd_serve;
 pub use zygote::cmd_zygote;
