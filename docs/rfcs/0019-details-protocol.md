@@ -83,10 +83,84 @@ To eliminate the overhead of socket creation for every worker-host link, Velo us
 
 ### Performance Gates (HPC Engineer Recommendations)
 *   **Gate I (Marshalling Efficiency)**: Payloads arriving via Granian-core MUST use `PyBytes` views in `conversion.rs` to ensure **True Zero-Copy** delivery to the Python stack.
-*   **Gate K (Rust-Side Decoding) [MANDATORY]**: All MessagePack decoding MUST happen in Rust (`rmp_serde::from_slice`). Python MUST receive pre-decoded `dict` objects via PyO3, NOT raw bytes.
+*   **Gate K (Rust-Side Encoding) [MANDATORY]**: All MessagePack encoding MUST happen in Rust (`rmp_serde::to_vec`). Python receives bytes via UDS and decodes locally.
 *   **Gate L (GIL Minimization)**: HTTP parsing, TLS termination, and protocol framing MUST execute entirely in Rust (zero GIL). GIL acquisition is ONLY permitted for ASGI dispatch and user code execution.
 
 ### Runtime Integration Gates (Rust Core Dev Recommendations)
 *   **Gate M (Tokio Runtime Sharing) [P1 CRITICAL]**: Velo MUST pass its global `tokio::Runtime` to Granian Core. Granian MUST NOT create its own Runtime. Violation causes thread pool explosion.
 *   **Gate N (Executor Boundary)**: Granian's async Python bridge MUST use the provided Velo Runtime for all IO operations. Blocking Python code MUST be offloaded via `tokio::task::spawn_blocking`.
 
+---
+
+## 5. Hybrid Serialization Strategy (Phase 7.2)
+
+> [!IMPORTANT]
+> Due to Velo's multi-process architecture (Rust Host ↔ UDS ↔ Python Worker), PyO3 direct object passing is NOT possible. This section defines the hybrid strategy for optimal performance.
+
+### 5.1 Request Processing Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Rust Host (PID 1)                                              │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  1. HTTP bytes arrive (Hyper)                               ││
+│  │  2. rmp_serde::to_vec() → MessagePack bytes                ││  ← rmp-serde
+│  │  3. UDS send(bytes)                                        ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+                            │ UDS (bytes)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Python Worker (PID 2)                                          │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  4. socket.recv() → raw bytes                              ││
+│  │  5. memoryview(bytes) → zero-copy slice                    ││  ← memoryview
+│  │  6. msgpack.unpackb(view) → dict                           ││
+│  │  7. sys.intern(header_name) → cached string                ││  ← sys.intern
+│  │  8. Pass to FastAPI                                        ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Technology Responsibilities
+
+| Technology | Location | Stage | Purpose |
+|:---|:---|:---|:---|
+| **rmp-serde** | Rust | Encoding | Compact binary, fast serialization |
+| **memoryview** | Python | Receiving | Avoid bytes slice copy |
+| **sys.intern** | Python | Processing | Cache common strings (headers) |
+
+### 5.3 Python Worker Reference Implementation
+
+```python
+import msgpack
+import sys
+
+def process_request(raw_bytes: bytes) -> tuple:
+    # 1. memoryview: avoid slice copy
+    view = memoryview(raw_bytes)
+    
+    # 2. Decode MessagePack (raw=False returns str directly)
+    request = msgpack.unpackb(view, raw=False, use_list=False)
+    
+    # 3. sys.intern: cache common header names
+    headers = {
+        sys.intern(k): v 
+        for k, v in request["headers"]
+    }
+    
+    return request["method"], request["path"], headers
+```
+
+### 5.4 Optimization Notes
+
+| Optimization | Benefit | Notes |
+|:---|:---|:---|
+| `raw=False` | Skip manual `.decode()` | msgpack returns str directly |
+| `use_list=False` | Return tuple instead of list | Immutable, slightly faster |
+| `sys.intern(k)` only | Intern header names, not values | Values are user data |
+
+### 5.5 Quality Gates
+
+*   **Gate O (Hybrid Strategy) [Phase 7.2 MANDATORY]**: All three techniques (`rmp-serde`, `memoryview`, `sys.intern`) MUST be implemented in Phase 7.2.
+*   **Gate P (String Interning)**: Only HTTP header NAMES may be interned. Header VALUES and body content MUST NOT be interned (security + memory).
