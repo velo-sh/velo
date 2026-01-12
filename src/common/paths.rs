@@ -24,7 +24,6 @@ pub const VELO_PROFILE_JSON: &str = "velo_profile.json";
 /// Global sequence for worker sockets to ensure uniqueness across respawns.
 static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-
 impl VeloPaths {
     /// Get the canonical socket directory using hierarchical path resolution.
     pub fn socket_dir() -> PathBuf {
@@ -136,10 +135,14 @@ impl VeloPaths {
         // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
         let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
         let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
-        eprintln!("[PATHS] Generated worker socket: {} (id={}, seq={})", path.display(), worker_id, seq);
+        eprintln!(
+            "[PATHS] Generated worker socket: {} (id={}, seq={})",
+            path.display(),
+            worker_id,
+            seq
+        );
         path
     }
-
 
     /// Get the log path for the Zygote.
     pub fn zygote_log() -> PathBuf {
