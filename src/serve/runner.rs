@@ -978,8 +978,8 @@ pub fn run_server(
         });
 
         loop {
-            std::thread::sleep(Duration::from_millis(500));
-            match rx.recv_timeout(Duration::from_secs(1)) {
+            // Periodic health check & signal handling
+            match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(ServerEvent::Signal(
                     signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM,
                 )) => {
@@ -990,6 +990,13 @@ pub fn run_server(
                     return Ok(ServerExit::Shutdown);
                 }
                 Ok(ServerEvent::Signal(_)) => {}
+                Ok(ServerEvent::Reload) => {
+                    logger.info("Changes detected (Proxy Mode), restarting workers...");
+                    for w in &workers {
+                        let _ = w.shutdown(Duration::from_secs(args.timeout));
+                    }
+                    return Ok(ServerExit::Reload);
+                }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     for (i, worker) in workers.iter_mut().enumerate() {
                         if !worker.is_alive() {
@@ -1038,6 +1045,10 @@ pub fn run_server(
                 _ => {}
             }
         }
+
+        // IMPORTANT: If we are in proxy mode, we handled everything above.
+        // We MUST return here if the loop finished without an exit variant.
+        return Ok(ServerExit::Shutdown);
     }
 
     // STB-RS-005: Respawn Loop
