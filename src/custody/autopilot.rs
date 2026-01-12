@@ -11,6 +11,9 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(unix)]
+use fs2::FileExt;
+
 /// Modules that trigger automatic Zygote activation
 #[derive(Debug, Clone)]
 pub struct GravityModule {
@@ -118,16 +121,21 @@ impl AutopilotEngine {
         let mut cumulative_weight = 0.0f32;
 
         for module in GRAVITY_MODULES {
-            // Simple pattern matching for imports
-            // Matches: import torch, from torch import, import torch.nn
+            // RFC-0018 Phase 7.1: Strict static analysis (DEF-71-009)
+            // Use word-boundary regex and scan line-by-line to avoid comments/strings
             let patterns = [
-                format!("import {}", module.name),
-                format!("from {} import", module.name),
-                format!("import {}", module.name.replace('_', ".")),
+                format!(
+                    r"(?m)^[ \t]*import[ \t]+{}(?:[ \t]+|$)",
+                    regex::escape(module.name)
+                ),
+                format!(
+                    r"(?m)^[ \t]*from[ \t]+{}[ \t]+import",
+                    regex::escape(module.name)
+                ),
             ];
 
             for pattern in patterns {
-                if content.contains(&pattern) {
+                if matches!(regex::Regex::new(&pattern), Ok(re) if re.is_match(&content)) {
                     detected_modules.push(module.name.to_string());
                     cumulative_weight = cumulative_weight.max(module.weight);
                     break;
@@ -206,28 +214,68 @@ impl TelemetryStore {
             .unwrap_or_else(|| PathBuf::from("/tmp/.velo/telemetry.json"))
     }
 
-    /// Load telemetry from disk
+    /// Load telemetry from disk with advisory shared locking (DEF-71-007)
     pub fn load() -> Self {
         let path = Self::telemetry_path();
         if !path.exists() {
             return Self::default();
         }
 
-        fs::read_to_string(&path)
-            .ok()
-            .and_then(|c| serde_json::from_str(&c).ok())
-            .unwrap_or_default()
+        let lock_path = path.with_extension("lock");
+        let lock_file = fs::OpenOptions::new()
+            .read(true)
+            .create(true)
+            .append(true) // DEF-71-007: Open for advisory locking (no truncate needed)
+            .open(&lock_path);
+
+        if let Ok(file) = lock_file {
+            #[cfg(unix)]
+            let _ = file.lock_shared();
+
+            let result = fs::read_to_string(&path)
+                .ok()
+                .and_then(|c| serde_json::from_str(&c).ok())
+                .unwrap_or_default();
+
+            #[cfg(unix)]
+            let _ = file.unlock();
+
+            result
+        } else {
+            Self::default()
+        }
     }
 
-    /// Save telemetry to disk
+    /// Save telemetry to disk with advisory file locking (DEF-71-007)
     pub fn save(&self) -> std::io::Result<()> {
         let path = Self::telemetry_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(&path, content)
+        let lock_path = path.with_extension("lock");
+        let lock_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true) // DEF-71-007: Ensure clean lock file for exclusive access
+            .open(&lock_path)?;
+
+        #[cfg(unix)]
+        {
+            lock_file.lock_exclusive()?;
+
+            let content = serde_json::to_string_pretty(self)?;
+            let result = fs::write(&path, content);
+
+            let _ = lock_file.unlock();
+            result
+        }
+
+        #[cfg(not(unix))]
+        {
+            let content = serde_json::to_string_pretty(self)?;
+            fs::write(&path, content)
+        }
     }
 
     /// Get history for a script
@@ -340,6 +388,39 @@ mod tests {
         let decision = engine.analyze_imports(&script);
 
         assert_eq!(decision, AutopilotDecision::Disabled);
+    }
+
+    #[test]
+    fn test_analyze_imports_ignores_comments() {
+        let tmp = tempdir().unwrap();
+        let script = tmp.path().join("test_comments.py");
+        fs::write(
+            &script,
+            "# import torch\n# from pandas import DataFrame\nprint('hello')",
+        )
+        .unwrap();
+
+        let engine = AutopilotEngine::default();
+        let decision = engine.analyze_imports(&script);
+
+        assert_eq!(decision, AutopilotDecision::Disabled);
+    }
+
+    #[test]
+    fn test_analyze_imports_detects_indented() {
+        let tmp = tempdir().unwrap();
+        let script = tmp.path().join("test_indent.py");
+        fs::write(&script, "if True:\n    import torch").unwrap();
+
+        let engine = AutopilotEngine::default();
+        let decision = engine.analyze_imports(&script);
+
+        match decision {
+            AutopilotDecision::EnabledByStatic { modules } => {
+                assert!(modules.contains(&"torch".to_string()));
+            }
+            _ => panic!("Expected EnabledByStatic for indented import"),
+        }
     }
 
     #[test]
