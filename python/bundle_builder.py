@@ -240,7 +240,8 @@ def build_from_project(
             is_package = True
         else:
             # Regular module
-            module_name = ".".join(parts[:-1] + [parts[-1].removesuffix(".py")])
+            stem = parts[-1][:-3] if parts[-1].endswith(".py") else parts[-1]
+            module_name = ".".join(parts[:-1] + [stem])
             is_package = False
 
         if module_name:
