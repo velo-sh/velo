@@ -17,6 +17,7 @@ use tokio::net::UnixStream;
 use uuid::Uuid;
 
 /// RSGI Host Engine
+#[derive(Clone)]
 pub struct RSGIHost {
     lb: Arc<LoadBalancer>,
 }

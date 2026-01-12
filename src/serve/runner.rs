@@ -976,36 +976,65 @@ pub fn run_server(
             *guard = Some(lb.clone());
         }
 
-        logger.info("Starting L7 Proxy...");
+        logger.info(if args.rsgi {
+            "Starting RSGI Host..."
+        } else {
+            "Starting L7 Proxy..."
+        });
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|e| anyhow::anyhow!("Tokio error: {}", e))?;
-        let service = VeloProxyService::new(lb.clone());
         let addr = format!("{}:{}", args.host, args.port);
         let bind_addr: std::net::SocketAddr = addr.parse()?;
 
         let lb_for_proxy = lb.clone();
-        rt.spawn(async move {
-            let listener = tokio::net::TcpListener::bind(bind_addr)
-                .await
-                .expect("Failed to bind proxy");
-            lb_for_proxy
-                .clone()
-                .spawn_health_checks(Duration::from_secs(5));
-            eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
-            loop {
-                if let Ok((stream, peer_addr)) = listener.accept().await {
-                    let io = TokioIo::new(stream);
-                    let service_with_addr = service.clone().with_client_addr(peer_addr);
-                    tokio::spawn(async move {
-                        let _ = http1::Builder::new()
-                            .serve_connection(io, service_with_addr)
-                            .await;
-                    });
+
+        if args.rsgi {
+            // RFC-0019: Native RSGI Host Mode
+            let rsgi_host = crate::rsgi::RSGIHost::new(lb.clone());
+            rt.spawn(async move {
+                let listener = tokio::net::TcpListener::bind(bind_addr)
+                    .await
+                    .expect("Failed to bind RSGI Host");
+                lb_for_proxy
+                    .clone()
+                    .spawn_health_checks(Duration::from_secs(5));
+                eprintln!("🚀 RSGI Host listening on http://{}", bind_addr);
+                loop {
+                    if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let io = TokioIo::new(stream);
+                        let service = rsgi_host.clone().with_client_addr(peer_addr);
+                        tokio::spawn(async move {
+                            let _ = http1::Builder::new().serve_connection(io, service).await;
+                        });
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            // Legacy L7 Proxy Mode
+            let service = VeloProxyService::new(lb.clone());
+            rt.spawn(async move {
+                let listener = tokio::net::TcpListener::bind(bind_addr)
+                    .await
+                    .expect("Failed to bind proxy");
+                lb_for_proxy
+                    .clone()
+                    .spawn_health_checks(Duration::from_secs(5));
+                eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
+                loop {
+                    if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let io = TokioIo::new(stream);
+                        let service_with_addr = service.clone().with_client_addr(peer_addr);
+                        tokio::spawn(async move {
+                            let _ = http1::Builder::new()
+                                .serve_connection(io, service_with_addr)
+                                .await;
+                        });
+                    }
+                }
+            });
+        }
 
         loop {
             // Periodic health check & signal handling
