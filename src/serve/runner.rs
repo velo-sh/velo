@@ -192,12 +192,11 @@ impl ManagedChild {
         self.pgid
     }
 
-    /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
     /// Spawn a new managed child process.
     ///
     /// # Arguments
     /// * `cmd` - Command to spawn
-    /// * `pid_file` - Optional PID file path to create
+    /// * `pid_file` - Optional PID file path to create (Deprecated: handled by PidFileGuard)
     pub fn spawn(mut cmd: Command, pid_file: Option<PathBuf>) -> Result<Self, ServeError> {
         #[cfg(unix)]
         apply_process_group(&mut cmd);
@@ -208,10 +207,11 @@ impl ManagedChild {
         })?;
 
         // Write PID file if requested (SEC-P0-003: use O_EXCL)
+        // NOTE: This is kept for backward compatibility if called directly,
+        // but run_server now uses PidFileGuard.
         if let Some(ref path) = pid_file
-            && let Err(e) = Self::write_pid_file_safe(path, child.id())
+            && let Err(e) = PidFileGuard::write_pid_file_safe(path, child.id())
         {
-            // CRITICAL: Kill the already-spawned child to prevent orphan
             let _ = child.kill();
             let _ = child.wait();
             return Err(e);
@@ -228,41 +228,62 @@ impl ManagedChild {
             pid_file,
         })
     }
+}
+
+/// RAII Guard for PID file management (SEC-P0-003)
+pub struct PidFileGuard {
+    path: PathBuf,
+}
+
+impl PidFileGuard {
+    /// Create a new PID file guard. Writes the current process PID to the file.
+    pub fn new(path: PathBuf) -> Result<Self, ServeError> {
+        Self::write_pid_file_safe(&path, std::process::id())?;
+        Ok(Self { path })
+    }
 
     /// Write PID file safely using O_EXCL to prevent TOCTOU attacks.
-    #[cfg(unix)]
-    fn write_pid_file_safe(path: &Path, pid: u32) -> Result<(), ServeError> {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
+    pub fn write_pid_file_safe(path: &Path, pid: u32) -> Result<(), ServeError> {
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
 
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true) // O_EXCL: fail if exists
-            .mode(0o644)
-            .open(path)
-            .map_err(|_| ServeError::PidFileExists {
-                path: path.to_path_buf(),
-            })?;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true) // O_EXCL: fail if exists
+                .mode(0o644)
+                .open(path)
+                .map_err(|_| ServeError::PidFileExists {
+                    path: path.to_path_buf(),
+                })?;
 
-        writeln!(file, "{}", pid).map_err(ServeError::SignalError)?;
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    fn write_pid_file_safe(path: &Path, pid: u32) -> Result<(), ServeError> {
-        use std::io::Write;
-
-        if path.exists() {
-            return Err(ServeError::PidFileExists {
-                path: path.to_path_buf(),
-            });
+            writeln!(file, "{}", pid).map_err(ServeError::SignalError)?;
+            Ok(())
         }
-
-        let mut file = std::fs::File::create(path).map_err(ServeError::SignalError)?;
-        writeln!(file, "{}", pid).map_err(ServeError::SignalError)?;
-        Ok(())
+        #[cfg(not(unix))]
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|_| ServeError::PidFileExists {
+                    path: path.to_path_buf(),
+                })?;
+            writeln!(file, "{}", pid).map_err(ServeError::SignalError)?;
+            Ok(())
+        }
     }
+}
 
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+impl ManagedChild {
     /// Wait for the child process to exit.
     pub fn wait(&mut self) -> Result<ExitStatus, ServeError> {
         self.child.wait().map_err(ServeError::SignalError)
@@ -598,6 +619,13 @@ pub fn run_server(
     // RAII Guard for Health Server (SEC-P0-004)
     // Shared container for LoadBalancer (populated later if in Zygote mode)
     let lb_holder = Arc::new(std::sync::Mutex::new(None));
+
+    // RAII Guard for PID file (SEC-P0-003)
+    let _pid_guard = if let Some(ref path) = args.pid_file {
+        Some(PidFileGuard::new(path.clone())?)
+    } else {
+        None
+    };
     let mut _health_server: Option<crate::serve::health::HealthServer> = None;
     let health_ready = Arc::new(AtomicBool::new(false));
     if let Some(ref bind) = args.health_bind {
@@ -1140,7 +1168,8 @@ pub fn run_server(
         }
 
         // Spawn with ManagedChild for RAII cleanup (D2)
-        let mut child_result = ManagedChild::spawn(cmd, args.pid_file.clone());
+        // Pass None for pid_file since we handle it with _pid_guard in run_server
+        let mut child_result = ManagedChild::spawn(cmd, None);
 
         if let Ok(ref mut child) = child_result {
             logger.info(&format!("Server started (PID: {})", child.id()));
