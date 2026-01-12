@@ -45,6 +45,6 @@
 *   **Hygiene**: No stale sockets left in `@velo-*` (Linux) or `mkdtemp` dirs (macOS) after clean exit.
 
 ## 3. Artifacts for Reference
-*   [RFC-0018: Integrated Custody](file:///Users/gjwang/eclipse-workspace/rust_source/velo_arch/docs/rfcs/0018-integrated-custody.md)
-*   [RFC-0019: Native Sovereignty](file:///Users/gjwang/eclipse-workspace/rust_source/velo_arch/docs/rfcs/0019-native-sovereignty.md)
-*   [Protocol Design](file:///Users/gjwang/.gemini/antigravity/brain/83ff6d79-49a9-43bf-bb0c-44af71421dd0/protocol_design_rfc0019.md)
+*   [RFC-0018: Integrated Custody](../rfcs/0018-integrated-custody.md)
+*   [RFC-0019: Native Sovereignty](../rfcs/0019-native-sovereignty.md)
+*   [Velo-uv Architecture Overview](./velo_uv_architecture_overview.md)
