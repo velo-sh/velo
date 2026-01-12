@@ -47,13 +47,31 @@ def _get_binary_arch(binary_path: str) -> str:
 
 
 def _get_system_arch() -> str:
-    """Get the current system architecture."""
+    """Get the current system architecture, handling Rosetta 2."""
     machine = platform.machine().lower()
+    
+    # On macOS, if we're running under Rosetta, machine will be x86_64
+    # but the system might actually support arm64.
+    if sys.platform == "darwin" and machine == "x86_64":
+        try:
+            # sysctl -n hw.optional.arm64 returns 1 on Apple Silicon
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.optional.arm64"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.stdout.strip() == "1":
+                return "arm64"
+        except Exception:
+            pass
+
     if machine in ("arm64", "aarch64"):
         return "arm64"
     elif machine in ("x86_64", "amd64"):
         return "x86_64"
     return machine
+
 
 
 @pytest.fixture(scope="session")
@@ -87,6 +105,8 @@ def velo_binary(workspace_root):
         )
 
     return binary_path
+
+
 
 
 @pytest.fixture(autouse=True)

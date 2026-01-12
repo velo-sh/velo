@@ -47,20 +47,48 @@ pub struct UvCustodian {
 
 impl UvCustodian {
     /// Create a new UvCustodian with default paths
+    ///
+    /// Path resolution order (RFC-0018 §3.4 Testability):
+    /// 1. VELO_HOME environment variable (for testing)
+    /// 2. HOME environment variable (respects subprocess HOME override)
+    /// 3. dirs::home_dir() (system default)
+    /// 4. /tmp/.velo-<uid> fallback (DEF-71-006 hardening)
     pub fn new() -> Self {
-        let base_dir = dirs::home_dir()
-            .map(|h| h.join(".velo"))
-            .unwrap_or_else(|| {
-                // RFC-0018 Phase 7.1: Predictable path hardening (DEF-71-006)
-                // Fallback to /tmp/.velo-<uid> to prevent symlink attacks in multi-user envs
-                let uid = unsafe { libc::getuid() };
-                PathBuf::from(format!("/tmp/.velo-{}", uid))
-            });
+        let base_dir = Self::resolve_base_dir();
 
         Self {
             base_dir,
             asset: None,
         }
+    }
+
+    /// Resolve the base directory for Velo data storage
+    ///
+    /// This method implements a hierarchical path resolution strategy
+    /// to support both production use and test isolation.
+    fn resolve_base_dir() -> PathBuf {
+        // 1. Check VELO_HOME override (highest priority - for testing)
+        if let Ok(velo_home) = std::env::var("VELO_HOME")
+            && !velo_home.is_empty()
+        {
+            return PathBuf::from(velo_home);
+        }
+
+        // 2. Check HOME environment variable (subprocess override)
+        if let Ok(home) = std::env::var("HOME")
+            && !home.is_empty()
+        {
+            return PathBuf::from(home).join(".velo");
+        }
+
+        // 3. Use dirs::home_dir() as system default
+        if let Some(home) = dirs::home_dir() {
+            return home.join(".velo");
+        }
+
+        // 4. Fallback: UID-based path (DEF-71-006 hardening)
+        let uid = unsafe { libc::getuid() };
+        PathBuf::from(format!("/tmp/.velo-{}", uid))
     }
 
     /// Create with custom base directory (for testing)

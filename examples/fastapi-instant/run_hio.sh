@@ -4,15 +4,22 @@
 
 export PYTHONPATH=$PYTHONPATH:.
 PROJECT_ROOT=$(pwd)/examples/fastapi-instant
+VELO_ROOT=$(pwd)
 
 # 0. Define Isolated Workspace & Noise Reduction
 export VELO_WORKSPACE="/tmp/velo_hio_003"
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 mkdir -p "$VELO_WORKSPACE"
 
-# Dependency Pre-check
+# RFC-0018: Velo binary path (use built binary by default)
+VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
+if [ ! -x "$VELO_BIN" ]; then
+    VELO_BIN="$VELO_ROOT/target/debug/velo"
+fi
+
+# Dependency Pre-check (RFC-0018: via Velo Integrated Python)
 check_deps() {
-    python3 -c "import rich" 2>/dev/null
+    $VELO_BIN python -c "import rich" 2>/dev/null
     if [ $? -ne 0 ]; then
         echo "[INFO] 'rich' not installed, using fallback mode."
     fi
@@ -34,14 +41,14 @@ echo -e "\033[38;5;33m[Velo HIO] Initializing FastAPI Instant Demo...\033[0m"
 echo -e "\033[90m⚠️ Note: Emulated Namespace Isolation\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Time Trial Mode
-    python3 $PROJECT_ROOT/rollback_race.py 2>/dev/null
+    # A/B Time Trial Mode (RFC-0018: via Velo)
+    $VELO_BIN run $PROJECT_ROOT/rollback_race.py 2>/dev/null
 else
     # Traditional Atomic Reset Verification Mode
     # 1. Security & Privilege Check
     echo -e "Checking Isolation Grade..."
     SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-    python3 -W ignore:NotOpenSSLWarning "$SCRIPT_DIR/../scripts/hio_verify_isolation.py"
+    $VELO_BIN python -W ignore:NotOpenSSLWarning "$SCRIPT_DIR/../scripts/hio_verify_isolation.py"
     if [ $? -eq 0 ]; then
         echo -e "\033[1;32m[VERIFIED] Environment satisfies HIO-003 Isolation Standards.\033[0m"
     else
@@ -52,8 +59,8 @@ else
     # Clear residue from last run
     rm -rf "$VELO_WORKSPACE"/*
 
-    # Start real FastAPI Server in background (using SQLite)
-    python3 $PROJECT_ROOT/server.py > /dev/null 2>&1 &
+    # Start real FastAPI Server in background (using SQLite, via Velo)
+    $VELO_BIN run $PROJECT_ROOT/server.py > /dev/null 2>&1 &
     SERVER_PID=$!
 
     # Wait for Server readiness (port 8000)
@@ -67,8 +74,8 @@ else
         sleep 1
     done
 
-    # Execute dirtying and validation
-    python3 $PROJECT_ROOT/tests/test_api.py 2>/dev/null
+    # Execute dirtying and validation (RFC-0018: via Velo)
+    $VELO_BIN python $PROJECT_ROOT/tests/test_api.py 2>/dev/null
 
     # Perform Velo Snap-Back
     echo -e "\nPhase 2: Velo Snap-Back ➔ \033[1;32mPurging all side effects...\033[0m"
@@ -83,8 +90,8 @@ else
         echo -e "[HIO] ❌ Database still exists -> Rollback failed"
     fi
 
-    # Calculate HIO Score
-    python3 examples/scripts/hio_engine.py \
+    # Calculate HIO Score (RFC-0018: via Velo)
+    $VELO_BIN python examples/scripts/hio_engine.py \
         --project "HIO-003 (FastAPI)" \
         --slogan "Zero Trace, Zero Lag, Infinite Retries." \
         --baseline 150 160 155 \

@@ -40,7 +40,7 @@ rustup component add clippy rustfmt llvm-tools-preview 2>/dev/null || true
 echo
 echo "🐍 Setting up Python environment from pyproject.toml..."
 uv venv --python 3.11
-uv sync --extra dev  # Single source: pyproject.toml
+uv sync  # Single source: pyproject.toml
 echo -e "${GREEN}✅${NC} Python environment ready"
 
 # Install pre-commit hooks

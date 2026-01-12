@@ -15,8 +15,8 @@ use tokio::net::UnixStream;
 /// Represents a single worker node in the load balancer.
 #[derive(Debug)]
 pub struct WorkerNode {
-    /// Path to the worker's Unix socket.
-    pub socket_path: String,
+    /// Path to the worker's Unix socket (protected by RwLock for respawns).
+    socket_path: std::sync::RwLock<String>,
     /// Unique worker ID for connection pooling authority.
     pub worker_id: u64,
     /// Number of active connections to this worker.
@@ -31,11 +31,26 @@ impl WorkerNode {
     /// Create a new worker node.
     pub fn new(socket_path: String, worker_id: u64) -> Self {
         Self {
-            socket_path,
+            socket_path: std::sync::RwLock::new(socket_path),
             worker_id,
             active_connections: AtomicUsize::new(0),
             consecutive_failures: AtomicUsize::new(0),
             healthy: std::sync::atomic::AtomicBool::new(true),
+        }
+    }
+
+    /// Get the current socket path for this worker.
+    pub fn socket_path(&self) -> String {
+        self.socket_path
+            .read()
+            .expect("Poisoned socket_path lock")
+            .clone()
+    }
+
+    /// Update the socket path (called during worker respawn).
+    pub fn update_path(&self, new_path: String) {
+        if let Ok(mut guard) = self.socket_path.write() {
+            *guard = new_path;
         }
     }
 
@@ -110,8 +125,8 @@ impl ConnectionGuard {
     }
 
     /// Get the socket path for this connection.
-    pub fn socket_path(&self) -> &str {
-        &self.worker.socket_path
+    pub fn socket_path(&self) -> String {
+        self.worker.socket_path()
     }
 
     /// Get the worker ID.
@@ -186,6 +201,10 @@ impl LoadBalancer {
         let healthy: Vec<_> = self.workers.iter().filter(|w| w.is_healthy()).collect();
 
         if healthy.is_empty() {
+            eprintln!(
+                "[LB] No healthy workers available among {} total",
+                self.workers.len()
+            );
             return None;
         }
 
@@ -205,13 +224,20 @@ impl LoadBalancer {
         // Use round-robin to select among candidates with equal connections
         let rr_index = self.round_robin_counter.fetch_add(1, Ordering::Relaxed);
 
-        // Race condition protection: if connection counts shifted between min_connections
-        // calculation and filtering, candidates might be empty. Fall back to healthy list.
         let selected = if !candidates.is_empty() {
             candidates[rr_index % candidates.len()]
         } else {
             healthy[rr_index % healthy.len()]
         };
+
+        eprintln!(
+            "[LB] selected={} connections={} candidates={} healthy={} rr_index={}",
+            selected.socket_path(),
+            selected.active_connections(),
+            candidates.len(),
+            healthy.len(),
+            rr_index
+        );
 
         Some(ConnectionGuard::new(Arc::clone(selected)))
     }
@@ -226,16 +252,31 @@ impl LoadBalancer {
         self.workers.iter().filter(|w| w.is_healthy()).count()
     }
 
+    /// Update a worker's socket path by worker ID.
+    ///
+    /// RFC-0011 §6A.7: Required for supporting monotonic socket paths during respawn.
+    pub fn update_worker_path(&self, worker_id: u64, new_path: String) {
+        if let Some(worker) = self.workers.get(worker_id as usize) {
+            let old_path = worker.socket_path();
+            eprintln!(
+                "[LB] update_worker_path: id={} old={} new={}",
+                worker_id, old_path, new_path
+            );
+            worker.update_path(new_path);
+            worker.mark_healthy(); // Assume new worker is healthy
+        }
+    }
+
     /// Mark a worker as unhealthy by socket path.
     pub fn mark_unhealthy(&self, socket_path: &str) {
-        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path() == socket_path) {
             worker.mark_unhealthy();
         }
     }
 
     /// Mark a worker as healthy by socket path.
     pub fn mark_healthy(&self, socket_path: &str) {
-        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path() == socket_path) {
             worker.mark_healthy();
         }
     }
@@ -261,7 +302,7 @@ impl LoadBalancer {
 
     /// Remove a worker from the load balancer.
     pub fn remove_worker(&mut self, socket_path: &str) {
-        self.workers.retain(|w| w.socket_path != socket_path);
+        self.workers.retain(|w| w.socket_path() != socket_path);
     }
 
     /// Get total active connections across all workers.
@@ -271,7 +312,7 @@ impl LoadBalancer {
 
     /// Add a backend by socket path (mark as healthy if exists, or log if not found)
     pub fn add_backend(&self, socket_path: &str) {
-        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path() == socket_path) {
             log::info!(
                 "[LB] event=add_backend worker_id={} socket={}",
                 worker.worker_id,
@@ -283,7 +324,7 @@ impl LoadBalancer {
 
     /// Remove a backend by socket path (mark as unhealthy)
     pub fn remove_backend(&self, socket_path: &str) {
-        if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
+        if let Some(worker) = self.workers.iter().find(|w| w.socket_path() == socket_path) {
             log::info!(
                 "[LB] event=remove_backend worker_id={} socket={}",
                 worker.worker_id,
@@ -324,7 +365,8 @@ impl LoadBalancer {
             loop {
                 for worker in &workers {
                     // Active probing: try to connect to the Unix socket
-                    match UnixStream::connect(&worker.socket_path).await {
+                    let current_path = worker.socket_path();
+                    match UnixStream::connect(&current_path).await {
                         Ok(_) => {
                             // If it was unhealthy, mark it healthy again
                             if !worker.is_healthy() {

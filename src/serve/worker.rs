@@ -183,7 +183,8 @@ impl Worker {
         let mut cmd = std::process::Command::new(python_path);
         cmd.current_dir(project_dir);
 
-        // Pass essential environment
+        // Pass essential environment (Surgical Whitelist - RFC-0012)
+
         let env = build_worker_env(config);
         for (k, v) in env.iter() {
             cmd.env(k, v);
