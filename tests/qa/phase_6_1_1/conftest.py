@@ -259,6 +259,7 @@ class VeloServeFactory:
         # RFC-0012: Resilience Whitelist for Framework Bootstrap
         # We must explicitly trust /workspace so sys.path isn't scrubbed by the Rust binary's EnvironmentShield
         # Using a comprehensive list to override defaults while keeping safety
+        # NOTE: Use ${HOME} placeholder instead of hardcoded /home/runner for portability
         trusted_paths = [
             "/usr",
             "/bin",
@@ -267,7 +268,7 @@ class VeloServeFactory:
             "/lib64",
             "/etc/ssl/certs",
             "/opt/hostedtoolcache",
-            "/home/runner",
+            "${HOME}",  # Expands to /home/runner on CI, /Users/xxx on macOS
             "${CWD}",
             "/workspace",
             "${VIRTUAL_ENV}",
