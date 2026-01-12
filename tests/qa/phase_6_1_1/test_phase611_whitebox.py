@@ -270,10 +270,6 @@ class TestWhiteBoxPythonStress:
 class TestWhiteBoxRustStress:
     """White-box STRESS tests for Rust Supervisor internals."""
 
-    @pytest.mark.xfail(
-        os.environ.get("GITHUB_ACTIONS") == "true",
-        reason="Worker respawn stress test requires resources unavailable in CI"
-    )
     def test_WB_006_STRESS_worker_respawn_race(self, velo_serve_fixture):
         """WB-006 STRESS (NEW): Rapid worker kills to race respawn logic.
 
