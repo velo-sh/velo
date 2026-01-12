@@ -1,5 +1,27 @@
 {
   "contracts": {},
-  "tests": {},
+  "tests": {
+    "tests/qa/phase_6_1_1/test_sec_shield.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "...",
+      "sha1": "15752b91931568199fea6e1170699706c17ff959",
+      "txhash": []
+    },
+    "tests/qa/test_phase3_brutal_attacks.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": ".........F...F....FFFF",
+      "sha1": "6d80a8562c6b6e3210027018dbea13d1acc2f778",
+      "txhash": []
+    },
+    "tests/qa/test_phase6_2_agent_d_destroyer.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "...",
+      "sha1": "5b72bf35285a561dafde4a4ea1eead19467ba7f8",
+      "txhash": []
+    }
+  },
   "tx": {}
 }
