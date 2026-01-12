@@ -7,16 +7,17 @@ This document specifies the binary interaction protocol (RSGI-Velo) used between
 The handshake ensures that the Worker is ready to receive requests and supports the host's required features.
 
 ### 1.1 Worker `READY` Message
-Sent by the Python worker immediately after startup.
+Sent by the Python worker immediately after startup and **Taint Re-randomization** (RFC-0013).
 
 ```yaml
 type: "READY"
-version: "1.0.0"
+version: "1.0.0" (Granian-compatible)
 capabilities:
   streaming: true
   fd_passing: true
-  protocol: ["rsgi/1.0", "asgi/3.0"]
-worker_id: "worker-7b02"
+  protocols: ["rsgi/1.0", "asgi/3.0"]
+  marshall_hints: ["zero_copy_views", "msgpack_native"]
+worker_id: "worker-{pid}"
 ```
 
 ### 1.2 Host `AUTH_OK` Message
@@ -73,4 +74,6 @@ To eliminate the overhead of socket creation for every worker-host link, Velo us
 *   **Gate D (Protocol)**: Any MessagePack payload > 1MB MUST be rejected unless explicitly negotiated.
 *   **Gate E (Lifecycle)**: A worker that doesn't send `READY` within 500ms MUST be SIGKILL'd.
 *   **Gate F (Security)**: All UDS paths MUST reside in a `0o700` restricted directory created via `mkdtemp`.
-*   **Gate G (Atomic IPC) [REMEDIATED SEC-07-001]**: On Linux, the Host and Worker MUST communicate via **Abstract Namespace Sockets** to eliminate filesystem race conditions.
+*   **Gate G (Atomic IPC) [REMEDIATED SEC-07-001]**: On Linux, the Host and Worker MUST communicate via **Abstract Namespace Sockets**.
+*   **Gate H (Peer Auth) [RFC-0019 MANDATORY]**: The Host MUST perform **Peer Authentication** (`SO_PEERCRED` / `getpeereid`) on the RSGI link. Handshake MUST NOT proceed if the peer UID/PID does not match the launched worker.
+*   **Gate I (Marshalling Efficiency)**: Payloads arriving via Granian-core MUST use `PyBytes` views in `conversion.rs` to ensure **True Zero-Copy** delivery to the Python stack.
