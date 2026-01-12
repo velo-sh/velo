@@ -227,3 +227,70 @@ When application fails to start, provide automatic diagnosis:
 | **WARN** | First-time filter (with guidance) | All users |
 | **INFO** | Filter summary (e.g., "2 vars filtered") | Default visible |
 | **DEBUG** | Each filtered variable detail | Debugging |
+
+### 7.7 Logging Output Strategy
+
+> [!NOTE]
+> Follow cloud-native best practices: stdout by default, structured JSON for aggregation.
+
+#### Default: stdout/stderr
+
+```
+┌─────────────────────────────────────────┐
+│  Velo Application                       │
+│  └── All logs → stdout/stderr           │
+└─────────────────────────────────────────┘
+        │
+        ▼
+   Docker/K8s auto-collect → Loki/CloudWatch
+```
+
+**Benefits**:
+- Container platforms auto-collect
+- Log aggregation systems handle filtering
+- No log rotation management
+
+#### Optional: JSON Format
+
+```json
+{
+  "ts": "2026-01-12T21:59:33Z",
+  "level": "INFO",
+  "msg": "Request processed",
+  "request_id": "abc-123",
+  "latency_ms": 12,
+  "code": "VELO-REQ-200"
+}
+```
+
+**Configuration**:
+```toml
+# pyproject.toml
+[tool.velo.logging]
+format = "json"  # "text" | "json"
+```
+
+#### Optional: File Output (Traditional)
+
+```toml
+# pyproject.toml
+[tool.velo.logging]
+output = "file"  # "stdout" | "file" | "both"
+log_dir = "./logs"
+max_size_mb = 100
+max_files = 5
+```
+
+**File Structure**:
+```
+$VELO_LOG_DIR/
+└── velo.log              # All levels (rotated)
+```
+
+#### Phase Assignment
+
+| Feature | Phase | Priority |
+|:---|:---|:---|
+| stdout default | 7.2 | ⭐⭐⭐ P1 |
+| JSON format option | 7.2 | ⭐⭐ P2 |
+| File output option | 8.x | ⭐ P3 |
