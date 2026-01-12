@@ -55,9 +55,15 @@ export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 # macOS fork safety
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
+# RFC-0018: Velo binary path (use built binary by default)
+VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
+if [ ! -x "$VELO_BIN" ]; then
+    VELO_BIN="$VELO_ROOT/target/debug/velo"
+fi
+
 # Function to print banner
 print_banner() {
-    python3 -c "from examples.scripts.hio_visual import print_header; print_header('HIO-004 (Serverless Instant)', 'Cold Start → Near Zero')" 2>/dev/null || {
+    $VELO_BIN python -c "from examples.scripts.hio_visual import print_header; print_header('HIO-004 (Serverless Instant)', 'Cold Start → Near Zero')" 2>/dev/null || {
         echo "=============================================="
         echo " HIO-004: Serverless Instant"
         echo " Cold Start → Near Zero"
@@ -67,10 +73,10 @@ print_banner() {
 
 # Dependency check
 check_deps() {
-    echo -e "\033[90m[CHECK] Verifying dependencies...\033[0m"
-    python3 -c "import fastapi, pydantic, sqlalchemy, numpy" 2>/dev/null || {
+    echo -e "\033[90m[CHECK] Verifying dependencies via Velo (RFC-0018)...\033[0m"
+    $VELO_BIN python -c "import fastapi, pydantic, sqlalchemy, numpy" 2>/dev/null || {
         echo -e "\033[31m[ERROR] Missing dependencies. Install with:\033[0m"
-        echo "  pip install -r $DEMO_ROOT/requirements.txt"
+        echo "  uv pip install -r $DEMO_ROOT/requirements.txt"
         exit 1
     }
     echo -e "\033[32m[OK] All dependencies available.\033[0m"
@@ -85,17 +91,17 @@ echo -e "\n\033[38;5;33m[Velo HIO] Initializing Serverless Instant Demo...\033[0
 echo -e "\033[90m  Scenario: $SCENARIO | Runs: $RUNS\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Comparison Mode
+    # A/B Comparison Mode (RFC-0018: via Velo Integrated Python)
     cd "$DEMO_ROOT"
-    python3 benchmark.py --scenario="$SCENARIO" --runs="$RUNS"
+    $VELO_BIN run benchmark.py --scenario="$SCENARIO" --runs="$RUNS"
 else
     # Quick Demo Mode
     echo -e "\n\033[1;36m=== Phase 1: CPython Cold Start ===\033[0m"
     cd "$DEMO_ROOT"
-    python3 cpython_runner.py
+    $VELO_BIN python cpython_runner.py
     
     echo -e "\n\033[1;32m=== Phase 2: Velo Zygote + Fork ===\033[0m"
-    python3 velo_runner.py
+    $VELO_BIN run --zygote velo_runner.py
 fi
 
 echo -e "\n\033[1;32m[DONE] HIO-004 Serverless Instant Demo Complete.\033[0m"
