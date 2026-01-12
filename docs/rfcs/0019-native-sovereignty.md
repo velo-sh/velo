@@ -503,3 +503,35 @@ These techniques are safe within Rust's ownership model:
 | **Use-After-Free** | Miri (Rust) | CI (PR) |
 | **Reference Count** | PyO3 debug logging | Debug builds |
 | **Stress Test** | 10K QPS for 1 hour | Release validation |
+
+### 8.15 Future Optimization Vision: "The Velo Compiler" (Phase 10.x Research)
+**Status**: 🔮 RESEARCH ONLY
+
+> [!NOTE]
+> **Strategic Goal**: Move beyond interpreter limitations by implementing a "Shadow Compiler" that stabilizes over time.
+> **Constraint**: 100% Backward Compatibility. Must run standard Python code (Django, NumPy, Pydantic) without modification.
+
+#### 8.15.1 Velo Shadow Compiler Strategy
+Instead of Just-In-Time (JIT) compilation which competes for resources during requests, Velo proposes an **Idle-Time Compiling** strategy.
+
+1.  **Observability First**: Runtime records hot-spot functions and type information during peak traffic.
+2.  **Idle-Time Compilation**: When system load drops (or in a background thread), Velo invokes the Shadow Compiler.
+3.  **AOT-like Stability**: Compiles hot Python functions into native machine code (or specialized bytecode).
+4.  **Persistent Caching**: Compiled artifacts are cached to disk (`~/.velo/cache/v1/`).
+5.  **Cold-Start Bonus**: Next restart loads cached native code immediately.
+
+#### 8.15.2 Architecture: The "Safe-Fail" JIT
+| Component | Responsibility | Failure Mode |
+|:---|:---|:---|
+| **Python Interpreter** | Main execution engine | N/A (Baseline) |
+| **Shadow Compiler** | Compiles functions to native shared objects | Log error, abort compilation |
+| **Hot-Swap Engine** | Replaces PyFunction pointer with NativeFunction | **Fallback to Interpreter** |
+
+> [!IMPORTANT]
+> **Stability-First Rule**: If the Shadow Compiler produces code that segfaults or behaves differently, the fallback mechanism MUST instantly revert to the standard Interpreter. The process MUST NOT crash.
+
+#### 8.15.3 Technology Candidates
+1.  **Copy-and-Patch JIT** (Python 3.13 strategy) - Likely the winner.
+2.  **Cranelift / LLVM** - For heavy numerical computing (Scientific workloads).
+3.  **WASM Intermediate** - For sandboxed, safe native execution.
+
