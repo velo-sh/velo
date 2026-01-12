@@ -103,8 +103,7 @@ pub fn run() -> Result<()> {
         }
         "run" => cmd::cmd_run(&args),
         "serve" => cmd::cmd_serve(&args),
-        "python" => cmd::cmd_python(&args), // RFC-0018
-        "pip" => cmd::cmd_pip(&args),       // RFC-0018
+        "python" => cmd::cmd_python(&args), // RFC-0018: managed Python
         "analyze" => cmd::cmd_analyze(&args),
         "bench" => cmd::cmd_bench(&args),
         "bundle" => cmd::cmd_bundle(&args),
