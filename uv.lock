@@ -721,14 +721,10 @@ dependencies = [
     { name = "blake3" },
     { name = "fastapi" },
     { name = "msgpack" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
     { name = "psutil" },
     { name = "pytest" },
     { name = "requests" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -743,12 +739,11 @@ requires-dist = [
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "msgpack", specifier = ">=1.0" },
-    { name = "psutil", marker = "extra == 'dev'", specifier = ">=5.9" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "requests", marker = "extra == 'dev'", specifier = ">=2.28" },
+    { name = "psutil", specifier = ">=5.9" },
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "requests", specifier = ">=2.28" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
-provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
