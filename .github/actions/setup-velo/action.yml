@@ -37,6 +37,8 @@ runs:
       run: |
         uv venv --python ${{ inputs.python-version }}
         uv sync
+        # SSoT: Centralized pyo3 interpreter discovery
+        echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
 
     - name: Determine artifact name
       if: inputs.download-binary == 'true'
