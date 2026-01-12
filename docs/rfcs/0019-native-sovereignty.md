@@ -169,3 +169,46 @@ Native Sovereignty establishes a "Zero-Trust" host-worker boundary:
 *   **P0-1 (Peer Auth)**: Every UDS connection MUST be verified via `SO_PEERCRED` (Linux) or `getpeereid` (macOS) before the handshake begins.
 *   **P0-2 (Taint Contract)**: The Python Worker MUST execute the Taint Re-randomization contract (`random.seed`, `os.urandom`) immediately post-fork and before sending the `READY` message.
 *   **Signal Hygiene**: The Host MUST reset the signal mask in `pre_exec` to ensure workers are reachable via standard signals.
+
+## 8. Technology Radar: Phase 8.x IO Evolution
+
+> [!NOTE]
+> This section documents future IO technologies under evaluation for post-7.x phases.
+
+### 8.1 io_uring (Linux 5.10+)
+**Status**: 🟡 WATCHING (tokio-uring 0.x maturity)
+
+| Feature | Benefit | Velo Applicability |
+|:---|:---|:---|
+| **Zero-copy TX/RX** | Eliminate network buffer copies | ⭐ High |
+| **Multishot Accept** | Single syscall for multiple connections | ⭐ High |
+| **SQPOLL Mode** | Kernel-side polling, zero syscall overhead | 🧪 Experimental |
+| **Registered Buffers** | Pre-registered memory for DMA | 🔮 Research |
+
+**Adoption Criteria**:
+1. `tokio-uring` reaches 1.0 stable
+2. Linux 5.10+ becomes baseline (currently ~80% server market)
+3. Benchmark shows >20% improvement over epoll
+
+### 8.2 Python 3.13+ Free-Threading
+**Status**: 🟡 MONITORING
+
+| Feature | Benefit |
+|:---|:---|
+| `--disable-gil` | True multi-threaded Python |
+| Per-object locking | Fine-grained concurrency |
+
+**Adoption Criteria**:
+1. NumPy/Pandas/PyTorch support free-threading
+2. Production stability confirmed (18+ months post-release)
+
+### 8.3 Current Stack (Phase 7.x Baseline)
+```
+┌─────────────────────────────────────┐
+│  Tokio (epoll/kqueue) - STABLE      │  ← Phase 7.2 Default
+├─────────────────────────────────────┤
+│  uvloop (libuv) - STABLE            │  ← Python Event Loop
+├─────────────────────────────────────┤
+│  io_uring - WATCHING                │  ← Phase 8.x Target
+└─────────────────────────────────────┘
+```
