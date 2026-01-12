@@ -147,10 +147,14 @@ impl VeloPaths {
         }
 
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        // Standard macOS/Linux log path location
-        PathBuf::from(home)
-            .join(".local/state/velo")
-            .join("zygote.log")
+        let log_dir = PathBuf::from(home).join(".local/state/velo");
+
+        // Ensure log directory exists
+        if !log_dir.exists() {
+            let _ = std::fs::create_dir_all(&log_dir);
+        }
+
+        log_dir.join("zygote.log")
     }
 
     /// Get the path to the Zygote's profiling data.
