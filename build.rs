@@ -90,13 +90,15 @@ fn main() {
          pub const MAX_MESSAGE_SIZE: usize = {};\n\
          pub const SOCKET_STARTUP_TIMEOUT: u64 = {};\n\
          pub const GRACEFUL_SHUTDOWN_TIMEOUT: u64 = {};\n\
-         pub const DEFAULT_PORT: u16 = {};\n",
+         pub const DEFAULT_PORT: u16 = {};\n\
+         pub const BUILD_SCM_HASH: &str = \"{}\";\n",
         protocol_version,
         socket_limit,
         max_message_size,
         socket_startup_timeout,
         graceful_shutdown_timeout,
-        default_port
+        default_port,
+        git_hash
     );
     fs::write(&dest_path, rust_code).unwrap();
 
@@ -145,6 +147,10 @@ SECURITY_BASE_TRUSTED_PREFIXES = "{}"
 SECURITY_BASE_ENV_WHITELIST = "{}"
 PATH_SOCKET_DIR_NAME = "{}"
 PATH_LOG_DIR_RELATIVE = "{}"
+
+# Level 1: Platform Defaults (Ensures all constants are importable)
+PATH_MACOS_FD_DIR = ""
+PATH_LINUX_FD_DIR = ""
 
 # Level 1: macOS specific
 if sys.platform == "darwin":

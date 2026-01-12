@@ -19,6 +19,7 @@ pub mod profile;
 pub mod proxy; // RFC-0011: L7 Proxy for UDS workers
 pub mod python;
 pub mod python_info;
+pub mod rsgi; // RFC-0019: Native Sovereignty (RSGI Host Engine)
 pub mod runner;
 pub mod serve;
 pub mod shm; // RFC-0015: Memory Gravity

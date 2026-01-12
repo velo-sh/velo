@@ -96,7 +96,11 @@ pub fn run() -> Result<()> {
             return Ok(());
         }
         "-V" | "--version" => {
-            println!("velo {}", env!("CARGO_PKG_VERSION"));
+            println!(
+                "velo {} ({})",
+                env!("CARGO_PKG_VERSION"),
+                crate::common::constants::BUILD_SCM_HASH
+            );
             return Ok(());
         }
         "run" => cmd::cmd_run(&args),

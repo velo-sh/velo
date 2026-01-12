@@ -10,7 +10,11 @@ use crate::{hardware, python, python_info};
 pub fn cmd_info() -> Result<()> {
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
-    println!("Velo {}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "Velo {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        crate::common::constants::BUILD_SCM_HASH
+    );
     println!("══════════════════════════════════════════════════════════════\n");
 
     // Hardware info
@@ -55,6 +59,27 @@ pub fn cmd_info() -> Result<()> {
         }
     } else {
         println!("└─ No cache (run a script first)\n");
+    }
+
+    // Custody Status (Embedded Toolchain)
+    println!("▸ Custody Status");
+    {
+        use crate::custody::{Custodian, UvCustodian};
+        let custodian = UvCustodian::new();
+
+        // ensure() triggers extraction if missing or verification fails
+        match custodian.ensure() {
+            Ok(path) => {
+                println!("├─ Embedded uv: Ready ✅");
+                println!("├─ Location:    {}", path.display());
+                println!("└─ Integrity:   BLAKE3 Verified");
+            }
+            Err(e) => {
+                println!("├─ Embedded uv: Failed ❌");
+                println!("└─ Error:       {}", e);
+            }
+        }
+        println!();
     }
 
     // Zygote Status
