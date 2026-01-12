@@ -18,6 +18,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::custody::autopilot::{AutopilotDecision, AutopilotEngine};
 use crate::lifecycle::apply_standard_hygiene;
 use crate::serve::config::{LogFormat, ServeArgs};
 use crate::serve::error::ServeError;
@@ -395,8 +396,68 @@ impl ShutdownCoordinator {
 }
 
 // ============================================================================
-// Event Bus Definitions (Recommendation #1)
+// Worker Management Helpers (RFC-0011, RFC-0018 Phase 7.2)
 // ============================================================================
+
+/// K8s-style CrashLoopBackOff tracker per worker
+/// Prevents respawn storms with exponential backoff: 10s -> 20s -> 40s -> ... -> 300s (cap)
+struct RespawnTracker {
+    last_failure: Option<Instant>,
+    backoff_secs: u64,
+    consecutive_failures: u32,
+    fail_fast_limit: u32,
+}
+
+impl RespawnTracker {
+    fn new() -> Self {
+        let timeout_multiplier: f64 = std::env::var("VELO_TIMEOUT_MULTIPLIER")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0);
+
+        let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
+        let base_limit: u32 = std::env::var("VELO_FAIL_FAST_LIMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let fail_fast_limit = (base_limit as f64 * timeout_multiplier) as u32;
+
+        Self {
+            last_failure: None,
+            backoff_secs,
+            consecutive_failures: 0,
+            fail_fast_limit,
+        }
+    }
+
+    fn should_respawn(&self) -> bool {
+        match self.last_failure {
+            None => true,
+            Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
+        }
+    }
+
+    fn record_failure(&mut self) -> bool {
+        self.last_failure = Some(Instant::now());
+        self.consecutive_failures += 1;
+        self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
+
+        if self.consecutive_failures >= self.fail_fast_limit {
+            eprintln!(
+                "FATAL: Worker failed to start after {}/{} attempts. \
+                 Check environment configuration and dependencies.",
+                self.consecutive_failures, self.fail_fast_limit
+            );
+            false
+        } else {
+            true
+        }
+    }
+}
 
 /// Events that can wake up the main server loop
 #[derive(Debug)]
@@ -680,8 +741,24 @@ pub fn run_server(
         }
     }
 
-    // Start Zygote if enabled
-    if args.use_zygote && crate::zygote::is_supported() {
+    // Start Zygote if enabled or suggested by Autopilot
+    let autopilot = AutopilotEngine::default();
+    let script_path = project_dir.join(format!("{}.py", module.replace('.', "/")));
+    let autopilot_decision = autopilot.should_use_zygote(&script_path);
+
+    let mut use_zygote = args.use_zygote;
+    if !use_zygote
+        && matches!(
+            autopilot_decision,
+            AutopilotDecision::EnabledByStatic { .. }
+                | AutopilotDecision::EnabledByPerformance { .. }
+        )
+    {
+        logger.info("Autopilot: Implicitly enabling Zygote based on imports/performance");
+        use_zygote = true;
+    }
+
+    if use_zygote && crate::zygote::is_supported() {
         let socket_path = crate::zygote::ipc::default_socket_path();
 
         if !socket_path.exists() {
@@ -762,390 +839,204 @@ pub fn run_server(
         }
     }
 
-    // RFC-0011 & Net-001: L7 Proxy activation
-    // We use >= 1 because even a single worker must go through the proxy to ensure
-    // consistent header injection (X-Forwarded-For) and Scope matching.
-    // DO NOT CHANGE to > 1 unless Real-IP injection is handled elsewhere.
+    // RFC-0011 & Net-001: Unified Worker Management & L7 Proxy
+    let mut workers = Vec::new();
+    let mut use_proxy = false;
+
+    // A. Spawn via Zygote (Optimized Path)
     if !args.dry_run
         && args.workers >= 1
-        && args.use_zygote
+        && use_zygote
         && !preload_modules.is_empty()
         && _zygote_guard.is_some()
         && server == Server::Uvicorn
     {
         eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
+        let socket_path = crate::zygote::ipc::default_socket_path();
 
-        use crate::serve::worker::Worker;
-        use crate::zygote::ipc::default_socket_path;
-        let socket_path = default_socket_path();
-        let mut workers = Vec::new();
-
-        // Spawn N workers
-        let mut spawn_failed = false;
         for i in 0..args.workers {
-            match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
+            match crate::serve::worker::Worker::spawn_uds_via_zygote(
+                &socket_path,
+                &args.app,
+                i as u64,
+                None,
+                config,
+            ) {
                 Ok(worker) => {
                     logger.info(&format!(
-                        "[WORKER] event=spawn worker_id={} pid={} socket={}",
-                        i,
-                        worker.pid,
-                        worker
-                            .socket_path
-                            .as_ref()
-                            .map(|p| p.to_string_lossy())
-                            .unwrap_or_default()
+                        "[WORKER] event=spawn type=zygote worker_id={} pid={}",
+                        i, worker.pid
                     ));
-                    eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
+                    eprintln!("  ✅ Worker {} (PID: {}) [Zygote]", i + 1, worker.pid);
                     workers.push(worker);
                 }
                 Err(e) => {
-                    logger.error(&format!(
-                        "[WORKER] event=spawn_failed worker_id={} error={}",
-                        i, e
-                    ));
-                    // RFC-0013: Silent Fallback to cold start on IPC failure
                     logger.warn(&format!(
-                        "  ⚠️ Zygote worker spawn failed: {}. Falling back to cold start...",
+                        "Zygote worker spawn failed: {}. Falling back to cold start.",
                         e
                     ));
-                    spawn_failed = true;
                     break;
                 }
             }
         }
-
-        if spawn_failed {
-            // Cleanup already spawned workers (if any) before falling back
-            for worker in workers.iter() {
-                let _ = worker.shutdown(Duration::from_secs(5));
-            }
+        if workers.len() == args.workers as usize {
+            use_proxy = true;
         } else {
-            eprintln!("✅ All workers ready");
-
-            // RFC-0011: K8s-style CrashLoopBackOff tracker per worker
-            // Prevents respawn storms with exponential backoff: 10s → 20s → 40s → ... → 300s (cap)
-            struct RespawnTracker {
-                last_failure: Option<Instant>,
-                backoff_secs: u64,
-                consecutive_failures: u32,
-                fail_fast_limit: u32,
+            // Partial failure: cleanup and fallback
+            for w in workers.drain(..) {
+                let _ = w.shutdown(Duration::from_secs(1));
             }
-            impl RespawnTracker {
-                fn new() -> Self {
-                    // SSOT: Read timeout multiplier (CI uses 6x)
-                    let timeout_multiplier: f64 = std::env::var("VELO_TIMEOUT_MULTIPLIER")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(1.0);
+        }
+    }
 
-                    let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(10);
-
-                    // VELO_FAIL_FAST_LIMIT: base limit, scaled by timeout multiplier
-                    // Default: 5, but in CI (6x multiplier) becomes 5*6=30
-                    let base_limit: u32 = std::env::var("VELO_FAIL_FAST_LIMIT")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(5);
-                    let fail_fast_limit = (base_limit as f64 * timeout_multiplier) as u32;
-
-                    Self {
-                        last_failure: None,
-                        backoff_secs,
-                        consecutive_failures: 0,
-                        fail_fast_limit,
-                    }
+    // B. Spawn via Cold-Start Proxy (Safe Path - Phase 7.2)
+    if !args.dry_run && workers.is_empty() && args.workers >= 1 && server == Server::Uvicorn {
+        eprintln!(
+            "🔄 Launching {} workers via Cold-Start Proxy...",
+            args.workers
+        );
+        for i in 0..args.workers {
+            match crate::serve::worker::Worker::spawn_uds_direct(
+                &args.app,
+                i as u64,
+                python_path,
+                project_dir,
+                config,
+            ) {
+                Ok(worker) => {
+                    logger.info(&format!(
+                        "[WORKER] event=spawn type=direct worker_id={} pid={}",
+                        i, worker.pid
+                    ));
+                    eprintln!("  ✅ Worker {} (PID: {}) [Cold-Start]", i + 1, worker.pid);
+                    workers.push(worker);
                 }
-                fn should_respawn(&self) -> bool {
-                    match self.last_failure {
-                        None => true,
-                        Some(t) => t.elapsed().as_secs() >= self.backoff_secs,
-                    }
-                }
-                fn record_failure(&mut self) -> bool {
-                    self.last_failure = Some(Instant::now());
-                    self.consecutive_failures += 1;
-                    self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
-
-                    // RFC-0011 Fail-Fast: If we fail consecutively at startup,
-                    // it's a fatal environment issue.
-                    if self.consecutive_failures >= self.fail_fast_limit {
-                        eprintln!(
-                            "FATAL: Worker failed to start after {}/{} attempts. \
-                             Please check environment configuration, networking, and dependencies. \
-                             To adjust this threshold, set the VELO_FAIL_FAST_LIMIT environment variable (e.g., VELO_FAIL_FAST_LIMIT=10).",
-                            self.consecutive_failures, self.fail_fast_limit
-                        );
-                        false
-                    } else {
-                        true
-                    }
-                }
-                #[allow(dead_code)] // Part of RespawnTracker API, may be used in future
-                fn reset(&mut self) {
-                    // RFC-0011 Stability Fix: "Probation Period".
-                    // Only reset if the system has been stable for at least 30 seconds.
-                    if let Some(t) = self.last_failure
-                        && t.elapsed().as_secs() < 30
-                    {
-                        return;
-                    }
-                    let default_backoff = std::env::var("VELO_BACKOFF_SECS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(10);
-                    self.backoff_secs = default_backoff;
-                    self.consecutive_failures = 0;
-                    self.last_failure = None;
-                }
-            }
-            let mut respawn_trackers: Vec<RespawnTracker> =
-                (0..workers.len()).map(|_| RespawnTracker::new()).collect();
-
-            // =========================================================================
-            // RFC-0011 Phase 2B: L7 Proxy Integration
-            // =========================================================================
-
-            // 1. Create LoadBalancer
-            let socket_paths: Vec<String> = workers
-                .iter()
-                .filter_map(|w| {
-                    w.socket_path
-                        .as_ref()
-                        .map(|p| p.to_string_lossy().to_string())
-                })
-                .collect();
-            let lb = Arc::new(LoadBalancer::new(socket_paths));
-            // 2. Update Health Check with LB reference (B2: Deep Health Check)
-            {
-                if let Ok(mut guard) = lb_holder.lock() {
-                    *guard = Some(lb.clone());
-                    logger.debug("LoadBalancer attached to HealthServer");
-                } else {
-                    logger.warn("Failed to attach LoadBalancer to HealthServer (lock error)");
-                }
-            }
-            // 3. Start Tokio Runtime for Hyper
-            logger.info("Starting L7 Proxy...");
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| anyhow::anyhow!("Failed to create Tokio runtime: {}", e))?;
-
-            // 4. Create Proxy Service components
-            // VeloProxyService takes Arc<LoadBalancer> and implements hyper::service::Service
-            let service = VeloProxyService::new(lb.clone());
-
-            let addr = format!("{}:{}", args.host, args.port);
-            let bind_addr: std::net::SocketAddr = addr
-                .parse()
-                .map_err(|e| anyhow::anyhow!("Invalid bind address {}: {}", addr, e))?;
-
-            // 5. Start Proxy Server
-            // RFC-0011 Phase 3C: We run the proxy in an async block to ensure the runtime stays alive
-            // and background health checks can continue.
-            let lb_for_proxy = lb.clone(); // Clone for async spawn
-            let _proxy_handle = rt.spawn(async move {
-                let listener = match tokio::net::TcpListener::bind(bind_addr).await {
-                    Ok(l) => l,
-                    Err(e) => {
-                        eprintln!("❌ Proxy failed to bind {}: {}", bind_addr, e);
-                        return;
-                    }
-                };
-
-                // RFC-0011 Phase 3C: Active health checks MUST run inside runtime context
-                lb_for_proxy
-                    .clone()
-                    .spawn_health_checks(Duration::from_secs(5));
-
-                eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
-
-                loop {
-                    match listener.accept().await {
-                        Ok((stream, peer_addr)) => {
-                            let io = TokioIo::new(stream);
-                            // RFC-0011 BLOCK-004 Fix: Pass client address for X-Forwarded-For injection
-                            let service_with_addr = service.clone().with_client_addr(peer_addr);
-
-                            tokio::spawn(async move {
-                                if let Err(err) = http1::Builder::new()
-                                    .serve_connection(io, service_with_addr)
-                                    .await
-                                {
-                                    let _ = err;
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            eprintln!("⚠️ Proxy accept error: {}", e);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                        }
-                    }
-                }
-            });
-
-            // Wait for signal with periodic worker health checks
-            loop {
-                // RFC-0011 Stabilization: Give workers time to bind
-                std::thread::sleep(std::time::Duration::from_millis(500));
-
-                // Check for signals with timeout for health monitoring
-                match rx.recv_timeout(std::time::Duration::from_secs(1)) {
-                    Ok(ServerEvent::Signal(sig)) => match sig {
-                        signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM => {
-                            eprintln!("\n🛑 Received shutdown signal, stopping workers...");
-                            for (i, worker) in workers.iter().enumerate() {
-                                eprint!("  Stopping worker {}... ", i + 1);
-                                match worker.shutdown(Duration::from_secs(args.timeout)) {
-                                    Ok(_) => eprintln!("✅"),
-                                    Err(e) => eprintln!("⚠️ {}", e),
-                                }
-                            }
-                            eprintln!("✅ All workers stopped");
-                            eprintln!("✅ All workers stopped");
-                            return Ok(ServerExit::Shutdown);
-                        }
-                        _ => {
-                            logger.trace(&format!("Supressing signal {} in Zygote mode", sig));
-                        }
-                    },
-                    Ok(ServerEvent::WorkerExit) => {
-                        // Worker exited - check which ones and respawn
-                        logger.warn(
-                            "Worker exit event received (Manual/Windows path), checking workers...",
-                        );
-                    }
-                    Ok(ServerEvent::Reload) => {
-                        logger.warn(
-                            "Reload requested but not supported in Zygote worker mode (ignoring)",
-                        );
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                        // Periodic health check - respawn dead workers with K8s CrashLoopBackOff
-                        // [STABILIZATION] Temporary deactivation of death scan
-                        for (i, worker) in workers.iter_mut().enumerate() {
-                            if !worker.is_alive() {
-                                let tracker = &mut respawn_trackers[i];
-
-                                // Check if we're still in backoff period FIRST
-                                // Don't record failure until we actually try to respawn
-                                if !tracker.should_respawn() {
-                                    logger.debug(&format!(
-                                        "Worker {} dead, in backoff ({}s remaining)",
-                                        i + 1,
-                                        tracker.backoff_secs.saturating_sub(
-                                            tracker
-                                                .last_failure
-                                                .map(|t| t.elapsed().as_secs())
-                                                .unwrap_or(0)
-                                        )
-                                    ));
-                                    continue;
-                                }
-
-                                logger.warn(&format!(
-                                    "[RESPAWN] worker_id={} attempt={}/{} backoff={}s reason=process_exit old_pid={}",
-                                    i,
-                                    tracker.consecutive_failures + 1,
-                                    tracker.fail_fast_limit,
-                                    tracker.backoff_secs,
-                                    worker.pid()
-                                ));
-
-                                // Record this respawn attempt (sets last_failure timestamp)
-                                // This enables proper backoff timing, but don't fail-fast yet
-                                tracker.last_failure = Some(std::time::Instant::now());
-
-                                // Respawn via Zygote
-                                match Worker::spawn_uds_via_zygote(
-                                    &socket_path,
-                                    &args.app,
-                                    i as u64,
-                                    None,
-                                    config,
-                                ) {
-                                    Ok(new_worker) => {
-                                        // Update LoadBalancer with new socket
-                                        if let Some(ref old_path) = worker.socket_path {
-                                            lb.remove_backend(&old_path.to_string_lossy());
-                                        }
-                                        if let Some(ref new_path) = new_worker.socket_path {
-                                            lb.add_backend(&new_path.to_string_lossy());
-                                        }
-
-                                        logger.info(&format!(
-                                            "[RESPAWN] worker_id={} status=success new_pid={} socket={}",
-                                            i,
-                                            new_worker.pid(),
-                                            new_worker.socket_path.as_ref().map(|p| p.to_string_lossy()).unwrap_or_default()
-                                        ));
-                                        *worker = new_worker;
-                                        // Don't reset immediately - let 30s stability period apply
-                                    }
-                                    Err(e) => {
-                                        // IPC failure is a hard failure - increment counter
-                                        if !tracker.record_failure() {
-                                            anyhow::bail!(
-                                                "FATAL: Worker respawn IPC failing consistently. Check Zygote health."
-                                            );
-                                        }
-                                        logger.error(&format!(
-                                            "[RESPAWN] worker_id={} status=failed attempt={}/{} error={}",
-                                            i,
-                                            tracker.consecutive_failures,
-                                            tracker.fail_fast_limit,
-                                            e
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-
-                        // P2: Zygote deep probe - verify Zygote is still responding
-                        let healthy_workers = workers.iter().filter(|w| w.is_alive()).count();
-                        let total_workers = workers.len();
-
-                        match crate::zygote::ipc::send_command(
-                            &socket_path,
-                            crate::zygote::ipc::ZygoteCommand::Status {
-                                request_id: Some(uuid::Uuid::now_v7().to_string()),
-                            },
-                            None,
-                        ) {
-                            Ok(_) => {
-                                // Only log periodically (every ~10 health checks)
-                                static HEALTH_LOG_COUNTER: std::sync::atomic::AtomicU64 =
-                                    std::sync::atomic::AtomicU64::new(0);
-                                let count = HEALTH_LOG_COUNTER
-                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                if count.is_multiple_of(10) {
-                                    logger.debug(&format!(
-                                        "[HEALTH] workers_alive={}/{} zygote=ok",
-                                        healthy_workers, total_workers
-                                    ));
-                                }
-                            }
-                            Err(e) => {
-                                logger.warn(&format!(
-                                    "[HEALTH] workers_alive={}/{} zygote=error error={}",
-                                    healthy_workers, total_workers, e
-                                ));
-                            }
-                        }
-                    }
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        logger.error("Signal bus disconnected! Finalizing Zygote shutdown.");
-                        break;
-                    }
+                Err(e) => {
+                    logger.error(&format!("Direct worker spawn failed: {}", e));
+                    break;
                 }
             }
         }
+        if workers.len() == args.workers as usize {
+            use_proxy = true;
+        } else {
+            for w in workers.drain(..) {
+                let _ = w.shutdown(Duration::from_secs(1));
+            }
+        }
+    }
 
-        if spawn_failed {
-            eprintln!("KINETIC_FALLBACK: Zygote failed, falling back to cold start.");
+    // C. Run Unified L7 Proxy Loop
+    if use_proxy && !workers.is_empty() {
+        eprintln!("✅ All workers ready");
+        let mut respawn_trackers: Vec<RespawnTracker> =
+            (0..workers.len()).map(|_| RespawnTracker::new()).collect();
+
+        let socket_paths: Vec<String> = workers
+            .iter()
+            .filter_map(|w| {
+                w.socket_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+            })
+            .collect();
+        let lb = Arc::new(LoadBalancer::new(socket_paths));
+
+        if let Ok(mut guard) = lb_holder.lock() {
+            *guard = Some(lb.clone());
+        }
+
+        logger.info("Starting L7 Proxy...");
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| anyhow::anyhow!("Tokio error: {}", e))?;
+        let service = VeloProxyService::new(lb.clone());
+        let addr = format!("{}:{}", args.host, args.port);
+        let bind_addr: std::net::SocketAddr = addr.parse()?;
+
+        let lb_for_proxy = lb.clone();
+        rt.spawn(async move {
+            let listener = tokio::net::TcpListener::bind(bind_addr)
+                .await
+                .expect("Failed to bind proxy");
+            lb_for_proxy
+                .clone()
+                .spawn_health_checks(Duration::from_secs(5));
+            eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
+            loop {
+                if let Ok((stream, peer_addr)) = listener.accept().await {
+                    let io = TokioIo::new(stream);
+                    let service_with_addr = service.clone().with_client_addr(peer_addr);
+                    tokio::spawn(async move {
+                        let _ = http1::Builder::new()
+                            .serve_connection(io, service_with_addr)
+                            .await;
+                    });
+                }
+            }
+        });
+
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            match rx.recv_timeout(Duration::from_secs(1)) {
+                Ok(ServerEvent::Signal(
+                    signal_hook::consts::SIGINT | signal_hook::consts::SIGTERM,
+                )) => {
+                    eprintln!("\n🛑 Received shutdown signal, stopping workers...");
+                    for w in &workers {
+                        let _ = w.shutdown(Duration::from_secs(args.timeout));
+                    }
+                    return Ok(ServerExit::Shutdown);
+                }
+                Ok(ServerEvent::Signal(_)) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    for (i, worker) in workers.iter_mut().enumerate() {
+                        if !worker.is_alive() {
+                            let tracker = &mut respawn_trackers[i];
+                            if !tracker.should_respawn() {
+                                continue;
+                            }
+
+                            logger.warn(&format!(
+                                "[RESPAWN] worker_id={} attempt={} old_pid={}",
+                                i,
+                                tracker.consecutive_failures + 1,
+                                worker.pid
+                            ));
+                            tracker.last_failure = Some(Instant::now());
+
+                            match worker.respawn(
+                                &args.app,
+                                i as u64,
+                                python_path,
+                                project_dir,
+                                config,
+                            ) {
+                                Ok(new_worker) => {
+                                    if let Some(ref old) = worker.socket_path {
+                                        lb.remove_backend(&old.to_string_lossy());
+                                    }
+                                    if let Some(ref new) = new_worker.socket_path {
+                                        lb.add_backend(&new.to_string_lossy());
+                                    }
+                                    *worker = new_worker;
+                                }
+                                Err(e) => {
+                                    if !tracker.record_failure() {
+                                        anyhow::bail!(
+                                            "FATAL: Worker respawn failing consistently."
+                                        );
+                                    }
+                                    logger.error(&format!("[RESPAWN] worker_id={} error={}", i, e));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                _ => {}
+            }
         }
     }
 
@@ -1154,12 +1045,15 @@ pub fn run_server(
     loop {
         let start_time = Instant::now();
 
-        // FALLBACK: Standard uvicorn/gunicorn mode
+        if server == Server::Uvicorn && args.workers >= 1 {
+            logger.info("Transitioning to RSGI Host (Proxy Redirect)...");
+        }
+
         // Build server command based on server type
-        logger.debug(&format!("Building command for {}...", server));
         let mut cmd = Command::new(python_path);
         cmd.arg("-m").arg(server.module_name());
 
+        // Match server type for legacy fallback
         match server {
             Server::Uvicorn => {
                 cmd.arg(&args.app)

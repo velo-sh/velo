@@ -13,7 +13,7 @@ pub struct Worker {
     pub pid: u32,
     pub port: u16,
     started_at: Instant,
-    zygote_socket: PathBuf,
+    zygote_socket: Option<PathBuf>,
     script_path: Option<PathBuf>,
     /// UDS socket path (RFC-0011 Phase 2)
     pub socket_path: Option<PathBuf>,
@@ -97,7 +97,7 @@ impl Worker {
                 pid: worker_pid,
                 port: 0,
                 started_at: Instant::now(),
-                zygote_socket: zygote_socket.to_path_buf(),
+                zygote_socket: Some(zygote_socket.to_path_buf()),
                 script_path: None,
                 socket_path: Some(socket_path),
             })
@@ -153,13 +153,60 @@ impl Worker {
                 pid: worker_pid,
                 port,
                 started_at: Instant::now(),
-                zygote_socket: zygote_socket.to_path_buf(),
+                zygote_socket: Some(zygote_socket.to_path_buf()),
                 script_path: None,
                 socket_path: None,
             })
         } else {
             anyhow::bail!("Zygote failed to fork worker: {:?}", response);
         }
+    }
+
+    /// Spawn a worker directly using UDS (Cold-start proxy mode)
+    pub fn spawn_uds_direct(
+        app: &str,
+        worker_id: u64,
+        python_path: &Path,
+        project_dir: &Path,
+        config: &crate::config::VeloConfig,
+    ) -> Result<Self> {
+        Self::validate_app_path(app)?;
+
+        let socket_path = crate::common::paths::generate_worker_socket_path(worker_id);
+        let socket_path_str = socket_path.to_string_lossy().to_string();
+
+        let mut cmd = std::process::Command::new(python_path);
+        cmd.current_dir(project_dir);
+
+        // Pass essential environment
+        let env = build_worker_env(config);
+        for (k, v) in env.iter() {
+            cmd.env(k, v);
+        }
+
+        // Use uvicorn directly if possible, or fall back to velo-managed launcher
+        cmd.args([
+            "-m",
+            "uvicorn",
+            app,
+            "--uds",
+            &socket_path_str,
+            "--proxy-headers",
+        ]);
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn direct worker: {}", e))?;
+        let pid = child.id();
+
+        Ok(Self {
+            pid,
+            port: 0,
+            started_at: Instant::now(),
+            zygote_socket: None,
+            script_path: None,
+            socket_path: Some(socket_path),
+        })
     }
 
     /// Validate app path security
@@ -193,6 +240,22 @@ impl Worker {
         Ok(())
     }
 
+    /// Respawn this worker using its original parameters
+    pub fn respawn(
+        &self,
+        app: &str,
+        worker_id: u64,
+        python_path: &Path,
+        project_dir: &Path,
+        config: &crate::config::VeloConfig,
+    ) -> Result<Self> {
+        if let Some(ref zygote) = self.zygote_socket {
+            Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config)
+        } else {
+            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config)
+        }
+    }
+
     pub fn pid(&self) -> u32 {
         self.pid
     }
@@ -202,13 +265,18 @@ impl Worker {
     }
 
     pub fn is_running(&self) -> bool {
-        let cmd = ipc::ZygoteCommand::WorkerStatus {
-            worker_pid: self.pid,
-            request_id: Some(Uuid::now_v7().to_string()),
-        };
-        match ipc::send_command(&self.zygote_socket, cmd, None) {
-            Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
-            _ => false,
+        if let Some(ref zygote) = self.zygote_socket {
+            let cmd = ipc::ZygoteCommand::WorkerStatus {
+                worker_pid: self.pid,
+                request_id: Some(Uuid::now_v7().to_string()),
+            };
+            match ipc::send_command(zygote, cmd, None) {
+                Ok(ipc::ZygoteResponse::WorkerInfo { is_running, .. }) => is_running,
+                _ => false,
+            }
+        } else {
+            // Direct worker: check if process exists
+            self.is_alive()
         }
     }
 
@@ -234,31 +302,50 @@ impl Worker {
     }
 
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
-        let cmd = ipc::ZygoteCommand::SignalWorker {
-            worker_pid: self.pid,
-            signal: 15, // SIGTERM
-            request_id: Some(Uuid::now_v7().to_string()),
-        };
-        let _ = ipc::send_command(&self.zygote_socket, cmd, None);
+        if let Some(ref zygote) = self.zygote_socket {
+            let cmd = ipc::ZygoteCommand::SignalWorker {
+                worker_pid: self.pid,
+                signal: 15, // SIGTERM
+                request_id: Some(Uuid::now_v7().to_string()),
+            };
+            let _ = ipc::send_command(zygote, cmd, None);
 
-        let cmd = ipc::ZygoteCommand::WaitWorker {
-            worker_pid: self.pid,
-            timeout_secs: Some(timeout.as_secs()),
-            request_id: Some(Uuid::now_v7().to_string()),
-        };
-        let response = ipc::send_command(&self.zygote_socket, cmd, None);
+            let cmd = ipc::ZygoteCommand::WaitWorker {
+                worker_pid: self.pid,
+                timeout_secs: Some(timeout.as_secs()),
+                request_id: Some(Uuid::now_v7().to_string()),
+            };
+            let response = ipc::send_command(zygote, cmd, None);
 
-        match response {
-            Ok(ipc::ZygoteResponse::WorkerExited { .. }) => Ok(()),
-            _ => {
-                let kill_cmd = ipc::ZygoteCommand::SignalWorker {
-                    worker_pid: self.pid,
-                    signal: 9, // SIGKILL
-                    request_id: Some(Uuid::now_v7().to_string()),
-                };
-                let _ = ipc::send_command(&self.zygote_socket, kill_cmd, None);
-                Ok(())
+            match response {
+                Ok(ipc::ZygoteResponse::WorkerExited { .. }) => Ok(()),
+                _ => {
+                    let kill_cmd = ipc::ZygoteCommand::SignalWorker {
+                        worker_pid: self.pid,
+                        signal: 9, // SIGKILL
+                        request_id: Some(Uuid::now_v7().to_string()),
+                    };
+                    let _ = ipc::send_command(zygote, kill_cmd, None);
+                    Ok(())
+                }
             }
+        } else {
+            // Direct worker: signal directly
+            unsafe {
+                libc::kill(self.pid as i32, 15); // SIGTERM
+            }
+            // Wait for exit or kill
+            let start = Instant::now();
+            while start.elapsed() < timeout {
+                if !self.is_alive() {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            unsafe {
+                libc::kill(self.pid as i32, 9); // SIGKILL
+            }
+            Ok(())
         }
     }
 }

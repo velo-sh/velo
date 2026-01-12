@@ -76,7 +76,7 @@ signal-hook = "0.3"      # Platform-specific signal handling
 nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS support
 
 [features]
-default = []
+default = ["embedded_uv"]
 embedded_uv = []  # RFC-0018: Embed uv binary at build time
 
 [build-dependencies]
