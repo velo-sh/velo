@@ -71,6 +71,9 @@ http = "1.1"
 http-body-util = "0.1"
 pin-project-lite = "0.2"
 
+# RFC-0019: Vendored Granian Core for Native Sovereignty
+granian-core = { path = "vendor/granian" }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 fs2 = "0.4"

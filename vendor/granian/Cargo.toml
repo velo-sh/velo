@@ -1,0 +1,48 @@
+[package]
+name = "granian-core"
+version = "2.6.1"
+description = "Vendored Granian core for Velo Native Sovereignty"
+authors = ["Giovanni Barillari <g@baro.dev>", "Velo Team"]
+license = "BSD-3-Clause"
+edition = "2024"
+
+# This is a vendored fork of Granian, modified for Velo integration
+# Original: https://github.com/emmett-framework/granian
+
+[lib]
+name = "granian_core"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+anyhow = "1.0"
+crossbeam-channel = "0.5"
+encoding_rs = "0.8"
+futures = "0.3"
+futures-util = { version = "0.3", default-features = false }
+http-body-util = "0.1"
+hyper = { version = "1.4", features = ["http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
+itertools = "0.14"
+log = "0.4"
+mime_guess = "2.0"
+pem = "3.0"
+percent-encoding = "2.3"
+pin-project-lite = "0.2"
+pkcs8 = { version = "0.10", features = ["encryption", "pkcs5"] }
+pyo3 = { version = "0.27", features = ["anyhow", "bytes", "extension-module", "generate-import-lib"] }
+pyo3-log = { version = "0.13", git = "https://github.com/gi0baro/pyo3-log.git", branch = "pyo3-027" }
+rustls-pemfile = "2.2"
+socket2 = { version = "0.6", features = ["all"] }
+sysinfo = "0.37"
+tls-listener = { version = "0.11", git = "https://github.com/gi0baro/tls-listener.git", branch = "0.11.x", features = ["rustls-ring", "rustls-tls12"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tokio-tungstenite = "0.28"
+tokio-util = { version = "0.7", features = ["codec", "rt"] }
+
+[build-dependencies]
+pyo3-build-config = "0.27"
+
+[features]
+default = []
