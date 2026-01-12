@@ -3,12 +3,17 @@
 //! RFC-0019: Native Sovereignty.
 //! This module implements the Rust-native host that communicates with Python workers
 //! via the RSGI-Velo protocol.
+//!
+//! Gate I/K Integration: Granian Core provides zero-copy ASGI conversion.
 
 pub mod host;
 pub mod protocol;
 
 pub use host::RSGIHost;
 pub use protocol::*;
+
+// RFC-0019: Re-export vendored Granian core for ASGI/RSGI integration
+pub use granian_core as granian;
 
 use thiserror::Error;
 
