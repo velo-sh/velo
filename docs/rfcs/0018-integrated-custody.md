@@ -1,8 +1,9 @@
 # RFC-0018: Integrated Custody (Seamless Environment & Acceleration)
 
-**Status**: ✅ DESIGN APPROVED (TITANIUM Grade) — Implementation Pending
+**Status**: ✅ IMPLEMENTED (Phase 7.2)
 **Author**: Architect
 **Date**: 2026-01-09
+**Implemented**: 2026-01-12
 
 ## 0. Detailed Specifications
 *   **Architecture Overview**: [../architecture/velo_uv_architecture_overview.md](../architecture/velo_uv_architecture_overview.md)
@@ -30,7 +31,20 @@ Velo will treat the Python package manager as a private, managed asset.
     2.  If missing, extract to temporary location, verify BLAKE3 hash.
     3.  Set `0o755` permissions.
     4.  Symlink/Atomic rename to the permanent cache path.
-*   **Internal Use Only**: The embedded `uv` is used internally by `velo run` and `velo serve` for environment management. Users interact with Velo commands, not `uv` directly.
+*   **Internal Use Only**: The embedded `uv` is used internally by `velo run` and `velo serve` for environment management.
+*   **User Command**: `velo python <args>` provides access to the managed Python environment for scripting and debugging.
+
+### 3.1.1 Configuration (SSOT)
+The platform matrix is defined in `config/embedded_assets.toml`:
+```toml
+[uv]
+version = "0.9.24"
+
+[[uv.platforms]]
+os = "macos"
+arch = "aarch64"
+asset_name = "uv-aarch64-apple-darwin"
+```
 
 ### 3.2 Environment Convergence (The "SSoT" Model)
 Velo becomes the Single Source of Truth for the project environment.
@@ -50,9 +64,14 @@ Transparent Zygote management based on architectural heuristics.
     - **UDS Custody**: Velo manages the `/tmp/velo-zygote.sock` lifecycle, including automatic cleanup and health checks.
 
 ## 4. Impact Analysis
-*   **Binary Size**: Anticipated increase of ~15MB (compressed `uv` binaries). 
+*   **Binary Size**: ~47MB release binary (includes ~29MB embedded `uv`).
 *   **DX**: Reduces "Time to First Token" for AI apps from minutes (env setup) to seconds.
 *   **Security**: Embedded toolchain reduces TOCTOU risks associated with global `uv` binaries.
+
+## 4.1 Implementation Summary
+*   **Phase 1-4**: Core modules (`custody/`), build infrastructure (`build.rs`)
+*   **Phase 5**: Asset embedding via `include_bytes!`, BLAKE3 verification
+*   **Config**: Declarative platform matrix in `config/embedded_assets.toml`
 
 ## 5. Architectural Quality Gates
 
