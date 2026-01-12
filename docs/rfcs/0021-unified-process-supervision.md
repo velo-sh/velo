@@ -14,13 +14,15 @@ This RFC proposes a unified supervision strategy for all critical Velo component
 
 ## Supervised Components
 
-| Component      | Type       | Current State    | Priority |
-|----------------|------------|------------------|----------|
-| **Workers**    | Child proc | Polling 1s       | P0       |
-| **Zygote**     | Child proc | No auto-restart  | P0       |
-| **L7 Proxy**   | Tokio task | No supervision   | P1       |
-| **Health Srv** | Thread     | No supervision   | P2       |
-| **File Watch** | Thread     | No supervision   | P3       |
+| Component          | Type       | Current State    | Priority | File Location |
+|--------------------|------------|------------------|----------|---------------|
+| **Workers**        | Child proc | Polling 1s       | P0       | `runner.rs:738` |
+| **Zygote**         | Child proc | No auto-restart  | P0       | `zygote/mod.rs:395` |
+| **L7 Proxy**       | Tokio task | No supervision   | P1       | `runner.rs:925` |
+| **Signal Fwd**     | Thread     | No supervision   | P1       | `runner.rs:426` |
+| **LB Health**      | Tokio task | No supervision   | P1       | `load_balancer.rs:323` |
+| **Health Srv**     | Thread     | No supervision   | P2       | `health.rs:49` |
+| **File Watch**     | Thread     | No supervision   | P3       | `runner.rs:588` |
 
 ## Architecture
 
@@ -37,7 +39,9 @@ This RFC proposes a unified supervision strategy for all critical Velo component
 │                     │     │  Workers[]  ─►  respawn via Zygote         │    │
 │  ┌───────────────┐  │     │  Zygote     ─►  respawn (full restart)     │    │
 │  │   Polling     │──┤     │  Proxy      ─►  respawn tokio task         │    │
-│  │  (Fallback)   │  │     │  Health     ─►  respawn thread             │    │
+│  │  (Fallback)   │  │     │  SignalFwd  ─►  respawn thread             │    │
+│  │  10s interval │  │     │  LBHealth   ─►  respawn tokio task         │    │
+│  └───────────────┘  │     │  Health     ─►  respawn thread             │    │
 │  │  10s interval │  │     │                                            │    │
 │  └───────────────┘  │     └────────────────────────────────────────────┘    │
 │                     │                                                       │
@@ -66,7 +70,10 @@ enum Component {
     Worker(u64),  // worker_id
     Zygote,
     Proxy,
+    SignalForwarder,
+    LBHealthCheck,
     HealthServer,
+    FileWatcher,
 }
 ```
 
@@ -123,6 +130,36 @@ let health_handle = std::thread::spawn(move || {
 // If dead, respawn
 ```
 
+### 5. Signal Forwarder (Thread Supervision)
+
+**Current Problem**: If signal forwarder dies, graceful shutdown breaks.
+
+```rust
+// runner.rs:426 - Signal forwarding thread
+let sig_fwd_handle = std::thread::spawn(move || {
+    forward_signals_to_child(child_pid)
+});
+
+// If thread dies, respawn it
+// Critical: Without this, SIGTERM/SIGINT won't reach workers
+```
+
+### 6. LB Health Check (Tokio Task Supervision)
+
+**Current Problem**: If health check task dies, unhealthy workers stay in rotation.
+
+```rust
+// load_balancer.rs:323 - Background health check task
+let health_handle = tokio::spawn(async move {
+    loop {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        lb.check_health().await;
+    }
+});
+
+// Monitor and restart if task completes unexpectedly
+```
+
 ## Unified Event System
 
 ```rust
@@ -140,7 +177,10 @@ struct Supervisor {
     workers: Vec<Worker>,
     zygote: Option<ZygoteLauncher>,
     proxy_handle: Option<JoinHandle<()>>,
-    health_handle: Option<JoinHandle<()>>,
+    lb_health_handle: Option<JoinHandle<()>>,
+    signal_fwd_handle: Option<std::thread::JoinHandle<()>>,
+    health_srv_handle: Option<std::thread::JoinHandle<()>>,
+    file_watch_handle: Option<std::thread::JoinHandle<()>>,
     
     event_rx: Receiver<SupervisionEvent>,
     respawn_tracker: RespawnTracker,
@@ -215,7 +255,7 @@ polling_interval_secs = 10
 fail_fast_limit = 5
 
 # Components to supervise (all by default)
-supervised_components = ["workers", "zygote", "proxy", "health"]
+supervised_components = ["workers", "zygote", "proxy", "signal_fwd", "lb_health", "health_srv", "file_watch"]
 ```
 
 ## Observability
@@ -239,12 +279,15 @@ All supervision events use structured logging:
 
 ## Success Metrics
 
-| Component   | Detection Latency | Recovery Time |
-|-------------|-------------------|---------------|
-| Workers     | ~0ms (SIGCHLD)    | < 1s          |
-| Zygote      | ~0ms (SIGCHLD)    | < 2s          |
-| Proxy       | < 100ms           | < 100ms       |
-| Health Srv  | < 100ms           | < 100ms       |
+| Component    | Detection Latency | Recovery Time |
+|--------------|-------------------|---------------|
+| Workers      | ~0ms (SIGCHLD)    | < 1s          |
+| Zygote       | ~0ms (SIGCHLD)    | < 2s          |
+| Proxy        | < 100ms           | < 100ms       |
+| Signal Fwd   | < 100ms           | < 100ms       |
+| LB Health    | < 100ms           | < 100ms       |
+| Health Srv   | < 100ms           | < 100ms       |
+| File Watch   | < 100ms           | < 100ms       |
 
 ## References
 
