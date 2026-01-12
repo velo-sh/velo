@@ -158,7 +158,7 @@ setup_python_env() {
     
     # Sync dependencies
     export UV_PROJECT_ENVIRONMENT="$venv_path"
-    uv sync --extra dev
+    uv sync
     
     log_success "Python environment ready"
 }
