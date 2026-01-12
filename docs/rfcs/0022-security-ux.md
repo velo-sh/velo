@@ -126,5 +126,104 @@ enum VeloSecurityMode {
 |:---|:---|:---|
 | Startup security banner | 7.2 | ⭐⭐⭐ P1 |
 | Filtered variable logging | 7.2 | ⭐⭐⭐ P1 |
+| Searchable error codes | 7.2 | ⭐⭐⭐ P1 |
+| Auto-detect dev-mode | 7.2 | ⭐⭐ P2 |
+| pyproject.toml integration | 7.2 | ⭐⭐ P2 |
 | Dev-mode relaxed restrictions | 7.2 | ⭐⭐ P2 |
+| `velo security check` command | 8.x | ⭐ P3 |
 | First-run guidance | 8.x | ⭐ P3 |
+| Failure diagnostics | 8.x | ⭐ P3 |
+
+---
+
+## 7. Best Practices (Industry Standards)
+
+### 7.1 Searchable Error Codes
+
+All security-related messages MUST use unique, searchable error codes:
+
+| Code | Category | Example |
+|:---|:---|:---|
+| `VELO-SEC-001` | Env Filtered | `Environment variable 'MY_VAR' was filtered` |
+| `VELO-SEC-002` | Path Blocked | `Import path '/suspicious' was blocked` |
+| `VELO-SEC-003` | FD Hygiene | `File descriptor 5 was closed` |
+
+**Benefit**: Users can Google `VELO-SEC-001` to find solutions.
+
+### 7.2 Auto-Detect Dev-Mode
+
+```rust
+fn detect_security_mode() -> SecurityMode {
+    if env_is("VELO_ENV", "prod") {
+        SecurityMode::Prod
+    } else if is_ci_environment() {
+        SecurityMode::CI
+    } else if is_interactive_terminal() {
+        SecurityMode::Dev  // Auto-relax for local development
+    } else {
+        SecurityMode::Prod  // Conservative default
+    }
+}
+```
+
+| Condition | Result |
+|:---|:---|
+| `VELO_ENV=prod` | PROD mode (strict) |
+| CI environment detected | CI mode (strict + logging) |
+| Interactive terminal (tty) | DEV mode (relaxed) |
+| Other | PROD mode (conservative) |
+
+### 7.3 pyproject.toml Integration
+
+```toml
+# pyproject.toml
+[tool.velo.security]
+mode = "dev"  # "dev", "ci", "prod"
+env_whitelist = ["MY_CUSTOM_VAR", "LEGACY_PATH"]
+trusted_paths = ["/opt/my-libs/"]
+```
+
+**Benefits**:
+- Project-specific configuration
+- Git-trackable
+- Shareable across team
+
+### 7.4 Security Check Command (Phase 8.x)
+
+```bash
+$ velo security check
+╔══════════════════════════════════════════════════════════╗
+║  VELO Security Audit                                     ║
+╠══════════════════════════════════════════════════════════╣
+║  Mode: DEVELOPMENT                                       ║
+║  Environment Whitelist: 47 entries                       ║
+║  Trusted Import Paths: 12 prefixes                       ║
+║  ──────────────────────────────────────────────────────  ║
+║  ⚠️  Variables that WOULD be filtered in PROD:          ║
+║     - MY_CUSTOM_VAR                                      ║
+║     - LEGACY_PATH                                        ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+### 7.5 Failure Diagnostics (Phase 8.x)
+
+When application fails to start, provide automatic diagnosis:
+
+```
+[VELO:DIAG] Application failed to start.
+            Possible causes:
+            1. Import path blocked - check VELO_LOG=debug
+            2. Environment variable filtered - see pyproject.toml
+            3. Dependency conflict - run 'velo deps check'
+            
+            Run 'velo doctor' for full diagnostics.
+```
+
+### 7.6 Tiered Logging Strategy
+
+| Level | Content | Audience |
+|:---|:---|:---|
+| **ERROR** | Blocking security issues | All users |
+| **WARN** | First-time filter (with guidance) | All users |
+| **INFO** | Filter summary (e.g., "2 vars filtered") | Default visible |
+| **DEBUG** | Each filtered variable detail | Debugging |
