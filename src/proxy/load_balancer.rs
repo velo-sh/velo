@@ -272,9 +272,10 @@ impl LoadBalancer {
     /// Add a backend by socket path (mark as healthy if exists, or log if not found)
     pub fn add_backend(&self, socket_path: &str) {
         if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
-            eprintln!(
+            log::info!(
                 "[LB] event=add_backend worker_id={} socket={}",
-                worker.worker_id, socket_path
+                worker.worker_id,
+                socket_path
             );
             worker.mark_healthy();
         }
@@ -283,9 +284,10 @@ impl LoadBalancer {
     /// Remove a backend by socket path (mark as unhealthy)
     pub fn remove_backend(&self, socket_path: &str) {
         if let Some(worker) = self.workers.iter().find(|w| w.socket_path == socket_path) {
-            eprintln!(
+            log::info!(
                 "[LB] event=remove_backend worker_id={} socket={}",
-                worker.worker_id, socket_path
+                worker.worker_id,
+                socket_path
             );
             worker.mark_unhealthy();
         }
