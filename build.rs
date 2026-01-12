@@ -146,6 +146,10 @@ SECURITY_BASE_ENV_WHITELIST = "{}"
 PATH_SOCKET_DIR_NAME = "{}"
 PATH_LOG_DIR_RELATIVE = "{}"
 
+# Level 1: Platform Defaults (Ensures all constants are importable)
+PATH_MACOS_FD_DIR = ""
+PATH_LINUX_FD_DIR = ""
+
 # Level 1: macOS specific
 if sys.platform == "darwin":
     SECURITY_MACOS_BASE_TRUSTED_PREFIXES = "{}"
