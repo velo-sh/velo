@@ -15,6 +15,27 @@ BSD-3-Clause (see LICENSE file)
 2. Renamed package from `granian` to `granian-core`
 3. Removed allocator globals (jemalloc/mimalloc) - use Velo's
 
+## ⚠️ Copyright Compliance (法律红线)
+
+### ✅ Do (要做的事)
+When modifying any Granian source file, **preserve the original copyright**:
+
+```rust
+// Original Copyright (c) 2022 Giovanni Barillari
+// Modified by Velo Team for Velo Runtime, 2026
+// SPDX-License-Identifier: BSD-3-Clause
+```
+
+### ❌ Don't (不要做的事)
+- **NEVER** remove original copyright headers
+- **NEVER** replace BSD-3-Clause with Apache-2.0 in vendored files
+- File-level copyright belongs to the original author
+
+### License Status
+- Granian: **BSD-3-Clause**
+- Velo: **Apache-2.0**
+- These are compatible, but modifications must preserve original attribution
+
 ## How to Update
 
 ```bash
