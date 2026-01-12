@@ -344,7 +344,7 @@ jobs:
   qa-serve-fast:
     name: "QA 3.5: Fast (Tier 1)"
     runs-on: ubuntu-latest
-    needs: [qa-serve-smoke, changes]
+    needs: [qa-serve-smoke, changes]  # Only depend on smoke, not other tiers
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.rust == 'true' || 
@@ -360,7 +360,7 @@ jobs:
   qa-serve-standard:
     name: "QA 3.5: Standard (Tier 2)"
     runs-on: ubuntu-latest
-    needs: [qa-serve-fast, changes]
+    needs: [qa-serve-smoke, changes]  # PARALLEL: Depend only on smoke, not on fast
     if: |
       needs.changes.outputs.serve == 'true' || 
       needs.changes.outputs.rust == 'true' || 
@@ -377,7 +377,7 @@ jobs:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [qa-serve-standard, changes]
+    needs: [qa-serve-smoke, changes]  # PARALLEL: Depend only on smoke
     # Only run on main branch - heavy tests are optional
     if: |
       github.ref == 'refs/heads/main' && (
@@ -417,7 +417,7 @@ jobs:
   qa-fast-loader-standard:
     name: "QA 5.0: Standard (L1-L3)"
     runs-on: ubuntu-latest
-    needs: [qa-fast-loader-smoke, changes]
+    needs: [qa-fast-loader-smoke, changes]  # PARALLEL: Depend only on smoke
     if: |
       needs.changes.outputs.loader == 'true' || 
       needs.changes.outputs.rust == 'true' || 
@@ -440,7 +440,7 @@ jobs:
   qa-fast-loader-security:
     name: "QA 5.0: Security (L4)"
     runs-on: ubuntu-latest
-    needs: [qa-fast-loader-standard, changes]
+    needs: [qa-fast-loader-smoke, changes]  # PARALLEL: Depend only on smoke
     if: |
       needs.changes.outputs.loader == 'true' || 
       needs.changes.outputs.rust == 'true' || 
@@ -456,7 +456,7 @@ jobs:
   qa-fast-loader-chaos:
     name: "QA 5.0: Chaos (L5)"
     runs-on: ubuntu-latest
-    needs: [qa-fast-loader-security, changes]
+    needs: [qa-fast-loader-smoke, changes]  # PARALLEL: Depend only on smoke
     if: |
       needs.changes.outputs.loader == 'true' || 
       needs.changes.outputs.rust == 'true' || 
