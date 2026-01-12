@@ -423,10 +423,22 @@ def health():
                 stderr = proc.stderr.read() if proc.stderr else ""
                 pytest.fail(f"Server did not start. stderr: {stderr}")
 
-            # Verify HTTP works
-            response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
-            assert response.status_code == 200
-            assert response.json()["status"] == "ok"
+            # Verify HTTP works - with retry for server startup race condition
+            # Port may open before server is fully ready to handle requests
+            max_retries = 3
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+                    assert response.status_code == 200
+                    assert response.json()["status"] == "ok"
+                    break
+                except requests.exceptions.ConnectionError as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        time.sleep(1)  # Brief pause before retry
+                    else:
+                        raise last_error
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_health_endpoint_works(self):
