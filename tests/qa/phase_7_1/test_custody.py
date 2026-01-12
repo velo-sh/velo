@@ -26,22 +26,7 @@ import pytest
 # =============================================================================
 # Test Markers
 # =============================================================================
-
-
-@pytest.fixture(scope="module")
-def velo_binary():
-    """Get path to velo binary."""
-    # Try cargo-built binary first
-    workspace_root = Path(__file__).parent.parent.parent.parent
-    release_binary = workspace_root / "target" / "release" / "velo"
-    debug_binary = workspace_root / "target" / "debug" / "velo"
-    
-    if release_binary.exists():
-        return str(release_binary)
-    elif debug_binary.exists():
-        return str(debug_binary)
-    else:
-        pytest.skip("velo binary not found - run 'cargo build' first")
+# Note: velo_binary fixture is provided by conftest.py with arch detection
 
 
 @pytest.fixture
