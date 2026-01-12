@@ -43,6 +43,7 @@ rustpython-parser = "0.4"
 rustpython-ast = "0.4"
 ignore = "0.4"
 log = "0.4"
+env_logger = "0.11"      # RFC-0020: Global structured logging
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching

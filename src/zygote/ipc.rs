@@ -517,7 +517,7 @@ pub fn send_command(
 
     match &result {
         Ok(resp) => {
-            eprintln!(
+            log::debug!(
                 "[IPC] command={:?} status=ok duration={}ms response={:?}",
                 std::mem::discriminant(&command),
                 elapsed_ms,
@@ -525,7 +525,7 @@ pub fn send_command(
             );
         }
         Err(e) => {
-            eprintln!(
+            log::warn!(
                 "[IPC] command={:?} status=error duration={}ms error={}",
                 std::mem::discriminant(&command),
                 elapsed_ms,

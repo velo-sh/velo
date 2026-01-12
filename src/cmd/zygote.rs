@@ -78,7 +78,7 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
         println!("🚀 Starting Zygote daemon...");
         match launcher.start(&preload, None, true, &config) {
             Ok(()) => {
-                eprintln!(
+                log::info!(
                     "[ZYGOTE] status=started socket={} preload={:?}",
                     socket_path.display(),
                     preload
@@ -89,7 +89,7 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
                 std::mem::forget(launcher);
             }
             Err(e) => {
-                eprintln!("[ZYGOTE] status=failed error={}", e);
+                log::error!("[ZYGOTE] status=failed error={}", e);
                 bail!("Failed to start Zygote: {}", e);
             }
         }
