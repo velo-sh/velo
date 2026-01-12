@@ -512,10 +512,12 @@ class TestRegressionBugFixes:
         assert result.returncode != 0, "Should exit with error when module not found"
         # Must exit quickly (not hang for 30s)
         assert elapsed < 5, f"Should exit in <5s, but took {elapsed:.1f}s (hanging bug)"
-        # Should have helpful error message
+        # Should have helpful error message (either old uvicorn message or new early validation)
+        combined = result.stdout + result.stderr
         assert (
-            "Could not import" in result.stdout + result.stderr
-            or "exited with code" in result.stdout + result.stderr
+            "Could not import" in combined
+            or "exited with code" in combined
+            or "not found" in combined  # New early module validation (SEC-P0-006)
         )
 
     def test_reg_002_process_group_cleanup_kills_workers(self, isolated_env):
