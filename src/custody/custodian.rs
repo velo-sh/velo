@@ -123,8 +123,7 @@ impl Custodian for UvCustodian {
             return Ok(false);
         }
 
-        // TODO: Implement BLAKE3 verification when assets are embedded
-        // For now, just check the file exists and is executable
+        // Check basic file properties first
         let metadata = fs::metadata(&path).map_err(|e| CustodyError::StateFileError {
             path: path.clone(),
             source: e,
@@ -134,7 +133,64 @@ impl Custodian for UvCustodian {
         let perms = metadata.permissions();
         let is_executable = perms.mode() & 0o111 != 0;
 
-        Ok(is_executable)
+        if !is_executable {
+            return Ok(false);
+        }
+
+        // BLAKE3 integrity verification (RFC-0018 §3.2)
+        // Only verify if embedded_uv feature is enabled and we have an expected hash
+        #[cfg(feature = "embedded_uv")]
+        {
+            use std::io::Read;
+
+            let asset = match UvAsset::current() {
+                Ok(a) => a,
+                Err(_) => return Ok(is_executable), // Fall back to basic check
+            };
+
+            let expected_hash = asset.expected_hash();
+            if expected_hash.is_empty() {
+                // No hash to verify against
+                return Ok(is_executable);
+            }
+
+            // Compute BLAKE3 hash of the extracted binary
+            let mut file = fs::File::open(&path).map_err(|e| CustodyError::StateFileError {
+                path: path.clone(),
+                source: e,
+            })?;
+
+            let mut hasher = blake3::Hasher::new();
+            let mut buffer = [0u8; 65536]; // 64KB buffer
+
+            loop {
+                let bytes_read =
+                    file.read(&mut buffer)
+                        .map_err(|e| CustodyError::StateFileError {
+                            path: path.clone(),
+                            source: e,
+                        })?;
+                if bytes_read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..bytes_read]);
+            }
+
+            let computed_hash = hasher.finalize().to_hex().to_string();
+
+            if computed_hash != expected_hash {
+                tracing::warn!(
+                    "BLAKE3 mismatch: expected {}, got {}",
+                    expected_hash,
+                    computed_hash
+                );
+                return Ok(false);
+            }
+
+            tracing::debug!("BLAKE3 verification passed: {}", &computed_hash[..16]);
+        }
+
+        Ok(true)
     }
 
     fn extract(&self) -> Result<()> {
