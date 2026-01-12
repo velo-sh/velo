@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::cache::EnvCache;
 pub use crate::common::paths::*;
 use crate::config::VeloConfig;
+use crate::custody::{AutopilotDecision, AutopilotEngine, EnvironmentSync};
 use crate::python;
 use crate::python_info::{PythonInfo, PythonVersion};
 use crate::runner;
@@ -120,8 +121,38 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         );
     }
 
-    // 4. Zygote/Fast/Normal run
-    if cmd.zygote_enabled() {
+    // 3.5 RFC-0018: Environment Sync (ensure deps are up-to-date)
+    let env_sync = EnvironmentSync::new();
+    if let Err(e) = env_sync.ensure_synced(&project_dir) {
+        tracing::warn!("Environment sync check failed: {}", e);
+        // Non-fatal: continue execution
+    }
+
+    // 3.6 RFC-0018: Autopilot decision (check if Zygote should be auto-enabled)
+    let autopilot = AutopilotEngine::default();
+    let autopilot_decision = autopilot.should_use_zygote(Path::new(&cmd.script));
+    let autopilot_enabled = matches!(
+        autopilot_decision,
+        AutopilotDecision::EnabledByStatic { .. } | AutopilotDecision::EnabledByPerformance { .. }
+    );
+
+    if cmd.profile {
+        match &autopilot_decision {
+            AutopilotDecision::EnabledByStatic { modules } => {
+                eprintln!("[VELO] Autopilot: Enabled (heavy imports: {:?})", modules);
+            }
+            AutopilotDecision::EnabledByPerformance { avg_cold_start_ms } => {
+                eprintln!(
+                    "[VELO] Autopilot: Enabled (avg cold start: {}ms)",
+                    avg_cold_start_ms
+                );
+            }
+            _ => {}
+        }
+    }
+
+    // 4. Zygote/Fast/Normal run (includes autopilot decision)
+    if cmd.zygote_enabled() || autopilot_enabled {
         let _zygote_start = std::time::Instant::now();
         // Create SHM segment if requested
         let shm_file = if let Some(ref shm_path) = cmd.shm {
