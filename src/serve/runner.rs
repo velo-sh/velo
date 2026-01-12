@@ -737,10 +737,21 @@ pub fn run_server(
         for i in 0..args.workers {
             match Worker::spawn_uds_via_zygote(&socket_path, &args.app, i as u64, None, config) {
                 Ok(worker) => {
+                    eprintln!(
+                        "[WORKER] event=spawn worker_id={} pid={} socket={}",
+                        i,
+                        worker.pid,
+                        worker
+                            .socket_path
+                            .as_ref()
+                            .map(|p| p.to_string_lossy())
+                            .unwrap_or_default()
+                    );
                     eprintln!("  ✅ Worker {} (PID: {})", i + 1, worker.pid);
                     workers.push(worker);
                 }
                 Err(e) => {
+                    eprintln!("[WORKER] event=spawn_failed worker_id={} error={}", i, e);
                     // RFC-0013: Silent Fallback to cold start on IPC failure
                     logger.warn(&format!(
                         "  ⚠️ Zygote worker spawn failed: {}. Falling back to cold start...",
@@ -1043,14 +1054,36 @@ pub fn run_server(
                         }
 
                         // P2: Zygote deep probe - verify Zygote is still responding
-                        if let Err(e) = crate::zygote::ipc::send_command(
+                        let healthy_workers = workers.iter().filter(|w| w.is_alive()).count();
+                        let total_workers = workers.len();
+
+                        match crate::zygote::ipc::send_command(
                             &socket_path,
                             crate::zygote::ipc::ZygoteCommand::Status {
                                 request_id: Some(uuid::Uuid::now_v7().to_string()),
                             },
                             None,
                         ) {
-                            logger.warn(&format!("Zygote health check failed: {}", e));
+                            Ok(_) => {
+                                // Only log periodically (every ~10 health checks)
+                                static HEALTH_LOG_COUNTER: std::sync::atomic::AtomicU64 =
+                                    std::sync::atomic::AtomicU64::new(0);
+                                let count = HEALTH_LOG_COUNTER
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if count.is_multiple_of(10) {
+                                    eprintln!(
+                                        "[HEALTH] workers_alive={}/{} zygote=ok",
+                                        healthy_workers, total_workers
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "[HEALTH] workers_alive={}/{} zygote=error error={}",
+                                    healthy_workers, total_workers, e
+                                );
+                                logger.warn(&format!("Zygote health check failed: {}", e));
+                            }
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
