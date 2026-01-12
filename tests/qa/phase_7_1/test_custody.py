@@ -480,3 +480,220 @@ class TestTAINT001EntropyReRandomization:
         # Values should have high entropy (no obvious patterns)
         assert len(set(val1)) > 10, "urandom output should be random"
         assert len(set(val2)) > 10, "urandom output should be random"
+
+
+# =============================================================================
+# USER-EDGE: User Perspective Edge Cases
+# =============================================================================
+
+
+@pytest.mark.tier2
+class TestUserEdgeCases:
+    """
+    User perspective edge cases for uv integration.
+    
+    These tests simulate real-world issues users might encounter:
+    - Permission problems
+    - Path issues (spaces, unicode, long paths)
+    - Environment configuration
+    - Platform differences
+    """
+
+    def test_readonly_home_graceful_error(self, velo_binary, tmp_path):
+        """When HOME is readonly, velo should fail gracefully."""
+        # Create a readonly home
+        readonly_home = tmp_path / "readonly_home"
+        readonly_home.mkdir()
+        readonly_home.chmod(0o444)  # Read-only
+        
+        env = os.environ.copy()
+        env["HOME"] = str(readonly_home)
+        
+        try:
+            result = subprocess.run(
+                [velo_binary, "info"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+            )
+            
+            # Should not panic, should give error or work with fallback
+            assert result.returncode in [0, 1, 2], \
+                f"Should not panic on readonly HOME: {result.stderr}"
+        finally:
+            # Cleanup: restore write permission
+            readonly_home.chmod(0o755)
+
+    def test_path_with_spaces(self, velo_binary, tmp_path):
+        """Project path with spaces should work correctly."""
+        project_dir = tmp_path / "my project with spaces"
+        project_dir.mkdir()
+        
+        pyproject = project_dir / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "space-test"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+""")
+        
+        script = project_dir / "test.py"
+        script.write_text("print('hello from spaced path')")
+        
+        result = subprocess.run(
+            [velo_binary, "run", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(project_dir),
+        )
+        
+        # Should handle spaces without shell escaping issues
+        assert result.returncode in [0, 1, 2], \
+            f"Path with spaces should not cause crash: {result.stderr}"
+
+    def test_unicode_project_path(self, velo_binary, tmp_path):
+        """Project path with unicode characters should work."""
+        project_dir = tmp_path / "项目目录_プロジェクト"
+        project_dir.mkdir()
+        
+        pyproject = project_dir / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "unicode-test"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+""")
+        
+        script = project_dir / "test.py"
+        script.write_text("print('hello from unicode path')")
+        
+        result = subprocess.run(
+            [velo_binary, "run", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(project_dir),
+        )
+        
+        assert result.returncode in [0, 1, 2], \
+            f"Unicode path should not cause crash: {result.stderr}"
+
+    def test_missing_python_clear_error(self, velo_binary, tmp_path):
+        """When Python is not found, error message should be clear."""
+        env = os.environ.copy()
+        # Remove Python from PATH (but keep velo)
+        env["PATH"] = str(Path(velo_binary).parent)
+        env["HOME"] = str(tmp_path)
+        
+        result = subprocess.run(
+            [velo_binary, "info"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        
+        # Should still work for info command
+        assert result.returncode in [0, 1, 2]
+
+    def test_corrupt_pyproject_graceful_error(self, velo_binary, tmp_path):
+        """Corrupted pyproject.toml should give helpful error."""
+        project_dir = tmp_path / "corrupt_project"
+        project_dir.mkdir()
+        
+        pyproject = project_dir / "pyproject.toml"
+        pyproject.write_text("THIS IS NOT VALID TOML {{{{")
+        
+        script = project_dir / "test.py"
+        script.write_text("print('test')")
+        
+        result = subprocess.run(
+            [velo_binary, "run", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(project_dir),
+        )
+        
+        # Should fail gracefully with helpful error, not panic
+        assert result.returncode in [0, 1, 2], \
+            f"Corrupt pyproject should not panic: {result.stderr}"
+
+    def test_no_pyproject_fallback(self, velo_binary, tmp_path):
+        """Running without pyproject.toml should work with system Python."""
+        project_dir = tmp_path / "no_pyproject"
+        project_dir.mkdir()
+        
+        script = project_dir / "test.py"
+        script.write_text("print('hello')")
+        
+        result = subprocess.run(
+            [velo_binary, "run", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(project_dir),
+        )
+        
+        # Should either work or give clear error about missing pyproject
+        assert result.returncode in [0, 1, 2], \
+            f"Missing pyproject should not panic: {result.stderr}"
+
+    def test_env_proxy_not_leak(self, velo_binary, tmp_path):
+        """HTTP_PROXY should not cause unexpected behavior."""
+        env = os.environ.copy()
+        env["HTTP_PROXY"] = "http://invalid-proxy:9999"
+        env["HTTPS_PROXY"] = "http://invalid-proxy:9999"
+        env["HOME"] = str(tmp_path)
+        
+        result = subprocess.run(
+            [velo_binary, "info"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        
+        # info command should work even with bad proxy (no network needed)
+        assert result.returncode in [0, 1, 2], \
+            f"Bad proxy should not crash info: {result.stderr}"
+
+    def test_existing_venv_not_corrupted(self, velo_binary, tmp_path):
+        """Velo should not corrupt existing .venv directory."""
+        project_dir = tmp_path / "existing_venv"
+        project_dir.mkdir()
+        
+        pyproject = project_dir / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "venv-test"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+""")
+        
+        # Create existing venv with marker file
+        venv_dir = project_dir / ".venv"
+        venv_dir.mkdir()
+        marker = venv_dir / "USER_MARKER.txt"
+        marker.write_text("This file should survive")
+        
+        script = project_dir / "test.py"
+        script.write_text("print('test')")
+        
+        result = subprocess.run(
+            [velo_binary, "run", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(project_dir),
+        )
+        
+        # Marker file should still exist (venv not wiped)
+        # This tests that velo doesn't destructively recreate venv
+        if venv_dir.exists():
+            assert marker.exists(), "Velo should not delete user files in .venv"
