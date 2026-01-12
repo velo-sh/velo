@@ -75,6 +75,13 @@ fs2 = "0.4"
 signal-hook = "0.3"      # Platform-specific signal handling
 nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS support
 
+[features]
+default = []
+embedded_uv = []  # RFC-0018: Embed uv binary at build time
+
+[build-dependencies]
+blake3 = "1.5"    # RFC-0018: Hash generation for uv verification
+
 [dev-dependencies]
 
 [profile.release]

@@ -6,6 +6,13 @@ use std::process::Command;
 fn main() {
     // 1. Re-run if config changes
     println!("cargo:rerun-if-changed=config/constants.toml");
+    println!("cargo:rerun-if-changed=assets/");
+
+    // RFC-0018: UV Embedding (only when feature enabled)
+    #[cfg(feature = "embedded_uv")]
+    {
+        embed_uv_binary();
+    }
 
     // 1b. Capture Git Hash
     let output = Command::new("git")
@@ -250,4 +257,154 @@ fn extract_u64(toml: &str, key: &str) -> u64 {
         }
     }
     panic!("Key {} not found", key);
+}
+
+/// RFC-0018: Download and prepare uv binary for embedding
+#[cfg(feature = "embedded_uv")]
+fn embed_uv_binary() {
+    use std::io::{Read, Write};
+
+    // UV version to embed
+    const UV_VERSION: &str = "0.5.14";
+
+    // Platform-specific download URLs
+    let (url, asset_name) = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => (
+            format!(
+                "https://github.com/astral-sh/uv/releases/download/{}/uv-aarch64-apple-darwin.tar.gz",
+                UV_VERSION
+            ),
+            "uv-aarch64-apple-darwin",
+        ),
+        ("macos", "x86_64") => (
+            format!(
+                "https://github.com/astral-sh/uv/releases/download/{}/uv-x86_64-apple-darwin.tar.gz",
+                UV_VERSION
+            ),
+            "uv-x86_64-apple-darwin",
+        ),
+        ("linux", "x86_64") => (
+            format!(
+                "https://github.com/astral-sh/uv/releases/download/{}/uv-x86_64-unknown-linux-musl.tar.gz",
+                UV_VERSION
+            ),
+            "uv-x86_64-unknown-linux-musl",
+        ),
+        (os, arch) => {
+            println!(
+                "cargo:warning=Unsupported platform for uv embedding: {}-{}",
+                os, arch
+            );
+            return;
+        }
+    };
+
+    let assets_dir = Path::new("assets");
+    // Store final binary as asset_name (uv-platform), but extracted dir has same name
+    // So we rename to "uv.{platform}" to avoid conflict
+    let final_binary_name = format!("uv.{}", asset_name.replace("uv-", ""));
+    let asset_path = assets_dir.join(&final_binary_name);
+    let hash_path = assets_dir.join(format!("{}.blake3", final_binary_name));
+
+    // Create assets directory
+    fs::create_dir_all(assets_dir).expect("Failed to create assets directory");
+
+    // Skip download if asset already exists and hash is present
+    if asset_path.exists() && hash_path.exists() {
+        println!(
+            "cargo:warning=Using cached uv binary: {}",
+            asset_path.display()
+        );
+        return;
+    }
+
+    println!(
+        "cargo:warning=Downloading uv {} for {}...",
+        UV_VERSION, asset_name
+    );
+
+    // Download using curl (available on macOS/Linux)
+    let tar_gz_path = assets_dir.join(format!("{}.tar.gz", asset_name));
+    let status = Command::new("curl")
+        .args(["-L", "-o", tar_gz_path.to_str().unwrap(), &url])
+        .status()
+        .expect("Failed to execute curl");
+
+    if !status.success() {
+        panic!("Failed to download uv binary from {}", url);
+    }
+
+    // Extract the binary
+    let status = Command::new("tar")
+        .args([
+            "-xzf",
+            tar_gz_path.to_str().unwrap(),
+            "-C",
+            assets_dir.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to execute tar");
+
+    if !status.success() {
+        panic!("Failed to extract uv binary");
+    }
+
+    // Find the extracted uv binary (it's in a subdirectory with same name)
+    let extracted_dir = assets_dir.join(asset_name);
+    let extracted_binary = extracted_dir.join("uv");
+
+    // Move uv binary to assets root (asset_name without extension)
+    if extracted_binary.exists() && extracted_binary.is_file() {
+        fs::copy(&extracted_binary, &asset_path).expect("Failed to copy uv binary");
+        // Set executable permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&asset_path, fs::Permissions::from_mode(0o755))
+                .expect("Failed to set permissions");
+        }
+        // Cleanup extracted directory
+        let _ = fs::remove_dir_all(&extracted_dir);
+    } else {
+        panic!(
+            "uv binary not found at expected path: {}",
+            extracted_binary.display()
+        );
+    }
+
+    // Cleanup tar.gz
+    let _ = fs::remove_file(&tar_gz_path);
+
+    // Compute BLAKE3 hash
+    let mut file = fs::File::open(&asset_path).expect("Failed to open uv binary");
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents)
+        .expect("Failed to read uv binary");
+
+    let hash = blake3::hash(&contents);
+    let hash_hex = hash.to_hex().to_string();
+
+    // Write hash to file
+    let mut hash_file = fs::File::create(&hash_path).expect("Failed to create hash file");
+    hash_file
+        .write_all(hash_hex.as_bytes())
+        .expect("Failed to write hash");
+
+    // Generate Rust constant for the hash
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let uv_hash_path = Path::new(&out_dir).join("uv_hash.rs");
+    let hash_code = format!(
+        "// Auto-generated by build.rs for uv {}\n\
+         pub const UV_BLAKE3_HASH: &str = \"{}\";\n\
+         pub const UV_VERSION: &str = \"{}\";\n",
+        UV_VERSION, hash_hex, UV_VERSION
+    );
+    fs::write(&uv_hash_path, hash_code).expect("Failed to write uv_hash.rs");
+
+    println!(
+        "cargo:warning=uv {} embedded, BLAKE3: {}...{}",
+        UV_VERSION,
+        &hash_hex[..8],
+        &hash_hex[hash_hex.len() - 8..]
+    );
 }
