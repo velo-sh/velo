@@ -20,8 +20,11 @@ Current limitations of the Uvicorn-wrapper model:
 
 ## 3. Architectural Blueprint
 
-### 3.1 The Native Host Topology
-The Velo binary becomes the **Master Execution Host**.
+### 3.1 The Native Host Topology (Granian-Powered)
+The Velo binary becomes the **Master Execution Host**, integrating a customized version of the **Granian** L7 engine.
+
+> [!NOTE]
+> Velo adopts a **"Strategic Dissection"** approach: vendoring Granian's ASGI/RSGI state machines while replacing its process management with Velo's proprietary Zygote/Forking lifecycle.
 
 ```
 [ External Client ] 
@@ -37,8 +40,9 @@ The Velo binary becomes the **Master Execution Host**.
 ### 3.2 RSGI-Velo Protocol Specification
 The protocol defines the binary exchange between the Rust Host and Python Worker.
 
+*   **Core Engine**: Hyper-based Granian ASGI core.
 *   **Transport**: Unix Domain Sockets (UDS) with length-prefixed framing.
-*   **Serialization**: MessagePack (rmp-serde) for high-speed, zero-copy potential.
+*   **Serialization**: MessagePack (rmp-serde) for high-speed, zero-copy potential, following Granian's internal marshalling patterns.
 *   **Handshake Phase**:
     1.  Host spawns Worker.
     2.  Worker sends `READY` with its capabilities (Supported RSGI versions, Worker ID).
@@ -63,8 +67,8 @@ To ensure TITANIUM-grade stability, the boundary is strictly defined:
 *   **Seccomp (Linux)**: Workers are restricted to a subset of syscalls (Network access only via the Host).
 
 ## 6. Performance Targets
-*   **Latency**: < 50μs overhead compared to raw TCP.
-*   **Throughput**: Parity with `rust-granian`.
+*   **Latency**: < 3.5ms total request overhead (Production Grade).
+*   **Throughput**: 1.2x - 1.5x of standard Uvicorn/uvloop.
 *   **Memory**: 30% reduction in worker RSS by removing the Python networking stack.
 
 ## 7. Strict Security Invariants (RFC-0012/0013 Alignment)
