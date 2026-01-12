@@ -11,6 +11,15 @@ import sys
 import traceback
 from typing import Any, Dict, List, Tuple
 
+# Gate O/P: Pre-intern common header names for performance (RFC-0019 Section 5)
+_INTERNED_HEADERS = {
+    sys.intern(h) for h in [
+        "content-type", "content-length", "accept", "accept-encoding",
+        "host", "user-agent", "authorization", "cookie", "cache-control",
+        "connection", "transfer-encoding", "x-forwarded-for", "x-real-ip"
+    ]
+}
+
 # RSGI Message Types (RFC-0019)
 TYPE_REQ_START = 0x01
 TYPE_REQ_BODY = 0x02
@@ -44,10 +53,16 @@ class RSGIWorker:
         await writer.drain()
 
     async def recv_msg(self, reader):
+        """Receive and decode MessagePack message.
+        
+        Gate O: Use memoryview to avoid bytes slice copy.
+        """
         len_data = await reader.readexactly(4)
         length = struct.unpack(">I", len_data)[0]
         payload = await reader.readexactly(length)
-        return msgpack.unpackb(payload)
+        # Gate O: memoryview for zero-copy slice (RFC-0019 Section 5.3)
+        view = memoryview(payload)
+        return msgpack.unpackb(view, raw=False, use_list=False)
 
     async def handle_connection(self, reader, writer):
         """Handle an incoming RSGI connection from the Rust Host."""
@@ -89,9 +104,10 @@ class RSGIWorker:
         """Bridge RSGI request to ASGI application."""
         _, req_id, method, path, headers, has_body = req_start
         
+        # Gate P: Intern header names only, not values (RFC-0019 Section 5.4)
         # Convert headers to ASGI format (list of tuples of bytes)
         asgi_headers = [
-            (k.lower().encode("latin-1"), v.encode("latin-1"))
+            (sys.intern(k.lower()).encode("latin-1"), v.encode("latin-1"))
             for k, v in headers
         ]
 
