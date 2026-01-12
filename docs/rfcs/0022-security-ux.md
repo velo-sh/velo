@@ -1,9 +1,9 @@
-# RFC-0022: Security UX Improvements (Dev-Mode & Startup Feedback)
+# RFC-0022: Operational Experience Standards (Security & Performance UX)
 
 **Status**: DRAFT
 **Author**: Architect
 **Date**: 2026-01-12
-**Priority**: P1 (User Experience Critical)
+**Priority**: P1 (Critical Experience Standards)
 
 ## 1. Problem Statement
 
