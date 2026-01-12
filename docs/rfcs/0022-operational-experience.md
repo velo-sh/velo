@@ -1,9 +1,9 @@
-# RFC-0022: Security UX Improvements (Dev-Mode & Startup Feedback)
+# RFC-0022: Operational Experience Standards (Security & Performance UX)
 
 **Status**: DRAFT
 **Author**: Architect
 **Date**: 2026-01-12
-**Priority**: P1 (User Experience Critical)
+**Priority**: P1 (Critical Experience Standards)
 
 ## 1. Problem Statement
 
@@ -294,3 +294,64 @@ $VELO_LOG_DIR/
 | stdout default | 7.2 | ⭐⭐⭐ P1 |
 | JSON format option | 7.2 | ⭐⭐ P2 |
 | File output option | 8.x | ⭐ P3 |
+
+---
+
+## 8. Performance UX (Operational Transparency)
+
+> [!TIP]
+> **Philosophy**: Performance wins should be visible. Users should know *why* Velo is fast (or slow).
+
+### 8.1 Upgrade Nudge (Progressive Enhancement)
+
+When running on older Python versions, gently hint at free performance gains:
+
+```
+[VELO:TIP] Running on Python 3.10. Upgrade to Python 3.13+ for ~30% faster requests (Free JIT).
+```
+
+### 8.2 JIT Awareness (Python 3.13+)
+
+When JIT is active, celebrate it in the startup banner:
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║  VELO Runtime: CPython 3.13.1 (JIT: ACTIVE 🚀)                ║
+╚════════════════════════════════════════════════════════════════╝
+```
+
+### 8.3 Config Doctor (Bottleneck Detection)
+
+If configuration limits performance, warn the user:
+
+```
+[VELO:PERF] Performance Warning:
+  • UVLOOP_DISABLED: Running with slower asyncio (install uvloop for speed)
+  • DEBUG_MODE: Log level is DEBUG (high I/O overhead)
+```
+
+### 8.4 Runtime Stats API (Localhost Only)
+
+Internal endpoint `/_velo/stats` for developers to verify optimizations:
+
+```json
+{
+  "runtime": "cpython",
+  "version": "3.13.1",
+  "jit_status": "active",
+  "optimizations": {
+    "memoryview_zero_copy": true,
+    "string_interning": true
+  }
+}
+```
+
+### 8.5 Phase Assignment
+
+| Feature | Phase | Priority |
+|:---|:---|:---|
+| Config Doctor | 7.2 | ⭐⭐ P2 |
+| Upgrade Nudge | 8.x | ⭐⭐ P2 |
+| JIT Awareness | 8.x | ⭐⭐ P2 |
+| Runtime Stats API | 8.x | ⭐ P3 |
+
