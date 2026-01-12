@@ -96,100 +96,56 @@ def get_process_rss_kb(pid: int) -> int:
 # BINARY RESOLUTION
 # =============================================================================
 
-def get_current_git_hash() -> str:
-    """Get the current Git SCM hash, including -dirty if applicable."""
-    try:
-        root_dir = Path(__file__).parents[2]
-        # Get short hash
-        short_hash = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], 
-            cwd=root_dir, text=True
-        ).strip()
-        
-        # Check if dirty
-        is_dirty = subprocess.check_output(
-            ["git", "status", "--porcelain"], 
-            cwd=root_dir, text=True
-        ).strip()
-        
-        if is_dirty:
-            return f"{short_hash}-dirty"
-        return short_hash
-    except Exception:
-        return "unknown"
-
 def get_velo_binary() -> str:
+    """Find the primary Velo binary (source of truth)."""
     root_dir = Path(__file__).parents[2]
-    current_hash = get_current_git_hash()
     
     # 1. Environment variable override
     env_binary = os.environ.get("VELO_BINARY")
     if env_binary and Path(env_binary).exists():
         return str(Path(env_binary).resolve())
 
-    # 2. Search locations in priority order
-    locations = [
-        # a. Current build (debug/release)
+    # 2. Local build detection (Dev priority)
+    candidates = [
         root_dir / "target" / "debug" / "velo",
         root_dir / "target" / "release" / "velo",
-        # b. Test deploy (legacy/pre-packaged) - downgraded in priority
-        root_dir / "test_deploy_tmp" / "bin" / "velo",
     ]
 
-    # Scheme A: Hash Consistency Check
-    candidates = []
-    for path in locations:
+    for path in candidates:
         if path.exists():
-            # Extract hash from binary via --version
-            try:
-                # Format: "velo 0.1.0 (hash)"
-                output = subprocess.check_output(
-                    [str(path), "--version"], text=True
-                ).strip()
-                # Parse (hash)
-                if "(" in output and ")" in output:
-                    bin_hash = output.split("(")[1].split(")")[0]
-                    if bin_hash == current_hash:
-                        return str(path.resolve())
-                    candidates.append((path, bin_hash))
-            except Exception:
-                pass
-
-    if candidates:
-        # If we found binaries but none match, warn and pick the newest one?
-        # For TITANIUM, we should ideally fail or pick target/debug if it exists.
-        best_path, best_hash = candidates[0]
-        print(f"\n⚠️ WARNING: Binary hash mismatch!")
-        print(f"  Current Source: {current_hash}")
-        print(f"  Found Binary:  {best_hash} ({best_path})")
-        print(f"  Please run 'cargo build' to synchronize.")
-        return str(best_path.resolve())
+            return str(path.resolve())
 
     # 3. Last resort: auto-build if not in CI
     if os.environ.get("GITHUB_ACTIONS") != "true":
-        print("🔨 Binary not found or mismatched. Building...")
+        print("🔨 Binary not found. Building...")
         subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
-        debug_bin = (root_dir / "target/debug/velo").resolve()
+        debug_bin = root_dir / "target" / "debug" / "velo"
         if debug_bin.exists():
-            return str(debug_bin)
+            return str(debug_bin.resolve())
             
-    raise RuntimeError("Velo binary not found or could not be synchronized")
+    raise RuntimeError("Velo binary not found. Run 'cargo build' first.")
 
 # =============================================================================
 # HERMETIC ENVIRONMENT (RFC-0012)
 # =============================================================================
 
 class VeloTestEnv:
-    def __init__(self, root: Path, velo_binary: str):
+    def __init__(self, root: Path, source_binary: str):
         self.root = root
-        self.velo = velo_binary
         self.tmp = root / "tmp"
         self.home = root / "home"
         self.xdg = root / "run"
         self.venv = root / "venv"
+        self.bin_dir = root / "bin"
 
-        for d in [self.tmp, self.home, self.xdg]:
+        for d in [self.tmp, self.home, self.xdg, self.bin_dir]:
             d.mkdir(parents=True, exist_ok=True)
+
+        # Hermetic Install: Copy the source binary to our isolated environment
+        import shutil
+        self.velo = str((self.bin_dir / "velo").resolve())
+        shutil.copy2(source_binary, self.velo)
+        os.chmod(self.velo, 0o755)
 
         self.env = os.environ.copy()
         current_venv = os.environ.get("VIRTUAL_ENV") or sys.prefix
