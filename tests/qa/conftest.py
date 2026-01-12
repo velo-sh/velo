@@ -152,8 +152,41 @@ def cleanup_zygote_between_modules():
 
 @pytest.fixture(scope="session")
 def velo_binary():
-    """Pytest fixture: Build and return path to Velo binary."""
-    return get_velo_binary()
+    """Pytest fixture: Build and return path to Velo binary with arch check."""
+    import platform
+    
+    binary_path = get_velo_binary()
+    
+    # Pure-Python binary format detection (no 'file' command needed)
+    def detect_binary_platform(path: str) -> str:
+        """Detect if binary is ELF (Linux) or Mach-O (macOS) using magic numbers."""
+        try:
+            with open(path, "rb") as f:
+                magic = f.read(4)
+                # ELF magic: 0x7F 'E' 'L' 'F'
+                if magic == b'\x7fELF':
+                    return "linux"
+                # Mach-O magic: 0xFEEDFACE (32-bit), 0xFEEDFACF (64-bit)
+                # or fat binary: 0xCAFEBABE
+                if magic[:4] in (b'\xfe\xed\xfa\xce', b'\xfe\xed\xfa\xcf', 
+                                  b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe',
+                                  b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'):
+                    return "macos"
+        except Exception:
+            pass
+        return "unknown"
+    
+    binary_platform = detect_binary_platform(binary_path)
+    current_platform = "linux" if platform.system() == "Linux" else "macos"
+    
+    # Check for platform mismatch
+    if binary_platform != "unknown" and binary_platform != current_platform:
+        pytest.skip(
+            f"Binary platform mismatch: binary={binary_platform}, system={current_platform}. "
+            f"Rebuild with 'cargo build --release'"
+        )
+    
+    return binary_path
 
 
 @pytest.fixture
