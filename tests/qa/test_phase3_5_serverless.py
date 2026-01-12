@@ -63,6 +63,41 @@ def wait_for_port(port: int, timeout: float = 30) -> bool:
     return False
 
 
+def wait_for_server_ready(
+    port: int, timeout: float = 60, path: str = "/"
+) -> tuple[bool, Optional[str]]:
+    """
+    Wait for server to be truly ready to handle HTTP requests.
+    
+    Unlike wait_for_port which only checks TCP, this actually makes HTTP requests
+    to verify the worker is ready. Returns (success, error_message).
+    """
+    if not HAS_REQUESTS:
+        # Fallback to port check if requests not available
+        return wait_for_port(port, timeout), None
+    
+    start = time.time()
+    last_error = None
+    delay = 0.5  # Start with 0.5s delay, increase gradually
+    
+    while time.time() - start < timeout:
+        try:
+            response = requests.get(f"http://127.0.0.1:{port}{path}", timeout=5)
+            if response.status_code < 500:  # 2xx, 3xx, 4xx are all "ready"
+                return True, None
+        except requests.exceptions.ConnectionError as e:
+            last_error = str(e)
+        except requests.exceptions.Timeout:
+            last_error = "Request timeout"
+        except Exception as e:
+            last_error = str(e)
+        
+        time.sleep(delay)
+        delay = min(delay * 1.5, 3.0)  # Exponential backoff, max 3s
+    
+    return False, last_error
+
+
 class ClientProject:
     """
     Simulates a real client project.
@@ -418,27 +453,25 @@ def health():
             # Velo starts server
             proc, port = project.serve("main:app")
 
-            # Wait for server
-            if not wait_for_port(port, timeout=30):
-                stderr = proc.stderr.read() if proc.stderr else ""
-                pytest.fail(f"Server did not start. stderr: {stderr}")
-
-            # Verify HTTP works - with retry for server startup race condition
-            # Port may open before server is fully ready to handle requests
-            max_retries = 3
-            last_error = None
-            for attempt in range(max_retries):
+            # Wait for server to be truly ready using HTTP requests
+            ready, error = wait_for_server_ready(port, timeout=60, path="/")
+            if not ready:
+                # Capture server stderr for debugging
+                import fcntl
                 try:
-                    response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
-                    assert response.status_code == 200
-                    assert response.json()["status"] == "ok"
-                    break
-                except requests.exceptions.ConnectionError as e:
-                    last_error = e
-                    if attempt < max_retries - 1:
-                        time.sleep(1)  # Brief pause before retry
-                    else:
-                        raise last_error
+                    fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
+                    stderr = proc.stderr.read() or ""
+                except:
+                    stderr = ""
+                pytest.fail(
+                    f"Server did not become ready. Error: {error}\n"
+                    f"stderr: {stderr[:2000]}"
+                )
+
+            # Server is ready, now verify the response
+            response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            assert response.status_code == 200
+            assert response.json()["status"] == "ok"
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_health_endpoint_works(self):
@@ -460,9 +493,10 @@ def health():
 
             proc, port = project.serve("main:app")
 
-            if not wait_for_port(port, timeout=30):
+            ready, error = wait_for_server_ready(port, timeout=60, path="/health")
+            if not ready:
                 stderr = proc.stderr.read() if proc.stderr else ""
-                pytest.fail(f"Server did not start. stderr: {stderr}")
+                pytest.fail(f"Server did not start. Error: {error}, stderr: {stderr}")
 
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
             assert response.status_code == 200
@@ -491,8 +525,9 @@ def count():
 
             proc, port = project.serve("main:app")
 
-            if not wait_for_port(port, timeout=30):
-                pytest.skip("Server did not start")
+            ready, error = wait_for_server_ready(port, timeout=60, path="/count")
+            if not ready:
+                pytest.skip(f"Server did not start: {error}")
 
             # Make 10 requests
             for i in range(10):
@@ -530,8 +565,9 @@ def root():
 
             proc, port = project.serve("main:app")
 
-            if not wait_for_port(port, timeout=30):
-                pytest.skip("Server did not start")
+            ready, error = wait_for_server_ready(port, timeout=60, path="/")
+            if not ready:
+                pytest.skip(f"Server did not start: {error}")
 
             # Make a request to ensure it's working
             requests.get(f"http://127.0.0.1:{port}/", timeout=5)
