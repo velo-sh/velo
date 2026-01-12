@@ -97,6 +97,7 @@ def get_process_rss_kb(pid: int) -> int:
 # =============================================================================
 
 def get_velo_binary() -> str:
+    """Find the primary Velo binary (source of truth)."""
     root_dir = Path(__file__).parents[2]
     
     # 1. Environment variable override
@@ -104,49 +105,47 @@ def get_velo_binary() -> str:
     if env_binary and Path(env_binary).exists():
         return str(Path(env_binary).resolve())
 
-    # 2. Search locations in priority order
-    locations = [
-        # a. Current architecture build (most reliable)
-        root_dir / "target" / "release" / "velo",
-        # b. Docker build cache (if running in Docker)
-        Path("/build_cache/target/release/velo"),
-        # c. Test deploy (legacy/pre-packaged)
-        root_dir / "test_deploy_tmp" / "bin" / "velo",
-        # d. Debug build
+    # 2. Local build detection (Dev priority)
+    candidates = [
         root_dir / "target" / "debug" / "velo",
+        root_dir / "target" / "release" / "velo",
     ]
 
-    for path in locations:
+    for path in candidates:
         if path.exists():
-            # Basic sanity check: if we are on Linux, don't pick a Mac binary (if we can tell)
-            # Actually, let the OS throw Exec format error if it's wrong, 
-            # but we prioritize current build.
             return str(path.resolve())
 
     # 3. Last resort: auto-build if not in CI
     if os.environ.get("GITHUB_ACTIONS") != "true":
+        print("🔨 Binary not found. Building...")
         subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
-        debug_bin = (root_dir / "target/debug/velo").resolve()
+        debug_bin = root_dir / "target" / "debug" / "velo"
         if debug_bin.exists():
-            return str(debug_bin)
+            return str(debug_bin.resolve())
             
-    raise RuntimeError("Velo binary not found")
+    raise RuntimeError("Velo binary not found. Run 'cargo build' first.")
 
 # =============================================================================
 # HERMETIC ENVIRONMENT (RFC-0012)
 # =============================================================================
 
 class VeloTestEnv:
-    def __init__(self, root: Path, velo_binary: str):
+    def __init__(self, root: Path, source_binary: str):
         self.root = root
-        self.velo = velo_binary
         self.tmp = root / "tmp"
         self.home = root / "home"
         self.xdg = root / "run"
         self.venv = root / "venv"
+        self.bin_dir = root / "bin"
 
-        for d in [self.tmp, self.home, self.xdg]:
+        for d in [self.tmp, self.home, self.xdg, self.bin_dir]:
             d.mkdir(parents=True, exist_ok=True)
+
+        # Hermetic Install: Copy the source binary to our isolated environment
+        import shutil
+        self.velo = str((self.bin_dir / "velo").resolve())
+        shutil.copy2(source_binary, self.velo)
+        os.chmod(self.velo, 0o755)
 
         self.env = os.environ.copy()
         current_venv = os.environ.get("VIRTUAL_ENV") or sys.prefix
