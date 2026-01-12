@@ -264,10 +264,11 @@ fn extract_u64(toml: &str, key: &str) -> u64 {
 fn embed_uv_binary() {
     use std::io::{Read, Write};
 
-    // UV version to embed
-    const UV_VERSION: &str = "0.5.14";
+    // UV version to embed (update periodically)
+    const UV_VERSION: &str = "0.9.24";
 
     // Platform-specific download URLs
+    // Supports: macOS (arm64, x86_64), Linux (x86_64, aarch64)
     let (url, asset_name) = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => (
             format!(
@@ -289,6 +290,13 @@ fn embed_uv_binary() {
                 UV_VERSION
             ),
             "uv-x86_64-unknown-linux-musl",
+        ),
+        ("linux", "aarch64") => (
+            format!(
+                "https://github.com/astral-sh/uv/releases/download/{}/uv-aarch64-unknown-linux-musl.tar.gz",
+                UV_VERSION
+            ),
+            "uv-aarch64-unknown-linux-musl",
         ),
         (os, arch) => {
             println!(
