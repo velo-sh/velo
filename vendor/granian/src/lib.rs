@@ -1,35 +1,37 @@
-#[cfg(all(feature = "jemalloc", not(feature = "mimalloc")))]
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+// Original Copyright (c) 2022 Giovanni Barillari
+// Modified by Velo Team for Velo Runtime, 2026
+// SPDX-License-Identifier: BSD-3-Clause
+//
+// This file has been modified from the original Granian source.
+// See vendor/granian/VENDOR.md for modification details.
 
-#[cfg(all(feature = "mimalloc", not(feature = "jemalloc")))]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// Allocator globals removed - Velo uses its own allocator strategy
 
 use pyo3::prelude::*;
 use std::sync::OnceLock;
 
-mod asgi;
-mod asyncio;
-mod blocking;
-mod callbacks;
-mod conversion;
-mod files;
-mod http;
-mod net;
-mod rsgi;
-mod runtime;
-mod sys;
-mod tls;
-mod utils;
-mod workers;
-mod ws;
-mod wsgi;
+// Core modules - made public for Velo integration
+pub mod asgi;
+pub mod asyncio;
+pub mod blocking;
+pub mod callbacks;
+pub mod conversion;
+pub mod files;
+pub mod http;
+pub mod net;
+pub mod rsgi;
+pub mod runtime;
+pub mod sys;
+pub mod tls;
+pub mod utils;
+pub mod workers;
+pub mod ws;
+pub mod wsgi;
 
 #[cfg(not(Py_GIL_DISABLED))]
-const BUILD_GIL: bool = true;
+pub const BUILD_GIL: bool = true;
 #[cfg(Py_GIL_DISABLED)]
-const BUILD_GIL: bool = false;
+pub const BUILD_GIL: bool = false;
 
 pub fn get_granian_version() -> &'static str {
     static GRANIAN_VERSION: OnceLock<String> = OnceLock::new();
@@ -40,6 +42,7 @@ pub fn get_granian_version() -> &'static str {
     })
 }
 
+// PyModule initialization remains for potential Python extension use
 #[pymodule(gil_used = false)]
 fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     module.add("__version__", get_granian_version())?;
