@@ -6,8 +6,10 @@
 
 ## 0. Detailed Specifications
 *   **Protocol Design**: [0019-details-protocol.md](0019-details-protocol.md)
+*   **Performance Benefits**: [0019-appendix-performance.md](0019-appendix-performance.md) *(QA Validation Required)*
 *   **Audit Report**: [../architecture/audit_phase_7_alignment.md](../architecture/audit_phase_7_alignment.md)
 *   **QA Handoff**: [../architecture/handover_qa_phase_7_1_7_2.md](../architecture/handover_qa_phase_7_1_7_2.md)
+
 
 ## 1. Summary
 "Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine. By moving the L7 HTTP logic into the Velo binary and orchestrating Python workers via the **RSGI-Velo protocol**, we achieve 0ms wrapper overhead and superior signal/lifecycle control.
