@@ -421,11 +421,11 @@ mod tests {
         let path1 = crate::common::paths::generate_worker_socket_path(1);
         let path2 = crate::common::paths::generate_worker_socket_path(2);
 
-        // Format is now: w-{id}-{uuid8}.s (e.g., w-1-a1b2c3d4.s)
-        assert!(path1.to_string_lossy().contains("w-1-"));
-        assert!(path2.to_string_lossy().contains("w-2-"));
-        assert!(path1.to_string_lossy().ends_with(".s"));
-        assert!(path2.to_string_lossy().ends_with(".s"));
+        // Format is now: v-worker-{id}-{seq}.sock (e.g., v-worker-1-0.sock)
+        assert!(path1.to_string_lossy().contains("v-worker-1-"));
+        assert!(path2.to_string_lossy().contains("v-worker-2-"));
+        assert!(path1.to_string_lossy().ends_with(".sock"));
+        assert!(path2.to_string_lossy().ends_with(".sock"));
         // Different worker IDs should produce different paths
         assert_ne!(path1, path2);
     }
