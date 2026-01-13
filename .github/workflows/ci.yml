@@ -258,6 +258,45 @@ jobs:
   # QA Test Suite - Layered by Purpose
   # ============================================
   
+  # SSOT: Matrix-based QA job for automatic test discovery
+  # All test subdirectories are run in parallel
+  qa-matrix:
+    name: "QA: ${{ matrix.suite.name }}"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Phase 6.1.1 Zygote", path: "tests/qa/phase_6_1_1" }
+          - { name: "Phase 7.0 Memory", path: "tests/qa/phase_7_0" }
+          - { name: "Phase 7.1 Custody", path: "tests/qa/phase_7_1" }
+          - { name: "Phase 7.2 Sovereignty", path: "tests/qa/phase_7_2" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Velo binary
+        uses: actions/download-artifact@v4
+        with:
+          name: velo-binary-ubuntu
+          path: ./bin
+      - name: Make binary executable
+        run: chmod +x ./bin/velo
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Run ${{ matrix.suite.name }} Tests
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          uv run pytest ${{ matrix.suite.path }} -v --tb=short
+        env:
+          VELO_TEST_MODE: "1"
+
   qa-zygote-core:
     name: "QA: Zygote Core E2E"
     runs-on: ubuntu-latest
