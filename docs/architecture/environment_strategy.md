@@ -1,6 +1,6 @@
 # Environment Strategy: Local vs. CI Parity
 
-Velo follows the **Single Source of Truth (SSoT)** principle for configuration, ensuring that the same code behaves predictably across all environments while allowing necessary tuning.
+Velo follows the **Single Source of Truth (SSoT)** principle for configuration. This strategy is governed by the definitive [SPEC-0005: Velo SSOT Master Standard](./SPEC-0005-SSOT-MASTER-STANDARD.md).
 
 ## 1. Configuration Hierarchy
 

@@ -28,15 +28,16 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0013](./0013-kinetic-protocol.md) | Kinetic Protocol (UDS Optimization) | ✅ Implemented | v0.6.3 |
 | [0014](./0014-cow-venv-architecture.md) | CoW-Venv & Top 100 Framework | ✅ Accepted | v0.7.0 |
 | [0015](./0015-memory-gravity.md) | Memory Gravity (Tensor SHM) | ✅ Implemented | v0.7.0 |
-| [0016](./0016-environment-convergence.md) | Environment Convergence & SSoT | [/] In Progress | v0.7.1 |
+| [0016](./0016-environment-convergence.md) | Environment Convergence & SSoT | ✅ Superseded by SPEC-0005 | v0.7.1 |
 | [0017](./0017-test-tier-discovery.md) | Test Tier Discovery (QA Optimization) | [/] In Progress | v0.7.1 |
 | [0018](./0018-integrated-custody.md) | Integrated Custody (uv / Autopilot) | ✅ Approved | v0.7.2 |
 | [0019](./0019-native-sovereignty.md) | Native Sovereignty (Rust Host) | ✅ Approved | v0.8.0 |
 | [0020](./0020-zygote-observability.md) | Zygote Observability | ✅ Approved | v0.8.0 |
 | [0021](./0021-unified-process-supervision.md) | Unified Process Supervision | ✅ Approved | v0.8.1 |
 | [0022](./0022-operational-experience.md) | Operational Experience Standard | ✅ Approved | v0.8.1 |
-| [0023](./0023-tiered-environment-namespacing.md) | Tiered Environment Namespacing | 🟡 Draft | v0.8.2 |
+| [0023](./0023-tiered-environment-namespacing.md) | Tiered Environment Namespacing | ✅ Approved | v0.8.2 |
 | [0024](./0024-forensic-compatibility-specification.md) | Forensic Compatibility Specification | ✅ Approved | v0.8.2 |
+| [SPEC-0005](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md) | **SSOT Master Standard** | ✅ **Master** | v0.7.2 |
 
 ## Quality Assurance Reports
 
