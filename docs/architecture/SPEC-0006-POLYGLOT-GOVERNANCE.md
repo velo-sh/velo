@@ -71,6 +71,13 @@ To prevent log corruption/interleaving when multiple workers emit data simultane
 - **Line-Atomic Buffering**: The Supervisor uses line-buffered reading from child pipes. A log entry is only committed to the sink once a newline (`\n`) is reached, ensuring that lines from `WRK:A` and `WRK:B` are never interleaved.
 - **Async Queueing**: Internally, the Supervisor utilizes a non-blocking MPMC or MPSC channel (e.g., `tokio::sync::mpsc`) to queue log events, ensuring that the critical path of worker execution is not blocked by log I/O.
 
+### 4.4 Performance Invariants (Mechanical Sympathy)
+Centralizing logs in the Rust Supervisor provides significant throughput gains over traditional Python logging:
+- **Offloading I/O**: Workers perform **zero** blocking Disk I/O. Writing to a Pipe is an in-memory kernel operation (O(1) from the user-space perspective), effectively offloading the expensive syscalls to the Supervisor.
+- **Zero-Formatter Overhead**: Python workers emit raw strings/bytes. Complex formatting, SID tagging, and TIMESTAMP generation are performed in Rust, which is orders of magnitude faster at string manipulation.
+- **Batched Sinks**: The Supervisor can batch multiple log entries into a single `write()` call to the file system or network sink, drastically reducing the total number of system calls.
+- **Cache Locality**: By centralizing the writing logic in a single Rust thread, we minimize cache misses and lock contention on the global file system table.
+
 ## 5. Polyglot Code Orthogonality
 To maintain "Nominal Sovereignty" and prevent import-path collisions:
 
