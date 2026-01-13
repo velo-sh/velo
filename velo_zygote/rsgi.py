@@ -98,10 +98,46 @@ class RSGIWorker:
                             writer.close()
                             await writer.wait_closed()
                             return
-                except (OSError, AttributeError) as e:
-                    # SO_PEERCRED not available (macOS) - fallback to UID check only
-                    # On macOS, LOCAL_PEERCRED exists but with different format
-                    pass
+                except (OSError, AttributeError):
+                    # macOS Fallback: LOCAL_PEERPID + LOCAL_PEERCRED
+                    try:
+                        # SOL_LOCAL = 0, LOCAL_PEERPID = 0x001, LOCAL_PEERCRED = 0x002
+                        # 1. Try to get PID
+                        creds_pid = sock.getsockopt(0, 0x001, 4)
+                        peer_pid = _struct.unpack('i', creds_pid)[0]
+                        
+                        # 2. Try to get UID (LOCAL_PEERCRED)
+                        creds_uid = sock.getsockopt(0, 0x002, 32) # xucred size varies, but 32 is enough
+                        # struct xucred: version (u16), uid (u32), ...
+                        peer_uid = _struct.unpack('HI', creds_uid[:6])[1]
+                        
+                        # Validate UID matches (Same-User isolation)
+                        my_uid = os.getuid()
+                        if peer_uid != my_uid:
+                            print(f"RSGI Gate H (macOS): Rejected connection from UID {peer_uid} (expected {my_uid})", file=sys.stderr)
+                            writer.close()
+                            await writer.wait_closed()
+                            return
+
+                        # Validate PID if available and non-zero
+                        authorized_host_pid = os.environ.get('VELO_HOST_PID')
+                        if authorized_host_pid and peer_pid != 0:
+                            if str(peer_pid) != authorized_host_pid:
+                                print(f"RSGI Gate H (macOS): Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
+                                writer.close()
+                                await writer.wait_closed()
+                                return
+                        elif not authorized_host_pid:
+                            # If no authorized PID provided, we rely on UID check only (Dev/Test mode fallback)
+                            pass
+                        elif peer_pid == 0:
+                            # Log the platform limitation but permit if UID matches and we're in same process group
+                            LogUtils.debug_log(f"RSGI Gate H: Peer PID is 0 on macOS, relying on UID {peer_uid} verification.")
+                            
+                    except Exception as e:
+                        # If extraction totally fails, we cannot guarantee Gate H
+                        LogUtils.debug_log(f"RSGI Gate H: Could not retrieve peer credentials on macOS: {e}")
+                        pass
             
             # 1. Send READY
             ready_msg = [
