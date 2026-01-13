@@ -60,7 +60,27 @@ Prevent Velo's internal dependencies from causing "Dependency Hijacking" in user
     - *Scenario*: Environment mutation during the import phase.
     - *Focus*: Cross-worker pollution detection in Zygote mode.
 
-## 6. Robustness Invariants
+## 6. Advanced Architecture Patterns (Expert Level)
+
+### 6.1 Context-Aware Forking (ContextVars Preservation)
+- **Best Practice**: In a Zygote model, forking can leave stale `contextvars` or thread-local state in the child. 
+- **Mechanism**: Velo MUST implement a `post_fork_reset()` hook that clears known framework-level context storage (e.g., `starlette.request_context`, `aiotask_context`) before the first request is accepted. This prevents "Request Bleeding" where data from the warm-up phase leaks into real user requests.
+
+### 6.2 Self-Diagnostic Protocol Handshakes
+- **Best Practice**: Instead of a silent failure when a framework sends a non-compliant ASGI message, Velo will implement **"Protocol Sincerity."**
+- **Mechanism**: If the RSGI bridge detects an invalid scope key or an illegal header character, it will return a specialized `502 Bad Gateway` with a `X-Velo-Error-Code` (e.g., `VELO-COMPAT-001`) and log the exact mismatched field to the supervisor for forensic analysis.
+
+### 6.3 Post-Fork Re-initialization (Pool Sovereignty)
+- **Best Practice**: Heavy resources (DB connection pools, Redis clients, SSL contexts) initialized during the Zygote warm-up phase become "Poisoned" after a fork due to shared FDs.
+- **Mechanism**: Frameworks should be validated against their ability to use `on_startup` hooks correctly. Velo will explicitly support a `VELO_FORCE_REINIT` signal that triggers standard framework "re-connect" logic post-fork.
+
+### 6.4 Graceful Rotation (High-Water Mark)
+- **Best Practice**: Long-running workers with memory fragmentation (common in Python ML apps) should be rotated based on memory usage, not just request count.
+- **Mechanism**: Velo will monitor RSS. Once a "High-Water Mark" is hit, the supervisor will signal the worker to finish current requests and then autonomously `exit(0)`, allowing a fresh Zygote fork to take over.
+
+---
+
+## 7. Robustness Invariants
 - **[P0] Hard Exit Containment**: Immediate detection of `os._exit(0)` via `SIGCHLD` and triggering of the auto-respawn logic.
 - **[P0] Infinite Hang Isolation**: Cutting connections and recycling resources when a handler enters an infinite loop (Timeout enforcement).
 - **[P1] Output Flood Protection**: Preventing deadlock when an application generates massive bursts of log/stdout data.
