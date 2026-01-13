@@ -72,7 +72,7 @@ Prevent Velo's internal dependencies from causing "Dependency Hijacking" in user
 
 ### 6.2 Self-Diagnostic Protocol Handshakes
 - **Best Practice**: Instead of a silent failure when a framework sends a non-compliant ASGI message, Velo will implement **"Protocol Sincerity."**
-- **Mechanism**: If the RSGI bridge detects an invalid scope key or an illegal header character, it will return a specialized `502 Bad Gateway` with a `X-Velo-Error-Code` (e.g., `VELO-COMPAT-001`) and log the exact mismatched field to the supervisor for forensic analysis.
+- **Mechanism**: If the RSGI bridge detects an invalid scope key or an illegal header character, it will return a specialized `502 Bad Gateway` with a `X-Velo-Error-Code` (Range: `VELO-COMPAT-001` through `099`) and log the exact mismatched field to the supervisor for forensic analysis.
 
 ### 6.3 Post-Fork Re-initialization (Pool Sovereignty)
 - **Best Practice**: Heavy resources (DB connection pools, Redis clients, SSL contexts) initialized during the Zygote warm-up phase become "Poisoned" after a fork due to shared FDs.
@@ -86,7 +86,7 @@ Prevent Velo's internal dependencies from causing "Dependency Hijacking" in user
 
 ## 7. Robustness Invariants
 - **[P0] Hard Exit Containment**: Immediate detection of `os._exit(0)` via `SIGCHLD` and triggering of the auto-respawn logic.
-- **[P0] Infinite Hang Isolation**: Cutting connections and recycling resources when a handler enters an infinite loop (Timeout enforcement).
+- **[P0] Infinite Hang Isolation**: Cutting connections and recycling resources when a handler enters an infinite loop. Velo implements a **Software-Hardware Watchdog** pattern: the Rust Supervisor tracks the elapsed time of a request; upon timeout transgression, it issues a `SIGKILL` to the specific Worker and spins up a fresh Zygote replacement within <50ms.
 - **[P1] Output Flood Protection**: Preventing deadlock when an application generates massive bursts of log/stdout data.
 
 ## 7. Execution Strategy

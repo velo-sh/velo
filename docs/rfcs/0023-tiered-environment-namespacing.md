@@ -21,7 +21,7 @@ We introduce a mandatory tiered naming convention for all variables within the V
 ### 3.1 `VELO_SYS_*` (System-Level)
 *   **Purpose**: Low-level communication between Rust Supervisor and Zygote (e.g., `VELO_SYS_HOST_PID`, `VELO_SYS_SOCK_FD`, `VELO_SYS_AUTH_TOKEN`).
 *   **Lifecycle**: Managed entirely by the Rust core.
-*   **Security**: **Hard Scrubbing**. These variables MUST be forcibly stripped from the environment before a Worker process starts executing user code. The Worker should have no knowledge of the internal mechanical state of the supervisor.
+*   **Security**: **Hard Scrubbing**. These variables MUST be forcibly stripped from the environment using `libc::unsetenv` in the Rust `pre_exec` hook before the child process enters the Python entry point. The Worker should have no knowledge of the internal mechanical state of the supervisor.
 
 ### 3.2 `VELO_CONF_*` (Configuration-Level)
 *   **Purpose**: User-tunable parameters that adjust Velo's behavior (e.g., `VELO_CONF_PORT`, `VELO_CONF_WORKERS`, `VELO_CONF_PRELOAD`).
@@ -68,7 +68,9 @@ Infrastructure variables (`VELO_CONF_*`) will be validated on the **Rust side** 
 - **Example**: If `VELO_CONF_PORT` is set to "ABC", Velo will fail-fast with a TITANIUM error in the Supervisor, rather than letting the Python worker crash with a cryptic `ValueError` later.
 
 ### 5.3 Poisoning Protection (Environment Sealing)
-Once the Worker has completed its bootstrap, Velo will optionally support "Sealing" the environment (`prctl(PR_SET_DUMPABLE, 0)` equivalent or simply freezing the `os.environ` proxy in Python) to prevent third-party middleware from poisoning the runtime environment during the request lifecycle.
+Once the Worker has completed its bootstrap, Velo will optionally support "Sealing" the environment.
+- **Mechanism (Python)**: Velo will replace the standard `os.environ` with a `MappingProxyType` or a custom read-only proxy that raises `RuntimeError` on any attempt to `__setitem__`.
+- **Mechanism (System)**: Use `prctl(PR_SET_DUMPABLE, 0)` on Linux to prevent unwanted environmental introspection via `/proc`.
 
 ---
 
