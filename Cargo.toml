@@ -98,9 +98,21 @@ serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 
+# Release profile: balanced speed vs build time
+# - lto=thin: ~3x faster than fat, still good optimization
+# - codegen-units=16: parallel compilation
+# - opt-level=2: sufficient for most use cases
 [profile.release]
-lto = "fat"           # Most aggressive LTO
+lto = "thin"          # Fast LTO (was "fat")
 strip = "symbols"     # Strip all symbols
-codegen-units = 1     # Better optimization
-opt-level = 3         # Optimize for speed (was z)
+codegen-units = 16    # Parallel compilation (was 1)
+opt-level = 2         # Good optimization (was 3)
 panic = "abort"       # Smaller panic handling
+
+# Production profile: maximum optimization for final releases
+# Use with: cargo build --profile production
+[profile.production]
+inherits = "release"
+lto = "fat"           # Most aggressive LTO
+codegen-units = 1     # Better optimization
+opt-level = 3         # Maximum speed

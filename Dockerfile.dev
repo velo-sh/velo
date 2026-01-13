@@ -1,0 +1,64 @@
+# =============================================================================
+# Velo CI Development Image
+# =============================================================================
+# Purpose: Development/Test environment (NOT delivery image)
+# - Mount source code at runtime
+# - Compile velo fresh each time
+# - Pre-compiled dependencies (cargo chef cook)
+#
+# Usage:
+#   ./scripts/local-ci.sh --dev    # Interactive shell
+#   ./scripts/local-ci.sh --docker # Full CI run
+# =============================================================================
+
+FROM velo-ci-base
+
+# Environment
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GITHUB_ACTIONS=true
+ENV CARGO_INCREMENTAL=0
+
+# Runtime dependencies for testing
+RUN apt-get update && apt-get install -y \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# RFC-0010: Ensure shared libraries are found for uv-managed Python
+ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib:/root/.local/share/uv/python/cpython-3.11.14-linux-aarch64-gnu/lib"
+
+WORKDIR /workspace
+
+# Pre-compile dependencies (this layer is cached!)
+# Copy only dependency files first
+COPY Cargo.toml Cargo.lock ./
+COPY vendor/ ./vendor/
+
+# Create dummy source to allow cargo chef prepare & cook
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs && touch src/lib.rs
+RUN cargo chef prepare --recipe-path recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Clean up dummy source (real source will be mounted)
+RUN rm -rf src target/release/velo target/release/deps/velo* target/release/.fingerprint/velo*
+
+# Default: Run full CI (source mounted at /workspace)
+CMD ["bash", "-c", "\
+    echo '🚀 Velo CI (Docker)' && \
+    echo '' && \
+    echo '==================== Phase 1: Build ====================' && \
+    cargo build --release && \
+    echo '' && \
+    echo '==================== Phase 2: Setup Python ====================' && \
+    uv sync && \
+    source .venv/bin/activate && \
+    echo '' && \
+    echo '==================== Phase 3: Pre-Flight ====================' && \
+    ./target/release/velo debug pre-flight && \
+    echo '' && \
+    echo '==================== Phase 4: Test ====================' && \
+    pytest tests/unit tests/qa -v --tb=short && \
+    echo '' && \
+    echo '==========================================' && \
+    echo '✅ ALL CI CHECKS PASSED!' && \
+    echo '==========================================' \
+    "]
