@@ -1,0 +1,55 @@
+# =============================================================================
+# Velo CI Base Image
+# =============================================================================
+# Single image for all CI needs: development, testing, and validation
+# Contains: Rust toolchain, Python 3.11 (fixed), uv, system packages
+#
+# Build: docker build -t velo-ci-base -f Dockerfile.base .
+# Rebuild: Only when toolchain version changes (rare)
+# =============================================================================
+
+# Using bookworm (Debian 12) for compatibility
+# Version must match rust-toolchain.toml (1.92.0)
+FROM rust:1.92-slim-bookworm
+
+# Metadata
+LABEL maintainer="velo-sh" \
+    description="Velo CI base image with Rust toolchain and Python 3.11"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install uv for Python package management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Configure uv to use Python 3.11
+ENV UV_PYTHON=python3.11
+
+# Install cargo-chef for dependency caching (optional optimization)
+RUN cargo install cargo-chef --locked
+
+# CI environment settings
+ENV CARGO_INCREMENTAL=0
+ENV GITHUB_ACTIONS=true
+ENV DEBIAN_FRONTEND=noninteractive
+
+# RFC-0010: Ensure shared libraries are found for uv-managed Python
+ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib:/root/.local/share/uv/python/cpython-3.11.14-linux-aarch64-gnu/lib"
+
+WORKDIR /workspace
+
+# Default command: show usage
+CMD ["bash", "-c", "echo 'Velo CI Environment Ready' && echo 'Python:' && python --version && echo 'Rust:' && rustc --version && echo '' && echo 'Run CI with: cargo build --release && pytest tests/'"]
