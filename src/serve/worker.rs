@@ -29,6 +29,8 @@ fn build_worker_env(
         .filter(|(k, _)| !(k.starts_with("VELO_") && k.contains("UNTRUSTED")))
         .collect::<std::collections::HashMap<String, String>>();
     env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
+    // Gate H (DEF-72-H01): Pass Host PID so workers can validate incoming connections
+    env.insert("VELO_HOST_PID".to_string(), std::process::id().to_string());
     if !env.contains_key("VELO_FORWARDED_ALLOW_IPS") {
         env.insert(
             "VELO_FORWARDED_ALLOW_IPS".to_string(),
