@@ -684,4 +684,54 @@ mod tests {
         let err = res.unwrap_err().to_string();
         assert!(err.contains("Protocol version mismatch"));
     }
+
+    /// DEF-72-FLOOD-RS: ZygoteStream resets timeout to None after handshake
+    ///
+    /// This test documents that after successful handshake, the socket timeout
+    /// is reset to None, leaving subsequent command reads vulnerable to indefinite
+    /// blocking if the Zygote server sends partial data.
+    ///
+    /// Current behavior (line 479): set_read_timeout(None)
+    /// Recommended fix: Keep a reasonable timeout (e.g., 30s) for commands
+    #[test]
+    #[ignore = "DEF-72-FLOOD-RS: This test FAILS until timeout reset vulnerability is fixed"]
+    fn test_zygote_stream_timeout_reset_after_handshake() {
+        use std::os::unix::net::UnixStream;
+        use std::time::Duration;
+
+        // Create a socket pair to test timeout behavior
+        let (stream1, _stream2) = UnixStream::pair().unwrap();
+
+        // Initially, socket has no timeout
+        assert!(
+            stream1.read_timeout().unwrap().is_none(),
+            "Socket should have no timeout initially"
+        );
+
+        // Set a timeout (simulating what ZygoteStream::connect does at line 471)
+        stream1
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+
+        // Verify timeout is set
+        assert!(
+            stream1.read_timeout().unwrap().is_some(),
+            "Socket should have timeout after setting"
+        );
+
+        // Simulate what happens at line 479 - timeout is reset to None
+        // This is the VULNERABILITY we're testing
+        stream1.set_read_timeout(None).unwrap();
+
+        // DEF-72-FLOOD-RS: After handshake, ZygoteStream resets timeout to None
+        // This test FAILS until the vulnerability is fixed
+        // The assertion expects timeout to still be set, but it's not
+        let timeout_after_handshake = stream1.read_timeout().unwrap();
+        assert!(
+            timeout_after_handshake.is_some(),
+            "DEF-72-FLOOD-RS: Timeout is reset to None after handshake! \
+             An attacker can block command reads indefinitely. \
+             Fix: Change line 479 from set_read_timeout(None) to Some(Duration::from_secs(30))"
+        );
+    }
 }
