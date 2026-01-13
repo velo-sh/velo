@@ -7,13 +7,14 @@
 use crate::proxy::load_balancer::LoadBalancer;
 use crate::rsgi::{RSGIError, Result, protocol};
 use bytes::Bytes;
-use http_body_util::{BodyExt, StreamBody};
+use http_body_util::{BodyExt, Full, StreamBody};
 use hyper::body::{Frame, Incoming};
 use hyper::service::Service;
 use hyper::{Request, Response};
 use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::UnixStream;
 use uuid::Uuid;
 
@@ -114,7 +115,11 @@ impl RSGIHost {
         let handshake_future = async {
             // 1. Wait for READY from worker
             let payload = protocol::framing::recv_msg(stream).await?;
-            let ready: protocol::Ready = rmp_serde::from_slice(&payload)?;
+            eprintln!("[RSGI] Received READY payload of {} bytes", payload.len());
+            let ready: protocol::Ready = rmp_serde::from_slice(&payload).map_err(|e| {
+                eprintln!("[RSGI] Deserialization error in READY: {}", e);
+                e
+            })?;
 
             if ready.0 != protocol::TYPE_READY {
                 // DEF-72-E03: Log malformed READY for observability
@@ -171,16 +176,66 @@ impl Service<Request<Incoming>> for RSGIHost {
 
             let socket_path = guard.socket_path();
 
-            // 2. Connect to worker
-            let mut stream = UnixStream::connect(socket_path).await?;
+            // 2. Connect to worker with retry (Industrial Resilience)
+            let mut stream = None;
+            let mut last_err = None;
+            for attempt in 0..10 {
+                match UnixStream::connect(&socket_path).await {
+                    Ok(s) => {
+                        stream = Some(s);
+                        break;
+                    }
+                    Err(e) => {
+                        // DEF-72-E02: Log connection failure retry
+                        if attempt < 9 {
+                            eprintln!(
+                                "[RSGI] Connection to worker {} failed (attempt {}): {}. Retrying...",
+                                socket_path,
+                                attempt + 1,
+                                e
+                            );
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        last_err = Some(e);
+                    }
+                }
+            }
+            let mut stream = stream.ok_or_else(|| {
+                RSGIError::Io(
+                    last_err.unwrap_or_else(|| std::io::Error::other("Unknown connection error")),
+                )
+            })?;
 
             // 3. Handshake (Gate H: validates worker PID)
             Self::perform_handshake(&mut stream, &lb).await?;
 
-            // 4. Send Request Headers (ReqStart)
             let (parts, body) = req.into_parts();
+
+            // DEF-72-C04: WebSocket Handshake Bridge - Detect and block for now (RSGI doesn't support WS yet)
+            if parts.headers.contains_key("sec-websocket-key")
+                || parts
+                    .headers
+                    .get("upgrade")
+                    .map(|v| v == "websocket")
+                    .unwrap_or(false)
+            {
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::NOT_IMPLEMENTED)
+                    .body(
+                        Full::new(Bytes::from("WebSockets not yet supported in RSGI mode"))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                    )
+                    .unwrap());
+            }
+
+            // 4. Send Request Headers (ReqStart)
             let method = parts.method.to_string();
-            let path = parts.uri.path().to_string();
+            let path = parts
+                .uri
+                .path_and_query()
+                .map(|pq| pq.to_string())
+                .unwrap_or_else(|| parts.uri.path().to_string());
             let headers: Vec<(String, String)> = parts
                 .headers
                 .iter()
@@ -229,10 +284,15 @@ impl Service<Request<Incoming>> for RSGIHost {
             let res_start: protocol::ResStart = rmp_serde::from_slice(&payload)?;
 
             if res_start.0 != protocol::TYPE_RES_START {
-                return Err(RSGIError::Protocol(format!(
-                    "Expected RES_START, got type {}",
-                    res_start.0
-                )));
+                // DEF-72-C03: Return 503 if worker abruptly closes or sends malformed data
+                return Ok(Response::builder()
+                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                    .body(
+                        Full::new(Bytes::from("Worker protocol error or abrupt disconnection"))
+                            .map_err(|never| match never {})
+                            .boxed(),
+                    )
+                    .unwrap());
             }
 
             let mut res_builder = Response::builder().status(res_start.2);
@@ -254,7 +314,8 @@ impl Service<Request<Incoming>> for RSGIHost {
             }
 
             // 7. Receive Response Body (Streaming)
-            let (body_tx, body_stream) = tokio::sync::mpsc::channel(1);
+            // DEF-72-C05: Use larger capacity channel for SSE streaming to prevent backpressure
+            let (body_tx, body_stream) = tokio::sync::mpsc::channel(32);
 
             tokio::spawn(async move {
                 loop {

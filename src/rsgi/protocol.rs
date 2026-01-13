@@ -87,6 +87,18 @@ pub struct Ready(
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthOk(pub u8, pub String, pub u64);
 
+impl AuthOk {
+    pub fn new() -> Self {
+        Self(TYPE_AUTH_OK, "session-1".to_string(), 10 * 1024 * 1024)
+    }
+}
+
+impl Default for AuthOk {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Gate J: Host -> Worker: Initiate graceful shutdown
 /// [0x20]
 #[derive(Debug, Serialize, Deserialize)]

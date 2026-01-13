@@ -29,6 +29,7 @@ TYPE_RES_BODY = 0x04
 TYPE_KEEPALIVE = 0x09
 TYPE_READY = 0x10
 TYPE_AUTH_OK = 0x11
+TYPE_LIFESPAN_SHUTDOWN = 0x20
 # Gate J: Graceful shutdown
 TYPE_LIFESPAN_SHUTDOWN = 0x20
 
@@ -52,6 +53,7 @@ class RSGIWorker:
         payload = msgpack.packb(msg)
         writer.write(struct.pack(">I", len(payload)))
         writer.write(payload)
+        # DEF-72-C05: Ensure immediate flush for streaming (SSE Optimization)
         await writer.drain()
 
     async def recv_msg(self, reader):
@@ -162,6 +164,10 @@ class RSGIWorker:
                     await self.process_request(msg, reader, writer)
                 elif msg[0] == TYPE_KEEPALIVE:
                     continue
+                elif msg[0] == TYPE_LIFESPAN_SHUTDOWN:
+                    # Gate J: Graceful Host-initiated shutdown
+                    LogUtils.debug_log("RSGI: Received LifespanShutdown, exiting loop.")
+                    break
                 else:
                     print(f"RSGI Warning: Unexpected message type {msg[0]}")
 
@@ -190,9 +196,9 @@ class RSGIWorker:
             "http_version": "1.1",
             "method": method,
             "scheme": "http",
-            "path": path,
-            "raw_path": path.encode("ascii"),
-            "query_string": b"", # TODO: parse from path
+            "path": path.split("?")[0],
+            "raw_path": path.split("?")[0].encode("ascii"),
+            "query_string": path.split("?")[1].encode("ascii") if "?" in path else b"",
             "headers": asgi_headers,
             "client": tuple(client) if client else None,
             "server": None,
