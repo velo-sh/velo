@@ -169,15 +169,18 @@ pub fn get_socket_dir() -> PathBuf {
 /// - Probe happens during startup before Zygote is running
 /// - Used only in `cleanup_stale_sockets()` to detect dead sockets
 /// - Connection is immediately dropped after probe
+#[allow(clippy::doc_lazy_continuation)]
+/// Check if a Zygote socket is alive (Shallow Probe).
+///
+/// This only verifies that the socket is accepting connections.
+/// It does NOT perform a handshake. Used in startup loops.
 pub fn is_socket_alive(socket_path: &Path) -> bool {
-    // RFC-0011 D.1: Abstract sockets don't "exist" on filesystem
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::ffi::OsStrExt;
         let bytes = socket_path.as_os_str().as_bytes();
         if !bytes.is_empty() && bytes[0] == 0 {
-            // Abstract socket, skip exists() check and use connect directly
-            return UnixStream::connect(socket_path).is_ok();
+            return std::os::unix::net::UnixStream::connect(socket_path).is_ok();
         }
     }
 
@@ -185,8 +188,14 @@ pub fn is_socket_alive(socket_path: &Path) -> bool {
         return false;
     }
 
-    // Try to connect - if it succeeds, socket is alive
-    UnixStream::connect(socket_path).is_ok()
+    std::os::unix::net::UnixStream::connect(socket_path).is_ok()
+}
+
+/// Check if a Zygote socket is responsive (Deep Probe).
+///
+/// Performs a full protocol handshake. Used in is_alive() for reliability.
+pub fn is_socket_responsive(socket_path: &Path) -> bool {
+    ZygoteStream::connect(socket_path).is_ok()
 }
 
 /// Clean up stale sockets from previous versions
@@ -456,8 +465,19 @@ impl ZygoteStream {
         let mut stream = UnixStream::connect(socket_path)
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
+        // WB-002: Reliability - Set handshake timeout to prevent supervisor hang
+        // if Zygote is unresponsive.
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+
         // 1. Receive mandatory "Ready" greeting
         let (ready, fd): (ZygoteResponse, _) = read_message(&mut stream)?;
+
+        // Reset timeout to none (or a larger value) for actual commands
+        stream
+            .set_read_timeout(None)
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
         if let Some(fd) = fd {
             // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
             let _ = nix::unistd::close(fd);

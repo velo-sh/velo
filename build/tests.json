@@ -1,5 +1,20 @@
 {
   "contracts": {},
-  "tests": {},
+  "tests": {
+    "tests/qa/phase_6_1_1/test_phase611_golden_path.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "FFFFsFFFFFFFFFFFFFFF",
+      "sha1": "f8fbadd5e12ae74b4051b43b7b8893871dbc68b7",
+      "txhash": []
+    },
+    "tests/qa/phase_6_1_1/test_phase611_smoke.py": {
+      "coverage": false,
+      "isolated": false,
+      "results": "F",
+      "sha1": "b8478fa210428b7e423bd0b354c07c1766226fec",
+      "txhash": []
+    }
+  },
   "tx": {}
 }

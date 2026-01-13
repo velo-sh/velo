@@ -16,7 +16,7 @@ velo_cache_dir = ".velo_cache"
 velo_profile_json = "velo_profile.json"
 
 # Timeouts (Seconds)
-socket_startup_timeout = 5
+socket_startup_timeout = 30
 worker_handshake_timeout = 10
 graceful_shutdown_timeout = 60
 default_slow_threshold_ms = 100
