@@ -32,6 +32,10 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0017](./0017-test-tier-discovery.md) | Test Tier Discovery (QA Optimization) | [/] In Progress | v0.7.1 |
 | [0018](./0018-integrated-custody.md) | Integrated Custody (uv / Autopilot) | ✅ Approved | v0.7.2 |
 | [0019](./0019-native-sovereignty.md) | Native Sovereignty (Rust Host) | ✅ Approved | v0.8.0 |
+| [0020](./0020-zygote-observability.md) | Zygote Observability | ✅ Approved | v0.8.0 |
+| [0021](./0021-unified-process-supervision.md) | Unified Process Supervision | ✅ Approved | v0.8.1 |
+| [0022](./0022-operational-experience.md) | Operational Experience Standard | ✅ Approved | v0.8.1 |
+| [0023](./0023-tiered-environment-namespacing.md) | Tiered Environment Namespacing | 🟡 Draft | v0.8.2 |
 
 ## Quality Assurance Reports
 
