@@ -90,14 +90,7 @@ Velo will proactively guide users away from defining infrastructure facts in She
 
 ---
 
-## 7. Legacy Compatibility & Deprecation Path
-
-To ensure a smooth transition from Phase 3.x/4.x architectures, Velo will implement a **Legacy Compatibility Wrapper**:
-
-1.  **Warning Phase**: For one minor release, legacy variables (e.g., `VELO_ENV`, `VELO_STRICT_OPTIMIZATIONS`) will still be honored but will trigger a `TITANIUM-WARN` in the Supervisor logs, directing users to the new `VELO_CONF_*` or `VELO_SYS_` equivalents.
-2.  **Hard Removal**: After the transition period, non-tiered `VELO_` variables will be ignored or rejected by the Environment Shield.
-
-## 8. Implementation Invariants (Grand Council Requirements)
+## 7. Implementation Invariants (Grand Council Requirements)
 
 *   **INV-ENV-001 (Late Scrubbing)**: `VELO_SYS_*` variables MUST be scrubbed as late as possible (e.g., in the `pre_exec` hook of the Rust supervisor or the custom C entry point) to minimize the window for TOCTOU leaks.
 *   **INV-ENV-002 (Early Injection)**: `VELO_RUNTIME_*` injection into `sys.modules['velo'].env` MUST occur before `sitecustomize.py`, `site.py`, or any user-defined modules are loaded.
@@ -105,7 +98,7 @@ To ensure a smooth transition from Phase 3.x/4.x architectures, Velo will implem
 
 ---
 
-## 9. Implementation Roadmap: Variable Sovereignty Cleanup
+## 8. Implementation Roadmap: Variable Sovereignty Cleanup
 
 | Step | Action | Target |
 |:---|:---|:---|
