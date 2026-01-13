@@ -14,6 +14,19 @@
 
 set -euo pipefail
 
+# RFC-0010: Ensure shared libraries are found for uv-managed Python (Linux)
+if [[ "${OSTYPE}" == "linux-gnu"* ]] && command -v uv &>/dev/null; then
+    PY_EXEC=$(uv python find 3.11 2>/dev/null | head -n 1 || true)
+    if [[ -n "$PY_EXEC" ]]; then
+        # uv find returns the executable path. We need the lib directory.
+        # Usually: .../bin/python -> .../lib/
+        PY_LIB_PATH="$(dirname "$(dirname "$PY_EXEC")")/lib"
+        if [[ -d "$PY_LIB_PATH" ]]; then
+            export LD_LIBRARY_PATH="${PY_LIB_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        fi
+    fi
+fi
+
 # Get script directory for relative sourcing
 _CI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

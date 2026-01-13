@@ -1,7 +1,29 @@
 # syntax=docker/dockerfile:1
-FROM velo-ci-ubuntu
+FROM ubuntu:22.04
 
-# 1. Python Optimization: Pre-install test dependencies
+# 0. System Dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    libssl-dev \
+    pkg-config \
+    git \
+    python3 \
+    python3-pip \
+    ca-certificates \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+# 1. Install uv and Python 3.11
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv python install 3.11
+
+# 2. Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# 3. Python Optimization: Pre-install test dependencies
 RUN uv venv --python 3.11 /tmp/.venv-docker && \
     . /tmp/.venv-docker/bin/activate && \
     uv pip install fastapi uvicorn pytest requests psutil
@@ -10,51 +32,31 @@ ENV VIRTUAL_ENV=/tmp/.venv-docker
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 ENV PYTHONPATH="/workspace"
 
-# 2. Rust Optimization: Cache Dependencies Layer (Registry + Compilation)
-# Explicitly set CARGO_HOME to ensure we cache the right directory
+# RFC-0010: Ensure shared libraries are found in image
+# We use the stable path for UV-managed python
+ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-aarch64-gnu/lib:${LD_LIBRARY_PATH:-}"
+
+# 4. Rust Optimization: Cache Dependencies Layer (Registry + Compilation)
 ENV CARGO_HOME=/usr/local/cargo
 WORKDIR /build_cache
 
 # Copy only dependency definitions first
 COPY Cargo.toml Cargo.lock ./
+COPY vendor/ ./vendor/
 
-# Create dummy source files
-RUN mkdir src && \
-    echo "fn main() { println!(\"Dummy build\"); }" > src/main.rs && \
-    mkdir -p velo_zygote
-
-# Build release binary to cache dependencies
-# OPTIMIZATION: Use BuildKit cache mounts to persist downloaded crates (registry/git)
-# across builds, ensuring we skip downloads even if Cargo.toml changes.
-# We also cache the target dir so we can potentially reuse artifacts if config matches.
+# Build BOTH Release and Test profiles to maximize image layer hit rate
+# We use a real (but empty) lib.rs to ensure all dependencies are resolved.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/build_cache/target \
-    cargo build --release || true
+    mkdir -p src && touch src/lib.rs && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build --release && \
+    cargo test --lib --no-run
 
-# Clean up source code but KEEP the compiled dependencies in target/
-# Note: target/ is in the build_cache dir, which was mounted in the previous step?
-# NO. In the previous step we mounted /build_cache/target. Changes happen in the mount.
-# They are NOT persisted to the image layer unless we copy them out.
-# So for Layer Caching (CI push/pull), we actually WANT to write to the layer.
-# But for Local Dev (User Request), we want to avoid downloads.
-
-# Hybrid Strategy:
-# 1. Mount Registry/Git (Persist Downloads on Host) -> Solves "Download" issue
-# 2. Do NOT mount target (Persist Artifacts in Image Layer) -> Solves "Rebuild" issue
-# This gives us best of both worlds:
-# - If Cargo.toml changes: Layer invalidates. Cache Mount (Registry) saves re-download. 
-# - If Cargo.toml same: Layer cache hit. Instant.
-
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release || true
-
-# Clean up dummy artifacts
-RUN rm -f target/release/deps/velo* target/release/velo* && \
+# Clean up ONLY the dummy binary artifacts, keep the .rlib dependencies
+RUN rm -f target/release/deps/velo* target/debug/deps/velo* && \
     rm -rf src
 
-# 3. Final Environment Setup
+# 5. Final Environment Setup
 ENV CARGO_TARGET_DIR=/build_cache/target
-
 WORKDIR /workspace
