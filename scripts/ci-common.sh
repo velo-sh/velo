@@ -14,6 +14,19 @@
 
 set -euo pipefail
 
+# RFC-0010: Ensure shared libraries are found for uv-managed Python (Linux)
+if [[ "${OSTYPE}" == "linux-gnu"* ]] && command -v uv &>/dev/null; then
+    PY_EXEC=$(uv python find 3.11 2>/dev/null | head -n 1 || true)
+    if [[ -n "$PY_EXEC" ]]; then
+        # uv find returns the executable path. We need the lib directory.
+        # Usually: .../bin/python -> .../lib/
+        PY_LIB_PATH="$(dirname "$(dirname "$PY_EXEC")")/lib"
+        if [[ -d "$PY_LIB_PATH" ]]; then
+            export LD_LIBRARY_PATH="${PY_LIB_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        fi
+    fi
+fi
+
 # Get script directory for relative sourcing
 _CI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -180,6 +193,20 @@ build_rust() {
     log_success "Rust build complete"
 }
 
+# ============================================
+# Phase Pre-Flight: Forensic Diagnostics
+# ============================================
+run_pre_flight() {
+    log_step "Running Forensic Pre-Flight Diagnostics..."
+    # Ensure binary is already built or use cargo run
+    if [[ -f "target/release/velo" ]]; then
+        ./target/release/velo debug pre-flight
+    else
+        cargo run --release -- debug pre-flight
+    fi
+    log_success "Pre-flight diagnostics passed"
+}
+
 # =============================================================================
 # Phase 3: Test
 # =============================================================================
@@ -250,6 +277,10 @@ run_full_ci() {
     echo ""
     echo "==================== Phase 2: Build ===================="
     build_rust release
+    
+    echo ""
+    echo "==================== Phase Pre-Flight: Diagnostics ===================="
+    run_pre_flight
     
     echo ""
     echo "==================== Phase 3: Test ===================="

@@ -1,0 +1,46 @@
+# =============================================================================
+# Velo Docker Ignore - DEVOPS-GC-01
+# =============================================================================
+# CRITICAL: Prevents macOS ARM64 binaries from contaminating Linux x86_64 builds
+# =============================================================================
+
+# Build artifacts (MUST exclude to prevent architecture mismatch)
+target/
+*.so
+*.dylib
+
+# Python environments
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Local configs
+.env
+.env.*
+
+# Documentation (not needed in CI)
+docs/
+*.md
+!README.md
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.log
+
+# Large unnecessary files
+*.tar.gz
+*.zip

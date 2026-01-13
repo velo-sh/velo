@@ -1,12 +1,88 @@
+use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct Constants {
+    // Core
+    protocol_version: u8,
+    python_version: String,
+    socket_path_limit: usize,
+    max_message_size: usize,
+
+    // Files and Directories
+    pyproject_toml: String,
+    uv_lock: String,
+    requirements_txt: String,
+    site_customize: String,
+    velo_loader: String,
+    velo_cache_dir: String,
+    velo_profile_json: String,
+
+    // Timeouts
+    socket_startup_timeout: u64,
+    worker_handshake_timeout: u64,
+    graceful_shutdown_timeout: u64,
+    default_slow_threshold_ms: u64,
+    strict_optimizations: bool,
+
+    // Network
+    default_host: String,
+    default_port: u16,
+
+    // Security Matrix
+    security_base_trusted_prefixes: String,
+    security_base_env_whitelist: String,
+    security_macos_base_trusted_prefixes: String,
+    security_macos_base_env_whitelist: String,
+    security_linux_base_trusted_prefixes: String,
+    security_linux_base_env_whitelist: String,
+    security_macos_dev_trusted_prefixes: String,
+    security_macos_dev_env_whitelist: String,
+    security_linux_dev_trusted_prefixes: String,
+    security_linux_dev_env_whitelist: String,
+    security_macos_ci_trusted_prefixes: String,
+    security_macos_ci_env_whitelist: String,
+    security_linux_ci_trusted_prefixes: String,
+    security_linux_ci_env_whitelist: String,
+    security_macos_prod_trusted_prefixes: String,
+    security_macos_prod_env_whitelist: String,
+    security_linux_prod_trusted_prefixes: String,
+    security_linux_prod_env_whitelist: String,
+    security_hpc_threads: usize,
+
+    // Paths Matrix
+    path_socket_dir_name: String,
+    path_log_dir_relative: String,
+    path_cache_dir_name: String,
+    path_macos_base_socket_parent: String,
+    path_macos_base_log_parent: String,
+    path_macos_base_xdg_fallback: String,
+    path_linux_base_socket_parent: String,
+    path_linux_base_log_parent: String,
+    path_linux_base_xdg_fallback: String,
+    path_linux_fd_dir: String,
+    path_macos_fd_dir: String,
+    path_macos_ci_socket_parent: String,
+    path_linux_ci_socket_parent: String,
+}
+
 fn main() {
+    // 0. VeloSentinel: Mandatory Environment Enforcement (One for All)
+    enforce_environment_ssot();
+
     // 1. Re-run if config changes
     println!("cargo:rerun-if-changed=config/constants.toml");
     println!("cargo:rerun-if-changed=assets/");
+
+    // SSOT: Force recompilation when Python interpreter changes
+    // This is the FIRST-PRINCIPLES fix for the cache invalidation problem.
+    // When PYO3_PYTHON changes, cargo MUST rerun build.rs and recompile PyO3.
+    println!("cargo:rerun-if-env-changed=PYO3_PYTHON");
+    println!("cargo:rerun-if-env-changed=UV_PYTHON");
 
     // RFC-0018: UV Embedding (only when feature enabled)
     #[cfg(feature = "embedded_uv")]
@@ -34,50 +110,11 @@ fn main() {
         git_hash.push_str("-dirty");
     }
 
-    // 2. Read TOML
+    // 2. Read and Parse TOML (Strict SSoT)
     let config_path = Path::new("config/constants.toml");
     let content = fs::read_to_string(config_path).expect("Failed to read config/constants.toml");
-
-    // 3. Extract strictly compile-time constants
-    let protocol_version = extract_u64(&content, "protocol_version");
-    let socket_limit = extract_u64(&content, "socket_path_limit");
-    let max_message_size = extract_u64(&content, "max_message_size");
-    let socket_startup_timeout = extract_u64(&content, "socket_startup_timeout");
-    let graceful_shutdown_timeout = extract_u64(&content, "graceful_shutdown_timeout");
-    let default_port = extract_u64(&content, "default_port");
-
-    // Security profiles (for Python parity) - Hierarchical Matrix
-    // Level 0: Global Base
-    let security_base_prefixes = extract_str(&content, "security_base_trusted_prefixes");
-    let security_base_envs = extract_str(&content, "security_base_env_whitelist");
-
-    // Level 1: macOS Base
-    let security_macos_base_prefixes =
-        extract_str(&content, "security_macos_base_trusted_prefixes");
-    let security_macos_base_envs = extract_str(&content, "security_macos_base_env_whitelist");
-
-    // Level 1: Linux Base
-    let security_linux_base_prefixes =
-        extract_str(&content, "security_linux_base_trusted_prefixes");
-    let security_linux_base_envs = extract_str(&content, "security_linux_base_env_whitelist");
-
-    // Level 2: macOS Environments
-    let security_macos_dev_prefixes = extract_str(&content, "security_macos_dev_trusted_prefixes");
-    let security_macos_dev_envs = extract_str(&content, "security_macos_dev_env_whitelist");
-    let security_macos_ci_prefixes = extract_str(&content, "security_macos_ci_trusted_prefixes");
-    let security_macos_ci_envs = extract_str(&content, "security_macos_ci_env_whitelist");
-    let security_macos_prod_prefixes =
-        extract_str(&content, "security_macos_prod_trusted_prefixes");
-    let security_macos_prod_envs = extract_str(&content, "security_macos_prod_env_whitelist");
-
-    // Level 2: Linux Environments
-    let security_linux_dev_prefixes = extract_str(&content, "security_linux_dev_trusted_prefixes");
-    let security_linux_dev_envs = extract_str(&content, "security_linux_dev_env_whitelist");
-    let security_linux_ci_prefixes = extract_str(&content, "security_linux_ci_trusted_prefixes");
-    let security_linux_ci_envs = extract_str(&content, "security_linux_ci_env_whitelist");
-    let security_linux_prod_prefixes =
-        extract_str(&content, "security_linux_prod_trusted_prefixes");
-    let security_linux_prod_envs = extract_str(&content, "security_linux_prod_env_whitelist");
+    let constants: Constants =
+        toml::from_str(&content).expect("Failed to parse config/constants.toml - Schema Mismatch!");
 
     // 4. Generate Rust Constants
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -91,51 +128,34 @@ fn main() {
          pub const SOCKET_STARTUP_TIMEOUT: u64 = {};\n\
          pub const GRACEFUL_SHUTDOWN_TIMEOUT: u64 = {};\n\
          pub const DEFAULT_PORT: u16 = {};\n\
-         pub const BUILD_SCM_HASH: &str = \"{}\";\n",
-        protocol_version,
-        socket_limit,
-        max_message_size,
-        socket_startup_timeout,
-        graceful_shutdown_timeout,
-        default_port,
-        git_hash
+         pub const BUILD_SCM_HASH: &str = \"{}\";\n\
+         pub const PYTHON_VERSION: &str = \"{}\";\n",
+        constants.protocol_version,
+        constants.socket_path_limit,
+        constants.max_message_size,
+        constants.socket_startup_timeout,
+        constants.graceful_shutdown_timeout,
+        constants.default_port,
+        git_hash,
+        constants.python_version
     );
     fs::write(&dest_path, rust_code).unwrap();
 
-    // Extract Path Matrix
-    // Level 0: Templates
-    let path_socket_dir_name = extract_str(&content, "path_socket_dir_name");
-    let path_log_dir_relative = extract_str(&content, "path_log_dir_relative");
-
-    // Level 1: macOS Base
-    let path_macos_base_socket_parent = extract_str(&content, "path_macos_base_socket_parent");
-    let path_macos_base_log_parent = extract_str(&content, "path_macos_base_log_parent");
-
-    // Level 1: Linux Base
-    let path_linux_base_socket_parent = extract_str(&content, "path_linux_base_socket_parent");
-    let path_linux_base_log_parent = extract_str(&content, "path_linux_base_log_parent");
-
-    // Level 2: Environment Overlays
-    let path_macos_ci_socket_parent = extract_str(&content, "path_macos_ci_socket_parent");
-    let path_linux_ci_socket_parent = extract_str(&content, "path_linux_ci_socket_parent");
-    let path_linux_fd_dir = extract_str(&content, "path_linux_fd_dir");
-    let path_macos_fd_dir = extract_str(&content, "path_macos_fd_dir");
-
     // 5. Generate Python Constants
     let py_path = Path::new("velo_zygote/constants.py");
-    // Indent for readability in Python file
 
     let python_constants = format!(
         r#"# Auto-generated by build.rs. DO NOT EDIT.
 import sys
 
 BUILD_SCM_HASH = "{build_hash}"
-PROTOCOL_VERSION = {}
-SOCKET_PATH_LIMIT = {}
-MAX_MESSAGE_SIZE = {}
-SOCKET_STARTUP_TIMEOUT = {}
-GRACEFUL_SHUTDOWN_TIMEOUT = {}
-DEFAULT_PORT = {}
+PROTOCOL_VERSION = {protocol_version}
+PYTHON_VERSION = "{python_version}"
+SOCKET_PATH_LIMIT = {socket_path_limit}
+MAX_MESSAGE_SIZE = {max_message_size}
+SOCKET_STARTUP_TIMEOUT = {socket_startup_timeout}
+GRACEFUL_SHUTDOWN_TIMEOUT = {graceful_shutdown_timeout}
+DEFAULT_PORT = {default_port}
 
 # Valid Environment Variables
 # VELO_ENV: dev, ci, prod
@@ -143,10 +163,10 @@ DEFAULT_PORT = {}
 # VELO_ZYGOTE_LOG: Override log file path
 
 # Level 0: Global Base (Universal)
-SECURITY_BASE_TRUSTED_PREFIXES = "{}"
-SECURITY_BASE_ENV_WHITELIST = "{}"
-PATH_SOCKET_DIR_NAME = "{}"
-PATH_LOG_DIR_RELATIVE = "{}"
+SECURITY_BASE_TRUSTED_PREFIXES = "{security_base_trusted_prefixes}"
+SECURITY_BASE_ENV_WHITELIST = "{security_base_env_whitelist}"
+PATH_SOCKET_DIR_NAME = "{path_socket_dir_name}"
+PATH_LOG_DIR_RELATIVE = "{path_log_dir_relative}"
 
 # Level 1: Platform Defaults (Ensures all constants are importable)
 PATH_MACOS_FD_DIR = ""
@@ -154,37 +174,37 @@ PATH_LINUX_FD_DIR = ""
 
 # Level 1: macOS specific
 if sys.platform == "darwin":
-    SECURITY_MACOS_BASE_TRUSTED_PREFIXES = "{}"
-    SECURITY_MACOS_BASE_ENV_WHITELIST = "{}"
+    SECURITY_MACOS_BASE_TRUSTED_PREFIXES = "{security_macos_base_trusted_prefixes}"
+    SECURITY_MACOS_BASE_ENV_WHITELIST = "{security_macos_base_env_whitelist}"
     # Level 2: macOS Environment Overlays
-    SECURITY_MACOS_DEV_TRUSTED_PREFIXES = "{}"
-    SECURITY_MACOS_DEV_ENV_WHITELIST = "{}"
-    SECURITY_MACOS_CI_TRUSTED_PREFIXES = "{}"
-    SECURITY_MACOS_CI_ENV_WHITELIST = "{}"
-    SECURITY_MACOS_PROD_TRUSTED_PREFIXES = "{}"
-    SECURITY_MACOS_PROD_ENV_WHITELIST = "{}"
+    SECURITY_MACOS_DEV_TRUSTED_PREFIXES = "{security_macos_dev_trusted_prefixes}"
+    SECURITY_MACOS_DEV_ENV_WHITELIST = "{security_macos_dev_env_whitelist}"
+    SECURITY_MACOS_CI_TRUSTED_PREFIXES = "{security_macos_ci_trusted_prefixes}"
+    SECURITY_MACOS_CI_ENV_WHITELIST = "{security_macos_ci_env_whitelist}"
+    SECURITY_MACOS_PROD_TRUSTED_PREFIXES = "{security_macos_prod_trusted_prefixes}"
+    SECURITY_MACOS_PROD_ENV_WHITELIST = "{security_macos_prod_env_whitelist}"
     # Paths
-    PATH_MACOS_BASE_SOCKET_PARENT = "{}"
-    PATH_MACOS_BASE_LOG_PARENT = "{}"
-    PATH_MACOS_CI_SOCKET_PARENT = "{}"
-    PATH_MACOS_FD_DIR = "{}"
+    PATH_MACOS_BASE_SOCKET_PARENT = "{path_macos_base_socket_parent}"
+    PATH_MACOS_BASE_LOG_PARENT = "{path_macos_base_log_parent}"
+    PATH_MACOS_CI_SOCKET_PARENT = "{path_macos_ci_socket_parent}"
+    PATH_MACOS_FD_DIR = "{path_macos_fd_dir}"
 
 # Level 1: Linux specific
 if sys.platform == "linux":
-    SECURITY_LINUX_BASE_TRUSTED_PREFIXES = "{}"
-    SECURITY_LINUX_BASE_ENV_WHITELIST = "{}"
+    SECURITY_LINUX_BASE_TRUSTED_PREFIXES = "{security_linux_base_trusted_prefixes}"
+    SECURITY_LINUX_BASE_ENV_WHITELIST = "{security_linux_base_env_whitelist}"
     # Level 2: Linux Environment Overlays
-    SECURITY_LINUX_DEV_TRUSTED_PREFIXES = "{}"
-    SECURITY_LINUX_DEV_ENV_WHITELIST = "{}"
-    SECURITY_LINUX_CI_TRUSTED_PREFIXES = "{}"
-    SECURITY_LINUX_CI_ENV_WHITELIST = "{}"
-    SECURITY_LINUX_PROD_TRUSTED_PREFIXES = "{}"
-    SECURITY_LINUX_PROD_ENV_WHITELIST = "{}"
+    SECURITY_LINUX_DEV_TRUSTED_PREFIXES = "{security_linux_dev_trusted_prefixes}"
+    SECURITY_LINUX_DEV_ENV_WHITELIST = "{security_linux_dev_env_whitelist}"
+    SECURITY_LINUX_CI_TRUSTED_PREFIXES = "{security_linux_ci_trusted_prefixes}"
+    SECURITY_LINUX_CI_ENV_WHITELIST = "{security_linux_ci_env_whitelist}"
+    SECURITY_LINUX_PROD_TRUSTED_PREFIXES = "{security_linux_prod_trusted_prefixes}"
+    SECURITY_LINUX_PROD_ENV_WHITELIST = "{security_linux_prod_env_whitelist}"
     # Paths
-    PATH_LINUX_BASE_SOCKET_PARENT = "{}"
-    PATH_LINUX_BASE_LOG_PARENT = "{}"
-    PATH_LINUX_CI_SOCKET_PARENT = "{}"
-    PATH_LINUX_FD_DIR = "{}"
+    PATH_LINUX_BASE_SOCKET_PARENT = "{path_linux_base_socket_parent}"
+    PATH_LINUX_BASE_LOG_PARENT = "{path_linux_base_log_parent}"
+    PATH_LINUX_CI_SOCKET_PARENT = "{path_linux_ci_socket_parent}"
+    PATH_LINUX_FD_DIR = "{path_linux_fd_dir}"
 
 # Security (Phase 10.1)
 DEFAULT_BLOCKED_PATHS = [
@@ -193,76 +213,46 @@ DEFAULT_BLOCKED_PATHS = [
     "/root", "/home",
 ]
 "#,
-        protocol_version,
-        socket_limit,
-        max_message_size,
-        socket_startup_timeout,
-        graceful_shutdown_timeout,
-        default_port,
-        security_base_prefixes,
-        security_base_envs,
-        path_socket_dir_name,
-        path_log_dir_relative,
+        protocol_version = constants.protocol_version,
+        socket_path_limit = constants.socket_path_limit,
+        max_message_size = constants.max_message_size,
+        socket_startup_timeout = constants.socket_startup_timeout,
+        graceful_shutdown_timeout = constants.graceful_shutdown_timeout,
+        default_port = constants.default_port,
+        security_base_trusted_prefixes = constants.security_base_trusted_prefixes,
+        security_base_env_whitelist = constants.security_base_env_whitelist,
+        path_socket_dir_name = constants.path_socket_dir_name,
+        path_log_dir_relative = constants.path_log_dir_relative,
         // macOS Vars
-        security_macos_base_prefixes,
-        security_macos_base_envs,
-        security_macos_dev_prefixes,
-        security_macos_dev_envs,
-        security_macos_ci_prefixes,
-        security_macos_ci_envs,
-        security_macos_prod_prefixes,
-        security_macos_prod_envs,
-        path_macos_base_socket_parent,
-        path_macos_base_log_parent,
-        path_macos_ci_socket_parent,
-        path_macos_fd_dir,
+        security_macos_base_trusted_prefixes = constants.security_macos_base_trusted_prefixes,
+        security_macos_base_env_whitelist = constants.security_macos_base_env_whitelist,
+        security_macos_dev_trusted_prefixes = constants.security_macos_dev_trusted_prefixes,
+        security_macos_dev_env_whitelist = constants.security_macos_dev_env_whitelist,
+        security_macos_ci_trusted_prefixes = constants.security_macos_ci_trusted_prefixes,
+        security_macos_ci_env_whitelist = constants.security_macos_ci_env_whitelist,
+        security_macos_prod_trusted_prefixes = constants.security_macos_prod_trusted_prefixes,
+        security_macos_prod_env_whitelist = constants.security_macos_prod_env_whitelist,
+        path_macos_base_socket_parent = constants.path_macos_base_socket_parent,
+        path_macos_base_log_parent = constants.path_macos_base_log_parent,
+        path_macos_ci_socket_parent = constants.path_macos_ci_socket_parent,
+        path_macos_fd_dir = constants.path_macos_fd_dir,
         // Linux Vars
-        security_linux_base_prefixes,
-        security_linux_base_envs,
-        security_linux_dev_prefixes,
-        security_linux_dev_envs,
-        security_linux_ci_prefixes,
-        security_linux_ci_envs,
-        security_linux_prod_prefixes,
-        security_linux_prod_envs,
-        path_linux_base_socket_parent,
-        path_linux_base_log_parent,
-        path_linux_ci_socket_parent,
-        path_linux_fd_dir,
-        build_hash = git_hash
+        security_linux_base_trusted_prefixes = constants.security_linux_base_trusted_prefixes,
+        security_linux_base_env_whitelist = constants.security_linux_base_env_whitelist,
+        security_linux_dev_trusted_prefixes = constants.security_linux_dev_trusted_prefixes,
+        security_linux_dev_env_whitelist = constants.security_linux_dev_env_whitelist,
+        security_linux_ci_trusted_prefixes = constants.security_linux_ci_trusted_prefixes,
+        security_linux_ci_env_whitelist = constants.security_linux_ci_env_whitelist,
+        security_linux_prod_trusted_prefixes = constants.security_linux_prod_trusted_prefixes,
+        security_linux_prod_env_whitelist = constants.security_linux_prod_env_whitelist,
+        path_linux_base_socket_parent = constants.path_linux_base_socket_parent,
+        path_linux_base_log_parent = constants.path_linux_base_log_parent,
+        path_linux_ci_socket_parent = constants.path_linux_ci_socket_parent,
+        path_linux_fd_dir = constants.path_linux_fd_dir,
+        build_hash = git_hash,
+        python_version = constants.python_version
     );
     fs::write(py_path, python_constants).unwrap();
-}
-
-fn extract_str(toml: &str, key: &str) -> String {
-    for line in toml.lines() {
-        let line = line.trim();
-        if !line.starts_with(key) {
-            continue;
-        }
-
-        if let Some(val_str) = line.split('=').nth(1) {
-            return val_str.trim().trim_matches('"').to_string();
-        }
-    }
-    "".to_string()
-}
-
-fn extract_u64(toml: &str, key: &str) -> u64 {
-    for line in toml.lines() {
-        let line = line.trim();
-        if !line.starts_with(key) {
-            continue;
-        }
-
-        if let Some(val_str) = line.split('=').nth(1) {
-            return val_str
-                .trim()
-                .parse()
-                .unwrap_or_else(|_| panic!("Invalid number for key {}", key));
-        }
-    }
-    panic!("Key {} not found", key);
 }
 
 /// RFC-0018: Download and prepare uv binary for embedding
@@ -461,4 +451,77 @@ pub const UV_VERSION: &str = \"{}\";
         &hash_hex[..8],
         &hash_hex[hash_hex.len() - 8..]
     );
+}
+
+/// One for All: Mandatory environment enforcement based on Cargo.toml metadata
+fn enforce_environment_ssot() {
+    println!("cargo:rerun-if-changed=Cargo.toml");
+
+    let cargo_toml_str = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
+    let cargo_toml: toml::Value = cargo_toml_str.parse().expect("Failed to parse Cargo.toml");
+
+    let metadata = cargo_toml
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("velo"))
+        .expect("Missing [package.metadata.velo] in Cargo.toml");
+
+    let expected_python = metadata
+        .get("python_version")
+        .and_then(|v| v.as_str())
+        .expect("Missing python_version in metadata");
+
+    // CI-Specific Enforcements
+    let is_ci = env::var("GITHUB_ACTIONS").is_ok();
+    if is_ci {
+        // 1. Mandatory PYO3_PYTHON
+        if env::var("PYO3_PYTHON").is_err() {
+            panic!(
+                "\n\n[SENTINEL FATAL] PYO3_PYTHON is NOT set in CI environment.\n\
+                   Velo requires explicit interpreter paths for SSoT stability.\n\
+                   Fix: Set PYO3_PYTHON in your workflow.\n\n"
+            );
+        }
+    }
+
+    // 2. Python Version Consistency
+    // We try to run the interpreter pyo3 will use
+    let python_path = env::var("PYO3_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let py_version_out = Command::new(&python_path)
+        .arg("-c")
+        .arg("import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        .output();
+
+    match py_version_out {
+        Ok(output) if output.status.success() => {
+            let actual_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if actual_version != expected_python {
+                // We only warn locally but fail in CI to enforce standard
+                let msg = format!(
+                    "\n\n[SENTINEL ERROR] Python version mismatch!\n\
+                                  Expected: {}\n\
+                                  Actual  : {} (via {})\n\n",
+                    expected_python, actual_version, python_path
+                );
+                if is_ci {
+                    panic!("{}", msg);
+                } else {
+                    println!("cargo:warning={}", msg);
+                }
+            }
+        }
+        _ => {
+            if is_ci {
+                panic!(
+                    "\n\n[SENTINEL FATAL] Failed to execute Python interpreter at: {}\n\n",
+                    python_path
+                );
+            } else {
+                println!(
+                    "cargo:warning=[SENTINEL] Could not verify Python version at {}",
+                    python_path
+                );
+            }
+        }
+    }
 }

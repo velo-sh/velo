@@ -2,8 +2,17 @@
 # Auto-generated into src/common/constants.rs and velo_zygote/constants.py
 
 protocol_version = 1
+python_version = "3.11"
 socket_path_limit = 104
-max_message_size = 10485760
+# IPC Message Size Limits
+# max_message_size: Control messages (Fork, Status, Shutdown, etc.)
+#   - 64KB is sufficient for all IPC commands (typically < 10KB)
+#   - Conservative compared to gRPC (4MB) and Uvicorn WebSocket (1MB)
+#   - Large data should use SHM (shared memory) via file descriptors
+# max_data_message_size: Reserved for future inline data transfer
+#   - Not currently used; data goes via SHM
+#   - Consider 4MB (gRPC standard) if inline data is needed
+max_message_size = 65536  # 64KB - control messages only
 
 # Files and Directories (Magic Strings)
 pyproject_toml = "pyproject.toml"
@@ -15,9 +24,9 @@ velo_cache_dir = ".velo_cache"
 velo_profile_json = "velo_profile.json"
 
 # Timeouts (Seconds)
-socket_startup_timeout = 5
+socket_startup_timeout = 30
 worker_handshake_timeout = 10
-graceful_shutdown_timeout = 20
+graceful_shutdown_timeout = 60
 default_slow_threshold_ms = 100
 strict_optimizations = true # H-Gov: Enabled in CI/Dev by default
 

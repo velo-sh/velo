@@ -5,6 +5,13 @@ edition = "2024"
 license = "Apache-2.0"
 description = "The high-performance runtime for the AI era."
 
+[package.metadata.velo]
+# SSoT: Centralized environment invariants
+python_version = "3.11"
+required_pyo3_no_extension = true
+socket_path_limit = 104
+hugepage_alignment = 2097152
+
 [lints.rust]
 unsafe_code = "allow" # Required for Unix signals and UDS integration
 unused_imports = "warn"
@@ -30,6 +37,7 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+bytes = "1"
 blake3 = "1.5"
 hex = "0.4"
 anyhow = "1.0"
@@ -63,11 +71,15 @@ uuid = { version = "1.7", features = ["v4", "v7"] }
 hyper = { version = "1.4", features = ["full", "http1", "http2"] }
 hyper-util = { version = "0.1", features = ["full", "tokio"] }
 tokio = { version = "1", features = ["full", "net"] }
+tokio-stream = "0.1"
 tower = "0.5"
 tower-service = "0.3"
 http = "1.1"
 http-body-util = "0.1"
 pin-project-lite = "0.2"
+
+# RFC-0019: Vendored Granian Core for Native Sovereignty
+granian-core = { path = "vendor/granian" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -82,12 +94,25 @@ embedded_uv = []  # RFC-0018: Embed uv binary at build time
 [build-dependencies]
 blake3 = "1.5"    # RFC-0018: Hash generation for uv verification
 toml = "0.8"      # RFC-0018: Parse embedded_assets.toml config
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 
+# Release profile: balanced speed vs build time
+# - lto=thin: ~3x faster than fat, still good optimization
+# - codegen-units=16: parallel compilation
+# - opt-level=2: sufficient for most use cases
 [profile.release]
-lto = "fat"           # Most aggressive LTO
+lto = "thin"          # Fast LTO (was "fat")
 strip = "symbols"     # Strip all symbols
-codegen-units = 1     # Better optimization
-opt-level = 3         # Optimize for speed (was z)
+codegen-units = 16    # Parallel compilation (was 1)
+opt-level = 2         # Good optimization (was 3)
 panic = "abort"       # Smaller panic handling
+
+# Production profile: maximum optimization for final releases
+# Use with: cargo build --profile production
+[profile.production]
+inherits = "release"
+lto = "fat"           # Most aggressive LTO
+codegen-units = 1     # Better optimization
+opt-level = 3         # Maximum speed

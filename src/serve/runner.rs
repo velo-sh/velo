@@ -467,6 +467,12 @@ impl RespawnTracker {
         self.consecutive_failures += 1;
         self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
+        // DEF-72-R01: Log backoff for observability
+        eprintln!(
+            "[RESPAWN] Worker crashed (attempt {}/{}), retrying in {}s (backoff)",
+            self.consecutive_failures, self.fail_fast_limit, self.backoff_secs
+        );
+
         if self.consecutive_failures >= self.fail_fast_limit {
             eprintln!(
                 "FATAL: Worker failed to start after {}/{} attempts. \
@@ -891,6 +897,7 @@ pub fn run_server(
                 i as u64,
                 None,
                 config,
+                args.rsgi,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -932,6 +939,7 @@ pub fn run_server(
                 python_path,
                 project_dir,
                 config,
+                args.rsgi,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -976,36 +984,65 @@ pub fn run_server(
             *guard = Some(lb.clone());
         }
 
-        logger.info("Starting L7 Proxy...");
+        logger.info(if args.rsgi {
+            "Starting RSGI Host..."
+        } else {
+            "Starting L7 Proxy..."
+        });
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .map_err(|e| anyhow::anyhow!("Tokio error: {}", e))?;
-        let service = VeloProxyService::new(lb.clone());
         let addr = format!("{}:{}", args.host, args.port);
         let bind_addr: std::net::SocketAddr = addr.parse()?;
 
         let lb_for_proxy = lb.clone();
-        rt.spawn(async move {
-            let listener = tokio::net::TcpListener::bind(bind_addr)
-                .await
-                .expect("Failed to bind proxy");
-            lb_for_proxy
-                .clone()
-                .spawn_health_checks(Duration::from_secs(5));
-            eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
-            loop {
-                if let Ok((stream, peer_addr)) = listener.accept().await {
-                    let io = TokioIo::new(stream);
-                    let service_with_addr = service.clone().with_client_addr(peer_addr);
-                    tokio::spawn(async move {
-                        let _ = http1::Builder::new()
-                            .serve_connection(io, service_with_addr)
-                            .await;
-                    });
+
+        if args.rsgi {
+            // RFC-0019: Native RSGI Host Mode
+            let rsgi_host = crate::rsgi::RSGIHost::new(lb.clone());
+            rt.spawn(async move {
+                let listener = tokio::net::TcpListener::bind(bind_addr)
+                    .await
+                    .expect("Failed to bind RSGI Host");
+                lb_for_proxy
+                    .clone()
+                    .spawn_health_checks(Duration::from_secs(5));
+                eprintln!("🚀 RSGI Host listening on http://{}", bind_addr);
+                loop {
+                    if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let io = TokioIo::new(stream);
+                        let service = rsgi_host.clone().with_client_addr(peer_addr);
+                        tokio::spawn(async move {
+                            let _ = http1::Builder::new().serve_connection(io, service).await;
+                        });
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            // Legacy L7 Proxy Mode
+            let service = VeloProxyService::new(lb.clone());
+            rt.spawn(async move {
+                let listener = tokio::net::TcpListener::bind(bind_addr)
+                    .await
+                    .expect("Failed to bind proxy");
+                lb_for_proxy
+                    .clone()
+                    .spawn_health_checks(Duration::from_secs(5));
+                eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
+                loop {
+                    if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let io = TokioIo::new(stream);
+                        let service_with_addr = service.clone().with_client_addr(peer_addr);
+                        tokio::spawn(async move {
+                            let _ = http1::Builder::new()
+                                .serve_connection(io, service_with_addr)
+                                .await;
+                        });
+                    }
+                }
+            });
+        }
 
         loop {
             let mut self_check_needed = false;
@@ -1035,9 +1072,12 @@ pub fn run_server(
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     self_check_needed = true;
                 }
-
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                _ => {}
+                Ok(ServerEvent::WorkerExit) => {
+                    self_check_needed = true;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Ok(ServerExit::Shutdown);
+                }
             }
 
             if self_check_needed {
@@ -1056,19 +1096,74 @@ pub fn run_server(
                         ));
                         tracker.last_failure = Some(Instant::now());
 
-                        match worker.respawn(&args.app, i as u64, python_path, project_dir, config)
-                        {
+                        match worker.respawn(
+                            &args.app,
+                            i as u64,
+                            python_path,
+                            project_dir,
+                            config,
+                            args.rsgi,
+                        ) {
                             Ok(new_worker) => {
-                                if let Some(ref path) = new_worker.socket_path {
-                                    lb.update_worker_path(
-                                        i as u64,
-                                        path.to_string_lossy().to_string(),
-                                    );
+                                if let Some(ref old) = worker.socket_path {
+                                    lb.remove_backend(&old.to_string_lossy());
+                                }
+                                if let Some(ref new) = new_worker.socket_path {
+                                    lb.add_backend(&new.to_string_lossy());
                                 }
                                 *worker = new_worker;
                             }
 
                             Err(e) => {
+                                // RFC-0011 Stabilization: Zygote Recovery
+                                // If respawn failed, check if Zygote is still alive.
+                                let mut zygote_died = false;
+                                if _zygote_guard.as_mut().is_some_and(|l| !l.is_alive()) {
+                                    logger.warn("[RESPAWN] Zygote detected as dead/unresponsive. Attempting restart...");
+                                    zygote_died = true;
+                                }
+
+                                if zygote_died {
+                                    // Attempt to restart Zygote
+                                    if let Some(ref mut launcher) = _zygote_guard {
+                                        match launcher.start(
+                                            &preload_modules,
+                                            Some(&args.app),
+                                            false,
+                                            config,
+                                        ) {
+                                            Ok(_) => {
+                                                logger.info("[RESPAWN] Zygote successfully restarted. Retrying worker respawn...");
+                                                // Retry once after restart
+                                                if let Ok(retry_worker) = worker.respawn(
+                                                    &args.app,
+                                                    i as u64,
+                                                    python_path,
+                                                    project_dir,
+                                                    config,
+                                                    args.rsgi,
+                                                ) {
+                                                    if let Some(ref old) = worker.socket_path {
+                                                        lb.remove_backend(&old.to_string_lossy());
+                                                    }
+                                                    if let Some(ref new) = retry_worker.socket_path
+                                                    {
+                                                        lb.add_backend(&new.to_string_lossy());
+                                                    }
+                                                    *worker = retry_worker;
+                                                    continue; // Success on retry
+                                                }
+                                            }
+                                            Err(restart_err) => {
+                                                logger.error(&format!(
+                                                    "[RESPAWN] Zygote restart failed: {}",
+                                                    restart_err
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if !tracker.record_failure() {
                                     anyhow::bail!("FATAL: Worker respawn failing consistently.");
                                 }
@@ -1080,9 +1175,7 @@ pub fn run_server(
             }
         }
 
-        // IMPORTANT: If we are in proxy mode, we handled everything above.
-        // We MUST return here if the loop finished without an exit variant.
-        return Ok(ServerExit::Shutdown);
+        // Loop handles all exit paths
     }
 
     // STB-RS-005: Respawn Loop
@@ -1129,6 +1222,9 @@ pub fn run_server(
                     cmd.arg("--reload");
                 }
                 cmd.arg(&args.app);
+            }
+            Server::RSGI => {
+                anyhow::bail!("RSGI mode is not supported in legacy fallback mode");
             }
         }
 

@@ -573,37 +573,51 @@ impl ZygoteLauncher {
             cmd.arg("--app").arg(app);
         }
 
+        #[cfg(target_os = "linux")]
+        let strict_optimizations = config.strict_optimizations;
+
         // Detach from parent process group so Zygote survives CLI exit
         #[cfg(unix)]
-        unsafe {
+        {
             use std::os::unix::process::CommandExt;
-            cmd.pre_exec(|| {
-                // 1. Create new session (setsid) to detach from parent
-                libc::setsid();
 
-                // 2. Linux-specific Hardening (Pillar 3+)
-                #[cfg(target_os = "linux")]
-                {
-                    // RFC-0011 Linux-Shield: Network Isolation
-                    // Use unshare to create a private network namespace (effectively disabling global network access)
-                    // Note: This requires CLONE_NEWNET.
-                    if libc::unshare(libc::CLONE_NEWNET) != 0 {
-                        // We continue even if it fails, as some old kernels might not support it
-                        // but ideally, we should log a warning if we had a logger here.
+            unsafe {
+                cmd.pre_exec(move || {
+                    // 1. Create new session (setsid) to detach from parent
+                    libc::setsid();
+
+                    // 2. Linux-specific Hardening (Pillar 3+)
+                    #[cfg(target_os = "linux")]
+                    {
+                        // RFC-0011 Linux-Shield: Network Isolation
+                        // Use unshare to create a private network namespace (effectively disabling global network access)
+                        // Note: This requires CLONE_NEWNET.
+                        // Only enabled when strict_optimizations is TRUE (Prod mode).
+                        if strict_optimizations && libc::unshare(libc::CLONE_NEWNET) != 0 {
+                            // We continue even if it fails, as some old kernels might not support it
+                            // but ideally, we should log a warning if we had a logger here.
+                        }
+
+                        // RFC-0011 Linux-Shield: Prevent privilege escalation
+                        // PR_SET_NO_NEW_PRIVS ensures that the process and its children cannot gain new privileges (e.g., via setuid)
+                        if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                            // Same here, fallback gracefully
+                        }
+
+                        // RFC-0012 TITANIUM Hardening: No Orphans Rule
+                        // PR_SET_PDEATHSIG ensures that the Zygote is killed if its parent supervisor dies.
+                        // This prevents leaks and "Shadow Traps" in production.
+                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                            // Fallback gracefully if not supported
+                        }
                     }
 
-                    // RFC-0011 Linux-Shield: Prevent privilege escalation
-                    // PR_SET_NO_NEW_PRIVS ensures that the process and its children cannot gain new privileges (e.g., via setuid)
-                    if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
-                        // Same here, fallback gracefully
-                    }
-                }
-
-                Ok(())
-            });
+                    Ok(())
+                });
+            }
         }
 
-        // Setup logging
+        // Setup logging - Redirect stdout/stderr to log file for daemon mode
         let log_path = get_log_path();
         if let Some(parent) = log_path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -621,7 +635,6 @@ impl ZygoteLauncher {
                 ))
             })?;
 
-        // Redirect stdout/stderr to log file for daemon mode
         cmd.stdout(Stdio::from(log_file.try_clone().map_err(|e| {
             ZygoteError::StartFailed(format!("Failed to clone log file handle: {}", e))
         })?));
@@ -784,8 +797,36 @@ impl ZygoteLauncher {
 
     /// Check if the Zygote process is running.
     /// Either we own the process (zygote_pid set) or socket exists (external Zygote).
-    pub fn is_running(&self) -> bool {
-        self.zygote_pid.is_some() || self.socket_path.exists()
+    pub fn is_running(&mut self) -> bool {
+        self.is_alive()
+    }
+
+    /// Robust liveness check for the Zygote process (First Principles).
+    ///
+    /// This check prioritizes process membership (Wait Status) over network probes.
+    /// Probing the socket with connect() and dropping it immediately can cause
+    /// BrokenPipeError on the Zygote side if it's in the middle of a handshake.
+    pub fn is_alive(&mut self) -> bool {
+        if let Some(ref mut child) = self.zygote_process {
+            match child.try_wait() {
+                Ok(None) => {
+                    // Process is still running according to the OS.
+                    // WB-002: Liveness Probe Handshake (Friendly)
+                    // We must verify the Zygote is actually responsive to IPC,
+                    // not just "running" in a deadlocked or stale state.
+                    ipc::is_socket_responsive(&self.socket_path)
+                }
+                _ => {
+                    // Process died or error
+                    self.zygote_pid = None;
+                    self.zygote_process = None;
+                    false
+                }
+            }
+        } else {
+            // If we don't own the process, a probe is the only way.
+            ipc::is_socket_responsive(&self.socket_path)
+        }
     }
 
     /// Get status information about the Zygote
@@ -800,7 +841,7 @@ impl ZygoteLauncher {
     #[cfg(unix)]
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_worker(
-        &self,
+        &mut self,
         script: &Path,
         args: &[&str],
         async_mode: bool,
@@ -901,7 +942,7 @@ impl ZygoteLauncher {
 
     #[cfg(not(unix))]
     pub fn spawn_worker(
-        &self,
+        &mut self,
         _script: &Path,
         _args: &[&str],
         _async_mode: bool,

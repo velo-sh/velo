@@ -108,6 +108,10 @@ pub struct ServeCmd {
     /// Disable Zygote pre-warming
     #[arg(long)]
     pub no_zygote: bool,
+
+    /// Force RSGI mode (RFC-0019)
+    #[arg(long)]
+    pub rsgi: bool,
 }
 
 impl ServeCmd {
@@ -147,6 +151,7 @@ impl ServeCmd {
 
         args.verbose = self.verbose;
         args.dry_run = self.dry_run;
+        args.rsgi = self.rsgi;
 
         // Apply prod mode settings
         args.apply_prod_mode();

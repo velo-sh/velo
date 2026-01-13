@@ -284,6 +284,11 @@ impl EnvironmentShield {
         // RFC §3.1: Mandatory Whitelist
 
         for var in &self.env_whitelist {
+            // DEF-72-S02: Block untrusted VELO_* variables even if whitelisted
+            if var.starts_with("VELO_") && var.contains("UNTRUSTED") {
+                eprintln!("🚨 Security: Blocking untrusted env var: {}", var);
+                continue;
+            }
             if let Ok(val) = std::env::var(var) {
                 // Special handling for PATH (Provenance Guard §3.5)
                 if var == "PATH" {

@@ -278,6 +278,8 @@ class ForkHandler:
                             except Exception as e:
                                 sys.stderr.write(f"SHM Attachment Warning: {e}\n")
 
+                    if os.environ.get("VELO_DEBUG_FORK") == "1":
+                        LogUtils.log(f"Child {os.getpid()} executing {script_path}")
                     exec(code, child_globals)
             elif fast_mode:
                 # Already handled in _activate_fast_mode

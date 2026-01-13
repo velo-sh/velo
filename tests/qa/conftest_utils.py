@@ -3,6 +3,7 @@ import subprocess
 import sys
 import platform
 import pytest
+import contextlib
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -160,8 +161,30 @@ class VeloTestEnv:
             "PYTHONUNBUFFERED": "1",
         })
 
+        # MacOS AF_UNIX 104-char limit hardening (RFC-0019 §10.2)
+        if IS_MACOS:
+            # If the default tmp dir is too long, redirect VELO_SOCKET_DIR to a shorter /tmp path
+            # pytest-generated paths are often very long (/private/var/folders/...)
+            default_socket_parent = self.xdg  # Standard XDG_RUNTIME_DIR
+            # Rough estimate: parent + "velo-UID" + "v-worker-0-0.sock"
+            # 104 - 15 (velo-UID) - 20 (worker-sock) = ~69 chars for parent
+            if len(str(default_socket_parent)) > 60:
+                short_dir = Path("/tmp") / f"v{os.getpid()}_{id(self) % 1000}"
+                short_dir.mkdir(parents=True, exist_ok=True)
+                self.env["VELO_SOCKET_DIR"] = str(short_dir)
+
         # Backward compatibility
         self.path = self.root
+
+    @contextlib.contextmanager
+    def env_vars(self, vars: dict):
+        """Temporarily update environment variables."""
+        old_env = self.env.copy()
+        self.env.update(vars)
+        try:
+            yield self
+        finally:
+            self.env = old_env
 
     def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
         env = self.env.copy()

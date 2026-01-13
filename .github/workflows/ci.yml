@@ -29,6 +29,7 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
+  # Note: UV_PYTHON is now set dynamically in setup-velo action from SSOT config
   # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
   performance-canary:
@@ -39,17 +40,27 @@ jobs:
       VELO_TIMEOUT_MULTIPLIER: 1.0  # STRICT: Must pass with 1x timeout
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-      - name: Install Python 3.11
-        run: uv python install 3.11
+      
+      # SSOT: Read Python version from centralized config (this job doesn't depend on changes)
+      - name: Read SSOT Config
+        id: config
+        run: |
+          PYTHON_VERSION=$(grep '^python_version' config/constants.toml | cut -d'"' -f2)
+          echo "python_version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "SSOT Python version: $PYTHON_VERSION"
+      
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ steps.config.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Pre-Flight Diagnostic
+        run: cargo run --release -- debug pre-flight
       - name: Build Velo (Release)
         run: cargo build --release
       - name: Run Total War Suite (Strict)
         run: |
-          uv venv
-          uv pip install pytest psutil requests
-          # Run everything with strict timeouts
+          # Use the environment prepared by setup-velo
           uv run pytest tests/qa
 
 
@@ -65,10 +76,21 @@ jobs:
       workflow: ${{ steps.filter.outputs.workflow }}
       qa_infra: ${{ steps.filter.outputs.qa_infra }}
       kinetic: ${{ steps.filter.outputs.kinetic }}
+      # SSOT: Python version from config/constants.toml
+      python_version: ${{ steps.config.outputs.python_version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      
+      # SSOT: Read Python version from centralized config
+      - name: Read SSOT Config
+        id: config
+        run: |
+          PYTHON_VERSION=$(grep '^python_version' config/constants.toml | cut -d'"' -f2)
+          echo "python_version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "SSOT Python version: $PYTHON_VERSION"
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -148,8 +170,11 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
+
+      - name: Pre-Flight Diagnostic
+        run: cargo run --release -- debug pre-flight
 
       - name: Build
         run: cargo build --release
@@ -161,7 +186,10 @@ jobs:
           path: target/release/velo
           if-no-files-found: error
 
-      - name: Run tests
+      - name: Run Rust tests
+        run: cargo test
+
+      - name: Run Python tests
         run: uv run run_tests.py
 
       - name: "RFC-0020: Pre-Flight Check"
@@ -172,55 +200,8 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
-  build-matrix:
-    name: Build Matrix (${{ matrix.os }} / ${{ matrix.python-version }})
-    needs: changes
-    if: |
-      needs.changes.outputs.rust == 'true' || 
-      needs.changes.outputs.workflow == 'true' || 
-      needs.changes.outputs.loader == 'true' || 
-      needs.changes.outputs.zygote == 'true' || 
-      needs.changes.outputs.serve == 'true' || 
-      needs.changes.outputs.analyze == 'true' ||
-      needs.changes.outputs.qa_infra == 'true' ||
-      needs.changes.outputs.kinetic == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.11", "3.12"]
-        exclude:
-          - os: ubuntu-latest
-            python-version: "3.11"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify Rust Toolchain
-        run: rustup show
-
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ matrix.python-version }}
-          uv-version: ${{ env.UV_VERSION }}
-
-      - name: Build
-        run: cargo build --release
-
-      # Upload macOS binary for Kinetic Regression Gate
-      - name: Upload macOS Binary
-        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
-        with:
-          name: velo-binary-macos
-          path: target/release/velo
-          if-no-files-found: error
-
-      - name: Run tests
-        run: uv run run_tests.py
+  # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
+  # See: First-Principles SSOT Python Version Fix walkthrough
 
   clippy:
     name: Clippy
@@ -233,6 +214,13 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Pre-Flight Diagnostic
+        run: cargo run --all-features -- debug pre-flight
       - name: Run Clippy (Single Source of Truth)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -247,7 +235,24 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
       - run: cargo fmt --all -- --check
+
+  actionlint:
+    name: Actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: |
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Run actionlint
+        run: actionlint
 
   # ============================================
   # QA Test Suite - Layered by Purpose
@@ -659,36 +664,35 @@ jobs:
 
   qa-kinetic-regression-gate:
     name: "QA 6.2: Kinetic Regression Gate"
-    runs-on: ${{ matrix.os }}
-    needs: [build, build-matrix, changes]
+    runs-on: ubuntu-latest
+    needs: [build, changes]
     if: |
       needs.changes.outputs.kinetic == 'true' || 
       needs.changes.outputs.workflow == 'true' ||
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.qa_infra == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    # NOTE: macOS removed - developers run locally, CI focuses on Linux
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           download-binary: true
           uv-version: ${{ env.UV_VERSION }}
           
       - name: "Verification: Agent D CHAOS Suite (Detection Probe)"
         run: |
           # Use downloaded binary to ensure path alignment
-          export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          export PATH
           uv run pytest tests/qa/test_phase6_2_agent_d_destroyer.py -v --tb=short
 
       - name: "Verification: Dry-Run Hang Probe"
         run: |
-          export PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          PATH="$(pwd)/target/debug:$(pwd)/target/release:$PATH"
+          export PATH
           # Detect the specific regression we just fixed: dry-run hanging in Zygote mode
           # Note: Zygote is enabled by default, no --use-zygote flag exists (only --no-zygote)
           echo "from fastapi import FastAPI; app = FastAPI()" > main.py
@@ -791,6 +795,15 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
       
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+
+      - name: Pre-Flight Diagnostic
+        run: cargo llvm-cov nextest -- debug pre-flight
+
       - name: Run tests with coverage
         run: cargo llvm-cov nextest --lcov --output-path lcov.info
       
