@@ -180,6 +180,20 @@ build_rust() {
     log_success "Rust build complete"
 }
 
+# ============================================
+# Phase Pre-Flight: Forensic Diagnostics
+# ============================================
+run_pre_flight() {
+    log_step "Running Forensic Pre-Flight Diagnostics..."
+    # Ensure binary is already built or use cargo run
+    if [[ -f "target/release/velo" ]]; then
+        ./target/release/velo debug pre-flight
+    else
+        cargo run --release -- debug pre-flight
+    fi
+    log_success "Pre-flight diagnostics passed"
+}
+
 # =============================================================================
 # Phase 3: Test
 # =============================================================================
@@ -250,6 +264,10 @@ run_full_ci() {
     echo ""
     echo "==================== Phase 2: Build ===================="
     build_rust release
+    
+    echo ""
+    echo "==================== Phase Pre-Flight: Diagnostics ===================="
+    run_pre_flight
     
     echo ""
     echo "==================== Phase 3: Test ===================="

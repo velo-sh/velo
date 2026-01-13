@@ -8,6 +8,7 @@ pub mod bundle;
 pub mod debug;
 pub mod graph;
 pub mod info;
+pub mod pre_flight;
 pub mod python;
 pub mod run;
 pub mod serve;
@@ -19,6 +20,7 @@ pub use bundle::cmd_bundle;
 pub use debug::cmd_debug;
 pub use graph::cmd_graph;
 pub use info::cmd_info;
+pub use pre_flight::cmd_debug_pre_flight;
 pub use python::cmd_python; // RFC-0018: managed Python
 pub use run::cmd_run;
 pub use serve::cmd_serve;

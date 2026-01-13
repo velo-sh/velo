@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cmd::cmd_debug_pre_flight;
 use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
 use crate::python;
@@ -28,12 +29,18 @@ pub enum DebugSubcommand {
         #[arg(long)]
         json: bool,
     },
+    /// Run environmental pre-flight checks
+    PreFlight {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 pub fn cmd_debug(args: &[String]) -> Result<()> {
     let cmd = DebugCmd::try_parse_from(&args[1..])?;
     match cmd.command {
         DebugSubcommand::Zygote { verbose, json } => cmd_debug_zygote(verbose, json),
+        DebugSubcommand::PreFlight { json } => cmd_debug_pre_flight(json),
     }
 }
 

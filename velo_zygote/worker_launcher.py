@@ -137,6 +137,7 @@ def main() -> None:
             run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
 
         # 8. Execution
+        print(f"🚀 [WORKER] Starting {args.app} on {args.uds or args.host}", file=sys.stderr)
         if args.rsgi:
             from velo_zygote.rsgi import run_rsgi
             run_rsgi(args.app, args.uds)

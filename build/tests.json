@@ -1,13 +1,5 @@
 {
   "contracts": {},
-  "tests": {
-    "tests/qa/test_phase6_2_agent_d_destroyer.py": {
-      "coverage": false,
-      "isolated": false,
-      "results": "...",
-      "sha1": "282edd193e9f3d14e728ff8f62d8532065ee5497",
-      "txhash": []
-    }
-  },
+  "tests": {},
   "tx": {}
 }
