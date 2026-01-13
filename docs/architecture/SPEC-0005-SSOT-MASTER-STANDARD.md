@@ -4,6 +4,11 @@
 **Author**: Architect
 **Date**: 2026-01-14
 
+## Related Documents
+- **Implementation**: [RFC-0023: Tiered Environment Namespacing](../rfcs/0023-tiered-environment-namespacing.md)
+- **Verification**: [RFC-0024: Forensic Compatibility Specification](../rfcs/0024-forensic-compatibility-specification.md)
+- **Context**: [RFC-0019: Native Sovereignty](../rfcs/0019-native-sovereignty.md)
+
 ## 1. The 0xMaster Axiom
 Velo shall maintain a **Single Source of Truth (SSOT)** for all operational and conceptual facts. Any deviation between the Rust Supervisor and the Python Worker is considered a **Fatal Integrity Violation (FIV)**.
 
