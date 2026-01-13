@@ -200,72 +200,8 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
-  build-matrix:
-    name: Build Matrix (${{ matrix.os }} / ${{ matrix.python-version }})
-    needs: changes
-    if: |
-      needs.changes.outputs.rust == 'true' || 
-      needs.changes.outputs.workflow == 'true' || 
-      needs.changes.outputs.loader == 'true' || 
-      needs.changes.outputs.zygote == 'true' || 
-      needs.changes.outputs.serve == 'true' || 
-      needs.changes.outputs.analyze == 'true' ||
-      needs.changes.outputs.qa_infra == 'true' ||
-      needs.changes.outputs.kinetic == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-        python-version: ["3.11"]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          # SSoT: Include Python version in cache key to invalidate when Python changes
-          # This prevents stale PyO3 linkage artifacts from being restored
-          prefix-key: "v1-py${{ needs.changes.outputs.python_version }}"
-
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          # SSOT: Use Python version from centralized config, NOT matrix value
-          python-version: ${{ needs.changes.outputs.python_version }}
-          uv-version: ${{ env.UV_VERSION }}
-
-      - name: Verify Python Environment (Debug)
-        run: |
-          echo "Python version: $(python3 --version)"
-          echo "UV Python: $UV_PYTHON"
-          echo "UV_PYTHON_PREFERENCE: $UV_PYTHON_PREFERENCE"
-          echo "PYO3_PYTHON: $PYO3_PYTHON"
-          uv python list
-          ls -la .python-version || echo "No .python-version file"
-          # SSoT: Explicitly re-enforce PYO3_PYTHON just in case
-          echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
-
-      - name: Pre-Flight Diagnostic
-        run: cargo run --release -- debug pre-flight
-
-      - name: Build
-        run: cargo build --release
-
-      # Upload macOS binary for Kinetic Regression Gate
-      - name: Upload macOS Binary
-        if: matrix.os == 'macos-latest' && matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
-        with:
-          name: velo-binary-macos
-          path: target/release/velo
-          if-no-files-found: error
-
-      - name: Run Rust tests
-        run: cargo test
-
-      - name: Run Python tests
-        run: uv run run_tests.py
+  # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
+  # See: First-Principles SSOT Python Version Fix walkthrough
 
   clippy:
     name: Clippy
@@ -728,17 +664,14 @@ jobs:
 
   qa-kinetic-regression-gate:
     name: "QA 6.2: Kinetic Regression Gate"
-    runs-on: ${{ matrix.os }}
-    needs: [build, build-matrix, changes]
+    runs-on: ubuntu-latest
+    needs: [build, changes]
     if: |
       needs.changes.outputs.kinetic == 'true' || 
       needs.changes.outputs.workflow == 'true' ||
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.qa_infra == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    # NOTE: macOS removed - developers run locally, CI focuses on Linux
     steps:
       - uses: actions/checkout@v4
       
