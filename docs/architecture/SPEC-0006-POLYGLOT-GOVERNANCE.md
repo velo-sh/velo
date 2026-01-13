@@ -7,16 +7,27 @@
 ## 1. Introduction
 Velo is a complex, polyglot system comprising Rust-native supervision and Python-native execution. To eliminate technical debt at the "Service Mesh" level, this standard defines the mandatory taxonomy for cross-service communication, log attribution, and code organization.
 
-## 2. Service Identity (SID) Protocol
-Every active process in the Velo ecosystem MUST have a unique **Service Identity (SID)**.
+## 2. Nominal Sovereignty (Intention-Based Naming)
+To minimize ambiguity and prevent "Semantic Hijacking," Velo enforces strict naming conventions across all layers.
 
-| Service Role | SID Template | Example |
-|:---|:---|:---|
-| **Supervisor** | `SUP` | `SUP` |
-| **Zygote** | `ZYG:{N}` | `ZYG:0` |
-| **Worker** | `WRK:{PID}` | `WRK:1024` |
-| **Log Forwarder** | `LOG` | `LOG` |
-| **Probe/Health** | `PRB` | `PRB` |
+### 2.1 Prefix-Directed Intent
+Every internal identifier OR file MUST follow a naming prefix that signals its sovereignty:
+
+| Prefix | Domain | Intent | Example |
+|:---|:---|:---|:---|
+| `core_` | Rust Core | Critical system logic (Unsafe/Kernel-adjacent) | `core_executor.rs` |
+| `bridge_` | RSGI Bridge | Cross-language protocol translation | `bridge_payload.rs` |
+| `util_` | Shared Utils | Side-effect free helper functions | `util_hash.rs` |
+| `v_` | Velo Runtime | Python-side internal runtime logic | `v_shield.py` |
+| `compat_` | Compatibility | Framework-specific polyfills/hacks | `compat_starlette.py` |
+
+### 2.2 Variable Sovereignty (Namespacing)
+As per **SPEC-0005**, environment variables are tiered. This logic extends to internal Python objects:
+- `_v_` (Global/Single Underscore): Protected Velo internal state.
+- `__v_` (Double Underscore): Private, un-spoofable engine state (Dunder-Style).
+- `app_` (User Space): Reserved for user-provided context.
+
+## 3. Service Identity (SID) Protocol
 
 ## 3. Log Origin Protocol (LOP)
 All logs emitted by Velo (Host or Zygote) MUST follow the unified LOP format to facilitate forensic filtering.
@@ -29,13 +40,15 @@ All logs emitted by Velo (Host or Zygote) MUST follow the unified LOP format to 
 **Example**:
 `2026-01-14T03:30:00 [WRK:1234] WARN [VELO-COMPAT-031] Un-buffered body access detected in Starlette.`
 
-## 4. Polyglot Code Orthogonality
-To maintain a clean boundary, the repository follows a strict ownership model:
+## 5. Polyglot Code Orthogonality
+To maintain "Nominal Sovereignty" and prevent import-path collisions:
 
-- **`/src`**: Rust Core (Supervisor, Zygote-Proxy, RSGI-Bridge).
-- **`/velo_proxy`** (proposed rename of current Python bits): Velo-owned Python logic (Zygote bootstrap, Environment Shield).
-- **`/vendor`**: Vendored Python dependencies (Section 5 of RFC-0024).
-- **`/app`**: (User-provided) User application logic.
+- **`/src`**: Rust Core.
+- **`/velo_proxy`**: (Proposed) Unified Python sovereignty layer.
+    - `velo_proxy/core/`: Engine-facing Python logic.
+    - `velo_proxy/compat/`: Framework parity layer.
+- **`/vendor`**: Strictly isolated 3rd party code (no direct user modification).
+- **`/app`**: User land.
 
 ## 5. Observability Hierarchy
 Velo provides three layers of truth for every request lifecycle:
