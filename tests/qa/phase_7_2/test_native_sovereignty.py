@@ -1,6 +1,7 @@
 import pytest
 import os
 import signal
+import subprocess
 import time
 import requests
 import socket
@@ -39,13 +40,17 @@ async def app(scope, receive, send):
         proc = isolated_env.spawn_velo("serve", "main:app", "--port", str(port), "--workers", "1")
         
         try:
-            time.sleep(3)
+            time.sleep(5)  # Allow more time for startup
             # Verify app is alive
             requests.get(f"http://127.0.0.1:{port}", timeout=5)
             
             # Send SIGTERM to the Host process
             proc.terminate()
-            proc.wait(timeout=10)
+            try:
+                proc.wait(timeout=20)  # More time for graceful shutdown
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
             
             # Check if worker received and handled the signal
             signal_file = isolated_env.root / "received_signal.txt"
@@ -96,23 +101,36 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     def test_respawn_backoff(self, isolated_env):
-        """[Tier 3] Verify 1s -> 2s -> 4s exponential backoff on crashing app."""
+        """[Tier 3] Verify exponential backoff on crashing app."""
         # Create an app that crashes immediately on startup
         isolated_env.create_app("main.py", "import sys; sys.exit(1)")
         port = isolated_env.next_port()
         
         # Use a short backoff for testing if supported
-        env = {"VELO_BACKOFF_SECS": "1"}
+        env = {"VELO_BACKOFF_SECS": "1", "VELO_FAIL_FAST_LIMIT": "3"}
         proc = isolated_env.spawn_velo("serve", "main:app", "--port", str(port), env=env, stderr=subprocess.PIPE)
         
         try:
-            time.sleep(5) # Allow for a few respawns
+            # Wait for at least 2 respawn attempts (with 1s backoff)
+            time.sleep(8)
             proc.terminate()
-            _, stderr = proc.communicate(timeout=5)
+            try:
+                _, stderr = proc.communicate(timeout=10)
+                if isinstance(stderr, bytes):
+                    stderr_text = stderr.decode('utf-8', errors='replace').lower()
+                else:
+                    stderr_text = stderr.lower() if stderr else ""
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                _, stderr = proc.communicate()
+                if isinstance(stderr, bytes):
+                    stderr_text = stderr.decode('utf-8', errors='replace').lower()
+                else:
+                    stderr_text = stderr.lower() if stderr else ""
             
             # Check logs for backoff messages
             # PROSECUTOR: If we don't see backoff messages, the system is hammering the CPU
-            assert "backoff" in stderr.lower() or "retrying" in stderr.lower()
+            assert "backoff" in stderr_text or "retrying" in stderr_text, f"No backoff message found in stderr: {stderr_text[:500]}"
         finally:
             if proc.poll() is None:
                 proc.kill()

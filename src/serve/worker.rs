@@ -25,6 +25,8 @@ fn build_worker_env(
 ) -> Box<std::collections::HashMap<String, String>> {
     let mut env = std::env::vars()
         .filter(|(k, _)| config.security_env_whitelist.contains(k))
+        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables
+        .filter(|(k, _)| !(k.starts_with("VELO_") && k.contains("UNTRUSTED")))
         .collect::<std::collections::HashMap<String, String>>();
     env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
     if !env.contains_key("VELO_FORWARDED_ALLOW_IPS") {
@@ -183,8 +185,10 @@ impl Worker {
         let mut cmd = std::process::Command::new(python_path);
         cmd.current_dir(project_dir);
 
-        // Pass essential environment (Surgical Whitelist - RFC-0012)
+        // DEF-72-S02: Clear parent environment to prevent untrusted vars from leaking
+        cmd.env_clear();
 
+        // Pass essential environment (Surgical Whitelist - RFC-0012)
         let env = build_worker_env(config);
         for (k, v) in env.iter() {
             cmd.env(k, v);

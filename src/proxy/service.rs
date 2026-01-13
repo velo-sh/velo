@@ -314,6 +314,8 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
             match result {
                 Ok(mut res) => {
                     guard.record_success();
+                    // DEF-72-E01: Strip hop-by-hop headers from RESPONSE
+                    VeloProxyService::strip_hop_by_hop_headers(res.headers_mut());
                     // Inject diagnostic header into RESPONSE for QA verification (Client side)
                     res.headers_mut().insert(
                         "x-velo-worker",
@@ -375,6 +377,8 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
             match result {
                 Ok(mut res) => {
                     guard.record_success();
+                    // DEF-72-E01: Strip hop-by-hop headers from RESPONSE
+                    Self::strip_hop_by_hop_headers(res.headers_mut());
                     // Inject diagnostic header into RESPONSE for QA verification (Client side)
                     res.headers_mut().insert(
                         "x-velo-worker",
