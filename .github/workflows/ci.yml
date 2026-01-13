@@ -205,6 +205,14 @@ jobs:
       - name: Verify Rust Toolchain
         run: rustup show
 
+      - name: Verify Python Environment (Debug)
+        run: |
+          echo "Python version: $(python3 --version)"
+          echo "UV Python: $UV_PYTHON"
+          echo "PYO3_PYTHON: $PYO3_PYTHON"
+          uv python list
+          ls -la .python-version || echo "No .python-version file"
+
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
 
