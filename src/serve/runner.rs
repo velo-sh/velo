@@ -467,6 +467,12 @@ impl RespawnTracker {
         self.consecutive_failures += 1;
         self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
+        // DEF-72-R01: Log backoff for observability
+        eprintln!(
+            "[RESPAWN] Worker crashed (attempt {}/{}), retrying in {}s (backoff)",
+            self.consecutive_failures, self.fail_fast_limit, self.backoff_secs
+        );
+
         if self.consecutive_failures >= self.fail_fast_limit {
             eprintln!(
                 "FATAL: Worker failed to start after {}/{} attempts. \
