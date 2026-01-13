@@ -292,10 +292,10 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
       - name: Run ${{ matrix.suite.name }} Tests
         run: |
-          export PATH="$PWD/bin:$PATH"
           uv run pytest ${{ matrix.suite.path }} -v --tb=short
         env:
           VELO_TEST_MODE: "1"
+          VELO_BINARY: ${{ github.workspace }}/bin/velo
 
   qa-zygote-core:
     name: "QA: Zygote Core E2E"
