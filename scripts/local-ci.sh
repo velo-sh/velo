@@ -92,7 +92,7 @@ docker_run() {
             echo ""
             echo "==================== Phase 4: Test ===================="
             source scripts/ci-common.sh
-            pytest $TEST_PATHS_DOCKER -v --tb=short
+            pytest tests/qa -v --tb=short
             echo ""
             echo "=========================================="
             echo "✅ ALL CI CHECKS PASSED!"
@@ -136,7 +136,7 @@ run_local_ci() {
     check_env_fast
     
     # Run full CI pipeline with SSOT test paths
-    run_full_ci ".venv" "$TEST_PATHS_DOCKER"
+    run_full_ci ".venv" "tests/qa"
 }
 
 run_quick_check() {
