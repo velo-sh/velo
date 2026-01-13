@@ -377,10 +377,10 @@ impl ZygoteLauncher {
             return Ok(());
         }
 
-        // Find Python interpreter
+        // Find Python interpreter using standardized detection (respects VELO_PYTHON)
+        let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let python = self.python_path.clone().unwrap_or_else(|| {
-            // Default to python3
-            PathBuf::from("python3")
+            crate::python::detect_python(&project_dir).unwrap_or_else(|_| PathBuf::from("python3"))
         });
 
         // RFC-0011: Standardized socket path

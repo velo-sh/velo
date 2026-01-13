@@ -14,13 +14,25 @@ use crate::cache::EnvCache;
 
 /// Detect the project's Python interpreter.
 /// Priority:
-/// 1. .venv/bin/python (local uv/virtualenv) - MUST BE FIRST for CI compatibility
-///    In CI, VIRTUAL_ENV may be set to the runner's venv which lacks project deps
-/// 2. VIRTUAL_ENV environment variable (activated venv)
-/// 3. VELO_PYTHON environment variable
+/// 1. VELO_PYTHON environment variable (explicit override for testing/CI)
+/// 2. .venv/bin/python (local uv/virtualenv)
+/// 3. VIRTUAL_ENV environment variable (activated venv)
 /// 4. System python3
 pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
-    // 1. Check for project-local venv names FIRST
+    // 1. Check VELO_PYTHON env var FIRST (for test mocking and explicit overrides)
+    if let Ok(python_path_str) = std::env::var("VELO_PYTHON") {
+        let path = PathBuf::from(&python_path_str);
+        if path.exists() {
+            return Ok(path);
+        }
+        // If VELO_PYTHON is set but doesn't exist, log and continue
+        eprintln!(
+            "[WARN] VELO_PYTHON={} does not exist, falling back",
+            python_path_str
+        );
+    }
+
+    // 2. Check for project-local venv names
     for name in [".venv", "venv", ".env", "env"] {
         let path = project_dir.join(name);
         let python = if cfg!(windows) {
@@ -33,7 +45,7 @@ pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
         }
     }
 
-    // 2. Check VIRTUAL_ENV env var (only if project venv not found)
+    // 3. Check VIRTUAL_ENV env var (only if project venv not found)
     if let Ok(venv) = std::env::var("VIRTUAL_ENV")
         && !venv.trim().is_empty()
     {
@@ -45,14 +57,6 @@ pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
         };
         if python.exists() {
             return Ok(python);
-        }
-    }
-
-    // 3. Check VELO_PYTHON env var
-    if let Ok(python_path_str) = std::env::var("VELO_PYTHON") {
-        let path = PathBuf::from(python_path_str);
-        if path.exists() {
-            return Ok(path);
         }
     }
 
