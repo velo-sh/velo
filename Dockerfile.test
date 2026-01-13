@@ -1,42 +1,19 @@
 # syntax=docker/dockerfile:1
-FROM ubuntu:22.04
+FROM velo-ci-ubuntu
 
-# 0. System Dependencies
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y \
-    curl \
-    build-essential \
-    libssl-dev \
-    pkg-config \
-    git \
-    python3 \
-    python3-pip \
-    ca-certificates \
-    --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
-# 1. Install uv and Python 3.11
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-RUN uv python install 3.11
-
-# 2. Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# 3. Python Optimization: Pre-install test dependencies
+# 1. Python Optimization: Pre-install test dependencies
 RUN uv venv --python 3.11 /tmp/.venv-docker && \
     . /tmp/.venv-docker/bin/activate && \
-    uv pip install fastapi uvicorn pytest requests psutil
+    uv pip install fastapi uvicorn pytest requests psutil blake3 msgpack
 
 ENV VIRTUAL_ENV=/tmp/.venv-docker
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 ENV PYTHONPATH="/workspace"
 
-# RFC-0010: Ensure shared libraries are found in image
-# We use the stable path for UV-managed python
+# RFC-0010: Ensure shared libraries are found for uv-managed Python
 ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-aarch64-gnu/lib:${LD_LIBRARY_PATH:-}"
 
-# 4. Rust Optimization: Cache Dependencies Layer (Registry + Compilation)
+# 2. Rust Optimization: Cache Dependencies Layer
 ENV CARGO_HOME=/usr/local/cargo
 WORKDIR /build_cache
 
@@ -44,19 +21,31 @@ WORKDIR /build_cache
 COPY Cargo.toml Cargo.lock ./
 COPY vendor/ ./vendor/
 
-# Build BOTH Release and Test profiles to maximize image layer hit rate
-# We use a real (but empty) lib.rs to ensure all dependencies are resolved.
+# Build BOTH Release and Test profiles to cache dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     mkdir -p src && touch src/lib.rs && \
     echo "fn main() {}" > src/main.rs && \
     cargo build --release && \
-    cargo test --lib --no-run
-
-# Clean up ONLY the dummy binary artifacts, keep the .rlib dependencies
-RUN rm -f target/release/deps/velo* target/debug/deps/velo* && \
+    cargo test --lib --no-run && \
+    rm -f target/release/deps/velo* target/debug/deps/velo* && \
     rm -rf src
 
-# 5. Final Environment Setup
+# 3. Final Environment Setup
 ENV CARGO_TARGET_DIR=/build_cache/target
 WORKDIR /workspace
+
+# 4. Copy CI scripts and run full pipeline
+COPY scripts/ci-common.sh scripts/test-suites.conf ./scripts/
+
+# CMD: Copy container-built binary to workspace/target before running tests
+# Tests look for target/debug/velo OR target/release/velo
+CMD ["bash", "-c", "\
+    mkdir -p /workspace/target/release /workspace/target/debug && \
+    cp /build_cache/target/release/velo /workspace/target/release/velo && \
+    cp /build_cache/target/release/velo /workspace/target/debug/velo && \
+    chmod +x /workspace/target/release/velo /workspace/target/debug/velo && \
+    source scripts/ci-common.sh && \
+    run_full_ci /tmp/.venv-docker \
+    "]
+
