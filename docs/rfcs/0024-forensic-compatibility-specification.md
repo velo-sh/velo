@@ -5,7 +5,7 @@
 **Date**: 2026-01-14
 
 ## 1. Summary
-This specification defines the mandatory compatibility baseline for Velo in **Native Sovereignty (RSGI)** mode. It ensures that user applications migrating from Uvicorn/Gunicorn to Velo experience "Zero Friction" and "Zero Conflict," maintaining 100% behavioral parity with standard ASGI expectations while operating under Velo's hardened environment features.
+This specification defines the mandatory compatibility baseline for Velo in **Native Sovereignty (RSGI)** mode. Built upon the architectural foundation of **[SPEC-0005: Velo SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md)**, it ensures that user applications migrating to Velo experience "Zero Friction" while operating under Velo's hardened environment and state sovereignty features.
 
 ## 2. Framework Matrix (Deep Dive)
 Velo must verify the integrity of the `scope` dictionary and event loop behavior across the following frameworks:

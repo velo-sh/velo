@@ -16,25 +16,16 @@ Currently, Velo uses a mix of environment variables for both internal coordinati
 
 ## 3. High-Level Blueprint: The Three-Tier Namespace
 
-We introduce a mandatory tiered naming convention for all variables within the Velo ecosystem:
+Velo adopts a mandatory tiered naming convention for all variables. The definitive specification for these tiers is documented in **[SPEC-0005: Velo SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md#3-environment-ssot-tiered-sovereignty)**.
 
-### 3.1 `VELO_SYS_*` (System-Level)
-*   **Purpose**: Low-level communication between Rust Supervisor and Zygote (e.g., `VELO_SYS_HOST_PID`, `VELO_SYS_SOCK_FD`, `VELO_SYS_AUTH_TOKEN`).
-*   **Lifecycle**: Managed entirely by the Rust core.
-*   **Security**: **Hard Scrubbing**. These variables MUST be forcibly stripped from the environment using `libc::unsetenv` in the Rust `pre_exec` hook before the child process enters the Python entry point. The Worker should have no knowledge of the internal mechanical state of the supervisor.
+This RFC focuses on the technical implementation of these tiers within the Velo Host and Zygote.
 
-### 3.2 `VELO_CONF_*` (Configuration-Level)
-*   **Purpose**: User-tunable parameters that adjust Velo's behavior (e.g., `VELO_CONF_PORT`, `VELO_CONF_WORKERS`, `VELO_CONF_PRELOAD`).
-*   **SSOT**: These should primarily be defined in `pyproject.toml` under `[tool.velo]`. Environment variables serve as high-priority overrides.
-*   **Visibility**: Visible to the Zygote but should be read-only for the Worker.
-
-### 3.3 `VELO_APP_*` (Application-Level)
-*   **Purpose**: Reserved exclusively for user application logic (e.g., `VELO_APP_DB_URL`, `VELO_APP_SECRET_KEY`).
-*   **Guarantee**: Velo guarantees that these variables will penetrate the **Environment Shield** and will never be used or modified by Velo internal logic.
-
-### 3.4 Tier 4: `VELO_RUNTIME_*` (Read-only/Sealed)
-*   **Purpose**: Immutable facts provided by the Velo engine to the application (e.g., `VELO_RUNTIME_WORKER_ID`, `VELO_RUNTIME_START_TIME`, `VELO_RUNTIME_MEM_LIMIT`).
-*   **Behavior**: These are injected into the Python `sys.modules['velo'].env` rather than the OS environment, making them "un-spoofable" and protected from `os.environ.clear()` or manual tampering by user code.
+| Tier | Namespace | Implementation Profile | Key Mechanism |
+|:---|:---|:---|:---|
+| **System** | `VELO_SYS_*` | Hard Scrubbed | `libc::unsetenv` in `pre_exec` |
+| **Config** | `VELO_CONF_*` | Read-only | Rust-side Schema Validation |
+| **App** | `VELO_APP_*` | Transparent | Environment Shield Pass-through |
+| **Runtime** | `VELO_RUNTIME_*` | Sealed | `sys.modules['velo'].env` Injection |
 
 ---
 
