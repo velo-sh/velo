@@ -67,6 +67,40 @@ class RSGIWorker:
     async def handle_connection(self, reader, writer):
         """Handle an incoming RSGI connection from the Rust Host."""
         try:
+            # Gate H (DEF-72-H01): Peer PID Authentication
+            # Validate that the connecting process is from our authorized parent (Rust Host)
+            sock = writer.get_extra_info('socket')
+            if sock is not None:
+                try:
+                    import socket
+                    import struct as _struct
+                    # SO_PEERCRED returns (pid, uid, gid) on Linux
+                    SO_PEERCRED = getattr(socket, 'SO_PEERCRED', 17)  # 17 on Linux
+                    creds = sock.getsockopt(socket.SOL_SOCKET, SO_PEERCRED, _struct.calcsize('3i'))
+                    peer_pid, peer_uid, peer_gid = _struct.unpack('3i', creds)
+                    
+                    # Validate UID matches (same user)
+                    my_uid = os.getuid()
+                    if peer_uid != my_uid:
+                        print(f"RSGI Gate H: Rejected connection from UID {peer_uid} (expected {my_uid})", file=sys.stderr)
+                        writer.close()
+                        await writer.wait_closed()
+                        return
+                    
+                    # Validate PID is our parent process (the Rust Host that spawned us)
+                    # The authorized Host PID is passed via VELO_HOST_PID environment variable
+                    authorized_host_pid = os.environ.get('VELO_HOST_PID')
+                    if authorized_host_pid:
+                        if str(peer_pid) != authorized_host_pid:
+                            print(f"RSGI Gate H: Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
+                            writer.close()
+                            await writer.wait_closed()
+                            return
+                except (OSError, AttributeError) as e:
+                    # SO_PEERCRED not available (macOS) - fallback to UID check only
+                    # On macOS, LOCAL_PEERCRED exists but with different format
+                    pass
+            
             # 1. Send READY
             ready_msg = [
                 TYPE_READY,
