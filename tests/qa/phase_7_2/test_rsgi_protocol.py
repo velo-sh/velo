@@ -97,10 +97,18 @@ def send_msg(s, msg):
     s.sendall(struct.pack(">I", len(payload)) + payload)
 
 def recv_msg(s):
-    len_data = s.recv(4)
-    if not len_data: return None
+    len_data = b""
+    while len(len_data) < 4:
+        chunk = s.recv(4 - len(len_data))
+        if not chunk: return None
+        len_data += chunk
     length = struct.unpack(">I", len_data)[0]
-    return msgpack.unpackb(s.recv(length))
+    payload = b""
+    while len(payload) < length:
+        chunk = s.recv(length - len(payload))
+        if not chunk: return None
+        payload += chunk
+    return msgpack.unpackb(payload)
 
 def main():
     log_path = os.environ.get("VELO_WORKER_DEBUG_LOG", "/tmp/velo_worker_debug.log")
