@@ -66,11 +66,16 @@ impl VeloPaths {
 
         // Validate length constraint
         if socket_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
+            // DEF-72-P01: Always enforce 0700 permissions
+            ensure_socket_dir(&socket_path);
             return socket_path;
         }
 
         // Fallback to /tmp if path is too long
-        PathBuf::from("/tmp").join(dir_name)
+        let fallback = PathBuf::from("/tmp").join(dir_name);
+        // DEF-72-P01: Enforce 0700 on fallback path too
+        ensure_socket_dir(&fallback);
+        fallback
     }
 
     /// Expand placeholders in path strings
