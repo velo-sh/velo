@@ -62,6 +62,7 @@ def main() -> None:
         parser.add_argument(
             "--proxy-headers", action="store_true", dest="proxy_headers"
         )
+        parser.add_argument("--rsgi", action="store_true")
         args = parser.parse_args()
 
         # 3. Secure Imports
@@ -69,6 +70,10 @@ def main() -> None:
         from velo_zygote.paths import VeloPaths
         from velo_zygote.settings import VeloConfig
         from velo_zygote import integrity
+        
+        # RFC-0019: Pre-import RSGI mode if needed before shielding
+        if args.rsgi:
+            from velo_zygote.rsgi import run_rsgi
 
         # 5. ImportShield Activation (Titanium Isolation)
         # SSOT: Import directly from shield module (Phase 10.0)
@@ -136,7 +141,12 @@ def main() -> None:
             run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
 
         # 8. Execution
-        uvicorn.run(**run_kwargs)
+        print(f"🚀 [WORKER] Starting {args.app} on {args.uds or args.host}", file=sys.stderr)
+        if args.rsgi:
+            from velo_zygote.rsgi import run_rsgi
+            run_rsgi(args.app, args.uds)
+        else:
+            uvicorn.run(**run_kwargs)
 
     except Exception as e:
         # Emergency logging - Print to stderr for visibility in CI/Tests

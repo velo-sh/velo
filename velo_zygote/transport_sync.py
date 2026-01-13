@@ -23,8 +23,14 @@ class ProtocolError(Exception):
 class ZygoteTransport:
     """Layer 1: Transport Layer - Handles raw socket IO with recvmsg support."""
 
+    # DEF-72-FLOOD: Timeout protection against malformed/partial messages
+    # 30 seconds is sufficient for IPC commands; prevents indefinite blocking
+    DEFAULT_TIMEOUT = 30.0
+
     def __init__(self, sock: socket.socket):
         self.sock = sock
+        # DEF-72-FLOOD: Set timeout to prevent DoS via partial data
+        self.sock.settimeout(self.DEFAULT_TIMEOUT)
 
     def recv(self) -> Optional[Dict[str, Any]]:
         """Receive length-prefixed MessagePack message + optional FD."""

@@ -56,7 +56,7 @@ class ImportShield:
 
             try:
                 # Log to stderr for visibility in CI logs (Trap 178.2/3)
-                sys.stderr.write(f"🛡️ [ImportShield] {msg}\n")
+                sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg}\n")
                 sys.stderr.flush()
             except:
                 pass

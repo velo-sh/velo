@@ -30,13 +30,21 @@ runs:
 
     - name: Set up Python ${{ inputs.python-version }}
       shell: bash
-      run: uv python install ${{ inputs.python-version }}
+      run: |
+        uv python install ${{ inputs.python-version }}
+        uv python pin ${{ inputs.python-version }}
+        # SSoT: Force uv to only use our managed Python version
+        echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+        # SSoT: Set UV_PYTHON from input parameter (not hardcoded)
+        echo "UV_PYTHON=${{ inputs.python-version }}" >> "$GITHUB_ENV"
 
     - name: Create venv and install deps
       shell: bash
       run: |
         uv venv --python ${{ inputs.python-version }}
         uv sync
+        # SSoT: Centralized pyo3 interpreter discovery
+        echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
 
     - name: Determine artifact name
       if: inputs.download-binary == 'true'

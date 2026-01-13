@@ -19,6 +19,8 @@ pub struct WorkerNode {
     socket_path: std::sync::RwLock<String>,
     /// Unique worker ID for connection pooling authority.
     pub worker_id: u64,
+    /// Worker process PID for Gate H peer authentication (DEF-72-H01).
+    worker_pid: std::sync::atomic::AtomicU32,
     /// Number of active connections to this worker.
     active_connections: AtomicUsize,
     /// Consecutive failures for circuit breaker.
@@ -30,9 +32,15 @@ pub struct WorkerNode {
 impl WorkerNode {
     /// Create a new worker node.
     pub fn new(socket_path: String, worker_id: u64) -> Self {
+        Self::with_pid(socket_path, worker_id, 0)
+    }
+
+    /// Create a new worker node with a known PID (Gate H compliance).
+    pub fn with_pid(socket_path: String, worker_id: u64, pid: u32) -> Self {
         Self {
             socket_path: std::sync::RwLock::new(socket_path),
             worker_id,
+            worker_pid: std::sync::atomic::AtomicU32::new(pid),
             active_connections: AtomicUsize::new(0),
             consecutive_failures: AtomicUsize::new(0),
             healthy: std::sync::atomic::AtomicBool::new(true),
@@ -57,6 +65,16 @@ impl WorkerNode {
     /// Get the worker ID.
     pub fn id(&self) -> u64 {
         self.worker_id
+    }
+
+    /// Get the worker PID (Gate H: for peer authentication).
+    pub fn pid(&self) -> u32 {
+        self.worker_pid.load(Ordering::Relaxed)
+    }
+
+    /// Update the worker PID (called during respawn).
+    pub fn update_pid(&self, new_pid: u32) {
+        self.worker_pid.store(new_pid, Ordering::Relaxed);
     }
 
     /// Get the current number of active connections.
@@ -303,6 +321,26 @@ impl LoadBalancer {
     /// Remove a worker from the load balancer.
     pub fn remove_worker(&mut self, socket_path: &str) {
         self.workers.retain(|w| w.socket_path() != socket_path);
+    }
+
+    /// Gate H (DEF-72-H01): Check if a PID is authorized to receive requests.
+    /// Returns true if the PID belongs to a known spawned worker.
+    pub fn is_authorized_pid(&self, pid: u32) -> bool {
+        if pid == 0 {
+            return false; // Invalid PID
+        }
+        self.workers.iter().any(|w| w.pid() == pid)
+    }
+
+    /// Register a worker's PID for Gate H authentication.
+    pub fn register_worker_pid(&self, worker_id: u64, pid: u32) {
+        if let Some(worker) = self.workers.get(worker_id as usize) {
+            worker.update_pid(pid);
+            eprintln!(
+                "[LB] Gate H: Registered PID {} for worker {}",
+                pid, worker_id
+            );
+        }
     }
 
     /// Get total active connections across all workers.
@@ -563,5 +601,47 @@ mod tests {
         // Shutdown with very short timeout should fail
         let result = lb.graceful_shutdown(Duration::from_millis(50)).await;
         assert!(result.is_err(), "Should timeout with active connections");
+    }
+
+    #[test]
+    fn test_circuit_breaker_threshold() {
+        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
+        let worker = &lb.workers[0];
+
+        // 1-4 failures: still healthy
+        for _ in 1..5 {
+            worker.record_failure();
+            assert!(worker.is_healthy());
+        }
+
+        // 5th failure: UNHEALTHY
+        worker.record_failure();
+        assert!(
+            !worker.is_healthy(),
+            "Circuit breaker MUST trip after 5 failures (RFC-0011)"
+        );
+
+        // Success: HEALTHY again
+        worker.mark_healthy();
+        assert!(worker.is_healthy());
+    }
+
+    #[test]
+    fn test_round_robin_tie_breaker() {
+        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string(), "/tmp/w2.sock".to_string()]);
+
+        // Both have 0 connections. RR should alternate.
+        let g1 = lb.select_worker().unwrap();
+        assert_eq!(g1.socket_path(), "/tmp/w1.sock");
+
+        let g2 = lb.select_worker().unwrap();
+        assert_eq!(g2.socket_path(), "/tmp/w2.sock");
+
+        let g3 = lb.select_worker().unwrap();
+        assert_eq!(
+            g3.socket_path(),
+            "/tmp/w1.sock",
+            "RR tie-breaker MUST alternate when connections are equal"
+        );
     }
 }

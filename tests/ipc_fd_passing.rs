@@ -21,8 +21,15 @@ fn test_ipc_fd_passing_end_to_end() -> Result<()> {
         .arg(socket_path.to_string_lossy().as_ref())
         .spawn()?;
 
-    // Give it time to start
-    std::thread::sleep(Duration::from_secs(2));
+    // Wait for socket to be ready (up to 10s) - CI environments may be slower
+    let start = std::time::Instant::now();
+    while !socket_path.exists() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !socket_path.exists() {
+        child.kill()?;
+        anyhow::bail!("Zygote socket not ready after 10s at {:?}", socket_path);
+    }
 
     // 3. Create a shared memory segment with data
     let shm_path = tmp_dir.path().join("test_shm");
