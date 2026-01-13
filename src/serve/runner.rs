@@ -1109,6 +1109,55 @@ pub fn run_server(
                             }
 
                             Err(e) => {
+                                // RFC-0011 Stabilization: Zygote Recovery
+                                // If respawn failed, check if Zygote is still alive.
+                                let mut zygote_died = false;
+                                if _zygote_guard.as_mut().is_some_and(|l| !l.is_alive()) {
+                                    logger.warn("[RESPAWN] Zygote detected as dead/unresponsive. Attempting restart...");
+                                    zygote_died = true;
+                                }
+
+                                if zygote_died {
+                                    // Attempt to restart Zygote
+                                    if let Some(ref mut launcher) = _zygote_guard {
+                                        match launcher.start(
+                                            &preload_modules,
+                                            Some(&args.app),
+                                            false,
+                                            config,
+                                        ) {
+                                            Ok(_) => {
+                                                logger.info("[RESPAWN] Zygote successfully restarted. Retrying worker respawn...");
+                                                // Retry once after restart
+                                                if let Ok(retry_worker) = worker.respawn(
+                                                    &args.app,
+                                                    i as u64,
+                                                    python_path,
+                                                    project_dir,
+                                                    config,
+                                                    args.rsgi,
+                                                ) {
+                                                    if let Some(ref old) = worker.socket_path {
+                                                        lb.remove_backend(&old.to_string_lossy());
+                                                    }
+                                                    if let Some(ref new) = retry_worker.socket_path
+                                                    {
+                                                        lb.add_backend(&new.to_string_lossy());
+                                                    }
+                                                    *worker = retry_worker;
+                                                    continue; // Success on retry
+                                                }
+                                            }
+                                            Err(restart_err) => {
+                                                logger.error(&format!(
+                                                    "[RESPAWN] Zygote restart failed: {}",
+                                                    restart_err
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+
                                 if !tracker.record_failure() {
                                     anyhow::bail!("FATAL: Worker respawn failing consistently.");
                                 }
