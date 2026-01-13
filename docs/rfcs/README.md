@@ -36,6 +36,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0021](./0021-unified-process-supervision.md) | Unified Process Supervision | ✅ Approved | v0.8.1 |
 | [0022](./0022-operational-experience.md) | Operational Experience Standard | ✅ Approved | v0.8.1 |
 | [0023](./0023-tiered-environment-namespacing.md) | Tiered Environment Namespacing | 🟡 Draft | v0.8.2 |
+| [0024](./0024-forensic-compatibility-specification.md) | Forensic Compatibility Specification | ✅ Approved | v0.8.2 |
 
 ## Quality Assurance Reports
 
