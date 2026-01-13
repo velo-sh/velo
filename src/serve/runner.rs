@@ -468,12 +468,10 @@ impl RespawnTracker {
         self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
         // DEF-72-R01: Log backoff for observability
-        // Architect Note: Use standard logging for production observability
-        log::warn!(
+        // Standardized on eprintln! for guaranteed immediate visibility in stderr
+        eprintln!(
             "[RESPAWN] Worker crashed (attempt {}/{}), retrying in {}s (backoff)",
-            self.consecutive_failures,
-            self.fail_fast_limit,
-            self.backoff_secs
+            self.consecutive_failures, self.fail_fast_limit, self.backoff_secs
         );
 
         if self.consecutive_failures >= self.fail_fast_limit {

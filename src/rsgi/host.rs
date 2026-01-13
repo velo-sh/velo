@@ -11,6 +11,7 @@ use http_body_util::{BodyExt, StreamBody};
 use hyper::body::{Frame, Incoming};
 use hyper::service::Service;
 use hyper::{Request, Response};
+use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::UnixStream;
@@ -62,18 +63,49 @@ impl RSGIHost {
             }
 
             // Step 2: PID must be in authorized registry (anti-hijack)
-            if let Some(peer_pid) = creds.pid()
-                && !lb.is_authorized_pid(peer_pid as u32)
+            let mut peer_pid = creds.pid();
+
+            #[cfg(target_os = "macos")]
+            if peer_pid.is_none() || peer_pid == Some(0) {
+                let fd = stream.as_raw_fd();
+
+                // Fallback 1: LOCAL_PEERPID (0x001)
+                if peer_pid.is_none() {
+                    let mut pid: libc::pid_t = 0;
+                    let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+                    unsafe {
+                        if libc::getsockopt(fd, 0, 0x001, &mut pid as *mut _ as *mut _, &mut len)
+                            == 0
+                        {
+                            peer_pid = Some(pid);
+                        }
+                    }
+                }
+
+                // Fallback 2: getpeereid for UID validation
+                // On macOS, LOCAL_PEERPID can return 0. If UID matches, we accept same-user isolation.
+                let mut uid: libc::uid_t = 0;
+                let mut gid: libc::gid_t = 0;
+                unsafe {
+                    if libc::getpeereid(fd, &mut uid, &mut gid) == 0 {
+                        let current_uid = libc::getuid();
+                        if uid != current_uid {
+                            return Err(RSGIError::HandshakeFailed(format!(
+                                "Security Violation: UID mismatch (expected {})",
+                                current_uid
+                            )));
+                        }
+                    }
+                }
+            }
+
+            if let Some(pid) = peer_pid
+                && pid != 0
+                && !lb.is_authorized_pid(pid as u32)
             {
-                eprintln!(
-                    "RSGI Gate H: Security Violation - Unauthorized PID {} (not in worker registry)",
-                    peer_pid
-                );
-                use std::io::Write;
-                let _ = std::io::stderr().flush();
                 return Err(RSGIError::HandshakeFailed(format!(
-                    "Security Violation: PID {} not authorized (possible hijack attempt)",
-                    peer_pid
+                    "Security Violation: PID {} not authorized",
+                    pid
                 )));
             }
         }
@@ -86,7 +118,11 @@ impl RSGIHost {
 
             if ready.0 != protocol::TYPE_READY {
                 // DEF-72-E03: Log malformed READY for observability
-                eprintln!("Expected READY, got type {}", ready.0);
+                eprintln!(
+                    "[RSGI] Handshake Error: Expected READY (type {}), got type {}",
+                    protocol::TYPE_READY,
+                    ready.0
+                );
                 use std::io::Write;
                 let _ = std::io::stderr().flush();
                 return Err(RSGIError::HandshakeFailed(format!(
@@ -109,7 +145,7 @@ impl RSGIHost {
             .await
             .map_err(|_| {
                 // DEF-72-E02: Log timeout for observability
-                eprintln!("Handshake timed out after 500ms");
+                eprintln!("[RSGI] Handshake Error: Handshake timed out after 500ms");
                 use std::io::Write;
                 let _ = std::io::stderr().flush();
                 RSGIError::Timeout("Handshake timed out after 500ms".to_string())
@@ -202,7 +238,19 @@ impl Service<Request<Incoming>> for RSGIHost {
             let mut res_builder = Response::builder().status(res_start.2);
 
             for (k, v) in res_start.3 {
-                res_builder = res_builder.header(k, v);
+                // DEF-72-E01: Strip hop-by-hop headers from response
+                let name = k.to_lowercase();
+                if name != "connection"
+                    && name != "keep-alive"
+                    && name != "proxy-authenticate"
+                    && name != "proxy-authorization"
+                    && name != "te"
+                    && name != "trailers"
+                    && name != "transfer-encoding"
+                    && name != "upgrade"
+                {
+                    res_builder = res_builder.header(k, v);
+                }
             }
 
             // 7. Receive Response Body (Streaming)

@@ -16,7 +16,12 @@ class TestNativeSecurity:
         vdir = Path(f"/tmp/v{os.getpid()}")
         vdir.mkdir(parents=True, exist_ok=True)
         isolated_env.create_app("main.py", "app = lambda x: x")
+        
+        # Ensure PYTHONPATH includes project root for velo_zygote
+        root_dir = os.getcwd()
         env = {"VELO_SOCKET_DIR": str(vdir)}
+        env["PYTHONPATH"] = f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"
+        
         port = isolated_env.next_port()
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
         

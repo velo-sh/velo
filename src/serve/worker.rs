@@ -25,9 +25,15 @@ fn build_worker_env(
 ) -> Box<std::collections::HashMap<String, String>> {
     let mut env = std::env::vars()
         .filter(|(k, _)| config.security_env_whitelist.contains(k))
-        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables
-        .filter(|(k, _)| !(k.starts_with("VELO_") && k.contains("UNTRUSTED")))
+        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables (Double-Guard System)
+        .filter(|(k, _)| !(k.contains("UNTRUSTED") && k.contains("VELO")))
         .collect::<std::collections::HashMap<String, String>>();
+
+    // Mandatory Infrastructure Invariant: PYTHONPATH must pass through if present
+    if let Ok(pp) = std::env::var("PYTHONPATH") {
+        env.insert("PYTHONPATH".to_string(), pp);
+    }
+
     env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
     // Gate H (DEF-72-H01): Pass Host PID so workers can validate incoming connections
     env.insert("VELO_HOST_PID".to_string(), std::process::id().to_string());

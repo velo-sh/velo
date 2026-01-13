@@ -52,7 +52,7 @@ def run_velo_with_mock_worker(isolated_env):
         short_socket_dir.mkdir(parents=True, exist_ok=True)
         env_vars["VELO_SOCKET_DIR"] = str(short_socket_dir)
         # Ensure PYTHONPATH includes project root for velo_zygote
-        root_dir = str(Path(__file__).parents[3])
+        root_dir = os.getcwd()
         env_vars["PYTHONPATH"] = f"{root_dir}:{env_vars.get('PYTHONPATH', '')}"
         
         # Create a dummy module to satisfy early validation
