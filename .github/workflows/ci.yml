@@ -220,7 +220,7 @@ jobs:
           uv python list
           ls -la .python-version || echo "No .python-version file"
           # SSoT: Explicitly re-enforce PYO3_PYTHON just in case
-          echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+          echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Pre-Flight Diagnostic
         run: cargo run --release -- debug pre-flight
