@@ -32,18 +32,39 @@ impl RSGIHost {
     }
 
     /// Perform RSGI handshake with a worker (RFC-0019 v1.0)
-    async fn perform_handshake(stream: &mut UnixStream) -> Result<()> {
-        // Gate H: Peer Authentication
-        // Verified SEC-07-001: Ensure connecting process is owned by us
+    async fn perform_handshake(stream: &mut UnixStream, lb: &LoadBalancer) -> Result<()> {
+        // Gate H: Peer Authentication (DEF-72-H01)
+        // SEC-07-001: Validate UID AND PID from peer credentials
         #[cfg(unix)]
         {
             let creds = stream.peer_cred()?;
             let current_uid = unsafe { libc::getuid() };
+
+            // Step 1: UID must match (same user)
             if creds.uid() != current_uid {
+                eprintln!(
+                    "RSGI Gate H: Security Violation - UID mismatch: peer={} expected={}",
+                    creds.uid(),
+                    current_uid
+                );
                 return Err(RSGIError::HandshakeFailed(format!(
                     "Security Violation: Peer UID {} mismatch (expected {})",
                     creds.uid(),
                     current_uid
+                )));
+            }
+
+            // Step 2: PID must be in authorized registry (anti-hijack)
+            if let Some(peer_pid) = creds.pid()
+                && !lb.is_authorized_pid(peer_pid as u32)
+            {
+                eprintln!(
+                    "RSGI Gate H: Security Violation - Unauthorized PID {} (not in worker registry)",
+                    peer_pid
+                );
+                return Err(RSGIError::HandshakeFailed(format!(
+                    "Security Violation: PID {} not authorized (possible hijack attempt)",
+                    peer_pid
                 )));
             }
         }
@@ -103,8 +124,8 @@ impl Service<Request<Incoming>> for RSGIHost {
             // 2. Connect to worker
             let mut stream = UnixStream::connect(socket_path).await?;
 
-            // 3. Handshake
-            Self::perform_handshake(&mut stream).await?;
+            // 3. Handshake (Gate H: validates worker PID)
+            Self::perform_handshake(&mut stream, &lb).await?;
 
             // 4. Send Request Headers (ReqStart)
             let (parts, body) = req.into_parts();
@@ -235,8 +256,13 @@ mod tests {
         });
 
         // 2. Connect and handshake via RSGIHost
+        // Create LoadBalancer with current process PID registered for Gate H
+        let lb = LoadBalancer::new(vec![socket_path.to_string_lossy().to_string()]);
+        let current_pid = std::process::id();
+        lb.register_worker_pid(0, current_pid);
+
         let mut stream = UnixStream::connect(&socket_path).await.unwrap();
-        RSGIHost::perform_handshake(&mut stream)
+        RSGIHost::perform_handshake(&mut stream, &lb)
             .await
             .expect("Handshake should succeed");
     }
