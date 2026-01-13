@@ -474,9 +474,10 @@ impl ZygoteStream {
         // 1. Receive mandatory "Ready" greeting
         let (ready, fd): (ZygoteResponse, _) = read_message(&mut stream)?;
 
-        // Reset timeout to none (or a larger value) for actual commands
+        // DEF-72-FLOOD-RS: Keep timeout for command reads to prevent indefinite blocking
+        // 30 seconds is sufficient for IPC commands
         stream
-            .set_read_timeout(None)
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
             .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
         if let Some(fd) = fd {
             // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
@@ -685,17 +686,12 @@ mod tests {
         assert!(err.contains("Protocol version mismatch"));
     }
 
-    /// DEF-72-FLOOD-RS: ZygoteStream resets timeout to None after handshake
+    /// DEF-72-FLOOD-RS: ZygoteStream must keep timeout after handshake
     ///
-    /// This test documents that after successful handshake, the socket timeout
-    /// is reset to None, leaving subsequent command reads vulnerable to indefinite
-    /// blocking if the Zygote server sends partial data.
-    ///
-    /// Current behavior (line 479): set_read_timeout(None)
-    /// Recommended fix: Keep a reasonable timeout (e.g., 30s) for commands
+    /// This test verifies that after handshake, the socket timeout is set to 30s
+    /// (not None) to prevent indefinite blocking from malformed/partial messages.
     #[test]
-    #[ignore = "DEF-72-FLOOD-RS: This test FAILS until timeout reset vulnerability is fixed"]
-    fn test_zygote_stream_timeout_reset_after_handshake() {
+    fn test_zygote_stream_timeout_kept_after_handshake() {
         use std::os::unix::net::UnixStream;
         use std::time::Duration;
 
@@ -719,19 +715,21 @@ mod tests {
             "Socket should have timeout after setting"
         );
 
-        // Simulate what happens at line 479 - timeout is reset to None
-        // This is the VULNERABILITY we're testing
-        stream1.set_read_timeout(None).unwrap();
+        // Simulate the FIXED behavior at line 479 - timeout is set to 30s (not None)
+        stream1
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
 
-        // DEF-72-FLOOD-RS: After handshake, ZygoteStream resets timeout to None
-        // This test FAILS until the vulnerability is fixed
-        // The assertion expects timeout to still be set, but it's not
+        // DEF-72-FLOOD-RS: After handshake, timeout should be 30s
         let timeout_after_handshake = stream1.read_timeout().unwrap();
         assert!(
             timeout_after_handshake.is_some(),
-            "DEF-72-FLOOD-RS: Timeout is reset to None after handshake! \
-             An attacker can block command reads indefinitely. \
-             Fix: Change line 479 from set_read_timeout(None) to Some(Duration::from_secs(30))"
+            "Timeout should be set after handshake (30s)"
+        );
+        assert_eq!(
+            timeout_after_handshake.unwrap(),
+            Duration::from_secs(30),
+            "Timeout should be exactly 30 seconds after handshake"
         );
     }
 }
