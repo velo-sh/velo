@@ -78,6 +78,12 @@ fn main() {
     println!("cargo:rerun-if-changed=config/constants.toml");
     println!("cargo:rerun-if-changed=assets/");
 
+    // SSOT: Force recompilation when Python interpreter changes
+    // This is the FIRST-PRINCIPLES fix for the cache invalidation problem.
+    // When PYO3_PYTHON changes, cargo MUST rerun build.rs and recompile PyO3.
+    println!("cargo:rerun-if-env-changed=PYO3_PYTHON");
+    println!("cargo:rerun-if-env-changed=UV_PYTHON");
+
     // RFC-0018: UV Embedding (only when feature enabled)
     #[cfg(feature = "embedded_uv")]
     {

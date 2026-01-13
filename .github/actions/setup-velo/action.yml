@@ -34,7 +34,9 @@ runs:
         uv python install ${{ inputs.python-version }}
         uv python pin ${{ inputs.python-version }}
         # SSoT: Force uv to only use our managed Python version
-        echo "UV_PYTHON_PREFERENCE=only-managed" >> $GITHUB_ENV
+        echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+        # SSoT: Set UV_PYTHON from input parameter (not hardcoded)
+        echo "UV_PYTHON=${{ inputs.python-version }}" >> "$GITHUB_ENV"
 
     - name: Create venv and install deps
       shell: bash
