@@ -32,10 +32,17 @@ class ImportShield:
         if not self._active:
             return None
 
-        # RFC-0012: Block ALL velo_zygote imports when shield is active.
-        # The shield is activated AFTER the launcher imports what it needs,
-        # so any subsequent import of velo_zygote.* is from untrusted user code.
-        if fullname.startswith("velo_zygote"):
+        # RFC-0012: Block velo_zygote imports unless whitelisted.
+        # The shield is activated AFTER the Zygote imports what it needs,
+        # but workers still need some internal modules for bootstrap.
+        whitelist = {
+            "velo_zygote.rsgi",
+            "velo_zygote.utils",
+            "velo_zygote.bootstrap",
+            "velo_zygote.settings",
+            "velo_zygote.paths"
+        }
+        if fullname.startswith("velo_zygote") and fullname not in whitelist:
             msg = f"Unauthorized access to internal framework module: {fullname}"
 
             # Check mode

@@ -606,13 +606,15 @@ class TestGoldenPathDemonCatching:
 
         print(f"✅ POST body correctly echoed by worker {data.get('worker_pid')}")
 
-    def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture):
+    @pytest.mark.parametrize("rsgi_mode", [True, False])
+    def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture, rsgi_mode):
         """GOLD-013: ASGI scope["client"] is correctly populated.
-
+        
         Demon: Proxy strips client IP, leaving scope["client"] as None or wrong.
         RFC-0011 requires: scope["client"] should have real client info.
         """
-        proc = velo_serve_fixture.start("main:app", workers=1)
+        extra_args = ["--rsgi"] if rsgi_mode else []
+        proc = velo_serve_fixture.start("main:app", workers=1, extra_args=extra_args)
         proc.wait_ready()
 
         # Get scope details

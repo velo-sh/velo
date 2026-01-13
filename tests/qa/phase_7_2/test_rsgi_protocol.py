@@ -121,6 +121,8 @@ def recv_msg(s):
 def main():
     log_path = os.environ.get("VELO_WORKER_DEBUG_LOG", "/tmp/velo_worker_debug.log")
     with open(log_path, "a") as log:
+        log.write(f"--- Mock Worker Starting (PID: {os.getpid()}) ---\n")
+        log.flush()
         try:
             parser = argparse.ArgumentParser()
             parser.add_argument("--uds")
@@ -128,41 +130,50 @@ def main():
             
             log.write(f"Worker started with args: {sys.argv}\n")
             log.write(f"CWD: {os.getcwd()}\n")
+            log.flush()
             
             if not args.uds:
                 log.write("ERROR: No UDS path provided\n")
+                log.flush()
                 sys.exit(1)
             
             if os.path.exists(args.uds):
                 log.write(f"Unlinking existing socket: {args.uds}\n")
+                log.flush()
                 os.unlink(args.uds)
                 
             ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             ls.bind(args.uds)
             ls.listen(5)
             log.write(f"Bound to {args.uds}, waiting for connections...\n")
+            log.flush()
             
             while True:
                 conn, _ = ls.accept()
                 log.write("Connection accepted!\n")
+                log.flush()
                 
                 try:
 {indented_logic}
                     conn.close()
                     log.write("Handshake logic completed successfully\n")
+                    log.flush()
                     break
                 except (BrokenPipeError, ConnectionResetError) as e:
                     log.write(f"Transient connection error: {e}. Retrying...\n")
+                    log.flush()
                     conn.close()
                     continue
                 except Exception as e:
                     log.write(f"LOGIC EXCEPTION: {e}\n")
+                    log.flush()
                     with open(log_path, "a") as log_err:
                         traceback.print_exc(file=log_err)
                     sys.exit(1)
             ls.close()
         except Exception as e:
             log.write(f"MAIN EXCEPTION: {e}\n")
+            log.flush()
             with open(log_path, "a") as log_err:
                 traceback.print_exc(file=log_err)
             sys.exit(1)
@@ -262,8 +273,10 @@ send_msg(conn, [0x01, "garbage"])
         with run_velo_with_mock_worker(logic_path) as (proc, port):
             if not self.wait_for_port(port): pytest.fail("Velo failed to start")
             t = self.trigger_request(port)
+            # Wait for request to finish and log errors
+            t.join(timeout=5)
+            time.sleep(0.5)
             stdout, stderr = self.terminate_and_communicate(proc)
-            t.join(timeout=1)
             
         # PROSECUTOR NOTE: If this fails, dev is swallowing protocol errors in Host!
         assert "Expected READY, got type 1" in stderr
@@ -280,8 +293,10 @@ time.sleep(1.0)
         with run_velo_with_mock_worker(logic_path) as (proc, port):
             if not self.wait_for_port(port): pytest.fail("Velo failed to start")
             t = self.trigger_request(port)
+            # Wait for request to finish and log errors
+            t.join(timeout=5)
+            time.sleep(0.5)
             stdout, stderr = self.terminate_and_communicate(proc)
-            t.join(timeout=1)
             
         # PROSECUTOR NOTE: If this fails, dev is missing the Gate E timeout logic!
         assert "Handshake timed out after 500ms" in stderr

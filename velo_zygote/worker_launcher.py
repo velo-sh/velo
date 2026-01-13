@@ -13,6 +13,7 @@ if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
 
 from velo_zygote import bootstrap
+from velo_zygote.utils import LogUtils
 
 bootstrap.initialize()
 # --------------------
@@ -33,7 +34,10 @@ class UDSProxyMiddleware:
         self.app = app
 
     async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
-        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+        current_client = scope.get("client")
+        is_client_missing = current_client is None or (isinstance(current_client, (list, tuple)) and len(current_client) > 0 and current_client[0] is None)
+
+        if scope["type"] in ("http", "websocket") and is_client_missing:
             # Check for common proxy headers in scope headers (list of tuples)
             headers = scope.get("headers", [])
             has_proxy_headers = any(
@@ -41,9 +45,15 @@ class UDSProxyMiddleware:
             )
 
             if has_proxy_headers:
-                # Inject a dummy local client to satisfy uvicorn/framework checks
-                # format: (host, port)
-                scope["client"] = ("127.0.0.1", 0)
+                client_host = "127.0.0.1"
+                for header_name, header_value in headers:
+                    if header_name.lower() == b"x-forwarded-for":
+                        client_host = header_value.decode().split(",")[0].strip()
+                        break
+                    if header_name.lower() == b"x-real-ip":
+                        client_host = header_value.decode().strip()
+                        break
+                scope["client"] = [client_host, 0]
         await self.app(scope, receive, send)
 
 
@@ -141,11 +151,13 @@ def main() -> None:
             run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
 
         # 8. Execution
-        print(f"🚀 [WORKER] Starting {args.app} on {args.uds or args.host}", file=sys.stderr)
+        LogUtils.debug_log(f"🚀 [WORKER] Starting {args.app} on {args.uds or args.host}")
         if args.rsgi:
+            LogUtils.debug_log(f"🚀 [WORKER] Entering RSGI mode for {args.app}")
             from velo_zygote.rsgi import run_rsgi
             run_rsgi(args.app, args.uds)
         else:
+            LogUtils.debug_log(f"🚀 [WORKER] Entering Uvicorn mode for {args.app}")
             uvicorn.run(**run_kwargs)
 
     except Exception as e:
