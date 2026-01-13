@@ -52,7 +52,7 @@ Prevent Velo's internal dependencies from causing "Dependency Hijacking" in user
 
 - **[P0] Dependency Shadowing**:
     - *Scenario*: Version conflicts between Velo internals and user apps (e.g., `msgpack`).
-    - *Focus*: `sys.path` priority ensuring user-installed versions take precedence.
+    - *Focus*: **Mandatory Vendoring Isolation**. All Velo internal dependencies (e.g., `msgpack`, `uvloop`, `rmp-serde` wrappers) MUST be strictly isolated within a private namespace (e.g., `velo._vendor.*`). `sys.path` priority alone is not a sufficient defense.
 - **[P1] Signal Hijacking**:
     - *Scenario*: User-defined `signal.signal(SIGINT, ...)` handlers.
     - *Focus*: Verification that they do not break Velo Host's worker lifecycle management.
@@ -62,9 +62,13 @@ Prevent Velo's internal dependencies from causing "Dependency Hijacking" in user
 
 ## 6. Advanced Architecture Patterns (Expert Level)
 
-### 6.1 Context-Aware Forking (ContextVars Preservation)
+### 6.1 Context-Aware Forking (ContextVars & Greenlet Preservation)
 - **Best Practice**: In a Zygote model, forking can leave stale `contextvars` or thread-local state in the child. 
-- **Mechanism**: Velo MUST implement a `post_fork_reset()` hook that clears known framework-level context storage (e.g., `starlette.request_context`, `aiotask_context`) before the first request is accepted. This prevents "Request Bleeding" where data from the warm-up phase leaks into real user requests.
+- **Mechanism**: Velo MUST implement a `post_fork_reset()` hook that clears:
+    1. Known framework-level context storage (e.g., `starlette.request_context`).
+    2. **Greenlet locals** and thread-local pointers used by sync-to-async threadpools.
+    3. `contextvars` initialized during the warm-up phase.
+- **Goal**: This prevents "Request Bleeding" where data from the warm-up phase leaks into real user requests.
 
 ### 6.2 Self-Diagnostic Protocol Handshakes
 - **Best Practice**: Instead of a silent failure when a framework sends a non-compliant ASGI message, Velo will implement **"Protocol Sincerity."**
