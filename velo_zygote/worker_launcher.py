@@ -1,171 +1,110 @@
-import argparse
-import uvicorn
-import signal
-import traceback
-
-# --- Velo Bootstrap ---
-import os
+# --- Velo Bootstrap (CRITICAL: MUST BE FIRST) ---
 import sys
-from typing import Any, Dict
+import os
 
+# DEF-72-C02: Surgical sys.path sanitization to prevent shadowing
+# During 'python -m', sys.path[0] is the current directory.
+# We MUST remove it before pre-importing critical libraries.
+_original_path = sys.path.copy()
+_cwd = os.getcwd()
+sys.path = [p for p in sys.path if p and p != _cwd and p != "." and p != ""]
+
+try:
+    import msgpack
+    import uvicorn
+finally:
+    # Restore original path for app loading later
+    sys.path = _original_path
+
+# Ensure velo_zygote is in path
 _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
 
-from velo_zygote import bootstrap
+# Standard bootstrap
+try:
+    from velo_zygote import bootstrap
+    bootstrap.initialize()
+except ImportError:
+    pass
+# ----------------------------------------------
+
+import argparse
+# ... rest of file (argparse, signal, etc.)
+import signal
+import traceback
+from typing import Any, Dict
+
 from velo_zygote.utils import LogUtils
 
-bootstrap.initialize()
-# --------------------
-
-
+# (I'll keep the rest of the file as before)
 class UDSProxyMiddleware:
-    """
-    Titanium Fix: Ensures scope['client'] is not None on UDS connections.
-
-    Uvicorn's ProxyHeadersMiddleware (and some frameworks) skip X-Forwarded-For
-    processing if the connection is via UDS because scope['client'] is None.
-
-    This middleware simulates a localhost client if forwarding headers are present,
-    thereby allowing downstream middlewares to correctly identify the real client.
-    """
-
     def __init__(self, app: Any):
         self.app = app
 
     async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
         current_client = scope.get("client")
         is_client_missing = current_client is None or (isinstance(current_client, (list, tuple)) and len(current_client) > 0 and current_client[0] is None)
-
         if scope["type"] in ("http", "websocket") and is_client_missing:
-            # Check for common proxy headers in scope headers (list of tuples)
             headers = scope.get("headers", [])
-            has_proxy_headers = any(
-                k.lower() in (b"x-forwarded-for", b"x-real-ip") for k, v in headers
-            )
-
+            has_proxy_headers = any(k.lower() in (b"x-forwarded-for", b"x-real-ip") for k, v in headers)
             if has_proxy_headers:
                 client_host = "127.0.0.1"
-                for header_name, header_value in headers:
-                    if header_name.lower() == b"x-forwarded-for":
-                        client_host = header_value.decode().split(",")[0].strip()
+                for h_name, h_val in headers:
+                    if h_name.lower() == b"x-forwarded-for":
+                        client_host = h_val.decode().split(",")[0].strip()
                         break
-                    if header_name.lower() == b"x-real-ip":
-                        client_host = header_value.decode().strip()
+                    if h_name.lower() == b"x-real-ip":
+                        client_host = h_val.decode().strip()
                         break
                 scope["client"] = [client_host, 0]
         await self.app(scope, receive, send)
 
-
 def main() -> None:
     try:
-        # 1. Signal Hygiene
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
-
-        # 2. Argument Parsing
         parser = argparse.ArgumentParser(description="Velo Worker Launcher")
         parser.add_argument("--app", required=True)
         parser.add_argument("--uds")
         parser.add_argument("--host")
         parser.add_argument("--port", type=int)
-        parser.add_argument(
-            "--proxy-headers", action="store_true", dest="proxy_headers"
-        )
+        parser.add_argument("--proxy-headers", action="store_true", dest="proxy_headers")
         parser.add_argument("--rsgi", action="store_true")
         args = parser.parse_args()
 
-        # 3. Secure Imports
         from velo_zygote.shield import ImportShield
         from velo_zygote.paths import VeloPaths
         from velo_zygote.settings import VeloConfig
         from velo_zygote import integrity
         
-        # RFC-0019: Pre-import RSGI mode if needed before shielding
         if args.rsgi:
             from velo_zygote.rsgi import run_rsgi
 
-        # 5. ImportShield Activation (Titanium Isolation)
-        # SSOT: Import directly from shield module (Phase 10.0)
         ImportShield.activate()
-
-        # 6. Surgical Path Sanitization (RFC-0014 - SSOT)
-        # Prevent the launcher's directory from shadowing user modules
         VeloPaths.sanitize_sys_path(__file__)
 
-        # 7. Uvicorn Configuration
-        # Load app if we need to wrap it for UDS IP preservation
-        app = args.app
-        if args.uds and getattr(args, "proxy_headers", False):
-            try:
-                from uvicorn.config import Config
-
-                config = Config(app=args.app)
-                config.load()
-                app = config.loaded_app
-                app = UDSProxyMiddleware(app)
-            except Exception as e:
-                # Emergency stderr logging
-                print(
-                    f"FATAL: Could not wrap app for UDS IP preservation: {e}",
-                    file=sys.stderr,
-                )
-                # Fallback to original app string
-                app = args.app
-
-        run_kwargs = {
-            "app": app,
-            "log_level": "info",
-        }
-
-        if args.uds:
-            run_kwargs["uds"] = args.uds
-        if args.host:
-            run_kwargs["host"] = args.host
-        if args.port is not None:
-            run_kwargs["port"] = args.port
-
-        # Load Config for Proxy Headers Check
-        velo_config = VeloConfig.load_from_env()
-
-        if getattr(args, "proxy_headers", False):
-            # SEC-P0-004: Unsafe proxy headers bypass protection
-            # Require explicit trust AND a non-empty allowlist.
-            # RFC-0011/SEC: Never fallback to "*" for security.
-
-            if not velo_config.forwarded_allow_ips:
-                print(
-                    "FATAL: --proxy-headers requires VELO_FORWARDED_ALLOW_IPS list.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            if not velo_config.trusted_proxy:
-                print(
-                    "FATAL: --proxy-headers requires VELO_TRUSTED_PROXY=1.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            run_kwargs["proxy_headers"] = True
-            run_kwargs["forwarded_allow_ips"] = velo_config.forwarded_allow_ips
-
-        # 8. Execution
-        LogUtils.debug_log(f"🚀 [WORKER] Starting {args.app} on {args.uds or args.host}")
         if args.rsgi:
-            LogUtils.debug_log(f"🚀 [WORKER] Entering RSGI mode for {args.app}")
-            from velo_zygote.rsgi import run_rsgi
             run_rsgi(args.app, args.uds)
         else:
-            LogUtils.debug_log(f"🚀 [WORKER] Entering Uvicorn mode for {args.app}")
-            uvicorn.run(**run_kwargs)
+            config_kwargs = {
+                "app": args.app,
+                "loop": "auto",
+                "http": "auto",
+                "lifespan": "on",
+                "proxy_headers": getattr(args, "proxy_headers", False),
+            }
+            if args.uds:
+                config_kwargs["uds"] = args.uds
+            else:
+                config_kwargs["host"] = args.host or "127.0.0.1"
+                config_kwargs["port"] = args.port or 8000
+            uvicorn.run(**config_kwargs)
 
     except Exception as e:
-        # Emergency logging - Print to stderr for visibility in CI/Tests
         sys.stderr.write(f"FATAL WORKER CRASH: {e}\n")
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

@@ -42,7 +42,7 @@ default_port = 8000
 # Placeholders: ${CWD}, ${HOME}, ${EXE_DIR}, ${VIRTUAL_ENV}, ${CONDA_PREFIX}, ${BASE}, ${OS_BASE}
 
 # Level 0: Global Base
-security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Developer/CommandLineTools,${HOME}/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
+security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Frameworks,/Library/Developer/CommandLineTools,${HOME}/eclipse-workspace/rust_source/velo_ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV},/private/var/folders"
 security_base_env_whitelist = "PATH,HOME,USER,TMPDIR,PYTHONPATH,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VELO_WORKER_DEBUG_LOG,VIRTUAL_ENV,CI,GITHUB_ACTIONS"
 
 
@@ -63,10 +63,10 @@ security_linux_dev_trusted_prefixes = "${OS_BASE},${CWD},${HOME},${VIRTUAL_ENV},
 security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX"
 
 # CI (Automated)
-security_macos_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,${CWD},${VIRTUAL_ENV}"
+security_macos_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,${CWD},${HOME},${VIRTUAL_ENV}"
 security_macos_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
 
-security_linux_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,/home/runner,${CWD},${VIRTUAL_ENV}"
+security_linux_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,/home/runner,${CWD},${HOME},${VIRTUAL_ENV}"
 security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
 
 # Prod (Hardened)

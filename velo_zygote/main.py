@@ -501,16 +501,17 @@ class ZygoteServer:
             future.set_result(result)
 
     def _setup_signals(self) -> None:
-        def handle_chld(sig, frame):
-            # We can't do much in a signal handler, so we just trigger the async reaper
-            pass
+        def handle_termination(sig, frame):
+            LogUtils.log(f"Zygote received signal {sig}. Cleaning up workers...")
+            self.worker_registry.kill_all()
+            # Restore default and re-send to self to exit
+            signal.signal(sig, signal.SIG_DFL)
+            os.kill(os.getpid(), sig)
 
-        signal.signal(
-            signal.SIGCHLD, signal.SIG_IGN
-        )  # Auto-reap if we don't care about exit codes?
-        # Actually we DO care about exit codes for WaitWorker.
-        # But for async workers, we want to prevent zombies.
-        # Re-enable SIGCHLD and use waitpid in a loop or thread.
+        signal.signal(signal.SIGTERM, handle_termination)
+        signal.signal(signal.SIGINT, handle_termination)
+
+        # Standard SIGCHLD behavior for async reaping
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         asyncio.create_task(self._async_reap())
 

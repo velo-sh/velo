@@ -231,7 +231,7 @@ class TestRsgiProtocol:
         """[H-PRO-01] Verify valid READY -> AUTH_OK handshake."""
         logic = """
 # 1. Send READY
-send_msg(conn, [0x10, "1.0.0", "worker-1", None, None])
+send_msg(conn, [0x10, "1.0.0", "worker-1", {"streaming": True}, {"hints": True}])
 
 # 2. Recv AUTH_OK
 resp = recv_msg(conn)
@@ -279,7 +279,7 @@ send_msg(conn, [0x01, "garbage"])
             stdout, stderr = self.terminate_and_communicate(proc)
             
         # PROSECUTOR NOTE: If this fails, dev is swallowing protocol errors in Host!
-        assert "Expected READY, got type 1" in stderr
+        assert "Expected READY" in stderr and "got type 1" in stderr
 
     @pytest.mark.tier1
     def test_handshake_timeout(self, isolated_env, mock_worker_logic, run_velo_with_mock_worker):
