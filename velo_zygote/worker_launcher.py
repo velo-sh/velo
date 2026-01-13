@@ -70,6 +70,10 @@ def main() -> None:
         from velo_zygote.paths import VeloPaths
         from velo_zygote.settings import VeloConfig
         from velo_zygote import integrity
+        
+        # RFC-0019: Pre-import RSGI mode if needed before shielding
+        if args.rsgi:
+            from velo_zygote.rsgi import run_rsgi
 
         # 5. ImportShield Activation (Titanium Isolation)
         # SSOT: Import directly from shield module (Phase 10.0)

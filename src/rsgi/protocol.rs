@@ -125,4 +125,51 @@ pub mod framing {
         reader.read_exact(&mut payload).await?;
         Ok(payload)
     }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::io::Cursor;
+
+        #[tokio::test]
+        async fn test_send_recv_msg() {
+            let mut buf = Vec::new();
+            let msg = vec![1, 2, 3, 4];
+            send_msg(&mut buf, &msg).await.unwrap();
+
+            let mut reader = Cursor::new(buf);
+            let out = recv_msg(&mut reader).await.unwrap();
+            // send_msg/recv_msg works on raw payloads;
+            // rmp_serde::to_vec of a Vec<u8> adds a MessagePack array prefix (0x94 for 4 elements).
+            assert_eq!(out, rmp_serde::to_vec(&msg).unwrap());
+        }
+
+        #[tokio::test]
+        async fn test_recv_msg_too_large() {
+            let len: u32 = 11 * 1024 * 1024; // 11MB
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&len.to_be_bytes());
+
+            let mut reader = Cursor::new(buf);
+            let result = recv_msg(&mut reader).await;
+            // PROSECUTOR: Verify that the 10MB limit is strictly enforced.
+            assert!(
+                result.is_err(),
+                "Framing MUST reject messages larger than 10MB"
+            );
+            if let Err(RSGIError::Protocol(e)) = result {
+                assert!(e.contains("Message too large"));
+            }
+        }
+
+        #[tokio::test]
+        async fn test_recv_msg_truncated() {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&10u32.to_be_bytes());
+            buf.extend_from_slice(&[1, 2, 3]); // Only 3 bytes of 10
+
+            let mut reader = Cursor::new(buf);
+            let result = recv_msg(&mut reader).await;
+            assert!(result.is_err(), "Framing MUST fail on truncated messages");
+        }
+    }
 }

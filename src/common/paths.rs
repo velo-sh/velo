@@ -291,3 +291,99 @@ pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::U
     let addr = abstract_socket_addr(name)?;
     UnixListener::bind_addr(&addr)
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_expand_path_placeholders() {
+        unsafe {
+            std::env::set_var("HOME", "/mock/home");
+            assert_eq!(
+                VeloPaths::expand_path_placeholders("${HOME}/test"),
+                "/mock/home/test"
+            );
+
+            std::env::set_var("XDG_RUNTIME_DIR", "/mock/xdg");
+            assert_eq!(
+                VeloPaths::expand_path_placeholders("${XDG_RUNTIME_DIR}/velo"),
+                "/mock/xdg/velo"
+            );
+
+            std::env::remove_var("XDG_RUNTIME_DIR");
+            assert_eq!(
+                VeloPaths::expand_path_placeholders("${XDG_RUNTIME_DIR}/velo"),
+                "/tmp/velo"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ensure_socket_dir_permissions() {
+        let dir = tempdir().unwrap();
+        let socket_dir = dir.path().join("velo-test");
+
+        // Create with Loose permissions (0777)
+        fs::create_dir_all(&socket_dir).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&socket_dir, fs::Permissions::from_mode(0o777)).unwrap();
+        }
+
+        assert!(ensure_socket_dir(&socket_dir));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = fs::metadata(&socket_dir).unwrap();
+            let mode = metadata.permissions().mode() & 0o777;
+            // PROSECUTOR: This test SHOULD FAIL if the code doesn't strictly enforce 0700.
+            assert_eq!(
+                mode, 0o700,
+                "SECURITY: ensure_socket_dir failed to enforce 0700 (got {:o})",
+                mode
+            );
+        }
+    }
+
+    #[test]
+    fn test_socket_path_limit_logic() {
+        // Since we can't change the constant SOCKET_PATH_LIMIT easily, we test the logic behavior
+        // by observing where it points.
+        let uid = unsafe { libc::getuid() };
+        let _dir_name = format!("velo-{}", uid);
+
+        // Scenario 1: No override
+        let sdir = VeloPaths::socket_dir();
+        // If the default path is already > limit, it should have fallen back to /tmp
+        if sdir.to_string_lossy().len() + 30 > SOCKET_PATH_LIMIT {
+            assert!(
+                sdir.to_string_lossy().starts_with("/tmp/"),
+                "Should fallback to /tmp when path too long"
+            );
+        }
+
+        // Scenario 2: Forced override
+        unsafe {
+            let too_long = "a".repeat(200);
+            std::env::set_var("VELO_SOCKET_DIR", &too_long);
+            // VeloPaths handles VELO_SOCKET_DIR by returning it directly (currently no length check on override!)
+            // PROSECUTOR: This is a potential bug if the override is also too long.
+            assert_eq!(VeloPaths::socket_dir(), PathBuf::from(&too_long));
+            std::env::remove_var("VELO_SOCKET_DIR");
+        }
+    }
+
+    #[test]
+    fn test_worker_socket_uniqueness() {
+        let s1 = VeloPaths::worker_socket(0);
+        let s2 = VeloPaths::worker_socket(0);
+        assert_ne!(
+            s1, s2,
+            "Worker sockets must be unique across spawns to prevent TOCTOU/STALE"
+        );
+    }
+}
