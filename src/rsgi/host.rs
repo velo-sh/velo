@@ -77,7 +77,7 @@ impl RSGIHost {
 
             if ready.0 != protocol::TYPE_READY {
                 // DEF-72-E03: Log malformed READY for observability
-                eprintln!("RSGI: Expected READY, got type {}", ready.0);
+                eprintln!("Expected READY, got type {}", ready.0);
                 return Err(RSGIError::HandshakeFailed(format!(
                     "Expected READY, got type {}",
                     ready.0
@@ -98,7 +98,7 @@ impl RSGIHost {
             .await
             .map_err(|_| {
                 // DEF-72-E02: Log timeout for observability
-                eprintln!("RSGI: Handshake timed out after 500ms");
+                eprintln!("Handshake timed out after 500ms");
                 RSGIError::Timeout("Handshake timed out after 500ms".to_string())
             })?
     }
