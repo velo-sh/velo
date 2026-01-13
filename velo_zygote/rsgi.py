@@ -10,6 +10,7 @@ import struct
 import sys
 import traceback
 from typing import Any, Dict, List, Tuple
+from velo_zygote.utils import LogUtils
 
 # Gate O/P: Pre-intern common header names for performance (RFC-0019 Section 5)
 _INTERNED_HEADERS = {
@@ -39,10 +40,11 @@ class RSGIWorker:
 
     async def run(self):
         """Main RSGI loop."""
+        LogUtils.debug_log(f"RSGI Worker starting server on {self.socket_path}...")
         server = await asyncio.start_unix_server(
             self.handle_connection, self.socket_path
         )
-        print(f"RSGI Worker listening on {self.socket_path}")
+        LogUtils.debug_log(f"RSGI Worker listening on {self.socket_path}")
         async with server:
             await server.serve_forever()
 
@@ -136,7 +138,8 @@ class RSGIWorker:
 
     async def process_request(self, req_start, reader, writer):
         """Bridge RSGI request to ASGI application."""
-        _, req_id, method, path, headers, has_body = req_start
+        # req_start: [type, req_id, method, path, headers, has_body, client]
+        _, req_id, method, path, headers, has_body, client = req_start
         
         # Gate P: Intern header names only, not values (RFC-0019 Section 5.4)
         # Convert headers to ASGI format (list of tuples of bytes)
@@ -155,7 +158,7 @@ class RSGIWorker:
             "raw_path": path.encode("ascii"),
             "query_string": b"", # TODO: parse from path
             "headers": asgi_headers,
-            "client": None,
+            "client": tuple(client) if client else None,
             "server": None,
             "rsgi.id": req_id,
         }
@@ -231,9 +234,12 @@ def run_rsgi(app_str: str, uds_path: str):
     os.urandom(16)  # Force kernel entropy refresh
     
     # Import app
+    LogUtils.debug_log(f"RSGI Worker importing app: {app_str}")
     module_name, app_name = app_str.split(":")
     module = importlib.import_module(module_name)
     app = getattr(module, app_name)
+    LogUtils.debug_log("RSGI Worker app imported successfully")
 
     worker = RSGIWorker(app, uds_path)
+    LogUtils.debug_log("RSGI Worker entering event loop")
     asyncio.run(worker.run())

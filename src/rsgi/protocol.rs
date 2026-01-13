@@ -26,17 +26,27 @@ pub struct ReqStart(
     pub String,
     pub Vec<(String, String)>,
     pub bool,
+    pub Option<(String, u16)>,
 );
 
 impl ReqStart {
     pub fn new(
-        id: u64,
+        req_id: u64,
         method: String,
         path: String,
         headers: Vec<(String, String)>,
         has_body: bool,
+        client: Option<(String, u16)>,
     ) -> Self {
-        Self(TYPE_REQ_START, id, method, path, headers, has_body)
+        Self(
+            TYPE_REQ_START,
+            req_id,
+            method,
+            path,
+            headers,
+            has_body,
+            client,
+        )
     }
 }
 

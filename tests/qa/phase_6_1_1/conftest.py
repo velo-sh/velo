@@ -403,7 +403,9 @@ class UDSProxyMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] in ("http", "websocket") and scope.get("client") is None:
+        current_client = scope.get("client")
+        is_client_missing = current_client is None or (isinstance(current_client, (list, tuple)) and len(current_client) > 0 and current_client[0] is None)
+        if scope["type"] in ("http", "websocket") and is_client_missing:
             headers = dict(scope.get("headers", []))
             # Try to restore client from X-Forwarded-For
             forwarded = headers.get(b"x-forwarded-for")

@@ -138,6 +138,7 @@ async def handle_handshake(
 
 @router.handler("Fork")
 async def handle_fork(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, Any]:
+    LogUtils.log(f"Zygote receiving Fork request for {cmd.get('script_path')}")
     # Shadow Preloading: Wait for preload to complete if still loading
     if server.state == ZygoteState.PRELOADING:
         try:

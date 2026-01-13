@@ -20,14 +20,19 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct RSGIHost {
     lb: Arc<LoadBalancer>,
+    client_addr: Option<std::net::SocketAddr>,
 }
 
 impl RSGIHost {
     pub fn new(lb: Arc<LoadBalancer>) -> Self {
-        Self { lb }
+        Self {
+            lb,
+            client_addr: None,
+        }
     }
 
-    pub fn with_client_addr(self, _addr: std::net::SocketAddr) -> Self {
+    pub fn with_client_addr(mut self, addr: std::net::SocketAddr) -> Self {
+        self.client_addr = Some(addr);
         self
     }
 
@@ -47,6 +52,8 @@ impl RSGIHost {
                     creds.uid(),
                     current_uid
                 );
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
                 return Err(RSGIError::HandshakeFailed(format!(
                     "Security Violation: Peer UID {} mismatch (expected {})",
                     creds.uid(),
@@ -62,6 +69,8 @@ impl RSGIHost {
                     "RSGI Gate H: Security Violation - Unauthorized PID {} (not in worker registry)",
                     peer_pid
                 );
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
                 return Err(RSGIError::HandshakeFailed(format!(
                     "Security Violation: PID {} not authorized (possible hijack attempt)",
                     peer_pid
@@ -78,6 +87,8 @@ impl RSGIHost {
             if ready.0 != protocol::TYPE_READY {
                 // DEF-72-E03: Log malformed READY for observability
                 eprintln!("Expected READY, got type {}", ready.0);
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
                 return Err(RSGIError::HandshakeFailed(format!(
                     "Expected READY, got type {}",
                     ready.0
@@ -88,7 +99,7 @@ impl RSGIHost {
             let auth_ok = protocol::AuthOk(
                 protocol::TYPE_AUTH_OK,
                 Uuid::now_v7().to_string(),
-                1024 * 1024 * 10, // 10MB default
+                crate::common::constants::MAX_MESSAGE_SIZE as u64,
             );
             protocol::framing::send_msg(stream, &auth_ok).await?;
             Ok(())
@@ -99,6 +110,8 @@ impl RSGIHost {
             .map_err(|_| {
                 // DEF-72-E02: Log timeout for observability
                 eprintln!("Handshake timed out after 500ms");
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
                 RSGIError::Timeout("Handshake timed out after 500ms".to_string())
             })?
     }
@@ -112,6 +125,7 @@ impl Service<Request<Incoming>> for RSGIHost {
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         let lb = self.lb.clone();
+        let client_addr = self.client_addr;
 
         Box::pin(async move {
             // 1. Select worker
@@ -134,12 +148,28 @@ impl Service<Request<Incoming>> for RSGIHost {
             let headers: Vec<(String, String)> = parts
                 .headers
                 .iter()
+                .filter(|(k, _)| {
+                    // DEF-72-E01: Strip hop-by-hop headers (RFC 2616)
+                    let name = k.as_str().to_lowercase();
+                    name != "connection"
+                        && name != "keep-alive"
+                        && name != "proxy-authenticate"
+                        && name != "proxy-authorization"
+                        && name != "te"
+                        && name != "trailers"
+                        && name != "transfer-encoding"
+                        && name != "upgrade"
+                })
                 .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                 .collect();
             let req_id: u64 = 1; // Handled per-stream
 
+            // Prepare client info for ReqStart
+            let client = client_addr.map(|addr| (addr.ip().to_string(), addr.port()));
+            eprintln!("[RSGI] Sending ReqStart with client: {:?}", client);
+
             // Always assume body may be present; streaming handles empty case
-            let req_start = protocol::ReqStart::new(req_id, method, path, headers, true);
+            let req_start = protocol::ReqStart::new(req_id, method, path, headers, true, client);
             protocol::framing::send_msg(&mut stream, &req_start).await?;
 
             // 5. Send Request Body

@@ -468,16 +468,20 @@ impl RespawnTracker {
         self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
 
         // DEF-72-R01: Log backoff for observability
-        eprintln!(
+        // Architect Note: Use standard logging for production observability
+        log::warn!(
             "[RESPAWN] Worker crashed (attempt {}/{}), retrying in {}s (backoff)",
-            self.consecutive_failures, self.fail_fast_limit, self.backoff_secs
+            self.consecutive_failures,
+            self.fail_fast_limit,
+            self.backoff_secs
         );
 
         if self.consecutive_failures >= self.fail_fast_limit {
-            eprintln!(
+            log::error!(
                 "FATAL: Worker failed to start after {}/{} attempts. \
                  Check environment configuration and dependencies.",
-                self.consecutive_failures, self.fail_fast_limit
+                self.consecutive_failures,
+                self.fail_fast_limit
             );
             false
         } else {
@@ -885,7 +889,7 @@ pub fn run_server(
         && use_zygote
         && !preload_modules.is_empty()
         && _zygote_guard.is_some()
-        && server == Server::Uvicorn
+        && matches!(server, Server::Uvicorn | Server::RSGI)
     {
         eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
         let socket_path = crate::zygote::ipc::default_socket_path();
@@ -927,7 +931,11 @@ pub fn run_server(
     }
 
     // B. Spawn via Cold-Start Proxy (Safe Path - Phase 7.2)
-    if !args.dry_run && workers.is_empty() && args.workers >= 1 && server == Server::Uvicorn {
+    if !args.dry_run
+        && workers.is_empty()
+        && args.workers >= 1
+        && matches!(server, Server::Uvicorn | Server::RSGI)
+    {
         eprintln!(
             "🔄 Launching {} workers via Cold-Start Proxy...",
             args.workers
@@ -982,6 +990,11 @@ pub fn run_server(
 
         if let Ok(mut guard) = lb_holder.lock() {
             *guard = Some(lb.clone());
+        }
+
+        // Gate H (DEF-72-H01): Register initial worker PIDs for peer authentication
+        for (i, w) in workers.iter().enumerate() {
+            lb.register_worker_pid(i as u64, w.pid);
         }
 
         logger.info(if args.rsgi {
@@ -1111,6 +1124,8 @@ pub fn run_server(
                                 if let Some(ref new) = new_worker.socket_path {
                                     lb.add_backend(&new.to_string_lossy());
                                 }
+                                // Gate H (DEF-72-H01): Register new PID after respawn
+                                lb.register_worker_pid(i as u64, new_worker.pid);
                                 *worker = new_worker;
                             }
 
@@ -1150,6 +1165,11 @@ pub fn run_server(
                                                     {
                                                         lb.add_backend(&new.to_string_lossy());
                                                     }
+                                                    // Gate H (DEF-72-H01): Register new PID after zygote-recovery respawn
+                                                    lb.register_worker_pid(
+                                                        i as u64,
+                                                        retry_worker.pid,
+                                                    );
                                                     *worker = retry_worker;
                                                     continue; // Success on retry
                                                 }
