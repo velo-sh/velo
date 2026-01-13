@@ -5,6 +5,13 @@ edition = "2024"
 license = "Apache-2.0"
 description = "The high-performance runtime for the AI era."
 
+[package.metadata.velo]
+# SSoT: Centralized environment invariants
+python_version = "3.11"
+required_pyo3_no_extension = true
+socket_path_limit = 104
+hugepage_alignment = 2097152
+
 [lints.rust]
 unsafe_code = "allow" # Required for Unix signals and UDS integration
 unused_imports = "warn"
@@ -87,6 +94,7 @@ embedded_uv = []  # RFC-0018: Embed uv binary at build time
 [build-dependencies]
 blake3 = "1.5"    # RFC-0018: Hash generation for uv verification
 toml = "0.8"      # RFC-0018: Parse embedded_assets.toml config
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 

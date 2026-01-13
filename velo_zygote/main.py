@@ -315,6 +315,7 @@ class ZygoteServer:
 
         self.pending_forks: Dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
+        self._active_clients = 0
 
     def _set_state(self, new_state: ZygoteState) -> None:
         """Standardized state transition with audit trail."""
@@ -409,7 +410,7 @@ class ZygoteServer:
                         self.idle_timeout
                         and (time.time() - self._last_activity) > self.idle_timeout
                     ):
-                        if not self.worker_registry.workers:
+                        if not self.worker_registry.workers and self._active_clients <= 0:
                             LogUtils.log(
                                 f"Idle timeout ({self.idle_timeout}s). Shutting down."
                             )
@@ -420,6 +421,7 @@ class ZygoteServer:
 
     async def _handle_client_socket(self, sock: socket.socket):
         """Handle a client connection using the synchronous transport."""
+        self._active_clients += 1
         transport = ZygoteTransport(sock)
         try:
             # RFC-0011 Requirement: Send Ready greeting immediately upon connection
@@ -437,6 +439,7 @@ class ZygoteServer:
                 if not msg:
                     break
 
+                self._last_activity = time.time()
                 req_id = msg.get("request_id")
                 token = request_context.set(req_id)
                 try:
@@ -458,6 +461,7 @@ class ZygoteServer:
 
             LogUtils.debug_log(traceback.format_exc())
         finally:
+            self._active_clients -= 1
             transport.close()
 
     async def _async_preload(self) -> None:
@@ -529,6 +533,7 @@ class ZygoteServer:
                         future.set_result(exit_code)
 
                     # Remove from registry
+                    LogUtils.log(f"Child {pid} exited with status {status}")
                     self.worker_registry.remove(pid)
             except ChildProcessError:
                 pass
