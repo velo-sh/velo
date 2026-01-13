@@ -4,6 +4,10 @@
 **Author**: Architect
 **Date**: 2026-01-14
 
+## Related Documents
+- **Standard**: [SPEC-0005: Velo SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md)
+- **Validation**: [RFC-0024: Forensic Compatibility Specification](./0024-forensic-compatibility-specification.md)
+
 ## 1. Summary
 This RFC proposes a fundamental restructuring of how Velo handles environment variables to achieve "Environment Sovereignty." By moving from a flat `VELO_` prefix to a tiered namespace and implementing "Ghost Mode" shadowing for critical library paths, we ensure a clean, secure, and predictable boundary between the Velo Supervisor, the Zygote, and the User Worker processes.
 

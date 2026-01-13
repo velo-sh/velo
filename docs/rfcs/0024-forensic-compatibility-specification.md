@@ -4,6 +4,10 @@
 **Author**: Architect
 **Date**: 2026-01-14
 
+## Related Documents
+- **Standard**: [SPEC-0005: Velo SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md)
+- **Prerequisite**: [RFC-0023: Tiered Environment Namespacing](./0023-tiered-environment-namespacing.md)
+
 ## 1. Summary
 This specification defines the mandatory compatibility baseline for Velo in **Native Sovereignty (RSGI)** mode. Built upon the architectural foundation of **[SPEC-0005: Velo SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md)**, it ensures that user applications migrating to Velo experience "Zero Friction" while operating under Velo's hardened environment and state sovereignty features.
 
