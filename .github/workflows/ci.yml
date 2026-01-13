@@ -29,6 +29,8 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
+  # SSoT: Force all uv operations to use 3.11 to prevent version drift (e.g., matching >=3.11 with 3.12)
+  UV_PYTHON: "3.11"
   # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
   performance-canary:
