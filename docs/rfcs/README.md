@@ -39,6 +39,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [0024](./0024-forensic-compatibility-specification.md) | Forensic Compatibility Specification | ✅ Approved | v0.8.2 |
 | [SPEC-0005](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md) | **SSOT Master Standard** | ✅ **Master** | v0.7.2 |
 | [SPEC-0006](../architecture/SPEC-0006-POLYGLOT-GOVERNANCE.md) | **Polyglot Service Governance** | ✅ **Master** | v0.8.2 |
+| [SPEC-0007](../architecture/SPEC-0007-PERFORMANCE-MASTER-STANDARD.md) | **High-Performance Master Standard** | ✅ **Master** | v0.8.2 |
 
 ## Quality Assurance Reports
 
