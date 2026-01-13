@@ -37,7 +37,10 @@ impl VeloPaths {
             .ok()
             .filter(|s| !s.is_empty())
         {
-            return PathBuf::from(socket_override);
+            // DEF-72-P01: Always enforce 0700 permissions even on override paths
+            let path = PathBuf::from(&socket_override);
+            ensure_socket_dir(&path);
+            return path;
         }
 
         // Determine OS and environment
