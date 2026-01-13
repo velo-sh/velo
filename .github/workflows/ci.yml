@@ -204,6 +204,10 @@ jobs:
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          # SSoT: Include Python version in cache key to invalidate when Python changes
+          # This prevents stale PyO3 linkage artifacts from being restored
+          prefix-key: "v1-py${{ matrix.python-version }}"
 
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
