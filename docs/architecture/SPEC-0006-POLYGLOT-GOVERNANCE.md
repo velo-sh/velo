@@ -65,6 +65,12 @@ To prevent the "Sin of Leakage," the Rust Supervisor implements a high-performan
 2. **Path Sanitization**: Replaces absolute user paths (e.g., `/Users/gjwang/`) with relative project anchors.
 3. **Forensic Code Injection**: Automatically attaches the relevant `[EVENT_CODE]` based on the stream origin (e.g., `stderr` triggers a default `VELO-ERR` code).
 
+### 4.3 Serialization & Atomicity (Concurrency Safety)
+To prevent log corruption/interleaving when multiple workers emit data simultaneously:
+- **Single-Writer Pattern**: The Rust Supervisor acts as the **Sole Sequencer** for the log sink. Workers pipe data to the Supervisor; they NEVER open the log file directly.
+- **Line-Atomic Buffering**: The Supervisor uses line-buffered reading from child pipes. A log entry is only committed to the sink once a newline (`\n`) is reached, ensuring that lines from `WRK:A` and `WRK:B` are never interleaved.
+- **Async Queueing**: Internally, the Supervisor utilizes a non-blocking MPMC or MPSC channel (e.g., `tokio::sync::mpsc`) to queue log events, ensuring that the critical path of worker execution is not blocked by log I/O.
+
 ## 5. Polyglot Code Orthogonality
 To maintain "Nominal Sovereignty" and prevent import-path collisions:
 
