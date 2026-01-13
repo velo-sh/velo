@@ -564,4 +564,46 @@ mod tests {
         let result = lb.graceful_shutdown(Duration::from_millis(50)).await;
         assert!(result.is_err(), "Should timeout with active connections");
     }
+
+    #[test]
+    fn test_circuit_breaker_threshold() {
+        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
+        let worker = &lb.workers[0];
+
+        // 1-4 failures: still healthy
+        for _ in 1..5 {
+            worker.record_failure();
+            assert!(worker.is_healthy());
+        }
+
+        // 5th failure: UNHEALTHY
+        worker.record_failure();
+        assert!(
+            !worker.is_healthy(),
+            "Circuit breaker MUST trip after 5 failures (RFC-0011)"
+        );
+
+        // Success: HEALTHY again
+        worker.mark_healthy();
+        assert!(worker.is_healthy());
+    }
+
+    #[test]
+    fn test_round_robin_tie_breaker() {
+        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string(), "/tmp/w2.sock".to_string()]);
+
+        // Both have 0 connections. RR should alternate.
+        let g1 = lb.select_worker().unwrap();
+        assert_eq!(g1.socket_path(), "/tmp/w1.sock");
+
+        let g2 = lb.select_worker().unwrap();
+        assert_eq!(g2.socket_path(), "/tmp/w2.sock");
+
+        let g3 = lb.select_worker().unwrap();
+        assert_eq!(
+            g3.socket_path(),
+            "/tmp/w1.sock",
+            "RR tie-breaker MUST alternate when connections are equal"
+        );
+    }
 }

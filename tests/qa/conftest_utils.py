@@ -3,6 +3,7 @@ import subprocess
 import sys
 import platform
 import pytest
+import contextlib
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -162,6 +163,16 @@ class VeloTestEnv:
 
         # Backward compatibility
         self.path = self.root
+
+    @contextlib.contextmanager
+    def env_vars(self, vars: dict):
+        """Temporarily update environment variables."""
+        old_env = self.env.copy()
+        self.env.update(vars)
+        try:
+            yield self
+        finally:
+            self.env = old_env
 
     def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
         env = self.env.copy()
