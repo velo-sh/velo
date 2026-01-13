@@ -29,8 +29,7 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
-  # SSoT: Force all uv operations to use 3.11 to prevent version drift (e.g., matching >=3.11 with 3.12)
-  UV_PYTHON: "3.11"
+  # Note: UV_PYTHON is now set dynamically in setup-velo action from SSOT config
   # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
   performance-canary:
@@ -41,10 +40,19 @@ jobs:
       VELO_TIMEOUT_MULTIPLIER: 1.0  # STRICT: Must pass with 1x timeout
     steps:
       - uses: actions/checkout@v4
+      
+      # SSOT: Read Python version from centralized config (this job doesn't depend on changes)
+      - name: Read SSOT Config
+        id: config
+        run: |
+          PYTHON_VERSION=$(grep '^python_version' config/constants.toml | cut -d'"' -f2)
+          echo "python_version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "SSOT Python version: $PYTHON_VERSION"
+      
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ steps.config.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
       - name: Pre-Flight Diagnostic
         run: cargo run --release -- debug pre-flight
@@ -68,10 +76,21 @@ jobs:
       workflow: ${{ steps.filter.outputs.workflow }}
       qa_infra: ${{ steps.filter.outputs.qa_infra }}
       kinetic: ${{ steps.filter.outputs.kinetic }}
+      # SSOT: Python version from config/constants.toml
+      python_version: ${{ steps.config.outputs.python_version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      
+      # SSOT: Read Python version from centralized config
+      - name: Read SSOT Config
+        id: config
+        run: |
+          PYTHON_VERSION=$(grep '^python_version' config/constants.toml | cut -d'"' -f2)
+          echo "python_version=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "SSOT Python version: $PYTHON_VERSION"
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -151,7 +170,7 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
       - name: Pre-Flight Diagnostic
@@ -207,12 +226,13 @@ jobs:
         with:
           # SSoT: Include Python version in cache key to invalidate when Python changes
           # This prevents stale PyO3 linkage artifacts from being restored
-          prefix-key: "v1-py${{ matrix.python-version }}"
+          prefix-key: "v1-py${{ needs.changes.outputs.python_version }}"
 
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: ${{ matrix.python-version }}
+          # SSOT: Use Python version from centralized config, NOT matrix value
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
       - name: Verify Python Environment (Debug)
@@ -261,7 +281,7 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
       - name: Pre-Flight Diagnostic
         run: cargo run --all-features -- debug pre-flight
@@ -282,7 +302,7 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
       - run: cargo fmt --all -- --check
 
@@ -725,7 +745,7 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           download-binary: true
           uv-version: ${{ env.UV_VERSION }}
           
@@ -845,7 +865,7 @@ jobs:
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
-          python-version: '3.11'
+          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
       - name: Pre-Flight Diagnostic
