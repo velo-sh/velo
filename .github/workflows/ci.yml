@@ -252,7 +252,7 @@ jobs:
           python-version: '3.11'
           uv-version: ${{ env.UV_VERSION }}
       - name: Pre-Flight Diagnostic
-        run: cargo run --all-targets --all-features -- debug pre-flight
+        run: cargo run --all-features -- debug pre-flight
       - name: Run Clippy (Single Source of Truth)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
