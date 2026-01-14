@@ -57,12 +57,16 @@ def get_rss(pid: int) -> int:
         return 0
 
 def get_pss(pid: int) -> int:
+    """Get Proportional Set Size. Falls back to RSS on macOS."""
     try:
         import psutil
         p = psutil.Process(pid)
         try:
-            return p.memory_full_info().pss
-        except AttributeError:
+            # PSS is only available on Linux via memory_full_info()
+            mem_info = p.memory_full_info()
+            return getattr(mem_info, 'pss', mem_info.rss)
+        except (AttributeError, psutil.AccessDenied):
+            # macOS: fallback to RSS (PSS not available)
             return p.memory_info().rss
     except Exception:
         return 0

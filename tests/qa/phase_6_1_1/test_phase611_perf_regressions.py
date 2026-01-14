@@ -125,7 +125,12 @@ class TestL5Performance:
         2. Measure RSS and PSS
         3. Calculate sharing efficiency
         """
-        from conftest_utils import get_pss, get_rss
+        from conftest_utils import get_pss, get_rss, IS_LINUX
+
+        # PSS (Proportional Set Size) is only available on Linux
+        # On macOS, get_pss returns RSS which makes COW calculation meaningless
+        if not IS_LINUX:
+            pytest.skip("COW efficiency test requires Linux PSS metrics (macOS only has RSS)")
 
         proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
         proc.wait_ready()
