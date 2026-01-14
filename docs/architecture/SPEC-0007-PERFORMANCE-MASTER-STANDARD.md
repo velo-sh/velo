@@ -40,7 +40,48 @@ To balance development velocity with production performance, Velo enforces three
 | **Release** | `cargo build --release` | `opt-level = 2` | **Regression**: Balanced performance for CI & QA. |
 | **Production** | `cargo build --profile production` | `opt-level = 3` | **Titanium**: Max speed, LTO-Fat, Strip, Panic-Abort. |
 
-### 4.2 Core Components
+### 4.2 Environment-Aware Infrastructure
+To minimize "drift" while maximizing resource efficiency:
+
+| Environment | Primary Profile | Optimization Secret |
+|:---|:---|:---|
+| **Local Dev** | `dev` | **ZLD/Mold Linker**: Reduce link time by 5x-10x. |
+| **CI (PR)** | `dev` | **rust-cache**: Persistent caching of `target/` and registry. |
+| **CI (Main)** | `production` | **PGO (Profile Guided Optimization)**: Optimize based on real traces. |
+| **Docker (Release)**| `production` | **cargo-chef**: Layered caching of compiled dependencies. |
+
+### 4.3 CI Best Practices (SOP-005)
+To balance speed and resource consumption in CI:
+
+1. **Disable Incremental Compilation**: Set `CARGO_INCREMENTAL=0` in CI. Incremental builds create large cache snapshots that bloat GHA cache and slow down I/O.
+2. **Linker Sovereignty**: Mandate the use of `mold` (Linux) or `zld` (macOS) in CI workflows to bypass the single-threaded link bottleneck.
+3. **Sparse Registry**: Use `CARGO_REGISTRY_SPARSE=true` to speed up dependency index fetching.
+4. **Cache Pruning**: Only cache `~/.cargo/registry` and specific `target/` artifacts to prevent cache eviction.
+
+### 4.4 Docker Optimization (The Chef Pattern)
+Velo Docker images MUST use a multi-stage `cargo-chef` workflow:
+
+```dockerfile
+# Stage 1: Compute Recipe
+FROM lukemathwalker/cargo-chef:latest-rust-1.92.0 AS chef
+WORKDIR /app
+COPY . .
+RUN cargo chef prepare --recipe-json recipe.json
+
+# Stage 2: Cache Dependencies
+FROM chef AS builder
+COPY --from=chef /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-json recipe.json
+# Build application
+COPY . .
+RUN cargo build --profile production
+
+# Stage 3: Runtime
+FROM debian:bookworm-slim
+COPY --from=builder /app/target/production/velo /usr/local/bin/velo
+```
+
+### 4.5 Core Components
 | Component | Technology | Performance Value |
 |:---|:---|:---|
 | **Allocator** | `jemalloc` | Low fragmentation, high-concurrency heap |
