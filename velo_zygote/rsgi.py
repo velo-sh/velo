@@ -75,6 +75,7 @@ class RSGIWorker:
             # Validate that the connecting process is from our authorized parent (Rust Host)
             sock = writer.get_extra_info('socket')
             if sock is not None:
+                authorized_host_pid = os.environ.get('VELO_HOST_PID')
                 try:
                     import socket
                     import struct as _struct
@@ -92,8 +93,6 @@ class RSGIWorker:
                         return
                     
                     # Validate PID is our parent process (the Rust Host that spawned us)
-                    # The authorized Host PID is passed via VELO_HOST_PID environment variable
-                    authorized_host_pid = os.environ.get('VELO_HOST_PID')
                     if authorized_host_pid:
                         if str(peer_pid) != authorized_host_pid:
                             print(f"RSGI Gate H: Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
@@ -121,25 +120,26 @@ class RSGIWorker:
                             await writer.wait_closed()
                             return
 
-                        # Validate PID if available and non-zero
-                        authorized_host_pid = os.environ.get('VELO_HOST_PID')
-                        if authorized_host_pid and peer_pid != 0:
+                        if authorized_host_pid:
                             if str(peer_pid) != authorized_host_pid:
                                 print(f"RSGI Gate H (macOS): Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
                                 writer.close()
                                 await writer.wait_closed()
                                 return
-                        elif not authorized_host_pid:
-                            # If no authorized PID provided, we rely on UID check only (Dev/Test mode fallback)
-                            pass
+                            # SUCCESS: PID matches
                         elif peer_pid == 0:
-                            # Log the platform limitation but permit if UID matches and we're in same process group
-                            LogUtils.debug_log(f"RSGI Gate H: Peer PID is 0 on macOS, relying on UID {peer_uid} verification.")
-                            
+                            # TITANIUM RULE: No 0-PID broad acceptance.
+                            # If we can't verify the PID, we can't guarantee sovereignty.
+                            print("RSGI Gate H (macOS): Rejected connection - Peer PID is 0 and no authorized Host PID provided", file=sys.stderr)
+                            writer.close()
+                            await writer.wait_closed()
+                            return
                     except Exception as e:
                         # If extraction totally fails, we cannot guarantee Gate H
-                        LogUtils.debug_log(f"RSGI Gate H: Could not retrieve peer credentials on macOS: {e}")
-                        pass
+                        print(f"RSGI Gate H: Could not retrieve peer credentials on macOS: {e}", file=sys.stderr)
+                        writer.close()
+                        await writer.wait_closed()
+                        return
             
             # 1. Send READY
             ready_msg = [

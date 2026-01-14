@@ -318,18 +318,36 @@ impl Worker {
     /// false-positive death detection before the worker binds its socket.
     pub fn is_alive(&self) -> bool {
         // Grace period: workers get 5 seconds to initialize before liveness checks kick in
+        // RFC-0016: Prevent false-positive death detection during startup
         const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(5);
 
-        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
-            // During grace period, only check if process still exists
-            // Don't trigger respawn logic even if socket isn't ready
-            return unsafe { libc::kill(self.pid as i32, 0) == 0 };
+        // Safety: kill with signal 0 checks process existence without sending signal
+        let alive = unsafe { libc::kill(self.pid as i32, 0) == 0 };
+
+        if !alive {
+            return false;
         }
 
-        // After grace period, normal liveness check
-        // Safety: kill with signal 0 checks process existence without sending signal
-        // SECURITY: libc::kill(pid, 0) is a standard non-destructive check for process existence.
-        unsafe { libc::kill(self.pid as i32, 0) == 0 }
+        // macOS Technical Debt: Zombies respond to kill(0) with success.
+        // If the process is a zombie, it's effectively dead. We try to reap it here
+        // to confirm its status.
+        #[cfg(target_os = "macos")]
+        {
+            let mut status = 0;
+            let res = unsafe { libc::waitpid(self.pid as i32, &mut status, libc::WNOHANG) };
+            if res == self.pid as i32 {
+                // Process was a zombie and is now reaped.
+                return false;
+            }
+        }
+
+        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
+            // During grace period, we don't return false for socket-related issues,
+            // but we already handled process death above.
+            return true;
+        }
+
+        true
     }
 
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
