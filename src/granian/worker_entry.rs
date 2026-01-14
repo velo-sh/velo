@@ -216,7 +216,7 @@ def make_hooks(loop, app):
                     "raw_path": rsgi_scope.path.encode('utf-8'),
                     "query_string": rsgi_scope.query_string.encode('utf-8') if rsgi_scope.query_string else b"",
                     "root_path": "",
-                    "headers": rsgi_scope.headers.items(),
+                    "headers": rsgi_scope.headers.raw_items(),
                     "server": rsgi_scope.server if isinstance(rsgi_scope.server, (list, tuple)) else (rsgi_scope.server, 0),
                     "client": rsgi_scope.client if isinstance(rsgi_scope.client, (list, tuple)) else (rsgi_scope.client, 0),
                 }
