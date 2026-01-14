@@ -39,6 +39,9 @@ pub struct WorkerConfig {
 
     /// TLS configuration (None = no TLS)
     pub tls_config: Option<TlsConfig>,
+
+    /// Project root directory (RFC-0012)
+    pub project_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for WorkerConfig {
@@ -55,6 +58,7 @@ impl Default for WorkerConfig {
             backpressure: 256,
             http_mode: "auto".to_string(),
             tls_config: None,
+            project_dir: None,
         }
     }
 }
@@ -93,6 +97,12 @@ impl WorkerConfig {
         self.threads = threads;
         self.blocking_threads = blocking;
         self.py_threads = py;
+        self
+    }
+
+    /// Set project directory.
+    pub fn with_project_dir(mut self, path: std::path::PathBuf) -> Self {
+        self.project_dir = Some(path);
         self
     }
 }

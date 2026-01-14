@@ -85,6 +85,11 @@ fn run_worker_blocking(config: WorkerConfig) -> Result<()> {
     // Step 1: Initialize Python interpreter (MUST be after fork)
     debug!("Initializing Python interpreter post-fork");
 
+    // In embedding mode, we must manually initialize the interpreter
+    // before attempting any GIL operations.
+    #[allow(deprecated)]
+    pyo3::prepare_freethreaded_python();
+
     // In PyO3 0.27+, we can use Python::with_gil directly or ensure it's initialized
     #[allow(deprecated)]
     Python::with_gil(|py| run_worker_with_python(py, config))
@@ -107,7 +112,7 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
     use pyo3::prelude::*;
 
     // Step 2: Create SocketHolder from inherited FD
-    debug!("Creating SocketHolder from FD {}", config.socket_fd);
+    info!("Creating SocketHolder from FD {}", config.socket_fd);
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let sock = SocketHolder::new(config.socket_fd, false, config.backpressure as i32);
@@ -119,11 +124,11 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
         .map_err(|e| GranianError::PyO3(format!("Failed to create SocketHolder: {e}")))?;
 
     // Step 3: Load ASGI application
-    debug!("Loading ASGI application: {}", config.app_path);
-    let app = load_asgi_app(py, &config.app_path)?;
+    info!("Loading ASGI application: {}", config.app_path);
+    let app = load_asgi_app(py, &config)?;
 
     // Step 4: Create event loop
-    debug!("Creating asyncio event loop");
+    info!("Creating asyncio event loop");
     let asyncio = py
         .import("asyncio")
         .map_err(|e| GranianError::PythonInit(format!("Failed to import asyncio: {e}")))?;
@@ -134,9 +139,57 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
         .call_method1("set_event_loop", (&event_loop,))
         .map_err(|e| GranianError::PythonInit(format!("Failed to set event loop: {e}")))?;
 
-    // Step 5: Create CallbackScheduler
+    // Step 5: Initialize CallbackScheduler hooks
+    // Step 5: Initialize CallbackScheduler hooks
+    debug!("Initializing CallbackScheduler hooks");
+
+    // Step 5: Define required Python hooks (Velo Integration)
+    // Granian's CallbackScheduler expects several Python hooks to be set.
+    // In a normal Granian launch, these are set by the Python Worker class.
+    // Since Velo embeds the worker directly, we must provide these hooks ourselves.
+    let globals = pyo3::types::PyDict::new(py);
+    py.run(
+        pyo3::ffi::c_str!(
+            r#"
+import asyncio
+def make_hooks(loop, app):
+    import sys
+    def _sched(watcher):
+        def _start():
+            task = loop.create_task(app(watcher.scope, watcher.proto))
+            watcher.taskref(task)
+        loop.call_soon_threadsafe(_start)
+        
+    def _nop(*args, **kwargs):
+        pass
+        
+    return _sched, _nop
+"#
+        ),
+        Some(&globals),
+        None,
+    )
+    .map_err(|e| GranianError::PythonInit(format!("Failed to define scheduler hooks: {e}")))?;
+
+    let hooks_factory = globals
+        .get_item("make_hooks")?
+        .ok_or_else(|| GranianError::PythonInit("Failed to find make_hooks in globals".into()))?;
+
+    let hooks_res = hooks_factory.call1((&event_loop, &app))?;
+    let (sched_fn, nop_fn): (Bound<'_, PyAny>, Bound<'_, PyAny>) =
+        hooks_res.extract().map_err(|e| {
+            GranianError::PythonInit(format!("Failed to initialize scheduler hooks: {e}"))
+        })?;
+
+    // Step 5.1: Create CallbackScheduler
     debug!("Creating CallbackScheduler");
-    let scheduler = create_callback_scheduler(py, &event_loop, &app)?;
+    let scheduler = create_callback_scheduler(py, &event_loop, &app, Some(&nop_fn), Some(&nop_fn))?;
+
+    // Set the internal _schedule_fn used by CallbackScheduler.schedule()
+    scheduler
+        .bind(py)
+        .setattr("_schedule_fn", sched_fn)
+        .map_err(|e| GranianError::PythonInit(format!("Failed to set _schedule_fn: {e}")))?;
 
     // Step 6: Create RSGIWorker
     debug!("Creating RSGIWorker");
@@ -200,9 +253,11 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
     );
 
     // serve_async returns a Python awaitable
+    debug!("Calling serve_async");
     let serve_future = worker.serve_async(scheduler, &event_loop, signal);
 
     // Run the event loop until completion
+    debug!("Starting event loop run_until_complete");
     event_loop
         .call_method1("run_until_complete", (serve_future,))
         .map_err(|e| GranianError::WorkerStartup(format!("Event loop error: {e}")))?;
@@ -220,9 +275,25 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
 #[cfg(feature = "granian_native")]
 fn load_asgi_app<'py>(
     py: pyo3::Python<'py>,
-    app_path: &str,
+    config: &WorkerConfig,
 ) -> Result<pyo3::Bound<'py, pyo3::PyAny>> {
     use pyo3::prelude::*;
+    use pyo3::types::PyList;
+
+    let app_path = &config.app_path;
+
+    // Add project directory to sys.path (RFC-0012)
+    if let Some(ref project_dir) = config.project_dir {
+        let sys = py.import("sys")?;
+        let path: Bound<'py, PyList> = sys.getattr("path")?.cast_into()?;
+        path.insert(0, project_dir.to_string_lossy())?;
+        debug!("Added project dir to sys.path: {:?}", project_dir);
+    }
+
+    // Also add "." to be safe
+    let sys = py.import("sys")?;
+    let path: Bound<'py, PyList> = sys.getattr("path")?.cast_into()?;
+    path.insert(0, ".")?;
 
     let parts: Vec<&str> = app_path.split(':').collect();
     if parts.len() != 2 {
@@ -264,6 +335,8 @@ fn create_callback_scheduler<'py>(
     py: pyo3::Python<'py>,
     event_loop: &pyo3::Bound<'py, pyo3::PyAny>,
     app: &pyo3::Bound<'py, pyo3::PyAny>,
+    tenter: Option<&pyo3::Bound<'py, pyo3::PyAny>>,
+    texit: Option<&pyo3::Bound<'py, pyo3::PyAny>>,
 ) -> Result<pyo3::Py<granian_core::callbacks::CallbackScheduler>> {
     use granian_core::callbacks::CallbackScheduler;
     use pyo3::prelude::*;
@@ -285,15 +358,8 @@ fn create_callback_scheduler<'py>(
     // - aio_texit: Task.__exit__ equivalent
 
     // Get task context methods
-    let task_enter = task_cls
-        .getattr("__class__")
-        .and_then(|c: Bound<'py, PyAny>| c.getattr("__enter__"))
-        .unwrap_or_else(|_| py.None().into_bound(py));
-
-    let task_exit = task_cls
-        .getattr("__class__")
-        .and_then(|c: Bound<'py, PyAny>| c.getattr("__exit__"))
-        .unwrap_or_else(|_| py.None().into_bound(py));
+    let task_enter = tenter.cloned().unwrap_or_else(|| py.None().into_bound(py));
+    let task_exit = texit.cloned().unwrap_or_else(|| py.None().into_bound(py));
 
     // Create the scheduler
     let scheduler = CallbackScheduler::new(

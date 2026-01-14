@@ -905,8 +905,6 @@ pub fn run_server(
         };
 
         socket.set_reuse_address(true)?;
-        #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
-        socket.set_reuse_port(true)?;
 
         socket.bind(&bind_addr.into())?;
         socket.listen(1024)?;
@@ -922,7 +920,13 @@ pub fn run_server(
 
         eprintln!("🚀 Launching {} native Granian workers...", args.workers);
         for i in 0..args.workers {
-            match crate::serve::worker::Worker::spawn_native(&args.app, i as i32, fd, config) {
+            match crate::serve::worker::Worker::spawn_native(
+                &args.app,
+                i as i32,
+                fd,
+                project_dir,
+                config,
+            ) {
                 Ok(worker) => {
                     logger.info(&format!(
                         "[WORKER] event=spawn type=native worker_id={} pid={}",
@@ -951,6 +955,7 @@ pub fn run_server(
 
     // A. Spawn via Zygote (Optimized Path)
     if !args.dry_run
+        && workers.is_empty() // FIX: Avoid dual spawning if native workers are already up
         && args.workers >= 1
         && use_zygote
         && !preload_modules.is_empty()
@@ -998,7 +1003,7 @@ pub fn run_server(
 
     // B. Spawn via Cold-Start Proxy (Safe Path - Phase 7.2)
     if !args.dry_run
-        && workers.is_empty()
+        && workers.is_empty() // FIX: Avoid dual spawning
         && args.workers >= 1
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {

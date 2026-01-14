@@ -76,4 +76,16 @@ pub enum GranianError {
     Io(#[from] std::io::Error),
 }
 
+impl From<pyo3::PyErr> for GranianError {
+    fn from(err: pyo3::PyErr) -> Self {
+        Self::PyO3(err.to_string())
+    }
+}
+
+impl<'py> From<pyo3::CastIntoError<'py>> for GranianError {
+    fn from(err: pyo3::CastIntoError<'py>) -> Self {
+        Self::PyO3(err.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, GranianError>;
