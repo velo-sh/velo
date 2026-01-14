@@ -263,9 +263,52 @@ def make_hooks(loop, app):
                 else:
                     scope['server'] = ('127.0.0.1', 8000)
                 
-                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": [], "is_streaming": False}
+                # Detect WebSocket upgrade request from headers
+                is_websocket = False
+                for h in scope.get('headers', []):
+                    if isinstance(h, (list, tuple)) and len(h) >= 2:
+                        name = h[0] if isinstance(h[0], str) else h[0].decode('latin-1')
+                        val = h[1] if isinstance(h[1], str) else h[1].decode('latin-1')
+                        if name.lower() == 'upgrade' and val.lower() == 'websocket':
+                            is_websocket = True
+                            break
+                
+                if is_websocket:
+                    # Convert to WebSocket scope for ASGI
+                    scope['type'] = 'websocket'
+                    scope.setdefault('subprotocols', [])
+                
+                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": [], "is_streaming": False, "ws_connected": False}
                 
                 async def receive():
+                    # Handle WebSocket scope type
+                    if scope.get('type') == 'websocket':
+                        if not ctx.get("ws_connect_sent"):
+                            # First receive() for WebSocket returns connect message
+                            ctx["ws_connect_sent"] = True
+                            return {"type": "websocket.connect"}
+                        
+                        # Wait for WebSocket messages from proto
+                        try:
+                            msg = await proto.receive()
+                            if msg is None:
+                                return {"type": "websocket.disconnect", "code": 1000}
+                            
+                            # If already ASGI-compliant, return as-is
+                            if isinstance(msg, dict) and 'type' in msg:
+                                return msg
+                            
+                            # Wrap raw bytes/str in ASGI format
+                            if isinstance(msg, bytes):
+                                return {"type": "websocket.receive", "bytes": msg}
+                            elif isinstance(msg, str):
+                                return {"type": "websocket.receive", "text": msg}
+                            else:
+                                return {"type": "websocket.disconnect", "code": 1000}
+                        except:
+                            return {"type": "websocket.disconnect", "code": 1006}
+                    
+                    # HTTP handling below
                     # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
                     # FastAPI/Starlette expect: {'type': 'http.request', 'body': b'...', 'more_body': False}
                     # Django ASGIHandler calls receive() twice - second call should block until response sent
