@@ -133,3 +133,59 @@ def test_rsgi_native_websocket_echo(run_velo_native):
         proc.wait()
         out_f.close()
         err_f.close()
+
+
+def test_rsgi_native_ipc_timeout(run_velo_native):
+    """Verify that a hung ASGI app triggers the 10s RSGI IPC timeout."""
+    app_code = """
+    import asyncio
+    async def app(scope, proto):
+        if scope.proto == 'http':
+            await asyncio.sleep(15) # Exceeds 10s timeout
+            proto.response_str(200, [], 'this should not be sent')
+    """
+    proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
+    try:
+        import requests
+        import time
+        start = time.time()
+        # Request should return 500 after ~10s
+        resp = requests.get(f"http://127.0.0.1:{port}/", timeout=20)
+        duration = time.time() - start
+        
+        assert resp.status_code == 500
+        assert 10 <= duration <= 13 # Allow for some overhead
+    finally:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        out_f.close()
+        err_f.close()
+
+
+def test_rsgi_native_header_timeout(run_velo_native):
+    """Verify that slow headers trigger the 5s header read timeout."""
+    app_code = """
+    async def app(scope, proto):
+        proto.response_str(200, [], 'ok')
+    """
+    proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
+    try:
+        import socket
+        import time
+        s = socket.create_connection(("127.0.0.1", port))
+        s.send(b"GET / HTTP/1.1\r\n")
+        time.sleep(7) # Exceeds 5s header timeout
+        try:
+            s.send(b"Host: localhost\r\n\r\n")
+            # Connection should have been closed by server
+            s.settimeout(2)
+            data = s.recv(1024)
+            # If server closed, recv returns b'' or raises error
+            assert data == b""
+        except (ConnectionResetError, BrokenPipeError, socket.timeout):
+            pass # Success: connection closed
+    finally:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait()
+        out_f.close()
+        err_f.close()

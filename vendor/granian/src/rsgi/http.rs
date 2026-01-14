@@ -2,7 +2,9 @@ use futures::sink::SinkExt;
 use http_body_util::BodyExt;
 use hyper::{StatusCode, header::SERVER as HK_SERVER, http::response::Builder as ResponseBuilder};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{Notify, mpsc};
+use tokio::time::timeout;
 
 use super::{
     callbacks::{call_http, call_ws},
@@ -32,12 +34,16 @@ macro_rules! build_scope {
 
 macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $body:expr, $scope:expr) => {
-        match $handler($callback, $rt, $disconnect_guard, $body, $scope).await {
-            Ok(PyResponse::Body(pyres)) => pyres.to_response(),
-            Ok(PyResponse::File(pyres)) => pyres.to_response().await,
-            Ok(PyResponse::FileRange(pyres)) => pyres.to_response().await,
-            _ => {
+        match timeout(Duration::from_secs(10), $handler($callback, $rt, $disconnect_guard, $body, $scope)).await {
+            Ok(Ok(PyResponse::Body(pyres))) => pyres.to_response(),
+            Ok(Ok(PyResponse::File(pyres))) => pyres.to_response().await,
+            Ok(Ok(PyResponse::FileRange(pyres))) => pyres.to_response().await,
+            Ok(_) => {
                 log::error!("RSGI protocol failure");
+                response_500()
+            }
+            Err(_) => {
+                log::error!("RSGI IPC timeout (10s)");
                 response_500()
             }
         }

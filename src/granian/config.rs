@@ -42,6 +42,12 @@ pub struct WorkerConfig {
 
     /// Project root directory (RFC-0012)
     pub project_dir: Option<std::path::PathBuf>,
+
+    /// HTTP/1.1 configuration
+    pub http1_config: Http1Config,
+
+    /// HTTP/2 configuration
+    pub http2_config: Http2Config,
 }
 
 impl Default for WorkerConfig {
@@ -59,6 +65,8 @@ impl Default for WorkerConfig {
             http_mode: "auto".to_string(),
             tls_config: None,
             project_dir: None,
+            http1_config: Http1Config::default(),
+            http2_config: Http2Config::default(),
         }
     }
 }
@@ -165,7 +173,7 @@ pub struct Http1Config {
 impl Default for Http1Config {
     fn default() -> Self {
         Self {
-            header_read_timeout: Duration::from_secs(30),
+            header_read_timeout: Duration::from_secs(5),
             keep_alive: true,
             max_buffer_size: 65536,
             pipeline_flush: false,
