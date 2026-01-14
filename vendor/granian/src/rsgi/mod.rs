@@ -4,8 +4,9 @@ mod callbacks;
 pub(crate) mod conversion;
 mod errors;
 mod http;
-pub(crate) mod io;
-pub(crate) mod serve;
+// Velo Integration: Made public for RFC-0019/0025
+pub mod io;
+pub mod serve;
 mod types;
 
 pub(crate) fn init_pymodule(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
