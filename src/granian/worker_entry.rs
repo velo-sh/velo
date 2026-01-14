@@ -231,7 +231,7 @@ def make_hooks(loop, app):
                 if isinstance(scope.get('query_string'), str):
                     scope['query_string'] = scope['query_string'].encode('utf-8')
                 
-                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False}
+                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": []}
                 
                 async def receive():
                     # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
@@ -267,18 +267,29 @@ def make_hooks(loop, app):
                         ctx["headers"] = msg.get('headers', [])
                     elif m_type == 'http.response.body':
                         body = msg.get('body', b'')
-                        # Convert ASGI bytes headers to str headers for proto
-                        converted_headers = []
-                        for h in ctx["headers"]:
-                            if isinstance(h, (list, tuple)) and len(h) == 2:
-                                k, v = h
-                                if isinstance(k, bytes):
-                                    k = k.decode('latin-1')
-                                if isinstance(v, bytes):
-                                    v = v.decode('latin-1')
-                                converted_headers.append((k, v))
-                        proto.response_bytes(ctx["status"], converted_headers, body)
-                        ctx["response_sent"] = True
+                        more_body = msg.get('more_body', False)
+                        
+                        # StreamingResponse support: buffer chunks until more_body=False
+                        if more_body:
+                            ctx["body_chunks"].append(body)
+                        else:
+                            # Final chunk - combine all buffered chunks and send
+                            all_chunks = ctx["body_chunks"] + [body]
+                            full_body = b''.join(all_chunks)
+                            ctx["body_chunks"] = []
+                            
+                            # Convert ASGI bytes headers to str headers for proto
+                            converted_headers = []
+                            for h in ctx["headers"]:
+                                if isinstance(h, (list, tuple)) and len(h) == 2:
+                                    k, v = h
+                                    if isinstance(k, bytes):
+                                        k = k.decode('latin-1')
+                                    if isinstance(v, bytes):
+                                        v = v.decode('latin-1')
+                                    converted_headers.append((k, v))
+                            proto.response_bytes(ctx["status"], converted_headers, full_body)
+                            ctx["response_sent"] = True
                     elif m_type == 'websocket.accept':
                         await proto.accept()
                     elif m_type == 'websocket.send':
