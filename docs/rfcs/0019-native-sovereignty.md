@@ -1,6 +1,6 @@
 # RFC-0019: Native Sovereignty (Granian Native Runtime)
 
-**Status**: DRAFT → APPROVED (Phase 9.x Evolution)
+**Status**: DRAFT → APPROVED (Current Evolution)
 **Author**: Architect
 **Date**: 2026-01-09 (Updated: 2026-01-14)
 
@@ -12,11 +12,11 @@
 *   **HTTP/2**: [RFC-0027](./0027-http2-support.md)
 
 > [!IMPORTANT]
-> **Phase 9.x Architectural Evolution** (Jan 14, 2026)
+> **Current Architectural Evolution** (Jan 14, 2026)
 >
 > This RFC has been updated to adopt the **Granian Native Runtime** architecture:
 > - **Before (Phase 7.x)**: UDS + MessagePack IPC (~50-100μs/request)
-> - **After (Phase 9.x)**: PyO3 Direct Call (~1-5μs/request)
+> - **After (Current)**: PyO3 Direct Call (~1-5μs/request)
 >
 > See [Section 3.5](#35-phase-9x-granian-native-architecture-current) for the new unified architecture.
 
@@ -150,13 +150,13 @@ The protocol defines the binary exchange between the Rust Host and Python Worker
 | `KEEPALIVE` | 0x09 | Both | Timestamp |
 
 > [!WARNING]
-> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Phase 9.x by direct PyO3 calls.
+> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Current by direct PyO3 calls.
 > See Section 3.5 for the current architecture.
 
-### 3.5 Phase 9.x: Granian Native Architecture (Current)
+### 3.5 Current: Granian Native Architecture (Current)
 
 > [!IMPORTANT]
-> This section describes the **current recommended architecture** as of Phase 9.x.
+> This section describes the **current recommended architecture** as of Current.
 
 #### 3.5.1 Architecture Evolution
 
@@ -476,7 +476,7 @@ Python Worker:
 | Protocol | Status | Notes |
 |:---|:---|:---|
 | **HTTP/2** | 🟢 STABLE | Granian full support |
-| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 9.x |
+| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Current |
 | **WebTransport** | 🔮 RESEARCH | Future real-time applications |
 
 ### 8.14 Memory Management Strategy (Stability-First)
@@ -601,7 +601,7 @@ Instead of Just-In-Time (JIT) compilation which competes for resources during re
 ## 9. Grand Council Review Summary
 
 **Initial Review**: 2026-01-09 (Phase 7.x UDS Architecture)
-**Re-Evaluation**: 2026-01-14 (Phase 9.x Granian Native Architecture)
+**Re-Evaluation**: 2026-01-14 (Current Granian Native Architecture)
 **Verdict**: ✅ **APPROVED**
 
 | Persona | Vote | Rationale |
