@@ -536,6 +536,16 @@ fn load_asgi_app<'py>(
     let path: Bound<'py, PyList> = sys.getattr("path")?.cast_into()?;
     path.insert(0, ".")?;
 
+    // Add PYTHONPATH entries to sys.path (for test harness compatibility)
+    if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
+        for entry in pythonpath.split(':') {
+            if !entry.is_empty() {
+                path.insert(0, entry)?;
+                debug!("Added PYTHONPATH entry to sys.path: {}", entry);
+            }
+        }
+    }
+
     let parts: Vec<&str> = app_path.split(':').collect();
     if parts.len() != 2 {
         return Err(GranianError::AppLoad(format!(
