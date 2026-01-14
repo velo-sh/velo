@@ -1,4 +1,5 @@
 pub mod governance;
+pub mod log_sanitize;
 pub mod paths;
 
 // Import generated constants from OUT_DIR
