@@ -5,16 +5,17 @@ import os
 # DEF-72-C02: Surgical sys.path sanitization to prevent shadowing
 # During 'python -m', sys.path[0] is the current directory.
 # We MUST remove it before pre-importing critical libraries.
-_original_path = sys.path.copy()
-_cwd = os.getcwd()
-sys.path = [p for p in sys.path if p and p != _cwd and p != "." and p != ""]
+def _sovereign_import(name):
+    _original_path = sys.path.copy()
+    _cwd = os.getcwd()
+    sys.path = [p for p in sys.path if p and p != _cwd and p != "." and p != ""]
+    try:
+        return __import__(name)
+    finally:
+        sys.path = _original_path
 
-try:
-    import msgpack
-    import uvicorn
-finally:
-    # Restore original path for app loading later
-    sys.path = _original_path
+# Pre-import msgpack to protect against local shadowing
+msgpack = _sovereign_import("msgpack")
 
 # Ensure velo_zygote is in path
 _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -80,13 +81,14 @@ def main() -> None:
         
         if args.rsgi:
             from velo_zygote.rsgi import run_rsgi
-
-        ImportShield.activate()
-        VeloPaths.sanitize_sys_path(__file__)
-
-        if args.rsgi:
+            ImportShield.activate()
+            VeloPaths.sanitize_sys_path(__file__)
             run_rsgi(args.app, args.uds)
         else:
+            uvicorn = _sovereign_import("uvicorn")
+            ImportShield.activate()
+            VeloPaths.sanitize_sys_path(__file__)
+            
             config_kwargs = {
                 "app": args.app,
                 "loop": "auto",

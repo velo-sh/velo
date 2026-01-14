@@ -253,8 +253,10 @@ async def handle_worker_status(
 async def handle_shutdown(server: "ZygoteServer", cmd: Dict) -> Dict:
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
-    asyncio.get_event_loop().call_later(0.1, sys.exit, 0)
-    return {"type": "Ack"}
+    # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
+    server.worker_registry.kill_all()
+    # Use os._exit to bypass any blocking cleanup handlers
+    os._exit(0)
 
 
 @router.handler("Status")
@@ -502,18 +504,20 @@ class ZygoteServer:
 
     def _setup_signals(self) -> None:
         def handle_termination(sig, frame):
-            LogUtils.log(f"Zygote received signal {sig}. Cleaning up workers...")
+            # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
+            sys.stderr.write(f"\nZygote received signal {sig}. Cleaning up workers...\n")
+            sys.stderr.flush()
             self.worker_registry.kill_all()
-            # Restore default and re-send to self to exit
-            signal.signal(sig, signal.SIG_DFL)
-            os.kill(os.getpid(), sig)
+            # Use os._exit to ensure immediate death and no orphans
+            os._exit(0)
 
+        # Use standard signal.signal for reliable termination even if loop is hung
         signal.signal(signal.SIGTERM, handle_termination)
         signal.signal(signal.SIGINT, handle_termination)
 
         # Standard SIGCHLD behavior for async reaping
         signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-        asyncio.create_task(self._async_reap())
+        asyncio.get_event_loop().create_task(self._async_reap())
 
     async def _async_reap(self) -> None:
         """Async-safe zombie reaping."""

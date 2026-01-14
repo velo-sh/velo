@@ -487,7 +487,7 @@ impl ZygoteLauncher {
         #[allow(unexpected_cfgs)]
         #[cfg(not(feature = "sandbox_disabled"))]
         #[cfg(target_os = "macos")]
-        {
+        if std::env::var("VELO_TEST_MODE").unwrap_or_default() != "1" {
             let socket_dir = self
                 .socket_path
                 .parent()
@@ -769,7 +769,8 @@ impl ZygoteLauncher {
         // Wait for process to exit or kill it
         if let Some(mut child) = self.zygote_process.take() {
             // Give it a moment to shut down gracefully
-            std::thread::sleep(Duration::from_millis(100));
+            // RFC-0012 C.6: Increased from 100ms to 2000ms to allow Zygote to kill its workers
+            std::thread::sleep(Duration::from_millis(2000));
 
             // Check if it's still running
             match child.try_wait() {

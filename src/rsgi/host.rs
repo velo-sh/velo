@@ -212,13 +212,15 @@ impl Service<Request<Incoming>> for RSGIHost {
             let (parts, body) = req.into_parts();
 
             // DEF-72-C04: WebSocket Handshake Bridge - Detect and block for now (RSGI doesn't support WS yet)
-            if parts.headers.contains_key("sec-websocket-key")
+            let is_websocket = parts.headers.contains_key("sec-websocket-key")
                 || parts
                     .headers
                     .get("upgrade")
-                    .map(|v| v == "websocket")
-                    .unwrap_or(false)
-            {
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v.to_lowercase() == "websocket")
+                    .unwrap_or(false);
+
+            if is_websocket {
                 return Ok(Response::builder()
                     .status(hyper::StatusCode::NOT_IMPLEMENTED)
                     .body(
@@ -231,11 +233,21 @@ impl Service<Request<Incoming>> for RSGIHost {
 
             // 4. Send Request Headers (ReqStart)
             let method = parts.method.to_string();
+            // DEF-72-C01: Query String Preservation - Ensure full URI is extracted
             let path = parts
                 .uri
                 .path_and_query()
                 .map(|pq| pq.to_string())
                 .unwrap_or_else(|| parts.uri.path().to_string());
+
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[RSGI] Routing Request: {} {} (Query: {:?})",
+                method,
+                path,
+                parts.uri.query()
+            );
+
             let headers: Vec<(String, String)> = parts
                 .headers
                 .iter()
@@ -257,7 +269,6 @@ impl Service<Request<Incoming>> for RSGIHost {
 
             // Prepare client info for ReqStart
             let client = client_addr.map(|addr| (addr.ip().to_string(), addr.port()));
-            eprintln!("[RSGI] Sending ReqStart with client: {:?}", client);
 
             // Always assume body may be present; streaming handles empty case
             let req_start = protocol::ReqStart::new(req_id, method, path, headers, true, client);
@@ -314,8 +325,8 @@ impl Service<Request<Incoming>> for RSGIHost {
             }
 
             // 7. Receive Response Body (Streaming)
-            // DEF-72-C05: Use larger capacity channel for SSE streaming to prevent backpressure
-            let (body_tx, body_stream) = tokio::sync::mpsc::channel(32);
+            // DEF-72-C05: Use larger capacity channel for SSE streaming (increased to 1024)
+            let (body_tx, body_stream) = tokio::sync::mpsc::channel(1024);
 
             tokio::spawn(async move {
                 loop {
