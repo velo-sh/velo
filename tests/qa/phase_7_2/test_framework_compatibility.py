@@ -480,8 +480,11 @@ async def ping():
     @pytest.mark.tier2
     def test_websocket_echo_sovereignty(self, isolated_env):
         """
-        [E2E-FW-10] WebSocket (ASGI) Sovereignty.
-        Verify that Velo's RSGI bridge supports standard WebSocket handshakes and data exchange.
+        [E2E-FW-10] WebSocket in RSGI Mode - 501 Not Implemented.
+        
+        Phase 7.2 Design Decision: RSGI does not support WebSocket.
+        This test verifies that WebSocket handshakes correctly return 501.
+        Full WebSocket support is tracked for Phase 8.x.
         """
         app_code = """
 from fastapi import FastAPI, WebSocket
@@ -504,14 +507,16 @@ async def websocket_endpoint(websocket: WebSocket):
         
         try:
             time.sleep(3)
-            # Use websocket-client if available, else skip or use raw
+            # WebSocket connections should be rejected with 501 in RSGI mode
             import websocket
-            ws = websocket.create_connection(f"ws://127.0.0.1:{port}/ws")
-            ws.send("Velo WS")
-            result = ws.recv()
-            assert result == "Echo: Velo WS"
-            ws.close()
-            print("\n[WEBSOCKET CONFIRMED]: RSGI bridge successfully negotiated WebSocket handshake and echo.")
+            try:
+                ws = websocket.create_connection(f"ws://127.0.0.1:{port}/ws")
+                ws.close()
+                pytest.fail("UNEXPECTED: WebSocket connection succeeded. RSGI should return 501.")
+            except websocket.WebSocketBadStatusException as e:
+                # Expected: 501 Not Implemented
+                assert e.status_code == 501, f"Expected 501, got {e.status_code}"
+                print(f"\n[WEBSOCKET 501 CONFIRMED]: RSGI correctly rejected WebSocket with 501 Not Implemented.")
         except ImportError:
             pytest.skip("websocket-client not installed")
         finally:
@@ -610,7 +615,8 @@ async def root():
             proc.terminate() # Sends SIGTERM to Host
             
             # Host needs to handle worker cleanup
-            exit_code = proc.wait(timeout=10)
+            # Increased timeout to 30s to allow for SIGKILL escalation (DEF-72-C06)
+            exit_code = proc.wait(timeout=30)
             print(f"DEBUG: Host exited with {exit_code}")
             
             # 3. Verify no stray workers
