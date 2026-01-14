@@ -226,4 +226,19 @@ In CI, each test job should:
 
 ---
 
+## 6. Forensic Invariant Mapping (SPEC alignment)
+
+To ensure **TITANIUM Grade** stability, all tests MUST map to one or more architectural invariants defined in the SPEC series.
+
+| Invariant ID | Domain | Target Verification | Test File |
+|:---|:---|:---|:---|
+| **INV-SSOT-001** | Configuration | Context sync (Rust/Python) | `tests/qa/static_audit.py` |
+| **INV-POLY-001** | Observability | Supervisor-managed Pipes | `tests/qa/test_native_sovereignty.py` |
+| **INV-POLY-004** | Security | Log Anti-Spoofing | `tests/qa/test_log_integrity.py` |
+| **INV-PERF-001** | Performance | Zero-Copy Body (memfd) | `tests/qa/test_rsgi_protocol.py` |
+| **INV-PERF-002** | Performance | Cold-start < 50ms | `tests/qa/perf_bench.py` |
+
+> [!NOTE]
+> When a test fails, the output MUST report the specific Invariant ID to facilitate rapid "Forensic Prosecution" as per [SOP-002](./architecture/SOP-002-mission-protocol.md).
+
 **Document End**
