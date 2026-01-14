@@ -749,14 +749,13 @@ async def app(scope, proto):
     @pytest.mark.tier2
     def test_asgi_signature_regression_indictment_03(self, isolated_env):
         """
-        [INDICTMENT-03] ASGI Protocol Regression.
-        Verify that native workers currently FAIL to support the standard 
-        ASGI signature (scope, receive, send).
+        [INDICTMENT-03] ASGI Protocol Support Verification.
+        Verify that native workers NOW support the standard 
+        ASGI signature (scope, receive, send) via the compatibility bridge.
         """
         isolated_env.create_app("asgi_app.py", """
 async def app(scope, receive, send):
     # Standard ASGI signature (3 arguments)
-    # Native worker currently calls app(scope, proto) -> 2 arguments
     await send({
         'type': 'http.response.start',
         'status': 200,
@@ -779,15 +778,10 @@ async def app(scope, receive, send):
             import requests
             time.sleep(5)
             
-            # This is EXPECTED to fail with a Gateway error or Connection reset due to TypeError in Python
-            try:
-                resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
-                # If it succeeds, the bug is fixed!
-                if resp.status_code == 200:
-                    pytest.fail("INDICTMENT-03 FAILED: ASGI signature was unexpectedly supported!")
-                print(f"ASGI Signature Failure (Status: {resp.status_code})")
-            except Exception as e:
-                print(f"VERIFIED: ASGI signature call failed as expected: {e}")
+            resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+            assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
+            assert resp.content == b'ASGI SUCCESS', f"Expected 'ASGI SUCCESS', got {resp.content!r}"
+            print("VERIFIED: ASGI signature now supported via compatibility bridge!")
                 
         finally:
             try:
@@ -795,3 +789,4 @@ async def app(scope, receive, send):
             except:
                 pass
             proc.wait()
+

@@ -154,13 +154,61 @@ fn run_worker_with_python(py: pyo3::Python<'_>, config: WorkerConfig) -> Result<
         pyo3::ffi::c_str!(
             r#"
 import asyncio
+import inspect
+
 def make_hooks(loop, app):
-    import sys
+    # Industrial-Grade Bridge: Detect ASGI vs RSGI signature (RFC-0019)
+    try:
+        # Standard ASGI is (scope, receive, send) -> 3 args
+        # Native RSGI is (scope, proto) -> 2 args
+        is_asgi = len(inspect.signature(app).parameters) >= 3
+    except:
+        # Fallback to RSGI if signature inspection fails
+        is_asgi = False
+
     def _sched(watcher):
-        def _start():
-            task = loop.create_task(app(watcher.scope, watcher.proto))
-            watcher.taskref(task)
-        loop.call_soon_threadsafe(_start)
+        if not is_asgi:
+            # Native RSGI Path
+            def _start():
+                task = loop.create_task(app(watcher.scope, watcher.proto))
+                watcher.taskref(task)
+            loop.call_soon_threadsafe(_start)
+        else:
+            # ASGI Compatibility Bridge
+            async def asgi_bridge(scope, proto):
+                ctx = {"status": 200, "headers": []}
+                
+                async def receive():
+                    return await proto.receive()
+                
+                async def send(msg):
+                    m_type = msg.get('type')
+                    if m_type == 'http.response.start':
+                        ctx["status"] = msg.get('status', 200)
+                        ctx["headers"] = msg.get('headers', [])
+                    elif m_type == 'http.response.body':
+                        # TODO: Support streaming for body (more than one message)
+                        body = msg.get('body', b'')
+                        proto.response_bytes(ctx["status"], ctx["headers"], body)
+                    elif m_type == 'websocket.accept':
+                        await proto.accept()
+                    elif m_type == 'websocket.send':
+                        if 'text' in msg:
+                            await proto.send_str(msg['text'])
+                        else:
+                            await proto.send_bytes(msg['bytes'])
+                    elif m_type == 'websocket.close':
+                        await proto.close()
+
+                try:
+                    await app(scope, receive, send)
+                except Exception as e:
+                    print(f"ASGI Bridge Runtime Error: {e}")
+
+            def _start():
+                task = loop.create_task(asgi_bridge(watcher.scope, watcher.proto))
+                watcher.taskref(task)
+            loop.call_soon_threadsafe(_start)
         
     def _nop(*args, **kwargs):
         pass
