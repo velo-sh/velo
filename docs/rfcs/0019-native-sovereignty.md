@@ -1,6 +1,6 @@
 # RFC-0019: Native Sovereignty (Granian Native Runtime)
 
-**Status**: DRAFT → APPROVED (Current Evolution)
+**Status**: DRAFT → APPROVED (Phase 7.2)
 **Author**: Architect
 **Date**: 2026-01-09 (Updated: 2026-01-14)
 
@@ -16,7 +16,7 @@
 >
 > This RFC has been updated to adopt the **Granian Native Runtime** architecture:
 > - **Before (Phase 7.x)**: UDS + MessagePack IPC (~50-100μs/request)
-> - **After (Current)**: PyO3 Direct Call (~1-5μs/request)
+> - **After (Phase 7.2)**: PyO3 Direct Call (~1-5μs/request)
 >
 > See [Section 3.5](#35-phase-9x-granian-native-architecture-current) for the new unified architecture.
 
@@ -26,7 +26,7 @@
 | Phase | Architecture | Latency |
 |:---|:---|:---|
 | 7.x (Legacy) | UDS + MessagePack | ~50-100μs |
-| **9.x (Current)** | **PyO3 Direct Call** | **~1-5μs** |
+| **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** |
 
 ## 2. Motivation
 Current limitations of the Uvicorn-wrapper model:
@@ -150,20 +150,20 @@ The protocol defines the binary exchange between the Rust Host and Python Worker
 | `KEEPALIVE` | 0x09 | Both | Timestamp |
 
 > [!WARNING]
-> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Current by direct PyO3 calls.
+> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Phase 7.2 by direct PyO3 calls.
 > See Section 3.5 for the current architecture.
 
-### 3.5 Current: Granian Native Architecture (Current)
+### 3.5 Current: Granian Native Architecture (Phase 7.2)
 
 > [!IMPORTANT]
-> This section describes the **current recommended architecture** as of Current.
+> This section describes the **current recommended architecture** as of Phase 7.2.
 
 #### 3.5.1 Architecture Evolution
 
 | Phase | IPC Mechanism | Latency | Status |
 |:---|:---|:---|:---|
 | 7.x | UDS + MessagePack | ~50-100μs | **Legacy** |
-| **9.x** | **PyO3 Direct Call** | **~1-5μs** | **Current** |
+| **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** | **Current** |
 
 #### 3.5.2 Key Benefits
 
@@ -476,7 +476,7 @@ Python Worker:
 | Protocol | Status | Notes |
 |:---|:---|:---|
 | **HTTP/2** | 🟢 STABLE | Granian full support |
-| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Current |
+| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 8.x |
 | **WebTransport** | 🔮 RESEARCH | Future real-time applications |
 
 ### 8.14 Memory Management Strategy (Stability-First)
@@ -554,7 +554,7 @@ These techniques are safe within Rust's ownership model:
 | **PyBytes views** | Boundary | 7.2 | ⭐⭐⭐ | Medium |
 | **SPSC Ring Buffer** | Rust | 8.x | ⭐⭐ | Low |
 | **Memory Arena** | Rust | 8.x | ⭐⭐ | Low |
-| **Zero-copy mmap** | Boundary | 9.x | ⭐ | High |
+| **Zero-copy mmap** | Boundary | Phase 8.x | ⭐ | High |
 
 #### 8.14.5 Verification Strategy
 
@@ -601,7 +601,7 @@ Instead of Just-In-Time (JIT) compilation which competes for resources during re
 ## 9. Grand Council Review Summary
 
 **Initial Review**: 2026-01-09 (Phase 7.x UDS Architecture)
-**Re-Evaluation**: 2026-01-14 (Current Granian Native Architecture)
+**Re-Evaluation**: 2026-01-14 (Phase 7.2 Granian Native Architecture)
 **Verdict**: ✅ **APPROVED**
 
 | Persona | Vote | Rationale |
