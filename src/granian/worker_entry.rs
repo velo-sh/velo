@@ -240,6 +240,16 @@ def make_hooks(loop, app):
                 else:
                     scope['client'] = ('127.0.0.1', 0)
                 
+                # Ensure server is a proper tuple (host, port) for Starlette URL construction
+                server = scope.get('server')
+                if server is None:
+                    scope['server'] = ('127.0.0.1', 8000)
+                elif isinstance(server, (list, tuple)) and len(server) >= 2:
+                    # Starlette URL expects exactly 2-tuple: (host, port)
+                    scope['server'] = (str(server[0]), int(server[1]) if server[1] else 0)
+                else:
+                    scope['server'] = ('127.0.0.1', 8000)
+                
                 ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": [], "is_streaming": False}
                 
                 async def receive():
