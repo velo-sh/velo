@@ -47,7 +47,38 @@ Tests are mapped to the Compilation Tiers defined in [SPEC-0007](./SPEC-0007-PER
 - Developers should run `pytest -m "tier0 or tier1"` before pushing.
 - Heavy tests (`tier3`, `chaos`) should be run in a dedicated long-running local session or CI stage.
 
-## 5. Industrial Invariants
-1. **INV-TEST-001**: Any test exceeding 60s without a `@pytest.mark.tier2` or higher marker is a violation of the stability policy.
-2. **INV-TEST-002**: All `chaos` and `flood` tests MUST implement a `finally` block or use context managers to ensure system state restoration.
-3. **INV-TEST-003**: Integration tests MUST use isolated project environments to prevent `.venv` contamination.
+## 6. Implementation Guide
+
+### 6.1 GitHub Actions (CI) Workflow Example
+Separate your jobs by tier to optimize runner allocation:
+
+```yaml
+jobs:
+  tier-1-fast:
+    name: "Tier 1: PR Fast Pass"
+    if: github.event_name == 'pull_request'
+    run: uv run pytest -m "tier0 or tier1"
+
+  tier-2-main:
+    name: "Tier 2: Main Integration"
+    if: github.ref == 'refs/heads/main'
+    run: uv run pytest -m "tier2"
+
+  tier-4-nightly:
+    name: "Tier 4: Chaos & Flood"
+    if: github.event_name == 'schedule'
+    run: uv run pytest -m "flood or chaos" --timeout=3600
+```
+
+### 6.2 Local Execution (Developer Dashboard)
+It is recommended to use specific commands or a `Makefile` to trigger tiers:
+
+| Goal | Command |
+|:---|:---|
+| **Quick Check (Safe)** | `pytest -m "tier1"` |
+| **Pre-commit (Sanity)** | `pytest -m "tier0"` |
+| **Heavy Debug (Careful)**| `pytest -m "tier3"` |
+| **Burn-in (Destructive)**| `pytest -m "flood or chaos"` |
+
+> [!CAUTION]
+> Running Tier 4 tests locally may impact system stability and consumes significant CPU/IO. Close all IDEs and browser windows before starting.
