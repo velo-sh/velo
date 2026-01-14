@@ -31,6 +31,16 @@ Velo eliminates Python's "Import Tax" through pre-warming.
 ## 4. Mechanical Sympathy (Industrial Stack)
 Velo utilizes a titanium-grade tech stack to minimize runtime jitter.
 
+### 4.1 Triple-Tier Compilation Strategy
+To balance development velocity with production performance, Velo enforces three compilation tiers:
+
+| Tier | Command | Optimization | Goal |
+|:---|:---|:---|:---|
+| **Dev** | `cargo build` | `opt-level = 0` | **Velocity**: Max compilation speed, incremental linking. |
+| **Release** | `cargo build --release` | `opt-level = 2` | **Regression**: Balanced performance for CI & QA. |
+| **Production** | `cargo build --profile production` | `opt-level = 3` | **Titanium**: Max speed, LTO-Fat, Strip, Panic-Abort. |
+
+### 4.2 Core Components
 | Component | Technology | Performance Value |
 |:---|:---|:---|
 | **Allocator** | `jemalloc` | Low fragmentation, high-concurrency heap |
