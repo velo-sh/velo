@@ -15,6 +15,7 @@
  > - ❌ **NO UNAUTHORIZED ROLE SWITCH**: The agent is strictly forbidden from switching to another role without explicit, human-approved modification of this section in `AGENTS.md`.
  > - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
  > - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
+ > - 📌 **MANDATORY TASK ANCHOR**: Every agent MUST copy this **ID-LOCK-GLOBAL** block into the top of their active `task.md` (or equivalent task tracker) immediately upon mission start. This ensures constant visibility of role boundaries.
  >
  > **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
 
