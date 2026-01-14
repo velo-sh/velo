@@ -212,7 +212,20 @@ def make_hooks(loop, app):
                 # Ensure headers is a list of 2-tuples (bytes, bytes) for ASGI
                 raw_headers = scope.get('headers', [])
                 normalized_headers = []
-                if isinstance(raw_headers, (list, tuple)):
+                
+                # RSGIHeaders is a special object - use .items() to iterate
+                if hasattr(raw_headers, 'items'):
+                    # RSGIHeaders object from Granian - has .items() method
+                    try:
+                        for k, v in raw_headers.items():
+                            if isinstance(k, str):
+                                k = k.encode('latin-1')
+                            if isinstance(v, str):
+                                v = v.encode('latin-1')
+                            normalized_headers.append((k, v))
+                    except:
+                        pass
+                elif isinstance(raw_headers, (list, tuple)):
                     for h in raw_headers:
                         try:
                             if isinstance(h, (list, tuple)):
