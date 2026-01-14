@@ -63,19 +63,20 @@ class WorkerRegistry:
     def get_stats(self) -> Dict:
         return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
-    @staticmethod
-    def start_guardian(parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
+    def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
 
         def guardian():
             while True:
-                time.sleep(10)
+                time.sleep(1)
                 # 1. Check parent
                 if monitor_parent:
                     try:
                         os.kill(parent_pid, 0)
                     except ProcessLookupError:
-                        LogUtils.log("Parent process died. Zygote exiting.")
+                        LogUtils.log("Parent process died. Zygote cleaning up workers and exiting.")
+                        # RFC-0012 C.6: Kill all workers before Zygote exits
+                        self.kill_all()
                         os._exit(0)
 
                 # Check for kill signal file or other termination conditions if needed
@@ -85,12 +86,23 @@ class WorkerRegistry:
 
     def kill_all(self) -> None:
         """Emergency cleanup of all workers."""
-        for pid in list(self.workers.keys()):
+        pids = list(self.workers.keys())
+        sys.stderr.write(f"\n[ZYGOTE] Eradicating {len(pids)} workers: {pids}\n")
+        sys.stderr.flush()
+        # RFC-0012 C.6: Robust Eradication - Kill all registered workers
+        for pid in pids:
             try:
+                sys.stderr.write(f"[ZYGOTE] SIGKILL -> PID {pid}\n")
+                sys.stderr.flush()
+                # Use SIGKILL immediately for no-mercy cleanup
                 os.kill(pid, signal.SIGKILL)
+                # Small yield to kernel to allow reaping
+                time.sleep(0.01)
             except:
                 pass
         self.workers.clear()
+        sys.stderr.write("[ZYGOTE] Worker eradication complete.\n")
+        sys.stderr.flush()
 
     def reap_stale(self) -> None:
         """Cleanup logic for timed-out or missing workers."""
@@ -181,11 +193,23 @@ def hook_computing(**kwargs: Any) -> None:
     if "torch" in sys.modules:
         try:
             import torch
-
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except:
             pass
+
+    # RFC-0011 HPC-001: Restore threading environment post-fork
+    # Defaulting to 0 (which usually triggers logical CPU count in BLAS)
+    # or explicitly reading cpu_count.
+    import multiprocessing
+    try:
+        cpus = str(multiprocessing.cpu_count())
+        for var in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+            if var in os.environ:
+                # Restore to CPU count for workers to ensure performance
+                os.environ[var] = cpus
+    except Exception as e:
+        LogUtils.log(f"HPC Restoration Warning: {e}")
 
 
 def hook_telemetry(**kwargs: Any) -> None:

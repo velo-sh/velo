@@ -7,6 +7,7 @@ import socket
 import struct
 import msgpack
 from pathlib import Path
+import sys
 
 
 def test_H12_signal_hygiene_direct_fork(velo_serve_fixture):
@@ -70,7 +71,20 @@ if __name__ == \"__main__\":
     probe_path.write_text(probe_script)
 
     import asyncio
-    from tests.qa.zygote_client import ZygoteClient
+    _repo_root = os.path.abspath(str(Path(__file__).parents[3]))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+    
+    print(f"DEBUG: sys.path at import time: {sys.path}")
+    print(f"DEBUG: CWD: {os.getcwd()}")
+    try:
+        from tests.qa.zygote_client import ZygoteClient
+    except ImportError as e:
+        print(f"DEBUG: FAILED TO IMPORT tests.qa.zygote_client: {e}")
+        # Try finding it on disk
+        target = os.path.join(_repo_root, "tests/qa/zygote_client.py")
+        print(f"DEBUG: Exists? {target} -> {os.path.exists(target)}")
+        raise
     from velo_zygote.constants import PROTOCOL_VERSION
 
     async def run_hygiene_test():
