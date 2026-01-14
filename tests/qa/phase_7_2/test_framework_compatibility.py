@@ -48,7 +48,12 @@ async def check_sovereignty(request: Request):
         port = isolated_env.next_port()
         
         root_dir = str(Path(__file__).parents[3])
-        env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
+        # Include system site-packages for framework imports (FastAPI, Starlette, etc.)
+        import site
+        site_packages = site.getsitepackages()
+        site_paths = ":".join(site_packages)
+        env = {"PYTHONPATH": f"{root_dir}:{site_paths}:{os.environ.get('PYTHONPATH', '')}"}
+
         
         # Start Velo in RSGI mode
         # Observation Point: We expect ZERO 'uvicorn' imports during the entire lifecycle.
