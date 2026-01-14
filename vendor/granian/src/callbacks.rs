@@ -37,7 +37,12 @@ impl CallbackScheduler {
         let sched = self.schedule_fn.get().unwrap().as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
+            let res = pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
+            if res.is_null() {
+                pyo3::ffi::PyErr_Print();
+            } else {
+                pyo3::ffi::Py_DECREF(res);
+            }
         }
 
         watcher.drop_ref(py);

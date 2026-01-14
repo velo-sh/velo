@@ -834,6 +834,7 @@ macro_rules! acceptor_impl {
                         } => {
                             match event {
                                 Ok((stream, addr_remote)) => {
+                                    eprintln!("[GRANIAN] Accepted connection from {:?}", addr_remote);
                                     let disconnect_guard = Arc::new(tokio::sync::Notify::new());
                                     let handle = self.handle(disconnect_guard.clone());
                                     let svc = WorkerSvc {

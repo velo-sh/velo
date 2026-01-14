@@ -249,6 +249,7 @@ impl Worker {
         app: &str,
         worker_id: i32,
         socket_fd: std::os::unix::io::RawFd,
+        project_dir: &Path,
         _config: &crate::config::VeloConfig,
     ) -> Result<Self> {
         use crate::granian::config::WorkerConfig;
@@ -269,6 +270,7 @@ impl Worker {
 
                 // 3. Prepare worker config
                 let g_config = WorkerConfig::new(worker_id, socket_fd, app)
+                    .with_project_dir(project_dir.to_path_buf())
                     .with_websockets(true)
                     .with_http_mode("auto");
 
@@ -346,7 +348,7 @@ impl Worker {
             #[cfg(unix)]
             {
                 if let Some(fd) = socket_fd {
-                    return Self::spawn_native(app, worker_id as i32, fd, config);
+                    return Self::spawn_native(app, worker_id as i32, fd, project_dir, config);
                 }
             }
             Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
