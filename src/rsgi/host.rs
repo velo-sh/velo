@@ -70,11 +70,11 @@ impl RSGIHost {
             if peer_pid.is_none() || peer_pid == Some(0) {
                 let fd = stream.as_raw_fd();
 
-                // Explicitly try LOCAL_PEERPID (0x001) if peer_cred didn't provide it
+                // Explicitly try LOCAL_PEERPID (0x002) if peer_cred didn't provide it
                 let mut pid: libc::pid_t = 0;
                 let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
                 unsafe {
-                    if libc::getsockopt(fd, 0, 0x001, &mut pid as *mut _ as *mut _, &mut len) == 0 {
+                    if libc::getsockopt(fd, 0, 0x002, &mut pid as *mut _ as *mut _, &mut len) == 0 {
                         peer_pid = Some(pid);
                     }
                 }
