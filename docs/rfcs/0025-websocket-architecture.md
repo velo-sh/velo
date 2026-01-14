@@ -3,7 +3,7 @@
 **Status**: APPROVED
 **Author**: Architect
 **Date**: 2026-01-14
-**Phase**: 9.x (Part of Granian Native Runtime)
+**Phase**: Current (Part of Granian Native Runtime)
 
 ## Related Documents
 
