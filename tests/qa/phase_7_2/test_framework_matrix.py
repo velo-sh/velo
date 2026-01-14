@@ -627,6 +627,7 @@ class TestFlaskWSGI:
         with RealFrameworkProject("flask", "Flask") as p:
             p.set_pyproject(deps=[
                 "flask>=3.0.0",
+                "a2wsgi>=1.10.4",
             ])
             p.set_app("main.py", '''
 from flask import Flask, jsonify, request

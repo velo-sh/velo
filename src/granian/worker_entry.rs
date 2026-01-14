@@ -157,14 +157,40 @@ import asyncio
 import inspect
 
 def make_hooks(loop, app):
-    # Industrial-Grade Bridge: Detect ASGI vs RSGI signature (RFC-0019)
+    # Industrial-Grade Bridge: Detect ASGI vs RSGI vs WSGI signature (RFC-0019)
+    # - ASGI: (scope, receive, send) -> 3 args, async
+    # - RSGI: (scope, proto) -> 2 args, async  
+    # - WSGI: (environ, start_response) -> 2 args, sync
     try:
-        # Standard ASGI is (scope, receive, send) -> 3 args
-        # Native RSGI is (scope, proto) -> 2 args
-        is_asgi = len(inspect.signature(app).parameters) >= 3
-    except:
-        # Fallback to RSGI if signature inspection fails
-        is_asgi = False
+        sig = inspect.signature(app)
+        param_count = len(sig.parameters)
+        
+        # Check if app is async (ASGI/RSGI) or sync (WSGI)
+        is_async = asyncio.iscoroutinefunction(app) or (
+            hasattr(app, '__call__') and asyncio.iscoroutinefunction(app.__call__)
+        )
+        
+        if param_count == 2 and not is_async:
+            # WSGI app detected! Wrap with a2wsgi adapter
+            try:
+                from a2wsgi import WSGIMiddleware
+                app = WSGIMiddleware(app)
+                is_asgi = True
+                print("[Velo] WSGI app detected, wrapped with a2wsgi.WSGIMiddleware")
+            except ImportError:
+                raise RuntimeError(
+                    "WSGI app detected but a2wsgi not installed. "
+                    "Run: pip install a2wsgi"
+                )
+        elif param_count >= 3:
+            is_asgi = True
+        else:
+            # Native RSGI (2 args, async)
+            is_asgi = False
+    except Exception as e:
+        # Fallback to ASGI if signature inspection fails
+        print(f"[Velo] Signature inspection failed: {e}, assuming ASGI")
+        is_asgi = True
 
     def _sched(watcher):
         if not is_asgi:
@@ -176,170 +202,80 @@ def make_hooks(loop, app):
         else:
             # ASGI Compatibility Bridge
             async def asgi_bridge(rsgi_scope, proto):
-                # INDICTMENT-05/07 Fix: Build complete ASGI-compliant scope
-                # ASGI HTTP scope requires: type, asgi, http_version, method, scheme,
-                # path, raw_path, query_string, root_path, headers, server, client, state
+                # INDICTMENT-05/07/WS Fix: Unified ASGI Bridge
+                # Detect protocol type from rsgi_scope.proto: "ws" for WebSocket
+                is_ws = rsgi_scope.proto == "ws"
                 
-                scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}}
+                scope = {
+                    "type": "websocket" if is_ws else "http",
+                    "asgi": {"version": "3.0", "spec_version": "2.4" if is_ws else "2.3"},
+                    "http_version": rsgi_scope.http_version,
+                    "method": getattr(rsgi_scope, "method", "GET"),
+                    "scheme": rsgi_scope.scheme,
+                    "path": rsgi_scope.path,
+                    "raw_path": rsgi_scope.path.encode('utf-8'),
+                    "query_string": rsgi_scope.query_string.encode('utf-8') if rsgi_scope.query_string else b"",
+                    "root_path": "",
+                    "headers": rsgi_scope.headers.items(),
+                    "server": rsgi_scope.server if isinstance(rsgi_scope.server, (list, tuple)) else (rsgi_scope.server, 0),
+                    "client": rsgi_scope.client if isinstance(rsgi_scope.client, (list, tuple)) else (rsgi_scope.client, 0),
+                }
                 
-                # Copy all available attributes from RSGIHTTPScope
-                for key in dir(rsgi_scope):
-                    if not key.startswith('_'):
-                        try:
-                            val = getattr(rsgi_scope, key)
-                            # Skip methods/callables
-                            if not callable(val):
-                                scope[key] = val
-                        except:
-                            pass
+                if is_ws:
+                    scope["subprotocols"] = []
                 
-                # Ensure all critical ASGI HTTP scope keys exist with proper defaults
-                scope.setdefault('type', 'http')
-                scope.setdefault('http_version', '1.1')
-                scope.setdefault('method', 'GET')
-                scope.setdefault('scheme', 'http')
-                scope.setdefault('path', '/')
-                scope.setdefault('raw_path', scope.get('path', '/').encode('utf-8'))
-                scope.setdefault('query_string', b'')
-                scope.setdefault('root_path', '')
-                scope.setdefault('headers', [])
-                scope.setdefault('server', ('127.0.0.1', 8000))
-                scope.setdefault('client', ('127.0.0.1', 0))
-                scope.setdefault('state', {})
-                scope.setdefault('app', None)
-                scope.setdefault('extensions', {})
-                
-                # Ensure headers is a list of 2-tuples (bytes, bytes) for ASGI
-                raw_headers = scope.get('headers', [])
-                normalized_headers = []
-                
-                # RSGIHeaders is a special object - use .items() to iterate
-                if hasattr(raw_headers, 'items'):
-                    # RSGIHeaders object from Granian - has .items() method
-                    try:
-                        for k, v in raw_headers.items():
-                            if isinstance(k, str):
-                                k = k.encode('latin-1')
-                            if isinstance(v, str):
-                                v = v.encode('latin-1')
-                            normalized_headers.append((k, v))
-                    except:
-                        pass
-                elif isinstance(raw_headers, (list, tuple)):
-                    for h in raw_headers:
-                        try:
-                            if isinstance(h, (list, tuple)):
-                                if len(h) >= 2:
-                                    k, v = h[0], h[1]  # Take only first two
-                                    if isinstance(k, str):
-                                        k = k.encode('latin-1')
-                                    if isinstance(v, str):
-                                        v = v.encode('latin-1')
-                                    normalized_headers.append((k, v))
-                        except:
-                            pass  # Skip malformed headers
-                scope['headers'] = normalized_headers
-                
-                # Ensure query_string is bytes
-                if isinstance(scope.get('query_string'), str):
-                    scope['query_string'] = scope['query_string'].encode('utf-8')
-                
-                # Ensure client is a proper tuple (host, port) for FastAPI Request.client
-                client = scope.get('client')
-                if client is None:
-                    scope['client'] = ('127.0.0.1', 0)
-                elif isinstance(client, (list, tuple)) and len(client) >= 2:
-                    scope['client'] = (str(client[0]), int(client[1]) if client[1] else 0)
-                else:
-                    scope['client'] = ('127.0.0.1', 0)
-                
-                # Ensure server is a proper tuple (host, port) for Starlette URL construction
-                server = scope.get('server')
-                if server is None:
-                    scope['server'] = ('127.0.0.1', 8000)
-                elif isinstance(server, (list, tuple)) and len(server) >= 2:
-                    # Starlette URL expects exactly 2-tuple: (host, port)
-                    scope['server'] = (str(server[0]), int(server[1]) if server[1] else 0)
-                else:
-                    scope['server'] = ('127.0.0.1', 8000)
-                
-                # Detect WebSocket upgrade request from headers
-                is_websocket = False
-                for h in scope.get('headers', []):
-                    if isinstance(h, (list, tuple)) and len(h) >= 2:
-                        name = h[0] if isinstance(h[0], str) else h[0].decode('latin-1')
-                        val = h[1] if isinstance(h[1], str) else h[1].decode('latin-1')
-                        if name.lower() == 'upgrade' and val.lower() == 'websocket':
-                            is_websocket = True
-                            break
-                
-                if is_websocket:
-                    # Convert to WebSocket scope for ASGI
-                    scope['type'] = 'websocket'
-                    scope.setdefault('subprotocols', [])
-                
-                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": [], "is_streaming": False, "ws_connected": False}
+                ctx = {
+                    "status": 200, 
+                    "headers": [], 
+                    "body_received": False, 
+                    "response_sent": False, 
+                    "body_chunks": [], 
+                    "ws_accepted": False,
+                    "ws_transport": None
+                }
                 
                 async def receive():
-                    # Handle WebSocket scope type
-                    if scope.get('type') == 'websocket':
-                        if not ctx.get("ws_connect_sent"):
-                            # First receive() for WebSocket returns connect message
-                            ctx["ws_connect_sent"] = True
+                    if is_ws:
+                        if not ctx["ws_accepted"]:
+                            # ASGI WebSocket starts with a connect message
+                            ctx["ws_accepted"] = "pending"
                             return {"type": "websocket.connect"}
                         
-                        # Wait for WebSocket messages from proto
-                        try:
-                            msg = await proto.receive()
-                            if msg is None:
-                                return {"type": "websocket.disconnect", "code": 1000}
+                        # Wait for app to call accept() which sets the transport
+                        while ctx["ws_accepted"] == "pending":
+                            await asyncio.sleep(0.005)
                             
-                            # If already ASGI-compliant, return as-is
-                            if isinstance(msg, dict) and 'type' in msg:
-                                return msg
-                            
-                            # Wrap raw bytes/str in ASGI format
-                            if isinstance(msg, bytes):
-                                return {"type": "websocket.receive", "bytes": msg}
-                            elif isinstance(msg, str):
-                                return {"type": "websocket.receive", "text": msg}
-                            else:
-                                return {"type": "websocket.disconnect", "code": 1000}
-                        except:
+                        if not ctx["ws_transport"]:
                             return {"type": "websocket.disconnect", "code": 1006}
-                    
-                    # HTTP handling below
-                    # INDICTMENT-06/07 Fix: Ensure ASGI-compliant receive() messages
-                    # FastAPI/Starlette expect: {'type': 'http.request', 'body': b'...', 'more_body': False}
-                    # Django ASGIHandler calls receive() twice - second call should block until response sent
-                    #
-                    # CRITICAL: RSGIHTTPProtocol does NOT have a receive() method!
-                    # The body is obtained by calling proto() which invokes __call__
-                    # and returns the full body as bytes via body.collect().await
+                            
+                        try:
+                            # RSGIWebsocketTransport.receive() returns msg (Text or Bytes)
+                            # See vendor/granian/src/rsgi/types.rs: kind 1=Bytes, 2=Text
+                            msg = await ctx["ws_transport"].receive()
+                            # print(f"[DEBUG] WS received kind={msg.kind}")
+                            if msg.kind == 2:
+                                return {"type": "websocket.receive", "text": msg.data}
+                            if msg.kind == 1:
+                                return {"type": "websocket.receive", "bytes": msg.data}
+                            if msg.kind == 0:
+                                return {"type": "websocket.disconnect", "code": 1000}
+                            return {"type": "websocket.receive", "bytes": b""}
+                        except Exception as e:
+                            # print(f"[DEBUG] WS receive error: {e}")
+                            return {"type": "websocket.disconnect", "code": 1006}
+
+                    # HTTP body receive logic
                     if ctx.get("body_received"):
-                        # After body is fully received, block until response is sent
-                        # Django expects this to block (like waiting for client disconnect)
-                        import asyncio
                         while not ctx.get("response_sent"):
                             await asyncio.sleep(0.01)
                         return {"type": "http.disconnect"}
                     
                     try:
-                        # RSGIHTTPProtocol provides body via __call__ (proto())
-                        # This returns the full body bytes collected from the stream
+                        # RSGIHTTPProtocol: await proto() gets full body bytes
                         body = await proto()
                         ctx["body_received"] = True
-                        
-                        if body is None:
-                            body = b""
-                        elif not isinstance(body, bytes):
-                            # Handle edge cases where body might be something else
-                            body = bytes(body) if hasattr(body, '__iter__') else b""
-                        
-                        return {"type": "http.request", "body": body, "more_body": False}
-                    except Exception as e:
-                        # Log the error for debugging
-                        print(f"ASGI Bridge receive() error: {e}")
+                        return {"type": "http.request", "body": body or b"", "more_body": False}
+                    except Exception:
                         ctx["body_received"] = True
                         return {"type": "http.request", "body": b"", "more_body": False}
                 
@@ -348,85 +284,56 @@ def make_hooks(loop, app):
                     if m_type == 'http.response.start':
                         ctx["status"] = msg.get('status', 200)
                         ctx["headers"] = msg.get('headers', [])
-                        # Detect SSE/EventStream - these need immediate response, not buffering
-                        for h in ctx["headers"]:
-                            if isinstance(h, (list, tuple)) and len(h) >= 2:
-                                hname = h[0].lower() if isinstance(h[0], str) else h[0].decode('latin-1').lower()
-                                hval = h[1] if isinstance(h[1], str) else h[1].decode('latin-1')
-                                if hname == 'content-type' and 'text/event-stream' in hval:
-                                    ctx["is_streaming"] = True
-                                    break
                     elif m_type == 'http.response.body':
-                        # Guard: Only process HTTP response if proto supports it
-                        # WebSocket protocol doesn't have response_bytes
-                        if not hasattr(proto, 'response_bytes'):
-                            return  # Ignore HTTP responses on WebSocket protocol
+                        # Ignore HTTP responses on WebSocket protocol
+                        if not hasattr(proto, 'response_bytes'): return
                         
-                        body = msg.get('body', b'')
+                        body = msg.get('body', b"")
                         more_body = msg.get('more_body', False)
                         
-                        # SSE/EventStream: send immediately on first body (workaround for sync proto)
-                        if ctx["is_streaming"] and not ctx.get("response_sent"):
-                            # For SSE, send initial response with first body chunk
-                            converted_headers = []
-                            for h in ctx["headers"]:
-                                if isinstance(h, (list, tuple)) and len(h) == 2:
-                                    k, v = h
-                                    if isinstance(k, bytes):
-                                        k = k.decode('latin-1')
-                                    if isinstance(v, bytes):
-                                        v = v.decode('latin-1')
-                                    converted_headers.append((k, v))
+                        if not more_body and not ctx["body_chunks"]:
+                            converted_headers = [(k.decode('latin-1') if isinstance(k, bytes) else k, 
+                                                v.decode('latin-1') if isinstance(v, bytes) else v) 
+                                               for k, v in ctx["headers"]]
                             proto.response_bytes(ctx["status"], converted_headers, body)
                             ctx["response_sent"] = True
                             return
                         
-                        # Regular StreamingResponse: buffer chunks until more_body=False
                         if more_body:
                             ctx["body_chunks"].append(body)
                         else:
-                            # Final chunk - combine all buffered chunks and send
-                            all_chunks = ctx["body_chunks"] + [body]
-                            full_body = b''.join(all_chunks)
+                            full_body = b''.join(ctx["body_chunks"] + [body])
                             ctx["body_chunks"] = []
-                            
-                            # Convert ASGI bytes headers to str headers for proto
-                            converted_headers = []
-                            for h in ctx["headers"]:
-                                if isinstance(h, (list, tuple)) and len(h) == 2:
-                                    k, v = h
-                                    if isinstance(k, bytes):
-                                        k = k.decode('latin-1')
-                                    if isinstance(v, bytes):
-                                        v = v.decode('latin-1')
-                                    converted_headers.append((k, v))
+                            converted_headers = [(k.decode('latin-1') if isinstance(k, bytes) else k, 
+                                                v.decode('latin-1') if isinstance(v, bytes) else v) 
+                                               for k, v in ctx["headers"]]
                             proto.response_bytes(ctx["status"], converted_headers, full_body)
                             ctx["response_sent"] = True
                     elif m_type == 'websocket.accept':
-                        await proto.accept()
+                        # RSGIWebsocketProtocol.accept() handshakes and returns transport
+                        ctx["ws_transport"] = await proto.accept()
+                        ctx["ws_accepted"] = True
                     elif m_type == 'websocket.send':
+                        if not ctx["ws_transport"]: return
                         if 'text' in msg:
-                            await proto.send_str(msg['text'])
+                            await ctx["ws_transport"].send_str(msg['text'])
                         else:
-                            await proto.send_bytes(msg['bytes'])
+                            await ctx["ws_transport"].send_bytes(msg['bytes'])
                     elif m_type == 'websocket.close':
-                        await proto.close()
+                        proto.close(msg.get('code', 1000))
 
                 try:
                     await app(scope, receive, send)
                 except Exception as e:
-                    print(f"ASGI Bridge Runtime Error: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # Send error response if ASGI app failed before sending response
-                    # Only for HTTP - WebSocket protocol doesn't have response_bytes
-                    if not ctx.get("response_sent") and scope.get('type') == 'http':
+                    # Log to stdout for forensics
+                    # print(f"ASGI Bridge Error: {e}")
+                    if not ctx.get("response_sent") and not is_ws:
                         try:
-                            error_body = f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode('utf-8')
-                            proto.response_bytes(500, [('content-type', 'application/json')], error_body)
+                            # Send 500 fallback for HTTP
+                            proto.response_bytes(500, [('content-type', 'application/json')], 
+                                f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode())
                             ctx["response_sent"] = True
-                        except:
-                            pass  # Ignore if we can't send error response
+                        except: pass
 
             def _start():
                 task = loop.create_task(asgi_bridge(watcher.scope, watcher.proto))
