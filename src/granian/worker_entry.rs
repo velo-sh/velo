@@ -166,6 +166,10 @@ def make_hooks(loop, app):
         pass
         
     return _sched, _nop
+
+def make_config(kwargs):
+    from types import SimpleNamespace
+    return SimpleNamespace(**kwargs)
 "#
         ),
         Some(&globals),
@@ -218,6 +222,53 @@ def make_hooks(loop, app):
         None => (false, None, None, None, "1.3", None, Vec::new(), false),
     };
 
+    let make_config = globals
+        .get_item("make_config")?
+        .ok_or_else(|| GranianError::PythonInit("Failed to find make_config in globals".into()))?;
+
+    let http1_dict = pyo3::types::PyDict::new(py);
+    http1_dict.set_item(
+        "header_read_timeout",
+        config.http1_config.header_read_timeout.as_millis(),
+    )?;
+    http1_dict.set_item("keep_alive", config.http1_config.keep_alive)?;
+    http1_dict.set_item("max_buffer_size", config.http1_config.max_buffer_size)?;
+    http1_dict.set_item("pipeline_flush", config.http1_config.pipeline_flush)?;
+    let http1_opts = make_config.call1((http1_dict,))?;
+
+    let http2_dict = pyo3::types::PyDict::new(py);
+    http2_dict.set_item("adaptive_window", config.http2_config.adaptive_window)?;
+    http2_dict.set_item(
+        "initial_connection_window_size",
+        config.http2_config.initial_connection_window_size,
+    )?;
+    http2_dict.set_item(
+        "initial_stream_window_size",
+        config.http2_config.initial_stream_window_size,
+    )?;
+    http2_dict.set_item(
+        "keep_alive_interval",
+        config
+            .http2_config
+            .keep_alive_interval
+            .map(|d| d.as_millis()),
+    )?;
+    http2_dict.set_item(
+        "keep_alive_timeout",
+        config.http2_config.keep_alive_timeout.as_secs(),
+    )?;
+    http2_dict.set_item(
+        "max_concurrent_streams",
+        config.http2_config.max_concurrent_streams,
+    )?;
+    http2_dict.set_item("max_frame_size", config.http2_config.max_frame_size)?;
+    http2_dict.set_item("max_headers_size", config.http2_config.max_headers_size)?;
+    http2_dict.set_item(
+        "max_send_buffer_size",
+        config.http2_config.max_send_buffer_size,
+    )?;
+    let http2_opts = make_config.call1((http2_dict,))?;
+
     let worker = RSGIWorker::new(
         py,
         config.worker_id,
@@ -228,8 +279,8 @@ def make_hooks(loop, app):
         config.py_threads_idle_timeout,
         config.backpressure,
         &config.http_mode,
-        None, // http1_opts - use defaults
-        None, // http2_opts - use defaults
+        Some(http1_opts.unbind()),
+        Some(http2_opts.unbind()),
         config.websockets_enabled,
         None, // static_files
         ssl_enabled,
