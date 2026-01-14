@@ -1099,13 +1099,20 @@ pub fn run_server(
                             continue;
                         }
 
+                        // REG-72-R01: Record failure BEFORE attempting respawn to ensure
+                        // backoff and standardized logging ([RESPAWN]) are triggered.
+                        if !tracker.record_failure() {
+                            anyhow::bail!(
+                                "FATAL: Worker worker_id={} failed to start after {} attempts.",
+                                i,
+                                tracker.fail_fast_limit
+                            );
+                        }
+
                         logger.warn(&format!(
                             "[RESPAWN] worker_id={} attempt={} old_pid={}",
-                            i,
-                            tracker.consecutive_failures + 1,
-                            worker.pid
+                            i, tracker.consecutive_failures, worker.pid
                         ));
-                        tracker.last_failure = Some(Instant::now());
 
                         match worker.respawn(
                             &args.app,
@@ -1128,6 +1135,11 @@ pub fn run_server(
                             }
 
                             Err(e) => {
+                                logger.error(&format!(
+                                    "[RESPAWN] worker_id={} respawn_error={}",
+                                    i, e
+                                ));
+
                                 // RFC-0011 Stabilization: Zygote Recovery
                                 // If respawn failed, check if Zygote is still alive.
                                 let mut zygote_died = false;
@@ -1169,7 +1181,6 @@ pub fn run_server(
                                                         retry_worker.pid,
                                                     );
                                                     *worker = retry_worker;
-                                                    continue; // Success on retry
                                                 }
                                             }
                                             Err(restart_err) => {
@@ -1181,11 +1192,6 @@ pub fn run_server(
                                         }
                                     }
                                 }
-
-                                if !tracker.record_failure() {
-                                    anyhow::bail!("FATAL: Worker respawn failing consistently.");
-                                }
-                                logger.error(&format!("[RESPAWN] worker_id={} error={}", i, e));
                             }
                         }
                     }
@@ -1347,6 +1353,22 @@ pub fn run_server(
                                     "Shutdown signal received, waiting for graceful shutdown...",
                                 );
 
+                                // RFC-0012 C.6: Aggressive Eradication - Signal the entire process group: This ensures Zygote and all workers die even through sandbox-exec wrapper.
+                                #[cfg(unix)]
+                                {
+                                    let pid = child.id() as i32;
+                                    let target = if let Some(pgid) = child.pgid() {
+                                        -pgid
+                                    } else {
+                                        // Fallback: Use getpgid to find the process group
+                                        let pgid = unsafe { libc::getpgid(pid) };
+                                        if pgid > 0 { -pgid } else { pid }
+                                    };
+                                    unsafe {
+                                        libc::kill(target, libc::SIGTERM);
+                                    }
+                                }
+                                #[cfg(not(unix))]
                                 if let Err(e) = child.terminate() {
                                     logger.warn(&format!("Failed to send SIGTERM: {}", e));
                                 }
@@ -1358,7 +1380,22 @@ pub fn run_server(
                                         return Ok(ServerExit::Shutdown);
                                     }
                                     _ => {
-                                        logger.warn("Shutdown timeout expired, force killing...");
+                                        logger.warn("Shutdown timeout expired, force killing process group...");
+                                        #[cfg(unix)]
+                                        {
+                                            let pid = child.id() as i32;
+                                            let target = if let Some(pgid) = child.pgid() {
+                                                -pgid
+                                            } else {
+                                                // Fallback: Use getpgid to find the process group
+                                                let pgid = unsafe { libc::getpgid(pid) };
+                                                if pgid > 0 { -pgid } else { pid }
+                                            };
+                                            unsafe {
+                                                libc::kill(target, libc::SIGKILL);
+                                            }
+                                        }
+                                        #[cfg(not(unix))]
                                         let _ = child.kill();
                                         return Ok(ServerExit::Shutdown);
                                     }

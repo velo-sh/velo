@@ -318,21 +318,43 @@ impl Worker {
     /// false-positive death detection before the worker binds its socket.
     pub fn is_alive(&self) -> bool {
         // Grace period: workers get 5 seconds to initialize before liveness checks kick in
+        // RFC-0016: Prevent false-positive death detection during startup
         const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(5);
 
-        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
-            // During grace period, only check if process still exists
-            // Don't trigger respawn logic even if socket isn't ready
-            return unsafe { libc::kill(self.pid as i32, 0) == 0 };
+        // Safety: kill with signal 0 checks process existence without sending signal
+        let alive = unsafe { libc::kill(self.pid as i32, 0) == 0 };
+
+        if !alive {
+            return false;
         }
 
-        // After grace period, normal liveness check
-        // Safety: kill with signal 0 checks process existence without sending signal
-        // SECURITY: libc::kill(pid, 0) is a standard non-destructive check for process existence.
-        unsafe { libc::kill(self.pid as i32, 0) == 0 }
+        // macOS Technical Debt: Zombies respond to kill(0) with success.
+        // If the process is a zombie, it's effectively dead. We try to reap it here
+        // to confirm its status.
+        #[cfg(target_os = "macos")]
+        {
+            let mut status = 0;
+            let res = unsafe { libc::waitpid(self.pid as i32, &mut status, libc::WNOHANG) };
+            if res == self.pid as i32 {
+                // Process was a zombie and is now reaped.
+                return false;
+            }
+        }
+
+        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
+            // During grace period, we don't return false for socket-related issues,
+            // but we already handled process death above.
+            return true;
+        }
+
+        true
     }
 
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
+        eprintln!(
+            "[WORKER] Shutting down worker PID {} (UDS={:?})",
+            self.pid, self.socket_path
+        );
         if let Some(ref zygote) = self.zygote_socket {
             let cmd = ipc::ZygoteCommand::SignalWorker {
                 worker_pid: self.pid,
@@ -349,19 +371,68 @@ impl Worker {
             let response = ipc::send_command(zygote, cmd, None);
 
             match response {
-                Ok(ipc::ZygoteResponse::WorkerExited { .. }) => Ok(()),
+                Ok(ipc::ZygoteResponse::WorkerExited { .. }) => {
+                    eprintln!("[WORKER] PID {} exited gracefully via Zygote", self.pid);
+                    Ok(())
+                }
                 _ => {
+                    eprintln!(
+                        "[WORKER] PID {} failed graceful Zygote shutdown, triggering fallback",
+                        self.pid
+                    );
+                    // RFC-0012 C.6: Fallback - If Zygote is unreachable or fails to kill,
+                    // we MUST perform a direct kill from the Host to ensure eradication.
                     let kill_cmd = ipc::ZygoteCommand::SignalWorker {
                         worker_pid: self.pid,
                         signal: 9, // SIGKILL
                         request_id: Some(Uuid::now_v7().to_string()),
                     };
                     let _ = ipc::send_command(zygote, kill_cmd, None);
+
+                    // Final nuclear fallback: direct kill from Host
+                    unsafe {
+                        eprintln!(
+                            "[WORKER] PID {} NUCLEAR FALLBACK: Direct libc::kill(SIGKILL)",
+                            self.pid
+                        );
+                        let res = libc::kill(self.pid as i32, 9);
+                        if res != 0 {
+                            let err = std::io::Error::last_os_error();
+                            eprintln!(
+                                "[WORKER] CRITICAL: libc::kill({}) failed: {}",
+                                self.pid, err
+                            );
+                        } else {
+                            eprintln!(
+                                "[WORKER] libc::kill({}) returned SUCCESS, waiting for reaping...",
+                                self.pid
+                            );
+                            // Wait up to 1s for reaping
+                            let kill_start = Instant::now();
+                            while kill_start.elapsed() < Duration::from_secs(1) {
+                                let check_res = libc::kill(self.pid as i32, 0);
+                                if check_res != 0 {
+                                    let err =
+                                        std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                                    if err == libc::ESRCH {
+                                        eprintln!("[WORKER] PID {} reaped (ESRCH)!", self.pid);
+                                        break;
+                                    }
+                                    // If EPERM, process still exists!
+                                }
+                                std::thread::sleep(Duration::from_millis(100));
+                            }
+                        }
+                    }
                     Ok(())
                 }
             }
         } else {
             // Direct worker: signal directly
+            eprintln!(
+                "[WORKER] PID {} direct shutdown sequence initiated",
+                self.pid
+            );
             unsafe {
                 libc::kill(self.pid as i32, 15); // SIGTERM
             }
@@ -369,12 +440,14 @@ impl Worker {
             let start = Instant::now();
             while start.elapsed() < timeout {
                 if !self.is_alive() {
+                    eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
                     return Ok(());
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             unsafe {
-                libc::kill(self.pid as i32, 9); // SIGKILL
+                eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                libc::kill(self.pid as i32, 9);
             }
             Ok(())
         }
@@ -383,6 +456,10 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
+        // RFC-0012 C.6: RAII Cleanup - Ensure worker process is terminated when handle is dropped
+        // We use a 2s timeout for graceful shutdown before SIGKILL
+        let _ = self.shutdown(Duration::from_secs(2));
+
         if let Some(ref path) = self.script_path {
             let _ = std::fs::remove_file(path);
         }

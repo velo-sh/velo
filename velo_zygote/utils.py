@@ -119,9 +119,10 @@ class MacOSDeathSigMonitor:
                     except Exception as e:
                         pass
 
-                # Force kill self
+                # Force kill self via SIGKILL (Zero Mercy for Orphans)
                 LogUtils.log("Monitor triggering suicide (SIGKILL to self)")
-                os.kill(os.getpid(), 9)
+                import signal
+                os.kill(os.getpid(), signal.SIGKILL)
             except Exception as e:
                 LogUtils.log(f"Monitor failed: {e}")
                 import traceback
