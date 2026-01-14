@@ -15,6 +15,7 @@ hugepage_alignment = 2097152
 [lints.rust]
 unsafe_code = "allow" # Required for Unix signals and UDS integration
 unused_imports = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(PyPy)', 'cfg(Py_3_10)'] }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
