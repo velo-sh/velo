@@ -41,6 +41,8 @@ def _log_banner():
     Display a diagnostic startup banner according to the Velo Service Pattern.
     Standardized service header for transparency.
     """
+    if os.environ.get("VELO_TEST_MODE") == "1":
+        return
     try:
         from velo_zygote import constants
 
