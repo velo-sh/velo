@@ -746,4 +746,52 @@ async def app(scope, proto):
                 pass
             proc.wait()
 
-
+    @pytest.mark.tier2
+    def test_asgi_signature_regression_indictment_03(self, isolated_env):
+        """
+        [INDICTMENT-03] ASGI Protocol Regression.
+        Verify that native workers currently FAIL to support the standard 
+        ASGI signature (scope, receive, send).
+        """
+        isolated_env.create_app("asgi_app.py", """
+async def app(scope, receive, send):
+    # Standard ASGI signature (3 arguments)
+    # Native worker currently calls app(scope, proto) -> 2 arguments
+    await send({
+        'type': 'http.response.start',
+        'status': 200,
+        'headers': []
+    })
+    await send({
+        'type': 'http.response.body',
+        'body': b'ASGI SUCCESS'
+    })
+""")
+        port = isolated_env.next_port()
+        env = os.environ.copy()
+        project_root = Path(__file__).parent.parent.parent.parent
+        env["PYTHONPATH"] = str(project_root)
+        
+        # Native mode (--rsgi)
+        proc = isolated_env.spawn_velo("serve", "asgi_app:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True)
+        
+        try:
+            import requests
+            time.sleep(5)
+            
+            # This is EXPECTED to fail with a Gateway error or Connection reset due to TypeError in Python
+            try:
+                resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
+                # If it succeeds, the bug is fixed!
+                if resp.status_code == 200:
+                    pytest.fail("INDICTMENT-03 FAILED: ASGI signature was unexpectedly supported!")
+                print(f"ASGI Signature Failure (Status: {resp.status_code})")
+            except Exception as e:
+                print(f"VERIFIED: ASGI signature call failed as expected: {e}")
+                
+        finally:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except:
+                pass
+            proc.wait()
