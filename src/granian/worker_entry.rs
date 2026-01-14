@@ -176,20 +176,62 @@ def make_hooks(loop, app):
         else:
             # ASGI Compatibility Bridge
             async def asgi_bridge(rsgi_scope, proto):
-                # INDICTMENT-05 Fix: Convert frozen RSGIHTTPScope to mutable dict
-                # FastAPI/Starlette need to modify scope (e.g., scope["state"] = {})
-                scope = {}
+                # INDICTMENT-05/07 Fix: Build complete ASGI-compliant scope
+                # ASGI HTTP scope requires: type, asgi, http_version, method, scheme,
+                # path, raw_path, query_string, root_path, headers, server, client, state
+                
+                scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"}}
+                
+                # Copy all available attributes from RSGIHTTPScope
                 for key in dir(rsgi_scope):
                     if not key.startswith('_'):
                         try:
-                            scope[key] = getattr(rsgi_scope, key)
+                            val = getattr(rsgi_scope, key)
+                            # Skip methods/callables
+                            if not callable(val):
+                                scope[key] = val
                         except:
                             pass
-                # Ensure required ASGI keys exist
+                
+                # Ensure all critical ASGI HTTP scope keys exist with proper defaults
+                scope.setdefault('type', 'http')
+                scope.setdefault('http_version', '1.1')
+                scope.setdefault('method', 'GET')
+                scope.setdefault('scheme', 'http')
+                scope.setdefault('path', '/')
+                scope.setdefault('raw_path', scope.get('path', '/').encode('utf-8'))
+                scope.setdefault('query_string', b'')
+                scope.setdefault('root_path', '')
+                scope.setdefault('headers', [])
+                scope.setdefault('server', ('127.0.0.1', 8000))
+                scope.setdefault('client', ('127.0.0.1', 0))
                 scope.setdefault('state', {})
                 scope.setdefault('app', None)
+                scope.setdefault('extensions', {})
                 
-                ctx = {"status": 200, "headers": [], "body_received": False}
+                # Ensure headers is a list of 2-tuples (bytes, bytes) for ASGI
+                raw_headers = scope.get('headers', [])
+                normalized_headers = []
+                if isinstance(raw_headers, (list, tuple)):
+                    for h in raw_headers:
+                        try:
+                            if isinstance(h, (list, tuple)):
+                                if len(h) >= 2:
+                                    k, v = h[0], h[1]  # Take only first two
+                                    if isinstance(k, str):
+                                        k = k.encode('latin-1')
+                                    if isinstance(v, str):
+                                        v = v.encode('latin-1')
+                                    normalized_headers.append((k, v))
+                        except:
+                            pass  # Skip malformed headers
+                scope['headers'] = normalized_headers
+                
+                # Ensure query_string is bytes
+                if isinstance(scope.get('query_string'), str):
+                    scope['query_string'] = scope['query_string'].encode('utf-8')
+                
+                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False}
                 
                 async def receive():
                     # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
@@ -224,9 +266,19 @@ def make_hooks(loop, app):
                         ctx["status"] = msg.get('status', 200)
                         ctx["headers"] = msg.get('headers', [])
                     elif m_type == 'http.response.body':
-                        # TODO: Support streaming for body (more than one message)
                         body = msg.get('body', b'')
-                        proto.response_bytes(ctx["status"], ctx["headers"], body)
+                        # Convert ASGI bytes headers to str headers for proto
+                        converted_headers = []
+                        for h in ctx["headers"]:
+                            if isinstance(h, (list, tuple)) and len(h) == 2:
+                                k, v = h
+                                if isinstance(k, bytes):
+                                    k = k.decode('latin-1')
+                                if isinstance(v, bytes):
+                                    v = v.decode('latin-1')
+                                converted_headers.append((k, v))
+                        proto.response_bytes(ctx["status"], converted_headers, body)
+                        ctx["response_sent"] = True
                     elif m_type == 'websocket.accept':
                         await proto.accept()
                     elif m_type == 'websocket.send':
@@ -241,6 +293,13 @@ def make_hooks(loop, app):
                     await app(scope, receive, send)
                 except Exception as e:
                     print(f"ASGI Bridge Runtime Error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Send error response if ASGI app failed before sending response
+                    if not ctx.get("response_sent"):
+                        error_body = f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode('utf-8')
+                        proto.response_bytes(500, [(b'content-type', b'application/json')], error_body)
+                        ctx["response_sent"] = True
 
             def _start():
                 task = loop.create_task(asgi_bridge(watcher.scope, watcher.proto))
