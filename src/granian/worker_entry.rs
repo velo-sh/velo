@@ -306,6 +306,11 @@ def make_hooks(loop, app):
                                     ctx["is_streaming"] = True
                                     break
                     elif m_type == 'http.response.body':
+                        # Guard: Only process HTTP response if proto supports it
+                        # WebSocket protocol doesn't have response_bytes
+                        if not hasattr(proto, 'response_bytes'):
+                            return  # Ignore HTTP responses on WebSocket protocol
+                        
                         body = msg.get('body', b'')
                         more_body = msg.get('more_body', False)
                         
@@ -363,10 +368,14 @@ def make_hooks(loop, app):
                     import traceback
                     traceback.print_exc()
                     # Send error response if ASGI app failed before sending response
-                    if not ctx.get("response_sent"):
-                        error_body = f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode('utf-8')
-                        proto.response_bytes(500, [(b'content-type', b'application/json')], error_body)
-                        ctx["response_sent"] = True
+                    # Only for HTTP - WebSocket protocol doesn't have response_bytes
+                    if not ctx.get("response_sent") and scope.get('type') == 'http':
+                        try:
+                            error_body = f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode('utf-8')
+                            proto.response_bytes(500, [('content-type', 'application/json')], error_body)
+                            ctx["response_sent"] = True
+                        except:
+                            pass  # Ignore if we can't send error response
 
             def _start():
                 task = loop.create_task(asgi_bridge(watcher.scope, watcher.proto))
