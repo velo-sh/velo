@@ -35,7 +35,9 @@
 
 use super::config::WorkerConfig;
 use super::{GranianError, Result};
-use log::{debug, info};
+#[cfg(feature = "granian_native")]
+use log::debug;
+use log::info;
 #[cfg(unix)]
 use std::os::unix::io::RawFd;
 
