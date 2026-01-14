@@ -309,9 +309,13 @@ def make_hooks(loop, app):
                             return {"type": "websocket.disconnect", "code": 1006}
                     
                     # HTTP handling below
-                    # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
+                    # INDICTMENT-06/07 Fix: Ensure ASGI-compliant receive() messages
                     # FastAPI/Starlette expect: {'type': 'http.request', 'body': b'...', 'more_body': False}
                     # Django ASGIHandler calls receive() twice - second call should block until response sent
+                    #
+                    # CRITICAL: RSGIHTTPProtocol does NOT have a receive() method!
+                    # The body is obtained by calling proto() which invokes __call__
+                    # and returns the full body as bytes via body.collect().await
                     if ctx.get("body_received"):
                         # After body is fully received, block until response is sent
                         # Django expects this to block (like waiting for client disconnect)
@@ -321,22 +325,21 @@ def make_hooks(loop, app):
                         return {"type": "http.disconnect"}
                     
                     try:
-                        msg = await proto.receive()
-                        if msg is None:
-                            ctx["body_received"] = True
-                            return {"type": "http.request", "body": b"", "more_body": False}
-                        
-                        # If msg is already ASGI-compliant, return as-is
-                        if isinstance(msg, dict) and 'type' in msg:
-                            if msg.get('type') == 'http.request':
-                                ctx["body_received"] = not msg.get('more_body', False)
-                            return msg
-                        
-                        # Otherwise, wrap in ASGI format
-                        body = msg if isinstance(msg, bytes) else b""
+                        # RSGIHTTPProtocol provides body via __call__ (proto())
+                        # This returns the full body bytes collected from the stream
+                        body = await proto()
                         ctx["body_received"] = True
+                        
+                        if body is None:
+                            body = b""
+                        elif not isinstance(body, bytes):
+                            # Handle edge cases where body might be something else
+                            body = bytes(body) if hasattr(body, '__iter__') else b""
+                        
                         return {"type": "http.request", "body": body, "more_body": False}
-                    except Exception:
+                    except Exception as e:
+                        # Log the error for debugging
+                        print(f"ASGI Bridge receive() error: {e}")
                         ctx["body_received"] = True
                         return {"type": "http.request", "body": b"", "more_body": False}
                 
