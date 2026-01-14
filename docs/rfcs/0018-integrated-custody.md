@@ -89,3 +89,97 @@ To avoid the "Three Sins" of security (Suffocation, Death Spiral, Collision), Ph
 ## 7. Alternatives Considered
 *   **System uv Integration**: Rejected due to version drift and installation friction.
 *   **Conda/Micromamba**: Rejected due to binary size (100MB+) and slower resolution compared to `uv`.
+
+## 8. Technology Radar: Phase 8.x Optimizations
+
+> [!NOTE]
+> This section documents future optimizations under evaluation.
+
+### 8.1 Current Limitation: exec() Overhead
+
+The current `uv` integration uses `fork() + exec()`, which has inherent overhead:
+
+| Stage | Time | Optimizable |
+|:---|:---|:---|
+| **Disk I/O** | ~0.1ms | ✅ OS Page Cache |
+| **ELF/Mach-O Parsing** | ~0.5ms | ❌ Kernel |
+| **Dynamic Linking** | ~2-3ms | ⚠️ Static linking |
+| **Rust Runtime Init** | ~3-5ms | ❌ exec() inherent |
+| **Total** | ~7-10ms | Per invocation |
+
+**Note**: `exec()` replaces the process image, so Zygote COW benefits do not apply to `uv` calls.
+
+### 8.2 Phase 8.x: SHM Venv (Memory-Speed Python Environment)
+
+**Goal**: Keep the entire `.venv` in shared memory for memory-speed imports.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  SHM Venv Architecture                                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  /dev/shm/velo-venv/  (Linux)                                    │
+│  shm_open("/velo-venv")  (macOS)                                 │
+│  CreateFileMapping()  (Windows)                                  │
+│       │                                                          │
+│       ├── torch/                                                 │
+│       ├── pandas/                                                │
+│       └── *.so, *.pyc                                            │
+│                                                                  │
+│  Python: sys.path.insert(0, shm_venv_path)                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Cross-Platform SHM Library Candidates
+
+| Crate | Platform Support | Features | Status |
+|:---|:---|:---|:---|
+| **`shared_memory`** | Linux, macOS, Windows | Named SHM, cross-process | ⭐ Primary |
+| **`memmap2`** | All major platforms | File-backed, COW, exec maps | ⭐ Fallback |
+| **`mmap-rs`** | Tier 1 all platforms | Huge Pages, memory locking | 🔮 Research |
+| **`mmap-sync`** | Cross-platform | Single-writer multi-reader | 🔮 Research |
+
+#### Platform Equivalence
+
+| Platform | Technology | Path/API |
+|:---|:---|:---|
+| **Linux** | tmpfs / shm_open | `/dev/shm/`, `/run/` |
+| **macOS** | shm_open + mmap | POSIX shm, no filesystem path |
+| **Windows** | Memory-Mapped Files | `CreateFileMapping()` API |
+
+#### Benefits
+
+| Aspect | Disk venv | SHM venv |
+|:---|:---|:---|
+| **import speed** | Page Cache (~ms) | Memory (~μs) |
+| **Cross-process sharing** | File locks | Native SHM |
+| **Restart persistence** | ✅ Survives | ❌ Volatile |
+
+#### Adoption Criteria (All MUST be met)
+
+1. ✅ Cross-platform abstraction layer implemented
+2. ✅ Benchmark shows >50% import speedup for large packages
+3. ✅ Fallback to disk venv on SHM failure
+4. ✅ Memory pressure detection and eviction policy
+
+### 8.3 Phase 8.x: uv Library Integration (Alternative)
+
+**Goal**: Integrate `uv` as a Rust library to eliminate exec() overhead.
+
+```toml
+# Cargo.toml (potential)
+[dependencies]
+uv-resolver = { git = "https://github.com/astral-sh/uv", tag = "0.5.14" }
+uv-installer = { git = "https://github.com/astral-sh/uv", tag = "0.5.14" }
+```
+
+| Aspect | Binary Embed (Current) | Library Integration |
+|:---|:---|:---|
+| **Call overhead** | ~10ms (exec) | ~0.1ms (function) |
+| **COW sharing** | ❌ | ✅ |
+| **Build complexity** | Low | High (dependency conflicts) |
+| **Version decoupling** | ✅ | Lock via Cargo.toml |
+
+**Status**: 🟡 EVALUATION (Blocked on dependency conflict analysis)
+
