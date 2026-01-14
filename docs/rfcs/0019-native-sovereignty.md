@@ -206,6 +206,69 @@ The Velo binary becomes the **Master Execution Host**, integrating the **Granian
 | **COW Sharing** | After Zygote fork, memory pages are shared (~50ms cold start) |
 | **PyO3 Call** | ~1-5μs latency, no serialization overhead |
 
+### 3.1.3 Zygote + PyO3 Integration Model (Architectural Clarification)
+
+> [!IMPORTANT]
+> **Eliminating Ambiguity**: Zygote and PyO3 are **complementary mechanisms** operating at different levels:
+> - **Zygote/Fork** = Process-level (creating workers)
+> - **PyO3** = Intra-process (Rust↔Python calls within each worker)
+
+#### Lifecycle Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 1: ZYGOTE PRE-WARM                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Python Interpreter starts                                             │  │
+│  │  → import torch, pandas, fastapi (heavy libs)                          │  │
+│  │  → Load ML model weights into memory                                   │  │
+│  │  → FREEZE: Ready for fork()                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                             fork() COW
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 2: WORKER SPAWNING                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Velo Master calls fork() N times                                      │  │
+│  │  → Each fork creates Worker with COPIED memory (COW)                   │  │
+│  │  → Each Worker has: Rust Runtime + Python Interpreter + Loaded Libs    │  │
+│  │  → Workers are ISOLATED processes (independent GIL, crash isolation)   │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                           per-request
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 3: REQUEST HANDLING (PyO3)                    │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  HTTP Request arrives at Worker                                        │  │
+│  │  → Rust (Hyper) parses HTTP                                            │  │
+│  │  → PyO3 Direct Call: Rust → Python (SAME PROCESS, ~1-5μs)              │  │
+│  │  → Python ASGI App executes                                            │  │
+│  │  → PyO3 returns response: Python → Rust                                │  │
+│  │  → Rust sends HTTP response                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Why This Works
+
+| Concern | Resolution |
+|:---|:---|
+| "PyO3 requires same-process" | ✅ Rust and Python ARE in the same process (each Worker) |
+| "Zygote uses multi-process" | ✅ Multiple Workers exist; each is a separate process |
+| "GIL blocks parallelism" | ✅ Each Worker has its own GIL; N workers = N-way parallelism |
+| "Fork copies everything" | ✅ COW ensures only modified pages are copied (memory efficient) |
+
+#### Strategic Dissection Clarification
+
+Velo's "Strategic Dissection" of Granian means:
+1. **KEEP**: Granian's L7 engine (HTTP parsing, ASGI state machine, PyO3 bindings)
+2. **REPLACE**: Granian's process management with Velo's Zygote/Fork lifecycle
+3. **RESULT**: Faster cold-start (~50ms vs 500ms+) while preserving PyO3 performance
+
 
 
 
