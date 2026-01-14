@@ -268,8 +268,13 @@ def make_hooks(loop, app):
                 async def receive():
                     # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
                     # FastAPI/Starlette expect: {'type': 'http.request', 'body': b'...', 'more_body': False}
+                    # Django ASGIHandler calls receive() twice - second call should block until response sent
                     if ctx.get("body_received"):
-                        # After body is fully received, return disconnect on subsequent calls
+                        # After body is fully received, block until response is sent
+                        # Django expects this to block (like waiting for client disconnect)
+                        import asyncio
+                        while not ctx.get("response_sent"):
+                            await asyncio.sleep(0.01)
                         return {"type": "http.disconnect"}
                     
                     try:
