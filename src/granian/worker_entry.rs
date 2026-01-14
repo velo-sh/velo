@@ -450,14 +450,57 @@ pub fn reset_signal_handlers() {
 #[cfg(unix)]
 pub fn close_range_except(keep_fds: &[RawFd]) {
     use std::collections::HashSet;
+    use std::fs;
 
     let keep: HashSet<RawFd> = keep_fds.iter().copied().collect();
-
-    // Standard FDs to always keep
     let always_keep = [0, 1, 2]; // stdin, stdout, stderr
 
-    // Close FDs 3 to a reasonable upper bound
-    // Note: On Linux 5.9+, we could use close_range(3, ~0, 0) syscall
+    // TITANIUM RULE: Efficient FD Hygiene
+    // Instead of brute-forcing 3..65535, we iterate over /dev/fd (macOS) or /proc/self/fd (Linux)
+    // to find exactly which FDs are open. This is faster and cleaner.
+
+    #[cfg(target_os = "macos")]
+    let fd_dir = "/dev/fd";
+    #[cfg(target_os = "linux")]
+    let fd_dir = "/proc/self/fd";
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let fd_dir = "";
+
+    if fd_dir.is_empty() {
+        // Fallback to brute force for safety if dir is empty/not defined
+        for fd in 3..1024 {
+            if !keep.contains(&fd) && !always_keep.contains(&fd) {
+                unsafe {
+                    libc::close(fd);
+                }
+            }
+        }
+        return;
+    }
+
+    if let Ok(entries) = fs::read_dir(fd_dir) {
+        let mut to_close = Vec::new();
+        for entry in entries.flatten() {
+            let Ok(fd_str) = entry.file_name().into_string() else {
+                continue;
+            };
+            let Ok(fd) = fd_str.parse::<RawFd>() else {
+                continue;
+            };
+            if fd > 2 && !keep.contains(&fd) && !always_keep.contains(&fd) {
+                to_close.push(fd);
+            }
+        }
+
+        // Now close them all safely
+        for fd in to_close {
+            unsafe {
+                libc::close(fd);
+            }
+        }
+    }
+
+    // Fallback to brute force for safety if dir iteration fails
     for fd in 3..1024 {
         if !keep.contains(&fd) && !always_keep.contains(&fd) {
             unsafe {

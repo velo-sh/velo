@@ -113,6 +113,7 @@ pub fn run() -> Result<()> {
         "zygote" => cmd::cmd_zygote(&args),
         "debug" => cmd::cmd_debug(&args),
         "graph" => cmd::cmd_graph(&args),
+        "worker-native" => cmd::cmd_worker_native(&args),
         cmd => {
             eprintln!("{}: unknown command '{}'", "error".red().bold(), cmd);
             if let Some(suggestion) = suggest_command(cmd) {
