@@ -22,7 +22,11 @@ class TestSovereigntyForensics:
         """
         isolated_env.create_app("main.py", "app = lambda x: x")
         port = isolated_env.next_port()
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port))
+        
+        root_dir = str(Path(__file__).parents[3])
+        env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
+        
+        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
         
         try:
             import time
@@ -70,7 +74,11 @@ class TestSovereigntyForensics:
         """
         isolated_env.create_app("main.py", "app = lambda x: x")
         port = isolated_env.next_port()
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port))
+        
+        root_dir = str(Path(__file__).parents[3])
+        env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
+        
+        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
         
         try:
             import time
@@ -131,8 +139,11 @@ async def app(scope, receive, send):
         secret_key = "VELO_FORENSIC_SECRET_DO_NOT_LEAK"
         secret_val = "CLEAN_ROOM_VERIFIED"
         
+        # Build environment with required PYTHONPATH
+        root_dir = str(Path(__file__).parents[3])
         env = os.environ.copy()
         env[secret_key] = secret_val
+        env["PYTHONPATH"] = f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"
         
         port = isolated_env.next_port()
         # Start Velo. It should NOT leak this env var to the worker.
@@ -159,7 +170,12 @@ async def app(scope, receive, send):
         isolated_env.create_app("main.py", "app = lambda x: x")
         vdir = Path(f"/tmp/v{os.getpid()}_rsgi_fp")
         vdir.mkdir(parents=True, exist_ok=True)
-        env = {"VELO_SOCKET_DIR": str(vdir)}
+        
+        root_dir = str(Path(__file__).parents[3])
+        env = {
+            "VELO_SOCKET_DIR": str(vdir),
+            "PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"
+        }
         port = isolated_env.next_port()
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
         
