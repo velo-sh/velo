@@ -80,18 +80,13 @@ def run_velo_native(isolated_env):
 def test_rsgi_native_http_basic(run_velo_native):
     """Verify basic HTTP request/response in native RSGI mode."""
     app_code = """
-    async def app(scope, receive, send):
-        if scope['type'] == 'http':
-            await send({
-                'type': 'http.response.start',
-                'status': 200,
-                'headers': [(b'content-type', b'application/json')],
-            })
-            await send({
-                'type': 'http.response.body',
-                'body': b'{"status": "ok", "mode": "native"}',
-                'more_body': False
-            })
+    async def app(scope, proto):
+        if scope.proto == 'http':
+            proto.response_str(
+                200, 
+                [('content-type', 'application/json')],
+                '{"status": "ok", "mode": "native"}'
+            )
     """
     proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
     try:
@@ -108,21 +103,17 @@ def test_rsgi_native_http_basic(run_velo_native):
 def test_rsgi_native_websocket_echo(run_velo_native):
     """Verify WebSocket echo in native RSGI mode."""
     app_code = """
-    async def app(scope, receive, send):
-        if scope['type'] == 'websocket':
+    async def app(scope, proto):
+        if scope.proto == 'ws':
+            transport = await proto.accept()
             while True:
-                message = await receive()
-                if message['type'] == 'websocket.connect':
-                    await send({'type': 'websocket.accept'})
-                elif message['type'] == 'websocket.receive':
-                    text = message.get('text')
-                    if text:
-                        await send({'type': 'websocket.send', 'text': f"echo: {text}"})
-                    else:
-                        data = message.get('bytes')
-                        await send({'type': 'websocket.send', 'bytes': data})
-                elif message['type'] == 'websocket.disconnect':
+                message = await transport.receive()
+                if message.kind == 0: # Close
                     break
+                if message.kind == 2: # Text
+                    await transport.send_str(f"echo: {message.data}")
+                else: # Bytes
+                    await transport.send_bytes(message.data)
     """
     proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
     try:
