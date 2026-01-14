@@ -1,206 +1,127 @@
-# RFC-0025: Granian Native Runtime Architecture
+# RFC-0025: WebSocket Support
 
-**Status**: DRAFT → APPROVED
+**Status**: APPROVED
 **Author**: Architect
 **Date**: 2026-01-14
-**Phase**: 9.x (Unified Architecture)
+**Phase**: 9.x (Part of Granian Native Runtime)
 
 ## Related Documents
 
-- [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md) (Superseded by this RFC)
-- [RFC-0026: Native TLS Integration](./0026-native-tls-integration.md)
-- [RFC-0027: HTTP/2 Support](./0027-http2-support.md)
-- [Granian Source](../../vendor/granian/)
+- [RFC-0019: Native Sovereignty - Granian Architecture](./0019-native-sovereignty.md) ← **Main Architecture**
+- [Granian WebSocket Source](../../vendor/granian/src/ws.rs)
 
 ---
 
 ## 1. Summary
 
-This RFC defines the unified Granian-native runtime architecture for Velo, including:
-- **HTTP/HTTPS Request Handling** via Granian's Hyper + PyO3 integration
-- **WebSocket Support** via Granian's tokio-tungstenite + RSGIWebsocketTransport
-- **Process Isolation** via Zygote COW fork model
+This RFC specifies WebSocket support in Velo's Granian-native runtime.
 
-> [!IMPORTANT]
-> **Design Principle**: Velo integrates Granian. We use its **full capabilities**, not just pieces.
-> This RFC supersedes the UDS-based architecture in RFC-0019.
+WebSocket is automatically available when using the Granian Worker architecture defined in RFC-0019. This document covers WebSocket-specific configuration and verification.
 
 ---
 
-## 2. Architecture Overview
-
-### 2.1 Unified Model: Granian Worker + Zygote
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Velo Master (Supervisor)                  │
-│   - Process management                                       │
-│   - Health checks                                            │
-│   - Load balancing                                           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ fork() COW
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Granian Worker (Forked)                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Rust Runtime (Tokio)                               │   │
-│  │  ┌─────────────────────────────────────────────┐   │   │
-│  │  │  Hyper HTTP/WebSocket Server                │   │   │
-│  │  │  ┌─────────────────────────────────────┐   │   │   │
-│  │  │  │  PyO3 Bridge (~1-5μs)               │   │   │   │
-│  │  │  │  ┌─────────────────────────────┐   │   │   │   │
-│  │  │  │  │  Python ASGI App            │   │   │   │   │
-│  │  │  │  │  (Pre-warmed via Zygote)    │   │   │   │   │
-│  │  │  │  └─────────────────────────────┘   │   │   │   │
-│  │  │  └─────────────────────────────────────┘   │   │   │
-│  │  └─────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 2.2 Granian Capabilities
+## 2. Granian WebSocket Components
 
 | Component | Location | Capability |
 |:---|:---|:---|
-| `HyperWebsocket` | `vendor/granian/src/ws.rs` | Rust-native WS via `tokio-tungstenite` |
-| `RSGIWebsocketTransport` | `vendor/granian/src/rsgi/io.rs` | PyO3-bound `receive()/send()` |
-| `build_scope_http` | `vendor/granian/src/asgi/utils.rs` | Rust-side ASGI scope building |
-| `HTTP2Config` | `vendor/granian/src/workers.rs` | HTTP/2 multiplexing support |
-| `TlsConfig` | `vendor/granian/src/tls.rs` | rustls-based TLS termination |
+| `HyperWebsocket` | `vendor/granian/src/ws.rs` | Rust-native WS upgrade via `tokio-tungstenite` |
+| `RSGIWebsocketTransport` | `vendor/granian/src/rsgi/io.rs` | PyO3-bound `receive()/send_bytes()/send_str()` |
+| `websockets_enabled` | `vendor/granian/src/rsgi/serve.rs` | Configuration flag |
 
 ---
 
-## 3. Performance Comparison
+## 3. Architecture
 
-| Metric | UDS (RFC-0019) | Granian Native (This RFC) | Improvement |
-|:---|:---|:---|:---|
-| **Request Latency** | ~50-100μs | **~1-5μs** | 10-50x |
-| **WebSocket Frame** | ~50-100μs | **~1-5μs** | 10-50x |
-| **Cold Start** | ~500ms | **~50ms (COW)** | 10x |
-| **Code Complexity** | +1500 lines | **-1300 lines** | Simpler |
-| **Fault Isolation** | ✅ Full | ✅ Per-worker | Same |
-
----
-
-## 4. Implementation Plan
-
-### Phase 9.1: Granian Worker Integration
-
-| Step | File | Change |
-|:---|:---|:---|
-| 1 | `src/serve/runner.rs` | Replace `spawn_python_worker()` with Granian worker |
-| 2 | `src/serve/runner.rs` | Remove UDS socket creation |
-| 3 | `src/rsgi/` | **Delete** (no longer needed) |
-| 4 | `velo_zygote/rsgi.py` | **Delete** (replaced by PyO3) |
-
-### Phase 9.2: Zygote COW Enhancement
-
-| Step | File | Change |
-|:---|:---|:---|
-| 1 | `src/serve/zygote.rs` | Pre-initialize PyO3 interpreter |
-| 2 | `src/serve/zygote.rs` | Pre-import user's ASGI app |
-| 3 | `src/serve/zygote.rs` | fork() with COW for Workers |
-
-### Phase 9.3: Supervisor Integration
-
-| Step | File | Change |
-|:---|:---|:---|
-| 1 | `src/serve/supervisor.rs` | Manage Granian Workers |
-| 2 | `src/serve/supervisor.rs` | Health checks via Worker signals |
-| 3 | `src/serve/supervisor.rs` | Respawn on Worker crash |
+```
+┌─────────┐      WS Upgrade      ┌──────────────────────────────────┐
+│ Client  │ ─────────────────▶   │     Granian Worker (Rust)        │
+│         │ ◀───────────────────│                                  │
+└─────────┘                      │  ┌─────────────────────────────┐ │
+           WS frames             │  │  tokio-tungstenite          │ │
+           (binary)              │  │  ┌───────────────────────┐  │ │
+                                 │  │  │   PyO3 Callbacks      │  │ │
+                                 │  │  │   RSGIWebsocketTransport │ │
+                                 │  │  └───────────────────────┘  │ │
+                                 │  └─────────────────────────────┘ │
+                                 │               ▲                  │
+                                 │               │ Direct Call      │
+                                 │               ▼                  │
+                                 │  ┌─────────────────────────────┐ │
+                                 │  │   Python ASGI App           │ │
+                                 │  │   scope["type"] = "websocket"│ │
+                                 │  └─────────────────────────────┘ │
+                                 └──────────────────────────────────┘
+```
 
 ---
 
-## 5. Implementation Risks & Advisories
+## 4. Performance
 
-> [!CAUTION]
-> The following details require special attention during Phase 9.x implementation:
-
-### 5.1 Event Loop and Fork Conflict
-
-| Risk | Requirement |
+| Metric | Latency |
 |:---|:---|
-| Python's `asyncio` Event Loop does not work after fork | Zygote should **only load code (import)**, **NEVER** start any Event Loop before fork |
+| WS Upgrade Handshake | ~10-20μs |
+| WS Frame (text/binary) | **~1-5μs** |
+| WS Close | ~5-10μs |
 
-```rust
-// ✅ CORRECT: Initialize Event Loop after Worker process starts
-fn worker_main() {
-    // Fork is complete, safe to initialize now
-    Python::with_gil(|py| {
-        let asyncio = py.import("asyncio")?;
-        let loop = asyncio.call_method0("new_event_loop")?;
-        asyncio.call_method1("set_event_loop", (loop,))?;
-    });
-}
+---
 
-// ❌ WRONG: Initialize Event Loop in Zygote (before fork)
-fn zygote_init() {
-    Python::with_gil(|py| {
-        let asyncio = py.import("asyncio")?;
-        asyncio.call_method0("get_event_loop")?;  // DANGEROUS!
-    });
+## 5. ASGI WebSocket Interface
+
+### 5.1 Scope
+
+```python
+{
+    "type": "websocket",
+    "asgi": {"version": "3.0", "spec_version": "2.3"},
+    "http_version": "1.1",
+    "scheme": "ws",  # or "wss"
+    "path": "/ws",
+    "query_string": b"",
+    "headers": [...],
+    "subprotocols": ["graphql-ws"],  # if requested
 }
 ```
 
-### 5.2 File Descriptor (FD) Management
+### 5.2 Events
 
-| Risk | Requirement |
-|:---|:---|
-| Fork duplicates all open FDs | Management FDs in Master (log handles, control channels) must be properly handled in Worker |
-
-### 5.3 Signal Handling
-
-| Risk | Requirement |
-|:---|:---|
-| SIGINT/SIGTERM received by Master must be correctly propagated to Worker group | `supervisor.rs` implements signal forwarding for graceful shutdown |
+| Event | Direction | Description |
+|:---|:---|:---|
+| `websocket.connect` | receive | Client initiated connection |
+| `websocket.accept` | send | Server accepts connection |
+| `websocket.receive` | receive | Message from client |
+| `websocket.send` | send | Message to client |
+| `websocket.disconnect` | receive | Client disconnected |
+| `websocket.close` | send | Server closes connection |
 
 ---
 
-## 6. Blocking Conditions
+## 6. Example Usage
 
-> [!CAUTION]
-> This RFC **MUST** satisfy the following three hard constraints before Phase 9.x implementation:
+### FastAPI
 
-### C1. Zygote Phase Capability Whitelist
+```python
+from fastapi import FastAPI, WebSocket
 
-```rust
-enum ZygotePhase {
-    ImportOnly,     // Only import allowed
-    PostForkInit,   // Initialize runtime within Worker
-}
+app = FastAPI()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Echo: {data}")
 ```
 
-| API | `ImportOnly` | `PostForkInit` |
-|:---|:---|:---|
-| PyO3 `import` | ✅ | ✅ |
-| `asyncio.get_event_loop` | ❌ **panic** | ✅ |
-| `uvloop.install` | ❌ **panic** | ✅ |
-| ASGI app call | ❌ | ✅ |
+### Starlette
 
-### C2. Worker Lifecycle State Machine
+```python
+from starlette.websockets import WebSocket
 
-```rust
-enum WorkerState {
-    Spawned,      // fork() completed
-    Initializing, // PyO3 + Event Loop initializing
-    Ready,        // Can accept requests
-    Draining,     // Received SIGTERM, draining
-    Dead,         // Exited
-}
+async def websocket_route(websocket: WebSocket):
+    await websocket.accept()
+    async for message in websocket.iter_text():
+        await websocket.send_text(f"Echo: {message}")
 ```
-
-**Invariants**:
-- Master **NEVER** dispatches requests to `Initializing` Workers
-- `SIGTERM` transitions to `Draining` state
-- Timeout (30s) transitions to `SIGKILL`
-
-### C3. Granian ABI Freeze Strategy
-
-Add `vendor/granian/VELO_GRANIAN_ABI.md` documenting:
-- Rust ↔ PyO3 function signatures
-- Worker startup entry function
-- ASGI invocation paths (`scope`, `receive`, `send`)
 
 ---
 
@@ -208,55 +129,47 @@ Add `vendor/granian/VELO_GRANIAN_ABI.md` documenting:
 
 | Gate | Requirement | Verification |
 |:---|:---|:---|
-| **Gate H** | Workers are separate processes (isolation) | Process tree verification |
-| **Gate E** | 500ms handshake timeout | `test_handshake_timeout` |
-| **Gate P** | UDS socket 0700 permissions (if used for control) | `test_uds_isolation_permissions` |
+| **Gate H** | Worker process isolation | `test_ws_process_isolation` |
+| **Gate E** | WS handshake timeout (500ms) | `test_ws_handshake_timeout` |
+| **Gate P** | Origin validation (if configured) | `test_ws_origin_check` |
 
 ---
 
-## 8. Grand Council Review Summary
+## 8. Verification Tests
 
-**Review Date**: 2026-01-14
-**Verdict**: ✅ **UNANIMOUS APPROVAL**
+```bash
+# Run WebSocket integration tests
+pytest tests/qa/phase_9/test_websocket.py -v
+```
 
-| Persona | Vote | Rationale |
-|:---|:---|:---|
-| HPC / Runtime Architect | ✅ **STRONG YES** | ~1-5μs latency achieved |
-| Security Engineer | ✅ **YES** | Process isolation preserved |
-| Rust Core / Systems | ✅ **YES** | -1300 lines of code |
-| Python Runtime Engineer | ✅ **YES** | Standard PyO3 integration |
-| CTO | ✅ **YES** | Leverages existing Granian investment |
+### Test Cases
 
-**P0 Blocking Issues**: C1, C2, C3 (must be satisfied before implementation)
+- [ ] `test_ws_echo` - Basic echo test
+- [ ] `test_ws_binary` - Binary message support
+- [ ] `test_ws_subprotocol` - Subprotocol negotiation
+- [ ] `test_ws_close_code` - Close code propagation
+- [ ] `test_ws_max_connections` - Connection limit enforcement
 
 ---
 
-## 9. Migration Notes
+## 9. Configuration
 
-### Supersedes
-
-- **RFC-0019**: UDS-based IPC → Replaced by PyO3 direct call
-- **RFC-0028**: ASGI Scope migration → Included in Granian natively
-
-### Code Deletion
-
+```toml
+# pyproject.toml
+[tool.velo.websocket]
+max_connections = 1000          # Maximum concurrent WS connections
+handshake_timeout_ms = 500      # Handshake timeout
+ping_interval_secs = 30         # Keep-alive ping interval
+max_message_size_bytes = 65536  # Maximum message size (64KB)
 ```
-src/rsgi/           → DELETE
-velo_zygote/rsgi.py → DELETE
-```
-
-**Net Change**: -1300 lines of code
 
 ---
 
 ## 10. References
 
-- [Granian GitHub](https://github.com/emmett-framework/granian)
-- [PyO3 Documentation](https://pyo3.rs/)
-- [tokio-tungstenite](https://docs.rs/tokio-tungstenite)
 - [WebSocket RFC 6455](https://tools.ietf.org/html/rfc6455)
-- [ASGI Specification](https://asgi.readthedocs.io/)
-- [Zygote Process Model](https://source.android.com/docs/core/runtime)
+- [ASGI WebSocket Spec](https://asgi.readthedocs.io/en/latest/specs/www.html#websocket)
+- [tokio-tungstenite](https://docs.rs/tokio-tungstenite)
 
 ---
 

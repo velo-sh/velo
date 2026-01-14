@@ -1,18 +1,32 @@
-# RFC-0019: Native Sovereignty (Rust-Native Runtime Engine)
+# RFC-0019: Native Sovereignty (Granian Native Runtime)
 
-**Status**: DRAFT (Proposed for Phase 7.2)
+**Status**: DRAFT → APPROVED (Phase 9.x Evolution)
 **Author**: Architect
-**Date**: 2026-01-09
+**Date**: 2026-01-09 (Updated: 2026-01-14)
 
 ## 0. Detailed Specifications
-*   **Protocol Design**: [0019-details-protocol.md](0019-details-protocol.md)
-*   **Performance Benefits**: [0019-appendix-performance.md](0019-appendix-performance.md) *(QA Validation Required)*
-*   **Audit Report**: [../architecture/audit_phase_7_alignment.md](../architecture/audit_phase_7_alignment.md)
-*   **QA Handoff**: [../architecture/handover_qa_phase_7_1_7_2.md](../architecture/handover_qa_phase_7_1_7_2.md)
+*   **Protocol Design**: [0019-details-protocol.md](0019-details-protocol.md) (Phase 7.x legacy)
+*   **Performance Benefits**: [0019-appendix-performance.md](0019-appendix-performance.md)
+*   **WebSocket Support**: [RFC-0025](./0025-websocket-architecture.md)
+*   **Native TLS**: [RFC-0026](./0026-native-tls-integration.md)
+*   **HTTP/2**: [RFC-0027](./0027-http2-support.md)
 
+> [!IMPORTANT]
+> **Phase 9.x Architectural Evolution** (Jan 14, 2026)
+>
+> This RFC has been updated to adopt the **Granian Native Runtime** architecture:
+> - **Before (Phase 7.x)**: UDS + MessagePack IPC (~50-100μs/request)
+> - **After (Phase 9.x)**: PyO3 Direct Call (~1-5μs/request)
+>
+> See [Section 3.5](#35-phase-9x-granian-native-architecture) for the new unified architecture.
 
 ## 1. Summary
-"Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine. By moving the L7 HTTP logic into the Velo binary and orchestrating Python workers via the **RSGI-Velo protocol**, we achieve 0ms wrapper overhead and superior signal/lifecycle control.
+"Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine powered by **Granian**.
+
+| Phase | Architecture | Latency |
+|:---|:---|:---|
+| 7.x (Legacy) | UDS + MessagePack | ~50-100μs |
+| **9.x (Current)** | **PyO3 Direct Call** | **~1-5μs** |
 
 ## 2. Motivation
 Current limitations of the Uvicorn-wrapper model:
@@ -23,21 +37,36 @@ Current limitations of the Uvicorn-wrapper model:
 ## 3. Architectural Blueprint
 
 ### 3.1 The Native Host Topology (Granian-Powered)
-The Velo binary becomes the **Master Execution Host**, integrating a customized version of the **Granian** L7 engine.
-
-> [!NOTE]
-> Velo adopts a **"Strategic Dissection"** approach: vendoring Granian's ASGI/RSGI state machines while replacing its process management with Velo's proprietary Zygote/Forking lifecycle.
+The Velo binary becomes the **Master Execution Host**, integrating the **Granian** L7 engine.
 
 ```
-[ External Client ] 
-       │ HTTP/1.1, HTTP/2
-       ▼
-[ Velo Master (Rust/Hyper) ]  <─── Control Plane (UDS)
-       │                                │
-       │ RSGI-Velo Protocol (MsgPack)   │ Health, Lifecycle
-       ▼                                │
-[ Velo Worker (Python/Zygote) ] <───────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Velo Master (Supervisor)                  │
+│   - Process management                                       │
+│   - Health checks                                            │
+│   - Load balancing                                           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ fork() COW
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Granian Worker (Forked)                   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Rust Runtime (Tokio)                               │   │
+│  │  ┌─────────────────────────────────────────────┐   │   │
+│  │  │  Hyper HTTP/WebSocket Server                │   │   │
+│  │  │  ┌─────────────────────────────────────┐   │   │   │
+│  │  │  │  PyO3 Bridge (~1-5μs)               │   │   │   │
+│  │  │  │  ┌─────────────────────────────┐   │   │   │   │
+│  │  │  │  │  Python ASGI App            │   │   │   │   │
+│  │  │  │  │  (Pre-warmed via Zygote)    │   │   │   │   │
+│  │  │  │  └─────────────────────────────┘   │   │   │   │
+│  │  │  └─────────────────────────────────────┘   │   │   │
+│  │  └─────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
+
 
 ### 3.2 Velo / Granian / FastAPI Three-Layer Architecture
 
