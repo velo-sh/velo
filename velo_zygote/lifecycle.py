@@ -181,11 +181,23 @@ def hook_computing(**kwargs: Any) -> None:
     if "torch" in sys.modules:
         try:
             import torch
-
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except:
             pass
+
+    # RFC-0011 HPC-001: Restore threading environment post-fork
+    # Defaulting to 0 (which usually triggers logical CPU count in BLAS)
+    # or explicitly reading cpu_count.
+    import multiprocessing
+    try:
+        cpus = str(multiprocessing.cpu_count())
+        for var in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+            if var in os.environ:
+                # Restore to CPU count for workers to ensure performance
+                os.environ[var] = cpus
+    except Exception as e:
+        LogUtils.log(f"HPC Restoration Warning: {e}")
 
 
 def hook_telemetry(**kwargs: Any) -> None:
