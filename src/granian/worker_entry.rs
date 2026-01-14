@@ -189,10 +189,34 @@ def make_hooks(loop, app):
                 scope.setdefault('state', {})
                 scope.setdefault('app', None)
                 
-                ctx = {"status": 200, "headers": []}
+                ctx = {"status": 200, "headers": [], "body_received": False}
                 
                 async def receive():
-                    return await proto.receive()
+                    # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
+                    # FastAPI/Starlette expect: {'type': 'http.request', 'body': b'...', 'more_body': False}
+                    if ctx.get("body_received"):
+                        # After body is fully received, return disconnect on subsequent calls
+                        return {"type": "http.disconnect"}
+                    
+                    try:
+                        msg = await proto.receive()
+                        if msg is None:
+                            ctx["body_received"] = True
+                            return {"type": "http.request", "body": b"", "more_body": False}
+                        
+                        # If msg is already ASGI-compliant, return as-is
+                        if isinstance(msg, dict) and 'type' in msg:
+                            if msg.get('type') == 'http.request':
+                                ctx["body_received"] = not msg.get('more_body', False)
+                            return msg
+                        
+                        # Otherwise, wrap in ASGI format
+                        body = msg if isinstance(msg, bytes) else b""
+                        ctx["body_received"] = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    except Exception:
+                        ctx["body_received"] = True
+                        return {"type": "http.request", "body": b"", "more_body": False}
                 
                 async def send(msg):
                     m_type = msg.get('type')
