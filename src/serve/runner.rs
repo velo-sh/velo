@@ -694,19 +694,24 @@ pub fn run_server(
         logger.trace("Framework: Unknown (auto-detection missed)");
     }
 
-    // Step 4: Check server is installed
-    logger.debug(&format!(
-        "Checking if {} is installed (using python_path: {})...",
-        server,
-        python_path.display()
-    ));
-    if !check_server_installed(server, python_path) {
-        logger.error(&format!("Missing dependency: {}", server));
-        eprintln!();
-        eprintln!("{} is required to run {} applications.", server, framework);
-        eprintln!("To fix:");
-        eprintln!("    {}", server.install_hint());
-        return Err(anyhow::anyhow!("Missing dependency: {}", server));
+    // Step 4: Check server is installed (only for non-RSGI mode)
+    // When --rsgi is specified, we use native Granian workers which don't need uvicorn
+    if !args.rsgi {
+        logger.debug(&format!(
+            "Checking if {} is installed (using python_path: {})...",
+            server,
+            python_path.display()
+        ));
+        if !check_server_installed(server, python_path) {
+            logger.error(&format!("Missing dependency: {}", server));
+            eprintln!();
+            eprintln!("{} is required to run {} applications.", server, framework);
+            eprintln!("To fix:");
+            eprintln!("    {}", server.install_hint());
+            return Err(anyhow::anyhow!("Missing dependency: {}", server));
+        }
+    } else {
+        logger.debug("Skipping server dependency check (Native RSGI mode)");
     }
 
     // Shutdown Coordinator (SEC-P0-001)
