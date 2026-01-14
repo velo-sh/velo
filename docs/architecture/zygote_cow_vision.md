@@ -127,6 +127,57 @@ Request → 50% fork(Zygote_v1) → Inference v1
 
 ---
 
+### 8. 🔧 Additional Pain Point Scenarios
+
+#### 8.1 CI Build Caching
+
+**Problem**: CI pipelines reinstall dependencies each run.
+
+| Phase | Overhead |
+|:---|:---|
+| `pip install` / `poetry install` | 2-5 min |
+| Docker layer rebuild | 1-3 min |
+
+**Approach**: Pre-warmed Zygote image with dependencies, CI runs from fork.
+
+**Status**: 🔮 RESEARCH
+
+#### 8.2 REPL State Management
+
+**Problem**: Interactive sessions accumulate stale state from previous executions.
+
+**Approach**: Fork from clean checkpoint, optional state merge.
+
+**Status**: 🔮 RESEARCH
+
+#### 8.3 Development Container Optimization
+
+**Problem**: Dev container initialization includes language server, extensions, tooling.
+
+| Component | Startup Time |
+|:---|:---|
+| Python LSP | ~5s |
+| Extensions | ~10s |
+| Dependency scan | ~5s |
+
+**Approach**: Pre-warmed container Zygote, new window as fork.
+
+**Status**: 🔮 RESEARCH
+
+#### 8.4 Model Weight Sharing
+
+**Problem**: Multiple inference processes load identical model weights independently.
+
+| 10 processes × 7B model | Traditional | COW |
+|:---|:---|:---|
+| Memory | 70GB | 7GB + 10× delta |
+
+**Approach**: Model loaded in Zygote, inference workers share via COW.
+
+**Status**: 🔮 RESEARCH
+
+---
+
 ## Promotion Path
 
 ```
