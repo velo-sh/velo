@@ -175,7 +175,20 @@ def make_hooks(loop, app):
             loop.call_soon_threadsafe(_start)
         else:
             # ASGI Compatibility Bridge
-            async def asgi_bridge(scope, proto):
+            async def asgi_bridge(rsgi_scope, proto):
+                # INDICTMENT-05 Fix: Convert frozen RSGIHTTPScope to mutable dict
+                # FastAPI/Starlette need to modify scope (e.g., scope["state"] = {})
+                scope = {}
+                for key in dir(rsgi_scope):
+                    if not key.startswith('_'):
+                        try:
+                            scope[key] = getattr(rsgi_scope, key)
+                        except:
+                            pass
+                # Ensure required ASGI keys exist
+                scope.setdefault('state', {})
+                scope.setdefault('app', None)
+                
                 ctx = {"status": 200, "headers": []}
                 
                 async def receive():
