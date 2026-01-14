@@ -67,6 +67,101 @@ The Velo binary becomes the **Master Execution Host**, integrating the **Granian
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### 3.1.1 Request Flow (Client → FastAPI)
+
+```
+  ┌─────────┐
+  │ Client  │  HTTP/HTTPS Request
+  └────┬────┘
+       │
+       ▼ (1) TCP Connection
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    Velo Master (Rust/Tokio)                              │
+  │  ┌───────────────────────────────────────────────────────────────────┐  │
+  │  │  (2) TLS Termination (rustls) - if HTTPS                          │  │
+  │  │  (3) HTTP Parsing (hyper) - parse headers, body                   │  │
+  │  │  (4) Load Balancer - select Worker (Round Robin / Least Conn)     │  │
+  │  └───────────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (5) PyO3 Direct Call (~1-5μs)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    Granian Worker (Forked Process)                       │
+  │  ┌───────────────────────────────────────────────────────────────────┐  │
+  │  │  (6) ASGI Scope Building (Rust-side)                              │  │
+  │  │  (7) PyO3 → Python: await app(scope, receive, send)               │  │
+  │  └───────────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (8) ASGI 3.0 Interface
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    FastAPI / Starlette                                   │
+  │  (9)  Routing: match @app.post("/api/predict")                          │
+  │  (10) Middleware Chain: Auth → CORS → Logging                           │
+  │  (11) Dependency Injection: Depends(get_db), Depends(get_model)         │
+  │  (12) Request Validation (Pydantic)                                     │
+  │  (13) Your Business Logic: model.predict(input)                         │
+  │  (14) Response Serialization (Pydantic → JSON)                          │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (15) Response: Worker → Master → Client
+```
+
+### 3.1.2 Multi-Worker Architecture
+
+```
+                              ┌─────────────────────┐
+                              │    External Client  │
+                              └──────────┬──────────┘
+                                         │ TCP/HTTP(S)
+                                         ▼
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                         VELO MASTER (Supervisor)                                │
+│  • TCP Listener (0.0.0.0:8000)     • Load Balancer                             │
+│  • TLS Termination (rustls)        • Health Monitor                            │
+│  • HTTP Parsing (hyper)            • Signal Handler (SIGTERM, SIGINT)          │
+│                                                                                 │
+│              ┌──────────────────────────┼──────────────────────────┐           │
+│              │                          │                          │           │
+│              ▼                          ▼                          ▼           │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐    │
+│  │  WORKER 0 (PID 1001)│  │  WORKER 1 (PID 1002)│  │  WORKER 2 (PID 1003)│    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ Rust (Tokio)  │  │  │  │ Rust (Tokio)  │  │  │  │ Rust (Tokio)  │  │    │
+│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │    │
+│  │          │ PyO3     │  │          │ PyO3     │  │          │ PyO3     │    │
+│  │          ▼          │  │          ▼          │  │          ▼          │    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ Python + GIL  │  │  │  │ Python + GIL  │  │  │  │ Python + GIL  │  │    │
+│  │  │ (独立进程)    │  │  │  │ (独立进程)    │  │  │  │ (独立进程)    │  │    │
+│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │    │
+│  │          ▼          │  │          ▼          │  │          ▼          │    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ FastAPI App   │  │  │  │ FastAPI App   │  │  │  │ FastAPI App   │  │    │
+│  │  │ (COW Shared)  │  │  │  │ (COW Shared)  │  │  │  │ (COW Shared)  │  │    │
+│  │  └───────────────┘  │  │  └───────────────┘  │  │  └───────────────┘  │    │
+│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘    │
+│                                                                                 │
+│  Memory Layout:                                                                 │
+│  ┌─ COW SHARED (Read-Only) ──────────────────────────────────────────────────┐ │
+│  │  • Python interpreter (~50MB)  • torch/numpy libraries                    │ │
+│  │  • FastAPI/Starlette code      • ML model weights (Zygote pre-load)       │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│  ┌─ PRIVATE (Per-Worker) ─────────────────────────────────────────────────────┐│
+│  │  • Request/response buffers    • Event loop state    • GIL state          ││
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Aspect | Description |
+|:---|:---|
+| **Process Isolation** | Each Worker is a separate process; crash doesn't affect others |
+| **Independent GIL** | Each Worker has its own GIL; true parallelism |
+| **COW Sharing** | After Zygote fork, memory pages are shared (~50ms cold start) |
+| **PyO3 Call** | ~1-5μs latency, no serialization overhead |
+
+
+
 
 ### 3.2 Velo / Granian / FastAPI Three-Layer Architecture
 
