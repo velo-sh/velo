@@ -100,46 +100,49 @@ class RSGIWorker:
                             await writer.wait_closed()
                             return
                 except (OSError, AttributeError):
-                    # macOS Fallback: LOCAL_PEERPID + LOCAL_PEERCRED
-                    try:
-                        # SOL_LOCAL = 0, LOCAL_PEERPID = 0x001, LOCAL_PEERCRED = 0x002
-                        # 1. Try to get PID
-                        creds_pid = sock.getsockopt(0, 0x001, 4)
-                        peer_pid = _struct.unpack('i', creds_pid)[0]
-                        
-                        # 2. Try to get UID (LOCAL_PEERCRED)
-                        creds_uid = sock.getsockopt(0, 0x002, 32) # xucred size varies, but 32 is enough
-                        # struct xucred: version (u16), uid (u32), ...
-                        peer_uid = _struct.unpack('HI', creds_uid[:6])[1]
-                        
-                        # Validate UID matches (Same-User isolation)
-                        my_uid = os.getuid()
-                        if peer_uid != my_uid:
-                            print(f"RSGI Gate H (macOS): Rejected connection from UID {peer_uid} (expected {my_uid})", file=sys.stderr)
-                            writer.close()
-                            await writer.wait_closed()
-                            return
-
-                        if authorized_host_pid:
-                            if str(peer_pid) != authorized_host_pid:
-                                print(f"RSGI Gate H (macOS): Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
+                        # macOS Fallback: LOCAL_PEERPID (0x002) + LOCAL_PEERCRED (0x001)
+                        try:
+                            # 1. Try to get PID (LOCAL_PEERPID = 0x002)
+                            creds_pid = sock.getsockopt(0, 0x002, 4)
+                            peer_pid = _struct.unpack('i', creds_pid)[0]
+                            
+                            # 2. Try to get UID (LOCAL_PEERCRED = 0x001)
+                            # On macOS, xucred is 76 bytes.
+                            # struct xucred { u_short cr_version; uid_t cr_uid; ... }
+                            # Offset 0: cr_version (2)
+                            # Offset 2: padding (2)
+                            # Offset 4: cr_uid (4)
+                            creds_u = sock.getsockopt(0, 0x001, 76)
+                            if len(creds_u) >= 8:
+                                peer_uid = _struct.unpack('I', creds_u[4:8])[0]
+                            else:
+                                raise ValueError(f"xucred too short: {len(creds_u)}")
+                            
+                            # Validate UID matches (Same-User isolation)
+                            my_uid = os.getuid()
+                            if peer_uid != my_uid:
+                                print(f"RSGI Gate H (macOS): Rejected connection from UID {peer_uid} (expected {my_uid})", file=sys.stderr)
                                 writer.close()
                                 await writer.wait_closed()
                                 return
-                            # SUCCESS: PID matches
-                        elif peer_pid == 0:
-                            # TITANIUM RULE: No 0-PID broad acceptance.
-                            # If we can't verify the PID, we can't guarantee sovereignty.
-                            print("RSGI Gate H (macOS): Rejected connection - Peer PID is 0 and no authorized Host PID provided", file=sys.stderr)
+                            
+                            if authorized_host_pid:
+                                if str(peer_pid) != authorized_host_pid:
+                                    print(f"RSGI Gate H (macOS): Rejected connection from unauthorized PID {peer_pid} (authorized: {authorized_host_pid})", file=sys.stderr)
+                                    writer.close()
+                                    await writer.wait_closed()
+                                    return
+                            elif peer_pid == 0:
+                                # TITANIUM RULE: No 0-PID broad acceptance.
+                                print("RSGI Gate H (macOS): Rejected connection - Peer PID is 0 and no authorized Host PID provided", file=sys.stderr)
+                                writer.close()
+                                await writer.wait_closed()
+                                return
+                        except Exception as e:
+                            print(f"RSGI Gate H: Could not retrieve peer credentials on macOS: {e}", file=sys.stderr)
                             writer.close()
                             await writer.wait_closed()
                             return
-                    except Exception as e:
-                        # If extraction totally fails, we cannot guarantee Gate H
-                        print(f"RSGI Gate H: Could not retrieve peer credentials on macOS: {e}", file=sys.stderr)
-                        writer.close()
-                        await writer.wait_closed()
-                        return
             
             # 1. Send READY
             ready_msg = [
