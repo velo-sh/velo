@@ -205,21 +205,36 @@ $ velo security check
 ╚══════════════════════════════════════════════════════════╝
 ```
 
-### 7.5 Failure Diagnostics (Phase 8.x)
+### 7.5 Failure Diagnostics (Phase 7.2 Enhancement)
 
-When application fails to start, provide automatic diagnosis:
+When application components fail to start or communicate, Velo MUST provide automatic, first-principles diagnosis:
 
-```
-[VELO:DIAG] Application failed to start.
-            Possible causes:
-            1. Import path blocked - check VELO_LOG=debug
-            2. Environment variable filtered - see pyproject.toml
-            3. Dependency conflict - run 'velo deps check'
-            
-            Run 'velo doctor' for full diagnostics.
-```
+#### 7.5.1 Handshake Timeout (Implicit Blocking)
+If a worker fails to establish the RSGI handshake within the security window (default 500ms):
+- **User Perception**: 502/503 Gateway Error.
+- **Diagnostic Output**:
+  ```
+  🚨 [VELO Handshake Timeout] Worker failed to respond within 500ms.
+  💡 TIP: This usually means your app has blocking top-level code or manual 'uvicorn.run()' at the module level.
+  💡 FIX: Ensure all blocking initialization is inside `if __name__ == '__main__':` or async handlers.
+  ```
 
-### 7.6 Tiered Logging Strategy
+#### 7.5.2 Import Path Scrubbing
+If a worker crashes with `ImportError` due to Environment Shielding:
+- **Diagnostic Output**:
+  ```
+  🚨 [VELO-SEC-002] Import path blocked by Environment Shield.
+  💡 TIP: Velo restricts access to absolute paths to prevent supply-chain leaks.
+  💡 FIX: Check pyproject.toml [tool.velo.security] trusted_paths.
+  ```
+
+### 7.6 Satori Diagnostics (Standardized Actionable Advice)
+Every high-level error log MUST follow the **Satori Pattern**:
+1. **The Alarm**: Concise error description with searchable code (e.g., `🚨 [VELO-ERR-XXX]`).
+2. **The Reason**: Identification of the most likely logical cause (The `💡 TIP`).
+3. **The Path**: Immediate, actionable step to resolve the issue (The `💡 FIX`).
+
+### 7.7 Tiered Logging Strategy
 
 | Level | Content | Audience |
 |:---|:---|:---|
@@ -228,7 +243,7 @@ When application fails to start, provide automatic diagnosis:
 | **INFO** | Filter summary (e.g., "2 vars filtered") | Default visible |
 | **DEBUG** | Each filtered variable detail | Debugging |
 
-### 7.7 Logging Output Strategy
+### 7.8 Logging Output Strategy
 
 > [!NOTE]
 > Follow cloud-native best practices: stdout by default, structured JSON for aggregation.

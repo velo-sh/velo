@@ -61,7 +61,11 @@ class RSGIWorker:
         
         Gate O: Use memoryview to avoid bytes slice copy.
         """
-        len_data = await reader.readexactly(4)
+        try:
+            len_data = await reader.readexactly(4)
+        except asyncio.IncompleteReadError:
+            return None
+            
         length = struct.unpack(">I", len_data)[0]
         payload = await reader.readexactly(length)
         # Gate O: memoryview for zero-copy slice (RFC-0019 Section 5.3)
@@ -170,8 +174,16 @@ class RSGIWorker:
             # 3. Request Loop
             while True:
                 msg = await self.recv_msg(reader)
+                if msg is None:
+                    # Graceful disconnect (Host closed connection)
+                    break
+                    
                 if msg[0] == TYPE_REQ_START:
                     await self.process_request(msg, reader, writer)
+                elif msg[0] == TYPE_REQ_BODY:
+                    # PROSECUTOR: Draining orphaned body frames from a previous request
+                    # This happens if a GET request app returns before Host sends EOF
+                    continue
                 elif msg[0] == TYPE_KEEPALIVE:
                     continue
                 elif msg[0] == TYPE_LIFESPAN_SHUTDOWN:
@@ -182,16 +194,21 @@ class RSGIWorker:
                     print(f"RSGI Warning: Unexpected message type {msg[0]}")
 
         except Exception as e:
-            print(f"RSGI Connection Error: {e}")
+            print(f"RSGI Connection Error (handle_connection): {e}", file=sys.stderr)
             traceback.print_exc()
         finally:
             writer.close()
             await writer.wait_closed()
 
-    async def process_request(self, req_start, reader, writer):
+    async def process_request(self, req_start: List[Any], reader, writer):
         """Bridge RSGI request to ASGI application."""
-        # req_start: [type, req_id, method, path, headers, has_body, client]
-        _, req_id, method, path, headers, has_body, client = req_start
+        # req_start: [type, req_id, method, path, headers, has_body, client?]
+        if len(req_start) == 7:
+            _, req_id, method, path, headers, has_body, client = req_start
+        else:
+            # Backward compatibility for Phase 7.2 v1
+            _, req_id, method, path, headers, has_body = req_start
+            client = None
         
         # Gate P: Intern header names only, not values (RFC-0019 Section 5.4)
         # Convert headers to ASGI format (list of tuples of bytes)
@@ -262,8 +279,10 @@ class RSGIWorker:
                         if is_eof:
                             break
                     else:
-                        print(f"RSGI Warning: Unexpected message in body stream: {msg[0]}")
+                        print(f"RSGI Warning: Unexpected message in body stream: {msg[0]}", file=sys.stderr)
                         break
+            except Exception as e:
+                print(f"RSGI Connection Error (read_body_task): {e}", file=sys.stderr)
             finally:
                 body_complete.set()
 
@@ -271,8 +290,14 @@ class RSGIWorker:
         body_task = asyncio.create_task(read_body_task())
 
         try:
+            # Step-by-Step Observation Point
+            LogUtils.debug_log(f"[RSGI-DISPATCH] Dispatching to {self.app.__class__.__name__} ID:{req_id}")
             await self.app(scope, receive, send)
-        except Exception as e:
+            # Ensure we don't return until body_task is done OR cancelled
+            if not body_complete.is_set():
+                # If app didn't consume body, we MUST wait or we'll pollute the main loop
+                await asyncio.wait_for(body_complete.wait(), timeout=1.0)
+        except (asyncio.TimeoutError, Exception) as e:
             print(f"ASGI App Error: {e}")
             traceback.print_exc()
         finally:
