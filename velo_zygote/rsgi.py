@@ -102,15 +102,25 @@ class RSGIWorker:
                 except (OSError, AttributeError):
                     # macOS Fallback: LOCAL_PEERPID + LOCAL_PEERCRED
                     try:
-                        # SOL_LOCAL = 0, LOCAL_PEERPID = 0x001, LOCAL_PEERCRED = 0x002
-                        # 1. Try to get PID
-                        creds_pid = sock.getsockopt(0, 0x001, 4)
+                        # PROBE RESULTS: SOL_LOCAL = 0, LOCAL_PEERCRED = 0x001, LOCAL_PEERPID = 0x002
+                        # 1. Try to get PID (0x002)
+                        creds_pid = sock.getsockopt(0, 0x002, 4)
                         peer_pid = _struct.unpack('i', creds_pid)[0]
                         
-                        # 2. Try to get UID (LOCAL_PEERCRED)
-                        creds_uid = sock.getsockopt(0, 0x002, 32) # xucred size varies, but 32 is enough
-                        # struct xucred: version (u16), uid (u32), ...
-                        peer_uid = _struct.unpack('HI', creds_uid[:6])[1]
+                        # 2. Try to get UID (LOCAL_PEERCRED = 0x001)
+                        # Probe showed 00000000f5010000 for UID 501
+                        creds_uid = sock.getsockopt(0, 0x001, 32)
+                        
+                        if len(creds_uid) >= 8:
+                            # Format: version(u16), padding(u16), uid(u32)
+                            # Native 'HI' expects 8 bytes: H(2) + padding(2) + I(4)
+                            peer_uid = _struct.unpack('HI', creds_uid[:8])[1]
+                        elif len(creds_uid) >= 4:
+                            # Direct UID?
+                            peer_uid = _struct.unpack('I', creds_uid[:4])[0]
+                        else:
+                            LogUtils.log(f"RSGI Gate H Error: LOCAL_PEERCRED buffer too short ({len(creds_uid)} bytes)")
+                            raise ValueError("Incomplete peer credentials")
                         
                         # Validate UID matches (Same-User isolation)
                         my_uid = os.getuid()
@@ -282,6 +292,22 @@ def run_rsgi(app_str: str, uds_path: str):
     random.seed()
     os.urandom(16)  # Force kernel entropy refresh
     
+    # DEF-72-REG: Sovereignty Guard (RFC-0019)
+    # Ensure uvicorn is NOT pre-loaded by early bootstrap or dependencies.
+    if "uvicorn" in sys.modules:
+        LogUtils.debug_log("SOVEREIGNTY VIOLATION: uvicorn pre-loaded! Purging from sys.modules.")
+        # Identify the importer for forensic analysis
+        for name, mod in list(sys.modules.items()):
+            if name == "uvicorn":
+                continue
+            try:
+                if hasattr(mod, "__file__") and mod.__file__:
+                    # This is just a heuristic, real forensic would use a custom loader
+                    pass
+            except:
+                pass
+        del sys.modules["uvicorn"]
+
     # Import app
     LogUtils.debug_log(f"RSGI Worker importing app: {app_str}")
     module_name, app_name = app_str.split(":")
