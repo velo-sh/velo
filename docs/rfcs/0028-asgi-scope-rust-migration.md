@@ -1,9 +1,14 @@
 # RFC-0028: ASGI Scope Rust Migration
 
-**Status**: DRAFT
+**Status**: ~~DRAFT~~ → **SUPERSEDED**
 **Author**: Architect
 **Date**: 2026-01-14
-**Phase**: 8.x (Performance Optimization)
+**Phase**: ~~8.x~~ (Obsolete)
+
+> [!WARNING]
+> **SUPERSEDED by [RFC-0029: Unified Granian Worker Architecture](./0029-unified-granian-worker-architecture.md)**
+>
+> RFC-0029 adopts Granian's native PyO3 Worker model, which already includes Rust-side ASGI scope building via `granian::asgi::utils::build_scope_http()`. This RFC is no longer needed as a separate optimization.
 
 ## Related Documents
 

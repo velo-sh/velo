@@ -3,12 +3,12 @@
 **Status**: DRAFT → REVISED
 **Author**: Architect
 **Date**: 2026-01-14
-**Phase**: 7.2 → 7.3 (Single-Phase Feature)
+**Phase**: 7.3 (Interim) → 9.x (Native via RFC-0029)
 
 ## Related Documents
 
 - [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md)
-- [RFC-0024: Forensic Compatibility Specification](./0024-forensic-compatibility-specification.md)
+- [RFC-0029: Unified Granian Worker Architecture](./0029-unified-granian-worker-architecture.md) ← **Evolution Path**
 - [SPEC-0005: SSOT Master Standard](../architecture/SPEC-0005-SSOT-MASTER-STANDARD.md)
 
 ---
@@ -18,7 +18,9 @@
 This RFC defines the architecture for WebSocket support in Velo's RSGI (Native Sovereignty) mode.
 
 > [!IMPORTANT]
-> **Revision Notice (Jan 14, 2026)**: After Grand Council re-evaluation, the architecture has been **simplified** to directly leverage Granian's existing WebSocket capability, rather than implementing a new Protocol Tunneling layer.
+> **Evolution Notice (Jan 14, 2026)**:
+> - **Phase 7.3 (Interim)**: Enable WebSocket via Granian bridge within current RSGI Host
+> - **Phase 9.x (Final)**: [RFC-0029](./0029-unified-granian-worker-architecture.md) unifies the entire architecture to Granian Worker model, making WebSocket fully native with ~1-5μs latency
 
 ---
 
