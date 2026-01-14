@@ -55,6 +55,7 @@ markers = [
     "timeout: Tests with custom timeout requirements",
     "happy_path: Level 1 happy path journey tests",
     "cli: CLI-specific integration tests",
+    "benchmark: Performance benchmark tests",
 ]
 
 [tool.mypy]

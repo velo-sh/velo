@@ -252,51 +252,52 @@ impl Worker {
         project_dir: &Path,
         _config: &crate::config::VeloConfig,
     ) -> Result<Self> {
-        use crate::granian::config::WorkerConfig;
-        use crate::granian::worker_entry;
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
 
         Self::validate_app_path(app)?;
 
-        match unsafe { libc::fork() } {
-            -1 => anyhow::bail!("fork() failed"),
-            0 => {
-                // CHILD PROCESS
+        // RFC-0019/0025 executive model: Spawn a NEW velo process as the worker
+        // This is safe to call from a multi-threaded Host (avoiding fork-safety issues).
+        let mut cmd = Command::new(std::env::current_exe()?);
+        cmd.arg("worker-native")
+            .arg("--worker-id")
+            .arg(worker_id.to_string())
+            .arg("--fd")
+            .arg(socket_fd.to_string())
+            .arg("--app")
+            .arg(app)
+            .arg("--project-dir")
+            .arg(project_dir);
 
-                // 1. Reset signal handlers to defaults
-                worker_entry::reset_signal_handlers();
-
-                // 2. Close all FDs except the listener
-                worker_entry::close_range_except(&[socket_fd]);
-
-                // 3. Prepare worker config
-                let g_config = WorkerConfig::new(worker_id, socket_fd, app)
-                    .with_project_dir(project_dir.to_path_buf())
-                    .with_websockets(true)
-                    .with_http_mode("auto");
-
-                // 4. Run worker (blocks until completion)
-                if let Err(e) = worker_entry::run_worker(g_config) {
-                    eprintln!(
-                        "[WORKER] CRITICAL: Granian worker initialization failed: {}",
-                        e
-                    );
-                    std::process::exit(1);
-                }
-
-                std::process::exit(0);
-            }
-            pid => {
-                // PARENT PROCESS
-                Ok(Self {
-                    pid: pid as u32,
-                    port: 0,
-                    started_at: Instant::now(),
-                    zygote_socket: None,
-                    script_path: None,
-                    socket_path: None, // Uses shared FD instead of UDS path
-                })
-            }
+        // Inherit PYTHONPATH for the worker
+        if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
+            cmd.env("PYTHONPATH", pythonpath);
         }
+
+        // Ensure the listener FD is inherited despite FD_CLOEXEC
+        unsafe {
+            cmd.pre_exec(move || {
+                let flags = libc::fcntl(socket_fd, libc::F_GETFD);
+                if flags != -1 {
+                    libc::fcntl(socket_fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
+                }
+                Ok(())
+            });
+        }
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn native worker: {}", e))?;
+
+        Ok(Self {
+            pid: child.id(),
+            port: 0,
+            started_at: Instant::now(),
+            zygote_socket: None,
+            script_path: None,
+            socket_path: None,
+        })
     }
 
     /// Validate app path security

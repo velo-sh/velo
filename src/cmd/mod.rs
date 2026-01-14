@@ -12,6 +12,7 @@ pub mod pre_flight;
 pub mod python;
 pub mod run;
 pub mod serve;
+pub mod worker_native;
 pub mod zygote; // RFC-0018: Shadow commands
 
 pub use analyze::cmd_analyze;
@@ -24,4 +25,5 @@ pub use pre_flight::cmd_debug_pre_flight;
 pub use python::cmd_python; // RFC-0018: managed Python
 pub use run::cmd_run;
 pub use serve::cmd_serve;
+pub use worker_native::cmd_worker_native;
 pub use zygote::cmd_zygote;
