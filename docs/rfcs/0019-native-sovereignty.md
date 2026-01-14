@@ -28,6 +28,52 @@
 | 7.x (Legacy) | UDS + MessagePack | ~50-100μs |
 | **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** |
 
+### 1.1 Scope: ASGI Web Server Mode Only
+
+> [!IMPORTANT]
+> This RFC applies **only to ASGI Web Server mode** (`velo serve`). Other Velo modes continue to use their existing architectures.
+
+| Mode | Command | Architecture | This RFC |
+|:---|:---|:---|:---|
+| **ASGI Web Server** | `velo serve main:app` | Granian + PyO3 + Multi-Worker | ✅ **Applies** |
+| Script Runner | `velo run script.py` | Zygote + Single Process | ❌ Unchanged |
+| Bundle Executable | `velo bundle` | Embedded Python | ❌ Unchanged |
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      VELO RUNNING MODES                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 1: velo serve main:app  [THIS RFC]                          │  │
+│  │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐           │  │
+│  │  │  Master     │───▶│  Worker 0   │ .. │  Worker N   │           │  │
+│  │  │  HTTP/TLS   │    │  Granian    │    │  Granian    │           │  │
+│  │  └─────────────┘    └─────────────┘    └─────────────┘           │  │
+│  │  Multi-Worker, Load Balancing, HTTP/WebSocket, High Concurrency  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 2: velo run script.py  [UNCHANGED]                          │  │
+│  │  ┌─────────────┐    ┌─────────────────────────────────┐          │  │
+│  │  │  Velo CLI   │───▶│  Python + Zygote (fast import)  │          │  │
+│  │  └─────────────┘    └─────────────────────────────────┘          │  │
+│  │  Single Process, Fast Startup (~50ms), Batch/CLI                 │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 3: ./my-app (after velo bundle)  [UNCHANGED]                │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐ │  │
+│  │  │  Single Executable: Velo + Embedded Python + Dependencies   │ │  │
+│  │  └─────────────────────────────────────────────────────────────┘ │  │
+│  │  No Python Install Required, Self-Contained Distribution        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Invariant**: Changes to ASGI Web Server mode MUST NOT break Script Runner or Bundle modes.
+
 ## 2. Motivation
 Current limitations of the Uvicorn-wrapper model:
 *   **Double Handling**: Requests are parsed by Rust (L7 Proxy) then re-parsed by Uvicorn.
