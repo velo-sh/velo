@@ -653,7 +653,6 @@ class TestNetworkEdgeCases:
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="WebSocket ping/pong requires data plane")
     def test_websocket_ping_pong(self):
         """[COUNCIL-NET-01] WebSocket ping/pong heartbeat."""
         with CouncilTestProject("ws-ping") as p:
@@ -765,7 +764,6 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="Binary WebSocket frames require data plane")
     def test_websocket_binary_frames(self):
         """[COUNCIL-NET-05] WebSocket binary frame handling."""
         with CouncilTestProject("ws-binary") as p:
@@ -788,10 +786,10 @@ async def ws_binary(websocket: WebSocket):
             if p.alive:
                 import websocket
                 ws = websocket.create_connection(f"ws://127.0.0.1:{p.port}/ws", timeout=5)
-                ws.send_binary(b"\\x00\\x01\\x02\\x03")
+                ws.send_binary(b"\x00\x01\x02\x03")
                 data = ws.recv()
                 ws.close()
-                assert data == b"\\x03\\x02\\x01\\x00"
+                assert data == b"\x03\x02\x01\x00"
 
 
 # =============================================================================
