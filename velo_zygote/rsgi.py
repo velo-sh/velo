@@ -190,15 +190,22 @@ class RSGIWorker:
             for k, v in headers
         ]
 
+        # DEF-72-C01: Query String Preservation - robust splitting
+        path_parts = path.split("?", 1)
+        clean_path = path_parts[0]
+        query_string = path_parts[1] if len(path_parts) > 1 else ""
+
+        LogUtils.debug_log(f"RSGI Request: {method} {clean_path} (Query: {query_string})")
+
         scope = {
             "type": "http",
             "asgi": {"version": "3.0", "spec_version": "2.3"},
             "http_version": "1.1",
             "method": method,
             "scheme": "http",
-            "path": path.split("?")[0],
-            "raw_path": path.split("?")[0].encode("ascii"),
-            "query_string": path.split("?")[1].encode("ascii") if "?" in path else b"",
+            "path": clean_path,
+            "raw_path": clean_path.encode("ascii", errors="replace"),
+            "query_string": query_string.encode("ascii", errors="replace"),
             "headers": asgi_headers,
             "client": tuple(client) if client else None,
             "server": None,
