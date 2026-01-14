@@ -39,7 +39,7 @@ impl RSGIWorker {
             ssl_client_verify=false,
         )
     )]
-    fn new(
+    pub fn new(
         py: Python,
         worker_id: i32,
         sock: Py<SocketHolder>,
@@ -88,7 +88,7 @@ impl RSGIWorker {
         })
     }
 
-    fn serve_mtr(
+    pub fn serve_mtr(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -109,7 +109,7 @@ impl RSGIWorker {
         );
     }
 
-    fn serve_str(
+    pub fn serve_str(
         &self,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<PyAny>,
@@ -129,7 +129,7 @@ impl RSGIWorker {
         );
     }
 
-    fn serve_async<'p>(
+    pub fn serve_async<'p>(
         &self,
         callback: Py<CallbackScheduler>,
         event_loop: &Bound<'p, PyAny>,

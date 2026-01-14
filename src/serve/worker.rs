@@ -239,6 +239,64 @@ impl Worker {
         })
     }
 
+    /// Spawn a native Granian worker via fork() [Phase 7.3]
+    ///
+    /// This method forks the current process and initializes a Granian RSGI worker
+    /// in the child. The child process embeds PyO3 and runs the ASGI application
+    /// directly in-process.
+    #[cfg(unix)]
+    pub fn spawn_native(
+        app: &str,
+        worker_id: i32,
+        socket_fd: std::os::unix::io::RawFd,
+        _config: &crate::config::VeloConfig,
+    ) -> Result<Self> {
+        use crate::granian::config::WorkerConfig;
+        use crate::granian::worker_entry;
+
+        Self::validate_app_path(app)?;
+
+        match unsafe { libc::fork() } {
+            -1 => anyhow::bail!("fork() failed"),
+            0 => {
+                // CHILD PROCESS
+
+                // 1. Reset signal handlers to defaults
+                worker_entry::reset_signal_handlers();
+
+                // 2. Close all FDs except the listener
+                worker_entry::close_range_except(&[socket_fd]);
+
+                // 3. Prepare worker config
+                let g_config = WorkerConfig::new(worker_id, socket_fd, app)
+                    .with_websockets(true)
+                    .with_http_mode("auto");
+
+                // 4. Run worker (blocks until completion)
+                if let Err(e) = worker_entry::run_worker(g_config) {
+                    eprintln!(
+                        "[WORKER] CRITICAL: Granian worker initialization failed: {}",
+                        e
+                    );
+                    std::process::exit(1);
+                }
+
+                std::process::exit(0);
+            }
+            pid => {
+                // PARENT PROCESS
+                Ok(Self {
+                    pid: pid as u32,
+                    port: 0,
+                    started_at: Instant::now(),
+                    zygote_socket: None,
+                    script_path: None,
+                    socket_path: None, // Uses shared FD instead of UDS path
+                })
+            }
+        }
+    }
+
     /// Validate app path security
     fn validate_app_path(app: &str) -> Result<()> {
         if !app.contains(':') {
@@ -271,6 +329,7 @@ impl Worker {
     }
 
     /// Respawn this worker using its original parameters
+    #[allow(clippy::too_many_arguments)]
     pub fn respawn(
         &self,
         app: &str,
@@ -279,9 +338,18 @@ impl Worker {
         project_dir: &Path,
         config: &crate::config::VeloConfig,
         rsgi: bool,
+        #[cfg(unix)] socket_fd: Option<std::os::unix::io::RawFd>,
     ) -> Result<Self> {
         if let Some(ref zygote) = self.zygote_socket {
             Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config, rsgi)
+        } else if rsgi {
+            #[cfg(unix)]
+            {
+                if let Some(fd) = socket_fd {
+                    return Self::spawn_native(app, worker_id as i32, fd, config);
+                }
+            }
+            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         } else {
             Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         }
