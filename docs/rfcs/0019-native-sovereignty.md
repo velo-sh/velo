@@ -18,7 +18,7 @@
 > - **Before (Phase 7.x)**: UDS + MessagePack IPC (~50-100μs/request)
 > - **After (Phase 9.x)**: PyO3 Direct Call (~1-5μs/request)
 >
-> See [Section 3.5](#35-phase-9x-granian-native-architecture) for the new unified architecture.
+> See [Section 3.5](#35-phase-9x-granian-native-architecture-current) for the new unified architecture.
 
 ## 1. Summary
 "Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine powered by **Granian**.
@@ -148,6 +148,38 @@ The protocol defines the binary exchange between the Rust Host and Python Worker
 | `RES_START` | 0x03 | Worker -> Host | Status Code, Headers |
 | `RES_BODY` | 0x04 | Worker -> Host | Body-Chunk-N, Is-EOF |
 | `KEEPALIVE` | 0x09 | Both | Timestamp |
+
+> [!WARNING]
+> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Phase 9.x by direct PyO3 calls.
+> See Section 3.5 for the current architecture.
+
+### 3.5 Phase 9.x: Granian Native Architecture (Current)
+
+> [!IMPORTANT]
+> This section describes the **current recommended architecture** as of Phase 9.x.
+
+#### 3.5.1 Architecture Evolution
+
+| Phase | IPC Mechanism | Latency | Status |
+|:---|:---|:---|:---|
+| 7.x | UDS + MessagePack | ~50-100μs | **Legacy** |
+| **9.x** | **PyO3 Direct Call** | **~1-5μs** | **Current** |
+
+#### 3.5.2 Key Benefits
+
+| Aspect | Improvement |
+|:---|:---|
+| **Latency** | 10-50x faster (no serialization) |
+| **Code** | -1300 lines (delete `src/rsgi/`, `velo_zygote/rsgi.py`) |
+| **WebSocket** | Native via `tokio-tungstenite` (see RFC-0025) |
+| **Maintenance** | Single codebase, not two |
+
+#### 3.5.3 Implementation Requirements
+
+Refer to RFC-0025 Section 6 for blocking conditions:
+- **C1**: Zygote Phase Capability Whitelist
+- **C2**: Worker Lifecycle State Machine
+- **C3**: Granian ABI Freeze Strategy
 
 ## 4. The ABI Boundary
 To ensure TITANIUM-grade stability, the boundary is strictly defined:
@@ -563,4 +595,36 @@ Instead of Just-In-Time (JIT) compilation which competes for resources during re
 1.  **Copy-and-Patch JIT** (Python 3.13 strategy) - Likely the winner.
 2.  **Cranelift / LLVM** - For heavy numerical computing (Scientific workloads).
 3.  **WASM Intermediate** - For sandboxed, safe native execution.
+
+---
+
+## 9. Grand Council Review Summary
+
+**Initial Review**: 2026-01-09 (Phase 7.x UDS Architecture)
+**Re-Evaluation**: 2026-01-14 (Phase 9.x Granian Native Architecture)
+**Verdict**: ✅ **APPROVED**
+
+| Persona | Vote | Rationale |
+|:---|:---|:---|
+| HPC / Runtime Architect | ✅ **STRONG YES** | ~1-5μs latency via PyO3 |
+| Security Engineer | ✅ **YES** | Process isolation preserved via fork() |
+| Rust Core / Systems | ✅ **YES** | -1300 lines of code |
+| Python Runtime Engineer | ✅ **YES** | Standard PyO3 integration |
+| CTO | ✅ **YES** | Leverages existing Granian investment |
+
+**P0 Blocking Issues**: C1, C2, C3 (must be satisfied before implementation)
+
+---
+
+## 10. References
+
+- [Granian GitHub](https://github.com/emmett-framework/granian)
+- [PyO3 Documentation](https://pyo3.rs/)
+- [Zygote Process Model](https://source.android.com/docs/core/runtime)
+- [tokio-tungstenite](https://docs.rs/tokio-tungstenite)
+- [ASGI Specification](https://asgi.readthedocs.io/)
+
+---
+
+**Last Updated**: 2026-01-14
 
