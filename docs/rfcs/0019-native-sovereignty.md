@@ -25,7 +25,7 @@
 
 | Phase | Architecture | Latency |
 |:---|:---|:---|
-| 7.x (Legacy) | UDS + MessagePack | ~50-100μs |
+| 7.x (Legacy) | UDS + MessagePack | ~50-100μs |O
 | **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** |
 
 ### 1.1 Scope: ASGI Web Server Mode Only
