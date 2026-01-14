@@ -231,7 +231,16 @@ def make_hooks(loop, app):
                 if isinstance(scope.get('query_string'), str):
                     scope['query_string'] = scope['query_string'].encode('utf-8')
                 
-                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": []}
+                # Ensure client is a proper tuple (host, port) for FastAPI Request.client
+                client = scope.get('client')
+                if client is None:
+                    scope['client'] = ('127.0.0.1', 0)
+                elif isinstance(client, (list, tuple)) and len(client) >= 2:
+                    scope['client'] = (str(client[0]), int(client[1]) if client[1] else 0)
+                else:
+                    scope['client'] = ('127.0.0.1', 0)
+                
+                ctx = {"status": 200, "headers": [], "body_received": False, "response_sent": False, "body_chunks": [], "is_streaming": False}
                 
                 async def receive():
                     # INDICTMENT-06 Fix: Ensure ASGI-compliant receive() messages
@@ -265,11 +274,35 @@ def make_hooks(loop, app):
                     if m_type == 'http.response.start':
                         ctx["status"] = msg.get('status', 200)
                         ctx["headers"] = msg.get('headers', [])
+                        # Detect SSE/EventStream - these need immediate response, not buffering
+                        for h in ctx["headers"]:
+                            if isinstance(h, (list, tuple)) and len(h) >= 2:
+                                hname = h[0].lower() if isinstance(h[0], str) else h[0].decode('latin-1').lower()
+                                hval = h[1] if isinstance(h[1], str) else h[1].decode('latin-1')
+                                if hname == 'content-type' and 'text/event-stream' in hval:
+                                    ctx["is_streaming"] = True
+                                    break
                     elif m_type == 'http.response.body':
                         body = msg.get('body', b'')
                         more_body = msg.get('more_body', False)
                         
-                        # StreamingResponse support: buffer chunks until more_body=False
+                        # SSE/EventStream: send immediately on first body (workaround for sync proto)
+                        if ctx["is_streaming"] and not ctx.get("response_sent"):
+                            # For SSE, send initial response with first body chunk
+                            converted_headers = []
+                            for h in ctx["headers"]:
+                                if isinstance(h, (list, tuple)) and len(h) == 2:
+                                    k, v = h
+                                    if isinstance(k, bytes):
+                                        k = k.decode('latin-1')
+                                    if isinstance(v, bytes):
+                                        v = v.decode('latin-1')
+                                    converted_headers.append((k, v))
+                            proto.response_bytes(ctx["status"], converted_headers, body)
+                            ctx["response_sent"] = True
+                            return
+                        
+                        # Regular StreamingResponse: buffer chunks until more_body=False
                         if more_body:
                             ctx["body_chunks"].append(body)
                         else:
