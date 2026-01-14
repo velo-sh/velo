@@ -34,7 +34,12 @@ macro_rules! build_scope {
 
 macro_rules! handle_http_response {
     ($handler:expr, $rt:expr, $disconnect_guard:expr, $callback:expr, $body:expr, $scope:expr) => {
-        match timeout(Duration::from_secs(10), $handler($callback, $rt, $disconnect_guard, $body, $scope)).await {
+        match timeout(
+            Duration::from_secs(10),
+            $handler($callback, $rt, $disconnect_guard, $body, $scope),
+        )
+        .await
+        {
             Ok(Ok(PyResponse::Body(pyres))) => pyres.to_response(),
             Ok(Ok(PyResponse::File(pyres))) => pyres.to_response().await,
             Ok(Ok(PyResponse::FileRange(pyres))) => pyres.to_response().await,
