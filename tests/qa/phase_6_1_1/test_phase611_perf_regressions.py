@@ -121,16 +121,11 @@ class TestL5Performance:
         Priority: P1
 
         Steps:
-        1. Start with 4 workers
-        2. Measure RSS and PSS
-        3. Calculate sharing efficiency
+        1. Start with 4 workers via Zygote fork
+        2. Measure COW efficiency (shared vs dirty pages)
+        3. Verify efficiency > 20% (at least some memory is shared)
         """
-        from conftest_utils import get_pss, get_rss, IS_LINUX
-
-        # PSS (Proportional Set Size) is only available on Linux
-        # On macOS, get_pss returns RSS which makes COW calculation meaningless
-        if not IS_LINUX:
-            pytest.skip("COW efficiency test requires Linux PSS metrics (macOS only has RSS)")
+        from conftest_utils import get_cow_stats
 
         proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
         proc.wait_ready()
@@ -139,28 +134,26 @@ class TestL5Performance:
         if len(workers) < 4:
             pytest.skip(f"Only {len(workers)} workers detected")
 
-        # Get RSS (Resident Set Size) - total memory footprint
-        total_rss = sum(get_rss(pid) for pid in workers)
-        avg_rss = total_rss / len(workers)
+        # Collect COW stats for all workers
+        stats = [get_cow_stats(pid) for pid in workers]
+        
+        # Check if we got valid data
+        valid_stats = [s for s in stats if s["resident_kb"] > 0]
+        if not valid_stats:
+            pytest.skip("Could not collect COW memory stats")
 
-        # Get PSS (Proportional Set Size) - accounts for shared pages
-        total_pss = sum(get_pss(pid) for pid in workers)
-        avg_pss = total_pss / len(workers)
+        avg_resident = sum(s["resident_kb"] for s in valid_stats) / len(valid_stats)
+        avg_dirty = sum(s["dirty_kb"] for s in valid_stats) / len(valid_stats)
+        avg_efficiency = sum(s["cow_efficiency"] for s in valid_stats) / len(valid_stats)
 
-        # Calculate COW efficiency
-        # Lower PSS/RSS ratio = more sharing
-        if avg_rss > 0:
-            sharing_ratio = avg_pss / avg_rss
-            efficiency = (1 - sharing_ratio) * 100
+        print(f"Average Resident per worker: {avg_resident / 1024:.2f} MB")
+        print(f"Average Dirty per worker: {avg_dirty / 1024:.2f} MB")
+        print(f"COW sharing efficiency: {avg_efficiency:.1f}%")
 
-            print(f"Average RSS per worker: {avg_rss / 1024 / 1024:.2f} MB")
-            print(f"Average PSS per worker: {avg_pss / 1024 / 1024:.2f} MB")
-            print(f"Memory sharing efficiency: {efficiency:.1f}%")
-
-            # PSS should be < 50% of RSS with good COW sharing
-            assert (
-                sharing_ratio < 0.80
-            ), f"COW sharing ratio {sharing_ratio:.2f} too high (expected < 0.80)"
+        # With Zygote fork, we expect at least 20% memory sharing
+        # (shared libraries, Python runtime, preloaded modules)
+        assert avg_efficiency > 20.0, \
+            f"COW efficiency {avg_efficiency:.1f}% too low (expected > 20%)"
 
     def test_PERF_604_zygote_speedup(self, velo_serve_fixture):
         """PERF-604: Zygote speedup vs CPython > 10x.

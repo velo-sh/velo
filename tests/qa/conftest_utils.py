@@ -97,6 +97,70 @@ def get_process_rss_kb(pid: int) -> int:
     return 0
 
 
+def get_cow_stats(pid: int) -> dict:
+    """Get COW (Copy-on-Write) memory stats for a process.
+    
+    On Linux: Uses PSS from /proc/[pid]/smaps
+    On macOS: Uses vmmap to get DIRTY/RESIDENT ratio
+    
+    Returns:
+        dict with 'resident_kb', 'dirty_kb', 'cow_efficiency' (0-100%)
+    """
+    result = {"resident_kb": 0, "dirty_kb": 0, "cow_efficiency": 0.0}
+    
+    if IS_LINUX:
+        try:
+            pss = 0
+            rss = 0
+            with open(f"/proc/{pid}/smaps_rollup", "r") as f:
+                for line in f:
+                    if line.startswith("Pss:"):
+                        pss = int(line.split()[1])
+                    elif line.startswith("Rss:"):
+                        rss = int(line.split()[1])
+            result["resident_kb"] = rss
+            result["dirty_kb"] = pss  # PSS approximates "private" memory
+            if rss > 0:
+                result["cow_efficiency"] = (1.0 - pss / rss) * 100
+        except (FileNotFoundError, PermissionError):
+            pass
+    elif IS_MACOS:
+        try:
+            # Parse vmmap output for TOTAL line
+            # Format: TOTAL  VSIZE  RESIDENT  DIRTY  SWAPPED ...
+            proc = subprocess.run(
+                ["vmmap", "-summary", str(pid)],
+                capture_output=True, text=True, timeout=5
+            )
+            if proc.returncode == 0:
+                for line in proc.stdout.split('\n'):
+                    if line.startswith("TOTAL"):
+                        parts = line.split()
+                        # Parse size values (e.g., "87.0M", "1456K")
+                        def parse_size(s):
+                            s = s.strip()
+                            if s.endswith('G'):
+                                return int(float(s[:-1]) * 1024 * 1024)
+                            elif s.endswith('M'):
+                                return int(float(s[:-1]) * 1024)
+                            elif s.endswith('K'):
+                                return int(float(s[:-1]))
+                            return int(s) if s.isdigit() else 0
+                        
+                        if len(parts) >= 4:
+                            result["resident_kb"] = parse_size(parts[2])
+                            result["dirty_kb"] = parse_size(parts[3])
+                            if result["resident_kb"] > 0:
+                                # COW efficiency = (resident - dirty) / resident
+                                shared = result["resident_kb"] - result["dirty_kb"]
+                                result["cow_efficiency"] = (shared / result["resident_kb"]) * 100
+                        break
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+    
+    return result
+
+
 # =============================================================================
 # BINARY RESOLUTION
 # =============================================================================
