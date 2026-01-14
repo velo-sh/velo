@@ -81,7 +81,16 @@ FROM debian:bookworm-slim
 COPY --from=builder /app/target/production/velo /usr/local/bin/velo
 ```
 
-### 4.5 Core Components
+### 4.5 Tiered CI Orchestration
+To balance feedback speed with production integrity, Velo CI follows a tiered execution model:
+
+| Phase | Trigger | Profile | Primary Activity | Requirement |
+|:---|:---|:---|:---|:---|
+| **Tier 1: Fast Pass** | Every PR / Push | `dev` | `cargo check` + Unit Tests | **< 5 min**: Catch regressions early. |
+| **Tier 2: Integration** | Merge to `main` | `release` | Full QA Suite + Stress Tests | **< 15 min**: Verify stable integration. |
+| **Tier 3: Certification** | Nightly / Tags | `production` | Benchmarks + PGO + Audit | **Industrial Grade**: Final artifact quality. |
+
+### 4.6 Core Components
 | Component | Technology | Performance Value |
 |:---|:---|:---|
 | **Allocator** | `jemalloc` | Low fragmentation, high-concurrency heap |
