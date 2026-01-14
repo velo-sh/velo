@@ -1022,6 +1022,7 @@ pub fn run_server(
                 eprintln!("🚀 RSGI Host listening on http://{}", bind_addr);
                 loop {
                     if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let _ = stream.set_nodelay(true);
                         let io = TokioIo::new(stream);
                         let service = rsgi_host.clone().with_client_addr(peer_addr);
                         tokio::spawn(async move {
@@ -1043,6 +1044,7 @@ pub fn run_server(
                 eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
                 loop {
                     if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let _ = stream.set_nodelay(true);
                         let io = TokioIo::new(stream);
                         let service_with_addr = service.clone().with_client_addr(peer_addr);
                         tokio::spawn(async move {

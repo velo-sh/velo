@@ -336,12 +336,21 @@ impl Service<Request<Incoming>> for RSGIHost {
             let (body_tx, body_stream) = tokio::sync::mpsc::channel(1024);
 
             tokio::spawn(async move {
+                let mut chunk_count = 0;
                 loop {
                     match protocol::framing::recv_msg(&mut stream).await {
                         Ok(payload) => {
                             match rmp_serde::from_slice::<protocol::ResBody>(&payload) {
                                 Ok(res_body) => {
                                     if !res_body.2.is_empty() {
+                                        chunk_count += 1;
+                                        #[cfg(debug_assertions)]
+                                        eprintln!(
+                                            "[RSGI-DEBUG] Received chunk {} ({} bytes) at {:?}",
+                                            chunk_count,
+                                            res_body.2.len(),
+                                            std::time::Instant::now()
+                                        );
                                         let _ = body_tx
                                             .send(Ok(Frame::data(Bytes::from(res_body.2))))
                                             .await;
