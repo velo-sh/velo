@@ -407,12 +407,18 @@ enum WebsocketMessageType {
 pub(super) struct WebsocketInboundCloseMessage {
     #[pyo3(get)]
     kind: usize,
+    #[pyo3(get)]
+    code: Option<u16>,
+    #[pyo3(get)]
+    reason: Option<Py<PyString>>,
 }
 
 impl WebsocketInboundCloseMessage {
-    pub fn new() -> Self {
+    pub fn new(code: Option<u16>, reason: Option<Py<PyString>>) -> Self {
         Self {
             kind: WebsocketMessageType::Close as usize,
+            code,
+            reason,
         }
     }
 }
