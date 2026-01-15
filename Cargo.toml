@@ -15,6 +15,7 @@ hugepage_alignment = 2097152
 [lints.rust]
 unsafe_code = "allow" # Required for Unix signals and UDS integration
 unused_imports = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(PyPy)', 'cfg(Py_3_10)'] }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -37,6 +38,8 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+socket2 = { version = "0.6", features = ["all"] }
+pyo3 = { version = "0.27", features = ["anyhow", "bytes", "generate-import-lib"] }
 bytes = "1"
 blake3 = "1.5"
 hex = "0.4"
@@ -90,6 +93,7 @@ nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS supp
 [features]
 default = ["embedded_uv"]
 embedded_uv = []  # RFC-0018: Embed uv binary at build time
+granian_native = []  # RFC-0019/0025: Enable native Granian workers with PyO3
 
 [build-dependencies]
 blake3 = "1.5"    # RFC-0018: Hash generation for uv verification
@@ -102,17 +106,31 @@ serde = { version = "1.0", features = ["derive"] }
 # - lto=thin: ~3x faster than fat, still good optimization
 # - codegen-units=16: parallel compilation
 # - opt-level=2: sufficient for most use cases
-[profile.release]
-lto = "thin"          # Fast LTO (was "fat")
-strip = "symbols"     # Strip all symbols
-codegen-units = 16    # Parallel compilation (was 1)
-opt-level = 2         # Good optimization (was 3)
-panic = "abort"       # Smaller panic handling
+# 1. Dev Profile (Default: cargo build)
+# Optimized for: Compilation Speed (Fast Edit-Compile-Test Loop)
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked" # Faster linking on macOS/Linux
+incremental = true
 
-# Production profile: maximum optimization for final releases
-# Use with: cargo build --profile production
+# 2. Release Profile (Flag: --release)
+# Optimized for: General Testing & Regression (Balanced Speed/Perf)
+[profile.release]
+opt-level = 2
+lto = "thin"          # Fast LTO
+strip = "none"        # Keep symbols for regression debugging
+debug = 1             # Line tables only for backtraces
+codegen-units = 16    # Parallel compilation
+panic = "unwind"      # Standard stack unwinding for tests
+
+# 3. Production Profile (Flag: --profile production)
+# Optimized for: Titanium Performance & Minimum Binary Size (Final Release)
 [profile.production]
 inherits = "release"
-lto = "fat"           # Most aggressive LTO
-codegen-units = 1     # Better optimization
 opt-level = 3         # Maximum speed
+lto = "fat"           # Most aggressive LTO (Cross-crate optimization)
+codegen-units = 1     # No parallel codegen units (Maximum optimization)
+strip = true          # Strip all symbols for minimum size
+panic = "abort"       # Smallest binary, no stack unwinding
+debug = false

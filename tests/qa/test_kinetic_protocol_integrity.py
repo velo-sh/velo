@@ -12,7 +12,7 @@ pytestmark = pytest.mark.tier1
 
 # Velo Kinetic IPC Protocol (KIP) Constants (Sync with constants.py)
 PROTOCOL_VERSION = 1
-MAX_MESSAGE_SIZE = 10485760
+MAX_MESSAGE_SIZE = 65536
 
 
 @pytest.fixture

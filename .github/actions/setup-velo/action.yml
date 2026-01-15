@@ -45,6 +45,10 @@ runs:
         uv sync
         # SSoT: Centralized pyo3 interpreter discovery
         echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+        # RFC-0019: Export LD_LIBRARY_PATH for native pyo3 workers
+        # Note: uv-managed Python shared libraries are in the LIBDIR
+        PYTHON_LIB_DIR=$(.venv/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+        echo "LD_LIBRARY_PATH=$PYTHON_LIB_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Determine artifact name
       if: inputs.download-binary == 'true'

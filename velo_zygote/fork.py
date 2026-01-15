@@ -80,6 +80,7 @@ class ForkHandler:
         shm_fd = shm.fd if shm else None
         shm_size = shm.expected_size if shm else None
 
+        LogUtils.log(f"Forking child process for {script_path}...")
         pid = os.fork()
 
         if pid == 0:  # Child process

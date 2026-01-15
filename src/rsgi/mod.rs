@@ -6,13 +6,7 @@
 //!
 //! Gate I/K Integration: Granian Core provides zero-copy ASGI conversion.
 
-pub mod host;
-pub mod protocol;
-
-pub use host::RSGIHost;
-pub use protocol::*;
-
-// RFC-0019: Re-export vendored Granian core for ASGI/RSGI integration
+// RFC-0019/0025: Native Granian integration replaces this legacy UDS relay.
 pub use granian_core as granian;
 
 use thiserror::Error;

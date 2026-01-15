@@ -41,6 +41,8 @@ def _log_banner():
     Display a diagnostic startup banner according to the Velo Service Pattern.
     Standardized service header for transparency.
     """
+    if os.environ.get("VELO_TEST_MODE") == "1":
+        return
     try:
         from velo_zygote import constants
 
@@ -73,6 +75,13 @@ def initialize():
     Rule 1: Explicit Bootstrap
     Rule 3: Boot-Validation
     """
+    # 0. Pre-import critical dependencies before sys.path is modified
+    # This prevents DEF-72-C02: Dependency Shadowing (e.g. user msgpack.py)
+    try:
+        import msgpack  # type: ignore
+    except ImportError:
+        pass
+
     # 1. Environment Normalization (Phase 11.1)
     _normalize_environment()
 

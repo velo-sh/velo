@@ -8,7 +8,8 @@ pub(crate) type PyCBScheduler = Py<CallbackScheduler>;
 pub(crate) type ArcCBScheduler = Arc<PyCBScheduler>;
 
 #[pyclass(frozen, subclass, module = "granian._granian")]
-pub(crate) struct CallbackScheduler {
+// Velo Integration: Made public for RFC-0019/0025
+pub struct CallbackScheduler {
     pub cb: Py<PyAny>,
     #[pyo3(get)]
     _loop: Py<PyAny>,
@@ -36,7 +37,12 @@ impl CallbackScheduler {
         let sched = self.schedule_fn.get().unwrap().as_ptr();
 
         unsafe {
-            pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
+            let res = pyo3::ffi::PyObject_CallOneArg(sched, cbarg);
+            if res.is_null() {
+                pyo3::ffi::PyErr_Print();
+            } else {
+                pyo3::ffi::Py_DECREF(res);
+            }
         }
 
         watcher.drop_ref(py);
@@ -217,7 +223,7 @@ impl CallbackScheduler {
 #[pymethods]
 impl CallbackScheduler {
     #[new]
-    fn new(
+    pub fn new(
         py: Python,
         event_loop: Py<PyAny>,
         cb: Py<PyAny>,

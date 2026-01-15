@@ -348,14 +348,31 @@ impl RSGIWebsocketProtocol {
         }
     }
 
-    fn accept<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyAny>> {
+    #[pyo3(signature = (subprotocol=None, headers=None))]
+    fn accept<'p>(
+        &self,
+        py: Python<'p>,
+        subprotocol: Option<String>,
+        headers: Option<Vec<(String, String)>>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         let rth = self.rt.clone();
         let mut upgrade = self.upgrade.write().unwrap().take().unwrap();
         let transport = self.websocket.clone();
         let itransport = self.transport.clone();
+
+        let mut upgrade_headers = headers.unwrap_or_default();
+        if let Some(subproto) = subprotocol {
+            upgrade_headers.push(("Sec-WebSocket-Protocol".to_string(), subproto));
+        }
+        let upgrade_headers = if upgrade_headers.is_empty() {
+            None
+        } else {
+            Some(upgrade_headers)
+        };
+
         future_into_py_futlike(self.rt.clone(), py, async move {
             let mut ws = transport.lock().await;
-            match upgrade.send(None).await {
+            match upgrade.send(upgrade_headers).await {
                 Ok(()) => match (&mut *ws).await {
                     Ok(stream) => {
                         let (stx, srx) = stream.split();
