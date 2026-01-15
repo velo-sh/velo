@@ -42,6 +42,7 @@ class TestRFC0025WebSocketArchitecture:
 async def app(scope, proto):
     if scope.proto == 'ws':
         await proto.accept()
+        proto.close()
         # Immediately close for this test
 """)
         port = isolated_env.next_port()
@@ -84,7 +85,7 @@ async def app(scope, proto):
     if scope.proto == 'ws':
         transport = await proto.accept()
         await transport.send_str(f"PID:{os.getpid()}")
-        await transport.close()
+        proto.close()
 """)
         port = isolated_env.next_port()
         env = os.environ.copy()

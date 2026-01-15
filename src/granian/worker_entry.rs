@@ -222,7 +222,15 @@ def make_hooks(loop, app):
                 }
                 
                 if is_ws:
-                    scope["subprotocols"] = []
+                    subprotocols = []
+                    for k, v in rsgi_scope.headers.raw_items():
+                        if k.lower() == b"sec-websocket-protocol":
+                            try:
+                                subprotocols = [p.strip() for p in v.decode("latin-1").split(",")]
+                            except:
+                                pass
+                            break
+                    scope["subprotocols"] = subprotocols
                 
                 ctx = {
                     "status": 200, 
@@ -258,7 +266,10 @@ def make_hooks(loop, app):
                             if msg.kind == 1:
                                 return {"type": "websocket.receive", "bytes": msg.data}
                             if msg.kind == 0:
-                                return {"type": "websocket.disconnect", "code": 1000}
+                                return {
+                                    "type": "websocket.disconnect", 
+                                    "code": msg.code if msg.code is not None else 1000
+                                }
                             return {"type": "websocket.receive", "bytes": b""}
                         except Exception as e:
                             # print(f"[DEBUG] WS receive error: {e}")
@@ -311,7 +322,15 @@ def make_hooks(loop, app):
                             ctx["response_sent"] = True
                     elif m_type == 'websocket.accept':
                         # RSGIWebsocketProtocol.accept() handshakes and returns transport
-                        ctx["ws_transport"] = await proto.accept()
+                        subprotocol = msg.get('subprotocol')
+                        headers = msg.get('headers')
+                        # Convert ASGI headers (list of [bytes, bytes]) to RSGI format
+                        rsgi_headers = []
+                        if headers:
+                            rsgi_headers = [(k.decode('latin-1') if isinstance(k, bytes) else k,
+                                           v.decode('latin-1') if isinstance(v, bytes) else v)
+                                          for k, v in headers]
+                        ctx["ws_transport"] = await proto.accept(subprotocol, rsgi_headers)
                         ctx["ws_accepted"] = True
                     elif m_type == 'websocket.send':
                         if not ctx["ws_transport"]: return
