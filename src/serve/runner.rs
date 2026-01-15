@@ -929,6 +929,7 @@ pub fn run_server(
                 &args.app,
                 i as i32,
                 fd,
+                python_path,
                 project_dir,
                 config,
             ) {
