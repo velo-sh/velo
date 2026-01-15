@@ -187,9 +187,14 @@ def make_hooks(loop, app):
             loop.call_soon_threadsafe(_start)
         elif proto_type == "asgi":
             async def asgi_bridge(rsgi_scope, proto):
+                import time
                 # INDICTMENT-05/07/WS Fix: Unified ASGI Bridge
                 # Detect protocol type from rsgi_scope.proto: "ws" for WebSocket
                 is_ws = rsgi_scope.proto == "ws"
+                
+                # SPEC-0006 §6: Generate TraceID for cross-language observability
+                # Format: velo-{timestamp_ms}-{scope_id} for uniqueness
+                trace_id = f"velo-{int(time.time() * 1000)}-{id(rsgi_scope):x}"
                 
                 scope = {
                     "type": "websocket" if is_ws else "http",
@@ -206,6 +211,8 @@ def make_hooks(loop, app):
                     "client": rsgi_scope.client if isinstance(rsgi_scope.client, (list, tuple)) else (rsgi_scope.client, 0),
                     # RFC-0019: RSGI tracing ID for forensic debugging
                     "rsgi.id": id(rsgi_scope),
+                    # SPEC-0006 §6/INV-POLY-003: Cross-language trace propagation
+                    "velo.trace_id": trace_id,
                 }
                 
                 if is_ws:
