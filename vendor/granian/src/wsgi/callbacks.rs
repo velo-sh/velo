@@ -146,10 +146,18 @@ pub(crate) fn call_http(
         if let Ok((proto, environ)) =
             build_wsgi(py, server_addr, client_addr, scheme, req, protocol, body)
         {
-            if let Err(err) = cb.get().cb.call1(py, (proto.clone_ref(py), environ)) {
-                log_application_callable_exception(py, &err);
-                if let Some(tx) = proto.get().tx() {
-                    let _ = tx.send((500, HeaderMap::new(), empty_body()));
+            let app = cb.get().cb.bind(py);
+            match app.call1((environ, proto.clone_ref(py))) {
+                Ok(iterable) => {
+                    if let Some((status, headers)) = proto.get().take_info() {
+                        proto.get().response_iter(py, status, headers, iterable);
+                    }
+                }
+                Err(err) => {
+                    log_application_callable_exception(py, &err);
+                    if let Some(tx) = proto.get().tx() {
+                        let _ = tx.send((500, HeaderMap::new(), empty_body()));
+                    }
                 }
             }
 

@@ -281,6 +281,13 @@ impl Worker {
             cmd.env("PYTHONPATH", pp);
         } else if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
             cmd.env("PYTHONPATH", pythonpath);
+        } else {
+            // If PYTHONPATH is not set in Host, detect it from venv/site-packages
+            // RFC-0012: Resilience for hermetic test environments
+            let (ppath, _) = crate::python::setup_python_env(project_dir, python_path);
+            if let Some(ppath) = ppath {
+                cmd.env("PYTHONPATH", ppath);
+            }
         }
 
         // Industrial Guard: Set VIRTUAL_ENV if we're in one

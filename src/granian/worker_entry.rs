@@ -157,50 +157,35 @@ import asyncio
 import inspect
 
 def make_hooks(loop, app):
-    # Industrial-Grade Bridge: Detect ASGI vs RSGI vs WSGI signature (RFC-0019)
-    # - ASGI: (scope, receive, send) -> 3 args, async
-    # - RSGI: (scope, proto) -> 2 args, async  
-    # - WSGI: (environ, start_response) -> 2 args, sync
+    # Industrial-Grade Bridge: Detect ASGI vs RSGI vs WSGI signature
     try:
         sig = inspect.signature(app)
         param_count = len(sig.parameters)
-        
-        # Check if app is async (ASGI/RSGI) or sync (WSGI)
         is_async = asyncio.iscoroutinefunction(app) or (
             hasattr(app, '__call__') and asyncio.iscoroutinefunction(app.__call__)
         )
         
         if param_count == 2 and not is_async:
-            # WSGI app detected! Wrap with a2wsgi adapter
-            try:
-                from a2wsgi import WSGIMiddleware
-                app = WSGIMiddleware(app)
-                is_asgi = True
-                print("[Velo] WSGI app detected, wrapped with a2wsgi.WSGIMiddleware")
-            except ImportError:
-                raise RuntimeError(
-                    "WSGI app detected but a2wsgi not installed. "
-                    "Run: pip install a2wsgi"
-                )
+            # Native WSGI detected
+            proto_type = "wsgi"
+            is_asgi = False # Not used for WSGI native path
         elif param_count >= 3:
+            proto_type = "asgi"
             is_asgi = True
         else:
-            # Native RSGI (2 args, async)
+            proto_type = "rsgi"
             is_asgi = False
-    except Exception as e:
-        # Fallback to ASGI if signature inspection fails
-        print(f"[Velo] Signature inspection failed: {e}, assuming ASGI")
+    except Exception:
+        proto_type = "asgi"
         is_asgi = True
 
     def _sched(watcher):
-        if not is_asgi:
-            # Native RSGI Path
+        if proto_type == "rsgi":
             def _start():
                 task = loop.create_task(app(watcher.scope, watcher.proto))
                 watcher.taskref(task)
             loop.call_soon_threadsafe(_start)
-        else:
-            # ASGI Compatibility Bridge
+        elif proto_type == "asgi":
             async def asgi_bridge(rsgi_scope, proto):
                 # INDICTMENT-05/07/WS Fix: Unified ASGI Bridge
                 # Detect protocol type from rsgi_scope.proto: "ws" for WebSocket
@@ -362,7 +347,7 @@ def make_hooks(loop, app):
     def _nop(*args, **kwargs):
         pass
         
-    return _sched, _nop
+    return proto_type, _sched, _nop
 
 def make_config(kwargs):
     from types import SimpleNamespace
@@ -379,23 +364,27 @@ def make_config(kwargs):
         .ok_or_else(|| GranianError::PythonInit("Failed to find make_hooks in globals".into()))?;
 
     let hooks_res = hooks_factory.call1((&event_loop, &app))?;
-    let (sched_fn, nop_fn): (Bound<'_, PyAny>, Bound<'_, PyAny>) =
+    let (proto_type, sched_fn, nop_fn): (String, Bound<'_, PyAny>, Bound<'_, PyAny>) =
         hooks_res.extract().map_err(|e| {
             GranianError::PythonInit(format!("Failed to initialize scheduler hooks: {e}"))
         })?;
+
+    info!("[Velo] Detected protocol: {}", proto_type);
+    let is_wsgi = proto_type == "wsgi";
 
     // Step 5.1: Create CallbackScheduler
     debug!("Creating CallbackScheduler");
     let scheduler = create_callback_scheduler(py, &event_loop, &app, Some(&nop_fn), Some(&nop_fn))?;
 
     // Set the internal _schedule_fn used by CallbackScheduler.schedule()
+    // For WSGI, CallbackScheduler might not be strictly needed for the serve call,
+    // but Granian expects it for common shared logic.
     scheduler
         .bind(py)
         .setattr("_schedule_fn", sched_fn)
         .map_err(|e| GranianError::PythonInit(format!("Failed to set _schedule_fn: {e}")))?;
 
-    // Step 6: Create RSGIWorker
-    debug!("Creating RSGIWorker");
+    // Step 6: Configuration Preparation
     let (
         ssl_enabled,
         ssl_cert,
@@ -466,51 +455,105 @@ def make_config(kwargs):
     )?;
     let http2_opts = make_config.call1((http2_dict,))?;
 
-    let worker = RSGIWorker::new(
-        py,
-        config.worker_id,
-        sock_py,
-        config.threads,
-        config.blocking_threads,
-        config.py_threads,
-        config.py_threads_idle_timeout,
-        config.backpressure,
-        &config.http_mode,
-        Some(http1_opts.unbind()),
-        Some(http2_opts.unbind()),
-        config.websockets_enabled,
-        None, // static_files
-        ssl_enabled,
-        ssl_cert,
-        ssl_key,
-        ssl_key_password,
-        ssl_protocol_min,
-        ssl_ca,
-        ssl_crl,
-        ssl_client_verify,
-    )
-    .map_err(|e| GranianError::WorkerStartup(format!("Failed to create RSGIWorker: {e}")))?;
+    if is_wsgi {
+        use granian_core::workers::WorkerSignalSync;
+        use granian_core::wsgi::serve::WSGIWorker;
 
-    // Step 7: Create WorkerSignal for shutdown
-    debug!("Creating WorkerSignal");
-    let signal = pyo3::Py::new(py, WorkerSignal::new())
-        .map_err(|e| GranianError::PyO3(format!("Failed to create WorkerSignal: {e}")))?;
+        debug!("Creating WSGIWorker");
+        let worker = WSGIWorker::new(
+            py,
+            config.worker_id,
+            sock_py,
+            config.threads,
+            config.blocking_threads,
+            config.py_threads,
+            config.py_threads_idle_timeout,
+            config.backpressure,
+            &config.http_mode,
+            Some(http1_opts.unbind()),
+            Some(http2_opts.unbind()),
+            None, // static_files
+            ssl_enabled,
+            ssl_cert,
+            ssl_key,
+            ssl_key_password,
+            ssl_protocol_min,
+            ssl_ca,
+            ssl_crl,
+            ssl_client_verify,
+        )
+        .map_err(|e| GranianError::WorkerStartup(format!("Failed to create WSGIWorker: {e}")))?;
 
-    // Step 8: Start serving
-    info!(
-        "Granian worker {} ready, serving on FD {}",
-        config.worker_id, config.socket_fd
-    );
+        // WSGI uses WorkerSignalSync. It requires a synchronization object with .wait()
+        // We use threading.Event() as the Industrial-Grade bridge.
+        let threading = py
+            .import("threading")
+            .map_err(|e| GranianError::PythonInit(format!("Failed to import threading: {e}")))?;
+        let event = threading.call_method0("Event").map_err(|e| {
+            GranianError::PythonInit(format!("Failed to create threading.Event: {e}"))
+        })?;
 
-    // serve_async returns a Python awaitable
-    debug!("Calling serve_async");
-    let serve_future = worker.serve_async(scheduler, &event_loop, signal);
+        let signal = pyo3::Py::new(py, WorkerSignalSync::new(event.unbind()))
+            .map_err(|e| GranianError::PyO3(format!("Failed to create WorkerSignalSync: {e}")))?;
 
-    // Run the event loop until completion
-    debug!("Starting event loop run_until_complete");
-    event_loop
-        .call_method1("run_until_complete", (serve_future,))
-        .map_err(|e| GranianError::WorkerStartup(format!("Event loop error: {e}")))?;
+        info!(
+            "Granian worker {} ready (WSGI), serving on FD {}",
+            config.worker_id, config.socket_fd
+        );
+
+        if config.threads > 1 {
+            worker.serve_mtr(py, scheduler, &event_loop, signal);
+        } else {
+            worker.serve_str(py, scheduler, &event_loop, signal);
+        }
+    } else {
+        debug!("Creating RSGIWorker");
+        let worker = RSGIWorker::new(
+            py,
+            config.worker_id,
+            sock_py,
+            config.threads,
+            config.blocking_threads,
+            config.py_threads,
+            config.py_threads_idle_timeout,
+            config.backpressure,
+            &config.http_mode,
+            Some(http1_opts.unbind()),
+            Some(http2_opts.unbind()),
+            config.websockets_enabled,
+            None, // static_files
+            ssl_enabled,
+            ssl_cert,
+            ssl_key,
+            ssl_key_password,
+            ssl_protocol_min,
+            ssl_ca,
+            ssl_crl,
+            ssl_client_verify,
+        )
+        .map_err(|e| GranianError::WorkerStartup(format!("Failed to create RSGIWorker: {e}")))?;
+
+        // Step 7: Create WorkerSignal for shutdown
+        debug!("Creating WorkerSignal");
+        let signal = pyo3::Py::new(py, WorkerSignal::new())
+            .map_err(|e| GranianError::PyO3(format!("Failed to create WorkerSignal: {e}")))?;
+
+        // Step 8: Start serving
+        info!(
+            "Granian worker {} ready (RSGI/ASGI), serving on FD {}",
+            config.worker_id, config.socket_fd
+        );
+
+        // serve_async returns a Python awaitable
+        debug!("Calling serve_async");
+        let serve_future = worker.serve_async(scheduler, &event_loop, signal);
+
+        // Run the event loop until completion
+        debug!("Starting event loop run_until_complete");
+        event_loop
+            .call_method1("run_until_complete", (serve_future,))
+            .map_err(|e| GranianError::WorkerStartup(format!("Event loop error: {e}")))?;
+    }
 
     info!("Granian worker {} shutting down", config.worker_id);
     Ok(())
@@ -554,6 +597,12 @@ fn load_asgi_app<'py>(
             }
         }
     }
+
+    // DEBUG: Log current sys.path and executable
+    let executable: String = sys.getattr("executable")?.extract()?;
+    eprintln!("DEBUG: Embedded Python Executable: {}", executable);
+    let current_path: Vec<String> = path.extract()?;
+    eprintln!("DEBUG: Embedded Python sys.path: {:?}", current_path);
 
     let parts: Vec<&str> = app_path.split(':').collect();
     if parts.len() != 2 {
