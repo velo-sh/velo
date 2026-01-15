@@ -428,7 +428,8 @@ import os
 async def app(scope, proto):
     '''Pure RSGI with (scope, proto) signature.'''
     body = f'{{"framework": "RSGI", "pid": {os.getpid()}, "chain": "complete"}}'
-    proto.response_str(200, [(b"content-type", b"application/json")], body)
+    # Granian RSGI API: headers must be string tuples, not bytes
+    proto.response_str(200, [("content-type", "application/json")], body)
 """)
             
             p.custody_sync()
