@@ -32,7 +32,7 @@ const RESERVED_PREFIXES: &[&str] = &[
 /// let spoofed = "[SUP] FAKE: malicious message";
 /// let clean = sanitize_worker_log(spoofed);
 /// assert!(!clean.contains("[SUP]"));
-/// assert!(clean.contains("[SPOOFED]"));
+/// assert!(clean.contains("[SPOOFED:SUP]"));
 /// ```
 pub fn sanitize_worker_log(line: &str) -> Cow<'_, str> {
     let mut needs_sanitization = false;
