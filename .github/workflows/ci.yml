@@ -55,9 +55,9 @@ jobs:
           python-version: ${{ steps.config.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
       - name: Pre-Flight Diagnostic
-        run: cargo run --release -- debug pre-flight
+        run: cargo run --release --all-features -- debug pre-flight
       - name: Build Velo (Release)
-        run: cargo build --release
+        run: cargo build --release --all-features
       - name: Run Total War Suite (Strict)
         run: |
           # Use the environment prepared by setup-velo
@@ -174,10 +174,10 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
 
       - name: Pre-Flight Diagnostic
-        run: cargo run --release -- debug pre-flight
+        run: cargo run --release --all-features -- debug pre-flight
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --all-features
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4

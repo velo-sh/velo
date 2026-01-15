@@ -19,7 +19,7 @@ def compile_velo():
     path_parts = env.get("PATH", "").split(os.pathsep)
     clean_path = os.pathsep.join(p for p in path_parts if not p.startswith(venv_bin))
     env["PATH"] = clean_path
-    res = subprocess.run(["cargo", "build", "--release"], capture_output=True, env=env)
+    res = subprocess.run(["cargo", "build", "--release", "--all-features"], capture_output=True, env=env)
     if res.returncode != 0:
         print("\n❌ Build Failed!")
         print(res.stderr.decode())

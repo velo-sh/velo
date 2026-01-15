@@ -626,7 +626,6 @@ class TestFlaskWSGI:
         with RealFrameworkProject("flask", "Flask") as p:
             p.set_pyproject(deps=[
                 "flask>=3.0.0",
-                "a2wsgi>=1.10.4",
             ])
             p.set_app("main.py", '''
 from flask import Flask, jsonify, request
@@ -772,7 +771,6 @@ app = get_asgi_application()
         with RealFrameworkProject("django-wsgi", "Django WSGI") as p:
             p.set_pyproject(deps=[
                 "django>=5.0",
-                "a2wsgi>=1.10.4",
             ])
             
             p.set_app("settings.py", '''

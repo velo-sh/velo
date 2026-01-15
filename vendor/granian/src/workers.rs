@@ -54,7 +54,7 @@ impl WorkerSignalSync {
 #[pymethods]
 impl WorkerSignalSync {
     #[new]
-    fn new(qs: Py<PyAny>) -> Self {
+    pub fn new(qs: Py<PyAny>) -> Self {
         let (tx, rx) = crossbeam_channel::bounded(1);
         Self {
             rx: Mutex::new(Some(rx)),
