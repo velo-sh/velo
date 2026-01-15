@@ -57,15 +57,53 @@ pub fn sanitize_worker_log(line: &str) -> Cow<'_, str> {
             let replacement = format!("[SPOOFED:{}]", prefix.trim_matches(&['[', ']'] as &[_]));
             result = result.replace(prefix, &replacement);
 
-            // Log security event (if this were in a real logging context)
-            eprintln!(
+            // Log security event
+            log::warn!(
                 "[VELO-SEC-004] Log injection attempt detected: {} -> {}",
-                prefix, replacement
+                prefix,
+                replacement
             );
         }
     }
 
     Cow::Owned(result)
+}
+
+/// Filter worker output through the anti-spoofing sanitizer.
+///
+/// SPEC-0006 INV-POLY-004: Workers cannot inject reserved tags.
+///
+/// # Example
+/// ```ignore
+/// use std::io::{BufRead, BufReader};
+/// use velo::common::log_sanitize::filter_worker_output;
+///
+/// let output = "[SUP] fake message\nlegit message\n";
+/// let filtered = filter_worker_output(output);
+/// assert!(filtered.contains("[SPOOFED:SUP]"));
+/// assert!(filtered.contains("legit message"));
+/// ```
+pub fn filter_worker_output(output: &str) -> String {
+    output
+        .lines()
+        .map(|line| sanitize_worker_log(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Sanitize and print worker output line by line.
+///
+/// This is the primary integration point for piped worker stdout/stderr.
+///
+/// # Arguments
+/// * `worker_id` - The worker ID for tagging
+/// * `stream` - "stdout" or "stderr"
+/// * `line` - The raw line from the worker
+pub fn emit_sanitized_worker_log(worker_id: u64, stream: &str, line: &str) {
+    let sanitized = sanitize_worker_log(line);
+    // SPEC-0006 §4.1: Supervisor-Attributed Logging
+    // The supervisor adds the authoritative [WRK:PID] tag
+    eprintln!("[WRK:{}][{}] {}", worker_id, stream, sanitized);
 }
 
 /// Check if a log line contains any spoofed tags (for validation).
@@ -107,5 +145,23 @@ mod tests {
         assert!(contains_spoofed_tag("[SUP] hello"));
         assert!(contains_spoofed_tag("[SID:123] hello"));
         assert!(!contains_spoofed_tag("normal message"));
+    }
+
+    #[test]
+    fn test_filter_worker_output_multiline() {
+        let output = "[SUP] spoofed\nlegit message\n[SID:999] also spoofed";
+        let filtered = filter_worker_output(output);
+        assert!(filtered.contains("[SPOOFED:SUP]"));
+        assert!(filtered.contains("legit message"));
+        assert!(filtered.contains("[SPOOFED:SID:]"));
+        assert!(!filtered.contains("[SUP]"));
+        assert!(!filtered.contains("[SID:999]"));
+    }
+
+    #[test]
+    fn test_filter_worker_output_clean() {
+        let output = "line 1\nline 2\nline 3";
+        let filtered = filter_worker_output(output);
+        assert_eq!(filtered, output);
     }
 }
