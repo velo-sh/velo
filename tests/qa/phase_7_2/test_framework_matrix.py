@@ -432,18 +432,17 @@ async def health(request):
 
 
 # =============================================================================
-# WSGI FRAMEWORK TESTS (Future - requires a2wsgi bridge)
+# WSGI FRAMEWORK TESTS (RFC-0031: Native WSGI Sovereignty)
 # =============================================================================
 
 class TestWSGIFrameworks:
     """
-    WSGI framework tests - currently skipped as RSGI doesn't support WSGI.
-    These document the gap for future implementation.
+    WSGI framework tests - now supported via RFC-0031 Native WSGI.
+    Granian's native WSGIWorker provides direct WSGI execution without a2wsgi bridge.
     """
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.skip(reason="WSGI requires a2wsgi bridge - not implemented")
     def test_flask_real(self):
         """[FW-WSGI-01] Flask - Most Popular WSGI Framework."""
         with RealFrameworkProject("flask", "Flask") as p:
@@ -459,20 +458,65 @@ def root():
             p.install_deps()
             p.start_server("main:app")
             p.test_endpoint("/", expected_key="framework", expected_value="Flask")
+            results = p.report()
+            assert results['response_valid'], f"Flask WSGI test failed: {results['error']}"
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Django WSGI requires a2wsgi bridge")
     def test_django_wsgi_real(self):
         """[FW-WSGI-02] Django WSGI Mode."""
-        pass  # Complex setup required
+        with RealFrameworkProject("django-wsgi-basic", "Django WSGI") as p:
+            p.set_pyproject(deps=["django>=5.0"])
+            p.set_app("settings.py", '''
+DEBUG = True
+SECRET_KEY = "velo-test"
+ROOT_URLCONF = "urls"
+ALLOWED_HOSTS = ["*"]
+''')
+            p.set_app("urls.py", '''
+from django.http import JsonResponse
+from django.urls import path
+def index(request):
+    return JsonResponse({"framework": "Django", "status": "ok"})
+urlpatterns = [path("", index)]
+''')
+            p.set_app("main.py", '''
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
+import django
+django.setup()
+from django.core.wsgi import get_wsgi_application
+app = get_wsgi_application()
+''')
+            p.install_deps()
+            p.start_server("main:app")
+            p.test_endpoint("/", expected_key="framework", expected_value="Django")
+            results = p.report()
+            assert results['response_valid'], f"Django WSGI test failed: {results['error']}"
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Bottle requires a2wsgi bridge")
     def test_bottle_real(self):
         """[FW-WSGI-03] Bottle - Minimal WSGI."""
-        pass
+        with RealFrameworkProject("bottle", "Bottle") as p:
+            p.set_pyproject(deps=["bottle>=0.12"])
+            p.set_app("main.py", '''
+from bottle import Bottle, response
+import json
+
+app = Bottle()
+
+@app.route("/")
+def root():
+    response.content_type = "application/json"
+    return json.dumps({"framework": "Bottle", "status": "ok"})
+''')
+            p.install_deps()
+            p.start_server("main:app")
+            p.test_endpoint("/", expected_key="framework", expected_value="Bottle")
+            results = p.report()
+            assert results['response_valid'], f"Bottle WSGI test failed: {results['error']}"
 
 
 # =============================================================================
