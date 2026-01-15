@@ -49,17 +49,23 @@ impl PythonEnv {
     /// Priority:
     /// 1. PEP 405 pyvenv.cfg (fastest, no subprocess)
     /// 2. Query Python's sys.base_prefix (fallback)
+    ///
+    /// Uses SSOT constants from config/constants.toml via build.rs generated code.
     pub fn detect(python_path: &Path) -> anyhow::Result<Self> {
+        use crate::common::constants::{PYTHON_LIB_DIR_PATTERN, PYTHON_LIB_DYNLOAD_SUBDIR};
+
         // Step 1: Detect base_prefix
         let base_prefix = Self::detect_base_prefix(python_path)?;
 
         // Step 2: Detect Python version
         let version = Self::detect_version(python_path)?;
 
-        // Step 3: Build paths
-        let version_dir = format!("python{}", version);
-        let lib_dir = base_prefix.join("lib").join(&version_dir);
-        let lib_dynload = lib_dir.join("lib-dynload");
+        // Step 3: Build paths using SSOT patterns
+        // SSOT: PYTHON_LIB_DIR_PATTERN = "lib/python{version}"
+        let lib_dir_relative = PYTHON_LIB_DIR_PATTERN.replace("{version}", &version);
+        let lib_dir = base_prefix.join(&lib_dir_relative);
+        // SSOT: PYTHON_LIB_DYNLOAD_SUBDIR = "lib-dynload"
+        let lib_dynload = lib_dir.join(PYTHON_LIB_DYNLOAD_SUBDIR);
 
         // Step 4: Detect venv root if applicable
         let venv_root = python_path

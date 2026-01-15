@@ -109,3 +109,35 @@ path_linux_ci_socket_parent = "${XDG_RUNTIME_DIR}"
 # Prod: Same as base (no override needed)
 # path_macos_prod_socket_parent = (inherits from base)
 # path_linux_prod_socket_parent = (inherits from base)
+
+# =============================================================================
+# Python Environment SSOT (Phase 7.3+)
+# =============================================================================
+# This is the SINGLE SOURCE OF TRUTH for Python environment configuration.
+# build.rs reads this to generate:
+#   1. Rust constants in src/common/constants.rs
+#   2. Python constants in velo_zygote/constants.py
+#
+# At runtime, common::python_env::PythonEnv uses these as validation baselines.
+
+[python_environment]
+# Required Python version for Velo
+required_version = "3.11"
+
+# Project venv path relative to project root
+venv_path = ".venv"
+
+# Lib dir subdirectory pattern (python{major}.{minor})
+lib_dir_pattern = "lib/python{version}"
+
+# C extension module subdirectory
+lib_dynload_subdir = "lib-dynload"
+
+# Environment variables set by Velo for native workers (SSOT)
+env_vars = [
+    "PYTHONHOME",           # Python base directory (stdlib location)
+    "VELO_PYTHON_LIB_DIR",  # stdlib lib directory
+    "VELO_PYTHON_LIB_DYNLOAD", # C extension modules
+    "VIRTUAL_ENV",          # Virtual environment root
+    "VELO_PYTHON_EXECUTABLE", # Python executable path
+]
