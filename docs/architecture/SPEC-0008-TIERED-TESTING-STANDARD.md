@@ -47,6 +47,46 @@ Tests are mapped to the Compilation Tiers defined in [SPEC-0007](./SPEC-0007-PER
 - Developers should run `pytest -m "tier0 or tier1"` before pushing.
 - Heavy tests (`tier3`, `chaos`) should be run in a dedicated long-running local session or CI stage.
 
+## 5. Binary Resolution Standard
+
+### 5.1 Detection Priority Order
+
+The test framework MUST resolve the Velo binary in the following order:
+
+| Priority | Source | Use Case |
+|:---:|:---|:---|
+| 1 | `VELO_BINARY` env var | Explicit override for CI or custom builds |
+| 2 | `target/release/velo` | **Default preference** - production-like testing |
+| 3 | `target/debug/velo` | Development fallback (with warning) |
+| 4 | Auto-build | Build release if nothing exists (outside CI) |
+
+### 5.2 Rationale
+
+- **Release binary preferred**: Release builds include optimizations and represent production behavior more accurately.
+- **Stale binary detection**: If debug binary is newer than release, emit a warning to alert developers.
+- **Auto-build**: When no binary exists, build release (not debug) to ensure consistent test behavior.
+
+### 5.3 Environment Variable Override
+
+For CI or explicit testing, use:
+
+```bash
+# Explicit release binary (recommended)
+VELO_BINARY=./target/release/velo uv run pytest tests/qa/
+
+# Specific build for testing
+VELO_BINARY=/path/to/custom/velo uv run pytest tests/qa/
+```
+
+### 5.4 Developer Warnings
+
+The test framework emits warnings in these cases:
+
+| Condition | Warning |
+|:---|:---|
+| Using debug binary | `⚠️ Using debug binary. For accurate testing, use: VELO_BINARY=./target/release/velo` |
+| Debug newer than release | `⚠️ Warning: debug binary is newer than release. Consider running 'cargo build --release'` |
+
 ## 6. Implementation Guide
 
 ### 6.1 GitHub Actions (CI) Workflow Example

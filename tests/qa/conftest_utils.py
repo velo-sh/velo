@@ -166,33 +166,45 @@ def get_cow_stats(pid: int) -> dict:
 # =============================================================================
 
 def get_velo_binary() -> str:
-    """Find the primary Velo binary (source of truth)."""
+    """Find the primary Velo binary (source of truth).
+    
+    Priority order:
+    1. VELO_BINARY environment variable (explicit override)
+    2. Release binary (preferred for production-like testing)
+    3. Debug binary (fallback for development)
+    4. Auto-build (only outside CI)
+    """
     root_dir = Path(__file__).parents[2]
     
-    # 1. Environment variable override
+    # 1. Environment variable override (highest priority)
     env_binary = os.environ.get("VELO_BINARY")
     if env_binary and Path(env_binary).exists():
         return str(Path(env_binary).resolve())
 
-    # 2. Local build detection (Dev priority)
-    candidates = [
-        root_dir / "target" / "debug" / "velo",
-        root_dir / "target" / "release" / "velo",
-    ]
-
-    for path in candidates:
-        if path.exists():
-            return str(path.resolve())
+    # 2. Local build detection - PREFER RELEASE over debug
+    release_bin = root_dir / "target" / "release" / "velo"
+    debug_bin = root_dir / "target" / "debug" / "velo"
+    
+    # Prefer release if it exists and is newer than debug
+    if release_bin.exists():
+        if debug_bin.exists():
+            # Warn if debug is newer (might indicate stale release)
+            if debug_bin.stat().st_mtime > release_bin.stat().st_mtime:
+                print("⚠️  Warning: debug binary is newer than release. Consider running 'cargo build --release'")
+        return str(release_bin.resolve())
+    
+    if debug_bin.exists():
+        print("⚠️  Using debug binary. For accurate testing, use: VELO_BINARY=./target/release/velo")
+        return str(debug_bin.resolve())
 
     # 3. Last resort: auto-build if not in CI
     if os.environ.get("GITHUB_ACTIONS") != "true":
-        print("🔨 Binary not found. Building...")
-        subprocess.run(["cargo", "build"], cwd=root_dir, check=True)
-        debug_bin = root_dir / "target" / "debug" / "velo"
-        if debug_bin.exists():
-            return str(debug_bin.resolve())
+        print("🔨 Binary not found. Building release version...")
+        subprocess.run(["cargo", "build", "--release"], cwd=root_dir, check=True)
+        if release_bin.exists():
+            return str(release_bin.resolve())
             
-    raise RuntimeError("Velo binary not found. Run 'cargo build' first.")
+    raise RuntimeError("Velo binary not found. Run 'cargo build --release' first.")
 
 # =============================================================================
 # HERMETIC ENVIRONMENT (RFC-0012)
