@@ -108,39 +108,24 @@ fn run_worker_blocking(config: WorkerConfig) -> Result<()> {
 
 /// Fixup sys.path to include runtime Python's stdlib directories.
 ///
-/// **SSOT Contract**: The PYTHONHOME environment variable is set by `worker.rs`
-/// before spawning the worker process. This function reads that value to ensure
-/// C extension modules can be found.
+/// **SSOT**: Uses `common::python_env::PythonEnv::from_env()` to read the
+/// environment variables set by `worker.rs::spawn_native()`.
 ///
 /// This is necessary when the runtime Python differs from PyO3's compile-time Python,
 /// particularly for C extension modules in lib-dynload (e.g., binascii, _hashlib).
-///
-/// # Environment Variables (SSOT)
-/// - `PYTHONHOME`: Set by `src/serve/worker.rs::spawn_native()` from pyvenv.cfg or sys.base_prefix
-/// - The value points to the Python installation's base directory (not the venv prefix)
 #[cfg(feature = "granian_native")]
 fn fixup_python_path(py: pyo3::Python<'_>) -> std::result::Result<(), pyo3::PyErr> {
     use pyo3::prelude::*;
     use pyo3::types::PyListMethods;
 
-    // SSOT: PYTHONHOME set by worker.rs (see src/serve/worker.rs::spawn_native)
-    let pythonhome = std::env::var("PYTHONHOME").ok();
+    // SSOT: Read Python environment from env vars set by worker.rs
+    let py_env = crate::common::python_env::PythonEnv::from_env();
 
-    if let Some(home) = pythonhome {
-        debug!("[SSOT] Fixing up sys.path with PYTHONHOME: {}", home);
-
-        // Determine the Python version from sys.version_info
-        let sys = py.import("sys")?;
-        let version_info = sys.getattr("version_info")?;
-        let major: u32 = version_info.getattr("major")?.extract()?;
-        let minor: u32 = version_info.getattr("minor")?.extract()?;
-        let version_str = format!("python{}.{}", major, minor);
-
-        // Build paths to add
-        let lib_dir = std::path::Path::new(&home).join("lib").join(&version_str);
-        let lib_dynload = lib_dir.join("lib-dynload");
+    if let Some(env) = py_env {
+        debug!("[SSOT] Fixing up sys.path with lib_dir: {:?}", env.lib_dir);
 
         // Get sys.path as a PyList
+        let sys = py.import("sys")?;
         let sys_path = sys.getattr("path")?;
         #[allow(deprecated)]
         let sys_path_list = sys_path
@@ -148,18 +133,50 @@ fn fixup_python_path(py: pyo3::Python<'_>) -> std::result::Result<(), pyo3::PyEr
             .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyTypeError, _>(e.to_string()))?;
 
         // Add lib_dir if not present
-        let lib_dir_str = lib_dir.to_string_lossy().to_string();
+        let lib_dir_str = env.lib_dir.to_string_lossy().to_string();
         if !sys_path_list.contains(&lib_dir_str)? {
             sys_path_list.insert(0, &lib_dir_str)?;
-            debug!("Added to sys.path: {}", lib_dir_str);
+            debug!("[SSOT] Added to sys.path: {}", lib_dir_str);
         }
 
         // Add lib-dynload if it exists and not present
-        if lib_dynload.exists() {
-            let lib_dynload_str = lib_dynload.to_string_lossy().to_string();
+        if env.lib_dynload.exists() {
+            let lib_dynload_str = env.lib_dynload.to_string_lossy().to_string();
             if !sys_path_list.contains(&lib_dynload_str)? {
                 sys_path_list.insert(1, &lib_dynload_str)?;
-                debug!("Added to sys.path: {}", lib_dynload_str);
+                debug!("[SSOT] Added to sys.path: {}", lib_dynload_str);
+            }
+        }
+    } else {
+        // Fallback: Try legacy PYTHONHOME env var
+        if let Ok(home) = std::env::var("PYTHONHOME") {
+            debug!("[SSOT] Fallback: Using PYTHONHOME: {}", home);
+
+            let sys = py.import("sys")?;
+            let version_info = sys.getattr("version_info")?;
+            let major: u32 = version_info.getattr("major")?.extract()?;
+            let minor: u32 = version_info.getattr("minor")?.extract()?;
+            let version_str = format!("python{}.{}", major, minor);
+
+            let lib_dir = std::path::Path::new(&home).join("lib").join(&version_str);
+            let lib_dynload = lib_dir.join("lib-dynload");
+
+            let sys_path = sys.getattr("path")?;
+            #[allow(deprecated)]
+            let sys_path_list = sys_path
+                .downcast::<pyo3::types::PyList>()
+                .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyTypeError, _>(e.to_string()))?;
+
+            let lib_dir_str = lib_dir.to_string_lossy().to_string();
+            if !sys_path_list.contains(&lib_dir_str)? {
+                sys_path_list.insert(0, &lib_dir_str)?;
+            }
+
+            if lib_dynload.exists() {
+                let lib_dynload_str = lib_dynload.to_string_lossy().to_string();
+                if !sys_path_list.contains(&lib_dynload_str)? {
+                    sys_path_list.insert(1, &lib_dynload_str)?;
+                }
             }
         }
     }

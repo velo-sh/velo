@@ -290,66 +290,26 @@ impl Worker {
             }
         }
 
-        // Industrial Guard: Set VIRTUAL_ENV if we're in one
-        if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
-            cmd.env("VIRTUAL_ENV", venv_root);
-        }
-
-        // SSOT Contract: PYTHONHOME for Native Workers
-        // ==============================================
-        // RFC-0031 FIX: Set PYTHONHOME for embedded PyO3 initialization
-        // CRITICAL: We need base_prefix (where stdlib lives), NOT venv prefix!
-        //
-        // This value is consumed by:
-        // - src/granian/worker_entry.rs::fixup_python_path() to add stdlib to sys.path
-        //
-        // PEP 405: Read from pyvenv.cfg if available (faster, no subprocess)
-        let base_prefix = if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
-            let pyvenv_cfg = venv_root.join("pyvenv.cfg");
-            if pyvenv_cfg.exists() {
-                // PEP 405: Parse pyvenv.cfg for 'home' key
-                std::fs::read_to_string(&pyvenv_cfg)
-                    .ok()
-                    .and_then(|content| {
-                        for line in content.lines() {
-                            if let Some(rest) = line.strip_prefix("home")
-                                && let Some(value) = rest.trim_start().strip_prefix('=')
-                            {
-                                // 'home' points to bin dir, we need parent for PYTHONHOME
-                                let home = value.trim();
-                                return std::path::Path::new(home)
-                                    .parent()
-                                    .map(|p| p.to_string_lossy().to_string());
-                            }
-                        }
-                        None
-                    })
-            } else {
-                None
+        // SSOT: Python Environment Configuration
+        // =======================================
+        // All Python environment detection is centralized in common::python_env
+        // This single source of truth is consumed by worker_entry.rs::fixup_python_path()
+        match crate::common::python_env::PythonEnv::detect(python_path) {
+            Ok(py_env) => {
+                py_env.apply_to_command(&mut cmd);
+                log::info!(
+                    "[SSOT] Python env: base_prefix={:?}, lib_dir={:?}",
+                    py_env.base_prefix,
+                    py_env.lib_dir
+                );
             }
-        } else {
-            None
-        };
-
-        // Fallback: Query Python directly if pyvenv.cfg not found
-        let base_prefix = base_prefix.or_else(|| {
-            std::process::Command::new(python_path)
-                .args(["-c", "import sys; print(sys.base_prefix)"])
-                .output()
-                .ok()
-                .and_then(|output| {
-                    if output.status.success() {
-                        let bp = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        if !bp.is_empty() { Some(bp) } else { None }
-                    } else {
-                        None
-                    }
-                })
-        });
-
-        if let Some(ref bp) = base_prefix {
-            cmd.env("PYTHONHOME", bp);
-            log::debug!("Set PYTHONHOME to base_prefix: {}", bp);
+            Err(e) => {
+                log::warn!("[SSOT] Failed to detect Python environment: {}", e);
+                // Fallback: Set PYTHONHOME from venv parent if possible
+                if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
+                    cmd.env("VIRTUAL_ENV", venv_root);
+                }
+            }
         }
 
         // Also pass the Python executable path for PyO3 to use
