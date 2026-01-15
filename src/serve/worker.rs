@@ -295,6 +295,23 @@ impl Worker {
             cmd.env("VIRTUAL_ENV", venv_root);
         }
 
+        // RFC-0031 FIX: Set PYTHONHOME for embedded PyO3 initialization
+        // CRITICAL: We need base_prefix (where stdlib lives), NOT venv prefix!
+        // Virtualenvs symlink to the system Python's stdlib.
+        if let Ok(output) = std::process::Command::new(python_path)
+            .args(["-c", "import sys; print(sys.base_prefix)"])
+            .output()
+        {
+            let base_prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if output.status.success() && !base_prefix.is_empty() {
+                cmd.env("PYTHONHOME", &base_prefix);
+                log::debug!("Set PYTHONHOME to base_prefix: {}", base_prefix);
+            }
+        }
+
+        // Also pass the Python executable path for PyO3 to use
+        cmd.env("VELO_PYTHON_EXECUTABLE", python_path);
+
         // Ensure the listener FD is inherited despite FD_CLOEXEC
         unsafe {
             cmd.pre_exec(move || {
