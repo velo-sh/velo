@@ -13,6 +13,7 @@ dependencies = [
     "pytest>=7.0",
     "requests>=2.28",
     "uvicorn>=0.40.0",
+    "websocket-client>=1.8.0",
 ]
 
 [tool.uv]
@@ -54,6 +55,7 @@ markers = [
     "timeout: Tests with custom timeout requirements",
     "happy_path: Level 1 happy path journey tests",
     "cli: CLI-specific integration tests",
+    "benchmark: Performance benchmark tests",
 ]
 
 [tool.mypy]

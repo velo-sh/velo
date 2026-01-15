@@ -31,14 +31,12 @@ except ImportError:
 # ----------------------------------------------
 
 import argparse
-# ... rest of file (argparse, signal, etc.)
 import signal
 import traceback
 from typing import Any, Dict
 
 from velo_zygote.utils import LogUtils
 
-# (I'll keep the rest of the file as before)
 class UDSProxyMiddleware:
     def __init__(self, app: Any):
         self.app = app

@@ -30,6 +30,9 @@ use crate::proxy::{LoadBalancer, VeloProxyService};
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
+
 // ============================================================================
 // Logging & Security helpers (ADR D3, D4, D5)
 // ============================================================================
@@ -691,19 +694,24 @@ pub fn run_server(
         logger.trace("Framework: Unknown (auto-detection missed)");
     }
 
-    // Step 4: Check server is installed
-    logger.debug(&format!(
-        "Checking if {} is installed (using python_path: {})...",
-        server,
-        python_path.display()
-    ));
-    if !check_server_installed(server, python_path) {
-        logger.error(&format!("Missing dependency: {}", server));
-        eprintln!();
-        eprintln!("{} is required to run {} applications.", server, framework);
-        eprintln!("To fix:");
-        eprintln!("    {}", server.install_hint());
-        return Err(anyhow::anyhow!("Missing dependency: {}", server));
+    // Step 4: Check server is installed (only for non-RSGI mode)
+    // When --rsgi is specified, we use native Granian workers which don't need uvicorn
+    if !args.rsgi {
+        logger.debug(&format!(
+            "Checking if {} is installed (using python_path: {})...",
+            server,
+            python_path.display()
+        ));
+        if !check_server_installed(server, python_path) {
+            logger.error(&format!("Missing dependency: {}", server));
+            eprintln!();
+            eprintln!("{} is required to run {} applications.", server, framework);
+            eprintln!("To fix:");
+            eprintln!("    {}", server.install_hint());
+            return Err(anyhow::anyhow!("Missing dependency: {}", server));
+        }
+    } else {
+        logger.debug("Skipping server dependency check (Native RSGI mode)");
     }
 
     // Shutdown Coordinator (SEC-P0-001)
@@ -880,9 +888,80 @@ pub fn run_server(
     // RFC-0011 & Net-001: Unified Worker Management & L7 Proxy
     let mut workers = Vec::new();
     let mut use_proxy = false;
+    #[cfg(unix)]
+    let mut _native_listener: Option<std::net::TcpListener> = None;
+    #[cfg(not(unix))]
+    let _native_listener: Option<std::net::TcpListener> = None;
+
+    // A.1 Spawn via Native Granian (Phase 7.3)
+    #[cfg(unix)]
+    if !args.dry_run && args.workers >= 1 && args.rsgi {
+        use std::os::unix::io::AsRawFd;
+
+        let addr = format!("{}:{}", args.host, args.port);
+        let bind_addr: std::net::SocketAddr = addr.parse()?;
+
+        // Bind the socket in the parent
+        // Use SO_REUSEADDR for faster restarts
+        let socket = if bind_addr.is_ipv4() {
+            socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None)?
+        } else {
+            socket2::Socket::new(socket2::Domain::IPV6, socket2::Type::STREAM, None)?
+        };
+
+        socket.set_reuse_address(true)?;
+
+        socket.bind(&bind_addr.into())?;
+        socket.listen(1024)?;
+        let listener: std::net::TcpListener = socket.into();
+        listener.set_nonblocking(true)?;
+        let fd = listener.as_raw_fd();
+
+        // IMPORTANT: Ensure FD is NOT cloexec so children can inherit it
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if flags != -1 {
+            unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) };
+        }
+
+        eprintln!("🚀 Launching {} native Granian workers...", args.workers);
+        for i in 0..args.workers {
+            match crate::serve::worker::Worker::spawn_native(
+                &args.app,
+                i as i32,
+                fd,
+                python_path,
+                project_dir,
+                config,
+            ) {
+                Ok(worker) => {
+                    logger.info(&format!(
+                        "[WORKER] event=spawn type=native worker_id={} pid={}",
+                        i, worker.pid
+                    ));
+                    eprintln!("  ✅ Worker {} (PID: {}) [Native]", i + 1, worker.pid);
+                    workers.push(worker);
+                }
+                Err(e) => {
+                    logger.error(&format!("Native worker spawn failed: {}", e));
+                    break;
+                }
+            }
+        }
+
+        if workers.len() == args.workers as usize {
+            use_proxy = true;
+            _native_listener = Some(listener);
+        } else {
+            // Partial failure: cleanup
+            for w in workers.drain(..) {
+                let _ = w.shutdown(Duration::from_secs(1));
+            }
+        }
+    }
 
     // A. Spawn via Zygote (Optimized Path)
     if !args.dry_run
+        && workers.is_empty() // FIX: Avoid dual spawning if native workers are already up
         && args.workers >= 1
         && use_zygote
         && !preload_modules.is_empty()
@@ -930,7 +1009,7 @@ pub fn run_server(
 
     // B. Spawn via Cold-Start Proxy (Safe Path - Phase 7.2)
     if !args.dry_run
-        && workers.is_empty()
+        && workers.is_empty() // FIX: Avoid dual spawning
         && args.workers >= 1
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
@@ -1009,27 +1088,12 @@ pub fn run_server(
 
         let lb_for_proxy = lb.clone();
 
-        if args.rsgi {
-            // RFC-0019: Native RSGI Host Mode
-            let rsgi_host = crate::rsgi::RSGIHost::new(lb.clone());
-            rt.spawn(async move {
-                let listener = tokio::net::TcpListener::bind(bind_addr)
-                    .await
-                    .expect("Failed to bind RSGI Host");
-                lb_for_proxy
-                    .clone()
-                    .spawn_health_checks(Duration::from_secs(5));
-                eprintln!("🚀 RSGI Host listening on http://{}", bind_addr);
-                loop {
-                    if let Ok((stream, peer_addr)) = listener.accept().await {
-                        let io = TokioIo::new(stream);
-                        let service = rsgi_host.clone().with_client_addr(peer_addr);
-                        tokio::spawn(async move {
-                            let _ = http1::Builder::new().serve_connection(io, service).await;
-                        });
-                    }
-                }
-            });
+        if args.rsgi && _native_listener.is_some() {
+            // RFC-0019/0025: Native RSGI Mode
+            // Workers handle their own server listening; Master only supervises.
+            logger.info("Master supervisor active (Native RSGI Mode)");
+        } else if args.rsgi {
+            anyhow::bail!("RSGI mode requires a native listener (Unix only)");
         } else {
             // Legacy L7 Proxy Mode
             let service = VeloProxyService::new(lb.clone());
@@ -1043,6 +1107,7 @@ pub fn run_server(
                 eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
                 loop {
                     if let Ok((stream, peer_addr)) = listener.accept().await {
+                        let _ = stream.set_nodelay(true);
                         let io = TokioIo::new(stream);
                         let service_with_addr = service.clone().with_client_addr(peer_addr);
                         tokio::spawn(async move {
@@ -1114,6 +1179,9 @@ pub fn run_server(
                             i, tracker.consecutive_failures, worker.pid
                         ));
 
+                        #[cfg(unix)]
+                        let socket_fd = _native_listener.as_ref().map(|l| l.as_raw_fd());
+
                         match worker.respawn(
                             &args.app,
                             i as u64,
@@ -1121,6 +1189,8 @@ pub fn run_server(
                             project_dir,
                             config,
                             args.rsgi,
+                            #[cfg(unix)]
+                            socket_fd,
                         ) {
                             Ok(new_worker) => {
                                 if let Some(ref old) = worker.socket_path {
@@ -1159,6 +1229,11 @@ pub fn run_server(
                                         ) {
                                             Ok(_) => {
                                                 logger.info("[RESPAWN] Zygote successfully restarted. Retrying worker respawn...");
+                                                #[cfg(unix)]
+                                                let socket_fd = _native_listener
+                                                    .as_ref()
+                                                    .map(|l| l.as_raw_fd());
+
                                                 // Retry once after restart
                                                 if let Ok(retry_worker) = worker.respawn(
                                                     &args.app,
@@ -1167,6 +1242,8 @@ pub fn run_server(
                                                     project_dir,
                                                     config,
                                                     args.rsgi,
+                                                    #[cfg(unix)]
+                                                    socket_fd,
                                                 ) {
                                                     if let Some(ref old) = worker.socket_path {
                                                         lb.remove_backend(&old.to_string_lossy());

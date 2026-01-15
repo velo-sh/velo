@@ -15,6 +15,7 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::net::SocketAddr;
+#[cfg(target_os = "macos")]
 use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -308,6 +309,7 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
                     )));
                 }
 
+                #[allow(unused_mut)]
                 let mut peer_pid = creds.pid();
                 #[cfg(target_os = "macos")]
                 if peer_pid.is_none() || peer_pid == Some(0) {
@@ -412,6 +414,7 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
                     )));
                 }
 
+                #[allow(unused_mut)]
                 let mut peer_pid = creds.pid();
                 #[cfg(target_os = "macos")]
                 if peer_pid.is_none() {
