@@ -21,7 +21,17 @@ pub(crate) fn ws_message_into_py(py: Python, message: Message) -> PyResult<Bound
             WebsocketInboundTextMessage::new(PyString::new(py, &message).unbind())
                 .into_bound_py_any(py)
         }
-        Message::Close(_) => WebsocketInboundCloseMessage::new().into_bound_py_any(py),
+        Message::Close(frame) => {
+            let (code, reason) = frame
+                .map(|f| {
+                    (
+                        Some(f.code.into()),
+                        (!f.reason.is_empty()).then(|| PyString::new(py, &f.reason).unbind()),
+                    )
+                })
+                .unwrap_or((None, None));
+            WebsocketInboundCloseMessage::new(code, reason).into_bound_py_any(py)
+        }
         v => {
             log::warn!("Unsupported websocket message received {v:?}");
             error_proto!()

@@ -53,5 +53,6 @@ fn _granian(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
     sys::init_pymodule(module)?;
     net::init_pymodule(module)?;
     workers::init_pymodule(module)?;
+    wsgi::init_pymodule(module)?;
     Ok(())
 }

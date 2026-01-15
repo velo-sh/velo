@@ -15,6 +15,7 @@ hugepage_alignment = 2097152
 [lints.rust]
 unsafe_code = "allow" # Required for Unix signals and UDS integration
 unused_imports = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(PyPy)', 'cfg(Py_3_10)'] }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -37,6 +38,8 @@ path = "src/lib.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+socket2 = { version = "0.6", features = ["all"] }
+pyo3 = { version = "0.27", features = ["anyhow", "bytes", "generate-import-lib"] }
 bytes = "1"
 blake3 = "1.5"
 hex = "0.4"
@@ -88,8 +91,9 @@ signal-hook = "0.3"      # Platform-specific signal handling
 nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS support
 
 [features]
-default = ["embedded_uv"]
+default = ["embedded_uv", "granian_native"]
 embedded_uv = []  # RFC-0018: Embed uv binary at build time
+granian_native = []  # RFC-0019/0025: Enable native Granian workers with PyO3
 
 [build-dependencies]
 blake3 = "1.5"    # RFC-0018: Hash generation for uv verification

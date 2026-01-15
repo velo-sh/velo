@@ -10,6 +10,7 @@ pub mod cmd;
 pub mod common;
 pub mod config;
 pub mod custody; // RFC-0018: Integrated Custody
+pub mod granian; // RFC-0019/0025: Granian Native RSGI Workers
 pub mod graph;
 pub mod hardware;
 pub mod hardware_k8s; // RFC-0011: K8s Cgroup Quota
@@ -19,7 +20,7 @@ pub mod profile;
 pub mod proxy; // RFC-0011: L7 Proxy for UDS workers
 pub mod python;
 pub mod python_info;
-pub mod rsgi; // RFC-0019: Native Sovereignty (RSGI Host Engine)
+pub mod rsgi; // RFC-0019: Native Sovereignty (RSGI Host Engine - Legacy)
 pub mod runner;
 pub mod serve;
 pub mod shm; // RFC-0015: Memory Gravity

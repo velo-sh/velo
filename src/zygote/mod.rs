@@ -778,8 +778,20 @@ impl ZygoteLauncher {
                     // Already exited
                 }
                 Ok(None) => {
-                    // Still running, kill it
+                    // RFC-0012 C.6: Robust Eradication - Kill the entire process group.
+                    // Since Zygote uses setsid(), its PGID == PID.
+                    #[cfg(unix)]
+                    unsafe {
+                        let pgid = child.id() as i32;
+                        // Try to kill process group first
+                        if libc::kill(-pgid, libc::SIGKILL) != 0 {
+                            // Fallback to killing just the child
+                            let _ = child.kill();
+                        }
+                    }
+                    #[cfg(not(unix))]
                     let _ = child.kill();
+
                     let _ = child.wait();
                 }
                 Err(_) => {

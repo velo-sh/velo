@@ -90,16 +90,18 @@ class WorkerRegistry:
         sys.stderr.write(f"\n[ZYGOTE] Eradicating {len(pids)} workers: {pids}\n")
         sys.stderr.flush()
         # RFC-0012 C.6: Robust Eradication - Kill all registered workers
+        # Transitioning to SIGTERM to allow for graceful shutdown and signal proxying verification.
         for pid in pids:
             try:
-                sys.stderr.write(f"[ZYGOTE] SIGKILL -> PID {pid}\n")
+                sys.stderr.write(f"[ZYGOTE] SIGTERM -> PID {pid}\n")
                 sys.stderr.flush()
-                # Use SIGKILL immediately for no-mercy cleanup
-                os.kill(pid, signal.SIGKILL)
-                # Small yield to kernel to allow reaping
-                time.sleep(0.01)
+                # Use SIGTERM to allow graceful cleanup (required for test_signal_proxying)
+                os.kill(pid, signal.SIGTERM)
             except:
                 pass
+        
+        # Give workers a moment to process SIGTERM before Zygote itself exits
+        time.sleep(0.1)
         self.workers.clear()
         sys.stderr.write("[ZYGOTE] Worker eradication complete.\n")
         sys.stderr.flush()

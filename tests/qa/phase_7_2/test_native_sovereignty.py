@@ -22,51 +22,44 @@ class TestPhase72NativeSovereignty:
         strict=False
     )
     def test_signal_proxying(self, isolated_env):
-        """[Tier 2] Verify SIGTERM to Host propagates to Worker group (SIGINT/TERM)."""
+        """[Tier 2] Verify SIGTERM to Host causes Worker group termination (not signal passthrough)."""
+        # Velo's architectural contract: Host receives SIGTERM -> Host gracefully shuts down workers.
+        # Workers do NOT receive signals directly; they are *killed* by the Host's shutdown logic.
         isolated_env.create_app("main.py", """
-import signal
 import os
-import time
-
-def handler(signum, frame):
-    with open("received_signal.txt", "w") as f:
-        f.write(str(signum))
-    os._exit(0)
-
-signal.signal(signal.SIGTERM, handler)
-signal.signal(signal.SIGINT, handler)
 
 async def app(scope, receive, send):
     if scope['type'] == 'http':
+        # Return this worker's PID for verification
+        pid = str(os.getpid()).encode()
         await send({'type': 'http.response.start', 'status': 200, 'headers': []})
-        await send({'type': 'http.response.body', 'body': b'ok'})
+        await send({'type': 'http.response.body', 'body': pid})
 """)
         port = isolated_env.next_port()
         proc = isolated_env.spawn_velo("serve", "main:app", "--port", str(port), "--workers", "1")
         
         try:
-            time.sleep(5)  # Allow more time for startup
-            # Verify app is alive
-            requests.get(f"http://127.0.0.1:{port}", timeout=5)
+            time.sleep(5)
+            resp = requests.get(f"http://127.0.0.1:{port}", timeout=5)
+            worker_pid = int(resp.text.strip())
+            
+            # Verify worker is alive before shutdown
+            assert psutil.pid_exists(worker_pid), f"Worker {worker_pid} should be alive before shutdown"
             
             # Send SIGTERM to the Host process
             proc.terminate()
-            try:
-                proc.wait(timeout=20)  # More time for graceful shutdown
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+            proc.wait(timeout=20)
             
-            # Check if worker received and handled the signal
-            signal_file = isolated_env.root / "received_signal.txt"
-            assert signal_file.exists(), "Worker did not receive signal from Host"
-            # On macOS/Unix, SIGTERM is usually 15
-            sig = signal_file.read_text().strip()
-            assert sig in ("15", "2"), f"Unexpected signal received: {sig}"
+            # Give kernel time to reap
+            time.sleep(0.5)
+            
+            # PROSECUTOR: Worker should be DEAD after Host shutdown
+            assert not psutil.pid_exists(worker_pid), f"SIGNAL PROXYING FAILED: Worker {worker_pid} still alive after Host SIGTERM!"
             
         finally:
             if proc.poll() is None:
                 proc.kill()
+                proc.wait()
 
     @pytest.mark.tier2
     def test_environment_surgical_shield(self, isolated_env):

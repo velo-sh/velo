@@ -14,7 +14,8 @@ use super::tls::{
 use super::wsgi::serve::WSGIWorker;
 
 #[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct WorkerSignal {
+// Velo Integration: Made public for RFC-0019/0025
+pub struct WorkerSignal {
     pub rx: Mutex<Option<tokio::sync::watch::Receiver<bool>>>,
     tx: tokio::sync::watch::Sender<bool>,
 }
@@ -22,7 +23,7 @@ pub(crate) struct WorkerSignal {
 #[pymethods]
 impl WorkerSignal {
     #[new]
-    fn new() -> Self {
+    pub fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(false);
         Self {
             rx: Mutex::new(Some(rx)),
@@ -36,7 +37,8 @@ impl WorkerSignal {
 }
 
 #[pyclass(frozen, module = "granian._granian")]
-pub(crate) struct WorkerSignalSync {
+// Velo Integration: Made public for RFC-0019/0025
+pub struct WorkerSignalSync {
     pub rx: Mutex<Option<crossbeam_channel::Receiver<bool>>>,
     tx: crossbeam_channel::Sender<bool>,
     #[pyo3(get)]
@@ -52,7 +54,7 @@ impl WorkerSignalSync {
 #[pymethods]
 impl WorkerSignalSync {
     #[new]
-    fn new(qs: Py<PyAny>) -> Self {
+    pub fn new(qs: Py<PyAny>) -> Self {
         let (tx, rx) = crossbeam_channel::bounded(1);
         Self {
             rx: Mutex::new(Some(rx)),
@@ -832,6 +834,7 @@ macro_rules! acceptor_impl {
                         } => {
                             match event {
                                 Ok((stream, addr_remote)) => {
+                                    eprintln!("[GRANIAN] Accepted connection from {:?}", addr_remote);
                                     let disconnect_guard = Arc::new(tokio::sync::Notify::new());
                                     let handle = self.handle(disconnect_guard.clone());
                                     let svc = WorkerSvc {

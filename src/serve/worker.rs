@@ -239,6 +239,87 @@ impl Worker {
         })
     }
 
+    /// Spawn a native Granian worker via fork() [Phase 7.3]
+    ///
+    /// This method forks the current process and initializes a Granian RSGI worker
+    /// in the child. The child process embeds PyO3 and runs the ASGI application
+    /// directly in-process.
+    #[cfg(unix)]
+    pub fn spawn_native(
+        app: &str,
+        worker_id: i32,
+        socket_fd: std::os::unix::io::RawFd,
+        python_path: &Path,
+        project_dir: &Path,
+        _config: &crate::config::VeloConfig,
+    ) -> Result<Self> {
+        use crate::python;
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        Self::validate_app_path(app)?;
+
+        // RFC-0019/0025 executive model: Spawn a NEW velo process as the worker
+        // This is safe to call from a multi-threaded Host (avoiding fork-safety issues).
+        let mut cmd = Command::new(std::env::current_exe()?);
+        cmd.arg("worker-native")
+            .arg("--worker-id")
+            .arg(worker_id.to_string())
+            .arg("--fd")
+            .arg(socket_fd.to_string())
+            .arg("--app")
+            .arg(app)
+            .arg("--project-dir")
+            .arg(project_dir);
+
+        // Security Shield + Sovereignty: Set up Python environment
+        // We use setup_python_env to get the correct site-packages for the child process.
+        let (pythonpath, _) = python::setup_python_env(project_dir, python_path);
+
+        // Inherit or set PYTHONPATH
+        if let Some(pp) = pythonpath {
+            cmd.env("PYTHONPATH", pp);
+        } else if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
+            cmd.env("PYTHONPATH", pythonpath);
+        } else {
+            // If PYTHONPATH is not set in Host, detect it from venv/site-packages
+            // RFC-0012: Resilience for hermetic test environments
+            let (ppath, _) = crate::python::setup_python_env(project_dir, python_path);
+            if let Some(ppath) = ppath {
+                cmd.env("PYTHONPATH", ppath);
+            }
+        }
+
+        // Industrial Guard: Set VIRTUAL_ENV if we're in one
+        if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
+            cmd.env("VIRTUAL_ENV", venv_root);
+        }
+
+        // Ensure the listener FD is inherited despite FD_CLOEXEC
+        unsafe {
+            cmd.pre_exec(move || {
+                let flags = libc::fcntl(socket_fd, libc::F_GETFD);
+                if flags != -1 {
+                    libc::fcntl(socket_fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
+                }
+                Ok(())
+            });
+        }
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn native worker: {}", e))?;
+
+        Ok(Self {
+            pid: child.id(),
+            port: 0,
+            started_at: Instant::now(),
+            zygote_socket: None,
+            script_path: None,
+            socket_path: None,
+        })
+    }
+
     /// Validate app path security
     fn validate_app_path(app: &str) -> Result<()> {
         if !app.contains(':') {
@@ -271,6 +352,7 @@ impl Worker {
     }
 
     /// Respawn this worker using its original parameters
+    #[allow(clippy::too_many_arguments)]
     pub fn respawn(
         &self,
         app: &str,
@@ -279,9 +361,25 @@ impl Worker {
         project_dir: &Path,
         config: &crate::config::VeloConfig,
         rsgi: bool,
+        #[cfg(unix)] socket_fd: Option<std::os::unix::io::RawFd>,
     ) -> Result<Self> {
         if let Some(ref zygote) = self.zygote_socket {
             Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config, rsgi)
+        } else if rsgi {
+            #[cfg(unix)]
+            {
+                if let Some(fd) = socket_fd {
+                    return Self::spawn_native(
+                        app,
+                        worker_id as i32,
+                        fd,
+                        python_path,
+                        project_dir,
+                        config,
+                    );
+                }
+            }
+            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         } else {
             Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         }

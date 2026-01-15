@@ -63,6 +63,17 @@ impl RSGIHeaders {
         ret
     }
 
+    fn raw_items<'p>(&self, py: Python<'p>) -> Vec<(Bound<'p, PyBytes>, Bound<'p, PyBytes>)> {
+        let mut ret = Vec::with_capacity(self.inner.len());
+        for (key, val) in &self.inner {
+            ret.push((
+                PyBytes::new(py, key.as_str().as_bytes()),
+                PyBytes::new(py, val.as_bytes()),
+            ));
+        }
+        ret
+    }
+
     fn __contains__(&self, key: &str) -> bool {
         self.inner.contains_key(key)
     }
@@ -396,12 +407,18 @@ enum WebsocketMessageType {
 pub(super) struct WebsocketInboundCloseMessage {
     #[pyo3(get)]
     kind: usize,
+    #[pyo3(get)]
+    code: Option<u16>,
+    #[pyo3(get)]
+    reason: Option<Py<PyString>>,
 }
 
 impl WebsocketInboundCloseMessage {
-    pub fn new() -> Self {
+    pub fn new(code: Option<u16>, reason: Option<Py<PyString>>) -> Self {
         Self {
             kind: WebsocketMessageType::Close as usize,
+            code,
+            reason,
         }
     }
 }
