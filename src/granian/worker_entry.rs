@@ -108,18 +108,26 @@ fn run_worker_blocking(config: WorkerConfig) -> Result<()> {
 
 /// Fixup sys.path to include runtime Python's stdlib directories.
 ///
+/// **SSOT Contract**: The PYTHONHOME environment variable is set by `worker.rs`
+/// before spawning the worker process. This function reads that value to ensure
+/// C extension modules can be found.
+///
 /// This is necessary when the runtime Python differs from PyO3's compile-time Python,
-/// particularly for C extension modules in lib-dynload.
+/// particularly for C extension modules in lib-dynload (e.g., binascii, _hashlib).
+///
+/// # Environment Variables (SSOT)
+/// - `PYTHONHOME`: Set by `src/serve/worker.rs::spawn_native()` from pyvenv.cfg or sys.base_prefix
+/// - The value points to the Python installation's base directory (not the venv prefix)
 #[cfg(feature = "granian_native")]
 fn fixup_python_path(py: pyo3::Python<'_>) -> std::result::Result<(), pyo3::PyErr> {
     use pyo3::prelude::*;
     use pyo3::types::PyListMethods;
 
-    // Get PYTHONHOME from environment (set by worker.rs)
+    // SSOT: PYTHONHOME set by worker.rs (see src/serve/worker.rs::spawn_native)
     let pythonhome = std::env::var("PYTHONHOME").ok();
 
     if let Some(home) = pythonhome {
-        debug!("Fixing up sys.path with PYTHONHOME: {}", home);
+        debug!("[SSOT] Fixing up sys.path with PYTHONHOME: {}", home);
 
         // Determine the Python version from sys.version_info
         let sys = py.import("sys")?;

@@ -295,8 +295,14 @@ impl Worker {
             cmd.env("VIRTUAL_ENV", venv_root);
         }
 
+        // SSOT Contract: PYTHONHOME for Native Workers
+        // ==============================================
         // RFC-0031 FIX: Set PYTHONHOME for embedded PyO3 initialization
         // CRITICAL: We need base_prefix (where stdlib lives), NOT venv prefix!
+        //
+        // This value is consumed by:
+        // - src/granian/worker_entry.rs::fixup_python_path() to add stdlib to sys.path
+        //
         // PEP 405: Read from pyvenv.cfg if available (faster, no subprocess)
         let base_prefix = if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
             let pyvenv_cfg = venv_root.join("pyvenv.cfg");
