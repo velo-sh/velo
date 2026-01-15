@@ -15,6 +15,8 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
 use std::future::Future;
 use std::net::SocketAddr;
+#[cfg(target_os = "macos")]
+use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
@@ -294,6 +296,48 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyServiceWithAddr {
                     ))
                 })?;
 
+            // Gate H (DEF-72-H01): Peer Authentication for Legacy mode
+            {
+                let creds = stream
+                    .peer_cred()
+                    .map_err(|e| ProxyError::Connection(e.to_string()))?;
+                let current_uid = unsafe { libc::getuid() };
+                if creds.uid() != current_uid {
+                    return Err(ProxyError::Connection(format!(
+                        "Security Violation: UID mismatch (expected {})",
+                        current_uid
+                    )));
+                }
+
+                #[allow(unused_mut)]
+                let mut peer_pid = creds.pid();
+                #[cfg(target_os = "macos")]
+                if peer_pid.is_none() || peer_pid == Some(0) {
+                    let fd = stream.as_raw_fd();
+                    if peer_pid.is_none() {
+                        let mut pid: libc::pid_t = 0;
+                        let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+                        unsafe {
+                            if libc::getsockopt(fd, 0, 0x01, &mut pid as *mut _ as *mut _, &mut len)
+                                == 0
+                            {
+                                peer_pid = Some(pid);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(pid) = peer_pid
+                    && pid != 0
+                    && !proxy.load_balancer().is_authorized_pid(pid as u32)
+                {
+                    return Err(ProxyError::Connection(format!(
+                        "Security Violation: PID {} not authorized",
+                        pid
+                    )));
+                }
+            }
+
             let io = TokioIo::new(stream);
 
             // HTTP/1.1 handshake
@@ -356,6 +400,46 @@ impl hyper::service::Service<Request<Incoming>> for VeloProxyService {
                         worker_socket_path, e
                     ))
                 })?;
+
+            // Gate H (DEF-72-H01): Peer Authentication for Legacy mode
+            {
+                let creds = stream
+                    .peer_cred()
+                    .map_err(|e| ProxyError::Connection(e.to_string()))?;
+                let current_uid = unsafe { libc::getuid() };
+                if creds.uid() != current_uid {
+                    return Err(ProxyError::Connection(format!(
+                        "Security Violation: UID mismatch (expected {})",
+                        current_uid
+                    )));
+                }
+
+                #[allow(unused_mut)]
+                let mut peer_pid = creds.pid();
+                #[cfg(target_os = "macos")]
+                if peer_pid.is_none() {
+                    let fd = stream.as_raw_fd();
+                    let mut pid: libc::pid_t = 0;
+                    let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+                    unsafe {
+                        // SOL_LOCAL = 0, LOCAL_PEERPID = 0x01
+                        if libc::getsockopt(fd, 0, 0x01, &mut pid as *mut _ as *mut _, &mut len)
+                            == 0
+                        {
+                            peer_pid = Some(pid);
+                        }
+                    }
+                }
+
+                if let Some(pid) = peer_pid
+                    && !proxy.load_balancer().is_authorized_pid(pid as u32)
+                {
+                    return Err(ProxyError::Connection(format!(
+                        "Security Violation: PID {} not authorized",
+                        pid
+                    )));
+                }
+            }
 
             let io = TokioIo::new(stream);
 

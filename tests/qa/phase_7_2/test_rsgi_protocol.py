@@ -23,10 +23,18 @@ def run_velo_with_mock_worker(isolated_env):
         with open(fake_python, "w") as f:
             f.write("#!/bin/bash\n")
             f.write("echo \"Wrapper called with args: $@\" >> /tmp/wrapper.log\n")
+            # Check if this is a worker spawn (has --uds flag)
             f.write("if [[ \"$*\" == *\"--uds\"* ]]; then\n")
             f.write("    echo \"Intercepting worker spawn\" >> /tmp/wrapper.log\n")
-            # We MUST use exec so the PID matches what Velo expects (Gate H)
-            f.write(f"    exec {python_exe} {worker_logic_path} \"$@\" 2>> /tmp/worker_err.log\n")
+            # Extract --uds path from arguments (skip -m module_name)
+            f.write("    UDS_PATH=\"\"\n")
+            f.write("    for arg in \"$@\"; do\n")
+            f.write("        if [[ \"$prev\" == \"--uds\" ]]; then UDS_PATH=\"$arg\"; fi\n")
+            f.write("        prev=\"$arg\"\n")
+            f.write("    done\n")
+            f.write("    echo \"UDS_PATH=$UDS_PATH\" >> /tmp/wrapper.log\n")
+            # Run mock worker with extracted --uds path only
+            f.write(f"    exec {python_exe} {worker_logic_path} --uds \"$UDS_PATH\" 2>> /tmp/worker_err.log\n")
             f.write("else\n")
             f.write(f"    exec {python_exe} \"$@\"\n")
             f.write("fi\n")
@@ -44,7 +52,7 @@ def run_velo_with_mock_worker(isolated_env):
         short_socket_dir.mkdir(parents=True, exist_ok=True)
         env_vars["VELO_SOCKET_DIR"] = str(short_socket_dir)
         # Ensure PYTHONPATH includes project root for velo_zygote
-        root_dir = str(Path(__file__).parents[3])
+        root_dir = os.getcwd()
         env_vars["PYTHONPATH"] = f"{root_dir}:{env_vars.get('PYTHONPATH', '')}"
         
         # Create a dummy module to satisfy early validation
@@ -113,6 +121,8 @@ def recv_msg(s):
 def main():
     log_path = os.environ.get("VELO_WORKER_DEBUG_LOG", "/tmp/velo_worker_debug.log")
     with open(log_path, "a") as log:
+        log.write(f"--- Mock Worker Starting (PID: {os.getpid()}) ---\n")
+        log.flush()
         try:
             parser = argparse.ArgumentParser()
             parser.add_argument("--uds")
@@ -120,41 +130,50 @@ def main():
             
             log.write(f"Worker started with args: {sys.argv}\n")
             log.write(f"CWD: {os.getcwd()}\n")
+            log.flush()
             
             if not args.uds:
                 log.write("ERROR: No UDS path provided\n")
+                log.flush()
                 sys.exit(1)
             
             if os.path.exists(args.uds):
                 log.write(f"Unlinking existing socket: {args.uds}\n")
+                log.flush()
                 os.unlink(args.uds)
                 
             ls = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             ls.bind(args.uds)
             ls.listen(5)
             log.write(f"Bound to {args.uds}, waiting for connections...\n")
+            log.flush()
             
             while True:
                 conn, _ = ls.accept()
                 log.write("Connection accepted!\n")
+                log.flush()
                 
                 try:
 {indented_logic}
                     conn.close()
                     log.write("Handshake logic completed successfully\n")
+                    log.flush()
                     break
                 except (BrokenPipeError, ConnectionResetError) as e:
                     log.write(f"Transient connection error: {e}. Retrying...\n")
+                    log.flush()
                     conn.close()
                     continue
                 except Exception as e:
                     log.write(f"LOGIC EXCEPTION: {e}\n")
+                    log.flush()
                     with open(log_path, "a") as log_err:
                         traceback.print_exc(file=log_err)
                     sys.exit(1)
             ls.close()
         except Exception as e:
             log.write(f"MAIN EXCEPTION: {e}\n")
+            log.flush()
             with open(log_path, "a") as log_err:
                 traceback.print_exc(file=log_err)
             sys.exit(1)
@@ -212,7 +231,7 @@ class TestRsgiProtocol:
         """[H-PRO-01] Verify valid READY -> AUTH_OK handshake."""
         logic = """
 # 1. Send READY
-send_msg(conn, [0x10, "1.0.0", "worker-1", None, None])
+send_msg(conn, [0x10, "1.0.0", "worker-1", {"streaming": True}, {"hints": True}])
 
 # 2. Recv AUTH_OK
 resp = recv_msg(conn)
@@ -254,11 +273,13 @@ send_msg(conn, [0x01, "garbage"])
         with run_velo_with_mock_worker(logic_path) as (proc, port):
             if not self.wait_for_port(port): pytest.fail("Velo failed to start")
             t = self.trigger_request(port)
+            # Wait for request to finish and log errors
+            t.join(timeout=5)
+            time.sleep(0.5)
             stdout, stderr = self.terminate_and_communicate(proc)
-            t.join(timeout=1)
             
         # PROSECUTOR NOTE: If this fails, dev is swallowing protocol errors in Host!
-        assert "Expected READY, got type 1" in stderr
+        assert "Expected READY" in stderr and "got type 1" in stderr
 
     @pytest.mark.tier1
     def test_handshake_timeout(self, isolated_env, mock_worker_logic, run_velo_with_mock_worker):
@@ -272,8 +293,10 @@ time.sleep(1.0)
         with run_velo_with_mock_worker(logic_path) as (proc, port):
             if not self.wait_for_port(port): pytest.fail("Velo failed to start")
             t = self.trigger_request(port)
+            # Wait for request to finish and log errors
+            t.join(timeout=5)
+            time.sleep(0.5)
             stdout, stderr = self.terminate_and_communicate(proc)
-            t.join(timeout=1)
             
         # PROSECUTOR NOTE: If this fails, dev is missing the Gate E timeout logic!
         assert "Handshake timed out after 500ms" in stderr

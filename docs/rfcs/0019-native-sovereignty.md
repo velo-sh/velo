@@ -1,18 +1,78 @@
-# RFC-0019: Native Sovereignty (Rust-Native Runtime Engine)
+# RFC-0019: Native Sovereignty (Granian Native Runtime)
 
-**Status**: DRAFT (Proposed for Phase 7.2)
+**Status**: DRAFT → APPROVED (Phase 7.2)
 **Author**: Architect
-**Date**: 2026-01-09
+**Date**: 2026-01-09 (Updated: 2026-01-14)
 
 ## 0. Detailed Specifications
-*   **Protocol Design**: [0019-details-protocol.md](0019-details-protocol.md)
-*   **Performance Benefits**: [0019-appendix-performance.md](0019-appendix-performance.md) *(QA Validation Required)*
-*   **Audit Report**: [../architecture/audit_phase_7_alignment.md](../architecture/audit_phase_7_alignment.md)
-*   **QA Handoff**: [../architecture/handover_qa_phase_7_1_7_2.md](../architecture/handover_qa_phase_7_1_7_2.md)
+*   **Protocol Design**: [0019-details-protocol.md](0019-details-protocol.md) (Phase 7.x legacy)
+*   **Performance Benefits**: [0019-appendix-performance.md](0019-appendix-performance.md)
+*   **WebSocket Support**: [RFC-0025](./0025-websocket-architecture.md)
+*   **Native TLS**: [RFC-0026](./0026-native-tls-integration.md)
+*   **HTTP/2**: [RFC-0027](./0027-http2-support.md)
 
+> [!IMPORTANT]
+> **Current Architectural Evolution** (Jan 14, 2026)
+>
+> This RFC has been updated to adopt the **Granian Native Runtime** architecture:
+> - **Before (Phase 7.x)**: UDS + MessagePack IPC (~50-100μs/request)
+> - **After (Phase 7.2)**: PyO3 Direct Call (~1-5μs/request)
+>
+> See [Section 3.5](#35-phase-9x-granian-native-architecture-current) for the new unified architecture.
 
 ## 1. Summary
-"Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine. By moving the L7 HTTP logic into the Velo binary and orchestrating Python workers via the **RSGI-Velo protocol**, we achieve 0ms wrapper overhead and superior signal/lifecycle control.
+"Native Sovereignty" replaces the Python-based execution host (Uvicorn/Gunicorn) with a high-performance, Rust-native engine powered by **Granian**.
+
+| Phase | Architecture | Latency |
+|:---|:---|:---|
+| 7.x (Legacy) | UDS + MessagePack | ~50-100μs |O
+| **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** |
+
+### 1.1 Scope: ASGI Web Server Mode Only
+
+> [!IMPORTANT]
+> This RFC applies **only to ASGI Web Server mode** (`velo serve`). Other Velo modes continue to use their existing architectures.
+
+| Mode | Command | Architecture | This RFC |
+|:---|:---|:---|:---|
+| **ASGI Web Server** | `velo serve main:app` | Granian + PyO3 + Multi-Worker | ✅ **Applies** |
+| Script Runner | `velo run script.py` | Zygote + Single Process | ❌ Unchanged |
+| Bundle Executable | `velo bundle` | Embedded Python | ❌ Unchanged |
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      VELO RUNNING MODES                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 1: velo serve main:app  [THIS RFC]                          │  │
+│  │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐           │  │
+│  │  │  Master     │───▶│  Worker 0   │ .. │  Worker N   │           │  │
+│  │  │  HTTP/TLS   │    │  Granian    │    │  Granian    │           │  │
+│  │  └─────────────┘    └─────────────┘    └─────────────┘           │  │
+│  │  Multi-Worker, Load Balancing, HTTP/WebSocket, High Concurrency  │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 2: velo run script.py  [UNCHANGED]                          │  │
+│  │  ┌─────────────┐    ┌─────────────────────────────────┐          │  │
+│  │  │  Velo CLI   │───▶│  Python + Zygote (fast import)  │          │  │
+│  │  └─────────────┘    └─────────────────────────────────┘          │  │
+│  │  Single Process, Fast Startup (~50ms), Batch/CLI                 │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  MODE 3: ./my-app (after velo bundle)  [UNCHANGED]                │  │
+│  │  ┌─────────────────────────────────────────────────────────────┐ │  │
+│  │  │  Single Executable: Velo + Embedded Python + Dependencies   │ │  │
+│  │  └─────────────────────────────────────────────────────────────┘ │  │
+│  │  No Python Install Required, Self-Contained Distribution        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Invariant**: Changes to ASGI Web Server mode MUST NOT break Script Runner or Bundle modes.
 
 ## 2. Motivation
 Current limitations of the Uvicorn-wrapper model:
@@ -23,21 +83,194 @@ Current limitations of the Uvicorn-wrapper model:
 ## 3. Architectural Blueprint
 
 ### 3.1 The Native Host Topology (Granian-Powered)
-The Velo binary becomes the **Master Execution Host**, integrating a customized version of the **Granian** L7 engine.
-
-> [!NOTE]
-> Velo adopts a **"Strategic Dissection"** approach: vendoring Granian's ASGI/RSGI state machines while replacing its process management with Velo's proprietary Zygote/Forking lifecycle.
+The Velo binary becomes the **Master Execution Host**, integrating the **Granian** L7 engine.
 
 ```
-[ External Client ] 
-       │ HTTP/1.1, HTTP/2
-       ▼
-[ Velo Master (Rust/Hyper) ]  <─── Control Plane (UDS)
-       │                                │
-       │ RSGI-Velo Protocol (MsgPack)   │ Health, Lifecycle
-       ▼                                │
-[ Velo Worker (Python/Zygote) ] <───────┘
+┌───────────────────────────────────────────────────────────────┐
+│                    Velo Master (Supervisor)                   │
+│   - Process management                                        │
+│   - Health checks                                             │
+│   - Load balancing                                            │
+└───────────────────────────────────────────────────────────────┘
+                               │
+                               │ fork() COW
+                               ▼
+┌───────────────────────────────────────────────────────────────┐
+│                    Granian Worker (Forked)                    │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │  Rust Runtime (Tokio)                                   │  │
+│  │  ┌───────────────────────────────────────────────────┐  │  │
+│  │  │  Hyper HTTP/WebSocket Server                      │  │  │
+│  │  │  ┌─────────────────────────────────────────────┐  │  │  │
+│  │  │  │  PyO3 Bridge (~1-5μs)                       │  │  │  │
+│  │  │  │  ┌───────────────────────────────────────┐  │  │  │  │
+│  │  │  │  │  Python ASGI App                      │  │  │  │  │
+│  │  │  │  │  (Pre-warmed via Zygote)              │  │  │  │  │
+│  │  │  │  └───────────────────────────────────────┘  │  │  │  │
+│  │  │  └─────────────────────────────────────────────┘  │  │  │
+│  │  └───────────────────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────┘
 ```
+
+### 3.1.1 Request Flow (Client → FastAPI)
+
+```
+  ┌─────────┐
+  │ Client  │  HTTP/HTTPS Request
+  └────┬────┘
+       │
+       ▼ (1) TCP Connection
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    Velo Master (Rust/Tokio)                              │
+  │  ┌───────────────────────────────────────────────────────────────────┐  │
+  │  │  (2) TLS Termination (rustls) - if HTTPS                          │  │
+  │  │  (3) HTTP Parsing (hyper) - parse headers, body                   │  │
+  │  │  (4) Load Balancer - select Worker (Round Robin / Least Conn)     │  │
+  │  └───────────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (5) PyO3 Direct Call (~1-5μs)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    Granian Worker (Forked Process)                       │
+  │  ┌───────────────────────────────────────────────────────────────────┐  │
+  │  │  (6) ASGI Scope Building (Rust-side)                              │  │
+  │  │  (7) PyO3 → Python: await app(scope, receive, send)               │  │
+  │  └───────────────────────────────────────────────────────────────────┘  │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (8) ASGI 3.0 Interface
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                    FastAPI / Starlette                                   │
+  │  (9)  Routing: match @app.post("/api/predict")                          │
+  │  (10) Middleware Chain: Auth → CORS → Logging                           │
+  │  (11) Dependency Injection: Depends(get_db), Depends(get_model)         │
+  │  (12) Request Validation (Pydantic)                                     │
+  │  (13) Your Business Logic: model.predict(input)                         │
+  │  (14) Response Serialization (Pydantic → JSON)                          │
+  └─────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (15) Response: Worker → Master → Client
+```
+
+### 3.1.2 Multi-Worker Architecture
+
+```
+                              ┌─────────────────────┐
+                              │    External Client  │
+                              └──────────┬──────────┘
+                                         │ TCP/HTTP(S)
+                                         ▼
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                         VELO MASTER (Supervisor)                                │
+│  • TCP Listener (0.0.0.0:8000)     • Load Balancer                             │
+│  • TLS Termination (rustls)        • Health Monitor                            │
+│  • HTTP Parsing (hyper)            • Signal Handler (SIGTERM, SIGINT)          │
+│                                                                                 │
+│              ┌──────────────────────────┼──────────────────────────┐           │
+│              │                          │                          │           │
+│              ▼                          ▼                          ▼           │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐    │
+│  │  WORKER 0 (PID 1001)│  │  WORKER 1 (PID 1002)│  │  WORKER 2 (PID 1003)│    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ Rust (Tokio)  │  │  │  │ Rust (Tokio)  │  │  │  │ Rust (Tokio)  │  │    │
+│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │    │
+│  │          │ PyO3     │  │          │ PyO3     │  │          │ PyO3     │    │
+│  │          ▼          │  │          ▼          │  │          ▼          │    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ Python + GIL  │  │  │  │ Python + GIL  │  │  │  │ Python + GIL  │  │    │
+│  │  │ (独立进程)    │  │  │  │ (独立进程)    │  │  │  │ (独立进程)    │  │    │
+│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │    │
+│  │          ▼          │  │          ▼          │  │          ▼          │    │
+│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │    │
+│  │  │ FastAPI App   │  │  │  │ FastAPI App   │  │  │  │ FastAPI App   │  │    │
+│  │  │ (COW Shared)  │  │  │  │ (COW Shared)  │  │  │  │ (COW Shared)  │  │    │
+│  │  └───────────────┘  │  │  └───────────────┘  │  │  └───────────────┘  │    │
+│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘    │
+│                                                                                 │
+│  Memory Layout:                                                                 │
+│  ┌─ COW SHARED (Read-Only) ──────────────────────────────────────────────────┐ │
+│  │  • Python interpreter (~50MB)  • torch/numpy libraries                    │ │
+│  │  • FastAPI/Starlette code      • ML model weights (Zygote pre-load)       │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│  ┌─ PRIVATE (Per-Worker) ─────────────────────────────────────────────────────┐│
+│  │  • Request/response buffers    • Event loop state    • GIL state          ││
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+| Aspect | Description |
+|:---|:---|
+| **Process Isolation** | Each Worker is a separate process; crash doesn't affect others |
+| **Independent GIL** | Each Worker has its own GIL; true parallelism |
+| **COW Sharing** | After Zygote fork, memory pages are shared (~50ms cold start) |
+| **PyO3 Call** | ~1-5μs latency, no serialization overhead |
+
+### 3.1.3 Zygote + PyO3 Integration Model (Architectural Clarification)
+
+> [!IMPORTANT]
+> **Eliminating Ambiguity**: Zygote and PyO3 are **complementary mechanisms** operating at different levels:
+> - **Zygote/Fork** = Process-level (creating workers)
+> - **PyO3** = Intra-process (Rust↔Python calls within each worker)
+
+#### Lifecycle Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 1: ZYGOTE PRE-WARM                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Python Interpreter starts                                             │  │
+│  │  → import torch, pandas, fastapi (heavy libs)                          │  │
+│  │  → Load ML model weights into memory                                   │  │
+│  │  → FREEZE: Ready for fork()                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                             fork() COW
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 2: WORKER SPAWNING                            │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  Velo Master calls fork() N times                                      │  │
+│  │  → Each fork creates Worker with COPIED memory (COW)                   │  │
+│  │  → Each Worker has: Rust Runtime + Python Interpreter + Loaded Libs    │  │
+│  │  → Workers are ISOLATED processes (independent GIL, crash isolation)   │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                           per-request
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         STAGE 3: REQUEST HANDLING (PyO3)                    │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  HTTP Request arrives at Worker                                        │  │
+│  │  → Rust (Hyper) parses HTTP                                            │  │
+│  │  → PyO3 Direct Call: Rust → Python (SAME PROCESS, ~1-5μs)              │  │
+│  │  → Python ASGI App executes                                            │  │
+│  │  → PyO3 returns response: Python → Rust                                │  │
+│  │  → Rust sends HTTP response                                            │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Why This Works
+
+| Concern | Resolution |
+|:---|:---|
+| "PyO3 requires same-process" | ✅ Rust and Python ARE in the same process (each Worker) |
+| "Zygote uses multi-process" | ✅ Multiple Workers exist; each is a separate process |
+| "GIL blocks parallelism" | ✅ Each Worker has its own GIL; N workers = N-way parallelism |
+| "Fork copies everything" | ✅ COW ensures only modified pages are copied (memory efficient) |
+
+#### Strategic Dissection Clarification
+
+Velo's "Strategic Dissection" of Granian means:
+1. **KEEP**: Granian's L7 engine (HTTP parsing, ASGI state machine, PyO3 bindings)
+2. **REPLACE**: Granian's process management with Velo's Zygote/Fork lifecycle
+3. **RESULT**: Faster cold-start (~50ms vs 500ms+) while preserving PyO3 performance
+
+
+
 
 ### 3.2 Velo / Granian / FastAPI Three-Layer Architecture
 
@@ -119,6 +352,38 @@ The protocol defines the binary exchange between the Rust Host and Python Worker
 | `RES_START` | 0x03 | Worker -> Host | Status Code, Headers |
 | `RES_BODY` | 0x04 | Worker -> Host | Body-Chunk-N, Is-EOF |
 | `KEEPALIVE` | 0x09 | Both | Timestamp |
+
+> [!WARNING]
+> **Phase 7.x Legacy**: The RSGI-Velo Protocol above is replaced in Phase 7.2 by direct PyO3 calls.
+> See Section 3.5 for the current architecture.
+
+### 3.5 Current: Granian Native Architecture (Phase 7.2)
+
+> [!IMPORTANT]
+> This section describes the **current recommended architecture** as of Phase 7.2.
+
+#### 3.5.1 Architecture Evolution
+
+| Phase | IPC Mechanism | Latency | Status |
+|:---|:---|:---|:---|
+| 7.x | UDS + MessagePack | ~50-100μs | **Legacy** |
+| **Phase 7.2** | **PyO3 Direct Call** | **~1-5μs** | **Current** |
+
+#### 3.5.2 Key Benefits
+
+| Aspect | Improvement |
+|:---|:---|
+| **Latency** | 10-50x faster (no serialization) |
+| **Code** | -1300 lines (delete `src/rsgi/`, `velo_zygote/rsgi.py`) |
+| **WebSocket** | Native via `tokio-tungstenite` (see RFC-0025) |
+| **Maintenance** | Single codebase, not two |
+
+#### 3.5.3 Implementation Requirements
+
+Refer to RFC-0025 Section 6 for blocking conditions:
+- **C1**: Zygote Phase Capability Whitelist
+- **C2**: Worker Lifecycle State Machine
+- **C3**: Granian ABI Freeze Strategy
 
 ## 4. The ABI Boundary
 To ensure TITANIUM-grade stability, the boundary is strictly defined:
@@ -415,7 +680,7 @@ Python Worker:
 | Protocol | Status | Notes |
 |:---|:---|:---|
 | **HTTP/2** | 🟢 STABLE | Granian full support |
-| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 9.x |
+| **HTTP/3 (QUIC)** | 🟡 WATCHING | Granian planned, Phase 8.x |
 | **WebTransport** | 🔮 RESEARCH | Future real-time applications |
 
 ### 8.14 Memory Management Strategy (Stability-First)
@@ -493,7 +758,7 @@ These techniques are safe within Rust's ownership model:
 | **PyBytes views** | Boundary | 7.2 | ⭐⭐⭐ | Medium |
 | **SPSC Ring Buffer** | Rust | 8.x | ⭐⭐ | Low |
 | **Memory Arena** | Rust | 8.x | ⭐⭐ | Low |
-| **Zero-copy mmap** | Boundary | 9.x | ⭐ | High |
+| **Zero-copy mmap** | Boundary | Phase 8.x | ⭐ | High |
 
 #### 8.14.5 Verification Strategy
 
@@ -534,4 +799,36 @@ Instead of Just-In-Time (JIT) compilation which competes for resources during re
 1.  **Copy-and-Patch JIT** (Python 3.13 strategy) - Likely the winner.
 2.  **Cranelift / LLVM** - For heavy numerical computing (Scientific workloads).
 3.  **WASM Intermediate** - For sandboxed, safe native execution.
+
+---
+
+## 9. Grand Council Review Summary
+
+**Initial Review**: 2026-01-09 (Phase 7.x UDS Architecture)
+**Re-Evaluation**: 2026-01-14 (Phase 7.2 Granian Native Architecture)
+**Verdict**: ✅ **APPROVED**
+
+| Persona | Vote | Rationale |
+|:---|:---|:---|
+| HPC / Runtime Architect | ✅ **STRONG YES** | ~1-5μs latency via PyO3 |
+| Security Engineer | ✅ **YES** | Process isolation preserved via fork() |
+| Rust Core / Systems | ✅ **YES** | -1300 lines of code |
+| Python Runtime Engineer | ✅ **YES** | Standard PyO3 integration |
+| CTO | ✅ **YES** | Leverages existing Granian investment |
+
+**P0 Blocking Issues**: C1, C2, C3 (must be satisfied before implementation)
+
+---
+
+## 10. References
+
+- [Granian GitHub](https://github.com/emmett-framework/granian)
+- [PyO3 Documentation](https://pyo3.rs/)
+- [Zygote Process Model](https://source.android.com/docs/core/runtime)
+- [tokio-tungstenite](https://docs.rs/tokio-tungstenite)
+- [ASGI Specification](https://asgi.readthedocs.io/)
+
+---
+
+**Last Updated**: 2026-01-14
 

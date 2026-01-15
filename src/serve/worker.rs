@@ -25,9 +25,15 @@ fn build_worker_env(
 ) -> Box<std::collections::HashMap<String, String>> {
     let mut env = std::env::vars()
         .filter(|(k, _)| config.security_env_whitelist.contains(k))
-        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables
-        .filter(|(k, _)| !(k.starts_with("VELO_") && k.contains("UNTRUSTED")))
+        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables (Double-Guard System)
+        .filter(|(k, _)| !(k.contains("UNTRUSTED") && k.contains("VELO")))
         .collect::<std::collections::HashMap<String, String>>();
+
+    // Mandatory Infrastructure Invariant: PYTHONPATH must pass through if present
+    if let Ok(pp) = std::env::var("PYTHONPATH") {
+        env.insert("PYTHONPATH".to_string(), pp);
+    }
+
     env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
     // Gate H (DEF-72-H01): Pass Host PID so workers can validate incoming connections
     env.insert("VELO_HOST_PID".to_string(), std::process::id().to_string());
@@ -233,6 +239,67 @@ impl Worker {
         })
     }
 
+    /// Spawn a native Granian worker via fork() [Phase 7.3]
+    ///
+    /// This method forks the current process and initializes a Granian RSGI worker
+    /// in the child. The child process embeds PyO3 and runs the ASGI application
+    /// directly in-process.
+    #[cfg(unix)]
+    pub fn spawn_native(
+        app: &str,
+        worker_id: i32,
+        socket_fd: std::os::unix::io::RawFd,
+        project_dir: &Path,
+        _config: &crate::config::VeloConfig,
+    ) -> Result<Self> {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        Self::validate_app_path(app)?;
+
+        // RFC-0019/0025 executive model: Spawn a NEW velo process as the worker
+        // This is safe to call from a multi-threaded Host (avoiding fork-safety issues).
+        let mut cmd = Command::new(std::env::current_exe()?);
+        cmd.arg("worker-native")
+            .arg("--worker-id")
+            .arg(worker_id.to_string())
+            .arg("--fd")
+            .arg(socket_fd.to_string())
+            .arg("--app")
+            .arg(app)
+            .arg("--project-dir")
+            .arg(project_dir);
+
+        // Inherit PYTHONPATH for the worker
+        if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
+            cmd.env("PYTHONPATH", pythonpath);
+        }
+
+        // Ensure the listener FD is inherited despite FD_CLOEXEC
+        unsafe {
+            cmd.pre_exec(move || {
+                let flags = libc::fcntl(socket_fd, libc::F_GETFD);
+                if flags != -1 {
+                    libc::fcntl(socket_fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
+                }
+                Ok(())
+            });
+        }
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn native worker: {}", e))?;
+
+        Ok(Self {
+            pid: child.id(),
+            port: 0,
+            started_at: Instant::now(),
+            zygote_socket: None,
+            script_path: None,
+            socket_path: None,
+        })
+    }
+
     /// Validate app path security
     fn validate_app_path(app: &str) -> Result<()> {
         if !app.contains(':') {
@@ -265,6 +332,7 @@ impl Worker {
     }
 
     /// Respawn this worker using its original parameters
+    #[allow(clippy::too_many_arguments)]
     pub fn respawn(
         &self,
         app: &str,
@@ -273,9 +341,18 @@ impl Worker {
         project_dir: &Path,
         config: &crate::config::VeloConfig,
         rsgi: bool,
+        #[cfg(unix)] socket_fd: Option<std::os::unix::io::RawFd>,
     ) -> Result<Self> {
         if let Some(ref zygote) = self.zygote_socket {
             Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config, rsgi)
+        } else if rsgi {
+            #[cfg(unix)]
+            {
+                if let Some(fd) = socket_fd {
+                    return Self::spawn_native(app, worker_id as i32, fd, project_dir, config);
+                }
+            }
+            Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         } else {
             Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)
         }
@@ -312,21 +389,43 @@ impl Worker {
     /// false-positive death detection before the worker binds its socket.
     pub fn is_alive(&self) -> bool {
         // Grace period: workers get 5 seconds to initialize before liveness checks kick in
+        // RFC-0016: Prevent false-positive death detection during startup
         const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(5);
 
-        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
-            // During grace period, only check if process still exists
-            // Don't trigger respawn logic even if socket isn't ready
-            return unsafe { libc::kill(self.pid as i32, 0) == 0 };
+        // Safety: kill with signal 0 checks process existence without sending signal
+        let alive = unsafe { libc::kill(self.pid as i32, 0) == 0 };
+
+        if !alive {
+            return false;
         }
 
-        // After grace period, normal liveness check
-        // Safety: kill with signal 0 checks process existence without sending signal
-        // SECURITY: libc::kill(pid, 0) is a standard non-destructive check for process existence.
-        unsafe { libc::kill(self.pid as i32, 0) == 0 }
+        // macOS Technical Debt: Zombies respond to kill(0) with success.
+        // If the process is a zombie, it's effectively dead. We try to reap it here
+        // to confirm its status.
+        #[cfg(target_os = "macos")]
+        {
+            let mut status = 0;
+            let res = unsafe { libc::waitpid(self.pid as i32, &mut status, libc::WNOHANG) };
+            if res == self.pid as i32 {
+                // Process was a zombie and is now reaped.
+                return false;
+            }
+        }
+
+        if self.started_at.elapsed() < STARTUP_GRACE_PERIOD {
+            // During grace period, we don't return false for socket-related issues,
+            // but we already handled process death above.
+            return true;
+        }
+
+        true
     }
 
     pub fn shutdown(&self, timeout: Duration) -> Result<()> {
+        eprintln!(
+            "[WORKER] Shutting down worker PID {} (UDS={:?})",
+            self.pid, self.socket_path
+        );
         if let Some(ref zygote) = self.zygote_socket {
             let cmd = ipc::ZygoteCommand::SignalWorker {
                 worker_pid: self.pid,
@@ -343,19 +442,68 @@ impl Worker {
             let response = ipc::send_command(zygote, cmd, None);
 
             match response {
-                Ok(ipc::ZygoteResponse::WorkerExited { .. }) => Ok(()),
+                Ok(ipc::ZygoteResponse::WorkerExited { .. }) => {
+                    eprintln!("[WORKER] PID {} exited gracefully via Zygote", self.pid);
+                    Ok(())
+                }
                 _ => {
+                    eprintln!(
+                        "[WORKER] PID {} failed graceful Zygote shutdown, triggering fallback",
+                        self.pid
+                    );
+                    // RFC-0012 C.6: Fallback - If Zygote is unreachable or fails to kill,
+                    // we MUST perform a direct kill from the Host to ensure eradication.
                     let kill_cmd = ipc::ZygoteCommand::SignalWorker {
                         worker_pid: self.pid,
                         signal: 9, // SIGKILL
                         request_id: Some(Uuid::now_v7().to_string()),
                     };
                     let _ = ipc::send_command(zygote, kill_cmd, None);
+
+                    // Final nuclear fallback: direct kill from Host
+                    unsafe {
+                        eprintln!(
+                            "[WORKER] PID {} NUCLEAR FALLBACK: Direct libc::kill(SIGKILL)",
+                            self.pid
+                        );
+                        let res = libc::kill(self.pid as i32, 9);
+                        if res != 0 {
+                            let err = std::io::Error::last_os_error();
+                            eprintln!(
+                                "[WORKER] CRITICAL: libc::kill({}) failed: {}",
+                                self.pid, err
+                            );
+                        } else {
+                            eprintln!(
+                                "[WORKER] libc::kill({}) returned SUCCESS, waiting for reaping...",
+                                self.pid
+                            );
+                            // Wait up to 1s for reaping
+                            let kill_start = Instant::now();
+                            while kill_start.elapsed() < Duration::from_secs(1) {
+                                let check_res = libc::kill(self.pid as i32, 0);
+                                if check_res != 0 {
+                                    let err =
+                                        std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                                    if err == libc::ESRCH {
+                                        eprintln!("[WORKER] PID {} reaped (ESRCH)!", self.pid);
+                                        break;
+                                    }
+                                    // If EPERM, process still exists!
+                                }
+                                std::thread::sleep(Duration::from_millis(100));
+                            }
+                        }
+                    }
                     Ok(())
                 }
             }
         } else {
             // Direct worker: signal directly
+            eprintln!(
+                "[WORKER] PID {} direct shutdown sequence initiated",
+                self.pid
+            );
             unsafe {
                 libc::kill(self.pid as i32, 15); // SIGTERM
             }
@@ -363,12 +511,14 @@ impl Worker {
             let start = Instant::now();
             while start.elapsed() < timeout {
                 if !self.is_alive() {
+                    eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
                     return Ok(());
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             unsafe {
-                libc::kill(self.pid as i32, 9); // SIGKILL
+                eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                libc::kill(self.pid as i32, 9);
             }
             Ok(())
         }
@@ -377,6 +527,10 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
+        // RFC-0012 C.6: RAII Cleanup - Ensure worker process is terminated when handle is dropped
+        // We use a 2s timeout for graceful shutdown before SIGKILL
+        let _ = self.shutdown(Duration::from_secs(2));
+
         if let Some(ref path) = self.script_path {
             let _ = std::fs::remove_file(path);
         }

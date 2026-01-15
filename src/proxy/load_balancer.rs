@@ -37,6 +37,10 @@ impl WorkerNode {
 
     /// Create a new worker node with a known PID (Gate H compliance).
     pub fn with_pid(socket_path: String, worker_id: u64, pid: u32) -> Self {
+        eprintln!(
+            "[LB] Created worker node {} at {} with pid {}",
+            worker_id, socket_path, pid
+        );
         Self {
             socket_path: std::sync::RwLock::new(socket_path),
             worker_id,
@@ -104,6 +108,7 @@ impl WorkerNode {
 
     /// Mark this worker as unhealthy.
     pub fn mark_unhealthy(&self) {
+        eprintln!("[LB] Worker marked UNHEALTHY (circuit breaker tripped)");
         self.healthy.store(false, Ordering::Relaxed);
     }
 
@@ -219,9 +224,15 @@ impl LoadBalancer {
         let healthy: Vec<_> = self.workers.iter().filter(|w| w.is_healthy()).collect();
 
         if healthy.is_empty() {
+            let statuses: Vec<String> = self
+                .workers
+                .iter()
+                .map(|w| format!("{}:{}", w.socket_path(), w.is_healthy()))
+                .collect();
             eprintln!(
-                "[LB] No healthy workers available among {} total",
-                self.workers.len()
+                "[LB] No healthy workers available among {} total. Statuses: {:?}",
+                self.workers.len(),
+                statuses
             );
             return None;
         }
@@ -408,13 +419,15 @@ impl LoadBalancer {
                         Ok(_) => {
                             // If it was unhealthy, mark it healthy again
                             if !worker.is_healthy() {
+                                eprintln!("[LB] Worker {} recovered", current_path);
                                 worker.mark_healthy();
                             } else {
                                 // Reset consecutive failures on success
                                 worker.record_success();
                             }
                         }
-                        Err(_) => {
+                        Err(e) => {
+                            eprintln!("[LB] Health check failed for {}: {}", current_path, e);
                             // Record failure (may trigger circuit breaker)
                             worker.record_failure();
                         }

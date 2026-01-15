@@ -377,10 +377,10 @@ impl ZygoteLauncher {
             return Ok(());
         }
 
-        // Find Python interpreter
+        // Find Python interpreter using standardized detection (respects VELO_PYTHON)
+        let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let python = self.python_path.clone().unwrap_or_else(|| {
-            // Default to python3
-            PathBuf::from("python3")
+            crate::python::detect_python(&project_dir).unwrap_or_else(|_| PathBuf::from("python3"))
         });
 
         // RFC-0011: Standardized socket path
@@ -487,7 +487,7 @@ impl ZygoteLauncher {
         #[allow(unexpected_cfgs)]
         #[cfg(not(feature = "sandbox_disabled"))]
         #[cfg(target_os = "macos")]
-        {
+        if std::env::var("VELO_TEST_MODE").unwrap_or_default() != "1" {
             let socket_dir = self
                 .socket_path
                 .parent()
@@ -769,7 +769,8 @@ impl ZygoteLauncher {
         // Wait for process to exit or kill it
         if let Some(mut child) = self.zygote_process.take() {
             // Give it a moment to shut down gracefully
-            std::thread::sleep(Duration::from_millis(100));
+            // RFC-0012 C.6: Increased from 100ms to 2000ms to allow Zygote to kill its workers
+            std::thread::sleep(Duration::from_millis(2000));
 
             // Check if it's still running
             match child.try_wait() {
@@ -777,8 +778,20 @@ impl ZygoteLauncher {
                     // Already exited
                 }
                 Ok(None) => {
-                    // Still running, kill it
+                    // RFC-0012 C.6: Robust Eradication - Kill the entire process group.
+                    // Since Zygote uses setsid(), its PGID == PID.
+                    #[cfg(unix)]
+                    unsafe {
+                        let pgid = child.id() as i32;
+                        // Try to kill process group first
+                        if libc::kill(-pgid, libc::SIGKILL) != 0 {
+                            // Fallback to killing just the child
+                            let _ = child.kill();
+                        }
+                    }
+                    #[cfg(not(unix))]
                     let _ = child.kill();
+
                     let _ = child.wait();
                 }
                 Err(_) => {

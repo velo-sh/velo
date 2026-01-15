@@ -75,18 +75,21 @@ subprocess.run = _scaled_subprocess_run
 
 def pytest_configure(config):
     """Register tier markers for pytest."""
-    config.addinivalue_line("markers", "tier0: Smoke tests (<5s) - run always")
+    config.addinivalue_line("markers", "tier0: Smoke tests (<10s) - run always")
     config.addinivalue_line(
-        "markers", "tier1: Fast tests (<30s) - security, error handling"
+        "markers", "tier1: Fast tests (<60s) - security, core logic"
     )
     config.addinivalue_line(
-        "markers", "tier2: Standard tests (<10min) - full functionality"
+        "markers", "tier2: Standard tests (<10min) - full functional integration"
     )
     config.addinivalue_line(
-        "markers", "tier3: Heavy tests (~5min) - chaos, stress tests"
+        "markers", "tier3: Heavy tests (>10min) - stress, resource leakage"
     )
+    config.addinivalue_line("markers", "tier4: Chaos/Flood tests - extreme scenarios")
     config.addinivalue_line("markers", "slow: Tests that install real packages (slow)")
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
+    config.addinivalue_line("markers", "chaos: Extreme scenarios and process destruction")
+    config.addinivalue_line("markers", "flood: High-concurrency / IPC flooding tests")
 
     # "Do Not Disturb" Log Policy for CI
     # In CI, we want to reduce noise unless a failure occurs.

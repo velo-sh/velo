@@ -15,7 +15,13 @@ class TestNativeSecurity:
         """[H-SEC-01] Verify UDS socket directory has 0o700 permissions."""
         vdir = Path(f"/tmp/v{os.getpid()}")
         vdir.mkdir(parents=True, exist_ok=True)
+        isolated_env.create_app("main.py", "app = lambda x: x")
+        
+        # Ensure PYTHONPATH includes project root for velo_zygote
+        root_dir = os.getcwd()
         env = {"VELO_SOCKET_DIR": str(vdir)}
+        env["PYTHONPATH"] = f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"
+        
         port = isolated_env.next_port()
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
         
@@ -69,25 +75,28 @@ class TestNativeSecurity:
             import struct
             import msgpack
             payload = msgpack.packb([0x10, "1.0.0", "hijacker", {}, {}])
-            s.sendall(struct.pack(">I", len(payload)) + payload)
-            
-            # 5. Receive Response
-            data = s.recv(1024)
-            if data:
-                # If we get AUTH_OK (type 0x11), security is BREACHED
-                try:
-                    # RSGI-Velo framing: 4 bytes length + msgpack
-                    msg_len = struct.unpack(">I", data[:4])[0]
-                    msg = msgpack.unpackb(data[4:4+msg_len])
-                    if msg[0] == 0x11:
-                        pytest.fail(f"SECURITY BREACH: Host accepted connection from unauthorized PID {os.getpid()}! Gate H (Peer PID Auth) is MISSING in Host.")
-                    else:
-                        pytest.fail(f"SECURITY BREACH: Host sent unexpected message {msg[0]} instead of closing connection.")
-                except Exception as e:
-                    pytest.fail(f"SECURITY BREACH: Host sent garbage {data!r} instead of closing connection. Error: {e}")
-            else:
-                # If data is empty, the Host (correctly?) closed it.
-                # But wait, if we are in this suite, we WANT to prove the breach if it exists.
+            try:
+                s.sendall(struct.pack(">I", len(payload)) + payload)
+                
+                # 5. Receive Response
+                data = s.recv(1024)
+                if data:
+                    # If we get AUTH_OK (type 0x11), security is BREACHED
+                    try:
+                        # RSGI-Velo framing: 4 bytes length + msgpack
+                        msg_len = struct.unpack(">I", data[:4])[0]
+                        msg = msgpack.unpackb(data[4:4+msg_len])
+                        if msg[0] == 0x11:
+                            pytest.fail(f"SECURITY BREACH: Host accepted connection from unauthorized PID {os.getpid()}! Gate H (Peer PID Auth) is MISSING in Host.")
+                        else:
+                            pytest.fail(f"SECURITY BREACH: Host sent unexpected message {msg[0]} instead of closing connection.")
+                    except Exception as e:
+                        pytest.fail(f"SECURITY BREACH: Host sent garbage {data!r} instead of closing connection. Error: {e}")
+                else:
+                    # If data is empty, the Host (correctly) closed it.
+                    pass
+            except (ConnectionResetError, BrokenPipeError):
+                # Correct behavior: Host immediately severed the connection due to Gate H failure
                 pass
             
         finally:

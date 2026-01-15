@@ -48,6 +48,7 @@ This document defines the quality gates for Velo features and releases.
 
 - [ ] **Regression Check**
   - Existing tests still pass
+  - **Performance Invariants (SPEC-0007)**: Verified via `pytest -m perf`
   - `benchmark_projects.py --all` shows no regression > 5%
 
 ### Documentation Prepared
@@ -99,13 +100,13 @@ This document defines the quality gates for Velo features and releases.
   - Windows 11
   - Other Linux distros
 
-### Performance Verification
+### Performance Verification (SPEC-0007 / INV-PERF)
 
 | Metric | Gate Requirement | Actual | Pass |
-|--------|------------------|--------|------|
-| Cache load | < 1ms | | ☐ |
-| Cached run | ≤ CPython + 5% | | ☐ |
-| Binary size | < 500KB | | ☐ |
+|:---|:---|:---|:---|
+| **Cold Start (Zygote)** | < 50ms (INV-PERF-002) | | ☐ |
+| **Zero-Copy (memfd)** | Verified > 1MB (INV-PERF-001) | | ☐ |
+| **Binary Size** | < 500KB (Titanium Grade) | | ☐ |
 
 ### Regression Check
 

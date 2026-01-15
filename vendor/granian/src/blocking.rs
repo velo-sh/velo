@@ -5,7 +5,7 @@ use std::{
     thread, time,
 };
 
-pub(crate) struct BlockingTask {
+pub struct BlockingTask {
     inner: Box<dyn FnOnce(Python) + Send + 'static>,
 }
 
@@ -26,7 +26,7 @@ impl BlockingTask {
     }
 }
 
-pub(crate) enum BlockingRunner {
+pub enum BlockingRunner {
     Empty,
     Mono(BlockingRunnerMono),
     Pool(BlockingRunnerPool),
@@ -54,7 +54,7 @@ impl BlockingRunner {
     }
 }
 
-pub(crate) struct BlockingRunnerMono {
+pub struct BlockingRunnerMono {
     queue: channel::Sender<BlockingTask>,
 }
 
@@ -76,7 +76,7 @@ impl BlockingRunnerMono {
     }
 }
 
-pub(crate) struct BlockingRunnerPool {
+pub struct BlockingRunnerPool {
     birth: time::Instant,
     queue: channel::Sender<BlockingTask>,
     tq: channel::Receiver<BlockingTask>,
