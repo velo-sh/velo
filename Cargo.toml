@@ -91,7 +91,7 @@ signal-hook = "0.3"      # Platform-specific signal handling
 nix = { version = "0.27", features = ["socket", "uio", "fs"] } # SCM_RIGHTS support
 
 [features]
-default = ["embedded_uv"]
+default = ["embedded_uv", "granian_native"]
 embedded_uv = []  # RFC-0018: Embed uv binary at build time
 granian_native = []  # RFC-0019/0025: Enable native Granian workers with PyO3
 
