@@ -249,9 +249,11 @@ impl Worker {
         app: &str,
         worker_id: i32,
         socket_fd: std::os::unix::io::RawFd,
+        python_path: &Path,
         project_dir: &Path,
         _config: &crate::config::VeloConfig,
     ) -> Result<Self> {
+        use crate::python;
         use std::os::unix::process::CommandExt;
         use std::process::Command;
 
@@ -270,9 +272,27 @@ impl Worker {
             .arg("--project-dir")
             .arg(project_dir);
 
-        // Inherit PYTHONPATH for the worker
-        if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
+        // Security Shield + Sovereignty: Set up Python environment
+        // We use setup_python_env to get the correct site-packages for the child process.
+        let (pythonpath, _) = python::setup_python_env(project_dir, python_path);
+
+        // Inherit or set PYTHONPATH
+        if let Some(pp) = pythonpath {
+            cmd.env("PYTHONPATH", pp);
+        } else if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
             cmd.env("PYTHONPATH", pythonpath);
+        } else {
+            // If PYTHONPATH is not set in Host, detect it from venv/site-packages
+            // RFC-0012: Resilience for hermetic test environments
+            let (ppath, _) = crate::python::setup_python_env(project_dir, python_path);
+            if let Some(ppath) = ppath {
+                cmd.env("PYTHONPATH", ppath);
+            }
+        }
+
+        // Industrial Guard: Set VIRTUAL_ENV if we're in one
+        if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
+            cmd.env("VIRTUAL_ENV", venv_root);
         }
 
         // Ensure the listener FD is inherited despite FD_CLOEXEC
@@ -349,7 +369,14 @@ impl Worker {
             #[cfg(unix)]
             {
                 if let Some(fd) = socket_fd {
-                    return Self::spawn_native(app, worker_id as i32, fd, project_dir, config);
+                    return Self::spawn_native(
+                        app,
+                        worker_id as i32,
+                        fd,
+                        python_path,
+                        project_dir,
+                        config,
+                    );
                 }
             }
             Self::spawn_uds_direct(app, worker_id, python_path, project_dir, config, rsgi)

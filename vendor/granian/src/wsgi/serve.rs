@@ -43,7 +43,7 @@ impl WSGIWorker {
             ssl_client_verify=false,
         )
     )]
-    fn new(
+    pub fn new(
         py: Python,
         worker_id: i32,
         sock: Py<SocketHolder>,
@@ -91,7 +91,7 @@ impl WSGIWorker {
         })
     }
 
-    fn serve_mtr(
+    pub fn serve_mtr(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
@@ -112,7 +112,7 @@ impl WSGIWorker {
         );
     }
 
-    fn serve_str(
+    pub fn serve_str(
         &self,
         py: Python,
         callback: Py<CallbackScheduler>,
