@@ -1,8 +1,8 @@
 # SPEC-0006: Velo Polyglot Service Taxonomy & Observability Standard
 
-**Status**: DRAFT (Proposed for Phase 7.2)
+**Status**: APPROVED (Phase 7.3 Stabilization)
 **Author**: Architect
-**Date**: 2026-01-14
+**Date**: 2026-01-15
 
 ## 1. Introduction
 Velo is a complex, polyglot system comprising Rust-native supervision and Python-native execution. To eliminate technical debt at the "Service Mesh" level, this standard defines the mandatory taxonomy for cross-service communication, log attribution, and code organization.
