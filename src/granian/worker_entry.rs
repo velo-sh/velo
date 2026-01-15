@@ -94,7 +94,69 @@ fn run_worker_blocking(config: WorkerConfig) -> Result<()> {
 
     // In PyO3 0.27+, we can use Python::with_gil directly or ensure it's initialized
     #[allow(deprecated)]
-    Python::with_gil(|py| run_worker_with_python(py, config))
+    Python::with_gil(|py| {
+        // Step 1.5: Fixup sys.path for runtime Python environment
+        // CRITICAL: PyO3 uses compile-time Python, but we may need runtime Python's stdlib
+        // This ensures C extension modules like binascii can be found
+        if let Err(e) = fixup_python_path(py) {
+            log::warn!("Failed to fixup Python path: {}", e);
+        }
+
+        run_worker_with_python(py, config)
+    })
+}
+
+/// Fixup sys.path to include runtime Python's stdlib directories.
+///
+/// This is necessary when the runtime Python differs from PyO3's compile-time Python,
+/// particularly for C extension modules in lib-dynload.
+#[cfg(feature = "granian_native")]
+fn fixup_python_path(py: pyo3::Python<'_>) -> std::result::Result<(), pyo3::PyErr> {
+    use pyo3::prelude::*;
+    use pyo3::types::PyListMethods;
+
+    // Get PYTHONHOME from environment (set by worker.rs)
+    let pythonhome = std::env::var("PYTHONHOME").ok();
+
+    if let Some(home) = pythonhome {
+        debug!("Fixing up sys.path with PYTHONHOME: {}", home);
+
+        // Determine the Python version from sys.version_info
+        let sys = py.import("sys")?;
+        let version_info = sys.getattr("version_info")?;
+        let major: u32 = version_info.getattr("major")?.extract()?;
+        let minor: u32 = version_info.getattr("minor")?.extract()?;
+        let version_str = format!("python{}.{}", major, minor);
+
+        // Build paths to add
+        let lib_dir = std::path::Path::new(&home).join("lib").join(&version_str);
+        let lib_dynload = lib_dir.join("lib-dynload");
+
+        // Get sys.path as a PyList
+        let sys_path = sys.getattr("path")?;
+        #[allow(deprecated)]
+        let sys_path_list = sys_path
+            .downcast::<pyo3::types::PyList>()
+            .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyTypeError, _>(e.to_string()))?;
+
+        // Add lib_dir if not present
+        let lib_dir_str = lib_dir.to_string_lossy().to_string();
+        if !sys_path_list.contains(&lib_dir_str)? {
+            sys_path_list.insert(0, &lib_dir_str)?;
+            debug!("Added to sys.path: {}", lib_dir_str);
+        }
+
+        // Add lib-dynload if it exists and not present
+        if lib_dynload.exists() {
+            let lib_dynload_str = lib_dynload.to_string_lossy().to_string();
+            if !sys_path_list.contains(&lib_dynload_str)? {
+                sys_path_list.insert(1, &lib_dynload_str)?;
+                debug!("Added to sys.path: {}", lib_dynload_str);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Stub implementation when granian_native feature is disabled.
