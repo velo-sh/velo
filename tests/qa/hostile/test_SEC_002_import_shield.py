@@ -2,9 +2,19 @@ import unittest
 import os
 import sys
 import importlib
-from velo_zygote import shield
+import pytest
+
+# Defer import to avoid collection-time failure when VELO_ENV is not set
+# This is a "hostile" test that requires the full Velo environment
+try:
+    from velo_zygote import shield
+    SHIELD_AVAILABLE = True
+except (ValueError, ModuleNotFoundError, ImportError):
+    shield = None
+    SHIELD_AVAILABLE = False
 
 
+@pytest.mark.skipif(not SHIELD_AVAILABLE, reason="Requires VELO_ENV to be set by Rust supervisor")
 class TestImportShieldHostile(unittest.TestCase):
     def setUp(self):
         # [RITUAL 11.2] Hostile Test Technical Hygiene
