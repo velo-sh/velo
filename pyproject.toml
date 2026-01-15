@@ -26,18 +26,29 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 markers = [
-    # RFC-0017: Tier Markers (SSOT for test discovery)
-    "tier0: Unit tests - no external deps, <30s (RFC-0017)",
-    "tier1: Integration tests - needs binary, <2min (RFC-0017)",
-    "tier2: E2E tests - full Zygote runtime, <5min (RFC-0017)",
-    "tier3: Hardened tests - security/stability (RFC-0017)",
-    # RFC-0017: Platform Markers
+    # SPEC-0008: Tier Markers (SSOT for test discovery)
+    "tier0: Smoke tests - basic sanity, <10s (SPEC-0008)",
+    "tier1: Core logic tests - needs binary, <60s (SPEC-0008)",
+    "tier2: E2E tests - full Zygote runtime, <10min (SPEC-0008)",
+    "tier3: Hardened tests - stress/security, >10min (SPEC-0008)",
+    "tier4: Chaos/Flood tests - hours (SPEC-0008)",
+    "tier5: Extreme chaos - manual/pre-release only (SPEC-0008)",
+    # Platform Markers
     "linux_only: Linux-specific features (Abstract Sockets, NUMA)",
     "macos_only: macOS-specific features (sandbox-exec)",
     "zygote_required: Requires Zygote mode (not fallback uvicorn)",
+    # SPEC-0008: Specialized Categories
+    "flood: High-concurrency flood tests (SPEC-0008 §3.1)",
+    "chaos: Process killing/environment poisoning (SPEC-0008 §3.2)",
+    "perf: Performance benchmarks - cold cache (SPEC-0008 §3.3)",
+    "performance: Alias for perf marker",
+    # pytest-asyncio integration
+    "asyncio: Async tests requiring pytest-asyncio",
+    # E2E and Correctness
+    "e2e: End-to-end integration tests",
+    "correctness: Correctness verification tests",
     # Legacy Markers (backward compatibility)
     "slow: marks tests as slow (deselect with '-m not slow')",
-    "chaos: marks tests as resource-heavy chaos tests",
     "brutal: marks tests as brutal stress tests",
     "order: execution order for test hierarchy",
     "smoke: Tier 0 smoke tests",
@@ -45,12 +56,10 @@ markers = [
     "edge: Tier 2 edge case tests",
     "stability: Tier 2 stability tests",
     "desync: Tier 3 desynchronization tests",
-    "perf: Tier 3 performance tests",
     "release_blocker: Critical release blocker tests (MANDATORY)",
     "expert_review: Tests covering specific expert panel concerns",
     "integration: Tier 2 integration-level tests",
     "regression: Phase 6.2 regression probes",
-    "tier4: Heavy chaos/stress tests",
     "heavy: Resource-intensive tests",
     "timeout: Tests with custom timeout requirements",
     "happy_path: Level 1 happy path journey tests",
