@@ -297,16 +297,53 @@ impl Worker {
 
         // RFC-0031 FIX: Set PYTHONHOME for embedded PyO3 initialization
         // CRITICAL: We need base_prefix (where stdlib lives), NOT venv prefix!
-        // Virtualenvs symlink to the system Python's stdlib.
-        if let Ok(output) = std::process::Command::new(python_path)
-            .args(["-c", "import sys; print(sys.base_prefix)"])
-            .output()
-        {
-            let base_prefix = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if output.status.success() && !base_prefix.is_empty() {
-                cmd.env("PYTHONHOME", &base_prefix);
-                log::debug!("Set PYTHONHOME to base_prefix: {}", base_prefix);
+        // PEP 405: Read from pyvenv.cfg if available (faster, no subprocess)
+        let base_prefix = if let Some(venv_root) = python_path.parent().and_then(|p| p.parent()) {
+            let pyvenv_cfg = venv_root.join("pyvenv.cfg");
+            if pyvenv_cfg.exists() {
+                // PEP 405: Parse pyvenv.cfg for 'home' key
+                std::fs::read_to_string(&pyvenv_cfg)
+                    .ok()
+                    .and_then(|content| {
+                        for line in content.lines() {
+                            if let Some(rest) = line.strip_prefix("home")
+                                && let Some(value) = rest.trim_start().strip_prefix('=')
+                            {
+                                // 'home' points to bin dir, we need parent for PYTHONHOME
+                                let home = value.trim();
+                                return std::path::Path::new(home)
+                                    .parent()
+                                    .map(|p| p.to_string_lossy().to_string());
+                            }
+                        }
+                        None
+                    })
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+        // Fallback: Query Python directly if pyvenv.cfg not found
+        let base_prefix = base_prefix.or_else(|| {
+            std::process::Command::new(python_path)
+                .args(["-c", "import sys; print(sys.base_prefix)"])
+                .output()
+                .ok()
+                .and_then(|output| {
+                    if output.status.success() {
+                        let bp = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                        if !bp.is_empty() { Some(bp) } else { None }
+                    } else {
+                        None
+                    }
+                })
+        });
+
+        if let Some(ref bp) = base_prefix {
+            cmd.env("PYTHONHOME", bp);
+            log::debug!("Set PYTHONHOME to base_prefix: {}", bp);
         }
 
         // Also pass the Python executable path for PyO3 to use
