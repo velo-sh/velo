@@ -161,7 +161,7 @@ class TestFrameworkCompatibilityIsolated:
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="INDICTMENT-03: Native RSGI uses (scope, proto) not (scope, receive, send)")
+    # INDICTMENT-03 RESOLVED: ASGI Bridge now converts (scope, receive, send) to native RSGI
     def test_fastapi_isolated_compatibility(self):
         """
         [COMPAT-ISOLATED-01] FastAPI in uv-isolated environment.
@@ -203,7 +203,7 @@ async def health(request: Request):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="INDICTMENT-03: Native RSGI uses (scope, proto) not (scope, receive, send)")
+    # INDICTMENT-03 RESOLVED: ASGI Bridge now converts (scope, receive, send) to native RSGI
     def test_starlette_isolated_compatibility(self):
         """
         [COMPAT-ISOLATED-02] Starlette in uv-isolated environment.
@@ -321,6 +321,7 @@ class TestASGISignatureEvidenceIsolated:
 
     @pytest.mark.tier2
     @pytest.mark.slow
+    @pytest.mark.skip(reason="INDICTMENT-03 RESOLVED: ASGI signature mismatch fixed in Phase 7.3")
     def test_asgi_signature_mismatch_evidence(self):
         """
         [EVIDENCE-ISOLATED-01] Direct evidence of signature mismatch.
