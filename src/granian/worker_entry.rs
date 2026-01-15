@@ -204,6 +204,8 @@ def make_hooks(loop, app):
                     "headers": rsgi_scope.headers.raw_items(),
                     "server": rsgi_scope.server if isinstance(rsgi_scope.server, (list, tuple)) else (rsgi_scope.server, 0),
                     "client": rsgi_scope.client if isinstance(rsgi_scope.client, (list, tuple)) else (rsgi_scope.client, 0),
+                    # RFC-0019: RSGI tracing ID for forensic debugging
+                    "rsgi.id": id(rsgi_scope),
                 }
                 
                 if is_ws:
