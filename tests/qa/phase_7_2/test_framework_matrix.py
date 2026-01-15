@@ -617,7 +617,6 @@ class TestFlaskWSGI:
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="WSGI not supported in Native RSGI - need a2wsgi bridge")
     def test_flask_real_wsgi(self):
         """[FW-FLASK-01] Flask - Most Popular Python Web Framework."""
         print("\n" + "="*60)
@@ -764,7 +763,6 @@ app = get_asgi_application()
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="Django WSGI requires a2wsgi bridge")
     def test_django_wsgi_full(self):
         """[FW-DJANGO-WSGI-01] Django 5.x WSGI Mode."""
         print("\n" + "="*60)
@@ -772,7 +770,10 @@ app = get_asgi_application()
         print("="*60)
         
         with RealFrameworkProject("django-wsgi", "Django WSGI") as p:
-            p.set_pyproject(deps=["django>=5.0"])
+            p.set_pyproject(deps=[
+                "django>=5.0",
+                "a2wsgi>=1.10.4",
+            ])
             
             p.set_app("settings.py", '''
 DEBUG = True
@@ -807,6 +808,7 @@ app = get_wsgi_application()
             
             results = p.report()
             print(f"  Results: {results}")
+            assert results['response_valid'], f"Django WSGI test failed: {results['error']}"
 
 
 # =============================================================================
