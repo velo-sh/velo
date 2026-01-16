@@ -56,7 +56,8 @@ CMD ["bash", "-c", "\
     echo '==================== Phase 1: Setup ====================' && \
     echo '' && \
     echo '▶ Setting up Python environment...' && \
-    uv sync --no-dev && \
+    echo '▶ Setting up Python environment...' && \
+    uv sync && \
     echo '✅ Python environment ready' && \
     echo '' && \
     echo '==================== Phase 2: Build ====================' && \
@@ -93,12 +94,8 @@ CMD ["bash", "-c", "\
     echo '' && \
     echo '==================== Phase 4: Lint ====================' && \
     echo '' && \
-    echo '▶ Running Clippy...' && \
-    cargo clippy -- -D warnings && \
-    echo '✅ Clippy passed' && \
-    echo '' && \
-    echo '▶ Checking format...' && \
-    cargo fmt --check && \
+    echo '▶ Running linting via pre-commit (SSOT)...' && \
+    uv run pre-commit run --all-files && \
     echo '✅ Format OK' && \
     echo '' && \
     echo '==========================================' && \
