@@ -241,6 +241,11 @@ class VeloTestEnv:
             "PYTHONUNBUFFERED": "1",
         })
 
+        # RFC-0012: First Principles Isolation
+        # We must NOT inherit PYTHONHOME from the host, as it overrides VIRTUAL_ENV
+        # and causes version mismatches (e.g. Host 3.10 vs Velo 3.11).
+        self.env.pop("PYTHONHOME", None)
+
         # MacOS AF_UNIX 104-char limit hardening (RFC-0019 §10.2)
         if IS_MACOS:
             # If the default tmp dir is too long, redirect VELO_SOCKET_DIR to a shorter /tmp path
