@@ -405,7 +405,10 @@ mod tests {
             // We search for it in a way that doesn't trigger itself
             let toxic_tmp = format!("{}\"{}", "/", "tmp");
             if content.contains(&toxic_tmp) {
-                eprintln!("🚨 FORENSIC FAIL: Hardcoded absolute path toxins found in {:?} (ZHC Violation)", file_path);
+                eprintln!(
+                    "🚨 FORENSIC FAIL: Hardcoded absolute path toxins found in {:?} (ZHC Violation)",
+                    file_path
+                );
                 // For evidence fixation, we allow the test to run but log the failure
             }
         }

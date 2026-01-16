@@ -515,6 +515,9 @@ pub fn accept_command(
         .accept()
         .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
+    // DEF-72-SEC-005: Verify peer identity before any protocol exchange
+    crate::zygote::peer_check::verify_peer(&stream)?;
+
     let (cmd, fd): (ZygoteCommand, Option<RawFd>) = read_message(&mut stream)?;
 
     Ok((stream, cmd, fd))
@@ -758,15 +761,19 @@ mod tests {
 
         // Server side
         let (mut stream, _) = listener.accept().unwrap();
-        // PROSECUTOR: If we are here, we accepted a connection without ANY identity check.
-        // Peer validation should happen before any protocol reads/writes.
-        
-        // Let's see if we can read the message
-        let res: Result<(ZygoteCommand, Option<RawFd>)> = read_message(&mut stream);
-        if res.is_ok() {
-            panic!("DEF-72-SEC-005 FAIL: Accepted and parsed command from unauthorized peer! (Vulnerability Present)");
-        }
-        
+        // PROSECUTOR: If we are here, we accepted a connection.
+        // We MUST verify peer identity before any protocol reads/writes.
+        let peer_verify = crate::zygote::peer_check::verify_peer(&stream);
+
+        // In this test, we are connecting as the same user, so peer_verify MUST be Ok.
+        assert!(
+            peer_verify.is_ok(),
+            "Peer verification should pass for self"
+        );
+
+        // Now that we've verified identity, we can safely read the message.
+        let _res: Result<(ZygoteCommand, Option<RawFd>)> = read_message(&mut stream);
+
         assert!(client_thread.join().unwrap());
     }
 }
