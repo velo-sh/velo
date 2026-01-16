@@ -422,12 +422,56 @@ class ZygoteServer:
                 if not isinstance(e, (asyncio.TimeoutError, KeyboardInterrupt)):
                     LogUtils.log(f"Accept error: {e}")
 
+    def _verify_peer(self, sock: socket.socket) -> None:
+        """
+        Verify that the client connecting to the Zygote is authorized.
+        RFC-0012 Pillar 4: Security (Gate SEC-005).
+        """
+        import struct
+        uid = -1
+        
+        if sys.platform == "linux":
+            try:
+                # SO_PEERCRED returns (pid, uid, gid)
+                ucred = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+                _, uid, _ = struct.unpack("3i", ucred)
+            except OSError as e:
+                raise PermissionError(f"Failed to retrieve peer credentials: {e}")
+        elif sys.platform == "darwin":
+            try:
+                import ctypes
+                import ctypes.util
+                libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+                c_uid = ctypes.c_uint(0)
+                c_gid = ctypes.c_uint(0)
+                # getpeereid is the standard for Unix sockets on macOS
+                if libc.getpeereid(sock.fileno(), ctypes.byref(c_uid), ctypes.byref(c_gid)) == 0:
+                    uid = c_uid.value
+                else:
+                    raise PermissionError("getpeereid failed")
+            except Exception as e:
+                raise PermissionError(f"Peer verification internal error: {e}")
+        else:
+            # Fallback for other platforms - allow but log
+            # LogUtils.log(f"Warning: Peer verification not supported on {sys.platform}")
+            return
+
+        if uid != os.getuid():
+            raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
+
     async def _handle_client_socket(self, sock: socket.socket):
         """Handle a client connection using the synchronous transport."""
         self._active_clients += 1
         transport = ZygoteTransport(sock)
         try:
-            # RFC-0011 Requirement: Send Ready greeting immediately upon connection
+            # RFC-0012 Gate SEC-005: Sovereign Identity Verification (PeerCred)
+            try:
+                self._verify_peer(sock)
+            except PermissionError as e:
+                LogUtils.log(f"Access Denied: {e}")
+                sock.close()
+                return
+
             try:
                 transport.send({"type": "Ready"})
             except BrokenPipeError:

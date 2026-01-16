@@ -211,7 +211,7 @@ impl TelemetryStore {
     fn telemetry_path() -> PathBuf {
         dirs::home_dir()
             .map(|h| h.join(".velo").join("telemetry.json"))
-            .unwrap_or_else(|| PathBuf::from("/tmp/.velo/telemetry.json"))
+            .unwrap_or_else(|| std::env::temp_dir().join(".velo").join("telemetry.json"))
     }
 
     /// Load telemetry from disk with advisory shared locking (DEF-71-007)

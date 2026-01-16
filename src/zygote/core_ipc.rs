@@ -507,7 +507,7 @@ impl ZygoteStream {
     }
 }
 
-/// Accept a command from a client connection
+/// Accept a command from a client connection with peer verification
 pub fn accept_command(
     listener: &UnixListener,
 ) -> Result<(UnixStream, ZygoteCommand, Option<RawFd>)> {
@@ -522,6 +522,7 @@ pub fn accept_command(
 
     Ok((stream, cmd, fd))
 }
+
 
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
@@ -594,7 +595,7 @@ mod tests {
     #[test]
     fn test_fork_command_serialization() {
         let cmd = ZygoteCommand::Fork {
-            script_path: PathBuf::from("/tmp/test.py"),
+            script_path: std::env::temp_dir().join("test.py"),
             args: vec!["--flag".to_string()],
             async_mode: true,
             stdout_path: None,
@@ -618,7 +619,7 @@ mod tests {
             ..
         } = decoded
         {
-            assert_eq!(script_path, PathBuf::from("/tmp/test.py"));
+            assert_eq!(script_path, std::env::temp_dir().join("test.py"));
             assert!(async_mode);
         } else {
             panic!("Decoded wrong variant");
@@ -628,14 +629,14 @@ mod tests {
     #[test]
     fn test_message_size_smaller_than_json() {
         let cmd = ZygoteCommand::Fork {
-            script_path: PathBuf::from("/tmp/test.py"),
+            script_path: std::env::temp_dir().join("test.py"),
             args: vec!["arg1".to_string(), "arg2".to_string()],
             async_mode: true,
-            stdout_path: Some(PathBuf::from("/tmp/out.txt")),
-            stderr_path: Some(PathBuf::from("/tmp/err.txt")),
-            exit_code_path: Some(PathBuf::from("/tmp/exit.txt")),
+            stdout_path: Some(std::env::temp_dir().join("out.txt")),
+            stderr_path: Some(std::env::temp_dir().join("err.txt")),
+            exit_code_path: Some(std::env::temp_dir().join("exit.txt")),
             fast_mode: true,
-            bundle_path: Some(PathBuf::from("/tmp/bundle.veloc")),
+            bundle_path: Some(std::env::temp_dir().join("bundle.veloc")),
             project_root: Some(PathBuf::from("${HOME}/project")),
             max_bundle_size: Some(1024 * 1024),
             env: Box::new(std::collections::HashMap::new()),
@@ -759,7 +760,7 @@ mod tests {
             write_message(&mut stream, &cmd, None).is_ok()
         });
 
-        // Server side
+        // Server side (Mock Zygote Acceptor)
         let (mut stream, _) = listener.accept().unwrap();
         // PROSECUTOR: If we are here, we accepted a connection.
         // We MUST verify peer identity before any protocol reads/writes.
@@ -773,7 +774,6 @@ mod tests {
 
         // Now that we've verified identity, we can safely read the message.
         let _res: Result<(ZygoteCommand, Option<RawFd>)> = read_message(&mut stream);
-
         assert!(client_thread.join().unwrap());
     }
 }

@@ -223,6 +223,10 @@ def ensure_socket_dir(path: Path) -> bool:
             finally:
                 os.umask(old_mask)
 
+        # SEC-003: Refuse to follow symlinks when setting permissions
+        if path.is_symlink():
+            sys.stderr.write(f"🚨 SECURITY: Refusing to set permissions on symlink: {path}\n")
+            return False
         path.chmod(0o700)
         # Verify
         try:

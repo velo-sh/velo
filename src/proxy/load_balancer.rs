@@ -445,7 +445,13 @@ mod tests {
 
     #[test]
     fn test_worker_node_connection_tracking() {
-        let node = WorkerNode::new("/tmp/test.sock".to_string(), 1);
+        let node = WorkerNode::new(
+            std::env::temp_dir()
+                .join("test.sock")
+                .to_string_lossy()
+                .to_string(),
+            1,
+        );
         assert_eq!(node.active_connections(), 0);
 
         node.increment();
@@ -463,7 +469,13 @@ mod tests {
 
     #[test]
     fn test_connection_guard_raii() {
-        let node = Arc::new(WorkerNode::new("/tmp/test.sock".to_string(), 1));
+        let node = Arc::new(WorkerNode::new(
+            std::env::temp_dir()
+                .join("test.sock")
+                .to_string_lossy()
+                .to_string(),
+            1,
+        ));
         assert_eq!(node.active_connections(), 0);
 
         {
@@ -484,9 +496,18 @@ mod tests {
     #[test]
     fn test_load_balancer_least_connections() {
         let lb = LoadBalancer::new(vec![
-            "/tmp/w1.sock".to_string(),
-            "/tmp/w2.sock".to_string(),
-            "/tmp/w3.sock".to_string(),
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .to_string(),
+            std::env::temp_dir()
+                .join("w2.sock")
+                .to_string_lossy()
+                .to_string(),
+            std::env::temp_dir()
+                .join("w3.sock")
+                .to_string_lossy()
+                .to_string(),
         ]);
 
         // First selection should pick any (all have 0 connections)
@@ -514,26 +535,38 @@ mod tests {
 
     #[test]
     fn test_load_balancer_unhealthy_worker() {
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string(), "/tmp/w2.sock".to_string()]);
+        let w1 = std::env::temp_dir()
+            .join("w1.sock")
+            .to_string_lossy()
+            .to_string();
+        let w2 = std::env::temp_dir()
+            .join("w2.sock")
+            .to_string_lossy()
+            .to_string();
+        let lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
 
-        lb.mark_unhealthy("/tmp/w1.sock");
+        lb.mark_unhealthy(&w1);
 
         // Should always select healthy worker
         for _ in 0..10 {
             let guard = lb.select_worker().unwrap();
-            assert_eq!(guard.socket_path(), "/tmp/w2.sock");
+            assert_eq!(guard.socket_path(), w2);
             drop(guard);
         }
 
         // Mark healthy again
-        lb.mark_healthy("/tmp/w1.sock");
+        lb.mark_healthy(&w1);
         assert_eq!(lb.healthy_worker_count(), 2);
     }
 
     #[test]
     fn test_load_balancer_no_healthy_workers() {
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
-        lb.mark_unhealthy("/tmp/w1.sock");
+        let w1 = std::env::temp_dir()
+            .join("w1.sock")
+            .to_string_lossy()
+            .to_string();
+        let lb = LoadBalancer::new(vec![w1.clone()]);
+        lb.mark_unhealthy(&w1);
 
         assert!(lb.select_worker().is_none());
     }
@@ -547,10 +580,22 @@ mod tests {
         let mut lb = LoadBalancer::new(vec![]);
         assert_eq!(lb.worker_count(), 0);
 
-        lb.add_worker("/tmp/w1.sock".to_string(), 1);
+        lb.add_worker(
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .to_string(),
+            1,
+        );
         assert_eq!(lb.worker_count(), 1);
 
-        lb.add_worker("/tmp/w2.sock".to_string(), 2);
+        lb.add_worker(
+            std::env::temp_dir()
+                .join("w2.sock")
+                .to_string_lossy()
+                .to_string(),
+            2,
+        );
         assert_eq!(lb.worker_count(), 2);
 
         // New worker should be selectable
@@ -560,16 +605,23 @@ mod tests {
 
     #[test]
     fn test_remove_worker_decreases_count() {
-        let mut lb =
-            LoadBalancer::new(vec!["/tmp/w1.sock".to_string(), "/tmp/w2.sock".to_string()]);
+        let w1 = std::env::temp_dir()
+            .join("w1.sock")
+            .to_string_lossy()
+            .to_string();
+        let w2 = std::env::temp_dir()
+            .join("w2.sock")
+            .to_string_lossy()
+            .to_string();
+        let mut lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
         assert_eq!(lb.worker_count(), 2);
 
-        lb.remove_worker("/tmp/w1.sock");
+        lb.remove_worker(&w1);
         assert_eq!(lb.worker_count(), 1);
 
         // Only w2 should remain
         let guard = lb.select_worker().unwrap();
-        assert_eq!(guard.socket_path(), "/tmp/w2.sock");
+        assert_eq!(guard.socket_path(), w2);
     }
 
     // =========================================================================
@@ -580,7 +632,12 @@ mod tests {
     async fn test_graceful_shutdown_waits_for_connections() {
         use std::time::Duration;
 
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
+        let lb = LoadBalancer::new(vec![
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .to_string(),
+        ]);
 
         // Acquire a connection
         let guard = lb.select_worker().unwrap();
@@ -606,7 +663,12 @@ mod tests {
     async fn test_graceful_shutdown_timeout() {
         use std::time::Duration;
 
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
+        let lb = LoadBalancer::new(vec![
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .to_string(),
+        ]);
 
         // Acquire a connection but don't drop it
         let _guard = lb.select_worker().unwrap();
@@ -618,7 +680,11 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_threshold() {
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]);
+        let w1 = std::env::temp_dir()
+            .join("w1.sock")
+            .to_string_lossy()
+            .to_string();
+        let lb = LoadBalancer::new(vec![w1]);
         let worker = &lb.workers[0];
 
         // 1-4 failures: still healthy
@@ -641,19 +707,27 @@ mod tests {
 
     #[test]
     fn test_round_robin_tie_breaker() {
-        let lb = LoadBalancer::new(vec!["/tmp/w1.sock".to_string(), "/tmp/w2.sock".to_string()]);
+        let w1 = std::env::temp_dir()
+            .join("w1.sock")
+            .to_string_lossy()
+            .to_string();
+        let w2 = std::env::temp_dir()
+            .join("w2.sock")
+            .to_string_lossy()
+            .to_string();
+        let lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
 
         // Both have 0 connections. RR should alternate.
         let g1 = lb.select_worker().unwrap();
-        assert_eq!(g1.socket_path(), "/tmp/w1.sock");
+        assert_eq!(g1.socket_path(), w1);
 
         let g2 = lb.select_worker().unwrap();
-        assert_eq!(g2.socket_path(), "/tmp/w2.sock");
+        assert_eq!(g2.socket_path(), w2);
 
         let g3 = lb.select_worker().unwrap();
         assert_eq!(
             g3.socket_path(),
-            "/tmp/w1.sock",
+            w1,
             "RR tie-breaker MUST alternate when connections are equal"
         );
     }

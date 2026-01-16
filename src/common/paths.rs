@@ -37,10 +37,18 @@ impl VeloPaths {
             .ok()
             .filter(|s| !s.is_empty())
         {
-            // DEF-72-P01: Always enforce 0700 permissions even on override paths
             let path = PathBuf::from(&socket_override);
-            ensure_socket_dir(&path);
-            return path;
+
+            // Validate length constraint even for overrides (SEC-004)
+            if path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
+                // DEF-72-P01: Always enforce 0700 permissions even on override paths
+                if let Some(parent) = path.parent() {
+                    let _ = ensure_socket_dir(parent);
+                }
+                let _ = ensure_socket_dir(&path);
+                return path;
+            }
+            // If override is too long, we fall through to the default/fallback logic
         }
 
         // Determine OS and environment
@@ -56,7 +64,7 @@ impl VeloPaths {
 
         let parent_path = Self::get_path_config(&env_key)
             .or_else(|| Self::get_path_config(&base_key))
-            .unwrap_or_else(|| "/tmp".to_string());
+            .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
 
         // Expand placeholders
         let expanded_parent = Self::expand_path_placeholders(&parent_path);
@@ -67,14 +75,14 @@ impl VeloPaths {
         // Validate length constraint
         if socket_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
             // DEF-72-P01: Always enforce 0700 permissions
-            ensure_socket_dir(&socket_path);
+            let _ = ensure_socket_dir(&socket_path);
             return socket_path;
         }
 
-        // Fallback to /tmp if path is too long
+        // Fallback to /tmp (guaranteed short on macOS/Linux) if path is too long
         let fallback = PathBuf::from("/tmp").join(dir_name);
         // DEF-72-P01: Enforce 0700 on fallback path too
-        ensure_socket_dir(&fallback);
+        let _ = ensure_socket_dir(&fallback);
         fallback
     }
 
@@ -83,20 +91,24 @@ impl VeloPaths {
         let mut result = s.to_string();
 
         if let Ok(home) = std::env::var("HOME") {
-            result = result.replace("${HOME}", &home);
+            result = result.replace("${HOME}", home.trim_end_matches('/'));
         }
 
         if result.contains("${XDG_RUNTIME_DIR}") {
             if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-                result = result.replace("${XDG_RUNTIME_DIR}", &xdg);
+                result = result.replace("${XDG_RUNTIME_DIR}", xdg.trim_end_matches('/'));
             } else {
                 // Fallback to /tmp if XDG_RUNTIME_DIR not set
-                result = result.replace("${XDG_RUNTIME_DIR}", "/tmp");
+                let tmp = std::env::temp_dir();
+                let tmp_str = tmp.to_string_lossy();
+                result = result.replace("${XDG_RUNTIME_DIR}", tmp_str.trim_end_matches('/'));
             }
         }
 
         if result.contains("${TMPDIR}") {
-            result = result.replace("${TMPDIR}", &std::env::temp_dir().to_string_lossy());
+            let tmp = std::env::temp_dir();
+            let tmp_str = tmp.to_string_lossy();
+            result = result.replace("${TMPDIR}", tmp_str.trim_end_matches('/'));
         }
 
         if result.contains("${UID}") {
@@ -115,12 +127,14 @@ impl VeloPaths {
 
     /// Get the full Zygote socket path.
     pub fn zygote_socket() -> PathBuf {
-        if let Some(path_str) = std::env::var("VELO_ZYGOTE_SOCKET")
-            .ok()
-            .filter(|p| !p.is_empty())
-        {
+        if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
+            let path_str = socket_path.to_string_lossy();
             if path_str.len() <= SOCKET_PATH_LIMIT {
-                return PathBuf::from(path_str);
+                let path_buf = PathBuf::from(socket_path);
+                if let Some(parent) = path_buf.parent() {
+                    let _ = ensure_socket_dir(parent);
+                }
+                return path_buf;
             } else {
                 eprintln!(
                     "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long ({} bytes, max {}). Falling back to safe default.",
@@ -131,7 +145,9 @@ impl VeloPaths {
         }
 
         let dir = Self::socket_dir();
-        ensure_socket_dir(&dir);
+        if let Err(e) = ensure_socket_dir(&dir) {
+            panic!("FATAL SECURITY ERROR: {}", e);
+        }
         dir.join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
     }
 
@@ -139,7 +155,9 @@ impl VeloPaths {
     /// Uses atomic counter to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
         let dir = Self::socket_dir();
-        ensure_socket_dir(&dir);
+        if let Err(e) = ensure_socket_dir(&dir) {
+            panic!("FATAL SECURITY ERROR: {}", e);
+        }
 
         // Monotonic counter - never repeats in same supervisor lifetime
         // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
@@ -163,7 +181,8 @@ impl VeloPaths {
             return PathBuf::from(path_str);
         }
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let home = std::env::var("HOME")
+            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
         let log_dir = PathBuf::from(home).join(".local/state/velo");
 
         // Ensure log directory exists
@@ -210,40 +229,42 @@ pub fn get_socket_path() -> PathBuf {
     VeloPaths::zygote_socket()
 }
 
-/// Ensure directory exists with 0700 permissions.
-pub fn ensure_socket_dir(dir: &Path) -> bool {
+/// Ensure directory exists with 0700 permissions and REFUSE SYMLINKS.
+pub fn ensure_socket_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     if !dir.exists() {
         let old_mask = unsafe { libc::umask(0o077) };
         let res = std::fs::create_dir_all(dir);
         unsafe { libc::umask(old_mask) };
-        if res.is_err() {
-            return false;
-        }
+        res?;
     }
 
-    // Force 0700
-    if let Ok(metadata) = dir.metadata() {
-        let mut perms = metadata.permissions();
-        perms.set_mode(0o700);
-        if std::fs::set_permissions(dir, perms).is_err() {
-            return false;
-        }
+    // Force 0700 and REFUSE SYMLINKS (SEC-003)
+    let metadata = dir.symlink_metadata()?;
+
+    if metadata.file_type().is_symlink() {
+        return Err(std::io::Error::other(format!(
+            "SECURITY VIOLATION: Socket directory {:?} is a symlink!",
+            dir
+        )));
     }
+
+    let mut perms = metadata.permissions();
+    perms.set_mode(0o700);
+    std::fs::set_permissions(dir, perms)?;
 
     // Verify
-    if let Ok(metadata) = dir.metadata() {
-        let mode = metadata.permissions().mode() & 0o777;
-        if mode != 0o700 {
-            eprintln!(
-                "⚠️ SECURITY: Socket dir has insecure permissions: {:o}",
-                mode
-            );
-        }
+    let metadata = dir.metadata()?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode != 0o700 {
+        return Err(std::io::Error::other(format!(
+            "SECURITY FAILURE: Failed to enforce 0700 on {:?} (got {:o})",
+            dir, mode
+        )));
     }
 
-    true
+    Ok(())
 }
 
 /// Legacy wrapper for generate_worker_socket_path (delegates to VeloPaths)
@@ -323,7 +344,10 @@ mod tests {
             std::env::remove_var("XDG_RUNTIME_DIR");
             assert_eq!(
                 VeloPaths::expand_path_placeholders("${XDG_RUNTIME_DIR}/velo"),
-                "/tmp/velo"
+                std::env::temp_dir()
+                    .join("velo")
+                    .to_string_lossy()
+                    .into_owned()
             );
         }
     }
@@ -341,7 +365,7 @@ mod tests {
             fs::set_permissions(&socket_dir, fs::Permissions::from_mode(0o777)).unwrap();
         }
 
-        assert!(ensure_socket_dir(&socket_dir));
+        assert!(ensure_socket_dir(&socket_dir).is_ok());
 
         #[cfg(unix)]
         {
@@ -374,13 +398,16 @@ mod tests {
             );
         }
 
-        // Scenario 2: Forced override
+        // Scenario 2: Forced override (Too Long)
         unsafe {
             let too_long = "a".repeat(200);
             std::env::set_var("VELO_SOCKET_DIR", &too_long);
-            // VeloPaths handles VELO_SOCKET_DIR by returning it directly (currently no length check on override!)
-            // PROSECUTOR: This is a potential bug if the override is also too long.
-            assert_eq!(VeloPaths::socket_dir(), PathBuf::from(&too_long));
+            // VeloPaths should now FALLBACK to /tmp because the override is too long (SEC-004)
+            let sdir = VeloPaths::socket_dir();
+            assert!(
+                sdir.to_string_lossy().starts_with("/tmp/"),
+                "Should fallback to /tmp when override path is too long"
+            );
             std::env::remove_var("VELO_SOCKET_DIR");
         }
     }

@@ -76,14 +76,15 @@ def app(scope, receive, send):
         
         # 2. Create app that tries to import evil_mod
         app_code = """
-def app(scope, receive, send):
+async def app(scope, receive, send):
     try:
+        # RFC-0012: This should FAIL if the guard is working
         import evil_mod
         msg = "BYPASS_DETECTED"
     except ImportError:
         msg = "SHIELD_ACTIVE"
         
-    async def respond():
+    if scope['type'] == 'http':
         await send({
             'type': 'http.response.start',
             'status': 200,
@@ -93,7 +94,6 @@ def app(scope, receive, send):
             'type': 'http.response.body',
             'body': msg.encode(),
         })
-    return respond()
 """
         isolated_env.create_app("main.py", app_code)
         
@@ -106,13 +106,25 @@ def app(scope, receive, send):
         env_with_poison = isolated_env.env.copy()
         env_with_poison["PYTHONPATH"] = str(malicious_dir)
         
-        proc = isolated_env.spawn_velo("serve", "main:app", "--port", str(port), "--workers", "1", env=env_with_poison)
+        proc = isolated_env.spawn_velo("serve", "main:app", "--port", str(port), "--use-zygote", 
+                                       env=env_with_poison, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         try:
             time.sleep(5)
-            import requests
-            resp = requests.get(f"http://127.0.0.1:{port}", timeout=5)
-            # If the defect exists, import evil_mod will succeed
+            # Try once
+            try:
+                import requests
+                resp = requests.get(f"http://127.0.0.1:{port}/", timeout=10)
+            except:
+                time.sleep(5)
+                import requests
+                resp = requests.get(f"http://127.0.0.1:{port}/", timeout=10)
+            
+            # Print output for debugging
+            proc.terminate()
+            stdout, stderr = proc.communicate(timeout=10)
+            print("--- VELO STDOUT ---")
+            print(stdout)
             assert "BYPASS_DETECTED" not in resp.text, "DEF-72-SEC-002 FAIL: Worker bypassed EnvironmentShield via PYTHONPATH"
             assert "SHIELD_ACTIVE" in resp.text
         finally:

@@ -94,10 +94,19 @@ pub fn unlink_socket_if_exists_sync(path: &Path) -> std::io::Result<()> {
 ///
 /// Creates the directory with 0700 permissions for security.
 pub async fn ensure_socket_directory(path: &Path) -> std::io::Result<()> {
-    if let Some(parent) = path.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent).await?;
+    if let Some(parent) = path.parent() {
+        if parent.exists() {
+            // SECURITY: If it exists but is a symlink, bail. RFC-0012 Gate SEC-003.
+            let metadata = std::fs::symlink_metadata(parent)?;
+            if metadata.file_type().is_symlink() {
+                return Err(std::io::Error::other(format!(
+                    "Security Violation: Socket parent directory {:?} is a symlink!",
+                    parent
+                )));
+            }
+        } else {
+            fs::create_dir_all(parent).await?;
+        }
 
         #[cfg(unix)]
         {
@@ -224,11 +233,13 @@ impl EnvironmentShield {
             trusted.push(PathBuf::from(expanded));
         }
 
+        let expanded_prefixes = trusted
+            .into_iter()
+            .filter_map(|p| p.canonicalize().ok())
+            .collect();
+
         Self {
-            trusted_prefixes: trusted
-                .into_iter()
-                .filter_map(|p| p.canonicalize().ok())
-                .collect(),
+            trusted_prefixes: expanded_prefixes,
             env_whitelist: config.security_env_whitelist.clone(),
             hpc_threads: config.security_hpc_threads,
         }
@@ -280,50 +291,64 @@ impl EnvironmentShield {
     /// Apply surgical whitelist and provenance guard to a Command
     pub fn apply(&self, cmd: &mut Command) -> SecurityResult<()> {
         cmd.env_clear();
+        let env = self.compile_env();
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        Ok(())
+    }
 
-        // RFC §3.1: Mandatory Whitelist
+    /// Compile a surgical whitelist of environment variables for forked workers.
+    /// RFC-0012: Prevents environment starvation and токсин injection.
+    pub fn compile_env(&self) -> std::collections::HashMap<String, String> {
+        let mut env = std::collections::HashMap::new();
 
+        // 1. Apply Whitelist
         for var in &self.env_whitelist {
             // DEF-72-S02: Block untrusted VELO_* variables even if whitelisted
             if var.starts_with("VELO_") && var.contains("UNTRUSTED") {
-                eprintln!("🚨 Security: Blocking untrusted env var: {}", var);
                 continue;
             }
             if let Ok(val) = std::env::var(var) {
                 // Special handling for PATH (Provenance Guard §3.5)
                 if var == "PATH" {
-                    let cleaned = self.validate_path_variable(&val)?;
-                    cmd.env(var, cleaned);
+                    if let Ok(cleaned) = self.validate_path_variable(&val) {
+                        env.insert(var.clone(), cleaned);
+                    }
                 } else {
-                    cmd.env(var, val);
+                    env.insert(var.clone(), val);
                 }
             }
         }
 
-        // RFC §4.0: PYTHONPATH is blacklisted by default unless surgically verified
+        // 2. Surgical PYTHONPATH (RFC §4.0)
         if let Ok(val) = std::env::var("PYTHONPATH")
             && let Ok(cleaned) = self.validate_path_variable(&val)
-            && !cleaned.is_empty()
         {
-            cmd.env("PYTHONPATH", cleaned);
+            if !cleaned.is_empty() {
+                env.insert("PYTHONPATH".to_string(), cleaned);
+            } else {
+                // SEC-002: Ensure we REMOVE/OVERWRITE any uncleaned version from the whitelist loop
+                env.remove("PYTHONPATH");
+            }
         }
 
-        // 2. High-Performance Isolation (RFC-0011 HPC-001)
+        // 3. High-Performance Isolation (RFC-0011 HPC-001)
         let thread_val = self.hpc_threads.to_string();
-        cmd.env("OMP_NUM_THREADS", &thread_val);
-        cmd.env("MKL_NUM_THREADS", &thread_val);
-        cmd.env("OPENBLAS_NUM_THREADS", &thread_val);
-        cmd.env("VECLIB_MAXIMUM_THREADS", &thread_val);
-        cmd.env("NUMEXPR_NUM_THREADS", &thread_val);
+        env.insert("OMP_NUM_THREADS".to_string(), thread_val.clone());
+        env.insert("MKL_NUM_THREADS".to_string(), thread_val.clone());
+        env.insert("OPENBLAS_NUM_THREADS".to_string(), thread_val.clone());
+        env.insert("VECLIB_MAXIMUM_THREADS".to_string(), thread_val.clone());
+        env.insert("NUMEXPR_NUM_THREADS".to_string(), thread_val);
 
-        // 3. Python Specific Isolation
-        cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-        cmd.env("PYTHONUNBUFFERED", "1");
-        cmd.env("PYTHONIOENCODING", "utf-8");
-        cmd.env("PYTHONUTF8", "1");
-        cmd.env("PYTHONNOUSERSITE", "1");
+        // 4. Python Specific Isolation
+        env.insert("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string());
+        env.insert("PYTHONUNBUFFERED".to_string(), "1".to_string());
+        env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
+        env.insert("PYTHONUTF8".to_string(), "1".to_string());
+        env.insert("PYTHONNOUSERSITE".to_string(), "1".to_string());
 
-        Ok(())
+        env
     }
 
     /// RFC §3.5: Environment Provenance Guard
@@ -352,8 +377,6 @@ impl EnvironmentShield {
             // Check if entry is within trusted prefixes
             if self.is_trusted(&canonical) {
                 valid_entries.push(entry.to_string());
-            } else {
-                eprintln!("🚨 Security: Scrubbing untrusted path entry: {:?}", entry);
             }
         }
 
@@ -361,9 +384,12 @@ impl EnvironmentShield {
     }
 
     fn is_trusted(&self, path: &Path) -> bool {
-        self.trusted_prefixes
-            .iter()
-            .any(|prefix| path.starts_with(prefix))
+        for prefix in &self.trusted_prefixes {
+            if path.starts_with(prefix) {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -437,8 +463,8 @@ mod tests {
 
     #[test]
     fn test_unlink_socket_if_exists_sync_not_exists() {
-        let path = std::path::Path::new("/tmp/nonexistent-socket-12345.sock");
-        let result = unlink_socket_if_exists_sync(path);
+        let path = std::env::temp_dir().join("nonexistent-socket-12345.sock");
+        let result = unlink_socket_if_exists_sync(&path);
         assert!(result.is_ok());
     }
 
@@ -491,7 +517,6 @@ mod tests {
         let file = File::create(&file_path).unwrap();
         let fd = file.as_raw_fd();
 
-        // Set FD_CLOEXEC
         let result = set_cloexec(fd);
         assert!(result.is_ok());
 
