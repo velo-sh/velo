@@ -48,7 +48,11 @@ impl VeloPaths {
                 let _ = ensure_socket_dir(&path);
                 return path;
             }
-            // If override is too long, we fall through to the default/fallback logic
+            // SEC-004: If override is too long, we fall back to /tmp immediately
+            let dir_name = format!("velo-{}", uid);
+            let fallback = PathBuf::from("/tmp").join(dir_name);
+            let _ = ensure_socket_dir(&fallback);
+            return fallback;
         }
 
         // Determine OS and environment
