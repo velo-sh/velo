@@ -578,4 +578,17 @@ mod tests {
             assert_eq!(expanded_home, home);
         }
     }
+
+    /// 🚨 [FORENSIC] SOP-004: Zero-Hardcode Toxin Audit
+    #[test]
+    fn test_forensic_zero_hardcode_toxins() {
+        let file_path = std::path::Path::new(file!());
+        if let Ok(content) = std::fs::read_to_string(file_path) {
+            let toxic_tmp = format!("{}\"{}", "/", "tmp");
+            let toxic_proc = format!("{}\"{}", "/", "proc");
+            if content.contains(&toxic_tmp) || content.contains(&toxic_proc) {
+                eprintln!("🚨 FORENSIC FAIL: Hardcoded absolute path toxins found in {:?} (ZHC Violation)", file_path);
+            }
+        }
+    }
 }
