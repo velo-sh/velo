@@ -732,4 +732,41 @@ mod tests {
             "Timeout should be exactly 30 seconds after handshake"
         );
     }
+
+    /// DEF-72-SEC-005: Zygote acceptor must verify peer UID/PID
+    ///
+    /// This test proves the current vulnerability: a socket connection is accepted
+    /// without any peer identification check (SO_PEERCRED).
+    #[test]
+    fn test_forensic_handshake_spoofing() {
+        use std::os::unix::net::UnixListener;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("test.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+
+        // Simulate a "malicious" client attempting to connect
+        let client_thread = std::thread::spawn(move || {
+            let mut stream = UnixStream::connect(socket_path).unwrap();
+            // In a vulnerable version, the connection is accepted and we can read/write
+            // A secure version would drop us immediately if we were an unauthorized peer
+            let cmd = ZygoteCommand::Status { request_id: None };
+            // Simulate writing a command
+            write_message(&mut stream, &cmd, None).is_ok()
+        });
+
+        // Server side
+        let (mut stream, _) = listener.accept().unwrap();
+        // PROSECUTOR: If we are here, we accepted a connection without ANY identity check.
+        // Peer validation should happen before any protocol reads/writes.
+        
+        // Let's see if we can read the message
+        let res: Result<(ZygoteCommand, Option<RawFd>)> = read_message(&mut stream);
+        if res.is_ok() {
+            panic!("DEF-72-SEC-005 FAIL: Accepted and parsed command from unauthorized peer! (Vulnerability Present)");
+        }
+        
+        assert!(client_thread.join().unwrap());
+    }
 }
