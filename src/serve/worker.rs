@@ -193,9 +193,23 @@ impl Worker {
         cmd.env_clear();
 
         // Pass essential environment (Surgical Whitelist - RFC-0012)
+        // Pass essential environment (Surgical Whitelist - RFC-0012)
         let env = build_worker_env(config);
         for (k, v) in env.iter() {
             cmd.env(k, v);
+        }
+
+        // Phase 7.3: Unified Python Environment Resolution (SSOT)
+        match crate::common::python_env::PythonEnv::detect(python_path) {
+            Ok(py_env) => {
+                py_env.apply_to_command(&mut cmd);
+            }
+            Err(e) => {
+                log::warn!(
+                    "[SSOT] Failed to detect Python environment for UDS Direct: {}",
+                    e
+                );
+            }
         }
 
         // Use uvicorn directly if possible, or use RSGI mode
