@@ -301,18 +301,6 @@ impl Worker {
         // Also pass the Python executable path for PyO3 to use
         cmd.env("VELO_PYTHON_EXECUTABLE", python_path);
 
-        // FIX: Explicitly forward critical Python environment variables for Native Workers
-        // These are required for hermetic runtimes (uv/venv) to function correctly.
-        if let Ok(home) = std::env::var("PYTHONHOME") {
-            cmd.env("PYTHONHOME", home);
-        }
-        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-            cmd.env("VIRTUAL_ENV", venv);
-        }
-        if let Ok(dyld) = std::env::var("DYLD_LIBRARY_PATH") {
-            cmd.env("DYLD_LIBRARY_PATH", dyld);
-        }
-
         // Ensure the listener FD is inherited despite FD_CLOEXEC
         unsafe {
             cmd.pre_exec(move || {
