@@ -303,6 +303,46 @@ impl Worker {
         // Ensure the listener FD is inherited despite FD_CLOEXEC
         unsafe {
             cmd.pre_exec(move || {
+                // DEF-72-SEC-001: FD Hygiene - Close all FDs except stdio and the listener
+                // This prevents the worker from inheriting sensitive handles (like logs or other sockets)
+                #[cfg(target_os = "macos")]
+                {
+                    // Smart Hygiene: Only close FDs that do NOT have FD_CLOEXEC set.
+                    // This protects Rust's internal pipes (which use CLOEXEC) and system handles,
+                    // while cleaning up "leaked" user FDs (which lack CLOEXEC).
+                    for fd in 3..4096 {
+                        if fd == socket_fd {
+                            continue;
+                        }
+
+                        let flags = libc::fcntl(fd, libc::F_GETFD);
+                        if flags != -1 {
+                            // If CLOEXEC is NOT set, it's a leak candidate. Close it.
+                            if (flags & libc::FD_CLOEXEC) == 0 {
+                                libc::close(fd);
+                            }
+                        }
+                    }
+                }
+
+                #[cfg(target_os = "linux")]
+                {
+                    // Same logic for Linux safety fallback
+                    for fd in 3..4096 {
+                        if fd == socket_fd {
+                            continue;
+                        }
+                        let flags = libc::fcntl(fd, libc::F_GETFD);
+                        if flags != -1 {
+                            if (flags & libc::FD_CLOEXEC) == 0 {
+                                libc::close(fd);
+                            }
+                        }
+                    }
+                }
+
+                // Ensure the listener FD is explicitly inherited
+                // (It might have been closed by the loop if we didn't check, but we did check)
                 let flags = libc::fcntl(socket_fd, libc::F_GETFD);
                 if flags != -1 {
                     libc::fcntl(socket_fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
