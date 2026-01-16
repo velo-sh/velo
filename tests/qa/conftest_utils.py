@@ -244,11 +244,11 @@ class VeloTestEnv:
         # RFC-0012: First Principles Isolation
         # We must NOT inherit PYTHONHOME from the host, as it overrides VIRTUAL_ENV
         # and causes version mismatches (e.g. Host 3.10 vs Velo 3.11).
-        if "PYTHONHOME" in self.env:
-            sys.stderr.write(
-                f"\n⚠️  [VeloTestEnv] Sanitizing Host Environment: Removed conflicting PYTHONHOME='{self.env['PYTHONHOME']}' to enforce hermetic Velo runtime.\n"
-            )
-            self.env.pop("PYTHONHOME")
+        # if "PYTHONHOME" in self.env:
+        #    sys.stderr.write(
+        #        f"\n⚠️  [VeloTestEnv] Sanitizing Host Environment: Removed conflicting PYTHONHOME='{self.env['PYTHONHOME']}' to enforce hermetic Velo runtime.\n"
+        #    )
+        #    self.env.pop("PYTHONHOME")
 
         # MacOS AF_UNIX 104-char limit hardening (RFC-0019 §10.2)
         if IS_MACOS:
