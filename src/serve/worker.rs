@@ -317,11 +317,9 @@ impl Worker {
                         }
 
                         let flags = libc::fcntl(fd, libc::F_GETFD);
-                        if flags != -1 {
+                        if flags != -1 && (flags & libc::FD_CLOEXEC) == 0 {
                             // If CLOEXEC is NOT set, it's a leak candidate. Close it.
-                            if (flags & libc::FD_CLOEXEC) == 0 {
-                                libc::close(fd);
-                            }
+                            libc::close(fd);
                         }
                     }
                 }
@@ -334,10 +332,8 @@ impl Worker {
                             continue;
                         }
                         let flags = libc::fcntl(fd, libc::F_GETFD);
-                        if flags != -1 {
-                            if (flags & libc::FD_CLOEXEC) == 0 {
-                                libc::close(fd);
-                            }
+                        if flags != -1 && (flags & libc::FD_CLOEXEC) == 0 {
+                            libc::close(fd);
                         }
                     }
                 }
