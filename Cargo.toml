@@ -7,7 +7,8 @@ description = "The high-performance runtime for the AI era."
 
 [package.metadata.velo]
 # SSoT: Centralized environment invariants
-python_version = "3.11"
+# SSoT: Centralized environment invariants
+# python_version removed in favor of config/constants.toml (SSOT)
 required_pyo3_no_extension = true
 socket_path_limit = 104
 hugepage_alignment = 2097152
