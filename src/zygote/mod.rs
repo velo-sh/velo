@@ -399,6 +399,7 @@ impl ZygoteLauncher {
         // We cannot use env_clear() safely here because we need basic system envs,
         // but we MUST scrub interception paths to prevent the Shield bypass.
         cmd.env_remove("PYTHONPATH");
+
         // NOTE: Do NOT remove PYTHONHOME/VIRTUAL_ENV as they are required for
         // uv/venv python to locate stdlib (fixes ModuleNotFoundError).
 
@@ -407,6 +408,19 @@ impl ZygoteLauncher {
         shield
             .apply(&mut cmd)
             .map_err(ZygoteError::SecurityViolation)?;
+
+        // FIX: Explicitly forward critical Python environment variables (Bridge of Truth)
+        // These are required for hermetic runtimes (uv/venv) and must persist across the shield.
+        if let Ok(home) = std::env::var("PYTHONHOME") {
+            cmd.env("PYTHONHOME", home);
+        }
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            cmd.env("VIRTUAL_ENV", venv);
+        }
+        // Forward DYLD for macOS C-extension loading if present
+        if let Ok(dyld) = std::env::var("DYLD_LIBRARY_PATH") {
+            cmd.env("DYLD_LIBRARY_PATH", dyld);
+        }
 
         // Pass GITHUB_ACTIONS to allow /home paths in CI
         if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
