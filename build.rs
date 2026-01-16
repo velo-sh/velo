@@ -517,19 +517,13 @@ pub const UV_VERSION: &str = \"{}\";
 fn enforce_environment_ssot() {
     println!("cargo:rerun-if-changed=Cargo.toml");
 
-    let cargo_toml_str = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml");
-    let cargo_toml: toml::Value = cargo_toml_str.parse().expect("Failed to parse Cargo.toml");
+    // SSOT: Read directly from config/constants.toml
+    let config_path = Path::new("config/constants.toml");
+    let content = fs::read_to_string(config_path).expect("Failed to read config/constants.toml");
+    let constants: Constants =
+        toml::from_str(&content).expect("Failed to parse config/constants.toml");
 
-    let metadata = cargo_toml
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("velo"))
-        .expect("Missing [package.metadata.velo] in Cargo.toml");
-
-    let expected_python = metadata
-        .get("python_version")
-        .and_then(|v| v.as_str())
-        .expect("Missing python_version in metadata");
+    let expected_python = constants.python_version;
 
     // CI-Specific Enforcements
     let is_ci = env::var("GITHUB_ACTIONS").is_ok();

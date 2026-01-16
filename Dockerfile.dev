@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # RFC-0010: Ensure shared libraries are found for uv-managed Python
+# RFC-0010: Ensure shared libraries are found for uv-managed Python (Dynamic Discovery)
+# Finds the lib directory under uv's python installation (e.g. cpython-3.11.x)
+RUN echo "export LD_LIBRARY_PATH=\"\$(find /root/.local/share/uv/python -name lib -type d | tr '\n' ':')\"" >> /root/.bashrc
 ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-x86_64-gnu/lib:/root/.local/share/uv/python/cpython-3.11.14-linux-aarch64-gnu/lib"
 
 WORKDIR /workspace
