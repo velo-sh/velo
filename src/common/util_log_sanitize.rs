@@ -27,7 +27,7 @@ const RESERVED_PREFIXES: &[&str] = &[
 ///
 /// # Example
 /// ```
-/// use velo::common::log_sanitize::sanitize_worker_log;
+/// use velo::common::util_log_sanitize::sanitize_worker_log;
 ///
 /// let spoofed = "[SUP] FAKE: malicious message";
 /// let clean = sanitize_worker_log(spoofed);
@@ -76,7 +76,7 @@ pub fn sanitize_worker_log(line: &str) -> Cow<'_, str> {
 /// # Example
 /// ```ignore
 /// use std::io::{BufRead, BufReader};
-/// use velo::common::log_sanitize::filter_worker_output;
+/// use velo::common::util_log_sanitize::filter_worker_output;
 ///
 /// let output = "[SUP] fake message\nlegit message\n";
 /// let filtered = filter_worker_output(output);
