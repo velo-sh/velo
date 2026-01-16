@@ -408,16 +408,6 @@ impl ZygoteLauncher {
             .apply(&mut cmd)
             .map_err(ZygoteError::SecurityViolation)?;
 
-        // FIX: Explicitly forward critical Python environment variables
-        // This is necessary because shield.apply() calls env_clear(), wiping inherited envs.
-        // We restore them here to ensure proper stdlib discovery.
-        if let Ok(home) = std::env::var("PYTHONHOME") {
-            cmd.env("PYTHONHOME", home);
-        }
-        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-            cmd.env("VIRTUAL_ENV", venv);
-        }
-
         // Pass GITHUB_ACTIONS to allow /home paths in CI
         if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
             cmd.env("GITHUB_ACTIONS", val);
