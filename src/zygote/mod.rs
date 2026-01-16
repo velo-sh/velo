@@ -20,6 +20,7 @@ pub mod auto_config;
 pub mod cli;
 pub mod core_ipc;
 pub mod error;
+pub mod peer_check;
 
 extern crate log;
 

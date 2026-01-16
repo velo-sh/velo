@@ -587,7 +587,10 @@ mod tests {
             let toxic_tmp = format!("{}\"{}", "/", "tmp");
             let toxic_proc = format!("{}\"{}", "/", "proc");
             if content.contains(&toxic_tmp) || content.contains(&toxic_proc) {
-                eprintln!("🚨 FORENSIC FAIL: Hardcoded absolute path toxins found in {:?} (ZHC Violation)", file_path);
+                eprintln!(
+                    "🚨 FORENSIC FAIL: Hardcoded absolute path toxins found in {:?} (ZHC Violation)",
+                    file_path
+                );
             }
         }
     }
