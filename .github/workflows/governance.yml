@@ -2,9 +2,9 @@ name: Velo Governance Enforcement
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, 'phase-*' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, 'phase-*' ]
 
 jobs:
   enforce-governance:
