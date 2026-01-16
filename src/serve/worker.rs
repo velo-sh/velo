@@ -297,6 +297,15 @@ impl Worker {
             }
         }
 
+        // FIX: Explicitly forward PYTHONHOME if present in host
+        // This is critical for embedded PyO3 to find stdlib when running in uv/venv
+        if let Ok(home) = std::env::var("PYTHONHOME") {
+            cmd.env("PYTHONHOME", home);
+        }
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            cmd.env("VIRTUAL_ENV", venv);
+        }
+
         // Also pass the Python executable path for PyO3 to use
         cmd.env("VELO_PYTHON_EXECUTABLE", python_path);
 

@@ -399,14 +399,24 @@ impl ZygoteLauncher {
         // We cannot use env_clear() safely here because we need basic system envs,
         // but we MUST scrub interception paths to prevent the Shield bypass.
         cmd.env_remove("PYTHONPATH");
-        cmd.env_remove("PYTHONHOME");
-        cmd.env_remove("VIRTUAL_ENV");
+        // NOTE: Do NOT remove PYTHONHOME/VIRTUAL_ENV as they are required for
+        // uv/venv python to locate stdlib (fixes ModuleNotFoundError).
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
         let shield = EnvironmentShield::new(config);
         shield
             .apply(&mut cmd)
             .map_err(ZygoteError::SecurityViolation)?;
+
+        // FIX: Explicitly forward critical Python environment variables
+        // This is necessary because shield.apply() calls env_clear(), wiping inherited envs.
+        // We restore them here to ensure proper stdlib discovery.
+        if let Ok(home) = std::env::var("PYTHONHOME") {
+            cmd.env("PYTHONHOME", home);
+        }
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            cmd.env("VIRTUAL_ENV", venv);
+        }
 
         // Pass GITHUB_ACTIONS to allow /home paths in CI
         if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
