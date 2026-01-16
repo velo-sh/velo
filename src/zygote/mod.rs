@@ -423,6 +423,7 @@ impl ZygoteLauncher {
         // Defect Fix: Ensure Zygote environment is derived from the Python binary
         // (via PythonEnv::detect) rather than relying on unstable manual forwarding.
         // This handles PYTHONHOME/VIRTUAL_ENV reconstruction automatically.
+        // [CI-FORCE] Verifying regression fix in production pipeline.
         match crate::common::python_env::PythonEnv::detect(&python) {
             Ok(py_env) => {
                 py_env.apply_to_command(&mut cmd);
