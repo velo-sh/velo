@@ -402,11 +402,16 @@ mod tests {
         unsafe {
             let too_long = "a".repeat(200);
             std::env::set_var("VELO_SOCKET_DIR", &too_long);
-            // VeloPaths should now FALLBACK to /tmp because the override is too long (SEC-004)
+            // VeloPaths should now FALLBACK to a safe default because the override is too long (SEC-004)
             let sdir = VeloPaths::socket_dir();
+            assert_ne!(
+                sdir.to_string_lossy(),
+                too_long,
+                "Should NOT use the too-long override path"
+            );
             assert!(
-                sdir.to_string_lossy().starts_with("/tmp/"),
-                "Should fallback to /tmp when override path is too long"
+                sdir.to_string_lossy().len() <= SOCKET_PATH_LIMIT,
+                "Fallback path must be within limits"
             );
             std::env::remove_var("VELO_SOCKET_DIR");
         }
