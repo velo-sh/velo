@@ -221,8 +221,8 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
       - name: Pre-Flight Diagnostic
         run: cargo run --all-features -- debug pre-flight
-      - name: Run Clippy (Single Source of Truth)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run Clippy via Pre-Commit (SSOT)
+        run: uv run pre-commit run cargo-clippy --all-files
 
   fmt:
     name: Format
@@ -240,7 +240,8 @@ jobs:
         with:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
-      - run: cargo fmt --all -- --check
+      - name: Run Fmt via Pre-Commit (SSOT)
+        run: uv run pre-commit run cargo-fmt --all-files
 
   actionlint:
     name: Actionlint
