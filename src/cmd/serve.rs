@@ -102,7 +102,7 @@ pub struct ServeCmd {
     pub prod: bool,
 
     /// Enable Zygote pre-warming (default)
-    #[arg(long, conflicts_with = "no_zygote")]
+    #[arg(long, alias = "use-zygote", conflicts_with = "no_zygote")]
     pub zygote: bool,
 
     /// Disable Zygote pre-warming
@@ -138,9 +138,9 @@ impl ServeCmd {
         args.timeout = self.timeout;
         args.health_bind = self.health_bind.clone();
         args.pid_file = self.pid_file.clone();
-        args.reload = self.reload;
-        args.prod = self.prod;
-        args.use_zygote = !self.no_zygote;
+        // Gate 7.2: Zygote is enabled by default unless --no-zygote is specified.
+        // Support --use-zygote (explicitly enabled) as well.
+        args.use_zygote = !self.no_zygote || self.zygote;
 
         // Parse log format
         args.log_format = match self.log_format.as_str() {

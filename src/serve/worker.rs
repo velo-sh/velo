@@ -23,20 +23,16 @@ pub struct Worker {
 fn build_worker_env(
     config: &crate::config::VeloConfig,
 ) -> Box<std::collections::HashMap<String, String>> {
-    let mut env = std::env::vars()
-        .filter(|(k, _)| config.security_env_whitelist.contains(k))
-        // DEF-72-S02: Block any VELO_*UNTRUSTED* variables (Double-Guard System)
-        .filter(|(k, _)| !(k.contains("UNTRUSTED") && k.contains("VELO")))
-        .collect::<std::collections::HashMap<String, String>>();
+    // RFC-0012: Always use EnvironmentShield for SSOT environment building.
+    // This ensures all workers (Zygote/Direct/Native) are scrubbed identically.
+    let shield = crate::lifecycle::safety::EnvironmentShield::new(config);
+    let mut env = shield.compile_env();
 
-    // Mandatory Infrastructure Invariant: PYTHONPATH must pass through if present
-    if let Ok(pp) = std::env::var("PYTHONPATH") {
-        env.insert("PYTHONPATH".to_string(), pp);
-    }
-
+    // Pass additional runtime-specific variables that aren't in the global whitelist
     env.insert("VELO_TRUSTED_PROXY".to_string(), "1".to_string());
     // Gate H (DEF-72-H01): Pass Host PID so workers can validate incoming connections
     env.insert("VELO_HOST_PID".to_string(), std::process::id().to_string());
+
     if !env.contains_key("VELO_FORWARDED_ALLOW_IPS") {
         env.insert(
             "VELO_FORWARDED_ALLOW_IPS".to_string(),
@@ -253,7 +249,6 @@ impl Worker {
         project_dir: &Path,
         _config: &crate::config::VeloConfig,
     ) -> Result<Self> {
-        use crate::python;
         use std::os::unix::process::CommandExt;
         use std::process::Command;
 
@@ -273,21 +268,11 @@ impl Worker {
             .arg(project_dir);
 
         // Security Shield + Sovereignty: Set up Python environment
-        // We use setup_python_env to get the correct site-packages for the child process.
-        let (pythonpath, _) = python::setup_python_env(project_dir, python_path);
-
-        // Inherit or set PYTHONPATH
-        if let Some(pp) = pythonpath {
-            cmd.env("PYTHONPATH", pp);
-        } else if let Ok(pythonpath) = std::env::var("PYTHONPATH") {
-            cmd.env("PYTHONPATH", pythonpath);
-        } else {
-            // If PYTHONPATH is not set in Host, detect it from venv/site-packages
-            // RFC-0012: Resilience for hermetic test environments
-            let (ppath, _) = crate::python::setup_python_env(project_dir, python_path);
-            if let Some(ppath) = ppath {
-                cmd.env("PYTHONPATH", ppath);
-            }
+        // RFC-0012: Always use EnvironmentShield for environment sanitization.
+        let shield = crate::lifecycle::safety::EnvironmentShield::new(_config);
+        let env = shield.compile_env();
+        for (k, v) in env {
+            cmd.env(k, v);
         }
 
         // SSOT: Python Environment Configuration

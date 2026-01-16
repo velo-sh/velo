@@ -916,11 +916,7 @@ impl ZygoteLauncher {
                 bundle_path,
                 project_root,
                 max_bundle_size,
-                env: Box::new(
-                    std::env::vars()
-                        .filter(|(k, _)| config.security_env_whitelist.contains(k))
-                        .collect(),
-                ),
+                env: Box::new(crate::lifecycle::EnvironmentShield::new(config).compile_env()),
                 shm_size,
                 request_id: Some(uuid::Uuid::now_v7().to_string()),
             },

@@ -328,21 +328,28 @@ mod tests {
 
     #[test]
     fn test_uds_target_creation() {
-        let target = UdsTarget::new("/tmp/velo-worker-1.sock");
-        assert_eq!(target.socket_path, PathBuf::from("/tmp/velo-worker-1.sock"));
+        let target = UdsTarget::new(std::env::temp_dir().join("velo-worker-1.sock"));
+        assert_eq!(
+            target.socket_path,
+            std::env::temp_dir().join("velo-worker-1.sock")
+        );
     }
 
     #[test]
     fn test_socket_target_from_pathbuf() {
-        let target: SocketTarget = PathBuf::from("/tmp/test.sock").into();
-        assert_eq!(target.socket_path, PathBuf::from("/tmp/test.sock"));
+        let target: SocketTarget = std::env::temp_dir().join("test.sock").into();
+        assert_eq!(target.socket_path, std::env::temp_dir().join("test.sock"));
         assert_eq!(target.worker_id, 0); // Default
     }
 
     #[test]
     fn test_socket_target_from_string() {
-        let target: SocketTarget = "/tmp/test.sock".into();
-        assert_eq!(target.socket_path, PathBuf::from("/tmp/test.sock"));
+        let socket_path = std::env::temp_dir()
+            .join("test.sock")
+            .to_string_lossy()
+            .to_string();
+        let target: SocketTarget = socket_path.clone().into();
+        assert_eq!(target.socket_path, PathBuf::from(socket_path));
         assert_eq!(target.worker_id, 0);
     }
 
@@ -352,16 +359,17 @@ mod tests {
 
     #[test]
     fn test_socket_target_new_with_worker_id() {
-        let target = SocketTarget::new("/tmp/worker-42.sock", 42);
-        assert_eq!(target.socket_path, PathBuf::from("/tmp/worker-42.sock"));
+        let socket_path = std::env::temp_dir().join("worker-42.sock");
+        let target = SocketTarget::new(socket_path.clone(), 42);
+        assert_eq!(target.socket_path, socket_path);
         assert_eq!(target.worker_id, 42);
     }
 
     #[test]
     fn test_socket_target_authority_unique_per_worker() {
-        let target1 = SocketTarget::new("/tmp/w1.sock", 1);
-        let target2 = SocketTarget::new("/tmp/w2.sock", 2);
-        let target3 = SocketTarget::new("/tmp/w3.sock", 3);
+        let target1 = SocketTarget::new(std::env::temp_dir().join("w1.sock"), 1);
+        let target2 = SocketTarget::new(std::env::temp_dir().join("w2.sock"), 2);
+        let target3 = SocketTarget::new(std::env::temp_dir().join("w3.sock"), 3);
 
         assert_eq!(target1.authority(), "worker-1@velo");
         assert_eq!(target2.authority(), "worker-2@velo");
@@ -374,11 +382,9 @@ mod tests {
 
     #[test]
     fn test_uds_connector_with_target() {
-        let connector = UdsConnector::with_target("/tmp/test.sock");
-        assert_eq!(
-            connector.socket_path(),
-            Some(&PathBuf::from("/tmp/test.sock"))
-        );
+        let socket_path = std::env::temp_dir().join("test.sock");
+        let connector = UdsConnector::with_target(socket_path.clone());
+        assert_eq!(connector.socket_path(), Some(&socket_path));
     }
 
     #[test]
@@ -386,11 +392,9 @@ mod tests {
         let mut connector = UdsConnector::new();
         assert!(connector.socket_path().is_none());
 
-        connector.set_target("/tmp/test.sock");
-        assert_eq!(
-            connector.socket_path(),
-            Some(&PathBuf::from("/tmp/test.sock"))
-        );
+        let socket_path = std::env::temp_dir().join("test.sock");
+        connector.set_target(socket_path.clone());
+        assert_eq!(connector.socket_path(), Some(&socket_path));
     }
 
     // =========================================================================
@@ -423,7 +427,8 @@ mod tests {
         use tower_service::Service;
 
         let mut connector = UdsConnector::new();
-        let target = SocketTarget::from("/tmp/nonexistent-velo-test-12345.sock");
+        let target =
+            SocketTarget::from(std::env::temp_dir().join("nonexistent-velo-test-12345.sock"));
 
         let result = connector.call(target).await;
         assert!(result.is_err(), "Should fail on nonexistent socket");

@@ -88,7 +88,7 @@ impl UvCustodian {
 
         // 4. Fallback: UID-based path (DEF-71-006 hardening)
         let uid = unsafe { libc::getuid() };
-        PathBuf::from(format!("/tmp/.velo-{}", uid))
+        std::env::temp_dir().join(format!(".velo-{}", uid))
     }
 
     /// Create with custom base directory (for testing)

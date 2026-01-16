@@ -553,7 +553,12 @@ mod tests {
 
     #[test]
     fn test_proxy_service_creation() {
-        let lb = Arc::new(LoadBalancer::new(vec!["/tmp/w1.sock".to_string()]));
+        let lb = Arc::new(LoadBalancer::new(vec![
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .to_string(),
+        ]));
         let service = VeloProxyService::new(lb);
 
         assert_eq!(service.load_balancer().worker_count(), 1);
