@@ -109,9 +109,24 @@ To balance feedback speed with production integrity, Velo CI follows a tiered ex
 | **Serialization** | `rkyv` / `MsgPack` | SIMD-accelerated, zero-copy deserialization |
 | **Compiler** | `LTO = "fat"` | Cross-crate link-time optimization |
 
-## 5. Shadow Optimization (Future Vision)
-- **Idle-Time Compiling**: Velo records hot-paths during peak traffic and compiles them to native code during idle periods (Shadow Compiler).
+## 5. Shadow Optimization (Future Vision: Phase 8.0+)
+- **Idle-Time Compiling`: Velo records hot-paths during peak traffic and compiles them to native code during idle periods (Shadow Compiler).
 - **Predictive Warming**: Anticipates load spikes to pre-fork Workers before they are needed.
+
+### 5.1 Hardware Affinity (Phase 8.0)
+- **NUMA Pinning**: To minimize L3 Cache Misses in >50k RPS scenarios, Workers shall be pinned to specific CPU Cores (`hwloc`), respecting NUMA topology.
+- **Worker Isolation**: Strict statelessness enforcement to allow aggressive "Kill & Respawn" rotation without session loss.
+
+### 5.2 Deep Observability
+- **Prometheus Exporter**: `/metrics` endpoint exposing:
+    - Active Connections (Gauge)
+    - Circuit Breaker Trips (Counter)
+    - Zygote Respawns (Counter)
+- **Goal**: Visualize the "Heartbeat" of the system.
+
+### 5.3 Chaos Verification ("Grim Reaper" Proving Ground)
+- **Automated Kill Scripts**: `chaos_kill.py` to randomly `kill -9` workers during load tests.
+- **Invariant**: 0% Error Rate during chaos rotation (User Perception < 100ms).
 
 ## 6. Industrial Invariants
 1. **INV-PERF-001**: Any body payload > 1MB MUST utilize the `memfd + SCM_RIGHTS` path.
