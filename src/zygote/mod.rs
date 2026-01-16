@@ -418,6 +418,33 @@ impl ZygoteLauncher {
         apply_standard_hygiene(&mut cmd);
 
         // =========================================================================
+        // Phase 7.3: Unified Python Environment Resolution (SSOT)
+        // =========================================================================
+        // Defect Fix: Ensure Zygote environment is derived from the Python binary
+        // (via PythonEnv::detect) rather than relying on unstable manual forwarding.
+        // This handles PYTHONHOME/VIRTUAL_ENV reconstruction automatically.
+        match crate::common::python_env::PythonEnv::detect(&python) {
+            Ok(py_env) => {
+                py_env.apply_to_command(&mut cmd);
+                log::info!(
+                    "[SSOT] Zygote Python env: base={:?}, version={}",
+                    py_env.base_prefix,
+                    py_env.version
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "[SSOT] Failed to detect Python environment for Zygote: {}",
+                    e
+                );
+                // Fallback: Try to inject VIRTUAL_ENV if present in parent
+                if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+                    cmd.env("VIRTUAL_ENV", venv);
+                }
+            }
+        }
+
+        // =========================================================================
         // Phase 8.0: The Bridge of Truth (Configuration Injection)
         // =========================================================================
         // Explicitly inject the resolved configuration as VELO_* environment variables.
