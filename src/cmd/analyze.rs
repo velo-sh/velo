@@ -430,7 +430,7 @@ fn run_with_profile(
                 );
             }
 
-            let socket_path = zygote::ipc::default_socket_path();
+            let socket_path = zygote::core_ipc::default_socket_path();
             let mut launcher =
                 ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 

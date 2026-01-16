@@ -3,6 +3,7 @@
 //! Organizes commands into separate files for maintainability.
 
 pub mod analyze;
+pub mod audit;
 pub mod bench;
 pub mod bundle;
 pub mod debug;
@@ -16,6 +17,7 @@ pub mod worker_native;
 pub mod zygote; // RFC-0018: Shadow commands
 
 pub use analyze::cmd_analyze;
+pub use audit::cmd_audit;
 pub use bench::cmd_bench;
 pub use bundle::cmd_bundle;
 pub use debug::cmd_debug;

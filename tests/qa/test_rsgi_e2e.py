@@ -25,7 +25,7 @@ pytest_plugins = ('pytest_asyncio',)
 # Add velo_zygote to path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from velo_zygote.rsgi import RSGIWorker, TYPE_REQ_START, TYPE_REQ_BODY, TYPE_RES_START, TYPE_RES_BODY, TYPE_READY, TYPE_AUTH_OK
+from velo_zygote.v_rsgi import RSGIWorker, TYPE_REQ_START, TYPE_REQ_BODY, TYPE_RES_START, TYPE_RES_BODY, TYPE_READY, TYPE_AUTH_OK
 
 
 class MockASGIApp:

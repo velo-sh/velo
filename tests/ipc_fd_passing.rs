@@ -3,7 +3,7 @@ use std::io::Write;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::time::Duration;
-use velo::zygote::ipc::{self, ZygoteCommand, ZygoteResponse};
+use velo::zygote::core_ipc::{self as ipc, ZygoteCommand, ZygoteResponse};
 
 #[test]
 fn test_ipc_fd_passing_end_to_end() -> Result<()> {

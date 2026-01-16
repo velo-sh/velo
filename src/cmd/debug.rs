@@ -11,7 +11,7 @@ use crate::cmd::cmd_debug_pre_flight;
 use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
 use crate::python;
-use crate::zygote::{ZygoteLauncher, ipc};
+use crate::zygote::{ZygoteLauncher, core_ipc as ipc};
 
 #[derive(Parser, Debug)]
 #[command(name = "debug", about = "Access internal debugging tools")]

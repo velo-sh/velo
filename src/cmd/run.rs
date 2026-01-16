@@ -292,7 +292,7 @@ fn try_zygote_run(
         return Ok(None);
     }
 
-    let socket_path = zygote::ipc::default_socket_path();
+    let socket_path = zygote::core_ipc::default_socket_path();
     let script = Path::new(script_path);
 
     // config is already loaded and passed in
@@ -388,7 +388,7 @@ fn try_zygote_run(
                 if is_stale && !started_new {
                     // Stale socket - remove and restart Zygote
                     eprintln!("🔄 Stale socket detected, restarting Zygote...");
-                    zygote::ipc::cleanup_socket(&socket_path);
+                    zygote::core_ipc::cleanup_socket(&socket_path);
 
                     if let Ok(()) = launcher.start(&[], None, false, config) {
                         eprintln!("✅ Zygote ready");

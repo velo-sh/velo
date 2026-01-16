@@ -58,7 +58,7 @@ pub fn cmd_zygote(args: &[String]) -> Result<()> {
 #[cfg(unix)]
 fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<()> {
     let python_path = python::detect_python(project_dir)?;
-    let socket_path = zygote::ipc::default_socket_path();
+    let socket_path = zygote::core_ipc::default_socket_path();
 
     if socket_path.exists() {
         println!("⚡ Zygote already running");
@@ -104,19 +104,23 @@ fn cmd_zygote_start(_project_dir: &Path, _preload_arg: Option<String>) -> Result
 
 #[cfg(unix)]
 fn cmd_zygote_stop() {
-    let socket_path = zygote::ipc::default_socket_path();
+    let socket_path = zygote::core_ipc::default_socket_path();
 
     if !socket_path.exists() {
         println!("ℹ️  Zygote not running");
     } else {
         println!("🛑 Stopping Zygote...");
-        match zygote::ipc::send_command(&socket_path, zygote::ipc::ZygoteCommand::Shutdown, None) {
+        match zygote::core_ipc::send_command(
+            &socket_path,
+            zygote::core_ipc::ZygoteCommand::Shutdown,
+            None,
+        ) {
             Ok(_) => {
                 println!("✅ Zygote stopped");
             }
             Err(e) => {
                 eprintln!("⚠️  Error stopping Zygote: {}", e);
-                zygote::ipc::cleanup_socket(&socket_path);
+                zygote::core_ipc::cleanup_socket(&socket_path);
                 println!("   Socket cleaned up");
             }
         }
@@ -132,7 +136,7 @@ fn cmd_zygote_stop() {
 fn cmd_zygote_status() {
     println!("▸ Zygote Status");
     match crate::zygote::get_status() {
-        Ok(crate::zygote::ipc::ZygoteResponse::Status { pid, preload, .. }) => {
+        Ok(crate::zygote::core_ipc::ZygoteResponse::Status { pid, preload, .. }) => {
             println!("├─ Status: Running ✅ (PID: {})", pid);
             if preload.is_empty() {
                 println!("└─ Preload: None");

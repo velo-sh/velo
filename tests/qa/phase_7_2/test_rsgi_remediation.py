@@ -225,7 +225,10 @@ async def app(scope, receive, send):
             except urllib.error.HTTPError as e:
                 status = e.code
                 
-            assert status == 501, f"Expected 501 for WebSocket, got {status}"
+            try:
+                assert status == 501, f"Expected 501 for WebSocket, got {status}"
+            except AssertionError as e:
+                raise e
             print(f"Verified C04: WebSocket returned {status}")
             
         finally:

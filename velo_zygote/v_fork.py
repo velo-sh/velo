@@ -95,12 +95,12 @@ class ForkHandler:
 
                 # RFC-0012: Activate security shield in worker after fork
                 try:
-                    from .shield import ImportShield
+                    from .v_shield import ImportShield
 
                     ImportShield.activate()
                 except (ImportError, ValueError):
                     try:
-                        from shield import ImportShield  # type: ignore[no-redef, import-not-found]
+                        from v_shield import ImportShield  # type: ignore[no-redef, import-not-found]
 
                         ImportShield.activate()
                     except:
@@ -186,7 +186,7 @@ class ForkHandler:
 
         # 2.5 Security: Activate ImportShield (Trap 178.5)
         try:
-            from velo_zygote.shield import ImportShield
+            from velo_zygote.v_shield import ImportShield
 
             ImportShield.activate()
         except ImportError:

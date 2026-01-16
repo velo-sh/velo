@@ -39,7 +39,7 @@ pub enum MemoryError {
 
     /// Alignment calculation error
     #[error("Alignment error: {0}")]
-    AlignmentError(#[from] super::alignment::AlignmentError),
+    AlignmentError(#[from] super::util_alignment::AlignmentError),
 
     /// Invalid SHM name (e.g., contains NUL byte)
     #[error("Invalid SHM name: {0}")]

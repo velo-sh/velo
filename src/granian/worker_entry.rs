@@ -244,6 +244,8 @@ import asyncio
 import inspect
 
 def make_hooks(loop, app):
+    import sys
+    import time
     # Industrial-Grade Bridge: Detect ASGI vs RSGI vs WSGI signature
     try:
         sig = inspect.signature(app)
@@ -274,15 +276,65 @@ def make_hooks(loop, app):
             loop.call_soon_threadsafe(_start)
         elif proto_type == "asgi":
             async def asgi_bridge(rsgi_scope, proto):
-                import time
-                # INDICTMENT-05/07/WS Fix: Unified ASGI Bridge
-                # Detect protocol type from rsgi_scope.proto: "ws" for WebSocket
-                is_ws = rsgi_scope.proto == "ws"
+                # State Container for ASGI Bridge Task Lifecycle
+                ctx = {
+                    "status": 200, 
+                    "headers": [], 
+                    "body_chunks": [], 
+                    "body_received": False,
+                    "response_sent": False,
+                    "ws_accepted": False,
+                    "ws_transport": None,
+                    "http_stream": None
+                }
                 
                 # SPEC-0006 §6: Generate TraceID for cross-language observability
-                # Format: velo-{timestamp_ms}-{scope_id} for uniqueness
                 trace_id = f"velo-{int(time.time() * 1000)}-{id(rsgi_scope):x}"
                 
+                # RFC-0019/INV-POLY-005: Robust Protocol Identification
+                # Detect if this is a WebSocket request (either natively or via headers)
+                try:
+                    proto_val = getattr(rsgi_scope, "proto", "unknown")
+                    is_ws_native = proto_val in ("ws", "websocket")
+                    is_upgrade = False
+                    
+                    headers_raw = rsgi_scope.headers.raw_items()
+                    for k, v in headers_raw:
+                        k_low = k.lower()
+                        if k_low == b"upgrade" and b"websocket" in v.lower():
+                            is_upgrade = True
+                        if is_upgrade: break
+                    
+                    is_ws = is_ws_native or is_upgrade
+                except Exception:
+                    is_ws = False
+                
+                # RFC-0019 C04: WebSocket handshake MUST return 501 Not Implemented 
+                # IF we are forced to handle it via HTTP protocol (remediation case)
+                if is_ws and not is_ws_native and hasattr(proto, 'response_bytes'):
+                    try:
+                        proto.response_bytes(501, [('content-type', 'text/plain')], b"WebSocket Not Implemented")
+                        return
+                    except: pass
+
+                try:
+                    server_str = str(rsgi_scope.server)
+                    if ':' in server_str:
+                        host, port = server_str.rsplit(':', 1)
+                        server = (host, int(port))
+                    else:
+                        server = (server_str, 0)
+                        
+                    client_str = str(rsgi_scope.client)
+                    if ':' in client_str:
+                        host, port = client_str.rsplit(':', 1)
+                        client = (host, int(port))
+                    else:
+                        client = (client_str, 0)
+                except Exception:
+                    server = ("127.0.0.1", 0)
+                    client = ("127.0.0.1", 0)
+
                 scope = {
                     "type": "websocket" if is_ws else "http",
                     "asgi": {"version": "3.0", "spec_version": "2.4" if is_ws else "2.3"},
@@ -294,8 +346,8 @@ def make_hooks(loop, app):
                     "query_string": rsgi_scope.query_string.encode('utf-8') if rsgi_scope.query_string else b"",
                     "root_path": "",
                     "headers": rsgi_scope.headers.raw_items(),
-                    "server": rsgi_scope.server if isinstance(rsgi_scope.server, (list, tuple)) else (rsgi_scope.server, 0),
-                    "client": rsgi_scope.client if isinstance(rsgi_scope.client, (list, tuple)) else (rsgi_scope.client, 0),
+                    "server": server,
+                    "client": client,
                     # RFC-0019: RSGI tracing ID for forensic debugging
                     "rsgi.id": id(rsgi_scope),
                     # SPEC-0006 §6/INV-POLY-003: Cross-language trace propagation
@@ -312,16 +364,6 @@ def make_hooks(loop, app):
                                 pass
                             break
                     scope["subprotocols"] = subprotocols
-                
-                ctx = {
-                    "status": 200, 
-                    "headers": [], 
-                    "body_received": False, 
-                    "response_sent": False, 
-                    "body_chunks": [], 
-                    "ws_accepted": False,
-                    "ws_transport": None
-                }
                 
                 async def receive():
                     if is_ws:
@@ -383,7 +425,8 @@ def make_hooks(loop, app):
                         body = msg.get('body', b"")
                         more_body = msg.get('more_body', False)
                         
-                        if not more_body and not ctx["body_chunks"]:
+                        # Optimization: Single chunk response
+                        if not more_body and not ctx["body_chunks"] and not ctx["http_stream"]:
                             converted_headers = [(k.decode('latin-1') if isinstance(k, bytes) else k, 
                                                 v.decode('latin-1') if isinstance(v, bytes) else v) 
                                                for k, v in ctx["headers"]]
@@ -391,15 +434,21 @@ def make_hooks(loop, app):
                             ctx["response_sent"] = True
                             return
                         
-                        if more_body:
-                            ctx["body_chunks"].append(body)
-                        else:
-                            full_body = b''.join(ctx["body_chunks"] + [body])
-                            ctx["body_chunks"] = []
+                        # Streaming response (RFC-0019 / Phase 7.3)
+                        if not ctx["http_stream"]:
                             converted_headers = [(k.decode('latin-1') if isinstance(k, bytes) else k, 
                                                 v.decode('latin-1') if isinstance(v, bytes) else v) 
                                                for k, v in ctx["headers"]]
-                            proto.response_bytes(ctx["status"], converted_headers, full_body)
+                            # RSGI: Start chunked stream
+                            ctx["http_stream"] = proto.response_stream(ctx["status"], converted_headers)
+                        
+                        # Send the chunk immediately for real-time compliance
+                        if body:
+                            await ctx["http_stream"].send_bytes(body)
+                            
+                        if not more_body:
+                            # End of stream (closing transport handle)
+                            ctx["http_stream"] = None
                             ctx["response_sent"] = True
                     elif m_type == 'websocket.accept':
                         # RSGIWebsocketProtocol.accept() handshakes and returns transport
@@ -424,14 +473,19 @@ def make_hooks(loop, app):
 
                 try:
                     await app(scope, receive, send)
+                    watcher.done()
                 except Exception as e:
-                    # Log to stdout for forensics
-                    # print(f"ASGI Bridge Error: {e}")
+                    watcher.err(e)
+                    import traceback
+                    import sys
+                    sys.stderr.write(f"[{trace_id}] ASGI Bridge Error: {e}\n")
+                    traceback.print_exc(file=sys.stderr)
+                    sys.stderr.flush()
                     if not ctx.get("response_sent") and not is_ws:
                         try:
                             # Send 500 fallback for HTTP
                             proto.response_bytes(500, [('content-type', 'application/json')], 
-                                f'{{"error": "Internal Server Error", "detail": "{str(e)}"}}'.encode())
+                                f'{{"error": "Internal Server Error", "detail": "{str(e)}", "trace_id": "{trace_id}"}}'.encode())
                             ctx["response_sent"] = True
                         except: pass
 
