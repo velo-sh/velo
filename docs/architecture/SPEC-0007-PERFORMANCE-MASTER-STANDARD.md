@@ -2,7 +2,18 @@
 
 **Status**: APPROVED (Phase 7.3 Stabilization)
 **Author**: Architect
-**Date**: 2026-01-14
+**Date**: 2026-01-16
+**Related RFCs**: [RFC-0019](../rfcs/0019-native-sovereignty.md), [RFC-0013](../rfcs/0013-top100-baseline.md), [RFC-0031](../rfcs/0031-kinetic-optimization.md)
+
+## 0. The Performance Codex (Index)
+> **Organization**: This Standard consolidates the following specialized documents:
+
+| Document | Role | Scope |
+|:---|:---|:---|
+| **SPEC-0007** (This Doc) | **The Law** | Governance, Coding Standards, Invariants |
+| [RFC-0019 (Native)](../rfcs/0019-native-sovereignty.md) | **The Strategy** | Architecture, Memory Safety Zones, Allocator Stats |
+| [RFC-0031 (Kinetic)](../rfcs/0031-kinetic-optimization.md) | **The Tactics** | Specific Optimization Logic (Hardcore Mode) |
+| [RFC-0013 (Baseline)](../rfcs/0013-top100-baseline.md) | **The Ruler** | Benchmarking Methodology (Top 100) |
 
 ## 1. Introduction
 Velo is engineered for "Industrial Sincerity," where performance is not a patch but a structural property. This standard consolidates the "Black Magic" patterns that allow Velo to bridge the Rust-Python gap with near-zero overhead.
@@ -98,11 +109,56 @@ To balance feedback speed with production integrity, Velo CI follows a tiered ex
 | **Serialization** | `rkyv` / `MsgPack` | SIMD-accelerated, zero-copy deserialization |
 | **Compiler** | `LTO = "fat"` | Cross-crate link-time optimization |
 
-## 5. Shadow Optimization (Future Vision)
-- **Idle-Time Compiling**: Velo records hot-paths during peak traffic and compiles them to native code during idle periods (Shadow Compiler).
+## 5. Shadow Optimization (Future Vision: Phase 8.0+)
+- **Idle-Time Compiling`: Velo records hot-paths during peak traffic and compiles them to native code during idle periods (Shadow Compiler).
 - **Predictive Warming**: Anticipates load spikes to pre-fork Workers before they are needed.
+
+### 5.1 Hardware Affinity (Phase 8.0)
+- **NUMA Pinning**: To minimize L3 Cache Misses in >50k RPS scenarios, Workers shall be pinned to specific CPU Cores (`hwloc`), respecting NUMA topology.
+- **Worker Isolation**: Strict statelessness enforcement to allow aggressive "Kill & Respawn" rotation without session loss.
+
+### 5.2 Deep Observability
+- **Prometheus Exporter**: `/metrics` endpoint exposing:
+    - Active Connections (Gauge)
+    - Circuit Breaker Trips (Counter)
+    - Zygote Respawns (Counter)
+- **Goal**: Visualize the "Heartbeat" of the system.
+
+### 5.3 Chaos Verification ("Grim Reaper" Proving Ground)
+- **Automated Kill Scripts**: `chaos_kill.py` to randomly `kill -9` workers during load tests.
+- **Invariant**: 0% Error Rate during chaos rotation (User Perception < 100ms).
 
 ## 6. Industrial Invariants
 1. **INV-PERF-001**: Any body payload > 1MB MUST utilize the `memfd + SCM_RIGHTS` path.
 2. **INV-PERF-002**: Worker cold-start (including FastAPI init) MUST remain below **50ms**.
 3. **INV-PERF-003**: No Python worker shall manage its own event loop; the Rust Host drives the execution pulse.
+
+## 7. The Kinetic Coding Standard (Titanium Hardcore)
+> **Added**: Phase XI (2026-01-16)
+> **Philosophy**: Hardware Sympathy. Zero Allocation.
+
+To achieve **< 50ms startup** and **DoS Resilience**, all Velo code must adhere to these "Hardcore" patterns.
+
+### 7.1 Memory: The Hierarchy of Speed
+1.  **Stack First**: For small artifacts (< 1KB) like Handshake packets or Heartbeats, use `SmallVec` or array on stack. **NEVER `malloc`**.
+2.  **Recycle Second**: For repetitive hot-path objects (IPC Buffers), use a **Bounded Recycler** (`ArrayQueue<Vec<u8>>`).
+    *   *Constraint*: Max pool size = 128. Max item size = 64KB.
+    *   *Why?*: Go uses Channels to dodge GC; Rust uses Recyclers to dodge **Allocator Contention** (`malloc` locks).
+3.  **Heap Last**: `Vec::new()` is forbidden in the `fork()` or `serve()` hot loop.
+
+### 7.2 Concurrency: Sharding & Locality
+1.  **Shard the Locks**: If a Mutex protects a map, split it into `N = CPU` shards.
+    *   *Pattern*: `Vec<Mutex<HashMap>>` instead of `Mutex<HashMap>`.
+2.  **Local Queues**: A Worker should pull from a local MPSC channel first, and only "steal" from a global queue if empty.
+    *   *Why*: Reduces CPU cache thrashing.
+
+### 7.3 Resilience: Defensive Coding
+1.  **Rate Limit Everything**: No error log or warning shall be emitted without a `RateLimiter` (Token Bucket).
+    *   *Rule*: "Logs must not kill the disk."
+2.  **Bounded Queues**: `unbounded_channel` is **STRICTLY PROHIBITED**. Every queue must backpressure.
+
+### 7.4 Unsafe: The Nuclear Option (Experimental)
+*   **Zero-Copy String Casting**: `unsafe { from_utf8_unchecked }` is permitted **ONLY** for:
+    *   Internal, trusted tags (e.g., `[SUP]`, `[SID:...]`).
+    *   High-frequency scanning paths (> 10k ops/sec).
+*   **Audit**: Must be gated behind `#[cfg(feature = "unsafe_log_fast_path")]`.
