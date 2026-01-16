@@ -523,7 +523,6 @@ pub fn accept_command(
     Ok((stream, cmd, fd))
 }
 
-
 /// Send a response back to the launcher
 pub fn send_response(stream: &mut UnixStream, response: ZygoteResponse) -> Result<()> {
     write_message(stream, &response, None)
