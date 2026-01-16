@@ -269,10 +269,11 @@ impl Worker {
 
         // Security Shield + Sovereignty: Set up Python environment
         // RFC-0012: Always use EnvironmentShield for environment sanitization.
+        // REFACTOR: Use shield.apply() to enforce strict whitelist (clears toxins)
+
         let shield = crate::lifecycle::safety::EnvironmentShield::new(_config);
-        let env = shield.compile_env();
-        for (k, v) in env {
-            cmd.env(k, v);
+        if let Err(e) = shield.apply(&mut cmd) {
+            log::warn!("Security Shield Warning: {}", e);
         }
 
         // SSOT: Python Environment Configuration
@@ -295,15 +296,6 @@ impl Worker {
                     cmd.env("VIRTUAL_ENV", venv_root);
                 }
             }
-        }
-
-        // FIX: Explicitly forward PYTHONHOME if present in host
-        // This is critical for embedded PyO3 to find stdlib when running in uv/venv
-        if let Ok(home) = std::env::var("PYTHONHOME") {
-            cmd.env("PYTHONHOME", home);
-        }
-        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-            cmd.env("VIRTUAL_ENV", venv);
         }
 
         // Also pass the Python executable path for PyO3 to use
