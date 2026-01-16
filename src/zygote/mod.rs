@@ -395,7 +395,12 @@ impl ZygoteLauncher {
         // Use 'env' to wrapper execution (Workaround for macOS symlink/Command::new issue)
         let mut cmd = Command::new("env");
         cmd.arg(&python);
-        // cmd.env_clear();
+        // DEF-72-SEC-002: Hard Shielding - Explicitly remove dangerous vars
+        // We cannot use env_clear() safely here because we need basic system envs,
+        // but we MUST scrub interception paths to prevent the Shield bypass.
+        cmd.env_remove("PYTHONPATH");
+        cmd.env_remove("PYTHONHOME");
+        cmd.env_remove("VIRTUAL_ENV");
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
         let shield = EnvironmentShield::new(config);
