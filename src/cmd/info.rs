@@ -87,7 +87,7 @@ pub fn cmd_info() -> Result<()> {
     if !crate::zygote::is_supported() {
         println!("└─ Not supported on this platform ⚠️");
     } else {
-        use crate::zygote::ipc::ZygoteResponse;
+        use crate::zygote::core_ipc::ZygoteResponse;
         match crate::zygote::get_status() {
             Ok(ZygoteResponse::Status { pid, preload, .. }) => {
                 println!("├─ PID:     {}", pid);

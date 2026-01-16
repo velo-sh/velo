@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::zygote::ipc;
+use crate::zygote::core_ipc as ipc;
 use uuid::Uuid;
 
 pub struct Worker {

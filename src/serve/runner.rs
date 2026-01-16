@@ -803,7 +803,7 @@ pub fn run_server(
     }
 
     if use_zygote && crate::zygote::is_supported() {
-        let socket_path = crate::zygote::ipc::default_socket_path();
+        let socket_path = crate::zygote::core_ipc::default_socket_path();
 
         if !socket_path.exists() {
             logger.info(&format!("Pre-warming Zygote with {} modules...", framework));
@@ -827,22 +827,22 @@ pub fn run_server(
                 // RAII: Keep Zygote alive as long as this function runs
                 _zygote_guard = Some(launcher);
             }
-        } else if crate::zygote::ipc::is_socket_alive(&socket_path) {
+        } else if crate::zygote::core_ipc::is_socket_alive(&socket_path) {
             logger.info("Using existing Zygote (Socket Found)");
 
             // RFC-0011 Audit Remediation: Perform Deep Handshake to verify Zygote is active
             // This prevents the "Shadow Trap" where a stale socket file leads to a silent fallback.
-            match crate::zygote::ipc::send_command(
+            match crate::zygote::core_ipc::send_command(
                 &socket_path,
-                crate::zygote::ipc::ZygoteCommand::Handshake {
-                    version: crate::zygote::ipc::PROTOCOL_VERSION,
+                crate::zygote::core_ipc::ZygoteCommand::Handshake {
+                    version: crate::zygote::core_ipc::PROTOCOL_VERSION,
                     capabilities: vec!["serve:http".to_string()],
                     request_id: Some(uuid::Uuid::now_v7().to_string()),
                 },
                 None,
             ) {
-                Ok(crate::zygote::ipc::ZygoteResponse::Handshake { version, .. })
-                    if version == crate::zygote::ipc::PROTOCOL_VERSION =>
+                Ok(crate::zygote::core_ipc::ZygoteResponse::Handshake { version, .. })
+                    if version == crate::zygote::core_ipc::PROTOCOL_VERSION =>
                 {
                     logger.info(&format!("Existing Zygote verified (Protocol v{})", version));
                     _zygote_guard = Some(ZygoteLauncher::new(socket_path));
@@ -969,7 +969,7 @@ pub fn run_server(
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
         eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
-        let socket_path = crate::zygote::ipc::default_socket_path();
+        let socket_path = crate::zygote::core_ipc::default_socket_path();
 
         for i in 0..args.workers {
             match crate::serve::worker::Worker::spawn_uds_via_zygote(

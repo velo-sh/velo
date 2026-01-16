@@ -18,16 +18,16 @@
 
 pub mod auto_config;
 pub mod cli;
+pub mod core_ipc;
 pub mod error;
-pub mod ipc;
 
 extern crate log;
 
 use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
 use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
+use core_ipc::{ZygoteResponse, is_socket_alive};
 use error::{Result, ZygoteError};
-use ipc::{ZygoteResponse, is_socket_alive};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -68,7 +68,7 @@ pub fn get_log_path() -> PathBuf {
 
 /// Get Zygote status
 pub fn get_status() -> Result<ZygoteResponse> {
-    use ipc::{ZygoteCommand, default_socket_path, send_command};
+    use core_ipc::{ZygoteCommand, default_socket_path, send_command};
 
     let socket_path = default_socket_path();
     if !socket_path.exists() {
@@ -371,7 +371,7 @@ impl ZygoteLauncher {
         config: &VeloConfig,
     ) -> Result<()> {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
-        ipc::cleanup_stale_sockets();
+        core_ipc::cleanup_stale_sockets();
 
         if self.is_running() {
             return Ok(());
@@ -384,7 +384,7 @@ impl ZygoteLauncher {
         });
 
         // RFC-0011: Standardized socket path
-        let socket_path = crate::zygote::ipc::default_socket_path();
+        let socket_path = crate::zygote::core_ipc::default_socket_path();
         log::info!("🚀 Zygote using socket: {}", socket_path.display());
 
         // Find zygote module
@@ -693,18 +693,18 @@ impl ZygoteLauncher {
         log::info!("Zygote socket detected. Performing deep probe...");
 
         // 1. Connect and verify Ready greeting (handled by ZygoteStream::connect)
-        let mut zygote_stream = ipc::ZygoteStream::connect(&self.socket_path)?;
+        let mut zygote_stream = core_ipc::ZygoteStream::connect(&self.socket_path)?;
 
         // 2. Perform Handshake
         log::debug!("Performing protocol handshake...");
-        let handshake_cmd = ipc::ZygoteCommand::Handshake {
-            version: ipc::PROTOCOL_VERSION,
+        let handshake_cmd = core_ipc::ZygoteCommand::Handshake {
+            version: core_ipc::PROTOCOL_VERSION,
             capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
         let response = zygote_stream.send_command(&handshake_cmd, None)?;
 
-        if let ipc::ZygoteResponse::Handshake {
+        if let core_ipc::ZygoteResponse::Handshake {
             version,
             capabilities,
         } = response
@@ -720,12 +720,12 @@ impl ZygoteLauncher {
 
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
-        let status_cmd = ipc::ZygoteCommand::Status {
+        let status_cmd = core_ipc::ZygoteCommand::Status {
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
         let response = zygote_stream.send_command(&status_cmd, None)?;
 
-        if let ipc::ZygoteResponse::Status { pid, .. } = response {
+        if let core_ipc::ZygoteResponse::Status { pid, .. } = response {
             if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
                 log::warn!(
                     "Deep probe PID mismatch: got {}, expected {} (Possible Shadow Trap, but continuing)",
@@ -763,7 +763,8 @@ impl ZygoteLauncher {
 
         // Try to send shutdown command
         if self.socket_path.exists() {
-            let _ = ipc::send_command(&self.socket_path, ipc::ZygoteCommand::Shutdown, None);
+            let _ =
+                core_ipc::send_command(&self.socket_path, core_ipc::ZygoteCommand::Shutdown, None);
         }
 
         // Wait for process to exit or kill it
@@ -802,7 +803,7 @@ impl ZygoteLauncher {
         }
 
         // Cleanup socket file
-        ipc::cleanup_socket(&self.socket_path);
+        core_ipc::cleanup_socket(&self.socket_path);
         self.zygote_pid = None;
 
         Ok(())
@@ -827,7 +828,7 @@ impl ZygoteLauncher {
                     // WB-002: Liveness Probe Handshake (Friendly)
                     // We must verify the Zygote is actually responsive to IPC,
                     // not just "running" in a deadlocked or stale state.
-                    ipc::is_socket_responsive(&self.socket_path)
+                    core_ipc::is_socket_responsive(&self.socket_path)
                 }
                 _ => {
                     // Process died or error
@@ -838,7 +839,7 @@ impl ZygoteLauncher {
             }
         } else {
             // If we don't own the process, a probe is the only way.
-            ipc::is_socket_responsive(&self.socket_path)
+            core_ipc::is_socket_responsive(&self.socket_path)
         }
     }
 
@@ -901,9 +902,9 @@ impl ZygoteLauncher {
         };
 
         // Send FORK command over socket
-        let response = ipc::send_command(
+        let response = core_ipc::send_command(
             &self.socket_path,
-            ipc::ZygoteCommand::Fork {
+            core_ipc::ZygoteCommand::Fork {
                 script_path,
                 args: args.iter().map(|s| s.to_string()).collect(),
                 async_mode,
@@ -926,7 +927,7 @@ impl ZygoteLauncher {
         )?;
 
         match response {
-            ipc::ZygoteResponse::Forked {
+            core_ipc::ZygoteResponse::Forked {
                 worker_pid,
                 exit_code,
             } => {
@@ -946,7 +947,7 @@ impl ZygoteLauncher {
                     exit_code_path: Some(exit_code_path),
                 })
             }
-            ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
+            core_ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
             _ => Err(ZygoteError::ProtocolError(
                 "Unexpected response to Fork command".to_string(),
             )),

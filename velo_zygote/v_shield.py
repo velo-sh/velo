@@ -36,7 +36,7 @@ class ImportShield:
         # The shield is activated AFTER the Zygote imports what it needs,
         # but workers still need some internal modules for bootstrap.
         whitelist = {
-            "velo_zygote.rsgi",
+            "velo_zygote.v_rsgi",
             "velo_zygote.utils",
             "velo_zygote.bootstrap",
             "velo_zygote.settings",

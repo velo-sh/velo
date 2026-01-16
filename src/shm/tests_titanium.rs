@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::config::VeloConfig;
-    use crate::shm::alignment;
     use crate::shm::constants::*;
     use crate::shm::registry::MemoryRegistry;
+    use crate::shm::util_alignment as alignment;
     use std::io::{Seek, SeekFrom, Write};
     use tempfile::NamedTempFile;
 

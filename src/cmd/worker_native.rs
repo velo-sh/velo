@@ -33,6 +33,9 @@ pub struct WorkerNativeCmd {
 
 /// Handle 'velo worker-native' command
 pub fn cmd_worker_native(args: &[String]) -> Result<()> {
+    // RFC-0020: Every velo process must initialize structured logging.
+    let _ = env_logger::try_init();
+
     // Parse with clap - skip "velo" prefix
     let cmd = WorkerNativeCmd::try_parse_from(&args[1..])?;
 

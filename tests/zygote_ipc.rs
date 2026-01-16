@@ -12,7 +12,7 @@ mod ipc_tests {
     #[test]
     fn test_socket_path_generation() {
         // Socket should be in temp directory with unique name
-        let socket_path = velo::zygote::ipc::default_socket_path();
+        let socket_path = velo::zygote::core_ipc::default_socket_path();
         assert!(socket_path.to_string_lossy().contains("velo-zygote"));
     }
 
@@ -23,19 +23,19 @@ mod ipc_tests {
         let socket_path = temp_dir.path().join("test-zygote.sock");
 
         // Create socket
-        let listener = velo::zygote::ipc::create_listener(&socket_path).unwrap();
+        let listener = velo::zygote::core_ipc::create_listener(&socket_path).unwrap();
         assert!(socket_path.exists());
 
         // Cleanup
         drop(listener);
-        velo::zygote::ipc::cleanup_socket(&socket_path);
+        velo::zygote::core_ipc::cleanup_socket(&socket_path);
         assert!(!socket_path.exists());
     }
 
     /// Test message serialization/deserialization with MessagePack
     #[test]
     fn test_message_roundtrip() {
-        use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
+        use velo::zygote::core_ipc::{ZygoteCommand, ZygoteResponse};
 
         // Test FORK command with MessagePack
         let fork_cmd = ZygoteCommand::Fork {
@@ -120,7 +120,7 @@ mod ipc_tests {
     #[test]
     fn test_socket_roundtrip() {
         use std::thread;
-        use velo::zygote::ipc::{ZygoteCommand, ZygoteResponse};
+        use velo::zygote::core_ipc::{ZygoteCommand, ZygoteResponse};
 
         let temp_dir = tempfile::tempdir().unwrap();
         let socket_path = temp_dir.path().join("test-roundtrip.sock");
@@ -128,7 +128,7 @@ mod ipc_tests {
 
         // Start server in background thread (mock Zygote with MessagePack)
         let server_handle = thread::spawn(move || {
-            let listener = velo::zygote::ipc::create_listener(&socket_path_clone).unwrap();
+            let listener = velo::zygote::core_ipc::create_listener(&socket_path_clone).unwrap();
 
             // Accept connection
             let (mut stream, _) = listener.accept().unwrap();
@@ -156,7 +156,7 @@ mod ipc_tests {
         thread::sleep(Duration::from_millis(100));
 
         // Connect as client and send command
-        let response = velo::zygote::ipc::send_command(
+        let response = velo::zygote::core_ipc::send_command(
             &socket_path,
             ZygoteCommand::Fork {
                 script_path: PathBuf::from("/tmp/test.py"),
@@ -193,9 +193,9 @@ mod ipc_tests {
         let socket_path = temp_dir.path().join("nonexistent.sock");
 
         // Connecting to non-existent socket should fail
-        let result = velo::zygote::ipc::send_command(
+        let result = velo::zygote::core_ipc::send_command(
             &socket_path,
-            velo::zygote::ipc::ZygoteCommand::Shutdown,
+            velo::zygote::core_ipc::ZygoteCommand::Shutdown,
             None,
         );
         assert!(result.is_err());

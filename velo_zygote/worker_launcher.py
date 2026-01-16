@@ -72,13 +72,13 @@ def main() -> None:
         parser.add_argument("--rsgi", action="store_true")
         args = parser.parse_args()
 
-        from velo_zygote.shield import ImportShield
+        from velo_zygote.v_shield import ImportShield
         from velo_zygote.paths import VeloPaths
         from velo_zygote.settings import VeloConfig
         from velo_zygote import integrity
         
         if args.rsgi:
-            from velo_zygote.rsgi import run_rsgi
+            from velo_zygote.v_rsgi import run_rsgi
             ImportShield.activate()
             VeloPaths.sanitize_sys_path(__file__)
             run_rsgi(args.app, args.uds)

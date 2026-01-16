@@ -38,8 +38,8 @@ fn test_registry_create_segment() {
 #[test]
 fn test_alignment_logic() {
     // L4-SHM-11 (Alignment)
-    assert_eq!(velo::shm::alignment::calculate_padding(56).unwrap(), 0);
-    assert_eq!(velo::shm::alignment::calculate_padding(1).unwrap(), 55);
+    assert_eq!(velo::shm::util_alignment::calculate_padding(56).unwrap(), 0);
+    assert_eq!(velo::shm::util_alignment::calculate_padding(1).unwrap(), 55);
 }
 
 #[test]

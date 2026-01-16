@@ -1,9 +1,9 @@
 #[cfg(target_os = "linux")]
 use crate::common::governance::{GovernanceSignal, SignalComponent};
 use crate::config::VeloConfig;
-use crate::shm::alignment;
 use crate::shm::constants::*;
 use crate::shm::error::MemoryError;
+use crate::shm::util_alignment as alignment;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};

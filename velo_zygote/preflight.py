@@ -17,7 +17,7 @@ try:
     bootstrap.initialize()
 
     from .env_profile import ENV_PROFILE, RunContext, OsType
-    from .shield import ImportShield, PathValidator
+    from .v_shield import ImportShield, PathValidator
     from .settings import velo_config
 except (ImportError, ValueError):
     # Fallback for direct execution if needed
@@ -26,7 +26,7 @@ except (ImportError, ValueError):
     bootstrap.initialize()
 
     from env_profile import ENV_PROFILE, RunContext, OsType
-    from shield import ImportShield, PathValidator
+    from v_shield import ImportShield, PathValidator
     from settings import velo_config
 
 

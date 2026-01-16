@@ -33,32 +33,32 @@ try:
     from velo_zygote.constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
     from velo_zygote.paths import VeloPaths
     from velo_zygote.settings import velo_config
-    from velo_zygote.shield import PathValidator
+    from velo_zygote.v_shield import PathValidator
     from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
     from velo_zygote.routing import CommandRouter
-    from velo_zygote.fork import ForkHandler, InboundSharedMemory
+    from velo_zygote.v_fork import ForkHandler, InboundSharedMemory
     from velo_zygote.transport_sync import ZygoteTransport, ProtocolError
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
         from .paths import VeloPaths
         from .settings import velo_config
-        from .shield import PathValidator
+        from .v_shield import PathValidator
         from .utils import ForkRateLimiter, LogUtils, request_context
         from .lifecycle import WorkerRegistry, post_fork_reinit
         from .routing import CommandRouter
-        from .fork import ForkHandler, InboundSharedMemory
+        from .v_fork import ForkHandler, InboundSharedMemory
         from .transport_sync import ZygoteTransport, ProtocolError
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef, import-not-found]
         from paths import VeloPaths  # type: ignore[no-redef, import-not-found]
         from settings import velo_config  # type: ignore[no-redef, import-not-found]
-        from shield import PathValidator  # type: ignore[no-redef, import-not-found]
+        from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
         from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
-        from fork import ForkHandler, InboundSharedMemory  # type: ignore[no-redef, import-not-found]
+        from v_fork import ForkHandler, InboundSharedMemory  # type: ignore[no-redef, import-not-found]
         from transport_sync import ZygoteTransport, ProtocolError  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)

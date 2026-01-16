@@ -22,6 +22,7 @@ USAGE:
     velo zygote <start|stop|status|auto-config>
     velo debug <zygote> [OPTIONS]
     velo info
+    velo audit
     velo graph <generate|verify> [OPTIONS]
 
 COMMANDS:
@@ -33,6 +34,7 @@ COMMANDS:
     zygote   Manage Zygote pre-warming daemon
     debug    Internal debugging tools (RFC-0020)
     info     Show environment information
+    audit    Verify architectural governance (audit SSOT/Naming/Perf)
 
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
@@ -66,7 +68,8 @@ OPTIONS:
 
 fn suggest_command(target: &str) -> Option<&'static str> {
     const COMMANDS: &[&str] = &[
-        "run", "serve", "python", "pip", "analyze", "bench", "bundle", "info", "zygote", "graph",
+        "run", "serve", "python", "pip", "analyze", "bench", "bundle", "info", "audit", "zygote",
+        "graph",
     ];
     let mut best_match = None;
     let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
@@ -110,6 +113,7 @@ pub fn run() -> Result<()> {
         "bench" => cmd::cmd_bench(&args),
         "bundle" => cmd::cmd_bundle(&args),
         "info" => cmd::cmd_info(),
+        "audit" => cmd::cmd_audit(&args),
         "zygote" => cmd::cmd_zygote(&args),
         "debug" => cmd::cmd_debug(&args),
         "graph" => cmd::cmd_graph(&args),
