@@ -134,6 +134,12 @@ run_local_ci() {
     
     # Phase 0: FAIL FAST environment check
     check_env_fast
+
+    # Fix DEF-72-CI-001: CI Toolchain Misalignment (macOS)
+    # Ensure rust-cpython/pyo3 links against the hermetic uv python, not system python.
+    log_step "Configuring build toolchain..."
+    export PYO3_PYTHON=$(uv python find 3.11)
+    log_success "Toolchain aligned: PYO3_PYTHON=$PYO3_PYTHON"
     
     # Run full CI pipeline with SSOT test paths
     run_full_ci ".venv" "tests/qa"
