@@ -530,4 +530,67 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_short_hash_consistency() {
+        // Same input should always produce same hash
+        let h1 = VeloPaths::short_hash("/path/to/project:main:app");
+        let h2 = VeloPaths::short_hash("/path/to/project:main:app");
+        assert_eq!(h1, h2, "Hash must be deterministic");
+        assert_eq!(h1.len(), 6, "Hash should be 6 hex characters");
+
+        // Different input should produce different hash
+        let h3 = VeloPaths::short_hash("/other/project:main:app");
+        assert_ne!(h1, h3, "Different inputs should produce different hashes");
+    }
+
+    #[test]
+    fn test_sanitize_project_name() {
+        // Normal project name
+        let name = VeloPaths::sanitize_project_name(Path::new("/home/user/myproject"));
+        assert_eq!(name, "myprojec", "Should be truncated to 8 chars");
+
+        // Short name
+        let name = VeloPaths::sanitize_project_name(Path::new("/home/user/app"));
+        assert_eq!(name, "app");
+
+        // Name with special chars
+        let name = VeloPaths::sanitize_project_name(Path::new("/home/user/my-app.v2"));
+        assert_eq!(name, "myappv2", "Should remove - and .");
+
+        // Empty/root path fallback
+        let name = VeloPaths::sanitize_project_name(Path::new("/"));
+        assert_eq!(name, "proj", "Should fallback to 'proj' for empty");
+
+        // Underscore allowed
+        let name = VeloPaths::sanitize_project_name(Path::new("/home/user/my_app"));
+        assert_eq!(name, "my_app");
+    }
+
+    #[test]
+    fn test_zygote_socket_for_app_format() {
+        // Clear env to test default path generation
+        unsafe {
+            std::env::remove_var("VELO_ZYGOTE_SOCKET");
+        }
+
+        let socket =
+            VeloPaths::zygote_socket_for_app(Path::new("/home/user/myproject"), "main:app");
+
+        let filename = socket.file_name().unwrap().to_string_lossy();
+
+        // Should match format: velo-zygote-{name}-{hash}-v{ver}.sock
+        assert!(
+            filename.starts_with("velo-zygote-"),
+            "Should start with velo-zygote-"
+        );
+        assert!(filename.ends_with(".sock"), "Should end with .sock");
+
+        // Total path should be within limit
+        assert!(
+            socket.to_string_lossy().len() <= SOCKET_PATH_LIMIT,
+            "Socket path must be within {} byte limit",
+            SOCKET_PATH_LIMIT
+        );
+    }
 }
