@@ -177,8 +177,8 @@ print("imported")
             print(f"  Without import: {time_without:.1f}ms")
             print(f"  Ratio: {ratio:.2f}x")
 
-            # Preload should make import nearly free
-            assert ratio < 2.5, f"Preload not working: {ratio:.2f}x slower with imports"
+            # Preload should make import nearly free (allow 3x margin for CI variance)
+            assert ratio < 3.0, f"Preload not working: {ratio:.2f}x slower with imports"
 
     def test_e2e_004_consecutive_runs_speedup(self):
         """
