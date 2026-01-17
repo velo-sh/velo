@@ -151,7 +151,8 @@ fn main() {
          pub const PYTHON_VENV_PATH: &str = \"{py_venv_path}\";\n\
          pub const PYTHON_LIB_DIR_PATTERN: &str = \"{py_lib_dir_pattern}\";\n\
          pub const PYTHON_LIB_DYNLOAD_SUBDIR: &str = \"{py_lib_dynload_subdir}\";\n\
-         pub const PYTHON_ENV_VARS: &[&str] = &[{py_env_vars}];\n",
+         pub const PYTHON_ENV_VARS: &[&str] = &[{py_env_vars}];\n\
+         pub const PYPROJECT_TOML: &str = \"{pyproject_toml}\";\n",
         protocol_version = constants.protocol_version,
         socket_path_limit = constants.socket_path_limit,
         max_message_size = constants.max_message_size,
@@ -170,6 +171,7 @@ fn main() {
             .map(|s| format!("\"{}\"", s))
             .collect::<Vec<_>>()
             .join(", "),
+        pyproject_toml = constants.pyproject_toml,
     );
     fs::write(&dest_path, rust_code).unwrap();
 

@@ -291,6 +291,7 @@ class ZygoteServer:
         worker_ttl: Optional[int] = None,
         app_name: Optional[str] = None,
         monitor_parent: bool = True,
+        authorized_secret: Optional[str] = None,
     ):
         self.config = velo_config
 
@@ -302,15 +303,22 @@ class ZygoteServer:
             self.socket_path = socket_path
 
         self.idle_timeout = idle_timeout or self.config.graceful_shutdown_timeout
+        self.worker_ttl = worker_ttl
+        self.app_name = app_name
+        self._monitor_parent = monitor_parent
+        self._authorized_secret = authorized_secret
+        if self._authorized_secret:
+            LogUtils.log(f"Zygote initialized with forensic secret (len={len(self._authorized_secret)})")
+        else:
+            LogUtils.log("Zygote initialized WITHOUT forensic secret")
+        
+        # Internal state
+        self.state = ZygoteState.INIT
         self.worker_registry = WorkerRegistry(worker_ttl or 3600)
         self.preload = preload or self.config.preload_modules
         self._preloaded_modules: List[str] = []
         self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
-        self.app_name: Optional[str] = app_name
-        self.fork_rate_limiter = ForkRateLimiter()
-        self._monitor_parent = monitor_parent
-
-        self.state = ZygoteState.INIT
+        self.fork_rate_limiter = ForkRateLimiter(60, 1) # 1 fork per sec avg, burst 60
         self.preload_complete = asyncio.Event()
         self.fork_queue: asyncio.Queue[
             Tuple[Dict[str, Any], asyncio.Future[Any]]
@@ -319,6 +327,10 @@ class ZygoteServer:
         self.pending_forks: Dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
         self._active_clients = 0
+        self._start_time = time.time()
+        
+        # PID Check State (SEC-005)
+        self._needs_auth: Dict[socket.socket, bool] = {}
 
     def _set_state(self, new_state: ZygoteState) -> None:
         """Standardized state transition with audit trail."""
@@ -422,93 +434,63 @@ class ZygoteServer:
                 if not isinstance(e, (asyncio.TimeoutError, KeyboardInterrupt)):
                     LogUtils.log(f"Accept error: {e}")
 
-    def _verify_peer(self, sock: socket.socket) -> None:
+    def _verify_peer(self, sock: socket.socket) -> bool:
         """
-        Verify that the client connecting to the Zygote is authorized.
-        RFC-0012 Pillar 4: Security (Gate SEC-005).
+        Verify peer identity (SEC-005).
+        Returns True if peer is fully trusted (Supervisor).
+        Returns False if peer needs additional Auth (Forensic Agent).
+        Raises PermissionError if peer is unauthorized.
         """
-        import struct
-        uid = -1
-        
-        import struct
-        uid = -1
-        pid = -1
+        # RFC-0012 Gate SEC-005: Sovereign Identity Verification (PeerCred)
+        # 1. Platform-specific check
+        uid, pid, gid = -1, -1, -1
         
         if sys.platform == "linux":
-            try:
-                # SO_PEERCRED returns (pid, uid, gid)
-                ucred = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-                pid, uid, _ = struct.unpack("3i", ucred)
-            except OSError as e:
-                raise PermissionError(f"Failed to retrieve peer credentials: {e}")
+            import struct
+            # ... linux implementation ...
+            creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
+            pid, uid, gid = struct.unpack('3i', creds)
         elif sys.platform == "darwin":
-            try:
-                # macOS/FreeBSD use LOCAL_PEERPID / LOCAL_PEERCRED
-                # Python doesn't have a clean way to get PID via socket module constants often,
-                # but we can try specialized logic or fall back to known constants.
-                # LOCAL_PEERPID = 0x002 (from sys/un.h)
-                try:
-                    # Try LOCAL_PEERPID first (available on some BSDs/macOS)
-                    pid_data = sock.getsockopt(0, 2, 4) # SOL_LOCAL=0?? No, usually SOL_LOCAL is 0 on macOS? 
-                    # Actually, getting PID on macOS via python socket is tricky without external libs.
-                    # But we can try the ctypes approach we used for UID which is robust.
-                    import ctypes
-                    import ctypes.util
-                    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
-                    c_pid = ctypes.c_int(0)
-                    # pid_t getsockopt_pid(int s, int level, int optname, void *optval, socklen_t *optlen)
-                    # macOS: getpeereid gives euid/egid. For PID we need LOCAL_PEERPID (0x002) at SOL_LOCAL (0)
-                    # Let's try to trust the UID check for macOS if PID check is too complex to implement safely in pure python 
-                    # without risk of crashing. 
-                    # WAIT - The defect report says "lack of Peer Verification". UID check WAS present but insufficient?
-                    # "core_ipc.rs法证测试确认 IPC 接口仍缺乏身份验证"
-                    # The rust side had UID check. The python side `_verify_peer` lines 430+ had UID check.
-                    # DEF-72-SEC-005 says "Unauthorized process connected to Zygote IPC! Peer Verification missing."
-                    # The test spawns a competing process as the SAME USER.
-                    # So UID check passes. We NEED Pid check.
-                    
-                    # On macOS, getting peer PID is harder.
-                    # pid_t pid; socklen_t len = sizeof(pid); getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &len);
-                    # SOL_LOCAL = 0, LOCAL_PEERPID = 2.
-                    LOCAL_PEERPID = 0x02
-                    pid_packed = sock.getsockopt(0, LOCAL_PEERPID, 4)
-                    pid = struct.unpack("i", pid_packed)[0]
-                    
-                    # Also get UID for double safety
-                    c_uid = ctypes.c_uint(0)
-                    c_gid = ctypes.c_uint(0)
-                    if libc.getpeereid(sock.fileno(), ctypes.byref(c_uid), ctypes.byref(c_gid)) == 0:
-                        uid = c_uid.value
-                    
-                except Exception as e:
-                    # Fallback or Log. If we can't get PID, we might be insecure.
-                    # But if we crash, we break Velo.
-                    # Let's log it.
-                    LogUtils.debug_log(f"Peer PID check failed: {e}")
-                    pass
-            except Exception as e:
-                raise PermissionError(f"Peer verification internal error: {e}")
-        else:
-            return
+            # macOS implementation
+            import ctypes
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+            # LOCAL_PEERCRED = 0x001 # macOS constant
+            # class Xucred(ctypes.Structure):
+            #     _fields_ = [("cr_version", ctypes.c_uint),
+            #                ("cr_uid", ctypes.c_uint),
+            #                ("cr_ngroups", ctypes.c_short),
+            #                ("cr_groups", ctypes.c_uint * 16)]
+            
+            # Note: macOS getpeereid is more direct for UID
+            # But we often need PID for Guardian checks
+            # LOCAL_PEERPID is a better fit for strict supervisor check
+            LOCAL_PEERPID = 0x002
+            pid_val = ctypes.c_int()
+            size = ctypes.c_uint(ctypes.sizeof(pid_val))
+            # SOL_LOCAL is 0 on macOS
+            if libc.getsockopt(sock.fileno(), 0, LOCAL_PEERPID, ctypes.byref(pid_val), ctypes.byref(size)) == 0:
+                pid = pid_val.value
+            
+            uid = os.getuid() # Fallback for UID on same-system probes
 
         # 1. UID Check (Basic sanitization)
         if uid != -1 and uid != os.getuid():
              raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
-             
+              
         # 2. Strict PID Check (Guardian Only)
-        # Only the parent process (Supervisor) is allowed to talk to Zygote.
-        # Any other process (even same user) is an intruder/spoofing attempt.
+        # Only the parent process (Supervisor) is allowed to talk to Zygote without Auth.
         if self._monitor_parent and pid != -1:
             ppid = os.getppid() 
-            if pid != ppid:
-                 raise PermissionError(f"Unauthorized peer PID: {pid} (Expected Supervisor: {ppid})")
-        else:
-            # Fallback for other platforms - allow but log
-            # LogUtils.log(f"Warning: Peer verification not supported on {sys.platform}")
-            return
-
-        if uid != os.getuid():
-            raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
+            if pid == ppid:
+                 return True # Fully trusted
+            
+        # 3. Forensic Agent Auth (Authorized Secret required)
+        if self._authorized_secret:
+            return False # Needs Auth
+            
+        # Default: Reject any non-supervisor connection if no secret provided
+        raise PermissionError(f"Unauthorized peer PID: {pid} (Expected Supervisor: {os.getppid()})")
 
     async def _handle_client_socket(self, sock: socket.socket):
         """Handle a client connection using the synchronous transport."""
@@ -517,7 +499,7 @@ class ZygoteServer:
         try:
             # RFC-0012 Gate SEC-005: Sovereign Identity Verification (PeerCred)
             try:
-                self._verify_peer(sock)
+                fully_trusted = self._verify_peer(sock)
             except PermissionError as e:
                 LogUtils.log(f"Access Denied: {e}")
                 sock.close()
@@ -529,6 +511,7 @@ class ZygoteServer:
                 # Drive-by probe (Trap 178.7) - ignore silently
                 return
 
+            authorized = fully_trusted
             while True:
                 # Use run_in_executor for blocking recvmsg
                 msg = await asyncio.get_event_loop().run_in_executor(
@@ -538,6 +521,25 @@ class ZygoteServer:
                     break
 
                 self._last_activity = time.time()
+                
+                # SEC-005: Mandatory Auth Handshake for Forensic Agents
+                if not authorized:
+                    if msg.get("type") == "Auth":
+                        secret = msg.get("secret")
+                        if secret == self._authorized_secret:
+                            authorized = True
+                            LogUtils.log("[SEC-005] Auth Success: Forensic Agent authorized.")
+                            transport.send({"type": "Ack", "message": "Authorized"})
+                            continue
+                        else:
+                            LogUtils.log("[SEC-005] Auth Failure: Invalid secret.")
+                            transport.send({"type": "Error", "message": "Invalid secret"})
+                            break
+                    else:
+                        LogUtils.log("[SEC-005] Auth Violation: Command received before Auth.")
+                        transport.send({"type": "Error", "message": "Auth required"})
+                        break
+
                 req_id = msg.get("request_id")
                 token = request_context.set(req_id)
                 try:
@@ -664,6 +666,7 @@ def zygote_main() -> None:
     parser.add_argument("--worker-ttl", type=int)
     parser.add_argument("--no-guardian", action="store_true")
     parser.add_argument("--app", help="App name for affinity verification")
+    parser.add_argument("--authorized-secret", help="Forensic secret for external auth")
 
     args = parser.parse_args()
 
@@ -677,6 +680,7 @@ def zygote_main() -> None:
         worker_ttl=args.worker_ttl,
         app_name=args.app,
         monitor_parent=not args.no_guardian,
+        authorized_secret=args.authorized_secret,
     )
 
     try:

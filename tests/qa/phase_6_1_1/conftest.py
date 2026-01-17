@@ -78,12 +78,13 @@ def pytest_collection_modifyitems(config, items):
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
 
-    def __init__(self, proc: subprocess.Popen, port: int, socket_path: str = None):
+    def __init__(self, proc: subprocess.Popen, port: int, socket_path: str = None, forensic_secret: str = None):
         self.proc = proc
         self.port = port
         self.pid = proc.pid
         self.zygote_pid = None
         self.socket_path = socket_path
+        self.forensic_secret = forensic_secret
         self._worker_pids: List[int] = []
 
     def is_running(self) -> bool:
@@ -117,12 +118,9 @@ class VeloServeProcess:
                 if log_path.exists():
                     print(f"\n📄 [ZYGOTE LOG] {log_path}")
                     print(log_path.read_text())
-                # Force stderr flush for visibility
-                import sys
-
-                sys.stderr.flush()
-                sys.stdout.flush()
+                
                 raise RuntimeError(f"Server process died (exit code: {exit_code})")
+            
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
                 if r.status_code == 200:
@@ -210,6 +208,9 @@ class VeloServeProcess:
 
     def get_socket_path(self) -> Optional[str]:
         """Find the Zygote socket path by inspecting Zygote command line."""
+        if self.socket_path:
+            return self.socket_path
+
         if not self.zygote_pid:
             self._detect_zygote_pid()
 
@@ -317,7 +318,11 @@ class VeloServeFactory:
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
 
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-        # env["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1" # Breaks Zygote startup
+        
+        # SEC-005: Generate and inject Forensic Secret for Zygote Auth
+        import uuid
+        forensic_secret = str(uuid.uuid4())
+        env["VELO_ZYGOTE_AUTH"] = forensic_secret
 
         proc = subprocess.Popen(
             cmd,
@@ -327,7 +332,7 @@ class VeloServeFactory:
             stdout=None,
             stderr=None,
         )
-        wrapper = VeloServeProcess(proc, port, str(socket_path))
+        wrapper = VeloServeProcess(proc, port, str(socket_path), forensic_secret)
         self.processes.append(wrapper)
         return wrapper
 
@@ -349,15 +354,15 @@ def velo_binary() -> str:
     """
     repo_root = Path(__file__).parents[3]
 
-    # 1. Check for CI-downloaded release binary (primary for CI environments)
-    release_bin = repo_root / "target" / "release" / "velo"
-    if release_bin.exists():
-        return str(release_bin.resolve())
-
-    # 2. Check for existing debug binary (common for local dev)
+    # 1. Check for existing debug binary (common for local dev)
     debug_bin = repo_root / "target" / "debug" / "velo"
     if debug_bin.exists():
         return str(debug_bin.resolve())
+
+    # 2. Check for CI-downloaded release binary (primary for CI environments)
+    release_bin = repo_root / "target" / "release" / "velo"
+    if release_bin.exists():
+        return str(release_bin.resolve())
 
     # 3. No binary exists - build debug binary for local development
     subprocess.run(["cargo", "build"], cwd=repo_root, check=True)
