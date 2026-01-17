@@ -350,6 +350,9 @@ class VeloServeFactory:
         ]
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
 
+        # STB-SOCKET-002: Isolate worker sockets to test-specific directory
+        # Without this, worker sockets go to /tmp/velo-{uid}/ which is shared across tests
+        env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
         
         # SEC-005: Generate and inject Forensic Secret for Zygote Auth
