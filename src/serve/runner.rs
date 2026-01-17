@@ -803,8 +803,7 @@ pub fn run_server(
     }
 
     if use_zygote && crate::zygote::is_supported() {
-        // STB-SOCKET-003: Use project-aware socket path for multi-project isolation
-        let socket_path = crate::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
+        let socket_path = crate::zygote::core_ipc::default_socket_path();
 
         if !socket_path.exists() {
             logger.info(&format!("Pre-warming Zygote with {} modules...", framework));
@@ -970,7 +969,7 @@ pub fn run_server(
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
         eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
-        let socket_path = crate::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
+        let socket_path = crate::zygote::core_ipc::default_socket_path();
 
         for i in 0..args.workers {
             match crate::serve::worker::Worker::spawn_uds_via_zygote(
