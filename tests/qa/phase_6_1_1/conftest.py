@@ -222,9 +222,12 @@ class VeloServeProcess:
                 pass
 
             if workers:
+                # TITANIUM-PERF: Ensure we have the full cohort (helpful in multi-worker scenarios)
+                # For now, if we find any, we assume it's starting to come up
                 return workers
 
-            time.sleep(0.5)
+            # Robustness: Native workers might take a few ms to appear in psutil
+            time.sleep(0.1)
 
         return []
 

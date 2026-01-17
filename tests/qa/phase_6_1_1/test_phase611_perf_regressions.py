@@ -189,17 +189,25 @@ class TestL5Performance:
         proc = velo_serve_fixture.start("main:app", workers=1, zygote=True)
         proc.wait_ready()
 
-        # Measure worker respawn (Zygote fork)
         zygote_times = []
         for _ in range(5):
-            workers = proc.get_worker_pids()
-            if workers:
-                os.kill(workers[0], signal.SIGTERM)
+            workers_before = proc.get_worker_pids()
+            if workers_before:
+                old_pid = workers_before[0]
+                os.kill(old_pid, signal.SIGTERM)
+                
                 start = time.perf_counter()
+                # Wait for PID to change to ensure we measure the NEW worker
+                for _ in range(100):
+                    time.sleep(0.005) # 5ms
+                    workers_after = proc.get_worker_pids()
+                    if workers_after and workers_after[0] != old_pid:
+                        break
+                
                 proc.wait_worker_ready()
                 elapsed = time.perf_counter() - start
                 zygote_times.append(elapsed)
-                time.sleep(0.1)  # Brief pause between respawns
+                time.sleep(0.1)
 
         if not zygote_times:
             pytest.skip("Could not measure Zygote respawn")
@@ -241,10 +249,19 @@ class TestL5Performance:
 
         zygote_times = []
         for _ in range(5):
-            workers = proc.get_worker_pids()
-            if workers:
-                os.kill(workers[0], signal.SIGTERM)
+            workers_before = proc.get_worker_pids()
+            if workers_before:
+                old_pid = workers_before[0]
+                os.kill(old_pid, signal.SIGTERM)
+                
                 start = time.perf_counter()
+                # Wait for PID to change
+                for _ in range(100):
+                    time.sleep(0.005)
+                    workers_after = proc.get_worker_pids()
+                    if workers_after and workers_after[0] != old_pid:
+                        break
+                
                 proc.wait_worker_ready()
                 elapsed = time.perf_counter() - start
                 zygote_times.append(elapsed)

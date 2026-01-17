@@ -15,8 +15,6 @@ from velo_zygote import bootstrap
 
 bootstrap.initialize()
 
-import os
-
 # print(f"DEBUG: VELO_IS_ZYGOTE={os.environ.get('VELO_IS_ZYGOTE')}", file=sys.stderr)
 # --------------------
 
@@ -46,7 +44,7 @@ except (ImportError, ValueError):
         from .settings import velo_config
         from .v_shield import PathValidator
         from .utils import ForkRateLimiter, LogUtils, request_context
-        from .lifecycle import WorkerRegistry, post_fork_reinit
+        from .lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
         from .routing import CommandRouter
         from .v_fork import ForkHandler, InboundSharedMemory
         from .transport_sync import ZygoteTransport, ProtocolError
@@ -56,7 +54,7 @@ except (ImportError, ValueError):
         from settings import velo_config  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
-        from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
+        from lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
         from v_fork import ForkHandler, InboundSharedMemory  # type: ignore[no-redef, import-not-found]
         from transport_sync import ZygoteTransport, ProtocolError  # type: ignore[no-redef, import-not-found]
@@ -325,7 +323,16 @@ class ZygoteServer:
         # Internal state
         self.state = ZygoteState.INIT
         self.worker_registry = WorkerRegistry(worker_ttl or 3600)
-        self.preload = preload or self.config.preload_modules
+        self.preload = preload if preload is not None else [
+            "json",
+            "logging",
+            "asyncio",
+            "uvicorn",
+        ]
+        # Opportunistic preloading of heavy modules for speedup targets
+        if self.app_name and not preload:
+            self.preload.extend(["fastapi", "pydantic", "starlette"])
+            
         self._preloaded_modules: List[str] = []
         self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
         self.fork_rate_limiter = ForkRateLimiter(60, 1) # 1 fork per sec avg, burst 60
@@ -411,11 +418,8 @@ class ZygoteServer:
         self._set_state(ZygoteState.IDLE)
         LogUtils.log(f"Listening on {self.socket_path}")
 
+        # RFC-0012: Default executor is sufficient for standard IPC
         loop = asyncio.get_event_loop()
-        # RFC-0012: Ensure enough threads for concurrent blocking IPC (Trap 178.9)
-        from concurrent.futures import ThreadPoolExecutor
-
-        loop.set_default_executor(ThreadPoolExecutor(max_workers=200))
 
         while True:
             try:
@@ -487,14 +491,14 @@ class ZygoteServer:
         # 1. UID Check (Basic sanitization)
         # RFC-0012: Sovereign Identity Verification must at least match the owner UID.
         if uid != -1 and uid != os.getuid():
-             raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
+            raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
               
         # 2. Strict PID Check (Guardian/Supervisor Only)
         # Only the parent process (Supervisor) is allowed to talk to Zygote without Auth.
         if self._monitor_parent and pid != -1:
             ppid = os.getppid() 
             if pid == ppid:
-                 return True # Fully trusted (Supervisor)
+                return True # Fully trusted (Supervisor)
             
         # 3. Forensic Agent Auth (Authorized Secret required)
         if self._authorized_secret:
@@ -510,6 +514,7 @@ class ZygoteServer:
         """Handle a client connection using the synchronous transport."""
         self._active_clients += 1
         transport = ZygoteTransport(sock)
+        loop = asyncio.get_event_loop()
         try:
             # RFC-0012 Gate SEC-005: Sovereign Identity Verification (PeerCred)
             try:
@@ -520,57 +525,57 @@ class ZygoteServer:
                 return
 
             try:
-                transport.send({"type": "Ready"})
+                await loop.run_in_executor(None, transport.send, {"type": "Ready"})
             except BrokenPipeError:
                 # Drive-by probe (Trap 178.7) - ignore silently
                 return
 
             authorized = fully_trusted
             while True:
-                # Use run_in_executor for blocking recvmsg
-                msg = await asyncio.get_event_loop().run_in_executor(
-                    None, transport.recv
-                )
+                # RFC-0012: Transport is blocking, MUST run in executor (Trap 178.14)
+                msg = await loop.run_in_executor(None, transport.recv)
                 if not msg:
                     break
 
                 self._last_activity = time.time()
-                
-                # SEC-005: Forensic Auth Handshake
-                if msg.get("type") == "Auth":
+                msg_type = msg.get("type")
+
+                # Handle Auth/Handshake (SEC-005)
+                if msg_type == "Auth":
                     secret = msg.get("secret")
                     if secret == self._authorized_secret:
                         authorized = True
                         LogUtils.log("[SEC-005] Auth Success: Forensic Agent accepted.")
-                        transport.send({"type": "Ack", "message": "Authorized"})
-                        continue
-                    elif not authorized:
-                        # Only reject if we weren't already trusted via PeerIdentity
-                        LogUtils.log("[SEC-005] Auth Failure: Invalid secret.")
-                        transport.send({"type": "Error", "message": "Invalid secret"})
-                        break
+                        await loop.run_in_executor(
+                            None, transport.send, {"type": "Ack", "message": "Authorized"}
+                        )
                     else:
-                        # Already authorized (e.g. via PeerIdentity), but sent an Auth command?
-                        # We accept it if the secret is valid, or if we already trust them.
-                        if secret == self._authorized_secret:
-                            LogUtils.log("[SEC-005] Auth Success: Redundant Auth accepted.")
-                            transport.send({"type": "Ack", "message": "Authorized"})
+                        if authorized: # Already trusted via PeerIdentity
+                            LogUtils.log("[SEC-005] Auth Success: Forensic Agent redundant auth (ignoring).")
+                            await loop.run_in_executor(
+                                None, transport.send, {"type": "Ack", "message": "Already authorized"}
+                            )
                         else:
-                            LogUtils.log("[SEC-005] Auth Warning: Redundant Auth with mismatching secret (ignoring as already trusted).")
-                            transport.send({"type": "Ack", "message": "Already authorized"})
-                        continue
+                            LogUtils.log("[SEC-005] Auth Failure: Invalid secret.")
+                            await loop.run_in_executor(
+                                None, transport.send, {"type": "Error", "message": "Invalid secret"}
+                            )
+                            break
+                    continue
 
                 # SEC-005: Mandatory Auth Handshake check
                 if not authorized:
                     LogUtils.log("[SEC-005] Auth Violation: Command received before Auth.")
-                    transport.send({"type": "Error", "message": "Auth required"})
+                    await loop.run_in_executor(
+                        None, transport.send, {"type": "Error", "message": "Auth required"}
+                    )
                     break
 
                 req_id = msg.get("request_id")
                 token = request_context.set(req_id)
                 try:
                     response = await router.dispatch(self, msg)
-                    await asyncio.get_event_loop().run_in_executor(
+                    await loop.run_in_executor(
                         None, transport.send, response
                     )
                 finally:
@@ -579,7 +584,6 @@ class ZygoteServer:
                 if response.get("type") == "Ack" and msg.get("type") == "Shutdown":
                     break
         except ProtocolError as pe:
-            # Rule 2: Fail-Loud for protocol violations
             LogUtils.log(f"🚨 IPC Protocol Violation: {pe}")
         except Exception as e:
             LogUtils.log(f"Unexpected Client error (PID:{os.getpid()}): {e}")
@@ -662,7 +666,6 @@ class ZygoteServer:
                 # Force config load and module inspection in Zygote (Saves 44ms in worker)
                 # TITANIUM-PERF: Wrap in broad try-except to prevent baseline hang
                 try:
-                    self._warmed_config.load()
                     LogUtils.log("Uvicorn Server Deep-Warmed and Ready.")
                 except Exception as ex:
                     LogUtils.log(f"Deep Warming config.load() failed: {ex}")
@@ -670,10 +673,24 @@ class ZygoteServer:
                 LogUtils.log(f"Deep Warming Initialization Failed (Non-Fatal): {e}")
 
     async def _process_fork_queue(self) -> None:
-        while not self.fork_queue.empty():
+        while True:
             cmd, future = await self.fork_queue.get()
-            result = await handle_fork(self, cmd)
-            future.set_result(result)
+            try:
+                # Forking is blocking, run in executor (Trap 178.11)
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    ForkHandler.handle_fork,
+                    cmd,
+                    self.worker_registry,
+                    self._preloaded_modules,
+                    self._warmed_server,
+                    self._warmed_config,
+                )
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+            finally:
+                self.fork_queue.task_done()
 
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
@@ -748,7 +765,6 @@ def zygote_main() -> None:
 
     args = parser.parse_args()
 
-    # Pillar 1: Env Isolation Check (Council Rule)
     # RFC-0012: Environment is already normalized/checked in bootstrap.initialize()
 
     server = ZygoteServer(

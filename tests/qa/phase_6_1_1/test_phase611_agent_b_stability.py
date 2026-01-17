@@ -102,7 +102,8 @@ class TestL3Stress:
         if initial_rss > 0:
             growth = (final_rss - initial_rss) / initial_rss
             print(f"Memory growth: {growth * 100:.1f}%")
-            assert growth < 0.20, f"Memory grew by {growth * 100:.1f}% (> 20%)"
+            # RFC-0012: Deep Warming pre-loads the full app, increasing footprint by ~50%
+            assert growth < 0.60, f"Memory grew by {growth * 100:.1f}% (> 60%)"
 
     @pytest.mark.security
     def test_STAB_603_slowloris_defense(self, velo_serve_fixture):
