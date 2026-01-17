@@ -128,7 +128,7 @@ class VeloServeProcess:
                     return
             except Exception:
                 pass
-            time.sleep(0.1)  # 100ms poll interval (was 10ms, reduced load)
+            time.sleep(0.01)
 
         # On timeout, try to read what happened
         print("Timeout reached.")

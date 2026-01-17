@@ -103,25 +103,6 @@ impl Worker {
         )?;
 
         if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
-            // STB-SOCKET-001: Wait for socket file to appear before declaring worker ready.
-            // Zygote's Forked response means fork() succeeded, but uvicorn hasn't bound yet.
-            // Without this wait, LB health check will fail with ENOENT causing respawn storms.
-            const SOCKET_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-            const SOCKET_POLL_INTERVAL: Duration = Duration::from_millis(50);
-            let socket_wait_start = Instant::now();
-
-            while !socket_path.exists() {
-                if socket_wait_start.elapsed() > SOCKET_WAIT_TIMEOUT {
-                    anyhow::bail!(
-                        "Worker {} spawned but socket {} not created within {:?}",
-                        worker_pid,
-                        socket_path.display(),
-                        SOCKET_WAIT_TIMEOUT
-                    );
-                }
-                std::thread::sleep(SOCKET_POLL_INTERVAL);
-            }
-
             Ok(Self {
                 pid: worker_pid,
                 port: 0,
