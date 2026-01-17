@@ -159,7 +159,7 @@ def main() -> None:
                         warmed_config.uds = None
                         warmed_config.host = args.host or "127.0.0.1"
                         warmed_config.port = args.port or 8000
-                    
+
                     # Recreate Server with patched config (socket binding is determined at run time)
                     server = uvicorn.Server(warmed_config)
                     server.run()
