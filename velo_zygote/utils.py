@@ -78,7 +78,7 @@ class MacOSDeathSigMonitor:
     """RFC-0012: macOS alternative to PR_SET_PDEATHSIG using kqueue/kevent (Polling Fallback)."""
 
     @staticmethod
-    def start_monitoring():
+    def start_monitoring() -> None:
         import sys
 
         if not sys.platform == "darwin":
@@ -88,7 +88,7 @@ class MacOSDeathSigMonitor:
         import os
         import time
 
-        def monitor():
+        def monitor() -> None:
             try:
                 original_ppid = os.getppid()
                 if original_ppid <= 1:

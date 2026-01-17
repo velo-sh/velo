@@ -29,8 +29,9 @@ class InboundSharedMemory:
             import stat as stat_mod
 
             st = os.fstat(self.fd)
-            if not stat_mod.S_ISREG(st.st_mode):
-                LogUtils.log(f"Security Violation: FD {self.fd} is not a regular file")
+            # macOS shm_open fds often return mode 0 (not S_IFREG)
+            if not stat_mod.S_ISREG(st.st_mode) and not (sys.platform == "darwin" and st.st_mode == 0):
+                LogUtils.log(f"Security Violation: FD {self.fd} is not a regular file (mode: {oct(st.st_mode)})")
                 return False
             if self.expected_size and st.st_size < self.expected_size:
                 LogUtils.log(
@@ -42,7 +43,7 @@ class InboundSharedMemory:
             LogUtils.log(f"FD Validation failed: {e}")
             return False
 
-    def close(self):
+    def close(self) -> None:
         try:
             os.close(self.fd)
         except:
@@ -305,7 +306,7 @@ class ForkHandler:
         return exit_code
 
     @staticmethod
-    def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]):
+    def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]) -> None:
         if stdout_path:
             try:
                 sys.stdout = open(stdout_path, "a")
