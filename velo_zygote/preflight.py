@@ -15,7 +15,7 @@ try:
 
     bootstrap.initialize()
 
-    from .env_profile import ENV_PROFILE, OsType, RunContext
+    from .env_profile import ENV_PROFILE, RunContext
     from .settings import velo_config
     from .v_shield import ImportShield, PathValidator
 except (ImportError, ValueError):
