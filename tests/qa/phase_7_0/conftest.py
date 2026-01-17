@@ -76,6 +76,21 @@ class VeloTestEnv:
     def __post_init__(self):
         if self.env is None:
             self.env = os.environ.copy()
+        
+        # SEC-H17: Forensic Isolation Layer
+        # Ensure each test has its own Zygote socket and auth file to prevent collisions.
+        socket_dir = self.path.resolve() / "sockets"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        self.env["VELO_SOCKET_DIR"] = str(socket_dir)
+        
+        # Direct Zygote logs to the test path for forensic observability
+        log_dir = self.path.resolve() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self.env["VELO_ZYGOTE_LOG"] = str(log_dir / "zygote.log")
+
+        # Force strict optimizations OFF to allow HugePages fallback to 4KB pages in CI.
+        # SEC-H17 tests are about read-only mapping enforcement, not HugePages availability.
+        # The Zygote isolation (VELO_SOCKET_DIR) remains critical.
         self.env["VELO_STRICT_OPTIMIZATIONS"] = "false"
         self.env["VELO_TEST_MODE"] = "1"
 

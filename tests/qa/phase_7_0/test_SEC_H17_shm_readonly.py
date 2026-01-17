@@ -129,9 +129,26 @@ time.sleep(10)
                     )
 
             if not found:
+                # Forensic Audit: Capture Zygote logs to see why SHM failed
+                zygote_log = Path(env.env["VELO_ZYGOTE_LOG"])
+                log_content = ""
+                if zygote_log.exists():
+                    log_content = zygote_log.read_text()
+                
+                # Kill the process first to avoid timeout on communicate
+                if proc.poll() is None:
+                    proc.kill()
+                
+                # Capture remaining stderr
+                _, stderr = proc.communicate(timeout=5)
+                
                 pytest.fail(
-                    f"Mapping matching patterns {patterns} not found in worker maps!\nMAPS CONTENT:\n{maps_content}"
+                    f"🚨 [RITUAL 21 FAILURE] Mapping matching patterns {patterns} not found in worker maps!\n"
+                    f"MAPS CONTENT:\n{maps_content}\n"
+                    f"VELO STDERR:\n{stderr}\n"
+                    f"ZYGOTE LOG:\n{log_content}"
                 )
+
 
         finally:
             if proc.poll() is None:
