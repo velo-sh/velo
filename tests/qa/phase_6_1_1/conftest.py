@@ -128,7 +128,7 @@ class VeloServeProcess:
                     return
             except Exception:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.01)
 
         # On timeout, try to read what happened
         print("Timeout reached.")
@@ -149,7 +149,7 @@ class VeloServeProcess:
                     return
             except Exception:
                 pass
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     def _detect_zygote_pid(self) -> None:
         """Find the Zygote process PID by checking children of Velo supervisor."""
@@ -179,26 +179,52 @@ class VeloServeProcess:
 
     def get_worker_pids(self) -> List[int]:
         """Get list of worker PIDs.
-
-        Workers are forked from the Zygote, so they are children of the Zygote PID.
-        Includes a short retry loop to account for fork latency.
+        
+        Workers can be:
+        1. Children of the Zygote (Zygote mode)
+        2. Children of the Supervisor (Native mode / Cold start)
         """
         for _ in range(10):
             if not self.zygote_pid:
                 self._detect_zygote_pid()
 
+            workers = []
+            
+            # Source 1: Children of Zygote (Uvicorn Zygote mode)
             if self.zygote_pid:
                 try:
                     zygote_proc = psutil.Process(self.zygote_pid)
-                    workers = [
+                    workers.extend([
                         child.pid for child in zygote_proc.children(recursive=True)
-                    ]
-                    if workers:
-                        return workers
+                    ])
                 except psutil.NoSuchProcess:
                     self.zygote_pid = None
+            
+            # Source 2: Children of Supervisor (Native mode / Cold start)
+            try:
+                supervisor = psutil.Process(self.pid)
+                for child in supervisor.children(recursive=True):
+                    try:
+                        cmdline = " ".join(child.cmdline()).lower()
+                        if (
+                            "python" in cmdline 
+                            or "granian" in cmdline 
+                            or "uvicorn" in cmdline
+                            or "worker-native" in cmdline
+                        ):
+                            # Avoid detecting the Zygote itself as a worker
+                            if "velo_zygote/main.py" not in cmdline:
+                                if child.pid not in workers:
+                                    workers.append(child.pid)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except psutil.NoSuchProcess:
+                pass
 
-            time.sleep(0.5)  # Increased sleep for macOS/CI
+            if workers:
+                return workers
+
+            time.sleep(0.5)
 
         return []
 
@@ -253,6 +279,7 @@ class VeloServeFactory:
         workers: int = 1,
         zygote: bool = True,  # Default to True as per new Velo default
         port: Optional[int] = None,
+        rsgi: bool = False,
         extra_args: Optional[List[str]] = None,
     ) -> VeloServeProcess:
         """Start a velo serve process."""
@@ -277,6 +304,9 @@ class VeloServeFactory:
         # In new version, Zygote is default. We only use --no-zygote to disable.
         if not zygote:
             cmd.append("--no-zygote")
+
+        if rsgi:
+            cmd.append("--rsgi")
 
         if extra_args:
             cmd.extend(extra_args)
@@ -354,15 +384,15 @@ def velo_binary() -> str:
     """
     repo_root = Path(__file__).parents[3]
 
-    # 1. Check for existing debug binary (common for local dev)
-    debug_bin = repo_root / "target" / "debug" / "velo"
-    if debug_bin.exists():
-        return str(debug_bin.resolve())
-
-    # 2. Check for CI-downloaded release binary (primary for CI environments)
+    # 1. Check for release binary (prioritize performance for benchmarks)
     release_bin = repo_root / "target" / "release" / "velo"
     if release_bin.exists():
         return str(release_bin.resolve())
+
+    # 2. Check for debug binary (fallback for local dev)
+    debug_bin = repo_root / "target" / "debug" / "velo"
+    if debug_bin.exists():
+        return str(debug_bin.resolve())
 
     # 3. No binary exists - build debug binary for local development
     subprocess.run(["cargo", "build"], cwd=repo_root, check=True)

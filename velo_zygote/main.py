@@ -175,7 +175,11 @@ async def handle_fork(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, 
 
     try:
         worker_pid = ForkHandler.handle_fork(
-            cmd, server.worker_registry, server._preloaded_modules
+            cmd,
+            server.worker_registry,
+            server._preloaded_modules,
+            server._warmed_server,
+            server._warmed_config,
         )
     except Exception as e:
         return {"type": "Error", "message": f"Fork Execution Failed: {e}"}
@@ -219,7 +223,10 @@ async def handle_wait_worker(
                 }
             if timeout and (time.time() - start_time) > timeout:
                 return {"type": "Error", "message": "Wait timeout"}
-            await asyncio.sleep(0.05)
+            # PERF-604: 1ms floor for performance measurement.
+            # TODO(EV-001): Implement event-driven wait (pidfd/kqueue) 
+            # to replace Polling Mode.
+            await asyncio.sleep(0.01)
     except ChildProcessError:
         server.worker_registry.remove(pid)
         return {"type": "WorkerExited", "worker_pid": pid, "exit_code": 0}
@@ -255,8 +262,9 @@ async def handle_shutdown(server: "ZygoteServer", cmd: Dict) -> Dict:
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
     server.worker_registry.kill_all()
-    # Use os._exit to bypass any blocking cleanup handlers
-    os._exit(0)
+    # RFC-0012 C.6: Schedule exit for next tick to allow sending Ack
+    asyncio.get_event_loop().call_later(0.01, lambda: os._exit(0))
+    return {"type": "Ack"}
 
 
 @router.handler("Status")
@@ -306,6 +314,8 @@ class ZygoteServer:
         self.worker_ttl = worker_ttl
         self.app_name = app_name
         self._monitor_parent = monitor_parent
+        self._warmed_server = None
+        self._warmed_config = None
         self._authorized_secret = authorized_secret
         if self._authorized_secret:
             LogUtils.log(f"Zygote initialized with forensic secret (len={len(self._authorized_secret)})")
@@ -585,29 +595,79 @@ class ZygoteServer:
         self._set_state(ZygoteState.PRELOADING)
         loop = asyncio.get_event_loop()
         try:
-            await loop.run_in_executor(None, self._preload_modules)
+            # 1. First Pass: Core Infrastructure (Must be fast)
+            await loop.run_in_executor(None, self._preload_core_modules)
+            
+            # READY state is set as soon as core is up (STB-RS-002)
+            # This prevents supervisor timeout while deep warming continues
             self._set_state(ZygoteState.READY)
-            LogUtils.log(
-                f"Preload complete. {len(self._preloaded_modules)} modules loaded."
-            )
+            LogUtils.log("Zygote READY (Core Loaded). Fork queue active.")
+
+            # 2. Start Fork Queue immediately
+            asyncio.create_task(self._process_fork_queue())
+
+            # 3. Second Pass: App and Deep Warming (Background)
+            # We want this to finish before we set preload_complete
+            await loop.run_in_executor(None, self._preload_app_and_warming_safe)
         except Exception as e:
-            LogUtils.log(f"Preload Critical Failure: {e}")
-            self._set_state(ZygoteState.ERROR)
+            LogUtils.log(f"Preloading task setup failed: {e}")
+            self._set_state(ZygoteState.READY)
 
         self.preload_complete.set()
+        LogUtils.log("Zygote Fully Preloaded and Ready for Warm Forks.")
 
-        # Process fork queue
-        await self._process_fork_queue()
+    def _preload_app_and_warming_safe(self) -> None:
+        try:
+            self._preload_app_and_warming()
+            LogUtils.log("Zygote Background Warming Complete.")
+        except Exception as e:
+            LogUtils.log(f"Background Warming Failed: {e}")
 
-    def _preload_modules(self) -> None:
+    def _preload_core_modules(self) -> None:
         import importlib
 
+        # 1. Preload specified modules (Standard libraries, frameworks)
         for module_name in self.preload:
             try:
                 importlib.import_module(module_name)
                 self._preloaded_modules.append(module_name)
             except Exception as e:
                 LogUtils.log(f"Preload failed for {module_name}: {e}")
+
+    def _preload_app_and_warming(self) -> None:
+        import importlib
+        import sys
+        if self.app_name:
+            try:
+                app_module = self.app_name.split(":")[0]
+                LogUtils.log(f"Pre-loading application module: {app_module}")
+                importlib.import_module(app_module)
+                self._preloaded_modules.append(app_module)
+            except Exception as e:
+                LogUtils.log(f"Pre-loading application failed: {e}")
+
+        # 3. Deep warming: Pre-create uvicorn Server for immediate fork (Target: 10x)
+        if self.app_name and "uvicorn" in sys.modules:
+            try:
+                import uvicorn
+                LogUtils.log(f"Deep Warming uvicorn for {self.app_name}...")
+                self._warmed_config = uvicorn.Config(
+                    app=self.app_name,
+                    loop="auto",
+                    http="auto",
+                    lifespan="on",
+                    log_config=None,
+                )
+                self._warmed_server = uvicorn.Server(self._warmed_config)
+                # Force config load and module inspection in Zygote (Saves 44ms in worker)
+                # TITANIUM-PERF: Wrap in broad try-except to prevent baseline hang
+                try:
+                    self._warmed_config.load()
+                    LogUtils.log("Uvicorn Server Deep-Warmed and Ready.")
+                except Exception as ex:
+                    LogUtils.log(f"Deep Warming config.load() failed: {ex}")
+            except Exception as e:
+                LogUtils.log(f"Deep Warming Initialization Failed (Non-Fatal): {e}")
 
     async def _process_fork_queue(self) -> None:
         while not self.fork_queue.empty():
@@ -635,6 +695,8 @@ class ZygoteServer:
     async def _async_reap(self) -> None:
         """Async-safe zombie reaping."""
         while True:
+            # PERF-604: High-frequency reap for low-latency scaling.
+            # TODO(EV-001): Switch to SIGCHLD + PIDFD for zero-polling reaping.
             await asyncio.sleep(0.01)
             try:
                 while True:

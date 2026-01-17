@@ -192,25 +192,13 @@ impl Worker {
         // DEF-72-S02: Clear parent environment to prevent untrusted vars from leaking
         cmd.env_clear();
 
-        // Pass essential environment (Surgical Whitelist - RFC-0012)
-        // Pass essential environment (Surgical Whitelist - RFC-0012)
-        let env = build_worker_env(config);
-        for (k, v) in env.iter() {
-            cmd.env(k, v);
-        }
+        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        let shield = crate::lifecycle::safety::EnvironmentShield::new(config);
 
-        // Phase 7.3: Unified Python Environment Resolution (SSOT)
-        match crate::common::python_env::PythonEnv::detect(python_path) {
-            Ok(py_env) => {
-                py_env.apply_to_command(&mut cmd);
-            }
-            Err(e) => {
-                log::warn!(
-                    "[SSOT] Failed to detect Python environment for UDS Direct: {}",
-                    e
-                );
-            }
-        }
+        // Phase 7.3: Unified Python Environment Resolution (SSOT) via Shield
+        shield
+            .apply_with_python(&mut cmd, python_path)
+            .map_err(|e| anyhow::anyhow!("Environment shield failure: {}", e))?;
 
         // Use uvicorn directly if possible, or use RSGI mode
         if rsgi {

@@ -66,6 +66,8 @@ class ForkHandler:
         cmd: Dict[str, Any],
         worker_registry: WorkerRegistry,
         preloaded_modules: List[str],
+        warmed_server: Any = None,
+        warmed_config: Any = None,
     ) -> int:
         """Fork and execute script."""
         script_path = cmd.get("script_path")
@@ -125,8 +127,10 @@ class ForkHandler:
                     project_root=cmd.get("project_root"),
                     max_bundle_size=cmd.get("max_bundle_size"),
                     worker_ttl=worker_ttl,
-                    shm_fd=shm_fd,
-                    shm_size=shm_size,
+                    shm_fd=shm.fd if shm else None,
+                    shm_size=shm.expected_size if shm else None,
+                    warmed_server=warmed_server,
+                    warmed_config=warmed_config,
                 )
                 os._exit(exit_code)
             except Exception as e:
@@ -156,6 +160,8 @@ class ForkHandler:
         worker_ttl: int,
         shm_fd: Optional[int] = None,
         shm_size: Optional[int] = None,
+        warmed_server: Any = None,
+        warmed_config: Any = None,
     ) -> int:
         # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
         #    Ensure THIS child dies if Zygote (Parent) dies.
@@ -248,6 +254,8 @@ class ForkHandler:
                         "__name__": "__main__",
                         "__file__": os.path.abspath(script_path),
                         "__builtins__": __builtins__,
+                        "__VELO_WARM_SERVER__": warmed_server,
+                        "__VELO_WARM_CONFIG__": warmed_config,
                         "__doc__": None,
                         "__package__": None,
                         "__loader__": None,

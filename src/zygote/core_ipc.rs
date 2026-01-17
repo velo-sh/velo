@@ -574,30 +574,8 @@ pub fn send_command(
     command: ZygoteCommand,
     fd: Option<RawFd>,
 ) -> Result<ZygoteResponse> {
-    let start = std::time::Instant::now();
     let mut stream = ZygoteStream::connect(socket_path)?;
-    let result = stream.send_command(&command, fd);
-    let elapsed_ms = start.elapsed().as_millis();
-
-    match &result {
-        Ok(resp) => {
-            log::debug!(
-                "[IPC] command={:?} status=ok duration={}ms response={:?}",
-                std::mem::discriminant(&command),
-                elapsed_ms,
-                std::mem::discriminant(resp)
-            );
-        }
-        Err(e) => {
-            log::warn!(
-                "[IPC] command={:?} status=error duration={}ms error={}",
-                std::mem::discriminant(&command),
-                elapsed_ms,
-                e
-            );
-        }
-    }
-    result
+    stream.send_command(&command, fd)
 }
 
 #[cfg(test)]

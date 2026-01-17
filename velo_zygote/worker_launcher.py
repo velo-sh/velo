@@ -35,7 +35,26 @@ import signal
 import traceback
 from typing import Any, Dict
 
+import time
+_T0 = time.perf_counter()
+
+def _prof_log(msg):
+    with open("/tmp/worker_prof.log", "a") as f:
+        f.write(f"[{time.perf_counter()}] {msg}\n")
+
+_prof_log(f"[PROF] Import Start: {_T0}")
+
+import uvicorn
+_T1 = time.perf_counter()
+_prof_log(f"[PROF] Uvicorn Imported: +{(_T1-_T0)*1000:.2f}ms")
+
 from velo_zygote.utils import LogUtils
+from velo_zygote.v_shield import ImportShield
+from velo_zygote.paths import VeloPaths
+from velo_zygote.settings import VeloConfig
+from velo_zygote import integrity
+_T2 = time.perf_counter()
+_prof_log(f"[PROF] Velo Framework Imported: +{(_T2-_T1)*1000:.2f}ms")
 
 class UDSProxyMiddleware:
     def __init__(self, app: Any):
@@ -61,8 +80,10 @@ class UDSProxyMiddleware:
 
 def main() -> None:
     try:
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        def _graceful_exit(sig, frame):
+            raise SystemExit(0)
+        signal.signal(signal.SIGINT, _graceful_exit)
+        signal.signal(signal.SIGTERM, _graceful_exit)
         parser = argparse.ArgumentParser(description="Velo Worker Launcher")
         parser.add_argument("--app", required=True)
         parser.add_argument("--uds")
@@ -70,22 +91,21 @@ def main() -> None:
         parser.add_argument("--port", type=int)
         parser.add_argument("--proxy-headers", action="store_true", dest="proxy_headers")
         parser.add_argument("--rsgi", action="store_true")
+        _T3 = time.perf_counter()
         args = parser.parse_args()
+        _T4 = time.perf_counter()
+        _prof_log(f"[PROF] Args Parsed: +{(_T4-_T3)*1000:.2f}ms")
 
-        from velo_zygote.v_shield import ImportShield
-        from velo_zygote.paths import VeloPaths
-        from velo_zygote.settings import VeloConfig
-        from velo_zygote import integrity
-        
         if args.rsgi:
             from velo_zygote.v_rsgi import run_rsgi
             ImportShield.activate()
             VeloPaths.sanitize_sys_path(__file__)
             run_rsgi(args.app, args.uds)
         else:
-            uvicorn = _sovereign_import("uvicorn")
             ImportShield.activate()
             VeloPaths.sanitize_sys_path(__file__)
+            _T5 = time.perf_counter()
+            _prof_log(f"[PROF] Pre-Run Hygiene: +{(_T5-_T4)*1000:.2f}ms")
             
             config_kwargs = {
                 "app": args.app,
@@ -93,13 +113,45 @@ def main() -> None:
                 "http": "auto",
                 "lifespan": "on",
                 "proxy_headers": getattr(args, "proxy_headers", False),
+                "log_config": None,
             }
             if args.uds:
                 config_kwargs["uds"] = args.uds
             else:
                 config_kwargs["host"] = args.host or "127.0.0.1"
                 config_kwargs["port"] = args.port or 8000
-            uvicorn.run(**config_kwargs)
+            
+            _T6 = time.perf_counter()
+            _prof_log(f"[PROF] Entering uvicorn execution: +{(_T6-_T5)*1000:.2f}ms")
+            
+            import cProfile
+            import pstats
+            profiler = cProfile.Profile()
+            profiler.enable()
+            try:
+                # Injected by v_fork.py under __VELO_WARM_SERVER__
+                warmed_server = globals().get("__VELO_WARM_SERVER__")
+                
+                if warmed_server is not None:
+                    _prof_log("[PROF] Using Deep-Warmed uvicorn Server.")
+                    # Patch dynamic args for this specific worker instance
+                    if args.uds:
+                        warmed_server.config.uds = args.uds
+                    else:
+                        warmed_server.config.host = args.host or "127.0.0.1"
+                        warmed_server.config.port = args.port or 8000
+                    warmed_server.run()
+                else:
+                    _prof_log("[PROF] warmed_server is None, falling back to uvicorn.run()")
+                    uvicorn.run(**config_kwargs)
+            except Exception as e:
+                _prof_log(f"[PROF] Execution Error: {e}")
+                uvicorn.run(**config_kwargs)
+            finally:
+                profiler.disable()
+                with open("/tmp/worker.prof_log", "w") as f:
+                    ps = pstats.Stats(profiler, stream=f).sort_stats('cumulative')
+                    ps.print_stats()
 
     except Exception as e:
         sys.stderr.write(f"FATAL WORKER CRASH: {e}\n")
