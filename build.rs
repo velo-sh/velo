@@ -202,9 +202,12 @@ SECURITY_BASE_ENV_WHITELIST = "{security_base_env_whitelist}"
 PATH_SOCKET_DIR_NAME = "{path_socket_dir_name}"
 PATH_LOG_DIR_RELATIVE = "{path_log_dir_relative}"
 
-# Level 1: Platform Defaults (Ensures all constants are importable)
-PATH_MACOS_FD_DIR = ""
-PATH_LINUX_FD_DIR = ""
+# Level 1: Platform Defaults (Ensures all constants are importable on ANY platform)
+# These are fallback defaults; the platform-specific blocks below override them.
+PATH_MACOS_FD_DIR = "{path_macos_fd_dir}"
+PATH_LINUX_FD_DIR = "{path_linux_fd_dir}"
+PATH_MACOS_BASE_SOCKET_PARENT = "{path_macos_base_socket_parent}"
+PATH_LINUX_BASE_SOCKET_PARENT = "{path_linux_base_socket_parent}"
 
 # Level 1: macOS specific
 if sys.platform == "darwin":
