@@ -315,7 +315,7 @@ fn try_zygote_run(
             }
         }
 
-        if let Err(e) = launcher.start(&preload, None, false, &config) {
+        if let Err(e) = launcher.start(&preload, None, true, &config) {
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);

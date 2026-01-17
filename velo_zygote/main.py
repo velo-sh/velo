@@ -475,24 +475,28 @@ class ZygoteServer:
             uid = os.getuid() # Fallback for UID on same-system probes
 
         # 1. UID Check (Basic sanitization)
+        # RFC-0012: Sovereign Identity Verification must at least match the owner UID.
         if uid != -1 and uid != os.getuid():
              raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
               
-        # 2. Strict PID Check (Guardian Only)
+        # 2. Strict PID Check (Guardian/Supervisor Only)
         # Only the parent process (Supervisor) is allowed to talk to Zygote without Auth.
         if self._monitor_parent and pid != -1:
             ppid = os.getppid() 
             if pid == ppid:
-                 return True # Fully trusted
+                 return True # Fully trusted (Supervisor)
             
         # 3. Forensic Agent Auth (Authorized Secret required)
         if self._authorized_secret:
+            # If a secret is set, ANY non-supervisor connection MUST perform Auth handshake.
             return False # Needs Auth
             
-        # Default: Reject any non-supervisor connection if no secret provided
-        raise PermissionError(f"Unauthorized peer PID: {pid} (Expected Supervisor: {os.getppid()})")
+        # 4. Default Trust (Same UID, No Secret)
+        # If no secret is set, we trust same-UID peers (like Docker/Postgres model).
+        # This allows 'velo status' to work without a global secret file.
+        return True
 
-    async def _handle_client_socket(self, sock: socket.socket):
+    async def _handle_client_socket(self, sock: socket.socket) -> None:
         """Handle a client connection using the synchronous transport."""
         self._active_clients += 1
         transport = ZygoteTransport(sock)
@@ -600,7 +604,7 @@ class ZygoteServer:
             future.set_result(result)
 
     def _setup_signals(self) -> None:
-        def handle_termination(sig, frame):
+        def handle_termination(sig: int, frame: Any) -> None:
             # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
             sys.stderr.write(f"\nZygote received signal {sig}. Cleaning up workers...\n")
             sys.stderr.flush()

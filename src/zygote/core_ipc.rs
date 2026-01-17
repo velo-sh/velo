@@ -100,6 +100,12 @@ pub enum ZygoteCommand {
         #[serde(default)]
         request_id: Option<String>,
     },
+    /// SEC-005: Forensic Authentication Handshake
+    Auth {
+        secret: String,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -483,12 +489,46 @@ impl ZygoteStream {
             // SECURITY: Explicitly close unexpected FDs to prevent supervisor leaks.
             let _ = nix::unistd::close(fd);
         }
-        match ready {
-            ZygoteResponse::Ready => Ok(Self { stream }),
-            _ => Err(ZygoteError::ProtocolError(
-                "Connection greeting failed - expected Ready".to_string(),
-            )),
+        let mut stream = match ready {
+            ZygoteResponse::Ready => Self { stream },
+            _ => {
+                return Err(ZygoteError::ProtocolError(
+                    "Connection greeting failed - expected Ready".to_string(),
+                ));
+            }
+        };
+
+        // SEC-005: Automated Forensic Auth Handshake if secret exists
+        // The secret is stored in a .auth file alongside the socket.
+        let auth_path = crate::common::paths::VeloPaths::auth_file_for_socket(socket_path);
+        if let Ok(secret) = std::fs::read_to_string(&auth_path) {
+            log::debug!("[SEC-005] Performing forensic auth handshake...");
+            let auth_cmd = ZygoteCommand::Auth {
+                secret: secret.trim().to_string(),
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            };
+
+            match stream.send_command(&auth_cmd, None) {
+                Ok(ZygoteResponse::Ack) => {
+                    log::debug!("[SEC-005] Auth Success: Forensic Agent accepted.");
+                }
+                Ok(ZygoteResponse::Error { message, .. }) => {
+                    return Err(ZygoteError::ProtocolError(format!(
+                        "Auth failed: {}",
+                        message
+                    )));
+                }
+                Ok(other) => {
+                    return Err(ZygoteError::ProtocolError(format!(
+                        "Unexpected response during auth: {:?}",
+                        other
+                    )));
+                }
+                Err(e) => return Err(e),
+            }
         }
+
+        Ok(stream)
     }
 
     /// Send a command and wait for the response

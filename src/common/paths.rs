@@ -221,6 +221,14 @@ impl VeloPaths {
     pub fn site_customize(dir: &Path) -> PathBuf {
         dir.join(SITE_CUSTOMIZE)
     }
+
+    /// RFC-0012: Path to the ephemeral forensic authentication file for a given socket.
+    /// The file is stored alongside the socket in the same protected directory.
+    pub fn auth_file_for_socket(socket_path: &Path) -> PathBuf {
+        let mut auth_path = socket_path.to_path_buf();
+        auth_path.set_extension("auth");
+        auth_path
+    }
 }
 
 /// Legacy wrapper for get_socket_dir (delegates to VeloPaths)

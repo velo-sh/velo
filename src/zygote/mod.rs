@@ -67,6 +67,31 @@ pub fn get_log_path() -> PathBuf {
     VeloPaths::zygote_log()
 }
 
+/// SEC-005: Generate an ephemeral forensic secret and write it to a .auth file
+/// alongside the socket. This file is used for client-side discovery and auth.
+/// Returns the secret string.
+pub fn write_ephemeral_secret(socket_path: &Path) -> Result<String> {
+    let auth_path = VeloPaths::auth_file_for_socket(socket_path);
+    let secret = uuid::Uuid::now_v7().to_string();
+
+    // Create file with 0600 permissions
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true).mode(0o600);
+        let mut file = options
+            .open(&auth_path)
+            .map_err(|e| ZygoteError::IOError(format!("Failed to create auth file: {}", e)))?;
+
+        use std::io::Write;
+        file.write_all(secret.as_bytes())
+            .map_err(|e| ZygoteError::IOError(format!("Failed to write auth secret: {}", e)))?;
+    }
+
+    Ok(secret)
+}
+
 /// Get Zygote status
 pub fn get_status() -> Result<ZygoteResponse> {
     use core_ipc::{ZygoteCommand, default_socket_path, send_command};
@@ -592,6 +617,11 @@ impl ZygoteLauncher {
 
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
+        // SEC-005: Generate and propagate forensic auth secret
+        if let Ok(secret) = write_ephemeral_secret(&self.socket_path) {
+            cmd.arg("--authorized-secret").arg(secret);
+        }
+
         if daemon {
             cmd.arg("--no-guardian");
         }
@@ -805,6 +835,12 @@ impl ZygoteLauncher {
         if self.socket_path.exists() {
             let _ =
                 core_ipc::send_command(&self.socket_path, core_ipc::ZygoteCommand::Shutdown, None);
+        }
+
+        // SEC-005: Clean up ephemeral auth file
+        let auth_path = VeloPaths::auth_file_for_socket(&self.socket_path);
+        if auth_path.exists() {
+            let _ = std::fs::remove_file(auth_path);
         }
 
         // Wait for process to exit or kill it
