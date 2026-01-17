@@ -526,23 +526,31 @@ class ZygoteServer:
 
                 self._last_activity = time.time()
                 
-                # SEC-005: Mandatory Auth Handshake for Forensic Agents
-                if not authorized:
-                    if msg.get("type") == "Auth":
-                        secret = msg.get("secret")
-                        if secret == self._authorized_secret:
-                            authorized = True
-                            LogUtils.log("[SEC-005] Auth Success: Forensic Agent authorized.")
-                            transport.send({"type": "Ack", "message": "Authorized"})
-                            continue
-                        else:
-                            LogUtils.log("[SEC-005] Auth Failure: Invalid secret.")
-                            transport.send({"type": "Error", "message": "Invalid secret"})
-                            break
-                    else:
-                        LogUtils.log("[SEC-005] Auth Violation: Command received before Auth.")
-                        transport.send({"type": "Error", "message": "Auth required"})
+                # SEC-005: Forensic Auth Handshake
+                if msg.get("type") == "Auth":
+                    secret = msg.get("secret")
+                    if secret == self._authorized_secret:
+                        authorized = True
+                        LogUtils.log("[SEC-005] Auth Success: Forensic Agent accepted.")
+                        transport.send({"type": "Ack", "message": "Authorized"})
+                        continue
+                    elif not authorized:
+                        # Only reject if we weren't already trusted via PeerIdentity
+                        LogUtils.log("[SEC-005] Auth Failure: Invalid secret.")
+                        transport.send({"type": "Error", "message": "Invalid secret"})
                         break
+                    else:
+                        # Already authorized (e.g. via PeerIdentity), but sent a bad secret?
+                        # In this case, we trust the PeerIdentity but warn about the secret mismatch.
+                        LogUtils.log("[SEC-005] Auth Warning: Redundant Auth with mismatching secret (ignoring as already trusted).")
+                        transport.send({"type": "Ack", "message": "Already authorized"})
+                        continue
+
+                # SEC-005: Mandatory Auth Handshake check
+                if not authorized:
+                    LogUtils.log("[SEC-005] Auth Violation: Command received before Auth.")
+                    transport.send({"type": "Error", "message": "Auth required"})
+                    break
 
                 req_id = msg.get("request_id")
                 token = request_context.set(req_id)
