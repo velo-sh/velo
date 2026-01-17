@@ -6,15 +6,13 @@ Replaces ad-hoc os.environ accesses scattered across the codebase.
 """
 
 import os
-import sys
 from dataclasses import dataclass, field
-from typing import Optional, List, Set
 
 # Environment Profile (SSOT for all env detection)
 try:
-    from .env_profile import ENV_PROFILE, RunContext, OsType
+    from .env_profile import ENV_PROFILE, OsType, RunContext
 except (ImportError, ValueError):
-    from env_profile import ENV_PROFILE, RunContext, OsType  # type: ignore[no-redef]
+    from env_profile import ENV_PROFILE, OsType  # type: ignore[no-redef]
 
 # Shared constants
 try:
@@ -42,13 +40,13 @@ class VeloConfig:
     shield_active: bool = field(default=False)
     trusted_proxy: bool = field(default=False)
     forwarded_allow_ips: str = field(default="")
-    trusted_prefixes: List[str] = field(default_factory=list)
-    env_whitelist: List[str] = field(default_factory=list)
+    trusted_prefixes: list[str] = field(default_factory=list)
+    env_whitelist: list[str] = field(default_factory=list)
     hpc_threads: int = field(default=1)
-    _blocked_paths: List[str] = field(default_factory=list)
+    _blocked_paths: list[str] = field(default_factory=list)
 
     @property
-    def blocked_paths(self) -> List[str]:
+    def blocked_paths(self) -> list[str]:
         """Validated list of blocked paths with environment adjustments."""
         return self._blocked_paths
 
@@ -62,7 +60,7 @@ class VeloConfig:
     port: int = field(default=DEFAULT_PORT)
 
     # Features
-    preload_modules: List[str] = field(default_factory=list)
+    preload_modules: list[str] = field(default_factory=list)
 
     @classmethod
     def load_from_env(cls) -> "VeloConfig":
@@ -83,7 +81,7 @@ class VeloConfig:
             env_mode = "dev"  # Map TEST -> DEV for Velo config purposes
 
         # Helper for ints with mandatory check
-        def get_int(key: str, default: Optional[int] = None) -> int:
+        def get_int(key: str, default: int | None = None) -> int:
             val = os.environ.get(key)
             if val is None:
                 if default is not None:
@@ -97,7 +95,7 @@ class VeloConfig:
                 raise
 
         # Helper for lists
-        def get_list(key: str) -> List[str]:
+        def get_list(key: str) -> list[str]:
             val = os.environ.get(key, "")
             return [s.strip() for s in val.split(",") if s.strip()]
 
@@ -109,12 +107,8 @@ class VeloConfig:
             timeout_multiplier=ENV_PROFILE.timeout_multiplier,
             strict_numa=ENV_PROFILE.strict_numa,
             max_bundle_size=get_int("VELO_MAX_BUNDLE_SIZE", MAX_MESSAGE_SIZE),
-            socket_startup_timeout=get_int(
-                "VELO_SOCKET_STARTUP_TIMEOUT", SOCKET_STARTUP_TIMEOUT
-            ),
-            graceful_shutdown_timeout=get_int(
-                "VELO_GRACEFUL_SHUTDOWN_TIMEOUT", GRACEFUL_SHUTDOWN_TIMEOUT
-            ),
+            socket_startup_timeout=get_int("VELO_SOCKET_STARTUP_TIMEOUT", SOCKET_STARTUP_TIMEOUT),
+            graceful_shutdown_timeout=get_int("VELO_GRACEFUL_SHUTDOWN_TIMEOUT", GRACEFUL_SHUTDOWN_TIMEOUT),
             host=os.environ.get("VELO_HOST", "127.0.0.1"),
             port=get_int("VELO_PORT", DEFAULT_PORT),
             preload_modules=get_list("VELO_PRELOAD"),
@@ -122,9 +116,7 @@ class VeloConfig:
         )
 
         # Resolve Security Matrix (Self-contained logic)
-        instance.trusted_prefixes = cls._resolve_security_list(
-            env_mode, "trusted_prefixes"
-        )
+        instance.trusted_prefixes = cls._resolve_security_list(env_mode, "trusted_prefixes")
         instance.env_whitelist = cls._resolve_security_list(env_mode, "env_whitelist")
 
         # Resolve Blocked Paths (using EnvProfile)
@@ -133,7 +125,7 @@ class VeloConfig:
         return instance
 
     @staticmethod
-    def _resolve_blocked_paths() -> List[str]:
+    def _resolve_blocked_paths() -> list[str]:
         """Resolve blocked paths using EnvProfile (Policy)."""
         # Copy base list to avoid mutation
         base = list(globals().get("DEFAULT_BLOCKED_PATHS", []))
@@ -149,7 +141,7 @@ class VeloConfig:
         return base
 
     @staticmethod
-    def _resolve_security_list(env_mode: str, base_key: str) -> List[str]:
+    def _resolve_security_list(env_mode: str, base_key: str) -> list[str]:
         """
         Resolve security lists using hierarchical Platform x Environment matrix.
         Matches logic from RFC-0012/config.py, using EnvProfile for OS detection.
@@ -178,7 +170,7 @@ class VeloConfig:
 
         return [s.strip() for s in final_val.split(",") if s.strip()]
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Verify configuration integrity. Returns list of errors."""
         errors = []
         if self.strict_numa and ENV_PROFILE.os_type != OsType.LINUX:

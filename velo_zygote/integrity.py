@@ -1,9 +1,8 @@
 """
 Velo Integrity Protocol (Pre-Flight Checks)
 """
-import sys
+
 import platform
-from typing import List
 
 try:
     from . import constants
@@ -40,23 +39,15 @@ REQUIRED_CONSTANTS_MACOS = [
 
 def check_constants() -> None:
     """Verify that constants.py contains all necessary configuration."""
-    missing = []
-
     # Check Base
-    for key in REQUIRED_CONSTANTS:
-        if not hasattr(constants, key):
-            missing.append(key)
+    missing = [key for key in REQUIRED_CONSTANTS if not hasattr(constants, key)]
 
     # Check Platform Specifics
     system = platform.system()
     if system == "Linux":
-        for key in REQUIRED_CONSTANTS_LINUX:
-            if not hasattr(constants, key):
-                missing.append(key)
+        missing.extend(key for key in REQUIRED_CONSTANTS_LINUX if not hasattr(constants, key))
     elif system == "Darwin":
-        for key in REQUIRED_CONSTANTS_MACOS:
-            if not hasattr(constants, key):
-                missing.append(key)
+        missing.extend(key for key in REQUIRED_CONSTANTS_MACOS if not hasattr(constants, key))
 
     if missing:
         raise IntegrityError(
@@ -68,9 +59,7 @@ def check_constants() -> None:
     # Check Logic
     if not constants.DEFAULT_BLOCKED_PATHS:
         # Empty list is dangerous (regression risk)
-        raise IntegrityError(
-            "DEFAULT_BLOCKED_PATHS is empty! Security regression detected."
-        )
+        raise IntegrityError("DEFAULT_BLOCKED_PATHS is empty! Security regression detected.")
 
 
 def validate_runtime() -> None:
@@ -84,4 +73,4 @@ def validate_runtime() -> None:
     except IntegrityError:
         raise
     except Exception as e:
-        raise IntegrityError(f"Integrity Check Failed Unexpectedly: {e}")
+        raise IntegrityError(f"Integrity Check Failed Unexpectedly: {e}") from e

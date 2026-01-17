@@ -47,13 +47,12 @@ def _log_banner() -> None:
         from velo_zygote import constants
 
         # RFC-0012: Rely on normalized environment (SSOT)
-        env = os.environ["VELO_ENV"]
         hash_scm = getattr(constants, "BUILD_SCM_HASH", "unknown")
         proto = getattr(constants, "PROTOCOL_VERSION", "unknown")
 
         # Identity Matrix (Rule 2: Fail-Loud/Transparency)
         banner = [
-            f"\n\033[1m[Velo Zygote Bootstrap]\033[0m",
+            "\n\033[1m[Velo Zygote Bootstrap]\033[0m",
             f"  • PID:      {os.getpid()}",
             f"  • ENV:      {ENV_PROFILE.describe()}",
             f"  • BUILD:    {hash_scm} (v{proto})",
@@ -77,10 +76,10 @@ def initialize() -> None:
     """
     # 0. Pre-import critical dependencies before sys.path is modified
     # This prevents DEF-72-C02: Dependency Shadowing (e.g. user msgpack.py)
-    try:
-        import msgpack  # type: ignore
-    except ImportError:
-        pass
+    import importlib.util
+
+    if importlib.util.find_spec("msgpack") is None:
+        pass  # msgpack not available, will use fallback
 
     # 1. Environment Normalization (Phase 11.1)
     _normalize_environment()

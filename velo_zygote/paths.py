@@ -8,7 +8,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 # RFC-0012: Import generated constants (SSOT)
 try:
@@ -54,7 +53,7 @@ class VeloPaths:
         return result
 
     @staticmethod
-    def _get_path_config(key: str) -> Optional[str]:
+    def _get_path_config(key: str) -> str | None:
         """Get path config from constants by name (e.g. PATH_MACOS_DEV_SOCKET_PARENT)."""
         # We look up in the global scope of this module (where constants are imported)
         return globals().get(key.upper())
@@ -75,9 +74,7 @@ class VeloPaths:
             # Rule 2: Never Guess. If Rust didn't inject it, the boundary is breached.
             from .integrity import IntegrityError
 
-            raise IntegrityError(
-                "CRITICAL: VELO_ENV not injected. Python boundary convergence failed."
-            )
+            raise IntegrityError("CRITICAL: VELO_ENV not injected. Python boundary convergence failed.")
 
         # 3. Resolve using Matrix
         env_key = f"PATH_{os_name}_{env_mode.lower()}_SOCKET_PARENT"
@@ -124,7 +121,7 @@ class VeloPaths:
                 return Path(path_str)
             else:
                 print(
-                    f"⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long. Falling back to default.",
+                    "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long. Falling back to default.",
                     file=sys.stderr,
                 )
 
@@ -234,7 +231,7 @@ def ensure_socket_dir(path: Path) -> bool:
             if mode != 0o700:
                 # Attempt to fix it
                 path.chmod(0o700)
-        except:
+        except Exception:
             pass
 
         return True

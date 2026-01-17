@@ -4,10 +4,9 @@ RFC-0020: Zygote Observability - Pre-Flight Checks
 
 import os
 import sys
-import shutil
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
 from pathlib import Path
+from typing import Any
 
 # Internal imports
 try:
@@ -16,31 +15,31 @@ try:
 
     bootstrap.initialize()
 
-    from .env_profile import ENV_PROFILE, RunContext, OsType
-    from .v_shield import ImportShield, PathValidator
+    from .env_profile import ENV_PROFILE, OsType, RunContext
     from .settings import velo_config
+    from .v_shield import ImportShield, PathValidator
 except (ImportError, ValueError):
     # Fallback for direct execution if needed
     import bootstrap  # type: ignore[no-redef]
 
     bootstrap.initialize()  # type: ignore[no-untyped-call]
 
-    from env_profile import ENV_PROFILE, RunContext, OsType  # type: ignore[no-redef]
-    from v_shield import ImportShield, PathValidator  # type: ignore[no-redef]
+    from env_profile import ENV_PROFILE, RunContext  # type: ignore[no-redef]
     from settings import velo_config  # type: ignore[no-redef]
+    from v_shield import ImportShield, PathValidator  # type: ignore[no-redef]
 
 
 @dataclass
 class CheckResult:
     name: str
     passed: bool
-    details: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
+    details: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass
 class PreflightResult:
-    checks: List[CheckResult]
+    checks: list[CheckResult]
 
     @property
     def all_passed(self) -> bool:
@@ -80,8 +79,7 @@ class PreflightCheck:
             if is_ci_env and ENV_PROFILE.run_context != RunContext.CI:
                 context_match = False
                 error_msg = (
-                    f"mismatch: Environment vars suggest CI ({is_ci_env}), "
-                    f"but detected {ENV_PROFILE.run_context.name}"
+                    f"mismatch: Environment vars suggest CI ({is_ci_env}), but detected {ENV_PROFILE.run_context.name}"
                 )
 
             return CheckResult(
@@ -117,9 +115,7 @@ class PreflightCheck:
 
             if ENV_PROFILE.run_context == RunContext.CI and home_blocked:
                 passed = False
-                issues.append(
-                    f"CI Context but HOME ({home}) is blocked by rules: {blocked}"
-                )
+                issues.append(f"CI Context but HOME ({home}) is blocked by rules: {blocked}")
 
             return CheckResult(
                 name="Security Shield Status",
@@ -140,7 +136,7 @@ class PreflightCheck:
         try:
             passed = True
             issues = []
-            checked_paths: Dict[str, Any] = {}
+            checked_paths: dict[str, Any] = {}
 
             # 1. worker_launcher.py
             try:

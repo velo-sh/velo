@@ -86,12 +86,50 @@ ignore_missing_imports = true
 module = "tests.*"
 disallow_untyped_defs = false
 
+# Ruff: Fast Python linter (replaces flake8/isort/pyupgrade)
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = ["velo_zygote/constants.py"]  # Generated file
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # bugbear
+    "C4",     # comprehensions
+    "UP",     # pyupgrade
+    "PERF",   # performance anti-patterns
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function calls in defaults (FastAPI pattern)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["velo_zygote"]
+
+[tool.ruff.lint.per-file-ignores]
+# Bootstrap pattern: imports must come after sys.path manipulation
+"velo_zygote/main.py" = ["E402", "F401"]
+"velo_zygote/worker_launcher.py" = ["E402", "F401", "F821"]
+# Star imports from constants.py are intentional (SSOT pattern)
+"velo_zygote/settings.py" = ["F401", "F403", "F405"]
+"velo_zygote/paths.py" = ["F403", "F405"]
+# Unused imports in try/except blocks for fallback
+"velo_zygote/preflight.py" = ["F401"]
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
     "pytest-asyncio>=1.3.0",
+    "pytest-cov>=6.0.0",
     "types-psutil>=7.2.1.20251231",
     "types-requests>=2.32.4.20260107",
     "pre-commit>=4.0.0",
+    "ruff>=0.9.0",
+    "jsonschema>=4.23.0",
 ]
 
