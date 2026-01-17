@@ -144,10 +144,27 @@ def main() -> None:
             try:
                 # Injected by v_fork.py under __VELO_WARM_SERVER__
                 warmed_server = globals().get("__VELO_WARM_SERVER__")
+                warmed_config = globals().get("__VELO_WARM_CONFIG__")
 
-                if warmed_server is not None:
-                    _prof_log("[PROF] Using Deep-Warmed uvicorn Server.")
-                    # Patch dynamic args for this specific worker instance
+                if warmed_config is not None:
+                    _prof_log("[PROF] Using Deep-Warmed uvicorn Config.")
+                    # STB-SOCKET-004: Patch config with this worker's socket path
+                    # We MUST patch BEFORE creating a new Server, not after.
+                    if args.uds:
+                        warmed_config.uds = args.uds
+                        warmed_config.host = None
+                        warmed_config.port = None
+                    else:
+                        warmed_config.uds = None
+                        warmed_config.host = args.host or "127.0.0.1"
+                        warmed_config.port = args.port or 8000
+                    
+                    # Recreate Server with patched config (socket binding is determined at run time)
+                    server = uvicorn.Server(warmed_config)
+                    server.run()
+                elif warmed_server is not None:
+                    # Legacy fallback: patch server.config directly (may not work for UDS)
+                    _prof_log("[PROF] Using Deep-Warmed uvicorn Server (legacy).")
                     if args.uds:
                         warmed_server.config.uds = args.uds
                     else:
