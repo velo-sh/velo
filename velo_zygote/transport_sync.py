@@ -10,8 +10,8 @@ try:
     from .serializer import packer, unpacker
     from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
 except (ImportError, ValueError):
-    from serializer import packer, unpacker
-    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from serializer import packer, unpacker  # type: ignore[no-redef]
+    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef]
 
 
 class ProtocolError(Exception):

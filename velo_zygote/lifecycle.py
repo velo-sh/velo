@@ -66,7 +66,7 @@ class WorkerRegistry:
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
 
-        def guardian():
+        def guardian() -> None:
             while True:
                 time.sleep(1)
                 # 1. Check parent

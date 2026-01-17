@@ -14,13 +14,13 @@ from typing import Optional, List, Set
 try:
     from .env_profile import ENV_PROFILE, RunContext, OsType
 except (ImportError, ValueError):
-    from env_profile import ENV_PROFILE, RunContext, OsType
+    from env_profile import ENV_PROFILE, RunContext, OsType  # type: ignore[no-redef]
 
 # Shared constants
 try:
     from .constants import *
 except (ImportError, ValueError):
-    from constants import *
+    from constants import *  # type: ignore[no-redef]
 
 
 @dataclass

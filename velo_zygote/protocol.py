@@ -31,7 +31,7 @@ class ZygoteTransport:
         self.reader = reader
         self.writer = writer
 
-    async def recv(self) -> Optional[Dict]:
+    async def recv(self) -> Optional[Dict[str, Any]]:
         """Receive length-prefixed MessagePack message with fail-fast validation."""
         try:
             # 1. Read Length Prefix
@@ -81,7 +81,7 @@ class ZygoteTransport:
         except Exception as e:
             raise ProtocolError(f"Unexpected transport error: {e}")
 
-    async def send(self, msg: Dict):
+    async def send(self, msg: Dict[str, Any]) -> None:
         """Send length-prefixed MessagePack message."""
         try:
             payload = packer(msg)
