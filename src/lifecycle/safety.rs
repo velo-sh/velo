@@ -298,6 +298,55 @@ impl EnvironmentShield {
         Ok(())
     }
 
+    /// RFC-0012: Apply environment AND reconcile with Python interpreter (SSOT)
+    pub fn apply_with_python(&self, cmd: &mut Command, python_path: &Path) -> SecurityResult<()> {
+        cmd.env_clear();
+
+        // 1. Compile base security environment
+        let mut env = self.compile_env();
+
+        // 2. RECONCILE: Inject Python-specific SSOT variables (SPEC-0005)
+        if let Ok(py_env) = crate::common::python_env::PythonEnv::detect(python_path) {
+            // Priority: py_env variables override general environment
+            env.insert(
+                "PYTHONHOME".to_string(),
+                py_env.base_prefix.to_string_lossy().to_string(),
+            );
+            env.insert(
+                "VELO_PYTHON_LIB_DIR".to_string(),
+                py_env.lib_dir.to_string_lossy().to_string(),
+            );
+            if py_env.lib_dynload.exists() {
+                env.insert(
+                    "VELO_PYTHON_LIB_DYNLOAD".to_string(),
+                    py_env.lib_dynload.to_string_lossy().to_string(),
+                );
+            }
+            if let Some(venv) = py_env.venv_root {
+                env.insert(
+                    "VIRTUAL_ENV".to_string(),
+                    venv.to_string_lossy().to_string(),
+                );
+            }
+        }
+
+        // 3. Special Case: Velo-as-interpreter (STB-RS-007)
+        // If the python_path is the current executable, we need to add the 'python' subcommand
+        if std::env::current_exe()
+            .ok()
+            .is_some_and(|exe| exe == python_path)
+        {
+            cmd.arg("python");
+        }
+
+        // 4. Final Injection
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+
+        Ok(())
+    }
+
     /// Compile a surgical whitelist of environment variables for forked workers.
     /// RFC-0012: Prevents environment starvation and токсин injection.
     pub fn compile_env(&self) -> std::collections::HashMap<String, String> {
@@ -311,10 +360,10 @@ impl EnvironmentShield {
             }
             if let Ok(val) = std::env::var(var) {
                 // Special handling for PATH (Provenance Guard §3.5)
-                if var == "PATH" {
-                    if let Ok(cleaned) = self.validate_path_variable(&val) {
-                        env.insert(var.clone(), cleaned);
-                    }
+                if var == "PATH"
+                    && let Ok(cleaned) = self.validate_path_variable(&val)
+                {
+                    env.insert(var.clone(), cleaned);
                 } else {
                     env.insert(var.clone(), val);
                 }

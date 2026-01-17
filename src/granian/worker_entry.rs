@@ -753,6 +753,8 @@ fn load_asgi_app<'py>(
     eprintln!("DEBUG: Embedded Python Executable: {}", executable);
     let current_path: Vec<String> = path.extract()?;
     eprintln!("DEBUG: Embedded Python sys.path: {:?}", current_path);
+    let builtins: Vec<String> = sys.getattr("builtin_module_names")?.extract()?;
+    eprintln!("DEBUG: Embedded Python builtins: {:?}", builtins);
 
     let parts: Vec<&str> = app_path.split(':').collect();
     if parts.len() != 2 {

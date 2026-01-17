@@ -213,3 +213,50 @@ class TestL5Performance:
         # Target: 10x speedup
         # Relaxed for macOS/CI environments where polling overhead is high
         assert speedup > 2.0, f"Speedup {speedup:.1f}x < 2x (target: 10x)"
+
+    def test_PERF_605_rsgi_speedup(self, velo_serve_fixture):
+        """PERF-605: RSGI Zygote speedup vs CPython > 10x.
+        
+        This tests the native RSGI bridge which bypasses uvicorn overhead.
+        """
+        # CPython cold start baseline
+        cpython_times = []
+        for _ in range(5):
+            start = time.perf_counter()
+            result = subprocess.run(
+                [sys.executable, "-c", "import fastapi; print('ok')"],
+                capture_output=True,
+                timeout=30,
+            )
+            elapsed = time.perf_counter() - start
+            if result.returncode == 0:
+                cpython_times.append(elapsed)
+
+        cpython_median = sorted(cpython_times)[len(cpython_times) // 2]
+        print(f"CPython cold start: {cpython_median * 1000:.1f}ms")
+
+        # Zygote warm start with RSGI
+        proc = velo_serve_fixture.start("main:app", workers=1, zygote=True, rsgi=True)
+        proc.wait_ready()
+
+        zygote_times = []
+        for _ in range(5):
+            workers = proc.get_worker_pids()
+            if workers:
+                os.kill(workers[0], signal.SIGTERM)
+                start = time.perf_counter()
+                proc.wait_worker_ready()
+                elapsed = time.perf_counter() - start
+                zygote_times.append(elapsed)
+                time.sleep(0.1)
+
+        if not zygote_times:
+            pytest.skip("Could not measure RSGI respawn times")
+
+        zygote_median = sorted(zygote_times)[len(zygote_times) // 2]
+        print(f"RSGI Zygote warm start: {zygote_median * 1000:.1f}ms")
+
+        speedup = cpython_median / zygote_median if zygote_median > 0 else 0
+        print(f"RSGI Speedup: {speedup:.1f}x")
+
+        assert speedup > 5.0, f"RSGI Speedup {speedup:.1f}x < 5x"

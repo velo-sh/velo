@@ -137,6 +137,7 @@ pub fn get_preload_modules(framework: Framework) -> Vec<&'static str> {
             "starlette",
             "starlette.routing",
             "starlette.middleware",
+            "uvicorn",
         ],
         Framework::Django => vec!["django", "django.core", "django.conf", "django.http"],
         Framework::Flask => vec!["flask", "werkzeug", "jinja2"],

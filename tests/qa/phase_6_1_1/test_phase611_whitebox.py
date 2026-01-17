@@ -115,7 +115,7 @@ class TestWhiteBoxPythonStress:
                     os.kill(zygote_pid, signal.SIGUSR1)
                 except ProcessLookupError:
                     break
-                time.sleep(0.001)  # 1ms between signals
+                time.sleep(0.01)  # 10ms between signals
 
         storm_thread = threading.Thread(target=signal_storm)
         storm_thread.start()

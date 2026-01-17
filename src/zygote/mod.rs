@@ -259,12 +259,8 @@ impl WorkerHandle {
                     break;
                 }
 
-                // Fast polling for first 100ms, then slower
-                if start.elapsed().as_millis() < 100 {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                } else {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
+                // Fast polling (10ms floor) ensures low latency while reducing log volume.
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
 
@@ -424,25 +420,11 @@ impl ZygoteLauncher {
         let mut cmd = Command::new("env");
         cmd.arg(&python);
 
-        // STB-RS-007: If python is the velo binary itself, add 'python' subcommand
-        if std::env::current_exe()
-            .ok()
-            .is_some_and(|exe| exe == python)
-        {
-            cmd.arg("python");
-        }
-        // DEF-72-SEC-002: Hard Shielding - Explicitly remove dangerous vars
-        // We cannot use env_clear() safely here because we need basic system envs,
-        // but we MUST scrub interception paths to prevent the Shield bypass.
-        cmd.env_remove("PYTHONPATH");
-
-        // NOTE: Do NOT remove PYTHONHOME/VIRTUAL_ENV as they are required for
-        // uv/venv python to locate stdlib (fixes ModuleNotFoundError).
-
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
         let shield = EnvironmentShield::new(config);
+
         shield
-            .apply(&mut cmd)
+            .apply_with_python(&mut cmd, &python)
             .map_err(ZygoteError::SecurityViolation)?;
 
         // Pass GITHUB_ACTIONS to allow /home paths in CI
@@ -767,7 +749,7 @@ impl ZygoteLauncher {
                     get_log_path().display()
                 )));
             }
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(5));
         }
 
         // Layer 3: Deep Liveness Probe & Handshake (RFC-0011 architectural requirement)

@@ -1052,6 +1052,7 @@ pub fn run_server(
     // C. Run Unified L7 Proxy Loop
     if use_proxy && !workers.is_empty() {
         eprintln!("✅ All workers ready");
+        health_ready.store(true, std::sync::atomic::Ordering::SeqCst);
         let mut respawn_trackers: Vec<RespawnTracker> =
             (0..workers.len()).map(|_| RespawnTracker::new()).collect();
 
@@ -1120,11 +1121,14 @@ pub fn run_server(
                 }
             });
         }
+        let mut self_check_needed = false;
 
+        // Main loop: Wait for Signal or Events (Zero Busy Wait)
         loop {
-            let mut self_check_needed = false;
-            // Periodic health check & signal handling
-            match rx.recv_timeout(Duration::from_millis(100)) {
+            // PERF-604: 10ms polling floor reduces log volume while maintaining throughput.
+            // TODO(EV-001): Migrate to event-driven pidfd (Linux) or kqueue (macOS)
+            // to eliminate polling overhead while maintaining low latency.
+            match rx.recv_timeout(Duration::from_millis(10)) {
                 Ok(ServerEvent::Signal(sig)) => {
                     use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
                     if sig == SIGINT || sig == SIGTERM {
@@ -1283,8 +1287,6 @@ pub fn run_server(
                 }
             }
         }
-
-        // Loop handles all exit paths
     }
 
     // STB-RS-005: Respawn Loop
