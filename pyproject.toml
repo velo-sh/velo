@@ -114,7 +114,7 @@ known-first-party = ["velo_zygote"]
 [tool.ruff.lint.per-file-ignores]
 # Bootstrap pattern: imports must come after sys.path manipulation
 "velo_zygote/main.py" = ["E402", "F401"]
-"velo_zygote/worker_launcher.py" = ["E402", "F401", "F821"]
+"velo_zygote/worker_launcher.py" = ["E402", "F401"]
 # Star imports from constants.py are intentional (SSOT pattern)
 "velo_zygote/settings.py" = ["F401", "F403", "F405"]
 "velo_zygote/paths.py" = ["F403", "F405"]
