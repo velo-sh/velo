@@ -540,10 +540,14 @@ class ZygoteServer:
                         transport.send({"type": "Error", "message": "Invalid secret"})
                         break
                     else:
-                        # Already authorized (e.g. via PeerIdentity), but sent a bad secret?
-                        # In this case, we trust the PeerIdentity but warn about the secret mismatch.
-                        LogUtils.log("[SEC-005] Auth Warning: Redundant Auth with mismatching secret (ignoring as already trusted).")
-                        transport.send({"type": "Ack", "message": "Already authorized"})
+                        # Already authorized (e.g. via PeerIdentity), but sent an Auth command?
+                        # We accept it if the secret is valid, or if we already trust them.
+                        if secret == self._authorized_secret:
+                            LogUtils.log("[SEC-005] Auth Success: Redundant Auth accepted.")
+                            transport.send({"type": "Ack", "message": "Authorized"})
+                        else:
+                            LogUtils.log("[SEC-005] Auth Warning: Redundant Auth with mismatching secret (ignoring as already trusted).")
+                            transport.send({"type": "Ack", "message": "Already authorized"})
                         continue
 
                 # SEC-005: Mandatory Auth Handshake check

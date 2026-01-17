@@ -95,6 +95,13 @@ if __name__ == \"__main__\":
                 "version": PROTOCOL_VERSION,
                 "capabilities": [],
             }
+            
+            # SEC-005: Forensic Auth
+            if proc.forensic_secret:
+                await client.send({"type": "Auth", "secret": proc.forensic_secret})
+                auth_resp = await client.recv()
+                print(f"DEBUG: Auth Response: {auth_resp}")
+            
             await client.send(handshake)
             await client.recv()
 

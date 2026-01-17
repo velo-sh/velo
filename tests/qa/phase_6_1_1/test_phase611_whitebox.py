@@ -164,6 +164,11 @@ class TestWhiteBoxPythonStress:
             # Read Ready
             _ = recv_msg(s)
 
+            # SEC-005: Forensic Auth
+            if hasattr(proc, "forensic_secret") and proc.forensic_secret:
+                send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
+                _ = recv_msg(s) # Ack
+
             # Send Handshake with empty capabilities (no app name)
             handshake = {"type": "Handshake", "version": 0x01, "capabilities": []}
             send_msg(s, handshake)
@@ -214,6 +219,11 @@ class TestWhiteBoxPythonStress:
 
                 # Read Ready
                 recv_msg(s)
+
+                # SEC-005: Forensic Auth
+                if hasattr(proc, "forensic_secret") and proc.forensic_secret:
+                    send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
+                    recv_msg(s) # Ack
 
                 script_path = (
                     str(proc.script_path)
@@ -461,6 +471,11 @@ class TestWhiteBoxProtocolCompliance:
                 assert (
                     msg.get("type") == "Ready"
                 ), f"WB-009: Expected Ready, got {msg.get('type')}"
+
+                # SEC-005: Forensic Auth (Required before we can send Status in next test part)
+                if hasattr(proc, "forensic_secret") and proc.forensic_secret:
+                    send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
+                    _ = recv_msg(s) # Ack
         except socket.error as e:
             pytest.fail(f"WB-009: Socket error with little-endian: {e}")
 
@@ -472,6 +487,11 @@ class TestWhiteBoxProtocolCompliance:
 
                 # Read Ready
                 recv_msg(s)
+                
+                # SEC-005: Forensic Auth
+                if hasattr(proc, "forensic_secret") and proc.forensic_secret:
+                    send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
+                    recv_msg(s) # Ack
 
                 # Send Status command with LITTLE-endian (correct)
                 send_msg(s, {"type": "Status"})

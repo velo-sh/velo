@@ -70,9 +70,12 @@ pub fn get_log_path() -> PathBuf {
 /// SEC-005: Generate an ephemeral forensic secret and write it to a .auth file
 /// alongside the socket. This file is used for client-side discovery and auth.
 /// Returns the secret string.
-pub fn write_ephemeral_secret(socket_path: &Path) -> Result<String> {
+pub fn write_ephemeral_secret(
+    socket_path: &Path,
+    provided_secret: Option<String>,
+) -> Result<String> {
     let auth_path = VeloPaths::auth_file_for_socket(socket_path);
-    let secret = uuid::Uuid::now_v7().to_string();
+    let secret = provided_secret.unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
 
     // Create file with 0600 permissions
     #[cfg(unix)]
@@ -420,6 +423,14 @@ impl ZygoteLauncher {
         // Use 'env' to wrapper execution (Workaround for macOS symlink/Command::new issue)
         let mut cmd = Command::new("env");
         cmd.arg(&python);
+
+        // STB-RS-007: If python is the velo binary itself, add 'python' subcommand
+        if std::env::current_exe()
+            .ok()
+            .is_some_and(|exe| exe == python)
+        {
+            cmd.arg("python");
+        }
         // DEF-72-SEC-002: Hard Shielding - Explicitly remove dangerous vars
         // We cannot use env_clear() safely here because we need basic system envs,
         // but we MUST scrub interception paths to prevent the Shield bypass.
@@ -618,7 +629,10 @@ impl ZygoteLauncher {
         cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
 
         // SEC-005: Generate and propagate forensic auth secret
-        if let Ok(secret) = write_ephemeral_secret(&self.socket_path) {
+        // Use provided secret from config if available (respecting VELO_ZYGOTE_AUTH)
+        if let Ok(secret) =
+            write_ephemeral_secret(&self.socket_path, config.forensic_secret.clone())
+        {
             cmd.arg("--authorized-secret").arg(secret);
         }
 
@@ -638,10 +652,7 @@ impl ZygoteLauncher {
             cmd.arg("--app").arg(app);
         }
 
-        // SEC-005: Pass forensic secret for external auth
-        if let Some(ref secret) = config.forensic_secret {
-            cmd.arg("--authorized-secret").arg(secret);
-        }
+        // SEC-005: Pass forensic secret for external auth (Removed redundant arg)
 
         #[cfg(target_os = "linux")]
         let strict_optimizations = config.strict_optimizations;
