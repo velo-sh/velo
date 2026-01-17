@@ -5,7 +5,7 @@ import os
 # DEF-72-C02: Surgical sys.path sanitization to prevent shadowing
 # During 'python -m', sys.path[0] is the current directory.
 # We MUST remove it before pre-importing critical libraries.
-def _sovereign_import(name):
+def _sovereign_import(name: str) -> Any:
     _original_path = sys.path.copy()
     _cwd = os.getcwd()
     sys.path = [p for p in sys.path if p and p != _cwd and p != "." and p != ""]
@@ -33,12 +33,13 @@ except ImportError:
 import argparse
 import signal
 import traceback
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from types import ModuleType, FrameType
 
 import time
 _T0 = time.perf_counter()
 
-def _prof_log(msg):
+def _prof_log(msg: str) -> None:
     with open("/tmp/worker_prof.log", "a") as f:
         f.write(f"[{time.perf_counter()}] {msg}\n")
 
@@ -80,7 +81,7 @@ class UDSProxyMiddleware:
 
 def main() -> None:
     try:
-        def _graceful_exit(sig, frame):
+        def _graceful_exit(sig: int, frame: Optional[FrameType]) -> None:
             raise SystemExit(0)
         signal.signal(signal.SIGINT, _graceful_exit)
         signal.signal(signal.SIGTERM, _graceful_exit)

@@ -255,7 +255,7 @@ async def handle_worker_status(
 
 
 @router.handler("Shutdown")
-async def handle_shutdown(server: "ZygoteServer", cmd: Dict) -> Dict:
+async def handle_shutdown(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, Any]:
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
@@ -364,10 +364,10 @@ class ZygoteServer:
             from velo_zygote.utils import MacOSDeathSigMonitor
         except ImportError:
             try:
-                from utils import MacOSDeathSigMonitor
+                from utils import MacOSDeathSigMonitor  # type: ignore[no-redef]
             except ImportError:
                 # Last resort relative import (but usually fails in script mode)
-                from .utils import MacOSDeathSigMonitor
+                from .utils import MacOSDeathSigMonitor  # type: ignore[no-redef]
 
         if self._monitor_parent:
             MacOSDeathSigMonitor.start_monitoring()
@@ -655,14 +655,14 @@ class ZygoteServer:
             try:
                 import uvicorn
                 LogUtils.log(f"Deep Warming uvicorn for {self.app_name}...")
-                self._warmed_config = uvicorn.Config(
+                self._warmed_config = uvicorn.Config(  # type: ignore[assignment]
                     app=self.app_name,
                     loop="auto",
                     http="auto",
                     lifespan="on",
                     log_config=None,
                 )
-                self._warmed_server = uvicorn.Server(self._warmed_config)
+                self._warmed_server = uvicorn.Server(self._warmed_config)  # type: ignore[assignment, arg-type]
                 # Force config load and module inspection in Zygote (Saves 44ms in worker)
                 # TITANIUM-PERF: Wrap in broad try-except to prevent baseline hang
                 try:

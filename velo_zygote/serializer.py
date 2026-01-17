@@ -14,8 +14,8 @@ try:
     if not hasattr(msgpack, "packb"):
         raise ImportError("msgpack installed but packb missing")
 
-    def packer(msg: Dict) -> bytes:
-        return msgpack.packb(msg, use_bin_type=True)
+    def packer(msg: Dict[str, Any]) -> bytes:
+        return bytes(msgpack.packb(msg, use_bin_type=True))
 
     def unpacker(data: bytes) -> Any:
         return msgpack.unpackb(data, raw=False)
@@ -45,8 +45,8 @@ except (ImportError, OSError, AttributeError):
                 # Only log if running as main process to avoid noise
                 # sys.stderr.write("[Velo] ⚠️  Warning: fast 'msgpack' extension failed to load. Using pure Python fallback.\n")
 
-                def packer(msg: Dict) -> bytes:
-                    return umsgpack.packb(msg)
+                def packer(msg: Dict[str, Any]) -> bytes:
+                    return bytes(umsgpack.packb(msg))
 
                 def unpacker(data: bytes) -> Any:
                     return umsgpack.unpackb(data)
@@ -60,7 +60,7 @@ except (ImportError, OSError, AttributeError):
     if not _fallback_loaded:
         # Define dummy functions that raise error when called,
         # allowing module to import but failing at runtime if used
-        def packer(msg: Dict) -> bytes:
+        def packer(msg: Dict[str, Any]) -> bytes:
             raise ImportError("msgpack not installed and fallback umsgpack not found")
 
         def unpacker(data: bytes) -> Any:

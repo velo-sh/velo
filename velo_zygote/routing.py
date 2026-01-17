@@ -10,7 +10,7 @@ class CommandRouter:
     """Layer 2: Control Plane - Decorator-based command dispatching."""
 
     def __init__(self) -> None:
-        self.handlers: Dict[str, Callable] = {}
+        self.handlers: Dict[str, Callable[..., Any]] = {}
 
     def handler(
         self, command_name: str
@@ -30,7 +30,7 @@ class CommandRouter:
             return {"type": "Error", "message": f"Unknown command: {cmd_type}"}
 
         try:
-            return await handler(server, cmd)
+            return await handler(server, cmd)  # type: ignore[no-any-return]
         except Exception as e:
             import traceback
 

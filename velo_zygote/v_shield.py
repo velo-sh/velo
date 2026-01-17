@@ -101,7 +101,7 @@ class ImportShield:
         """Install the shield at the front of sys.meta_path."""
         # Use name check instead of isinstance to avoid potential ABC issues or hangs
         if not any(type(f).__name__ == "ImportShield" for f in sys.meta_path):
-            sys.meta_path.insert(0, ImportShield())
+            sys.meta_path.insert(0, ImportShield())  # type: ignore[arg-type]
 
             # Centralized Path Sanitization (RFC-0011 6A.1)
             # Prevent shadowing of user modules by framework modules.

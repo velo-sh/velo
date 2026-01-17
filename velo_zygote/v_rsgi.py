@@ -9,7 +9,8 @@ import os
 import struct
 import sys
 import traceback
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from asyncio import StreamReader, StreamWriter
 from velo_zygote.utils import LogUtils
 
 # Gate O/P: Pre-intern common header names for performance (RFC-0019 Section 5)
@@ -39,7 +40,7 @@ class RSGIWorker:
         self.socket_path = socket_path
         self.worker_id = f"worker-{os.getpid()}"
 
-    async def run(self):
+    async def run(self) -> None:
         """Main RSGI loop."""
         LogUtils.debug_log(f"RSGI Worker starting server on {self.socket_path}...")
         server = await asyncio.start_unix_server(
@@ -49,14 +50,14 @@ class RSGIWorker:
         async with server:
             await server.serve_forever()
 
-    async def send_msg(self, writer, msg):
+    async def send_msg(self, writer: StreamWriter, msg: List[Any]) -> None:
         payload = msgpack.packb(msg)
         writer.write(struct.pack(">I", len(payload)))
         writer.write(payload)
         # DEF-72-C05: Ensure immediate flush for streaming (SSE Optimization)
         await writer.drain()
 
-    async def recv_msg(self, reader):
+    async def recv_msg(self, reader: StreamReader) -> Any:
         """Receive and decode MessagePack message.
         
         Gate O: Use memoryview to avoid bytes slice copy.
@@ -68,7 +69,7 @@ class RSGIWorker:
         view = memoryview(payload)
         return msgpack.unpackb(view, raw=False, use_list=False)
 
-    async def handle_connection(self, reader, writer):
+    async def handle_connection(self, reader: StreamReader, writer: StreamWriter) -> None:
         """Handle an incoming RSGI connection from the Rust Host."""
         try:
             # Gate H (DEF-72-H01): Peer PID Authentication
@@ -181,7 +182,7 @@ class RSGIWorker:
             writer.close()
             await writer.wait_closed()
 
-    async def process_request(self, req_start, reader, writer):
+    async def process_request(self, req_start: List[Any], reader: StreamReader, writer: StreamWriter) -> None:
         """Bridge RSGI request to ASGI application."""
         # req_start: [type, req_id, method, path, headers, has_body, client]
         _, req_id, method, path, headers, has_body, client = req_start
@@ -219,12 +220,12 @@ class RSGIWorker:
         body_buffer = bytearray()
         body_complete = asyncio.Event()
 
-        async def receive():
+        async def receive() -> Dict[str, Any]:
             """ASGI receive callable - reads streamed request body from Host."""
             await body_complete.wait()
             return {"type": "http.request", "body": bytes(body_buffer), "more_body": False}
 
-        async def send(message):
+        async def send(message: Dict[str, Any]) -> None:
             """ASGI send callable - sends response back to Host."""
             if message["type"] == "http.response.start":
                 res_start = [
@@ -243,8 +244,7 @@ class RSGIWorker:
                 ]
                 await self.send_msg(writer, res_body)
 
-        # Receive request body from Host
-        async def read_body_task():
+        async def read_body_task() -> None:
             try:
                 while True:
                     msg = await self.recv_msg(reader)
@@ -275,7 +275,7 @@ class RSGIWorker:
             except asyncio.CancelledError:
                 pass
 
-def run_rsgi(app_str: str, uds_path: str):
+def run_rsgi(app_str: str, uds_path: str) -> None:
     """Entry point for RSGI worker."""
     import importlib
     import random
