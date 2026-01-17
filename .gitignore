@@ -28,7 +28,6 @@ target
 .velo/
 __pycache__/
 velo_zygote/velo_zygote
-velo_zygote/constants.py
 test_large_bundle/
 *.veloc
 build/
