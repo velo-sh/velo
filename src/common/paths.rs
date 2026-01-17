@@ -129,7 +129,82 @@ impl VeloPaths {
         crate::config::extract_path_config(key)
     }
 
-    /// Get the full Zygote socket path.
+    /// Generate a short hash from input string (6 hex characters)
+    fn short_hash(input: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        input.hash(&mut hasher);
+        format!("{:06x}", hasher.finish() as u32 & 0xFFFFFF)
+    }
+
+    /// Sanitize project name for use in socket filename.
+    /// Only keeps alphanumeric and underscore, truncates to 8 chars.
+    fn sanitize_project_name(project_dir: &Path) -> String {
+        let name = project_dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "proj".to_string());
+
+        let clean: String = name
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .take(8)
+            .collect();
+
+        if clean.is_empty() {
+            "proj".to_string()
+        } else {
+            clean
+        }
+    }
+
+    /// Get project-specific Zygote socket path.
+    /// Format: velo-zygote-{name}-{hash}-v{version}.sock
+    ///
+    /// This allows multiple projects to have independent Zygotes while
+    /// allowing the same project to reuse its Zygote across restarts.
+    pub fn zygote_socket_for_app(project_dir: &Path, app: &str) -> PathBuf {
+        // Environment override takes precedence (for testing)
+        if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
+            let path_str = socket_path.to_string_lossy();
+            if path_str.len() <= SOCKET_PATH_LIMIT {
+                let path_buf = PathBuf::from(socket_path);
+                if let Some(parent) = path_buf.parent() {
+                    let _ = ensure_socket_dir(parent);
+                }
+                return path_buf;
+            } else {
+                eprintln!(
+                    "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long ({} bytes, max {}). Falling back to safe default.",
+                    path_str.len(),
+                    SOCKET_PATH_LIMIT
+                );
+            }
+        }
+
+        let dir = Self::socket_dir();
+        if let Err(e) = ensure_socket_dir(&dir) {
+            panic!("FATAL SECURITY ERROR: {}", e);
+        }
+
+        // Generate unique but readable socket name
+        let canonical = project_dir
+            .canonicalize()
+            .unwrap_or_else(|_| project_dir.to_path_buf());
+        let hash_input = format!("{}:{}", canonical.display(), app);
+        let hash = Self::short_hash(&hash_input);
+        let name = Self::sanitize_project_name(project_dir);
+
+        dir.join(format!(
+            "velo-zygote-{}-{}-v{:02x}.sock",
+            name, hash, PROTOCOL_VERSION
+        ))
+    }
+
+    /// Get the full Zygote socket path (legacy, uses fixed name).
+    /// Prefer zygote_socket_for_app() for better isolation.
     pub fn zygote_socket() -> PathBuf {
         if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
             let path_str = socket_path.to_string_lossy();
