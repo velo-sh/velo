@@ -243,6 +243,21 @@ jobs:
       - name: Run Fmt via Pre-Commit (SSOT)
         run: uv run pre-commit run cargo-fmt --all-files
 
+  mypy:
+    name: Mypy (Python Type Check)
+    needs: changes
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Run Mypy via Pre-Commit (SSOT)
+        run: uv run pre-commit run mypy --all-files
+
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
