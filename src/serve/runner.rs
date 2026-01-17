@@ -1092,10 +1092,11 @@ pub fn run_server(
             // RFC-0019/0025: Native RSGI Mode
             // Workers handle their own server listening; Master only supervises.
             logger.info("Master supervisor active (Native RSGI Mode)");
-        } else if args.rsgi {
+        } else if args.rsgi && _zygote_guard.is_none() {
+            // Only bail if NOT using Zygote (Legacy RSGI requires native listener)
             anyhow::bail!("RSGI mode requires a native listener (Unix only)");
         } else {
-            // Legacy L7 Proxy Mode
+            // Legacy L7 Proxy Mode (or RSGI-over-UDS bridge)
             let service = VeloProxyService::new(lb.clone());
             rt.spawn(async move {
                 let listener = tokio::net::TcpListener::bind(bind_addr)
@@ -1193,12 +1194,17 @@ pub fn run_server(
                             socket_fd,
                         ) {
                             Ok(new_worker) => {
-                                if let Some(ref old) = worker.socket_path {
-                                    lb.remove_backend(&old.to_string_lossy());
+                                // STB-RS-005: Atomic LB Update
+                                // Use update_worker_path to inform LB of monotonic socket path change.
+                                // This ensures the LB's WorkerNode is updated in-place without losing
+                                // connection tracking state (RFC-0011 §6A.7).
+                                if let Some(ref new_path) = new_worker.socket_path {
+                                    lb.update_worker_path(
+                                        i as u64,
+                                        new_path.to_string_lossy().to_string(),
+                                    );
                                 }
-                                if let Some(ref new) = new_worker.socket_path {
-                                    lb.add_backend(&new.to_string_lossy());
-                                }
+
                                 // Gate H (DEF-72-H01): Register new PID after respawn
                                 lb.register_worker_pid(i as u64, new_worker.pid);
                                 *worker = new_worker;
@@ -1245,13 +1251,15 @@ pub fn run_server(
                                                     #[cfg(unix)]
                                                     socket_fd,
                                                 ) {
-                                                    if let Some(ref old) = worker.socket_path {
-                                                        lb.remove_backend(&old.to_string_lossy());
-                                                    }
-                                                    if let Some(ref new) = retry_worker.socket_path
+                                                    if let Some(ref new_path) =
+                                                        retry_worker.socket_path
                                                     {
-                                                        lb.add_backend(&new.to_string_lossy());
+                                                        lb.update_worker_path(
+                                                            i as u64,
+                                                            new_path.to_string_lossy().to_string(),
+                                                        );
                                                     }
+
                                                     // Gate H (DEF-72-H01): Register new PID after zygote-recovery respawn
                                                     lb.register_worker_pid(
                                                         i as u64,
