@@ -1,6 +1,13 @@
 repos:
   - repo: local
     hooks:
+      - id: sync-constants
+        name: sync-constants (TOML→Python)
+        entry: uv run python scripts/sync-constants.py --check
+        language: system
+        files: ^(config/constants\.toml|velo_zygote/constants\.py|scripts/sync-constants\.py)$
+        pass_filenames: false
+
       - id: mypy
         name: mypy (zygote)
         entry: uv run mypy
