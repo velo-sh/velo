@@ -1,6 +1,7 @@
 # --- Velo Bootstrap (CRITICAL: MUST BE FIRST) ---
 import os
 import sys
+from typing import Any
 
 
 # DEF-72-C02: Surgical sys.path sanitization to prevent shadowing
