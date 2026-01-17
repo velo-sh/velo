@@ -63,6 +63,14 @@ def recv_msg(sock, timeout=2.0):
     return umsgpack.unpackb(payload)
 
 
+def auth_zygote(sock, secret):
+    """Perform SEC-005 Forensic Auth handshake."""
+    send_msg(sock, {"type": "Auth", "secret": secret})
+    resp = recv_msg(sock)
+    if not resp or resp.get("type") != "Ack" or resp.get("message") != "Authorized":
+        raise PermissionError(f"Zygote Auth Failed: {resp}")
+
+
 @pytest.mark.chaos
 class TestAgentDDesync:
     """Agent D: Lifecycle and Protocol Desync Testing."""
@@ -103,6 +111,7 @@ class TestAgentDDesync:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(socket_path)
                 recv_msg(s)  # Ready
+                auth_zygote(s, proc.forensic_secret) # SEC-005 Auth
 
                 send_msg(
                     s, {"type": "Fork", "script_path": str(script), "async_mode": True}
@@ -156,6 +165,7 @@ class TestAgentDDesync:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
             recv_msg(s)  # Ready
+            auth_zygote(s, proc.forensic_secret) # SEC-005 Auth
 
             # 1. Fork
             send_msg(
@@ -202,12 +212,18 @@ class TestAgentDDesync:
 
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
-            # We skip reading 'Ready' and just fire a status command
-            send_msg(s, {"type": "Status"})
-
-            # Now we read the 'Ready' that was sent by server
+            
+            # Fix for DESYNC-007 Flakiness:
+            # Must strictly read "Ready" before sending any commands.
+            # The previous "send then read" approach relied on kernel buffering which raced.
             ready = recv_msg(s)
             assert ready["type"] == "Ready"
+            
+            # SEC-005: Forensic Agent must Auth
+            auth_zygote(s, proc.forensic_secret)
+
+            # Now safe to send Status
+            send_msg(s, {"type": "Status"})
 
             # Now we should get the Status response
             status = recv_msg(s)

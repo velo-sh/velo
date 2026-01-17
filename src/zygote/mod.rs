@@ -608,6 +608,11 @@ impl ZygoteLauncher {
             cmd.arg("--app").arg(app);
         }
 
+        // SEC-005: Pass forensic secret for external auth
+        if let Some(ref secret) = config.forensic_secret {
+            cmd.arg("--authorized-secret").arg(secret);
+        }
+
         #[cfg(target_os = "linux")]
         let strict_optimizations = config.strict_optimizations;
 

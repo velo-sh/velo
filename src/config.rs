@@ -29,6 +29,8 @@ pub struct VeloConfig {
     pub graceful_shutdown_timeout: u64,
     /// H-Gov: Whether optimizations must be strictly enforced (bail on failure)
     pub strict_optimizations: bool,
+    /// SEC-005: Forensic secret for Zygote authentication
+    pub forensic_secret: Option<String>,
 }
 
 impl Default for VeloConfig {
@@ -102,6 +104,7 @@ impl Default for VeloConfig {
                 "ci" => false,   // CI/Test: Allow graceful fallback for resilience
                 _ => extract_default_bool("strict_optimizations", true),
             },
+            forensic_secret: None, // Generated at runtime or from env
         }
     }
 }
@@ -217,6 +220,9 @@ impl VeloConfig {
             .and_then(|v| v.parse::<bool>().ok())
         {
             self.strict_optimizations = b;
+        }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_AUTH") {
+            self.forensic_secret = Some(val);
         }
     }
 

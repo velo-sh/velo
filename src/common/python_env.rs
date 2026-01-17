@@ -52,27 +52,36 @@ impl PythonEnv {
     ///
     /// Uses SSOT constants from config/constants.toml via build.rs generated code.
     pub fn detect(python_path: &Path) -> anyhow::Result<Self> {
-        use crate::common::constants::{PYTHON_LIB_DIR_PATTERN, PYTHON_LIB_DYNLOAD_SUBDIR};
+        use crate::common::constants::{
+            PYTHON_LIB_DIR_PATTERN, PYTHON_LIB_DYNLOAD_SUBDIR, PYTHON_VENV_PATH,
+        };
 
-        // Step 1: Detect base_prefix
+        // Step 1: Find Project Root (SPEC-0005)
+        let project_root = Self::find_project_root(python_path).ok_or_else(|| {
+            anyhow::anyhow!("Failed to identify project root (missing pyproject.toml)")
+        })?;
+
+        // Step 2: Detect base_prefix
         let base_prefix = Self::detect_base_prefix(python_path)?;
 
-        // Step 2: Detect Python version
+        // Step 3: Detect Python version
         let version = Self::detect_version(python_path)?;
 
-        // Step 3: Build paths using SSOT patterns
+        // Step 4: Build paths using SSOT patterns
         // SSOT: PYTHON_LIB_DIR_PATTERN = "lib/python{version}"
         let lib_dir_relative = PYTHON_LIB_DIR_PATTERN.replace("{version}", &version);
         let lib_dir = base_prefix.join(&lib_dir_relative);
         // SSOT: PYTHON_LIB_DYNLOAD_SUBDIR = "lib-dynload"
         let lib_dynload = lib_dir.join(PYTHON_LIB_DYNLOAD_SUBDIR);
 
-        // Step 4: Detect venv root if applicable
-        let venv_root = python_path
-            .parent()
-            .and_then(|p| p.parent())
-            .filter(|root| root.join("pyvenv.cfg").exists())
-            .map(|p| p.to_path_buf());
+        // Step 5: Anchor venv root to project root (SPEC-0005)
+        // SSOT: venv_path = ".venv" (from constants.toml)
+        let venv_root_path = project_root.join(PYTHON_VENV_PATH);
+        let venv_root = if venv_root_path.join("pyvenv.cfg").exists() {
+            Some(venv_root_path)
+        } else {
+            None
+        };
 
         Ok(Self {
             base_prefix,
@@ -81,6 +90,19 @@ impl PythonEnv {
             lib_dynload,
             venv_root,
         })
+    }
+
+    /// Find project root by searching for pyproject.toml upwards from python_path.
+    fn find_project_root(start_path: &Path) -> Option<PathBuf> {
+        use crate::common::constants::PYPROJECT_TOML;
+        let mut current = start_path.to_path_buf();
+        while let Some(parent) = current.parent() {
+            if parent.join(PYPROJECT_TOML).exists() {
+                return Some(parent.to_path_buf());
+            }
+            current = parent.to_path_buf();
+        }
+        None
     }
 
     /// Detect base_prefix using PEP 405 or Python subprocess.
