@@ -1,7 +1,8 @@
 import os
 import sys
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Set, Any, List
+import types
 
 try:
     from .settings import velo_config
@@ -19,14 +20,19 @@ class ImportShield:
     _is_velo_import_shield = True
 
     @classmethod
-    def activate(cls):
+    def activate(cls) -> None:
         """Enable the shield. Once enabled, internal imports are blocked."""
         cls.install()
         cls._active = True
         # Set environment variable for persistence in forks
         os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
 
-    def find_spec(self, fullname, path, target=None):
+    def find_spec(
+        self,
+        fullname: str,
+        path: Optional[List[str]],
+        target: Optional[types.ModuleType] = None,
+    ) -> Optional[types.ModuleType]:
         # 0. Only block if shield is active (via class var or environment)
         # Environment check is the target-safe SSOT for forked children.
         if not self._active:
@@ -40,7 +46,8 @@ class ImportShield:
             "velo_zygote.utils",
             "velo_zygote.bootstrap",
             "velo_zygote.settings",
-            "velo_zygote.paths"
+            "velo_zygote.paths",
+            "velo_zygote.memory"
         }
         if fullname.startswith("velo_zygote") and fullname not in whitelist:
             msg = f"Unauthorized access to internal framework module: {fullname}"
@@ -90,7 +97,7 @@ class ImportShield:
         return None
 
     @staticmethod
-    def install():
+    def install() -> None:
         """Install the shield at the front of sys.meta_path."""
         # Use name check instead of isinstance to avoid potential ABC issues or hangs
         if not any(type(f).__name__ == "ImportShield" for f in sys.meta_path):

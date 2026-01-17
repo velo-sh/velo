@@ -60,7 +60,7 @@ class WorkerRegistry:
             self.remove(pid)
             return False
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, Any]:
         return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
@@ -124,7 +124,7 @@ class ReinitHooks:
     """Layer 3: Hook-based Re-initialization system."""
 
     def __init__(self) -> None:
-        self.hooks = []
+        self.hooks: List[Any] = []
 
     def register(self, hook_func: Any) -> None:
         self.hooks.append(hook_func)
