@@ -9,16 +9,16 @@ try:
 except ImportError:
     torch = None
 import weakref
-from typing import Optional, List
+from typing import Optional, List, Any, Union
 
 # H-17: Immutability Defense (Monkey-patching)
 _ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None
 
 
-def _safe_data_ptr(self):
+def _safe_data_ptr(self: Any) -> Optional[int]:
     """Safe data_ptr that warns on access to shared memory."""
     if _ORIG_DATA_PTR:
-        return _ORIG_DATA_PTR(self)
+        return _ORIG_DATA_PTR(self)  # type: ignore[no-any-return]
     return None
 
 
@@ -32,9 +32,9 @@ class SharedMemoryManager:
     Enforces H-31 (Lazy Unmap, Expect Breakage).
     """
 
-    def __init__(self):
-        self._mappings = []
-        self._tensor_refs = []
+    def __init__(self) -> None:
+        self._mappings: List[mmap.mmap] = []
+        self._tensor_refs: List[Any] = []
 
         # H-31: Register signal handler for expiry (SIGUSR1 usually, assuming SHM_EXPIRE)
         # Note: In real implementation, this might be a specific IPC message.
@@ -59,7 +59,7 @@ class SharedMemoryManager:
                     # would use metadata from the segment header.
                     t = torch.frombuffer(buf, dtype=torch.uint8)
                     self._tensor_refs.append(weakref.ref(t))
-                    return t
+                    return t  # type: ignore[return-value, no-any-return]
                 except Exception as e:
                     print(
                         f"[Memory] Warning: Could not wrap buffer as torch.Tensor: {e}",
@@ -74,7 +74,7 @@ class SharedMemoryManager:
             )
             return None
 
-    def handle_expire(self):
+    def handle_expire(self) -> None:
         """
         H-31: Lazy Unmap Support.
         When Host broadcasts expire, Python MUST drop all tensor references within 100ms.

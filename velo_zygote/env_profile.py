@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, Any
 
 
 class OsType(Enum):
@@ -113,7 +113,7 @@ class EnvProfile:
         container_tag = " (container)" if self.is_container else ""
         return f"{os_name}/{ctx}{container_tag}"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serializable representation for diagnostics."""
         return {
             "os_type": self.os_type.name,

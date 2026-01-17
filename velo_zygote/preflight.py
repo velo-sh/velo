@@ -140,7 +140,7 @@ class PreflightCheck:
         try:
             passed = True
             issues = []
-            checked_paths = {}
+            checked_paths: Dict[str, Any] = {}
 
             # 1. worker_launcher.py
             try:

@@ -103,7 +103,7 @@ class ZygoteTransport:
         except Exception as e:
             raise ProtocolError(f"Failed to send message: {e}")
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the underlying streams."""
         try:
             if not self.writer.is_closing():
