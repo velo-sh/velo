@@ -157,14 +157,6 @@ pub fn default_socket_path() -> PathBuf {
     crate::common::paths::get_socket_path()
 }
 
-/// Get project-specific socket path for Zygote IPC
-///
-/// This ensures different projects get independent Zygotes.
-/// Format: velo-zygote-{name}-{hash}-v{version}.sock
-pub fn socket_path_for_app(project_dir: &Path, app: &str) -> PathBuf {
-    crate::common::paths::VeloPaths::zygote_socket_for_app(project_dir, app)
-}
-
 /// Get the user-isolated socket directory
 ///
 /// Delegates to `common::paths` (RFC-0012).
