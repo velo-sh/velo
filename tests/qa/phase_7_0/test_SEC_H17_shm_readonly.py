@@ -135,12 +135,22 @@ time.sleep(10)
                 if zygote_log.exists():
                     log_content = zygote_log.read_text()
                 
-                # Kill the process first to avoid timeout on communicate
+                # Kill the process and wait for termination
+                stderr = "(could not capture stderr)"
                 if proc.poll() is None:
                     proc.kill()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        pass
                 
-                # Capture remaining stderr
-                _, stderr = proc.communicate(timeout=5)
+                # Capture remaining stderr (may already be closed)
+                try:
+                    _, stderr = proc.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    stderr = "(stderr capture timed out)"
+                except Exception as e:
+                    stderr = f"(stderr capture failed: {e})"
                 
                 pytest.fail(
                     f"🚨 [RITUAL 21 FAILURE] Mapping matching patterns {patterns} not found in worker maps!\n"
@@ -148,6 +158,7 @@ time.sleep(10)
                     f"VELO STDERR:\n{stderr}\n"
                     f"ZYGOTE LOG:\n{log_content}"
                 )
+
 
 
         finally:
