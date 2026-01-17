@@ -547,15 +547,15 @@ mod tests {
     #[test]
     fn test_sanitize_project_name() {
         // Normal project name
-        let name = VeloPaths::sanitize_project_name(Path::new("/tmp/myproject"));
+        let name = VeloPaths::sanitize_project_name(&std::env::temp_dir().join("myproject"));
         assert_eq!(name, "myprojec", "Should be truncated to 8 chars");
 
         // Short name
-        let name = VeloPaths::sanitize_project_name(Path::new("/tmp/app"));
+        let name = VeloPaths::sanitize_project_name(&std::env::temp_dir().join("app"));
         assert_eq!(name, "app");
 
         // Name with special chars
-        let name = VeloPaths::sanitize_project_name(Path::new("/tmp/my-app.v2"));
+        let name = VeloPaths::sanitize_project_name(&std::env::temp_dir().join("my-app.v2"));
         assert_eq!(name, "myappv2", "Should remove - and .");
 
         // Empty/root path fallback
@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(name, "proj", "Should fallback to 'proj' for empty");
 
         // Underscore allowed
-        let name = VeloPaths::sanitize_project_name(Path::new("/tmp/my_app"));
+        let name = VeloPaths::sanitize_project_name(&std::env::temp_dir().join("my_app"));
         assert_eq!(name, "my_app");
     }
 
@@ -574,7 +574,8 @@ mod tests {
             std::env::remove_var("VELO_ZYGOTE_SOCKET");
         }
 
-        let socket = VeloPaths::zygote_socket_for_app(Path::new("/tmp/myproject"), "main:app");
+        let socket =
+            VeloPaths::zygote_socket_for_app(&std::env::temp_dir().join("myproject"), "main:app");
 
         let filename = socket.file_name().unwrap().to_string_lossy();
 
