@@ -140,7 +140,8 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
     # Create app FIRST so module check can find it when starting zygote
     env.create_app("main.py", "app = lambda s, r, se: None")
 
-    cmd_env = os.environ.copy()
+    # Use hermetic environment from isolated_env as base
+    cmd_env = env.env.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
     # Use cwd=env.path so module validation can find main.py
     proc = subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env, cwd=env.path)
