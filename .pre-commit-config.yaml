@@ -12,15 +12,15 @@ repos:
       - id: cargo-fmt
         name: cargo fmt
         description: Format Rust code
-        entry: cargo fmt --all -- --check
+        entry: cargo fmt --all
         language: system
         files: \.rs$
         pass_filenames: false
 
       - id: cargo-clippy
         name: cargo clippy
-        description: Lint Rust code
-        entry: cargo clippy --workspace --all-targets -- -D warnings
+        description: Lint and fix Rust code
+        entry: cargo clippy --fix --allow-dirty --workspace --all-targets -- -D warnings
         language: system
         files: \.rs$
         pass_filenames: false
