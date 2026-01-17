@@ -17,6 +17,7 @@ import time
 import json
 import os
 import builtins
+import tempfile
 
 _velo_import_times = {}
 _velo_original_import = builtins.__import__
@@ -33,7 +34,8 @@ def _velo_timed_import(name, *args, **kwargs):
 builtins.__import__ = _velo_timed_import
 
 def _velo_write_profile():
-    output_path = os.environ.get('VELO_PROFILE_OUTPUT', '/tmp/velo_profile.json')
+    default_path = os.path.join(tempfile.gettempdir(), 'velo_profile.json')
+    output_path = os.environ.get('VELO_PROFILE_OUTPUT', default_path)
     try:
         with open(output_path, 'w') as f:
             json.dump(_velo_import_times, f)
