@@ -164,6 +164,14 @@ pub fn get_socket_dir() -> PathBuf {
     crate::common::paths::VeloPaths::socket_dir()
 }
 
+/// Get project-aware Zygote socket path (STB-SOCKET-003)
+///
+/// Returns a unique socket path for the given project directory and app.
+/// Format: velo-zygote-{name8}-{hash6}-v{version}.sock
+pub fn socket_path_for_app(project_dir: &Path, app: &str) -> PathBuf {
+    crate::common::paths::VeloPaths::zygote_socket_for_app(project_dir, app)
+}
+
 /// Check if a socket is alive (responds to connection attempt)
 ///
 /// # Side Effect (Red Line #4 Documentation)
