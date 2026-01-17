@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 # Environment Profile (SSOT for all env detection)
 try:
-    from .env_profile import ENV_PROFILE, OsType, RunContext
+    from .env_profile import ENV_PROFILE, OsType
 except (ImportError, ValueError):
     from env_profile import ENV_PROFILE, OsType  # type: ignore[no-redef]
 

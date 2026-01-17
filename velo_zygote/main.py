@@ -27,25 +27,25 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from velo_zygote.constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
-    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState, post_fork_reinit
+    from velo_zygote.constants import PROTOCOL_VERSION
+    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
     from velo_zygote.transport_sync import ProtocolError, ZygoteTransport
     from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
-    from velo_zygote.v_fork import ForkHandler, InboundSharedMemory
+    from velo_zygote.v_fork import ForkHandler
     from velo_zygote.v_shield import PathValidator
 except (ImportError, ValueError):
     try:
-        from .constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
-        from .lifecycle import WorkerRegistry, ZygoteState, post_fork_reinit
-        from .paths import VeloPaths
+        from .constants import PROTOCOL_VERSION
+        from .lifecycle import WorkerRegistry, ZygoteState
+        from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
         from .transport_sync import ProtocolError, ZygoteTransport
         from .utils import ForkRateLimiter, LogUtils, request_context
-        from .v_fork import ForkHandler, InboundSharedMemory
+        from .v_fork import ForkHandler
         from .v_shield import PathValidator
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
