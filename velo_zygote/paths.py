@@ -14,7 +14,7 @@ from typing import Optional
 try:
     from .constants import *
 except (ImportError, ValueError):
-    from constants import *
+    from constants import *  # type: ignore[no-redef]
 
 
 class VeloPaths:
@@ -174,10 +174,10 @@ class VeloPaths:
     @classmethod
     def pyproject(cls, project_root: Path) -> Path:
         """Canonical path to pyproject.toml."""
-        return cls.project_file(project_root, PYPROJECT_TOML)
+        return cls.project_file(project_root, cls.PYPROJECT_TOML)
 
     @staticmethod
-    def sanitize_sys_path(script_file: str):
+    def sanitize_sys_path(script_file: str) -> None:
         """
         Surgical Path Sanitization (RFC-0014).
 
@@ -195,7 +195,7 @@ class VeloPaths:
     @classmethod
     def uv_lock(cls, project_root: Path) -> Path:
         """Canonical path to uv.lock."""
-        return cls.project_file(project_root, UV_LOCK)
+        return cls.project_file(project_root, cls.UV_LOCK)
 
 
 def get_socket_dir() -> Path:

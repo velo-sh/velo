@@ -5,10 +5,10 @@ import sys
 try:
     from .env_profile import ENV_PROFILE
 except (ImportError, ValueError):
-    from env_profile import ENV_PROFILE
+    from env_profile import ENV_PROFILE  # type: ignore[no-redef]
 
 
-def _normalize_environment():
+def _normalize_environment() -> None:
     """
     Ensure critical environment variables are set and normalized.
     RFC-0012: SSOT for environment configuration.
@@ -19,7 +19,7 @@ def _normalize_environment():
         try:
             from .env_profile import EnvProfile, RunContext
         except (ImportError, ValueError):
-            from env_profile import EnvProfile, RunContext
+            from env_profile import EnvProfile, RunContext  # type: ignore[no-redef]
 
         profile = EnvProfile.detect()
 
@@ -36,7 +36,7 @@ def _normalize_environment():
     os.environ["VELO_ENV"] = os.environ["VELO_ENV"].lower()
 
 
-def _log_banner():
+def _log_banner() -> None:
     """
     Display a diagnostic startup banner according to the Velo Service Pattern.
     Standardized service header for transparency.
@@ -67,7 +67,7 @@ def _log_banner():
         sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
 
 
-def initialize():
+def initialize() -> None:
     """
     Standardize the Velo Python environment.
     This must be called at the very beginning of any entry point.

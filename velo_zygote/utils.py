@@ -14,7 +14,7 @@ request_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 try:
     from .env_profile import ENV_PROFILE
 except (ImportError, ValueError):
-    from env_profile import ENV_PROFILE
+    from env_profile import ENV_PROFILE  # type: ignore[no-redef]
 
 
 class ForkRateLimiter:
@@ -48,7 +48,7 @@ class LogUtils:
     """Utilities for safe logging in a daemonized process."""
 
     @staticmethod
-    def log(msg: str):
+    def log(msg: str) -> None:
         import sys
 
         req_id = request_context.get()
@@ -57,7 +57,7 @@ class LogUtils:
         sys.stderr.flush()
 
     @staticmethod
-    def debug_log(msg: str):
+    def debug_log(msg: str) -> None:
         # Write debug log to file for daemon mode debugging.
         try:
             from .paths import VeloPaths
@@ -65,8 +65,7 @@ class LogUtils:
             log_path = VeloPaths.zygote_log()
             with open(log_path, "a") as f:
                 f.write(f"[{time.ctime()}] {msg}\n")
-        except:
-            pass
+        except Exception:
             pass
 
 

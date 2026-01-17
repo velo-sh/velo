@@ -7,7 +7,7 @@ import types
 try:
     from .settings import velo_config
 except (ImportError, ValueError):
-    from settings import velo_config
+    from settings import velo_config  # type: ignore[no-redef]
 
 
 class ImportShield:

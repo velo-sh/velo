@@ -9,7 +9,7 @@ try:
     from . import constants
 except ImportError:
     # Fallback for direct execution
-    import constants
+    import constants  # type: ignore[no-redef]
 
 
 class IntegrityError(Exception):
@@ -38,7 +38,7 @@ REQUIRED_CONSTANTS_MACOS = [
 ]
 
 
-def check_constants():
+def check_constants() -> None:
     """Verify that constants.py contains all necessary configuration."""
     missing = []
 
@@ -73,7 +73,7 @@ def check_constants():
         )
 
 
-def validate_runtime():
+def validate_runtime() -> None:
     """
     Run all pre-flight checks.
     Raises IntegrityError if any check fails.
