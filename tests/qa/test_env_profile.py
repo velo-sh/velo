@@ -176,6 +176,11 @@ print(EnvProfile.detect().run_context.name)
         ctx = self._run_detect({"VELO_ENV": "production", "CI": "true"})
         assert ctx == "PRODUCTION"
 
+    def test_VELO_ENV_prod_shorthand(self):
+        """VELO_ENV=prod should also result in PRODUCTION."""
+        ctx = self._run_detect({"VELO_ENV": "prod"})
+        assert ctx == "PRODUCTION"
+
     def test_CI_true_detects_CI_context(self):
         """CI=true should result in CI context."""
         ctx = self._run_detect({"CI": "true"})
