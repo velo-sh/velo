@@ -11,53 +11,52 @@ _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
 
-from velo_zygote import bootstrap
+from velo_zygote import bootstrap  # noqa: E402
 
 bootstrap.initialize()
 
 # print(f"DEBUG: VELO_IS_ZYGOTE={os.environ.get('VELO_IS_ZYGOTE')}", file=sys.stderr)
 # --------------------
 
-import asyncio
-import signal
-import socket
-import struct
-import time
-import traceback
+import asyncio  # noqa: E402
+import signal  # noqa: E402
+import socket  # noqa: E402
+import time  # noqa: E402
+import traceback  # noqa: E402
 from pathlib import Path
-from typing import List, Optional, Set, Dict, Any, Tuple
+from typing import Any
 
 try:
-    from velo_zygote.constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from velo_zygote.constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
+    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState, post_fork_reinit
     from velo_zygote.paths import VeloPaths
-    from velo_zygote.settings import velo_config
-    from velo_zygote.v_shield import PathValidator
-    from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
-    from velo_zygote.lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
     from velo_zygote.routing import CommandRouter
+    from velo_zygote.settings import velo_config
+    from velo_zygote.transport_sync import ProtocolError, ZygoteTransport
+    from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.v_fork import ForkHandler, InboundSharedMemory
-    from velo_zygote.transport_sync import ZygoteTransport, ProtocolError
+    from velo_zygote.v_shield import PathValidator
 except (ImportError, ValueError):
     try:
-        from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+        from .constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
+        from .lifecycle import WorkerRegistry, ZygoteState, post_fork_reinit
         from .paths import VeloPaths
-        from .settings import velo_config
-        from .v_shield import PathValidator
-        from .utils import ForkRateLimiter, LogUtils, request_context
-        from .lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState
         from .routing import CommandRouter
+        from .settings import velo_config
+        from .transport_sync import ProtocolError, ZygoteTransport
+        from .utils import ForkRateLimiter, LogUtils, request_context
         from .v_fork import ForkHandler, InboundSharedMemory
-        from .transport_sync import ZygoteTransport, ProtocolError
+        from .v_shield import PathValidator
     except (ImportError, ValueError):
-        from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef, import-not-found]
-        from paths import VeloPaths  # type: ignore[no-redef, import-not-found]
-        from settings import velo_config  # type: ignore[no-redef, import-not-found]
-        from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
-        from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
-        from lifecycle import WorkerRegistry, post_fork_reinit, ZygoteState # type: ignore[no-redef, import-not-found]
+        from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
-        from v_fork import ForkHandler, InboundSharedMemory  # type: ignore[no-redef, import-not-found]
-        from transport_sync import ZygoteTransport, ProtocolError  # type: ignore[no-redef, import-not-found]
+        from settings import velo_config  # type: ignore[no-redef, import-not-found]
+        from transport_sync import ProtocolError, ZygoteTransport  # type: ignore[no-redef, import-not-found]
+        from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
+        from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
+        from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
+
+        from lifecycle import WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -76,9 +75,7 @@ router = CommandRouter()
 
 
 @router.handler("Handshake")
-async def handle_handshake(
-    server: "ZygoteServer", cmd: Dict[str, Any]
-) -> Dict[str, Any]:
+async def handle_handshake(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     """Protocol Handshake and Capability alignment."""
     server_version = PROTOCOL_VERSION
     client_app = cmd.get("app_name")
@@ -117,7 +114,7 @@ async def handle_handshake(
     if server.state == ZygoteState.PRELOADING:
         try:
             await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {
                 "type": "Error",
                 "message": "Handshake Timeout: Zygote still preloading after 30s",
@@ -135,13 +132,13 @@ async def handle_handshake(
 
 
 @router.handler("Fork")
-async def handle_fork(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     LogUtils.log(f"Zygote receiving Fork request for {cmd.get('script_path')}")
     # Shadow Preloading: Wait for preload to complete if still loading
     if server.state == ZygoteState.PRELOADING:
         try:
             await asyncio.wait_for(server.preload_complete.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return {
                 "type": "Error",
                 "message": "Preload timeout: modules still loading after 30s",
@@ -191,7 +188,7 @@ async def handle_fork(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, 
             server.pending_forks[worker_pid] = future
             exit_code = await asyncio.wait_for(future, timeout=30.0)
             return {"type": "Forked", "worker_pid": worker_pid, "exit_code": exit_code}
-        except asyncio.TimeoutError:
+        except TimeoutError:
             server.pending_forks.pop(worker_pid, None)
             return {"type": "Error", "message": "Fork wait timeout (30s exceeded)"}
         except Exception as e:
@@ -200,9 +197,7 @@ async def handle_fork(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, 
 
 
 @router.handler("WaitWorker")
-async def handle_wait_worker(
-    server: "ZygoteServer", cmd: Dict[str, Any]
-) -> Dict[str, Any]:
+async def handle_wait_worker(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     pid = int(cmd.get("worker_pid", 0))
     timeout = cmd.get("timeout_secs")
     if not server.worker_registry.is_alive(pid):
@@ -222,7 +217,7 @@ async def handle_wait_worker(
             if timeout and (time.time() - start_time) > timeout:
                 return {"type": "Error", "message": "Wait timeout"}
             # PERF-604: 1ms floor for performance measurement.
-            # TODO(EV-001): Implement event-driven wait (pidfd/kqueue) 
+            # TODO(EV-001): Implement event-driven wait (pidfd/kqueue)
             # to replace Polling Mode.
             await asyncio.sleep(0.01)
     except ChildProcessError:
@@ -231,19 +226,17 @@ async def handle_wait_worker(
 
 
 @router.handler("SignalWorker")
-async def handle_signal(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_signal(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     pid, sig = int(cmd.get("worker_pid", 0)), int(cmd.get("signal", 0))
     try:
         os.kill(pid, sig)
         return {"type": "Ack"}
-    except:
+    except Exception:
         return {"type": "Error", "message": "Process not found"}
 
 
 @router.handler("WorkerStatus")
-async def handle_worker_status(
-    server: "ZygoteServer", cmd: Dict[str, Any]
-) -> Dict[str, Any]:
+async def handle_worker_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     pid = int(cmd.get("worker_pid", 0))
     alive = server.worker_registry.is_alive(pid)
     return {
@@ -255,7 +248,7 @@ async def handle_worker_status(
 
 
 @router.handler("Shutdown")
-async def handle_shutdown(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[str, Any]:
+async def handle_shutdown(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
@@ -266,9 +259,7 @@ async def handle_shutdown(server: "ZygoteServer", cmd: Dict[str, Any]) -> Dict[s
 
 
 @router.handler("Status")
-async def handle_zy_status(
-    server: "ZygoteServer", cmd: Dict[str, Any]
-) -> Dict[str, Any]:
+async def handle_zy_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     status = {
         "type": "Status",
         "pid": os.getpid(),
@@ -292,12 +283,12 @@ class ZygoteServer:
     def __init__(
         self,
         socket_path: str,
-        preload: Optional[List[str]] = None,
-        idle_timeout: Optional[int] = None,
-        worker_ttl: Optional[int] = None,
-        app_name: Optional[str] = None,
+        preload: list[str] | None = None,
+        idle_timeout: int | None = None,
+        worker_ttl: int | None = None,
+        app_name: str | None = None,
         monitor_parent: bool = True,
-        authorized_secret: Optional[str] = None,
+        authorized_secret: str | None = None,
     ):
         self.config = velo_config
 
@@ -319,44 +310,44 @@ class ZygoteServer:
             LogUtils.log(f"Zygote initialized with forensic secret (len={len(self._authorized_secret)})")
         else:
             LogUtils.log("Zygote initialized WITHOUT forensic secret")
-        
+
         # Internal state
         self.state = ZygoteState.INIT
         self.worker_registry = WorkerRegistry(worker_ttl or 3600)
-        self.preload = preload if preload is not None else [
-            "json",
-            "logging",
-            "asyncio",
-            "uvicorn",
-        ]
+        self.preload = (
+            preload
+            if preload is not None
+            else [
+                "json",
+                "logging",
+                "asyncio",
+                "uvicorn",
+            ]
+        )
         # Opportunistic preloading of heavy modules for speedup targets
         if self.app_name and not preload:
             self.preload.extend(["fastapi", "pydantic", "starlette"])
-            
-        self._preloaded_modules: List[str] = []
-        self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
-        self.fork_rate_limiter = ForkRateLimiter(60, 1) # 1 fork per sec avg, burst 60
-        self.preload_complete = asyncio.Event()
-        self.fork_queue: asyncio.Queue[
-            Tuple[Dict[str, Any], asyncio.Future[Any]]
-        ] = asyncio.Queue()
 
-        self.pending_forks: Dict[int, asyncio.Future[Any]] = {}
+        self._preloaded_modules: list[str] = []
+        self.memory_limit_mb = self.config.max_bundle_size // (1024 * 1024)
+        self.fork_rate_limiter = ForkRateLimiter(60, 1)  # 1 fork per sec avg, burst 60
+        self.preload_complete = asyncio.Event()
+        self.fork_queue: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[Any]]] = asyncio.Queue()
+
+        self.pending_forks: dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
         self._active_clients = 0
         self._start_time = time.time()
-        
+
         # PID Check State (SEC-005)
-        self._needs_auth: Dict[socket.socket, bool] = {}
+        self._needs_auth: dict[socket.socket, bool] = {}
 
     def _set_state(self, new_state: ZygoteState) -> None:
         """Standardized state transition with audit trail."""
         old_state = self.state
         if old_state != new_state:
             self.state = new_state
-            LogUtils.debug_log(
-                f"State Transition: {old_state.name} -> {new_state.name}"
-            )
+            LogUtils.debug_log(f"State Transition: {old_state.name} -> {new_state.name}")
 
     async def start(self) -> None:
         """Start the Zygote server using asyncio."""
@@ -379,9 +370,7 @@ class ZygoteServer:
             try:
                 os.unlink(self.socket_path)
             except OSError as e:
-                LogUtils.log(
-                    f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}"
-                )
+                LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
 
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -396,9 +385,7 @@ class ZygoteServer:
             try:
                 os.chmod(self.socket_path, 0o600)
             except OSError as e:
-                LogUtils.log(
-                    f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}"
-                )
+                LogUtils.log(f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}")
         server_sock.listen(128)
         server_sock.setblocking(False)
 
@@ -425,24 +412,17 @@ class ZygoteServer:
             try:
                 # Use loop.sock_accept for non-blocking accept
                 try:
-                    client_sock, _ = await asyncio.wait_for(
-                        loop.sock_accept(server_sock), timeout=5.0
-                    )
+                    client_sock, _ = await asyncio.wait_for(loop.sock_accept(server_sock), timeout=5.0)
                     # We keep client_sock non-blocking or blocking?
                     # The sync transport expects blocking behavior for recvmsg/sendall
                     client_sock.setblocking(True)
                     asyncio.create_task(self._handle_client_socket(client_sock))
                     self._last_activity = time.time()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Check for idle timeout
-                    if (
-                        self.idle_timeout
-                        and (time.time() - self._last_activity) > self.idle_timeout
-                    ):
+                    if self.idle_timeout and (time.time() - self._last_activity) > self.idle_timeout:
                         if not self.worker_registry.workers and self._active_clients <= 0:
-                            LogUtils.log(
-                                f"Idle timeout ({self.idle_timeout}s). Shutting down."
-                            )
+                            LogUtils.log(f"Idle timeout ({self.idle_timeout}s). Shutting down.")
                             break
             except Exception as e:
                 if not isinstance(e, (asyncio.TimeoutError, KeyboardInterrupt)):
@@ -458,16 +438,18 @@ class ZygoteServer:
         # RFC-0012 Gate SEC-005: Sovereign Identity Verification (PeerCred)
         # 1. Platform-specific check
         uid, pid, gid = -1, -1, -1
-        
+
         if sys.platform == "linux":
             import struct
+
             # ... linux implementation ...
-            creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
-            pid, uid, gid = struct.unpack('3i', creds)
+            creds = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+            pid, uid, gid = struct.unpack("3i", creds)
         elif sys.platform == "darwin":
             # macOS implementation
             import ctypes
             import ctypes.util
+
             libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
             # LOCAL_PEERCRED = 0x001 # macOS constant
             # class Xucred(ctypes.Structure):
@@ -475,7 +457,7 @@ class ZygoteServer:
             #                ("cr_uid", ctypes.c_uint),
             #                ("cr_ngroups", ctypes.c_short),
             #                ("cr_groups", ctypes.c_uint * 16)]
-            
+
             # Note: macOS getpeereid is more direct for UID
             # But we often need PID for Guardian checks
             # LOCAL_PEERPID is a better fit for strict supervisor check
@@ -485,26 +467,26 @@ class ZygoteServer:
             # SOL_LOCAL is 0 on macOS
             if libc.getsockopt(sock.fileno(), 0, LOCAL_PEERPID, ctypes.byref(pid_val), ctypes.byref(size)) == 0:
                 pid = pid_val.value
-            
-            uid = os.getuid() # Fallback for UID on same-system probes
+
+            uid = os.getuid()  # Fallback for UID on same-system probes
 
         # 1. UID Check (Basic sanitization)
         # RFC-0012: Sovereign Identity Verification must at least match the owner UID.
         if uid != -1 and uid != os.getuid():
             raise PermissionError(f"Unauthorized peer connection attempt (UID: {uid}, Expected: {os.getuid()})")
-              
+
         # 2. Strict PID Check (Guardian/Supervisor Only)
         # Only the parent process (Supervisor) is allowed to talk to Zygote without Auth.
         if self._monitor_parent and pid != -1:
-            ppid = os.getppid() 
+            ppid = os.getppid()
             if pid == ppid:
-                return True # Fully trusted (Supervisor)
-            
+                return True  # Fully trusted (Supervisor)
+
         # 3. Forensic Agent Auth (Authorized Secret required)
         if self._authorized_secret:
             # If a secret is set, ANY non-supervisor connection MUST perform Auth handshake.
-            return False # Needs Auth
-            
+            return False  # Needs Auth
+
         # 4. Default Trust (Same UID, No Secret)
         # If no secret is set, we trust same-UID peers (like Docker/Postgres model).
         # This allows 'velo status' to work without a global secret file.
@@ -546,11 +528,9 @@ class ZygoteServer:
                     if secret == self._authorized_secret:
                         authorized = True
                         LogUtils.log("[SEC-005] Auth Success: Forensic Agent accepted.")
-                        await loop.run_in_executor(
-                            None, transport.send, {"type": "Ack", "message": "Authorized"}
-                        )
+                        await loop.run_in_executor(None, transport.send, {"type": "Ack", "message": "Authorized"})
                     else:
-                        if authorized: # Already trusted via PeerIdentity
+                        if authorized:  # Already trusted via PeerIdentity
                             LogUtils.log("[SEC-005] Auth Success: Forensic Agent redundant auth (ignoring).")
                             await loop.run_in_executor(
                                 None, transport.send, {"type": "Ack", "message": "Already authorized"}
@@ -566,18 +546,14 @@ class ZygoteServer:
                 # SEC-005: Mandatory Auth Handshake check
                 if not authorized:
                     LogUtils.log("[SEC-005] Auth Violation: Command received before Auth.")
-                    await loop.run_in_executor(
-                        None, transport.send, {"type": "Error", "message": "Auth required"}
-                    )
+                    await loop.run_in_executor(None, transport.send, {"type": "Error", "message": "Auth required"})
                     break
 
                 req_id = msg.get("request_id")
                 token = request_context.set(req_id)
                 try:
                     response = await router.dispatch(self, msg)
-                    await loop.run_in_executor(
-                        None, transport.send, response
-                    )
+                    await loop.run_in_executor(None, transport.send, response)
                 finally:
                     request_context.reset(token)
 
@@ -601,7 +577,7 @@ class ZygoteServer:
         try:
             # 1. First Pass: Core Infrastructure (Must be fast)
             await loop.run_in_executor(None, self._preload_core_modules)
-            
+
             # READY state is set as soon as core is up (STB-RS-002)
             # This prevents supervisor timeout while deep warming continues
             self._set_state(ZygoteState.READY)
@@ -641,6 +617,7 @@ class ZygoteServer:
     def _preload_app_and_warming(self) -> None:
         import importlib
         import sys
+
         if self.app_name:
             try:
                 app_module = self.app_name.split(":")[0]
@@ -654,6 +631,7 @@ class ZygoteServer:
         if self.app_name and "uvicorn" in sys.modules:
             try:
                 import uvicorn
+
                 LogUtils.log(f"Deep Warming uvicorn for {self.app_name}...")
                 self._warmed_config = uvicorn.Config(  # type: ignore[assignment]
                     app=self.app_name,

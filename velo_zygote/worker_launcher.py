@@ -1,6 +1,7 @@
 # --- Velo Bootstrap (CRITICAL: MUST BE FIRST) ---
-import sys
 import os
+import sys
+
 
 # DEF-72-C02: Surgical sys.path sanitization to prevent shadowing
 # During 'python -m', sys.path[0] is the current directory.
@@ -14,6 +15,7 @@ def _sovereign_import(name: str) -> Any:
     finally:
         sys.path = _original_path
 
+
 # Pre-import msgpack to protect against local shadowing
 msgpack = _sovereign_import("msgpack")
 
@@ -25,6 +27,7 @@ if _pkg_root not in sys.path:
 # Standard bootstrap
 try:
     from velo_zygote import bootstrap
+
     bootstrap.initialize()
 except ImportError:
     pass
@@ -32,38 +35,42 @@ except ImportError:
 
 import argparse
 import signal
-import traceback
-from typing import Any, Dict, Optional
-from types import ModuleType, FrameType
-
 import time
+import traceback
+from types import FrameType
+from typing import Any
+
 _T0 = time.perf_counter()
+
 
 def _prof_log(msg: str) -> None:
     with open("/tmp/worker_prof.log", "a") as f:
         f.write(f"[{time.perf_counter()}] {msg}\n")
 
+
 _prof_log(f"[PROF] Import Start: {_T0}")
 
 import uvicorn
-_T1 = time.perf_counter()
-_prof_log(f"[PROF] Uvicorn Imported: +{(_T1-_T0)*1000:.2f}ms")
 
-from velo_zygote.utils import LogUtils
-from velo_zygote.v_shield import ImportShield
+_T1 = time.perf_counter()
+_prof_log(f"[PROF] Uvicorn Imported: +{(_T1 - _T0) * 1000:.2f}ms")
+
 from velo_zygote.paths import VeloPaths
-from velo_zygote.settings import VeloConfig
-from velo_zygote import integrity
+from velo_zygote.v_shield import ImportShield
+
 _T2 = time.perf_counter()
-_prof_log(f"[PROF] Velo Framework Imported: +{(_T2-_T1)*1000:.2f}ms")
+_prof_log(f"[PROF] Velo Framework Imported: +{(_T2 - _T1) * 1000:.2f}ms")
+
 
 class UDSProxyMiddleware:
     def __init__(self, app: Any):
         self.app = app
 
-    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         current_client = scope.get("client")
-        is_client_missing = current_client is None or (isinstance(current_client, (list, tuple)) and len(current_client) > 0 and current_client[0] is None)
+        is_client_missing = current_client is None or (
+            isinstance(current_client, (list, tuple)) and len(current_client) > 0 and current_client[0] is None
+        )
         if scope["type"] in ("http", "websocket") and is_client_missing:
             headers = scope.get("headers", [])
             has_proxy_headers = any(k.lower() in (b"x-forwarded-for", b"x-real-ip") for k, v in headers)
@@ -79,10 +86,13 @@ class UDSProxyMiddleware:
                 scope["client"] = [client_host, 0]
         await self.app(scope, receive, send)
 
+
 def main() -> None:
     try:
-        def _graceful_exit(sig: int, frame: Optional[FrameType]) -> None:
+
+        def _graceful_exit(sig: int, frame: FrameType | None) -> None:
             raise SystemExit(0)
+
         signal.signal(signal.SIGINT, _graceful_exit)
         signal.signal(signal.SIGTERM, _graceful_exit)
         parser = argparse.ArgumentParser(description="Velo Worker Launcher")
@@ -95,10 +105,11 @@ def main() -> None:
         _T3 = time.perf_counter()
         args = parser.parse_args()
         _T4 = time.perf_counter()
-        _prof_log(f"[PROF] Args Parsed: +{(_T4-_T3)*1000:.2f}ms")
+        _prof_log(f"[PROF] Args Parsed: +{(_T4 - _T3) * 1000:.2f}ms")
 
         if args.rsgi:
             from velo_zygote.v_rsgi import run_rsgi
+
             ImportShield.activate()
             VeloPaths.sanitize_sys_path(__file__)
             run_rsgi(args.app, args.uds)
@@ -106,8 +117,8 @@ def main() -> None:
             ImportShield.activate()
             VeloPaths.sanitize_sys_path(__file__)
             _T5 = time.perf_counter()
-            _prof_log(f"[PROF] Pre-Run Hygiene: +{(_T5-_T4)*1000:.2f}ms")
-            
+            _prof_log(f"[PROF] Pre-Run Hygiene: +{(_T5 - _T4) * 1000:.2f}ms")
+
             config_kwargs = {
                 "app": args.app,
                 "loop": "auto",
@@ -121,18 +132,19 @@ def main() -> None:
             else:
                 config_kwargs["host"] = args.host or "127.0.0.1"
                 config_kwargs["port"] = args.port or 8000
-            
+
             _T6 = time.perf_counter()
-            _prof_log(f"[PROF] Entering uvicorn execution: +{(_T6-_T5)*1000:.2f}ms")
-            
+            _prof_log(f"[PROF] Entering uvicorn execution: +{(_T6 - _T5) * 1000:.2f}ms")
+
             import cProfile
             import pstats
+
             profiler = cProfile.Profile()
             profiler.enable()
             try:
                 # Injected by v_fork.py under __VELO_WARM_SERVER__
                 warmed_server = globals().get("__VELO_WARM_SERVER__")
-                
+
                 if warmed_server is not None:
                     _prof_log("[PROF] Using Deep-Warmed uvicorn Server.")
                     # Patch dynamic args for this specific worker instance
@@ -151,13 +163,14 @@ def main() -> None:
             finally:
                 profiler.disable()
                 with open("/tmp/worker.prof_log", "w") as f:
-                    ps = pstats.Stats(profiler, stream=f).sort_stats('cumulative')
+                    ps = pstats.Stats(profiler, stream=f).sort_stats("cumulative")
                     ps.print_stats()
 
     except Exception as e:
         sys.stderr.write(f"FATAL WORKER CRASH: {e}\n")
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

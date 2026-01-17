@@ -6,12 +6,12 @@ try:
 except (ImportError, ValueError):
     from serializer import packer, unpacker  # type: ignore[no-redef, import-not-found]
 
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 try:
-    from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+    from .constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
 except (ImportError, ValueError):
-    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef, import-not-found]
+    from constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
 
 
 class ProtocolError(Exception):
@@ -31,7 +31,7 @@ class ZygoteTransport:
         self.reader = reader
         self.writer = writer
 
-    async def recv(self) -> Optional[Dict[str, Any]]:
+    async def recv(self) -> dict[str, Any] | None:
         """Receive length-prefixed MessagePack message with fail-fast validation."""
         try:
             # 1. Read Length Prefix
@@ -44,9 +44,7 @@ class ZygoteTransport:
                     f"Oversized payload: {total_len} bytes exceeds MAX_MESSAGE_SIZE ({MAX_MESSAGE_SIZE})"
                 )
             if total_len < 1:
-                raise ProtocolError(
-                    f"Invalid total_len: {total_len} (must be >= 1 for version byte)"
-                )
+                raise ProtocolError(f"Invalid total_len: {total_len} (must be >= 1 for version byte)")
 
             # 2. Read Version Byte
             version_data = await self.reader.readexactly(1)
@@ -63,12 +61,10 @@ class ZygoteTransport:
             try:
                 msg = unpacker(data)
                 if not isinstance(msg, dict):
-                    raise ProtocolError(
-                        f"Malformed payload: expected dict, got {type(msg).__name__}"
-                    )
+                    raise ProtocolError(f"Malformed payload: expected dict, got {type(msg).__name__}")
                 return msg
             except Exception as e:
-                raise ProtocolError(f"Failed to decode MessagePack: {e}")
+                raise ProtocolError(f"Failed to decode MessagePack: {e}") from e
 
         except asyncio.IncompleteReadError:
             # Clean disconnect
@@ -79,9 +75,9 @@ class ZygoteTransport:
         except (BrokenPipeError, ConnectionResetError):
             return None
         except Exception as e:
-            raise ProtocolError(f"Unexpected transport error: {e}")
+            raise ProtocolError(f"Unexpected transport error: {e}") from e
 
-    async def send(self, msg: Dict[str, Any]) -> None:
+    async def send(self, msg: dict[str, Any]) -> None:
         """Send length-prefixed MessagePack message."""
         try:
             payload = packer(msg)
@@ -89,9 +85,7 @@ class ZygoteTransport:
 
             if total_len > MAX_MESSAGE_SIZE:
                 # This should not happen on send unless we are sending huge status
-                raise ProtocolError(
-                    f"Attempted to send oversized message: {total_len} bytes"
-                )
+                raise ProtocolError(f"Attempted to send oversized message: {total_len} bytes")
 
             header = struct.pack("<I", total_len)
             version = bytes([PROTOCOL_VERSION])
@@ -101,7 +95,7 @@ class ZygoteTransport:
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:
-            raise ProtocolError(f"Failed to send message: {e}")
+            raise ProtocolError(f"Failed to send message: {e}") from e
 
     async def close(self) -> None:
         """Close the underlying streams."""
@@ -109,5 +103,5 @@ class ZygoteTransport:
             if not self.writer.is_closing():
                 self.writer.close()
                 await self.writer.wait_closed()
-        except:
+        except Exception:
             pass

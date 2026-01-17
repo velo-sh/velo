@@ -1,21 +1,18 @@
 import mmap
-import os
-import signal
 import sys
-import time
 
 try:
     import torch
 except ImportError:
     torch = None
 import weakref
-from typing import Optional, List, Any, Union
+from typing import Any
 
 # H-17: Immutability Defense (Monkey-patching)
 _ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None
 
 
-def _safe_data_ptr(self: Any) -> Optional[int]:
+def _safe_data_ptr(self: Any) -> int | None:
     """Safe data_ptr that warns on access to shared memory."""
     if _ORIG_DATA_PTR:
         return _ORIG_DATA_PTR(self)  # type: ignore[no-any-return]
@@ -33,15 +30,15 @@ class SharedMemoryManager:
     """
 
     def __init__(self) -> None:
-        self._mappings: List[mmap.mmap] = []
-        self._tensor_refs: List[Any] = []
+        self._mappings: list[mmap.mmap] = []
+        self._tensor_refs: list[Any] = []
 
         # H-31: Register signal handler for expiry (SIGUSR1 usually, assuming SHM_EXPIRE)
         # Note: In real implementation, this might be a specific IPC message.
         # RFC-0015 mentions "SHM_EXPIRE message".
         pass
 
-    def attach(self, fd: int, size: int) -> Optional[mmap.mmap]:
+    def attach(self, fd: int, size: int) -> mmap.mmap | None:
         """
         Attach to a shared memory segment via FD.
         H-17: Maps as PROT_READ (ReadOnly).

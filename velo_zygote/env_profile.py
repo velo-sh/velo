@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional, Any
+from typing import Any
 
 
 class OsType(Enum):
@@ -52,9 +52,9 @@ class EnvProfile:
     run_context: RunContext
 
     # Raw values for diagnostics
-    _velo_env_raw: Optional[str] = None
-    _ci_raw: Optional[str] = None
-    _github_actions_raw: Optional[str] = None
+    _velo_env_raw: str | None = None
+    _ci_raw: str | None = None
+    _github_actions_raw: str | None = None
 
     # --- Derived Properties (Behavior Matrix) ---
 
@@ -71,10 +71,7 @@ class EnvProfile:
     @property
     def rate_limit_disabled(self) -> bool:
         """True if rate limiting should be disabled (e.g., in CI)."""
-        return (
-            self.run_context == RunContext.CI
-            or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
-        )
+        return self.run_context == RunContext.CI or os.environ.get("VELO_RATE_LIMIT_DISABLED") == "1"
 
     @property
     def strict_numa(self) -> bool:

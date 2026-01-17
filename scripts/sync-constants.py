@@ -9,6 +9,7 @@ Usage:
     python scripts/sync-constants.py --check  # Verify sync (for CI)
 """
 
+import json
 import sys
 import argparse
 import subprocess
@@ -18,6 +19,12 @@ try:
     import tomllib
 except ImportError:
     import tomli as tomllib  # Python < 3.11 fallback
+
+try:
+    import jsonschema
+    HAS_JSONSCHEMA = True
+except ImportError:
+    HAS_JSONSCHEMA = False
 
 
 def get_git_hash() -> str:
@@ -42,6 +49,28 @@ def get_git_hash() -> str:
         return hash_val
     except Exception:
         return "unknown"
+
+
+def validate_config(config: dict, schema_path: Path) -> bool:
+    """Validate config against JSON Schema. Returns True if valid."""
+    if not HAS_JSONSCHEMA:
+        print("⚠️  jsonschema not installed, skipping validation", file=sys.stderr)
+        return True
+    
+    if not schema_path.exists():
+        print(f"⚠️  Schema not found: {schema_path}, skipping validation", file=sys.stderr)
+        return True
+    
+    schema = json.loads(schema_path.read_text())
+    
+    try:
+        jsonschema.validate(config, schema)
+        print("✅ Schema validation passed")
+        return True
+    except jsonschema.ValidationError as e:
+        print(f"❌ Schema validation failed: {e.message}", file=sys.stderr)
+        print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path)}", file=sys.stderr)
+        return False
 
 
 def generate_constants_py(config: dict, git_hash: str) -> str:
@@ -147,6 +176,7 @@ def main():
     project_root = script_dir.parent
     
     toml_path = project_root / "config" / "constants.toml"
+    schema_path = project_root / "config" / "constants.schema.json"
     py_path = project_root / "velo_zygote" / "constants.py"
     
     if not toml_path.exists():
@@ -156,6 +186,10 @@ def main():
     # Read TOML
     with open(toml_path, "rb") as f:
         config = tomllib.load(f)
+    
+    # Validate against schema
+    if not validate_config(config, schema_path):
+        sys.exit(1)
     
     git_hash = get_git_hash()
     new_content = generate_constants_py(config, git_hash)

@@ -1,14 +1,15 @@
 """
 Velo Lifecycle Management
 """
+
 import os
-import sys
-import time
-import signal
 import random
+import signal
+import sys
 import threading
-from typing import Dict, Tuple, Any, List, Optional, Set
+import time
 from enum import Enum, auto
+from typing import Any
 
 
 class ZygoteState(Enum):
@@ -41,7 +42,7 @@ class WorkerRegistry:
     """Layer 3: State Management - Tracks worker lifecycle."""
 
     def __init__(self, worker_ttl: int = 3600):
-        self.workers: Dict[int, Tuple[float, Any]] = {}  # pid -> (start_time, metadata)
+        self.workers: dict[int, tuple[float, Any]] = {}  # pid -> (start_time, metadata)
         self.worker_ttl = worker_ttl
 
     def add(self, pid: int, metadata: Any = None) -> None:
@@ -60,7 +61,7 @@ class WorkerRegistry:
             self.remove(pid)
             return False
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
@@ -97,9 +98,9 @@ class WorkerRegistry:
                 sys.stderr.flush()
                 # Use SIGTERM to allow graceful cleanup (required for test_signal_proxying)
                 os.kill(pid, signal.SIGTERM)
-            except:
+            except Exception:
                 pass
-        
+
         # Give workers a moment to process SIGTERM before Zygote itself exits
         time.sleep(0.1)
         self.workers.clear()
@@ -113,7 +114,7 @@ class WorkerRegistry:
             if now - start_time > self.worker_ttl:
                 try:
                     os.kill(pid, signal.SIGKILL)
-                except:
+                except Exception:
                     pass
                 self.remove(pid)
             elif not self.is_alive(pid):
@@ -124,7 +125,7 @@ class ReinitHooks:
     """Layer 3: Hook-based Re-initialization system."""
 
     def __init__(self) -> None:
-        self.hooks: List[Any] = []
+        self.hooks: list[Any] = []
 
     def register(self, hook_func: Any) -> None:
         self.hooks.append(hook_func)
@@ -141,7 +142,7 @@ class ReinitHooks:
 reinit_hooks = ReinitHooks()
 
 
-def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
+def hook_security(keep_fds: set[int] | None = None) -> None:
     """Industrial Grade Cord-Cutting."""
     # 1. Close all non-standard file descriptors
     try:
@@ -169,14 +170,14 @@ def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
             if keep_fds is None or fd not in keep_fds:
                 try:
                     os.close(fd)
-                except:
+                except Exception:
                     pass
 
     # 2. Reset signal handlers
     for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD]:
         try:
             signal.signal(sig, signal.SIG_DFL)
-        except:
+        except Exception:
             pass
 
     # 3. Re-seed random number generators
@@ -186,7 +187,7 @@ def hook_security(keep_fds: Optional[Set[int]] = None) -> None:
             import numpy as np
 
             np.random.seed()
-        except:
+        except Exception:
             pass
 
 
@@ -195,18 +196,26 @@ def hook_computing(**kwargs: Any) -> None:
     if "torch" in sys.modules:
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        except:
+        except Exception:
             pass
 
     # RFC-0011 HPC-001: Restore threading environment post-fork
     # Defaulting to 0 (which usually triggers logical CPU count in BLAS)
     # or explicitly reading cpu_count.
     import multiprocessing
+
     try:
         cpus = str(multiprocessing.cpu_count())
-        for var in ["OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"]:
+        for var in [
+            "OMP_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "VECLIB_MAXIMUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+        ]:
             if var in os.environ:
                 # Restore to CPU count for workers to ensure performance
                 os.environ[var] = cpus
@@ -225,6 +234,6 @@ reinit_hooks.register(hook_computing)
 reinit_hooks.register(hook_telemetry)
 
 
-def post_fork_reinit(keep_fds: Optional[Set[int]] = None) -> None:
+def post_fork_reinit(keep_fds: set[int] | None = None) -> None:
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
     reinit_hooks.run_all(keep_fds=keep_fds)

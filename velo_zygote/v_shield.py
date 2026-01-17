@@ -1,8 +1,7 @@
 import os
 import sys
-from pathlib import Path
-from typing import Tuple, Optional, Set, Any, List
 import types
+from pathlib import Path
 
 try:
     from .settings import velo_config
@@ -30,9 +29,9 @@ class ImportShield:
     def find_spec(
         self,
         fullname: str,
-        path: Optional[List[str]],
-        target: Optional[types.ModuleType] = None,
-    ) -> Optional[types.ModuleType]:
+        path: list[str] | None,
+        target: types.ModuleType | None = None,
+    ) -> types.ModuleType | None:
         # 0. Only block if shield is active (via class var or environment)
         # Environment check is the target-safe SSOT for forked children.
         if not self._active:
@@ -47,7 +46,7 @@ class ImportShield:
             "velo_zygote.bootstrap",
             "velo_zygote.settings",
             "velo_zygote.paths",
-            "velo_zygote.memory"
+            "velo_zygote.memory",
         }
         if fullname.startswith("velo_zygote") and fullname not in whitelist:
             msg = f"Unauthorized access to internal framework module: {fullname}"
@@ -57,11 +56,9 @@ class ImportShield:
 
             if mode == "dry_run":
                 try:
-                    sys.stderr.write(
-                        f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n"
-                    )
+                    sys.stderr.write(f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n")
                     sys.stderr.flush()
-                except:
+                except Exception:
                     pass
                 return None  # Allow the import
 
@@ -72,7 +69,7 @@ class ImportShield:
                 # Log to stderr for visibility in CI logs (Trap 178.2/3)
                 sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg}\n")
                 sys.stderr.flush()
-            except:
+            except Exception:
                 pass
             raise ImportError(msg)
 
@@ -111,7 +108,7 @@ class ImportShield:
                     framework_dir = os.path.dirname(os.path.abspath(__file__))
                     if framework_dir in sys.path:
                         sys.path.remove(framework_dir)
-                except:
+                except Exception:
                     pass
 
 
@@ -128,7 +125,7 @@ class PathValidator:
     """Security validation for script paths."""
 
     @staticmethod
-    def validate(script_path: str) -> Tuple[bool, str]:
+    def validate(script_path: str) -> tuple[bool, str]:
         """
         Validate script path for security (SEC-P3-001).
         Blocks paths containing '..' or pointing to system directories.

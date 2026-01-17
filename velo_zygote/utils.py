@@ -1,15 +1,13 @@
 """
 Velo Utilities
 """
+
+import contextvars
 import os
 import time
-import contextvars
-from typing import Optional
 
 # Global context for Correlation IDs (Phase 2)
-request_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "request_context", default=None
-)
+request_context: contextvars.ContextVar[str | None] = contextvars.ContextVar("request_context", default=None)
 # Use EnvProfile as SSOT for environment detection
 try:
     from .env_profile import ENV_PROFILE
@@ -84,7 +82,6 @@ class MacOSDeathSigMonitor:
             return
 
         import threading
-        import os
         import time
 
         def monitor() -> None:
@@ -94,18 +91,14 @@ class MacOSDeathSigMonitor:
                     LogUtils.log(f"Monitor: Already orphaned (Parent {original_ppid})")
                     return
 
-                LogUtils.log(
-                    f"Monitor started for Parent {original_ppid} (Polling Mode)"
-                )
+                LogUtils.log(f"Monitor started for Parent {original_ppid} (Polling Mode)")
 
                 while True:
                     time.sleep(0.5)  # Poll every 500ms
                     try:
                         current_ppid = os.getppid()
                         if current_ppid != original_ppid:
-                            LogUtils.log(
-                                f"Parent changed from {original_ppid} to {current_ppid}. Exiting."
-                            )
+                            LogUtils.log(f"Parent changed from {original_ppid} to {current_ppid}. Exiting.")
                             break
 
                         # Double check if process exists (paranoid)
@@ -115,12 +108,13 @@ class MacOSDeathSigMonitor:
                         except OSError:
                             LogUtils.log(f"Parent {original_ppid} is dead. Exiting.")
                             break
-                    except Exception as e:
+                    except Exception:
                         pass
 
                 # Force kill self via SIGKILL (Zero Mercy for Orphans)
                 LogUtils.log("Monitor triggering suicide (SIGKILL to self)")
                 import signal
+
                 os.kill(os.getpid(), signal.SIGKILL)
             except Exception as e:
                 LogUtils.log(f"Monitor failed: {e}")

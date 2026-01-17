@@ -8,6 +8,23 @@ repos:
         files: ^(config/constants\.toml|velo_zygote/constants\.py|scripts/sync-constants\.py)$
         pass_filenames: false
 
+      - id: ruff
+        name: ruff (Python lint)
+        entry: uv run ruff check --fix
+        language: system
+        files: ^velo_zygote/
+        types: [python]
+        pass_filenames: true
+
+      - id: ruff-format
+        name: ruff format (Python)
+        entry: uv run ruff format
+        language: system
+        files: ^velo_zygote/
+        exclude: ^velo_zygote/constants\.py$
+        types: [python]
+        pass_filenames: true
+
       - id: mypy
         name: mypy (zygote)
         entry: uv run mypy

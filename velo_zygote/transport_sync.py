@@ -1,17 +1,17 @@
 """
 Velo Synchronous Transport
 """
+
 import socket
 import struct
-import traceback
-from typing import Dict, Optional, Any
+from typing import Any
 
 try:
+    from .constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
     from .serializer import packer, unpacker
-    from .constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
 except (ImportError, ValueError):
+    from constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION  # type: ignore[no-redef]
     from serializer import packer, unpacker  # type: ignore[no-redef]
-    from constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE  # type: ignore[no-redef]
 
 
 class ProtocolError(Exception):
@@ -32,7 +32,7 @@ class ZygoteTransport:
         # DEF-72-FLOOD: Set timeout to prevent DoS via partial data
         self.sock.settimeout(self.DEFAULT_TIMEOUT)
 
-    def recv(self) -> Optional[Dict[str, Any]]:
+    def recv(self) -> dict[str, Any] | None:
         """Receive length-prefixed MessagePack message + optional FD."""
         try:
             # 1. Read Length Prefix (4B) + Version Byte (1B)
@@ -51,9 +51,7 @@ class ZygoteTransport:
             client_version = header_data[4]
 
             if total_len > MAX_MESSAGE_SIZE:
-                raise ProtocolError(
-                    f"Oversized payload: {total_len} bytes (limit: {MAX_MESSAGE_SIZE})"
-                )
+                raise ProtocolError(f"Oversized payload: {total_len} bytes (limit: {MAX_MESSAGE_SIZE})")
             if client_version != PROTOCOL_VERSION:
                 raise ProtocolError(
                     f"Protocol version mismatch: Client v{client_version} != Server v{PROTOCOL_VERSION}"
@@ -64,31 +62,22 @@ class ZygoteTransport:
             try:
                 data = self._read_exactly(payload_len)
             except EOFError:
-                raise ProtocolError(
-                    f"Unexpected EOF while reading payload (expected {payload_len} bytes)"
-                )
+                raise ProtocolError(f"Unexpected EOF while reading payload (expected {payload_len} bytes)") from None
 
             try:
                 msg = unpacker(data)
             except Exception as e:
-                raise ProtocolError(f"Failed to unpack MessagePack payload: {e}")
+                raise ProtocolError(f"Failed to unpack MessagePack payload: {e}") from e
 
             # 3. Handle Ancillary Data (FDs)
             if ancdata:
                 for cmsg_level, cmsg_type, cmsg_data in ancdata:
-                    if (
-                        cmsg_level == socket.SOL_SOCKET
-                        and cmsg_type == socket.SCM_RIGHTS
-                    ):
+                    if cmsg_level == socket.SOL_SOCKET and cmsg_type == socket.SCM_RIGHTS:
                         # Extract FD
                         import array
 
                         fds = array.array("i")
-                        fds.frombytes(
-                            cmsg_data[
-                                : len(cmsg_data) - (len(cmsg_data) % fds.itemsize)
-                            ]
-                        )
+                        fds.frombytes(cmsg_data[: len(cmsg_data) - (len(cmsg_data) % fds.itemsize)])
                         if fds:
                             msg["shm_fd"] = fds[0]
 
@@ -98,7 +87,7 @@ class ZygoteTransport:
         except ProtocolError:
             raise
         except Exception as e:
-            raise ProtocolError(f"Unexpected transport error: {type(e).__name__}({e})")
+            raise ProtocolError(f"Unexpected transport error: {type(e).__name__}({e})") from e
 
     def _read_exactly(self, n: int) -> bytes:
         data = b""
@@ -109,7 +98,7 @@ class ZygoteTransport:
             data += chunk
         return data
 
-    def send(self, msg: Dict[str, Any]) -> None:
+    def send(self, msg: dict[str, Any]) -> None:
         """Send length-prefixed MessagePack message."""
         payload = packer(msg)
         total_len = 1 + len(payload)
@@ -120,5 +109,5 @@ class ZygoteTransport:
     def close(self) -> None:
         try:
             self.sock.close()
-        except:
+        except Exception:
             pass

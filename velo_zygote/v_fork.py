@@ -1,19 +1,20 @@
 """
 Velo Fork Implementation
 """
+
 import os
 import sys
-import time
 import traceback
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Optional
 
 try:
-    from .lifecycle import post_fork_reinit, WorkerRegistry
+    from .lifecycle import WorkerRegistry, post_fork_reinit
     from .utils import LogUtils
 except (ImportError, ValueError):
-    from lifecycle import post_fork_reinit, WorkerRegistry  # type: ignore[no-redef, import-not-found]
     from utils import LogUtils  # type: ignore[no-redef, import-not-found]
+
+    from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
 
 
 class InboundSharedMemory:
@@ -34,9 +35,7 @@ class InboundSharedMemory:
                 LogUtils.log(f"Security Violation: FD {self.fd} is not a regular file (mode: {oct(st.st_mode)})")
                 return False
             if self.expected_size and st.st_size < self.expected_size:
-                LogUtils.log(
-                    f"Security Violation: SHM size mismatch ({st.st_size} < {self.expected_size})"
-                )
+                LogUtils.log(f"Security Violation: SHM size mismatch ({st.st_size} < {self.expected_size})")
                 return False
             return True
         except Exception as e:
@@ -46,11 +45,11 @@ class InboundSharedMemory:
     def close(self) -> None:
         try:
             os.close(self.fd)
-        except:
+        except Exception:
             pass
 
     @classmethod
-    def from_command(cls, cmd: Dict[str, Any]) -> Optional["InboundSharedMemory"]:
+    def from_command(cls, cmd: dict[str, Any]) -> Optional["InboundSharedMemory"]:
         fd = cmd.get("shm_fd")
         size = cmd.get("shm_size")
         if fd is not None:
@@ -63,9 +62,9 @@ class ForkHandler:
 
     @staticmethod
     def handle_fork(
-        cmd: Dict[str, Any],
+        cmd: dict[str, Any],
         worker_registry: WorkerRegistry,
-        preloaded_modules: List[str],
+        preloaded_modules: list[str],
         warmed_server: Any = None,
         warmed_config: Any = None,
     ) -> int:
@@ -81,7 +80,6 @@ class ForkHandler:
         # Memory Gravity (SHM Support)
         shm = InboundSharedMemory.from_command(cmd)
         shm_fd = shm.fd if shm else None
-        shm_size = shm.expected_size if shm else None
 
         LogUtils.log(f"Forking child process for {script_path}...")
         pid = os.fork()
@@ -106,7 +104,7 @@ class ForkHandler:
                         from v_shield import ImportShield  # type: ignore[no-redef, import-not-found]
 
                         ImportShield.activate()
-                    except:
+                    except Exception:
                         pass
 
                 # RFC-0012: Hygiene - Restore SIGPIPE to default for worker
@@ -148,18 +146,18 @@ class ForkHandler:
     @staticmethod
     def _child_process(
         script_path: str,
-        args: List[str],
-        env: Dict[str, str],
-        stdout_path: Optional[str],
-        stderr_path: Optional[str],
-        exit_code_path: Optional[str],
+        args: list[str],
+        env: dict[str, str],
+        stdout_path: str | None,
+        stderr_path: str | None,
+        exit_code_path: str | None,
         fast_mode: bool,
-        bundle_path: Optional[str],
-        project_root: Optional[str],
-        max_bundle_size: Optional[int],
+        bundle_path: str | None,
+        project_root: str | None,
+        max_bundle_size: int | None,
         worker_ttl: int,
-        shm_fd: Optional[int] = None,
-        shm_size: Optional[int] = None,
+        shm_fd: int | None = None,
+        shm_size: int | None = None,
         warmed_server: Any = None,
         warmed_config: Any = None,
     ) -> int:
@@ -172,7 +170,7 @@ class ForkHandler:
 
                 try:
                     libc = ctypes.CDLL("libc.so.6")
-                except:
+                except Exception:
                     libc = ctypes.CDLL(None)
 
                 PR_SET_PDEATHSIG = 1
@@ -247,7 +245,7 @@ class ForkHandler:
                     except Exception as e:
                         raise RuntimeError(
                             f"Compilation Intent Failure: Target '{script_path}' is not a valid Python script: {e}"
-                        )
+                        ) from e
 
                     # Prepare execution environment
                     child_globals = {
@@ -280,9 +278,7 @@ class ForkHandler:
 
                         if MEMORY_MANAGER:
                             try:
-                                shm_obj = MEMORY_MANAGER.attach(
-                                    shm_fd, shm_size if shm_size else 0
-                                )
+                                shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size if shm_size else 0)
                                 if shm_obj is not None:
                                     child_globals["VELO_SHM"] = shm_obj
                             except Exception as e:
@@ -305,7 +301,7 @@ class ForkHandler:
             try:
                 sys.stdout.flush()
                 sys.stderr.flush()
-            except:
+            except Exception:
                 pass
 
         # 6. Final Cleanup
@@ -314,7 +310,7 @@ class ForkHandler:
         return exit_code
 
     @staticmethod
-    def _redirect_io(stdout_path: Optional[str], stderr_path: Optional[str]) -> None:
+    def _redirect_io(stdout_path: str | None, stderr_path: str | None) -> None:
         if stdout_path:
             try:
                 sys.stdout = open(stdout_path, "a")
@@ -333,23 +329,21 @@ class ForkHandler:
                 )
 
     @staticmethod
-    def _activate_fast_mode(
-        bundle_path: Optional[str], project_root: Optional[str], max_size: Optional[int]
-    ) -> None:
+    def _activate_fast_mode(bundle_path: str | None, project_root: str | None, max_size: int | None) -> None:
         """Specialized loading for pre-compiled or bundled apps."""
         # Implementation details...
         pass
 
     @staticmethod
     def _cleanup_child(
-        stdout_path: Optional[str],
-        stderr_path: Optional[str],
-        exit_code_path: Optional[str],
+        stdout_path: str | None,
+        stderr_path: str | None,
+        exit_code_path: str | None,
         exit_code: int,
     ) -> None:
         if exit_code_path:
             try:
                 with open(exit_code_path, "w") as f:
                     f.write(str(exit_code))
-            except:
+            except Exception:
                 pass

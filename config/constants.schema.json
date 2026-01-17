@@ -1,0 +1,234 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/velo/config/constants.schema.json",
+    "title": "Velo Constants Configuration",
+    "description": "Schema for config/constants.toml - Velo shared constants (RFC-0012 SSOT)",
+    "type": "object",
+    "required": [
+        "protocol_version",
+        "python_version",
+        "socket_path_limit",
+        "max_message_size",
+        "socket_startup_timeout",
+        "graceful_shutdown_timeout",
+        "default_port",
+        "security_base_trusted_prefixes",
+        "security_base_env_whitelist",
+        "path_socket_dir_name",
+        "path_log_dir_relative"
+    ],
+    "properties": {
+        "protocol_version": {
+            "type": "integer",
+            "description": "IPC protocol version",
+            "minimum": 1
+        },
+        "python_version": {
+            "type": "string",
+            "description": "Target Python version (e.g., '3.11')",
+            "pattern": "^3\\.[0-9]+$"
+        },
+        "socket_path_limit": {
+            "type": "integer",
+            "description": "Maximum socket path length (Unix limit)",
+            "minimum": 1,
+            "maximum": 108
+        },
+        "max_message_size": {
+            "type": "integer",
+            "description": "Maximum IPC message size in bytes",
+            "minimum": 1024
+        },
+        "socket_startup_timeout": {
+            "type": "integer",
+            "description": "Socket startup timeout in seconds",
+            "minimum": 1
+        },
+        "worker_handshake_timeout": {
+            "type": "integer",
+            "description": "Worker handshake timeout in seconds",
+            "minimum": 1
+        },
+        "graceful_shutdown_timeout": {
+            "type": "integer",
+            "description": "Graceful shutdown timeout in seconds",
+            "minimum": 1
+        },
+        "default_slow_threshold_ms": {
+            "type": "integer",
+            "description": "Default slow request threshold in milliseconds"
+        },
+        "strict_optimizations": {
+            "type": "boolean",
+            "description": "Enable strict optimization assertions"
+        },
+        "default_host": {
+            "type": "string",
+            "description": "Default bind host"
+        },
+        "default_port": {
+            "type": "integer",
+            "description": "Default port number",
+            "minimum": 1,
+            "maximum": 65535
+        },
+        "pyproject_toml": {
+            "type": "string"
+        },
+        "uv_lock": {
+            "type": "string"
+        },
+        "requirements_txt": {
+            "type": "string"
+        },
+        "site_customize": {
+            "type": "string"
+        },
+        "velo_loader": {
+            "type": "string"
+        },
+        "velo_cache_dir": {
+            "type": "string"
+        },
+        "velo_profile_json": {
+            "type": "string"
+        },
+        "security_base_trusted_prefixes": {
+            "type": "string",
+            "description": "Comma-separated trusted path prefixes (Level 0: Global)"
+        },
+        "security_base_env_whitelist": {
+            "type": "string",
+            "description": "Comma-separated whitelisted env vars (Level 0: Global)"
+        },
+        "security_macos_base_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_macos_base_env_whitelist": {
+            "type": "string"
+        },
+        "security_linux_base_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_linux_base_env_whitelist": {
+            "type": "string"
+        },
+        "security_macos_dev_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_macos_dev_env_whitelist": {
+            "type": "string"
+        },
+        "security_linux_dev_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_linux_dev_env_whitelist": {
+            "type": "string"
+        },
+        "security_macos_ci_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_macos_ci_env_whitelist": {
+            "type": "string"
+        },
+        "security_linux_ci_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_linux_ci_env_whitelist": {
+            "type": "string"
+        },
+        "security_macos_prod_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_macos_prod_env_whitelist": {
+            "type": "string"
+        },
+        "security_linux_prod_trusted_prefixes": {
+            "type": "string"
+        },
+        "security_linux_prod_env_whitelist": {
+            "type": "string"
+        },
+        "security_hpc_threads": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "path_socket_dir_name": {
+            "type": "string",
+            "description": "Socket directory name template (supports ${UID})"
+        },
+        "path_log_dir_relative": {
+            "type": "string",
+            "description": "Log directory relative to HOME"
+        },
+        "path_cache_dir_name": {
+            "type": "string"
+        },
+        "path_macos_base_socket_parent": {
+            "type": "string"
+        },
+        "path_macos_base_log_parent": {
+            "type": "string"
+        },
+        "path_macos_base_xdg_fallback": {
+            "type": "string"
+        },
+        "path_linux_base_socket_parent": {
+            "type": "string"
+        },
+        "path_linux_base_log_parent": {
+            "type": "string"
+        },
+        "path_linux_base_xdg_fallback": {
+            "type": "string"
+        },
+        "path_linux_fd_dir": {
+            "type": "string"
+        },
+        "path_macos_fd_dir": {
+            "type": "string"
+        },
+        "path_macos_ci_socket_parent": {
+            "type": "string"
+        },
+        "path_linux_ci_socket_parent": {
+            "type": "string"
+        },
+        "python_environment": {
+            "type": "object",
+            "description": "Python environment configuration (Phase 7.3+ SSOT)",
+            "required": [
+                "required_version",
+                "venv_path",
+                "lib_dir_pattern",
+                "lib_dynload_subdir",
+                "env_vars"
+            ],
+            "properties": {
+                "required_version": {
+                    "type": "string",
+                    "description": "Required Python version"
+                },
+                "venv_path": {
+                    "type": "string",
+                    "description": "Virtual environment path relative to project root"
+                },
+                "lib_dir_pattern": {
+                    "type": "string",
+                    "description": "Python lib dir pattern (e.g., 'lib/python{version}')"
+                },
+                "lib_dynload_subdir": {
+                    "type": "string",
+                    "description": "C extension subdirectory"
+                },
+                "env_vars": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Environment variables set by Velo for native workers"
+                }
+            }
+        }
+    }
+}
