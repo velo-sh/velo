@@ -23,7 +23,8 @@ class ZygoteGateway(execnet.gateway.Gateway):
     directly into an execnet listener.
     """
 
-    def __init__(self, spec: Any, socket_path: str = None, secret: str = None):
+    def __init__(self, spec: Any, socket_path: str = None, secret: str = None, project_root: str = None):
+        self.project_root = project_root
         if socket_path is None:
             # First Principles: Try VeloPaths, but gracefully fallback if unavailable
             try:
@@ -37,7 +38,7 @@ class ZygoteGateway(execnet.gateway.Gateway):
                 import tempfile
 
                 uid = os.getuid() if hasattr(os, "getuid") else 0
-                socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote-v01.sock"
+                socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote.sock"
 
         # 1. Physical Connect
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -85,7 +86,7 @@ class ZygoteGateway(execnet.gateway.Gateway):
             "PYTEST_XDIST_WORKER": os.environ.get("PYTEST_XDIST_WORKER", ""),
             "PYTEST_XDIST_WORKER_ID": os.environ.get("PYTEST_XDIST_WORKER_ID", ""),
         }
-        transport.send({"type": "GatewayFork", "nodeid": spec.id, "env": fork_env})
+        transport.send({"type": "GatewayFork", "nodeid": spec.id, "env": fork_env, "project_root": self.project_root})
         fork_resp = transport.recv()
         if not fork_resp or fork_resp.get("type") != "Ack":
             sock.close()
