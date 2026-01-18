@@ -17,25 +17,47 @@ class IdlePool:
     """
     P0: Pre-forked Idle Pool (RFC-0028 Phase 14).
     Maintains a pool of pre-forked processes to reduce on-path latency.
+    Includes Adaptive Scaling to handle burst demands.
     """
 
-    def __init__(self, size: int = 10):
+    def __init__(self, size: int = 4):
         self._target_size = size
+        self._min_size = 2
+        self._max_size = 32
         self.pool: deque[tuple[int, int]] = deque()  # (pid, control_pipe_fd)
         self.lock = threading.Lock()
 
     def add(self, pid: int, pipe_fd: int) -> None:
         with self.lock:
-            self.pool.append((pid, pipe_fd))
+            if len(self.pool) < self._max_size:
+                self.pool.append((pid, pipe_fd))
+            else:
+                LogUtils.log(f"IdlePool Overflow: Terminating extra worker {pid}")
+                os.close(pipe_fd)
+                os.kill(pid, signal.SIGKILL)
 
     def pop(self) -> tuple[int, int] | None:
         with self.lock:
             if self.pool:
-                return self.pool.popleft()
-        return None
+                worker = self.pool.popleft()
+                # Adaptive logic: If we are low, boost target size
+                if len(self.pool) < self._min_size:
+                    self._target_size = min(self._max_size, self._target_size + 2)
+                return worker
+            else:
+                # Burst detected! Maximize target size immediately
+                self._target_size = min(self._max_size, self._target_size + 4)
+                return None
 
     def get_count(self) -> int:
         return len(self.pool)
+
+    def maintenance(self) -> None:
+        """Decay target size if idle for a while (called by Zygote loop)."""
+        with self.lock:
+            if self.get_count() == self._target_size and self._target_size > self._min_size:
+                # Slow decay
+                self._target_size = max(self._min_size, self._target_size - 1)
 
 
 class ZygoteState(Enum):

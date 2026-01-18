@@ -278,11 +278,28 @@ async def handle_zy_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[
         "pid": os.getpid(),
         "state": server.state.name,
         "preload": server._preloaded_modules,
-        # RFC-0011: Optional fields moved to extra or kept if known to supervisor
+        # Phase 15 P2: Reporting pool metrics to the Rust Guardian
+        "pool_count": server.idle_pool.get_count(),
+        "target_pool_size": server.idle_pool._target_size,
         "workers": server.worker_registry.get_stats(),
         "app": server.app_name,
     }
     return status
+
+
+@router.handler("ReplenishPool")
+async def handle_replenish(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
+    """
+    Phase 15 P2: Explicitly replenish the pool as commanded by the Rust Guardian.
+    """
+    target = cmd.get("target_count", server.idle_pool._target_size)
+    # Update target size based on Rust's decision
+    server.idle_pool._target_size = target
+
+    # We don't block here; the background maintainer (if active) or a one-off task will fill it.
+    # To make it immediate, we trigger a replenishment check.
+    asyncio.create_task(server._fill_pool_now())
+    return {"type": "Ack", "message": f"Replenishment scheduled for target {target}"}
 
 
 # ============================================================================
@@ -695,10 +712,8 @@ class ZygoteServer:
                     LogUtils.debug_log(f"Activating Idle Worker {pid}")
                     try:
                         # Writing to pipe is fast but technically blocking
-                        def _write_cmd(w: int, c: dict[str, Any]) -> int:
-                            return os.write(w, json.dumps(c).encode())
-
-                        await loop.run_in_executor(None, _write_cmd, w_pipe, cmd)
+                        payload = json.dumps(cmd).encode()
+                        await loop.run_in_executor(None, os.write, w_pipe, payload)
                         await loop.run_in_executor(None, os.close, w_pipe)
                         future.set_result(pid)
                         continue
@@ -722,27 +737,41 @@ class ZygoteServer:
             finally:
                 self.fork_queue.task_done()
 
-    async def _maintain_idle_pool(self) -> None:
-        """Background task to replenish the Pre-forked Idle Pool."""
-        loop = asyncio.get_event_loop()
-        while True:
-            if self.state == ZygoteState.READY and self.idle_pool.get_count() < self.idle_pool._target_size:
-                try:
-                    # Forking is blocking, run in executor
-                    pid, w_pipe = await loop.run_in_executor(
-                        None,
-                        ForkHandler.handle_idle_fork,
-                        self.worker_registry,
-                        self._preloaded_modules,
-                        self._warmed_server,
-                        self._warmed_config,
-                    )
-                    self.idle_pool.add(pid, w_pipe)
-                    LogUtils.debug_log(f"Replenished Idle Pool: {pid} (count: {self.idle_pool.get_count()})")
-                except Exception as e:
-                    LogUtils.log(f"Failed to replenish Idle Pool: {e}")
+    async def _fill_pool_now(self) -> None:
+        """Helper to immediately attempt to reach target pool size."""
+        if self.state != ZygoteState.READY:
+            return
 
-            await asyncio.sleep(0.5)  # Fast replenishment for xdist bursts
+        loop = asyncio.get_event_loop()
+        while self.idle_pool.get_count() < self.idle_pool._target_size:
+            try:
+                pid, w_pipe = await loop.run_in_executor(
+                    None,
+                    ForkHandler.handle_idle_fork,
+                    self.worker_registry,
+                    self._preloaded_modules,
+                    self._warmed_server,
+                    self._warmed_config,
+                )
+                self.idle_pool.add(pid, w_pipe)
+                LogUtils.debug_log(f"Guided Replenishment: {pid} (count: {self.idle_pool.get_count()})")
+            except Exception as e:
+                LogUtils.log(f"Guided Replenishment failure: {e}")
+                break  # Avoid tight loop on failure
+
+    async def _maintain_idle_pool(self) -> None:
+        """
+        Background task to fulfill the pool target.
+        Phase 15: This loop is now subordinate to the Rust Guardian.
+        It only acts to close the gap between current count and _target_size.
+        """
+        while True:
+            await self._fill_pool_now()
+
+            # Phase 15: We no longer decay autonomously. Rust Guardian determines the target.
+            # self.idle_pool.maintenance()  <- Removed autonomous decay
+
+            await asyncio.sleep(1.0)  # Slower check, ReplenishPool command triggers immediate fill
 
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
