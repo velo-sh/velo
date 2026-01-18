@@ -189,11 +189,27 @@ def pytest_configure(config: Any) -> None:
         import shutil
         
         velo_bin = shutil.which("velo")
+        
+        # Get preload modules and validate they exist
+        preload = getattr(config.option, "velo_preload", "")
+        preload_args = []
+        
+        if preload:
+            # Validate each preload module exists
+            import importlib.util
+            for module_name in preload.split(","):
+                module_name = module_name.strip()
+                if not module_name:
+                    continue
+                spec = importlib.util.find_spec(module_name)
+                if spec is None:
+                    raise pytest.UsageError(
+                        f"--velo-preload: Module '{module_name}' not found. "
+                        f"Ensure the module is installed and accessible."
+                    )
+            preload_args = ["--preload", preload]
+        
         if velo_bin:
-            # Get preload modules
-            preload = getattr(config.option, "velo_preload", "")
-            preload_args = ["--preload", preload] if preload else []
-            
             try:
                 # Start Zygote in daemon mode
                 result = subprocess.run(
