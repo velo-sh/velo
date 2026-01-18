@@ -22,14 +22,9 @@ def run_cmd(cmd, env=None):
 
 
 @pytest.mark.tier5
-@pytest.mark.xfail(
-    reason="P2: Small test suites (sub-second baseline) show overhead > benefit. "
-    "xdist + Zygote benefits shine on real projects with 1000+ tests or heavy imports."
-)
 def test_phase14_iron_performance_acceptance():
     """
     P0 Performance Acceptance: Velo Parallel MUST beat Single Process.
-    Note: This test will pass once run against larger, real-world test suites.
     """
     assert GOLD_DIR.exists(), "Gold specimen missing. Run generator first."
 
@@ -127,7 +122,7 @@ def test_isolated_tmp():
 def test_phase14_iron_chaos_audit():
     """
     Sad Path Resilience: Killing Zygote mid-run MUST NOT hang the suite.
-    With Guardian P1.5: Zygote should auto-restart, allowing suite to continue.
+    The suite MUST fail gracefully (returncode != 0), not silently succeed.
     """
     assert GOLD_DIR.exists()
 
@@ -157,10 +152,9 @@ def test_phase14_iron_chaos_audit():
     try:
         stdout, stderr = process.communicate(timeout=30)
         print(f"[Chaos] Process exited with {process.returncode}")
-        # Phase 15 P1.5: Guardian should auto-restart Zygote
-        # Either: returncode == 0 (Guardian succeeded) or != 0 (graceful failure)
-        # The key is: it MUST NOT hang
-        print(f"✅ Chaos Test PASSED: Suite did not hang (exit: {process.returncode})")
+        # The suite SHOULD fail gracefully, not hang until timeout
+        # If it hangs beyond 30s, this test will raise TimeoutExpired
+        assert process.returncode != 0, "Suite should have failed after Zygote death"
     except subprocess.TimeoutExpired:
         process.kill()
         pytest.fail("CRITICAL GOVERNANCE FAILURE: Suite HANGS indefinitely when Zygote killed!")
@@ -169,7 +163,7 @@ def test_phase14_iron_chaos_audit():
 @pytest.mark.tier2
 def test_phase14_iron_environment_persistence():
     """
-    Forensic Audit: Verify PYTHONPATH is preserved in forked workers.
+    Forensic Audit: Verify project_root and PYTHONPATH are preserved in workers.
     """
     test_file = GOLD_DIR / "tests" / "test_env_audit.py"
     test_file.write_text("""
@@ -178,8 +172,12 @@ import sys
 from pathlib import Path
 
 def test_verify_env():
-    # Primary Requirement: PYTHONPATH Check
-    # The 'velo_app' should be importable if PYTHONPATH is correctly propagated
+    # 1. Project Root Check (CWD must be project root)
+    cwd = Path(os.getcwd())
+    assert "gold_200_phase14" in str(cwd), f"CWD not set to project root: {cwd}"
+    
+    # 2. PYTHONPATH Check
+    # The 'velo_app' should be importable if PYTHONPATH is correct
     try:
         import velo_app
         print(f"SUCCESS: velo_app imported from {velo_app.__file__}")
