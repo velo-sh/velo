@@ -23,18 +23,18 @@ import pytest
 
 
 class TestForkReinitHook:
-    """P0-1: pytest_velo_fork_reinit hook must be called after fork."""
+    """P0-1: velo_fork_reinit hook must be called after fork."""
 
     def test_fork_reinit_hook_called(self):
-        """Verify that pytest_velo_fork_reinit is called in child process."""
+        """Verify that velo_fork_reinit is called in child process."""
         # This test verifies the hook dispatch mechanism exists
         try:
-            from pytest_velo.plugin import pytest_velo_fork_reinit
+            from pytest_velo.plugin import velo_fork_reinit
         except ImportError:
             pytest.fail("pytest_velo.plugin not found - implement plugin first")
 
         # The hook should exist and be callable
-        assert callable(pytest_velo_fork_reinit), "Hook must be callable"
+        assert callable(velo_fork_reinit), "Hook must be callable"
 
     def test_fixture_resources_can_reinit(self):
         """Verify resources can register for reinit via hook."""
@@ -116,15 +116,15 @@ class TestChildProcessHygiene:
 # =============================================================================
 
 
-class TestXdistMutualExclusivity:
-    """Gate B: --velo and -n must be mutually exclusive."""
+class TestXdistCompatibility:
+    """Phase 14: --velo and -n now work together."""
 
-    def test_xdist_mutual_exclusivity(self):
-        """Running with both --velo and -n should raise ConfigError."""
+    def test_xdist_compatibility(self):
+        """Running with both --velo and -n should work (Phase 14)."""
         try:
-            from pytest_velo.plugin import validate_xdist_exclusivity
+            from pytest_velo.plugin import validate_xdist_compatibility
         except ImportError:
-            pytest.fail("validate_xdist_exclusivity not implemented")
+            pytest.fail("validate_xdist_compatibility not implemented")
 
         # Mock config object
         class MockConfig:
@@ -138,15 +138,17 @@ class TestXdistMutualExclusivity:
                     },
                 )()
 
-        # No conflict: velo only
-        validate_xdist_exclusivity(MockConfig(velo=True, numprocesses=0))
+        # Both enabled: should NOT raise (Phase 14 change)
+        validate_xdist_compatibility(MockConfig(velo=True, numprocesses=4))
 
-        # No conflict: xdist only
-        validate_xdist_exclusivity(MockConfig(velo=False, numprocesses=4))
+    def test_xdist_worker_detection(self):
+        """is_xdist_worker and is_xdist_controller exist."""
+        from pytest_velo.plugin import is_xdist_controller, is_xdist_worker
 
-        # Conflict: both enabled
-        with pytest.raises(pytest.UsageError, match="mutually exclusive"):
-            validate_xdist_exclusivity(MockConfig(velo=True, numprocesses=4))
+        assert callable(is_xdist_worker)
+        assert callable(is_xdist_controller)
+        # Not running under xdist, so should be controller
+        assert is_xdist_controller() is True
 
 
 # =============================================================================

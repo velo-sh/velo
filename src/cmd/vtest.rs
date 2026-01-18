@@ -120,14 +120,16 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
         cmd.arg("--cov-report=term-missing");
     }
 
-    // Parallel workers (only if > 1 and not using zygote)
-    // Note: --zygote and -n are mutually exclusive per RFC-0028
-    if workers > 1 && !use_zygote {
+    // Parallel workers: pass -n to pytest
+    // Phase 14: --workers + --zygote now supported (xdist + Zygote acceleration)
+    if workers > 1 {
         cmd.arg("-n").arg(workers.to_string());
-    } else if workers > 1 && use_zygote {
-        eprintln!(
-            "warning: --workers ignored when using Zygote (--zygote and -n are mutually exclusive)"
-        );
+        if use_zygote {
+            log::info!(
+                "Running with {} xdist workers + Zygote acceleration",
+                workers
+            );
+        }
     }
 
     // Pass through extra pytest args
