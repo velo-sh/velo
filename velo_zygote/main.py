@@ -598,7 +598,19 @@ class ZygoteServer:
                         # 2. Perform the fork (child takes over the socket)
                         nodeid = msg.get("nodeid", "worker")
                         fork_env = msg.get("env", {})  # Env vars from pytest master
-                        pid = ForkHandler.handle_gateway_fork(sock, self.worker_registry, nodeid=nodeid, env=fork_env)
+                        project_root = msg.get("project_root")
+
+                        try:
+                            pid = ForkHandler.handle_gateway_fork(
+                                sock, self.worker_registry, nodeid=nodeid, env=fork_env, project_root=project_root
+                            )
+                        except Exception as e:
+                            LogUtils.log(f"Gateway Handover Fork Error: {e}")
+                            # If fork fails, we should probably send an error back and not return
+                            await loop.run_in_executor(
+                                None, transport.send, {"type": "Error", "message": f"Gateway fork failed: {e}"}
+                            )
+                            break  # Break the while loop to close the socket
 
                         LogUtils.log(f"Zygote Gateway: Socket handed over to worker PID {pid} (node: {nodeid}).")
                         # 3. Parent: Exit handling and close local side (Child already has its copy)

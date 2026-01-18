@@ -66,6 +66,7 @@ class ForkHandler:
         worker_registry: WorkerRegistry,
         nodeid: str = "worker",
         env: dict[str, str] | None = None,
+        project_root: str | None = None,
     ) -> int:
         """
         Phase 14 P1: Fork a gateway worker that takes over the socket.
@@ -90,6 +91,13 @@ class ForkHandler:
                     for key, value in env.items():
                         if value:  # Only set non-empty values
                             os.environ[key] = value
+
+                # RFC-0028: Project Root Alignment
+                if project_root and os.path.isdir(project_root):
+                    os.chdir(project_root)
+                    LogUtils.debug_log(f"Miracle Worker chdir to project_root: {project_root}")
+                    if project_root not in sys.path:
+                        sys.path.insert(0, project_root)
 
                 # 2. Run execnet bootstrap
                 ForkHandler._run_execnet_gateway(sock, nodeid=nodeid)

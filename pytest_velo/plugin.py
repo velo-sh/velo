@@ -153,6 +153,27 @@ def is_xdist_controller() -> bool:
     return "PYTEST_XDIST_WORKER" not in os.environ
 
 
+def get_project_root(item: Any) -> Path:
+    """
+    RFC-0028: Derive project root from test file path.
+    Walk up to find a directory with conftest.py, pyproject.toml, or setup.py.
+    """
+    test_fspath = getattr(item, "fspath", None) or getattr(item, "path", None)
+    if not test_fspath:
+        return Path.cwd()
+
+    test_dir = Path(str(test_fspath)).parent
+    # Walk up to find project root (look for conftest.py, pyproject.toml, or setup.py)
+    project_root = test_dir
+    for parent in [test_dir] + list(test_dir.parents):
+        if (parent / "pyproject.toml").exists() or (parent / "setup.py").exists():
+            return parent
+        elif (parent / "conftest.py").exists():
+            project_root = parent
+            # Continue looking for pyproject.toml higher up
+    return project_root
+
+
 def validate_xdist_compatibility(config: Any) -> None:
     """
     Log info when --velo and -n are both enabled.
@@ -250,7 +271,10 @@ def hijack_execnet() -> None:
                 try:
                     # Capture secret from env (SSOT: VELO_ZYGOTE_AUTH)
                     secret = _os.environ.get("VELO_ZYGOTE_AUTH")
-                    gw = ZygoteGateway(spec, secret=secret)
+                    # RFC-0028: Determine project root for Miracle worker
+                    project_root = getattr(execnet.multi.Group, "_velo_project_root", _os.getcwd())
+
+                    gw = ZygoteGateway(spec, secret=secret, project_root=str(project_root))
                     self._register(gw)
                     return gw
                 except Exception as e:
@@ -286,6 +310,12 @@ def pytest_configure(config: Any) -> None:
         # P1 Miracle: Hijack execnet node creation EARLY (before worker spawning)
         # This must happen before xdist creates workers, regardless of velo binary
         if is_xdist_controller():
+            # RFC-0028: Cache project root on the Group class for hijackers
+            import execnet.multi
+
+            # Find project root from first item or config
+            root = getattr(config, "rootpath", None) or getattr(config, "rootdir", None)
+            execnet.multi.Group._velo_project_root = Path(str(root)) if root else Path.cwd()
             hijack_execnet()
 
         velo_bin = shutil.which("velo")
@@ -529,22 +559,6 @@ def run_in_zygote_fork(item: Any) -> bool:
             pythonpath = os.environ.get("PYTHONPATH")
             if pythonpath:
                 cmd.extend(["--env", f"PYTHONPATH={pythonpath}"])
-
-            # RFC-0028: Propagate project root so workers chdir to correct directory
-            # Derive from test file path - walk up to find a directory with conftest.py or pyproject.toml
-            test_fspath = getattr(item, "fspath", None) or getattr(item, "path", None)
-            if test_fspath:
-                test_dir = Path(str(test_fspath)).parent
-                # Walk up to find project root (look for conftest.py, pyproject.toml, or setup.py)
-                project_root = test_dir
-                for parent in [test_dir] + list(test_dir.parents):
-                    if (parent / "pyproject.toml").exists() or (parent / "setup.py").exists():
-                        project_root = parent
-                        break
-                    elif (parent / "conftest.py").exists():
-                        project_root = parent
-                        # Continue looking for pyproject.toml higher up
-                cmd.extend(["--project-root", str(project_root)])
 
             result = subprocess.run(
                 cmd,
