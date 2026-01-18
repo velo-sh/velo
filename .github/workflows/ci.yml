@@ -158,22 +158,11 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
-    env:
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
       - name: Verify Rust Toolchain
         run: rustup show
-
-      - name: Setup sccache
-        id: sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-        continue-on-error: true
-
-      - name: Set RUSTC_WRAPPER if sccache available
-        if: steps.sccache.outcome == 'success'
-        run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -224,17 +213,8 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    env:
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
-      - name: Setup sccache
-        id: sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
-        continue-on-error: true
-      - name: Set RUSTC_WRAPPER if sccache available
-        if: steps.sccache.outcome == 'success'
-        run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
