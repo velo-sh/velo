@@ -173,7 +173,7 @@ jobs:
 
       - name: Set RUSTC_WRAPPER if sccache available
         if: steps.sccache.outcome == 'success'
-        run: echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -234,7 +234,7 @@ jobs:
         continue-on-error: true
       - name: Set RUSTC_WRAPPER if sccache available
         if: steps.sccache.outcome == 'success'
-        run: echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
         with:
