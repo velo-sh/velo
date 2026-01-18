@@ -194,10 +194,10 @@ impl ZygoteGuardian {
         {
             if let Ok(statm) = std::fs::read_to_string(format!("/proc/{}/statm", _pid)) {
                 let parts: Vec<&str> = statm.split_whitespace().collect();
-                if parts.len() > 1 {
-                    if let Ok(rss_pages) = parts[1].parse::<u64>() {
-                        return Some(rss_pages * 4096); // Assuming 4KB pages
-                    }
+                if parts.len() > 1
+                    && let Ok(rss_pages) = parts[1].parse::<u64>()
+                {
+                    return Some(rss_pages * 4096); // Assuming 4KB pages
                 }
             }
             None
