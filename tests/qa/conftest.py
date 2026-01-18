@@ -1,8 +1,9 @@
-"""pytest conftest for Velo QA tests."""
 import subprocess
 import pytest
 import sys
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +105,44 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "resource_budget: Resource budget verification tests"
     )
+
+
+# =============================================================================
+# SESSION-SCOPED LOG DIRECTORY (P1 Fix: Artifact Bundling Scope)
+# =============================================================================
+
+# Global to store session log dir path for use in pytest_runtest_makereport
+_session_log_dir: Path | None = None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def session_log_directory(tmp_path_factory):
+    """
+    Create a unique log directory for this pytest session.
+    
+    This ensures artifact bundling only collects current session logs,
+    not the accumulated 26GB+ of historical logs.
+    """
+    global _session_log_dir
+    
+    # Create session-specific log dir
+    session_id = f"session-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    session_dir = Path.home() / ".local/state/velo" / "sessions" / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Export for child processes (Zygote, workers, etc.)
+    os.environ["VELO_SESSION_LOG_DIR"] = str(session_dir)
+    
+    # Store globally for artifact collection
+    _session_log_dir = session_dir
+    
+    sys.stderr.write(f"[Session] Log dir: {session_dir}\n")
+    
+    yield session_dir
+    
+    # Optional: Cleanup on success (keep on failure for debugging)
+    # import shutil
+    # shutil.rmtree(session_dir, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -242,10 +281,13 @@ def pytest_runtest_makereport(item, call):
             if velo_bin.exists():
                 log_dir = None
 
-                # Check for isolated env
-                if "velo_test_env" in item.funcargs:
+                # Priority 1: Use session-scoped log directory (P1 fix)
+                if _session_log_dir and _session_log_dir.exists():
+                    log_dir = _session_log_dir
+                    sys.stderr.write(f"📦 Collecting failure bundle from: {log_dir}\n")
+                # Priority 2: Check for isolated test env
+                elif "velo_test_env" in item.funcargs:
                     env = item.funcargs["velo_test_env"]
-                    # RFC-0012: Logs are in HOME/.local/state/velo
                     log_path = env.home / ".local/state/velo"
                     if log_path.exists():
                         log_dir = log_path
