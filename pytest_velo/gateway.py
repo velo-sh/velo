@@ -23,10 +23,20 @@ class ZygoteGateway(execnet.gateway.Gateway):
 
     def __init__(self, spec: Any, socket_path: str = None, secret: str = None):
         if socket_path is None:
-            if VeloPaths:
-                socket_path = str(VeloPaths.zygote_socket())
-            else:
-                socket_path = "/tmp/velo-zygote-v01.sock"
+            # First Principles: Try VeloPaths, but gracefully fallback if unavailable
+            try:
+                if VeloPaths:
+                    socket_path = str(VeloPaths.zygote_socket())
+            except Exception:
+                pass
+
+            if not socket_path:
+                # Ultimate fallback: standard temp location
+                import os
+                import tempfile
+
+                uid = os.getuid() if hasattr(os, "getuid") else 0
+                socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote-v01.sock"
 
         # 1. Physical Connect
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

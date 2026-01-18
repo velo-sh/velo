@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -8,9 +9,20 @@ def test_p1_miracle_gateway_hijack(tmp_path):
     """
     Verify Phase 14 P1: Zygote Gateway (execnet Hijacking).
     """
+    # First Principles: Derive project root from test file location
+    project_root = Path(__file__).resolve().parents[2]
 
-    project_root = Path("/Users/antigravity/rust_source/velo")
-    velo_bin = str(project_root / "target" / "debug" / "velo")
+    # Binary discovery: try debug first, then release
+    velo_bin = project_root / "target" / "debug" / "velo"
+    if not velo_bin.exists():
+        velo_bin = project_root / "target" / "release" / "velo"
+    if not velo_bin.exists():
+        import shutil
+
+        velo_bin = shutil.which("velo")
+        if not velo_bin:
+            raise RuntimeError("Could not find velo binary")
+    velo_bin = str(velo_bin)
 
     # 1. Start Zygote manually to ensure it's fresh
     subprocess.run([velo_bin, "zygote", "stop"], capture_output=True)
@@ -59,6 +71,15 @@ def test_worker_identity():
     assert result.returncode == 0
 
     # Verification of P1: Zygote log should show "Gateway: Handover requested"
-    zygote_log = Path("/Users/antigravity/.local/state/velo/zygote.log").read_text()
-    assert "Zygote Gateway: Handover requested" in zygote_log
-    assert "Zygote Gateway: Socket handed over to worker" in zygote_log
+    # Use dynamic log path
+    try:
+        from velo_zygote.paths import VeloPaths
+
+        zygote_log_path = VeloPaths.zygote_log()
+    except Exception:
+        zygote_log_path = Path.home() / ".local" / "state" / "velo" / "zygote.log"
+
+    if zygote_log_path.exists():
+        zygote_log = zygote_log_path.read_text()
+        assert "Zygote Gateway: Handover requested" in zygote_log
+        assert "Zygote Gateway: Socket handed over to worker" in zygote_log

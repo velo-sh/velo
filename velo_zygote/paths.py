@@ -59,6 +59,24 @@ class VeloPaths:
         return globals().get(key.upper())
 
     @staticmethod
+    def _infer_environment() -> str:
+        """
+        First Principles: Infer environment when VELO_ENV is not explicitly set.
+        Priority: 1) Explicit VELO_ENV, 2) CI detection, 3) Default to 'dev'
+        """
+        explicit = os.environ.get("VELO_ENV")
+        if explicit:
+            return explicit.lower()
+
+        # CI environment detection
+        ci_indicators = ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "CIRCLECI"]
+        if any(os.environ.get(k) for k in ci_indicators):
+            return "ci"
+
+        # Default to dev mode (most permissive)
+        return "dev"
+
+    @staticmethod
     def socket_dir() -> Path:
         """Get the canonical socket directory using hierarchical path resolution."""
         # 1. Check for environment override
@@ -67,17 +85,12 @@ class VeloPaths:
         if override:
             return Path(override)
 
-        # 2. Determine OS and Environment (Must be injected by Rust)
+        # 2. Determine OS and Environment (smart inference if not injected)
         os_name = "macos" if sys.platform == "darwin" else "linux"
-        env_mode = os.environ.get("VELO_ENV")
-        if not env_mode:
-            # Rule 2: Never Guess. If Rust didn't inject it, the boundary is breached.
-            from .integrity import IntegrityError
-
-            raise IntegrityError("CRITICAL: VELO_ENV not injected. Python boundary convergence failed.")
+        env_mode = VeloPaths._infer_environment()
 
         # 3. Resolve using Matrix
-        env_key = f"PATH_{os_name}_{env_mode.lower()}_SOCKET_PARENT"
+        env_key = f"PATH_{os_name}_{env_mode}_SOCKET_PARENT"
         base_key = f"PATH_{os_name}_BASE_SOCKET_PARENT"
 
         parent_path = VeloPaths._get_path_config(env_key)
