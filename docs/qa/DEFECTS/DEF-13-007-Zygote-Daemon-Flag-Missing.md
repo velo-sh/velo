@@ -5,7 +5,10 @@
 - **Severity**: Major
 - **Category**: CLI / Integration
 - **Reporter**: QA Agent (Antigravity)
-- **Status**: **OPEN**
+- **Status**: **FIXED** ✅ (Resolved in `b2d5dde`)
+
+## Resolution
+The `--daemon` flag was added to the `zygote start` subcommand in `src/cmd/zygote.rs`. This ensures that the `pytest-velo` plugin can successfully start the Zygote server in daemon mode, restoring the 42x speedup for automated tests. Verified with a full regression run.
 
 ## Description
 The `pytest-velo` plugin attempts to start the Zygote server using the command:
