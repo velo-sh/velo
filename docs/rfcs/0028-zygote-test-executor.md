@@ -1,9 +1,9 @@
 # RFC-0028: pytest-velo Plugin (Zygote-Accelerated Testing)
 
-**Status**: DRAFT
+**Status**: APPROVED (Council Review 2026-01-18)
 **Author**: Architect
-**Date**: 2026-01-14 (Updated: 2026-01-15)
-**Phase**: Phase 8.x
+**Date**: 2026-01-14 (Updated: 2026-01-18)
+**Phase**: Phase 13
 
 ## Related Documents
 - [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md) (Zygote Architecture)
@@ -301,5 +301,56 @@ pytest can natively run:
 
 ---
 
-**Last Updated**: 2026-01-15
- 
+## 12. Grand Council Review (2026-01-18)
+
+> **Verdict**: 🟢 **APPROVED** (with mandatory P0 mitigations)
+
+### 12.1 P0 Blockers (Must Implement)
+
+| # | Issue | Mitigation |
+|:---|:---|:---|
+| **P0-1** | **Fixture Scope Leakage** | Add `pytest_velo_fork_reinit` hook for resource reinit |
+| **P0-2** | **GIL Deadlock** | Fork ONLY from single-threaded Zygote main loop |
+| **P0-3** | **FD Corruption** (DB/Redis) | Child calls `atexit._clear()`, uses `os._exit()` |
+
+### 12.2 P1 Concerns (Address in Phase 1)
+
+| # | Issue | Mitigation |
+|:---|:---|:---|
+| **P1-1** | pytest-xdist conflict | Mutual exclusivity: `--velo` disables `-n` |
+| **P1-2** | COW thrashing | Set `PYTHONDONTWRITEBYTECODE=1` |
+| **P1-3** | Concurrent fork races | Connection pooling in TestCoordinator |
+
+### 12.3 Fork Safety Guarantees (MANDATORY)
+
+```python
+# 1. Single-threaded fork requirement
+assert threading.active_count() == 1, "Fork requires single-threaded parent"
+
+# 2. Child process hygiene
+def _child_init():
+    atexit._clear()  # Prevent double-cleanup
+    # MUST use os._exit() NOT sys.exit()
+
+# 3. Fixture reinit hook
+@pytest.hookimpl
+def pytest_velo_fork_reinit(item):
+    """Called in child after fork to reinit resources."""
+    # Users register: db.reconnect(), redis.reconnect(), etc.
+```
+
+---
+
+## 13. Implementation Phases
+
+| Phase | Scope | Owner | Effort |
+|:---|:---|:---|:---|
+| **Phase 1** | CLI scaffold (`velo test → pytest`) | Developer | 0.5 day |
+| **Phase 2** | TestCoordinator in Rust | Developer | 1 day |
+| **Phase 3** | pytest-velo plugin (Python hooks) | Developer | 1 day |
+| **Phase 4** | Integration & QA | QA | 0.5 day |
+| **Total** | | | **~3 days** |
+
+---
+
+**Last Updated**: 2026-01-18 (Council Review Added)
