@@ -166,6 +166,14 @@ jobs:
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          # Shared key enables cache sharing across jobs and branches
+          shared-key: "velo-rust-${{ runner.os }}"
+          # Cache even on failed builds to speed up fix iterations
+          cache-on-failure: true
+          # Cache both release and debug profiles
+          workspaces: |
+            . -> target
 
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
@@ -214,6 +222,9 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-rust-${{ runner.os }}"
+          cache-on-failure: true
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
@@ -235,6 +246,9 @@ jobs:
         run: rustup show
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-rust-${{ runner.os }}"
+          cache-on-failure: true
       - name: Setup Velo
         uses: ./.github/actions/setup-velo
         with:
