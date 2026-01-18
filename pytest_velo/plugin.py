@@ -280,6 +280,11 @@ def pytest_configure(config: Any) -> None:
         # P1-2: Prevent COW thrashing from .pyc writes
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
+        # P1 Miracle: Hijack execnet node creation EARLY (before worker spawning)
+        # This must happen before xdist creates workers, regardless of velo binary
+        if is_xdist_controller():
+            hijack_execnet()
+
         velo_bin = shutil.which("velo")
 
         # Get preload modules and validate they exist
