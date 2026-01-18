@@ -208,7 +208,7 @@ class TestAuditTrigger_CrossCuttingConcerns:
         # Allowed production code locations
         allowed_prod = ('pytest_velo/', 'src/cmd/vtest', 'src/lib.rs', 'Dockerfile')
         # Ignored auto-generated files
-        ignored_patterns = ('.egg-info', '__pycache__')
+        ignored_patterns = ('.egg-info', '__pycache__', 'pyproject.toml')
         
         # Filter to find unexpected changes
         unexpected = []

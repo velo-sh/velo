@@ -93,6 +93,20 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
     let mut cmd = ProcessCommand::new("uv");
     cmd.arg("run").arg("pytest");
 
+    // Ensure pytest_velo module is discoverable
+    // This is needed when running from a different directory (e.g., temp dir in E2E tests)
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(project_root) = exe_path
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+        {
+            let pythonpath = std::env::var("PYTHONPATH")
+                .map(|p| format!("{}:{}", project_root.display(), p))
+                .unwrap_or_else(|_| project_root.display().to_string());
+            cmd.env("PYTHONPATH", pythonpath);
+        }
+
     // Add test path
     cmd.arg(test_path);
 
