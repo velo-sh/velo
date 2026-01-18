@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -68,10 +69,13 @@ def test_guardian_basic_health_check():
     """
     Verify the Guardian starts successfully and Zygote reports health metrics.
     """
+    # Prefer release build for faster startup, fallback to debug
+    velo_bin = "./target/release/velo" if Path("./target/release/velo").exists() else "./target/debug/velo"
+    
     # Start Zygote and wait for it to be ready
     result = subprocess.run(
-        ["./target/debug/velo", "zygote", "start", "--daemon"],
-        capture_output=True, text=True, timeout=15
+        [velo_bin, "zygote", "start", "--daemon"],
+        capture_output=True, text=True, timeout=30  # Increased timeout for debug build
     )
     if result.returncode != 0:
         print(f"Zygote start failed: {result.stderr}")
