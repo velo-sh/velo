@@ -8,6 +8,7 @@
 ## Related Documents
 - [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md) (Zygote Architecture)
 - [RFC-0018: Integrated Custody](./0018-integrated-custody.md) (Environment Management)
+- [ISOLATION.md](../../pytest_velo/ISOLATION.md) (pytest-velo Isolation Behavior)
 
 ---
 
