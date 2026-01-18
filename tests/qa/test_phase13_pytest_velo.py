@@ -214,3 +214,105 @@ class TestPluginHooks:
             pytest.fail("pytest_runtest_protocol not implemented")
 
         assert callable(pytest_runtest_protocol)
+
+
+# =============================================================================
+# Worker Environment Isolation (Concurrent Safety)
+# =============================================================================
+
+
+class TestWorkerEnvironmentIsolation:
+    """P0/P1/P2: Worker environment isolation for concurrent safety."""
+
+    def test_worker_environment_isolation_exists(self):
+        """Verify worker_environment_isolation function exists."""
+        try:
+            from pytest_velo.plugin import worker_environment_isolation
+        except ImportError:
+            pytest.fail("worker_environment_isolation not implemented")
+
+        assert callable(worker_environment_isolation)
+
+    def test_cleanup_worker_environment_exists(self):
+        """Verify cleanup_worker_environment function exists."""
+        try:
+            from pytest_velo.plugin import cleanup_worker_environment
+        except ImportError:
+            pytest.fail("cleanup_worker_environment not implemented")
+
+        assert callable(cleanup_worker_environment)
+
+    def test_worker_tmpdir_isolation(self):
+        """P0: Verify worker gets isolated TMPDIR."""
+        from pytest_velo.plugin import worker_environment_isolation
+
+        # Fork a child and check its TMPDIR
+        pid = os.fork()
+        if pid == 0:
+            # Child process
+            worker_base = worker_environment_isolation()
+            
+            # Verify TMPDIR is set to worker-specific path
+            assert os.environ.get("TMPDIR", "").startswith("/tmp/velo-worker-")
+            assert os.environ.get("TMP", "").startswith("/tmp/velo-worker-")
+            assert os.environ.get("TEMP", "").startswith("/tmp/velo-worker-")
+            
+            os._exit(0)
+        else:
+            # Parent waits
+            _, status = os.waitpid(pid, 0)
+            assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+    def test_worker_socket_isolation(self):
+        """P1: Verify worker gets isolated socket directory."""
+        from pytest_velo.plugin import worker_environment_isolation
+
+        pid = os.fork()
+        if pid == 0:
+            worker_base = worker_environment_isolation()
+            
+            # Verify socket isolation env vars
+            assert "VELO_WORKER_ID" in os.environ
+            assert "VELO_WORKER_SOCKET_DIR" in os.environ
+            assert os.path.exists(os.environ["VELO_WORKER_SOCKET_DIR"])
+            
+            os._exit(0)
+        else:
+            _, status = os.waitpid(pid, 0)
+            assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+    def test_worker_log_isolation(self):
+        """P2: Verify worker gets isolated log directory."""
+        from pytest_velo.plugin import worker_environment_isolation
+
+        pid = os.fork()
+        if pid == 0:
+            worker_base = worker_environment_isolation()
+            
+            # Verify log isolation
+            assert "VELO_WORKER_LOG_DIR" in os.environ
+            assert os.path.exists(os.environ["VELO_WORKER_LOG_DIR"])
+            
+            os._exit(0)
+        else:
+            _, status = os.waitpid(pid, 0)
+            assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
+
+    def test_worker_cleanup(self):
+        """Verify cleanup removes worker directories."""
+        from pytest_velo.plugin import cleanup_worker_environment
+
+        # Create a fake worker directory
+        test_dir = "/tmp/velo-worker-test-cleanup"
+        os.makedirs(f"{test_dir}/tmp", exist_ok=True)
+        os.makedirs(f"{test_dir}/sockets", exist_ok=True)
+        os.makedirs(f"{test_dir}/logs", exist_ok=True)
+
+        assert os.path.exists(test_dir)
+
+        # Clean up
+        cleanup_worker_environment(test_dir)
+
+        # Should be removed
+        assert not os.path.exists(test_dir)
+

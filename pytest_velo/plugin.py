@@ -178,6 +178,59 @@ def pytest_unconfigure(config: Any) -> None:
         _zygote = None
 
 
+# =============================================================================
+# Worker Environment Isolation (Concurrent Safety)
+# =============================================================================
+
+
+def worker_environment_isolation() -> str:
+    """
+    Set up isolated environment for worker process.
+    
+    This MUST be called immediately after fork() in the child process.
+    Returns the worker-specific temp directory path.
+    
+    Isolation layers:
+    - P0: Isolated TMPDIR per worker
+    - P1: Worker-specific socket namespace (via PID)
+    - P2: Isolated log directory per worker
+    """
+    worker_pid = os.getpid()
+    worker_base = f"/tmp/velo-worker-{worker_pid}"
+    
+    # P0: Isolated TMPDIR - prevents temp file collisions
+    worker_tmp = f"{worker_base}/tmp"
+    os.makedirs(worker_tmp, exist_ok=True)
+    os.environ["TMPDIR"] = worker_tmp
+    os.environ["TMP"] = worker_tmp
+    os.environ["TEMP"] = worker_tmp
+    
+    # P1: Socket namespace isolation - worker ID in env for any child sockets
+    os.environ["VELO_WORKER_ID"] = str(worker_pid)
+    os.environ["VELO_WORKER_SOCKET_DIR"] = f"{worker_base}/sockets"
+    os.makedirs(f"{worker_base}/sockets", exist_ok=True)
+    
+    # P2: Log directory isolation
+    worker_logs = f"{worker_base}/logs"
+    os.makedirs(worker_logs, exist_ok=True)
+    os.environ["VELO_WORKER_LOG_DIR"] = worker_logs
+    
+    return worker_base
+
+
+def cleanup_worker_environment(worker_base: str) -> None:
+    """
+    Clean up worker-specific directories after test completion.
+    Called from parent process after child exits.
+    """
+    import shutil
+    try:
+        if os.path.exists(worker_base):
+            shutil.rmtree(worker_base, ignore_errors=True)
+    except Exception:
+        pass  # Best effort cleanup
+
+
 def run_in_zygote_fork(item: Any) -> bool:
     """
     Execute a single test in a Zygote fork.
@@ -193,6 +246,9 @@ def run_in_zygote_fork(item: Any) -> bool:
 
     if pid == 0:
         # ===== CHILD PROCESS =====
+        # Environment isolation FIRST (before any other operations)
+        worker_base = worker_environment_isolation()
+        
         # P0-3: Clean up atexit handlers to prevent double-cleanup
         child_process_hygiene()
 
@@ -212,6 +268,11 @@ def run_in_zygote_fork(item: Any) -> bool:
     else:
         # ===== PARENT PROCESS =====
         _, status = os.waitpid(pid, 0)
+        
+        # Cleanup worker temp dirs (P0/P1/P2)
+        worker_base = f"/tmp/velo-worker-{pid}"
+        cleanup_worker_environment(worker_base)
+        
         # Check if child exited normally with code 0
         if os.WIFEXITED(status):
             return os.WEXITSTATUS(status) == 0
