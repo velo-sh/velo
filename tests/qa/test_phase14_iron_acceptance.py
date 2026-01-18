@@ -4,6 +4,7 @@ Enforces QA-SOP P0 Performance Requirements.
 """
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -12,6 +13,18 @@ import pytest
 
 GOLD_DIR = Path("/tmp/gold_200_phase14")
 VELO_BIN = Path("./target/release/velo").absolute()
+
+
+def clear_pycache(target_dir: Path) -> None:
+    """
+    Clear __pycache__ directories to eliminate OS cache effects.
+    This ensures fair cold-cache benchmarking.
+    """
+    for cache_dir in target_dir.rglob("__pycache__"):
+        try:
+            shutil.rmtree(cache_dir)
+        except Exception:
+            pass  # Ignore errors if directory is already gone
 
 
 def run_cmd(cmd, env=None):
@@ -34,8 +47,9 @@ def test_phase14_iron_performance_acceptance():
     env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
     env["VELO_ENV"] = "dev"  # RFC-0012: Mandatory for Python boundary convergence
 
-    # 1. Baseline: Unsafe Single-Process Pytest
-    print(f"\n[Baseline] Running Pytest Single-Process on {GOLD_DIR}/tests...")
+    # 1. Baseline: Cold-cache Single-Process Pytest
+    print(f"\n[Baseline] Clearing cache and running Pytest Single-Process on {GOLD_DIR}/tests...")
+    clear_pycache(GOLD_DIR)  # Fair benchmark: cold cache
     res_base, dur_base = run_cmd(["uv", "run", "pytest", str(GOLD_DIR / "tests")], env=env)
     if res_base.returncode != 0:
         print(f"BASELINE STDOUT: {res_base.stdout}")
@@ -43,8 +57,9 @@ def test_phase14_iron_performance_acceptance():
     assert res_base.returncode == 0
     print(f"✅ Baseline: {dur_base:.3f}s")
 
-    # 2. Target: Velo Parallel (-n 4)
-    print(f"[Target] Running Velo Parallel (-n 4) on {GOLD_DIR}...")
+    # 2. Target: Cold-cache Velo Parallel (-n 4)
+    print(f"[Target] Clearing cache and running Velo Parallel (-n 4) on {GOLD_DIR}...")
+    clear_pycache(GOLD_DIR)  # Fair benchmark: cold cache
     # Stop any existing zygote first
     subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
 
