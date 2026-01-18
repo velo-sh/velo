@@ -179,7 +179,7 @@ def test_phase14_iron_chaos_audit():
 
     time.sleep(1.0)
     print("[Chaos] Slapping Zygote (SIGKILL)...")
-    subprocess.run(["pkill", "-9", "^velo_zygote$"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "velo_zygote/main.py"], capture_output=True)
 
     # 3. Wait for test to finish or hang
     try:
