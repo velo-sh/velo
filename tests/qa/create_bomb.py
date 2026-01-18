@@ -1,6 +1,5 @@
-import struct
 import marshal
-import sys
+import struct
 from pathlib import Path
 
 

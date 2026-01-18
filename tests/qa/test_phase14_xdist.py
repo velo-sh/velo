@@ -1,9 +1,8 @@
-import subprocess
-import sys
-import time
 import os
-import pytest
+import subprocess
+import time
 from pathlib import Path
+
 
 def test_xdist_with_zygote_acceleration():
     """
@@ -12,7 +11,7 @@ def test_xdist_with_zygote_acceleration():
     # Create a small project with many tests
     test_dir = Path("tests/qa/xdist_perf")
     test_dir.mkdir(parents=True, exist_ok=True)
-    
+
     for i in range(20):
         with open(test_dir / f"test_group_{i}.py", "w") as f:
             f.write(f"""
@@ -30,36 +29,36 @@ def test_b_{i}():
         # 1. Run with xdist but NO zygote (baseline)
         start = time.perf_counter()
         result_vanilla = subprocess.run(
-            ["uv", "run", "pytest", str(test_dir), "-n", "4"],
-            capture_output=True, text=True
+            ["uv", "run", "pytest", str(test_dir), "-n", "4"], capture_output=True, text=True
         )
         duration_vanilla = time.perf_counter() - start
         assert result_vanilla.returncode == 0
-        
+
         # 2. Run with xdist + zygote
         # We use 'velo test' which sets up everything
         start = time.perf_counter()
         result_velo = subprocess.run(
-            ["./target/release/velo", "test", str(test_dir), "-n", "4", "--zygote"],
-            capture_output=True, text=True
+            ["./target/release/velo", "test", str(test_dir), "-n", "4", "--zygote"], capture_output=True, text=True
         )
         duration_velo = time.perf_counter() - start
-        
+
         if result_velo.returncode != 0:
             print(result_velo.stdout)
             print(result_velo.stderr)
-            
+
         assert result_velo.returncode == 0
         assert "40 passed" in result_velo.stdout
-        
+
         # In a small test suite, overhead might dominate, but let's check it doesn't crash
         # and it should ideally be faster or comparable
-        assert duration_velo < duration_vanilla * 1.5 # Relaxed check for small suites
-        
+        assert duration_velo < duration_vanilla * 1.5  # Relaxed check for small suites
+
     finally:
         # Cleanup
         import shutil
+
         shutil.rmtree(test_dir, ignore_errors=True)
+
 
 def test_shared_zygote_lifecycle():
     """
@@ -68,7 +67,7 @@ def test_shared_zygote_lifecycle():
     # Start Zygote manually
     subprocess.run(["./target/release/velo", "zygote", "stop"], capture_output=True)
     subprocess.run(["./target/release/velo", "zygote", "start", "--daemon"], capture_output=True)
-    
+
     try:
         # Run tests that check for Shared Zygote PID
         test_file = "tests/qa/test_check_zygote_pid.py"
@@ -87,24 +86,22 @@ def test_verify_zygote_presence():
     # Check if VELO_IS_ZYGOTE was set (it should match because we forked from Zygote)
     assert os.environ.get("VELO_IS_ZYGOTE") == "1"
 """)
-        
+
         # Ensure velo binary is in PATH for the plugin to find it
         env = os.environ.copy()
         release_dir = str(Path.cwd() / "target" / "release")
         env["PATH"] = f"{release_dir}:{env.get('PATH', '')}"
-        
+
         result = subprocess.run(
-            ["uv", "run", "pytest", test_file, "-n", "2", "--velo", "-v", "-s"],
-            capture_output=True, text=True,
-            env=env
+            ["uv", "run", "pytest", test_file, "-n", "2", "--velo", "-v", "-s"], capture_output=True, text=True, env=env
         )
         if result.returncode != 0:
             print(result.stdout)
             print(result.stderr)
-            
+
         assert result.returncode == 0
         assert "2 passed" in result.stdout
-        
+
     finally:
         os.unlink(test_file)
         subprocess.run(["./target/release/velo", "zygote", "stop"], capture_output=True)

@@ -7,8 +7,8 @@ Tests edge cases in MessagePack IPC protocol:
 - EDGE-OPT-003: Nested structure depth limit
 """
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 
 # Add vendor path

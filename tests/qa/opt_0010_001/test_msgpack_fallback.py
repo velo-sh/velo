@@ -7,12 +7,9 @@ Tests Pure Python fallback mechanism per RFC ADV-3:
 - FALL-003: Stderr warning output correct
 """
 
-import unittest
-import pytest
 import sys
-import io
+import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 
 class TestMsgpackFallback(unittest.TestCase):
@@ -26,21 +23,15 @@ class TestMsgpackFallback(unittest.TestCase):
         system must set a flag and fallback to vendored u-msgpack-python.
         """
         # Import the main module and check fallback flag exists
-        sys.path.insert(
-            0, str(Path(__file__).parent.parent.parent.parent / "velo_zygote")
-        )
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "velo_zygote"))
 
         # Read source to verify fallback mechanism exists
-        velo_zygote_path = (
-            Path(__file__).parent.parent.parent.parent / "velo_zygote" / "main.py"
-        )
+        velo_zygote_path = Path(__file__).parent.parent.parent.parent / "velo_zygote" / "main.py"
         with open(velo_zygote_path) as f:
             source = f.read()
 
         # Verify fallback implementation exists
-        self.assertIn(
-            "_USING_PURE_PYTHON_MSGPACK", source, "Fallback flag must be defined"
-        )
+        self.assertIn("_USING_PURE_PYTHON_MSGPACK", source, "Fallback flag must be defined")
         # Developer refactored: now directly imports umsgpack after adding to sys.path
         self.assertIn(
             "import umsgpack",
@@ -61,9 +52,7 @@ class TestMsgpackFallback(unittest.TestCase):
         using the pure Python implementation.
         """
         # Import vendored umsgpack directly
-        vendor_path = (
-            Path(__file__).parent.parent.parent.parent / "python" / "velo" / "_vendor"
-        )
+        vendor_path = Path(__file__).parent.parent.parent.parent / "python" / "velo" / "_vendor"
         if str(vendor_path) not in sys.path:
             sys.path.insert(0, str(vendor_path))
 
@@ -98,9 +87,7 @@ class TestMsgpackFallback(unittest.TestCase):
         [Velo]    Run: pip install msgpack  (requires C compiler)
         """
         # Read source to verify warning format
-        velo_zygote_path = (
-            Path(__file__).parent.parent.parent.parent / "velo_zygote" / "main.py"
-        )
+        velo_zygote_path = Path(__file__).parent.parent.parent.parent / "velo_zygote" / "main.py"
         with open(velo_zygote_path) as f:
             source = f.read()
 
@@ -110,9 +97,7 @@ class TestMsgpackFallback(unittest.TestCase):
             source,
             "Warning must start with '[Velo] ⚠️  Warning:'",
         )
-        self.assertIn(
-            "Falling back to pure Python", source, "Must mention 'pure Python' fallback"
-        )
+        self.assertIn("Falling back to pure Python", source, "Must mention 'pure Python' fallback")
         self.assertIn(
             "pip install msgpack",
             source,

@@ -7,10 +7,9 @@ This module provides architecture-agnostic access to Linux syscalls
 for Memory Gravity testing.
 """
 
-import os
-import sys
 import ctypes
 import ctypes.util
+import os
 import platform
 
 
@@ -103,7 +102,7 @@ def check_writable_vmas_robust(fd: int) -> tuple:
         return None, f"fstat failed: {e}"
 
     try:
-        with open("/proc/self/maps", "r") as f:
+        with open("/proc/self/maps") as f:
             for line in f:
                 try:
                     # Parse VMA line format:

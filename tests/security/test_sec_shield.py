@@ -1,19 +1,15 @@
-import os
-import sys
-import subprocess
-import pytest
-import time
-import socket
-import signal
-import hashlib
 import glob
+import os
+import subprocess
+import sys
 import tempfile
+import time
+
+import pytest
 
 # Path to the compiled binary - adjusted to be relative to project root or absolute
 # For CI/Local, we assume it's in target/debug/velo
-VELO_BIN = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../target/debug/velo")
-)
+VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../target/debug/velo"))
 
 
 class TestSecurityShieldIntegration:
@@ -55,12 +51,10 @@ class TestSecurityShieldIntegration:
 
         # 3. Verification
         # Success = Result exists but toxic path is GONE (Surgical Scrubbing mandated by RFC)
-        assert (
-            result.returncode == 0
-        ), f"Velo crashed or failed to start: {result.stderr}"
-        assert (
-            toxic_path not in result.stdout
-        ), f"SECURITY FAILURE: Malicious PATH '{toxic_path}' was not scrubbed by EnvironmentProvenanceGuard!"
+        assert result.returncode == 0, f"Velo crashed or failed to start: {result.stderr}"
+        assert toxic_path not in result.stdout, (
+            f"SECURITY FAILURE: Malicious PATH '{toxic_path}' was not scrubbed by EnvironmentProvenanceGuard!"
+        )
 
     @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
     def test_sec_shield_004_fd_leakage_real(self):
@@ -69,7 +63,7 @@ class TestSecurityShieldIntegration:
         Verify that workers do NOT inherit sensitive parent FDs.
         """
         # 1. Parent process opens a sensitive file
-        sensitive_file = open("Cargo.toml", "r")
+        sensitive_file = open("Cargo.toml")
         sensitive_fd = sensitive_file.fileno()
 
         # Ensuring we have a high FD to test the hygiene loop
@@ -79,9 +73,7 @@ class TestSecurityShieldIntegration:
         fd_path = "/proc/self/fd" if sys.platform == "linux" else "/dev/fd"
         probe_script_content = f"import os; print(list(os.listdir('{fd_path}')))"
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as tmp_script:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_script:
             tmp_script.write(probe_script_content)
             tmp_script_path = tmp_script.name
 
@@ -109,15 +101,14 @@ class TestSecurityShieldIntegration:
         match = re.search(r"\[(.*?)\]", worker_fds_raw)
         if match:
             worker_fds = [f.strip(" '\"") for f in match.group(1).split(",")]
-            assert (
-                str(sensitive_fd) not in worker_fds
-            ), f"SECURITY FAILURE: Sensitive FD {sensitive_fd} leaked into the worker process! FDs detected: {worker_fds}"
+            assert str(sensitive_fd) not in worker_fds, (
+                f"SECURITY FAILURE: Sensitive FD {sensitive_fd} leaked into the worker process! FDs detected: {worker_fds}"
+            )
         else:
             # Fallback for unexpected format, but alert if sensitive_fd is in the list-like part
-            assert (
-                f"'{sensitive_fd}'" not in worker_fds_raw
-                and f'"{sensitive_fd}"' not in worker_fds_raw
-            ), f"SECURITY FAILURE: Sensitive FD {sensitive_fd} suspected in worker output: {worker_fds_raw}"
+            assert f"'{sensitive_fd}'" not in worker_fds_raw and f'"{sensitive_fd}"' not in worker_fds_raw, (
+                f"SECURITY FAILURE: Sensitive FD {sensitive_fd} suspected in worker output: {worker_fds_raw}"
+            )
 
     @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
     def test_sec_shield_003_zygote_isolation_real(self, tmp_path):
@@ -139,27 +130,22 @@ class TestSecurityShieldIntegration:
 
             if sys.platform == "linux":
                 # Check /proc/net/unix for the abstract socket
-                with open("/proc/net/unix", "r") as f:
+                with open("/proc/net/unix") as f:
                     unix_sockets = f.read()
                     # Abstract sockets start with @ or are shown as @... or \0...
-                    assert (
-                        "@velo-zygote-" in unix_sockets
-                        or "velo-zygote-" in unix_sockets
-                    ), "SECURITY FAILURE: Abstract Zygote socket not detected in /proc/net/unix"
+                    assert "@velo-zygote-" in unix_sockets or "velo-zygote-" in unix_sockets, (
+                        "SECURITY FAILURE: Abstract Zygote socket not detected in /proc/net/unix"
+                    )
             else:
                 # macOS check: Look for the secure randomized path
                 # Pattern: /tmp/velo-secure-*/velo-zygote-v*.sock
-                matches = glob.glob(
-                    "/tmp/velo-secure-*/velo-zygote-v*.sock"
-                ) + glob.glob(
+                matches = glob.glob("/tmp/velo-secure-*/velo-zygote-v*.sock") + glob.glob(
                     os.path.join(
                         os.environ.get("TMPDIR", "/tmp"),
                         "velo-secure-*/velo-zygote-v*.sock",
                     )
                 )
-                assert (
-                    len(matches) > 0
-                ), "SECURITY FAILURE: Atomic randomized Zygote socket not found on macOS"
+                assert len(matches) > 0, "SECURITY FAILURE: Atomic randomized Zygote socket not found on macOS"
 
         finally:
             proc.terminate()
@@ -180,9 +166,7 @@ class TestSecurityShieldIntegration:
                 "import os; print(os.environ.get('LD_LIBRARY_PATH', 'CLEAN')); print(os.environ.get('PYTHONHOME', 'CLEAN'))"
             )
 
-        result = subprocess.run(
-            [VELO_BIN, "run", probe_file], env=toxin_env, capture_output=True, text=True
-        )
+        result = subprocess.run([VELO_BIN, "run", probe_file], env=toxin_env, capture_output=True, text=True)
 
         assert "CLEAN" in result.stdout
         assert "/tmp/evil_libs" not in result.stdout

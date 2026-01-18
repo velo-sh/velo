@@ -15,14 +15,11 @@ Goal: Velo should handle all edge cases without crashing.
 """
 
 import os
-import pytest
-from pathlib import Path
 
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
-    VELO_BINARY,
+    run_velo,
 )
 
 
@@ -220,10 +217,7 @@ class TestInputFuzzingEMPTY:
             result = run_velo(["run", "does_not_exist.py"], cwd=env.path)
             assert_no_crash(result)
             assert not result.success
-            assert (
-                "not found" in result.stderr.lower()
-                or "no such" in result.stderr.lower()
-            )
+            assert "not found" in result.stderr.lower() or "no such" in result.stderr.lower()
         finally:
             env.cleanup()
 

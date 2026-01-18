@@ -10,19 +10,17 @@ Philosophy: If it doesn't crash, add more stress!
 
 import os
 import shutil
-import signal
 import socket
 import subprocess
 import tempfile
 import threading
 import time
-
-# Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
-
 from pathlib import Path
 
 import pytest
+
+# Import CI-aware timeout constants
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 
 def get_velo_binary():
@@ -62,12 +60,8 @@ class AttackEnv:
                 env=full_env,
             )
             # Decode safely, replacing invalid UTF-8
-            stdout = (
-                result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-            )
-            stderr = (
-                result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
-            )
+            stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
+            stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
             return result.returncode, stdout, stderr
         except subprocess.TimeoutExpired:
             return -1, "", "TIMEOUT"
@@ -112,9 +106,7 @@ except MemoryError:
     print("memory_error")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "memory_bomb.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "memory_bomb.py"], timeout=T_MEDIUM)
 
             # Should handle gracefully - either work or fail cleanly
             # Note: DEF-005 means stdout may be empty even on success
@@ -142,9 +134,7 @@ for i in range(10):
 print("fork_bomb_done")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "fork_bomb.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "fork_bomb.py"], timeout=T_MEDIUM)
 
             # Should not hang
             assert "TIMEOUT" not in stderr
@@ -171,9 +161,7 @@ finally:
             pass
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "fd_leak.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "fd_leak.py"], timeout=T_MEDIUM)
 
             assert "TIMEOUT" not in stderr
 
@@ -205,9 +193,7 @@ finally:
             pass
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "tmp_fill.py"], timeout=T_LONG
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "tmp_fill.py"], timeout=T_LONG)
 
             assert "TIMEOUT" not in stderr
 
@@ -232,9 +218,7 @@ for i in range(100):
 print("DONE")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "huge_stdout.py"], timeout=T_LONG
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "huge_stdout.py"], timeout=T_LONG)
 
             # Should complete without hanging
             assert "TIMEOUT" not in stderr
@@ -255,9 +239,7 @@ sys.stdout.buffer.write(b"\\nDONE\\n")
 sys.stdout.buffer.flush()
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "binary_stdout.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "binary_stdout.py"], timeout=T_MEDIUM)
 
             # Should not crash
             assert "TIMEOUT" not in stderr
@@ -275,9 +257,7 @@ for i in range(1000):
 print("MIXED_DONE")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "mixed_output.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "mixed_output.py"], timeout=T_MEDIUM)
 
             assert "TIMEOUT" not in stderr
 
@@ -295,9 +275,7 @@ print("")  # Final newline
 print("DONE")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "no_newline.py"], timeout=T_MEDIUM
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "no_newline.py"], timeout=T_MEDIUM)
 
             assert "TIMEOUT" not in stderr
 
@@ -320,9 +298,7 @@ while True:
     pass
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "infinite.py"], timeout=T_SHORT
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "infinite.py"], timeout=T_SHORT)
 
             # Should timeout, not hang forever
             assert "TIMEOUT" in stderr or code != 0
@@ -337,9 +313,7 @@ import time
 time.sleep(99999)
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "sleep_forever.py"], timeout=T_SHORT
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "sleep_forever.py"], timeout=T_SHORT)
 
             # Should timeout
             assert "TIMEOUT" in stderr or code != 0
@@ -356,9 +330,7 @@ data = sys.stdin.read()
 print(f"got: {data}")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "block_stdin.py"], timeout=T_SHORT
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "block_stdin.py"], timeout=T_SHORT)
 
             # Should timeout or return immediately (no stdin)
             assert "TIMEOUT" in stderr or code != 0 or code == 0
@@ -419,9 +391,7 @@ import os
 os.kill(os.getpid(), signal.SIGSEGV)
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "segfault.py"], timeout=T_SHORT
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "segfault.py"], timeout=T_SHORT)
 
             # Should handle the signal, not crash Zygote itself
             print(f"  SIGSEGV result: code={code}")
@@ -439,9 +409,7 @@ os.kill(os.getpid(), signal.SIGSTOP)
 print("AFTER_STOP")
 """,
             )
-            code, stdout, stderr = env.run(
-                ["run", "--zygote", "sigstop.py"], timeout=T_SHORT
-            )
+            code, stdout, stderr = env.run(["run", "--zygote", "sigstop.py"], timeout=T_SHORT)
 
             # Should timeout or handle gracefully
             print(f"  SIGSTOP result: code={code}, timeout={('TIMEOUT' in stderr)}")
@@ -570,9 +538,7 @@ class TestConcurrentAttacks:
 
             def run_one():
                 try:
-                    code, stdout, stderr = env.run(
-                        ["run", "--zygote", "quick.py"], timeout=T_MEDIUM
-                    )
+                    code, stdout, stderr = env.run(["run", "--zygote", "quick.py"], timeout=T_MEDIUM)
                     results.append(code)
                 except Exception as e:
                     errors.append(str(e))

@@ -19,18 +19,18 @@ bootstrap.initialize()
 # --------------------
 
 import asyncio  # noqa: E402
+import json  # noqa: E402
+import multiprocessing  # noqa: E402
 import signal  # noqa: E402
 import socket  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
-import json  # noqa: E402
-import multiprocessing  # noqa: E402
 from pathlib import Path
 from typing import Any
 
 try:
     from velo_zygote.constants import PROTOCOL_VERSION
-    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState, IdlePool
+    from velo_zygote.lifecycle import IdlePool, WorkerRegistry, ZygoteState
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
@@ -41,7 +41,7 @@ try:
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION
-        from .lifecycle import WorkerRegistry, ZygoteState, IdlePool
+        from .lifecycle import IdlePool, WorkerRegistry, ZygoteState
         from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
@@ -58,7 +58,7 @@ except (ImportError, ValueError):
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
 
-        from lifecycle import WorkerRegistry, ZygoteState, IdlePool  # type: ignore[no-redef, import-not-found]
+        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -570,20 +570,22 @@ class ZygoteServer:
                 token = request_context.set(req_id)
                 try:
                     response = await router.dispatch(self, msg)
-                    
+
                     # Phase 14 P1 Miracle: Socket Handover
                     if response.get("type") == "GatewayAccepted":
                         # 1. Ack the request so the Master knows we are handing over
-                        await loop.run_in_executor(None, transport.send, {"type": "Ack", "message": "Handover sequence initiated"})
-                        
+                        await loop.run_in_executor(
+                            None, transport.send, {"type": "Ack", "message": "Handover sequence initiated"}
+                        )
+
                         # 2. Perform the fork (child takes over the socket)
                         nodeid = msg.get("nodeid", "worker")
                         pid = ForkHandler.handle_gateway_fork(sock, self.worker_registry, nodeid=nodeid)
-                        
+
                         LogUtils.log(f"Zygote Gateway: Socket handed over to worker PID {pid} (node: {nodeid}).")
                         # 3. Parent: Exit handling and close local side (Child already has its copy)
-                        return 
-                        
+                        return
+
                     await loop.run_in_executor(None, transport.send, response)
                 finally:
                     request_context.reset(token)
@@ -693,7 +695,10 @@ class ZygoteServer:
                     LogUtils.debug_log(f"Activating Idle Worker {pid}")
                     try:
                         # Writing to pipe is fast but technically blocking
-                        await loop.run_in_executor(None, lambda: os.write(w_pipe, json.dumps(cmd).encode()))
+                        def _write_cmd(w: int, c: dict[str, Any]) -> int:
+                            return os.write(w, json.dumps(c).encode())
+
+                        await loop.run_in_executor(None, _write_cmd, w_pipe, cmd)
                         await loop.run_in_executor(None, os.close, w_pipe)
                         future.set_result(pid)
                         continue
@@ -736,7 +741,7 @@ class ZygoteServer:
                     LogUtils.debug_log(f"Replenished Idle Pool: {pid} (count: {self.idle_pool.get_count()})")
                 except Exception as e:
                     LogUtils.log(f"Failed to replenish Idle Pool: {e}")
-            
+
             await asyncio.sleep(0.5)  # Fast replenishment for xdist bursts
 
     def _setup_signals(self) -> None:

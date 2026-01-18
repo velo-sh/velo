@@ -15,9 +15,9 @@ Testing Hierarchy (must test in order):
 """
 
 import os
-import socket
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
 import time
@@ -26,8 +26,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
-
+from conftest_utils import T_MEDIUM, T_SHORT
 
 # Try to import requests, skip tests if not available
 try:
@@ -59,7 +58,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return False
 
 
@@ -85,9 +84,7 @@ class StabilityTestEnv:
 
     def setup(self):
         # Create venv
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -154,9 +151,7 @@ class TestLevel0Smoke:
     def test_smoke_002_serve_command_recognized(self):
         """SMOKE-002: 'serve' is a valid subcommand."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert "serve" in result.stdout.lower(), "serve command not in help"
 
     def test_smoke_003_serve_prints_banner(self):
@@ -173,11 +168,9 @@ class TestLevel0Smoke:
 
             stderr = proc.stderr.read()
             # Should show SOMETHING about starting
-            assert (
-                "Starting" in stderr
-                or "serve" in stderr.lower()
-                or "app" in stderr.lower()
-            ), f"No startup message. stderr: {stderr}"
+            assert "Starting" in stderr or "serve" in stderr.lower() or "app" in stderr.lower(), (
+                f"No startup message. stderr: {stderr}"
+            )
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests not installed")
     def test_smoke_004_server_binds_to_port(self):
@@ -209,15 +202,9 @@ def root():
                 stderr = proc.stderr.read() if proc.stderr else ""
                 stdout = proc.stdout.read() if proc.stdout else ""
                 # If uvicorn dependency check, skip this test
-                if "uvicorn" in stderr.lower() and (
-                    "missing" in stderr.lower() or "dependency" in stderr.lower()
-                ):
+                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
                     pytest.skip("velo serve checks project venv for uvicorn")
-                pytest.fail(
-                    f"CRITICAL: Server did not bind to port {port}!\n"
-                    f"stderr: {stderr}\n"
-                    f"stdout: {stdout}"
-                )
+                pytest.fail(f"CRITICAL: Server did not bind to port {port}!\nstderr: {stderr}\nstdout: {stdout}")
 
             # Success!
             assert is_port_open(port)
@@ -327,9 +314,7 @@ def create_item(item: Item):
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
-            response = requests.post(
-                f"http://127.0.0.1:{port}/items", json={"name": "test"}, timeout=T_SHORT
-            )
+            response = requests.post(f"http://127.0.0.1:{port}/items", json={"name": "test"}, timeout=T_SHORT)
             assert response.status_code == 200
             assert response.json()["created"] == "test"
 
@@ -461,8 +446,6 @@ class TestLevel3Regression:
     def test_reg_003_velo_info_still_works(self):
         """REG-003: velo info command still works."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "info"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "info"], capture_output=True, text=True, timeout=T_MEDIUM)
         # Should output something
         assert len(result.stdout) > 0 or len(result.stderr) > 0

@@ -1,13 +1,15 @@
-import unittest
+import importlib
 import os
 import sys
-import importlib
+import unittest
+
 import pytest
 
 # Defer import to avoid collection-time failure when VELO_ENV is not set
 # This is a "hostile" test that requires the full Velo environment
 try:
     from velo_zygote import shield
+
     SHIELD_AVAILABLE = True
 except (ValueError, ModuleNotFoundError, ImportError):
     shield = None
@@ -28,16 +30,12 @@ class TestImportShieldHostile(unittest.TestCase):
             shield.ImportShield._active = False
 
         # 3. Finder Synchronization: Ensure meta_path is clean before start
-        sys.meta_path = [
-            x for x in sys.meta_path if not isinstance(x, shield.ImportShield)
-        ]
+        sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
 
     def tearDown(self):
         # [RITUAL 11.2] Restoration Checklist
         shield.ImportShield._active = False
-        sys.meta_path = [
-            x for x in sys.meta_path if not isinstance(x, shield.ImportShield)
-        ]
+        sys.meta_path = [x for x in sys.meta_path if not isinstance(x, shield.ImportShield)]
         # Re-clear to prevent poisoning subsequent tests
         for mod in list(sys.modules.keys()):
             if mod.startswith("velo_"):

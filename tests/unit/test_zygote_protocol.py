@@ -1,9 +1,11 @@
 import asyncio
-import pytest
 import struct
+
 import msgpack
-from velo_zygote.protocol import ZygoteTransport, ProtocolError
-from velo_zygote.constants import PROTOCOL_VERSION, MAX_MESSAGE_SIZE
+import pytest
+
+from velo_zygote.constants import MAX_MESSAGE_SIZE, PROTOCOL_VERSION
+from velo_zygote.protocol import ProtocolError, ZygoteTransport
 
 
 class MockStream:

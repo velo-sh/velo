@@ -1,11 +1,9 @@
 # QA Leader - Brutal Tests for Phase 6.1 Serve & Analyze
 # 终极测试: "If the system survives these, it's production-ready."
 
-import pytest
 import os
-import subprocess
-import signal
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier3
@@ -95,9 +93,7 @@ class TestLeaderBrutal:
         # e.g., "✓ OK" or "✔ Success" - not just an icon
         output = result.stdout + result.stderr
         # Must contain a text status word, not just icon
-        assert any(
-            word in output.lower() for word in ["ok", "success", "ready", "detected"]
-        )
+        assert any(word in output.lower() for word in ["ok", "success", "ready", "detected"])
 
 
 @pytest.mark.tier2

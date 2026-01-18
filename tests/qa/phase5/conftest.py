@@ -7,7 +7,6 @@ Provides fixtures and markers for L0-L5 tests.
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest

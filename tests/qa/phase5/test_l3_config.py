@@ -45,14 +45,10 @@ def simple_project(tmp_path):
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -115,9 +111,7 @@ class TestL3Config:
         """
         custom_path = simple_project / "custom" / "my_bundle.veloc"
 
-        result = run_velo(
-            ["build", "--output", str(custom_path)], simple_project, velo_binary
-        )
+        result = run_velo(["build", "--output", str(custom_path)], simple_project, velo_binary)
 
         # If --output is implemented
         if result.returncode == 0 and custom_path.exists():
@@ -162,9 +156,7 @@ print(mymodule.VALUE)
         if result.returncode != 0:
             # May not be implemented yet - that's acceptable
             assert (
-                "unknown" in result.stderr.lower()
-                or "unrecognized" in result.stderr.lower()
-                or result.returncode == 0
+                "unknown" in result.stderr.lower() or "unrecognized" in result.stderr.lower() or result.returncode == 0
             )
 
     @pytest.mark.config
@@ -183,18 +175,14 @@ print(mymodule.VALUE)
         # Create __init__ for tests
         (tests_dir / "__init__.py").write_text("")
 
-        result = run_velo(
-            ["build", "--exclude", "tests/*"], simple_project, velo_binary
-        )
+        result = run_velo(["build", "--exclude", "tests/*"], simple_project, velo_binary)
 
         # If --exclude is implemented, verify tests not in bundle
         # Otherwise, just check command doesn't crash
         if result.returncode != 0:
             # May not be implemented yet
             assert (
-                "unknown" in result.stderr.lower()
-                or "unrecognized" in result.stderr.lower()
-                or result.returncode == 0
+                "unknown" in result.stderr.lower() or "unrecognized" in result.stderr.lower() or result.returncode == 0
             )
 
     @pytest.mark.config

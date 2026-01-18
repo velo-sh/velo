@@ -2,12 +2,10 @@
 # tests/qa/phase_6_1_1/test_sec_shield.py
 
 import os
-import requests
-import pytest
-import time
 import subprocess
-import signal
-from pathlib import Path
+import time
+
+import requests
 
 
 class TestSandboxShield:
@@ -26,9 +24,7 @@ class TestSandboxShield:
         # We'll use a new endpoint /debug/env specifically for this if available
         # or just rely on health check passing (it fails if env is starved)
         response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
-        assert (
-            response.status_code == 200
-        ), "Worker died/starved due to missing environment"
+        assert response.status_code == 200, "Worker died/starved due to missing environment"
 
     def test_SEC_SHIELD_002_filesystem_jail(self, velo_serve_fixture):
         """Verify that workers are correctly jailed in the filesystem.

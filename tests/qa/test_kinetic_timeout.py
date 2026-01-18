@@ -3,9 +3,9 @@ import socket
 import struct
 import threading
 import time
-import pytest
-import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def send_msgpack(conn, data):
@@ -79,10 +79,7 @@ def test_kinetic_handshake_timeout_fallback(isolated_env):
     # We check for "Zygote" and some form of failure or fallback
     # The exact message might be split or wrapped, so we check for key terms
     assert "Zygote" in proc.stderr
-    assert any(
-        term in proc.stderr
-        for term in ["failed", "timed out", "fallback", "without Zygote"]
-    )
+    assert any(term in proc.stderr for term in ["failed", "timed out", "fallback", "without Zygote"])
     assert "Server ready" in proc.stderr or "Uvicorn running on" in proc.stderr
 
 

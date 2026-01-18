@@ -11,16 +11,12 @@ IMPORTANT: Performance is the core value proposition of Velo.
 Any performance regression is a BLOCKING defect.
 """
 
-import os
-import time
 import statistics
-from pathlib import Path
+import time
 
 from test_harness import (
     VeloTestEnv,
     run_velo,
-    assert_no_crash,
-    VELO_BINARY,
 )
 
 

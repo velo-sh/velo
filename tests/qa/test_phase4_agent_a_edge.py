@@ -7,9 +7,7 @@ Each test is ATOMIC and uses ISOLATED temp projects.
 """
 
 import json
-import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
@@ -36,9 +34,7 @@ def velo_analyze_available() -> bool:
     """Check if velo analyze is implemented."""
     try:
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
     except:
         return False
@@ -194,11 +190,7 @@ class TestMalformedInput:
             p.set_file("main.py", "print(1)")
             result = p.analyze("--slow-threshold-ms=-1")
             # Should reject invalid input
-            assert (
-                result.returncode != 0
-                or "invalid" in result.stderr.lower()
-                or "error" in result.stderr.lower()
-            )
+            assert result.returncode != 0 or "invalid" in result.stderr.lower() or "error" in result.stderr.lower()
 
     def test_a2_4_overflow_threshold(self):
         """A2-4: Overflow threshold handled."""

@@ -1,30 +1,20 @@
-import subprocess
-import pytest
-import sys
 import os
+import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
 
+import pytest
 
 # Add tests/qa to path for imports
 # Add tests/qa to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from conftest_utils import (
-    get_timeout_multiplier,
-    ci_timeout,
-    get_rss,
-    get_pss,
-    get_ppid,
-    get_velo_binary,
-    VeloTestEnv,
-    T_SHORT,
-    T_MEDIUM,
-    T_LONG,
     TIMEOUT_MULTIPLIER,
-    CI_TIMEOUT,
+    VeloTestEnv,
+    get_velo_binary,
 )
 
 # =============================================================================
@@ -77,15 +67,9 @@ subprocess.run = _scaled_subprocess_run
 def pytest_configure(config):
     """Register tier markers for pytest."""
     config.addinivalue_line("markers", "tier0: Smoke tests (<10s) - run always")
-    config.addinivalue_line(
-        "markers", "tier1: Fast tests (<60s) - security, core logic"
-    )
-    config.addinivalue_line(
-        "markers", "tier2: Standard tests (<10min) - full functional integration"
-    )
-    config.addinivalue_line(
-        "markers", "tier3: Heavy tests (>10min) - stress, resource leakage"
-    )
+    config.addinivalue_line("markers", "tier1: Fast tests (<60s) - security, core logic")
+    config.addinivalue_line("markers", "tier2: Standard tests (<10min) - full functional integration")
+    config.addinivalue_line("markers", "tier3: Heavy tests (>10min) - stress, resource leakage")
     config.addinivalue_line("markers", "tier4: Chaos/Flood tests - extreme scenarios")
     config.addinivalue_line("markers", "slow: Tests that install real packages (slow)")
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
@@ -102,9 +86,7 @@ def pytest_configure(config):
             config.option.log_cli_format = "%(asctime)s [%(levelname)s] %(message)s"
             config.option.log_date_format = "%H:%M:%S"
 
-    config.addinivalue_line(
-        "markers", "resource_budget: Resource budget verification tests"
-    )
+    config.addinivalue_line("markers", "resource_budget: Resource budget verification tests")
 
 
 # =============================================================================
@@ -119,27 +101,27 @@ _session_log_dir: Path | None = None
 def session_log_directory(tmp_path_factory):
     """
     Create a unique log directory for this pytest session.
-    
+
     This ensures artifact bundling only collects current session logs,
     not the accumulated 26GB+ of historical logs.
     """
     global _session_log_dir
-    
+
     # Create session-specific log dir
     session_id = f"session-{int(time.time())}-{uuid.uuid4().hex[:8]}"
     session_dir = Path.home() / ".local/state/velo" / "sessions" / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Export for child processes (Zygote, workers, etc.)
     os.environ["VELO_SESSION_LOG_DIR"] = str(session_dir)
-    
+
     # Store globally for artifact collection
     _session_log_dir = session_dir
-    
+
     sys.stderr.write(f"[Session] Log dir: {session_dir}\n")
-    
+
     yield session_dir
-    
+
     # Optional: Cleanup on success (keep on failure for debugging)
     # import shutil
     # shutil.rmtree(session_dir, ignore_errors=True)
@@ -151,11 +133,11 @@ def cleanup_zygote_between_modules():
 
     This prevents test pollution where one module's Zygote affects another.
     """
-    import tempfile
     import shutil
+    import tempfile
 
     uid = os.getuid()
-    
+
     # All possible socket locations
     socket_paths = [
         # Legacy temp-based path
@@ -165,7 +147,7 @@ def cleanup_zygote_between_modules():
         # Direct zygote socket
         Path.home() / ".local" / "state" / "velo" / "velo-zygote-v01.sock",
     ]
-    
+
     def cleanup_sockets():
         for sock_path in socket_paths:
             if sock_path.exists():
@@ -178,7 +160,7 @@ def cleanup_zygote_between_modules():
             if parent.exists() and parent.name in ("velo", f"velo-{uid}"):
                 # Only remove socket file, not the entire dir
                 pass
-        
+
         # Clean temp-based socket dir completely
         sock_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
         if sock_dir.exists() and sock_dir.name.startswith("velo-"):
@@ -196,9 +178,9 @@ def cleanup_zygote_between_modules():
 def velo_binary():
     """Pytest fixture: Build and return path to Velo binary with arch check."""
     import platform
-    
+
     binary_path = get_velo_binary()
-    
+
     # Pure-Python binary format detection (no 'file' command needed)
     def detect_binary_platform(path: str) -> str:
         """Detect if binary is ELF (Linux) or Mach-O (macOS) using magic numbers."""
@@ -206,28 +188,33 @@ def velo_binary():
             with open(path, "rb") as f:
                 magic = f.read(4)
                 # ELF magic: 0x7F 'E' 'L' 'F'
-                if magic == b'\x7fELF':
+                if magic == b"\x7fELF":
                     return "linux"
                 # Mach-O magic: 0xFEEDFACE (32-bit), 0xFEEDFACF (64-bit)
                 # or fat binary: 0xCAFEBABE
-                if magic[:4] in (b'\xfe\xed\xfa\xce', b'\xfe\xed\xfa\xcf', 
-                                  b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe',
-                                  b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'):
+                if magic[:4] in (
+                    b"\xfe\xed\xfa\xce",
+                    b"\xfe\xed\xfa\xcf",
+                    b"\xcf\xfa\xed\xfe",
+                    b"\xce\xfa\xed\xfe",
+                    b"\xca\xfe\xba\xbe",
+                    b"\xbe\xba\xfe\xca",
+                ):
                     return "macos"
         except Exception:
             pass
         return "unknown"
-    
+
     binary_platform = detect_binary_platform(binary_path)
     current_platform = "linux" if platform.system() == "Linux" else "macos"
-    
+
     # Check for platform mismatch
     if binary_platform != "unknown" and binary_platform != current_platform:
         pytest.skip(
             f"Binary platform mismatch: binary={binary_platform}, system={current_platform}. "
             f"Rebuild with 'cargo build --release'"
         )
-    
+
     return binary_path
 
 
@@ -262,14 +249,10 @@ def pytest_runtest_makereport(item, call):
 
         # Skip bundling if env var is set (avoids 26GB state dir hang)
         if os.environ.get("VELO_SKIP_FAILURE_BUNDLE") == "1":
-            sys.stderr.write(
-                f"\n[Artifacts] Skipping bundle for {item.name} (VELO_SKIP_FAILURE_BUNDLE=1)\n"
-            )
+            sys.stderr.write(f"\n[Artifacts] Skipping bundle for {item.name} (VELO_SKIP_FAILURE_BUNDLE=1)\n")
             return
 
-        sys.stderr.write(
-            f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n"
-        )
+        sys.stderr.write(f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n")
 
         try:
             # Locate binary
@@ -304,9 +287,7 @@ def pytest_runtest_makereport(item, call):
                     import time
 
                     ts = int(time.time())
-                    safe_name = (
-                        item.name.replace("[", "_").replace("]", "_").replace("/", "_")
-                    )
+                    safe_name = item.name.replace("[", "_").replace("]", "_").replace("/", "_")
                     filename = f"failure-{safe_name}-{ts}.tar.gz"
                     cmd.extend(["--output", filename])
 

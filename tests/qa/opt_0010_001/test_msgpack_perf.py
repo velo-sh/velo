@@ -7,10 +7,10 @@ Tests performance of MessagePack IPC protocol:
 - PERF-OPT-003: Serialization speed comparison
 """
 
-import unittest
 import json
 import sys
 import time
+import unittest
 from pathlib import Path
 
 # Add vendor path

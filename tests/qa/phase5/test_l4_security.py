@@ -26,7 +26,6 @@ Security Test IDs per RFC-0006:
 """
 
 import os
-import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -37,14 +36,10 @@ import pytest
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -153,10 +148,7 @@ class TestL4Security:
 
             # Should reject or fallback
             if result.returncode != 0:
-                assert (
-                    "permission" in result.stderr.lower()
-                    or "insecure" in result.stderr.lower()
-                )
+                assert "permission" in result.stderr.lower() or "insecure" in result.stderr.lower()
 
     @pytest.mark.security
     def test_sec_003_corrupted_bundle_detected(self, tmp_path, velo_binary):
@@ -281,10 +273,7 @@ class TestL4Security:
                 # Fallback is acceptable
                 pass
             else:
-                assert (
-                    "insecure" in result.stderr.lower()
-                    or "symlink" in result.stderr.lower()
-                )
+                assert "insecure" in result.stderr.lower() or "symlink" in result.stderr.lower()
         finally:
             if evil_bundle.exists():
                 evil_bundle.unlink()
@@ -469,8 +458,9 @@ print(f"Result: {{deep()}}")
 
         RFC-0006 §3.5: Must use protected marshal loading
         """
-        from velo_loader import safe_marshal_loads
         import marshal
+
+        from velo_loader import safe_marshal_loads
 
         # Test basic functionality
         data = marshal.dumps([1, 2, 3])
@@ -484,8 +474,9 @@ print(f"Result: {{deep()}}")
 
         RFC-0006 §3.5: Must restore original limit in finally block
         """
-        import sys
         import marshal
+        import sys
+
         from velo_loader import safe_marshal_loads
 
         original_limit = sys.getrecursionlimit()
@@ -495,9 +486,7 @@ print(f"Result: {{deep()}}")
         safe_marshal_loads(data)
 
         # Limit should be restored
-        assert (
-            sys.getrecursionlimit() == original_limit
-        ), f"Recursion limit not restored: expected {original_limit}"
+        assert sys.getrecursionlimit() == original_limit, f"Recursion limit not restored: expected {original_limit}"
 
 
 if __name__ == "__main__":

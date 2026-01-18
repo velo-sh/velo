@@ -7,8 +7,6 @@ Test Categories:
 - ZYG-*: Core Zygote functionality
 """
 
-import json
-import os
 import socket
 import subprocess
 import sys
@@ -17,7 +15,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 
 # Path to velo_zygote module
 VELO_ROOT = Path(__file__).parent.parent.parent
@@ -47,16 +44,12 @@ class ZygoteTestHelper:
         for _ in range(50):
             if self.process.poll() is not None:
                 stderr = self.process.stderr.read().decode()
-                raise RuntimeError(
-                    f"Zygote process died early! RC={self.process.returncode}, Stderr: {stderr}"
-                )
+                raise RuntimeError(f"Zygote process died early! RC={self.process.returncode}, Stderr: {stderr}")
             if self.socket_path.exists():
                 break
             time.sleep(0.1)
         else:
-            raise RuntimeError(
-                f"Zygote socket not created in time. Stderr: {self.process.stderr.read().decode()}"
-            )
+            raise RuntimeError(f"Zygote socket not created in time. Stderr: {self.process.stderr.read().decode()}")
 
     def connect(self) -> socket.socket:
         """Connect to Zygote socket."""
@@ -116,7 +109,7 @@ class ZygoteTestHelper:
                     raise EOFError("Socket closed")
                 data += chunk
             return data
-        except socket.timeout:
+        except TimeoutError:
             raise RuntimeError(f"Socket timeout waiting for {n} bytes")
         finally:
             sock.settimeout(None)
@@ -218,9 +211,7 @@ with open('{output_file}', 'w') as f:
                 sock = helper.connect()
 
                 # Send Fork command
-                response = helper.send_command(
-                    sock, {"type": "Fork", "script_path": str(script_path), "args": []}
-                )
+                response = helper.send_command(sock, {"type": "Fork", "script_path": str(script_path), "args": []})
 
                 assert response.get("type") == "Forked"
                 assert "worker_pid" in response

@@ -1,18 +1,15 @@
 # Agent A (Edge) Test Suite: RFC-0009 Static Graph
 
-import pytest
 import os
-import subprocess
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier2
 class TestAgentAEdge:
     """Agent A specialized edge and scale tests for Phase 6.0."""
 
-    @pytest.mark.skip(
-        reason="P2: Deep dependency chains require loader optimization - tracked as DEF-60-008"
-    )
+    @pytest.mark.skip(reason="P2: Deep dependency chains require loader optimization - tracked as DEF-60-008")
     @pytest.mark.parametrize("depth", [10, 50, 100])
     def test_EDGE_601_deep_dependency_dag(self, isolated_env, depth):
         """EDGE-601: Verify bundle handling of deep dependency chains (N levels)."""
@@ -24,7 +21,7 @@ class TestAgentAEdge:
                 # Last module in chain has no import, just a variable
                 env.create_app(f"m{i}.py", f"# Leaf module at depth {i}")
             else:
-                env.create_app(f"m{i}.py", f"import m{i+1}  # Chain link {i}")
+                env.create_app(f"m{i}.py", f"import m{i + 1}  # Chain link {i}")
 
         env.create_app("main.py", f"import m0; print('CHAIN_DEPTH_{depth}')")
 
@@ -33,9 +30,7 @@ class TestAgentAEdge:
         result = env.run_velo("run", "--fast", "main.py")
 
         assert result.returncode == 0, f"Deep DAG ({depth}) failed: {result.stderr}"
-        assert (
-            f"CHAIN_DEPTH_{depth}" in result.stdout
-        ), f"Output mismatch: {result.stdout}"
+        assert f"CHAIN_DEPTH_{depth}" in result.stdout, f"Output mismatch: {result.stdout}"
 
     def test_L0_1_ast_dependency_classification(self, isolated_env):
         """L0-1: Verify dependency classification (Hard vs Soft)."""
@@ -91,7 +86,7 @@ def f(): import soft_fn  # Soft
             if i == depth - 1:
                 env.create_app(f"m{i}.py", "DATA = 'tail'")
             else:
-                env.create_app(f"m{i}.py", f"import m{i+1}\nDATA = m{i+1}.DATA")
+                env.create_app(f"m{i}.py", f"import m{i + 1}\nDATA = m{i + 1}.DATA")
 
         env.create_app("main.py", "import m0; print(m0.DATA)")
 
@@ -129,9 +124,7 @@ def f(): import soft_fn  # Soft
         assert result.returncode == 0
         assert "LOADED_ALL" in result.stdout
 
-    @pytest.mark.xfail(
-        reason="Design: Bundle uses cached module content; symlink swap requires rebuild"
-    )
+    @pytest.mark.xfail(reason="Design: Bundle uses cached module content; symlink swap requires rebuild")
     def test_EDGE_603_toctou_symlink_swap(self, isolated_env):
         """EDGE-603: Verify graph invalidation when symlink target changes between build and run."""
         env = isolated_env
@@ -161,9 +154,7 @@ def f(): import soft_fn  # Soft
         # If RFC-0009 is correct, it should detect the change
         assert "B" in res2.stdout
 
-    @pytest.mark.xfail(
-        reason="Design Change: Hard limit 5000 is now configurable, build succeeds"
-    )
+    @pytest.mark.xfail(reason="Design Change: Hard limit 5000 is now configurable, build succeeds")
     def test_EDGE_604_hard_limit_gating(self, isolated_env):
         """EDGE-604: Verify the 5,000 module hard limit build failure."""
         env = isolated_env

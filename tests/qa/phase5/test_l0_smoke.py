@@ -10,7 +10,6 @@ Test IDs:
 - SMOKE-003: Basic import works
 """
 
-import os
 import subprocess
 import sys
 import time
@@ -22,7 +21,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 
 from bundle_builder import build_from_project
-
 
 # === Fixtures ===
 
@@ -59,16 +57,12 @@ requires-python = ">=3.11"
 def velo_binary():
     """Get path to velo binary."""
     # Try cargo build path first
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
 
     # Try debug build
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
 
@@ -161,9 +155,9 @@ class TestL0Smoke:
         result = run_velo(["run", "--fast", "main.py"], simple_project, velo_binary)
 
         # Check json module was imported and used
-        assert (
-            '"status": "ok"' in result.stdout or '{"status": "ok"}' in result.stdout
-        ), f"json module output not found in: {result.stdout}"
+        assert '"status": "ok"' in result.stdout or '{"status": "ok"}' in result.stdout, (
+            f"json module output not found in: {result.stdout}"
+        )
 
 
 # === L0 Performance Baseline ===
@@ -202,9 +196,7 @@ class TestL0PerformanceBaseline:
         time_normal = time.perf_counter() - start
 
         # Allow 2x margin for smoke test (not strict benchmark)
-        assert (
-            time_fast <= time_normal * 2
-        ), f"--fast is too slow: {time_fast:.3f}s vs {time_normal:.3f}s"
+        assert time_fast <= time_normal * 2, f"--fast is too slow: {time_fast:.3f}s vs {time_normal:.3f}s"
 
 
 if __name__ == "__main__":

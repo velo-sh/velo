@@ -15,20 +15,17 @@ Priority: P2 (Important for production readiness)
 
 import os
 import signal
-import time
-from pathlib import Path
-
-import psutil
-import pytest
 import socket
 import sys
+import time
 import traceback
+from pathlib import Path
 
+import pytest
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
-
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 # Mark all tests in this module as expert review tests
 pytestmark = pytest.mark.expert_review
@@ -62,9 +59,7 @@ class TestHPCConcerns:
         import requests
 
         for _ in range(10):
-            response = requests.get(
-                f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
-            )
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
             assert response.status_code == 200
 
     def test_HPC_2_cuda_context_detection(self, velo_serve_fixture):
@@ -168,7 +163,7 @@ class TestNetworkConcerns:
             data = s.recv(1024)
             elapsed = time.time() - start
             # If we get a response quickly, server handled it
-        except socket.timeout:
+        except TimeoutError:
             elapsed = time.time() - start
 
         s.close()
@@ -246,6 +241,7 @@ class TestK8sConcerns:
         6. Exit
         """
         import concurrent.futures
+
         import requests
 
         proc = velo_serve_fixture.start("main:app", workers=2)
@@ -255,9 +251,7 @@ class TestK8sConcerns:
 
         def make_slow_request():
             try:
-                r = requests.get(
-                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
-                )
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
                 return r.status_code
             except Exception as e:
                 in_flight_errors.append(str(e))
@@ -319,9 +313,7 @@ class TestK8sConcerns:
 
         while time.time() - start_time < 5:
             try:
-                response = requests.get(
-                    f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
-                )
+                response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
                 final_status = response.status_code
                 if response.status_code in [200, 503]:
                     break
@@ -390,9 +382,7 @@ class TestO11yConcerns:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/headers", timeout=T_SHORT
-        )
+        response = requests.get(f"http://127.0.0.1:{proc.port}/headers", timeout=T_SHORT)
         assert response.status_code == 200
 
         headers = response.json()

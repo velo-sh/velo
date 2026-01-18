@@ -14,17 +14,16 @@ Priority: P0 (MUST pass before release)
 
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 
 import psutil
 import pytest
-import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
-
+from conftest_utils import T_MEDIUM, T_SHORT, get_timeout_multiplier
 
 # RFC-0011 is now implemented (at least partially)
 pytestmark = [
@@ -48,7 +47,6 @@ class TestReleaseBlockers:
         4. Wait for exit
         5. Verify ALL worker processes are gone (no zombies)
         """
-        import psutil
 
         proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
         proc.wait_ready()
@@ -79,9 +77,7 @@ class TestReleaseBlockers:
                 if status == psutil.STATUS_ZOMBIE:
                     pytest.fail(f"Worker {worker_pid} is ZOMBIE - Release Blocker!")
                 else:
-                    pytest.fail(
-                        f"Worker {worker_pid} still running (status={status}) - orphan detected!"
-                    )
+                    pytest.fail(f"Worker {worker_pid} still running (status={status}) - orphan detected!")
             except psutil.NoSuchProcess:
                 pass  # Expected - worker is properly cleaned up
 
@@ -90,7 +86,6 @@ class TestReleaseBlockers:
 
         Even if supervisor is SIGKILL'd, workers should eventually exit.
         """
-        import psutil
 
         proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
@@ -137,16 +132,14 @@ class TestReleaseBlockers:
 
         This ensures log correlation between Rust proxy and Python worker.
         """
+
         import requests
-        import subprocess
 
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
         # Make a request to a non-existent endpoint (should 404)
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/nonexistent-endpoint-for-test"
-        )
+        response = requests.get(f"http://127.0.0.1:{proc.port}/nonexistent-endpoint-for-test")
 
         # Check response headers for request ID
         request_id = response.headers.get("x-request-id")
@@ -200,8 +193,9 @@ class TestReleaseBlockers:
 
         Note: Full parity requires CI on both platforms.
         """
-        import requests
         from pathlib import Path
+
+        import requests
 
         proc = velo_serve_fixture.start("main:app", workers=2, zygote=True)
         proc.wait_ready()
@@ -237,6 +231,4 @@ class TestReleaseBlockers:
             results = list(pool.map(lambda _: make_request(), range(20)))
 
         success_rate = sum(1 for r in results if r == 200) / len(results)
-        assert (
-            success_rate >= 0.95
-        ), f"Success rate {success_rate:.1%} too low on {sys.platform}"
+        assert success_rate >= 0.95, f"Success rate {success_rate:.1%} too low on {sys.platform}"

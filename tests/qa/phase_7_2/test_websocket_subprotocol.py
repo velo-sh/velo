@@ -1,8 +1,10 @@
-import pytest
-import time
 import os
 import signal
+import time
 from pathlib import Path
+
+import pytest
+
 
 class TestWebSocketSubprotocol:
     @pytest.mark.tier1
@@ -10,7 +12,9 @@ class TestWebSocketSubprotocol:
         """
         Verify subprotocol negotiation: ASGI app selects a subprotocol, client receives it.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, receive, send):
     if scope['type'] == 'websocket':
         while True:
@@ -30,32 +34,33 @@ async def app(scope, receive, send):
                 })
             elif message['type'] == 'websocket.disconnect':
                 break
-""")
+""",
+        )
         port = isolated_env.next_port()
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import websocket
+
             time.sleep(5)
-            
+
             # Request subprotocols
-            ws = websocket.create_connection(
-                f"ws://127.0.0.1:{port}/",
-                subprotocols=["v1.velo", "v2.velo"]
-            )
-            
+            ws = websocket.create_connection(f"ws://127.0.0.1:{port}/", subprotocols=["v1.velo", "v2.velo"])
+
             # Verify selected subprotocol in handshake response
             assert ws.subprotocol == "v1.velo", f"Expected v1.velo, got {ws.subprotocol}"
-            
+
             # Verify scope contents via echo
             ws.send("hello")
             msg = ws.recv()
             assert "v1.velo" in msg and "v2.velo" in msg
-            
+
             ws.close()
             print("VERIFIED: Subprotocol negotiation successful")
         finally:

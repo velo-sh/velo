@@ -16,17 +16,18 @@ Author: Velo QA Revenge Squad
 Date: 2026-01-14
 """
 
-import pytest
-import os
+import concurrent.futures
 import json
+import os
 import shutil
 import subprocess
 import tempfile
-import time
-import requests
 import threading
-import concurrent.futures
+import time
 from pathlib import Path
+
+import pytest
+import requests
 
 
 def get_velo_binary() -> str:
@@ -71,31 +72,41 @@ dev-dependencies = []
     def start_server(self, app_module: str, port: int = None, workers: int = 1):
         if port is None:
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("", 0))
                 port = s.getsockname()[1]
-        
+
         self._port = port
         run_env = os.environ.copy()
         run_env["VELO_TEST_MODE"] = "1"
         run_env["VIRTUAL_ENV"] = str(self.path / ".venv")
         run_env["PATH"] = f"{self.path / '.venv' / 'bin'}:{os.environ.get('PATH', '')}"
-        
+
         venv_lib = self.path / ".venv" / "lib"
         site_dirs = list(venv_lib.glob("python*/site-packages"))
         if site_dirs:
             run_env["PYTHONPATH"] = str(site_dirs[0])
-        
+
         cmd = [
-            self.velo, "serve", app_module, 
-            "--rsgi", "--no-zygote",
-            "--port", str(port),
-            "--workers", str(workers),
+            self.velo,
+            "serve",
+            app_module,
+            "--rsgi",
+            "--no-zygote",
+            "--port",
+            str(port),
+            "--workers",
+            str(workers),
         ]
-        
+
         self._proc = subprocess.Popen(
-            cmd, cwd=self.path, env=run_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cmd,
+            cwd=self.path,
+            env=run_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         time.sleep(8)
         return self
@@ -125,6 +136,7 @@ dev-dependencies = []
 # CATEGORY 1: CONCURRENCY STRESS (5)
 # =============================================================================
 
+
 class TestConcurrencyStress:
     """Break the async machinery with concurrent hell."""
 
@@ -135,7 +147,9 @@ class TestConcurrencyStress:
         """[HARDCORE-CONC-01] 100 concurrent requests storm."""
         with HardcoreTestProject("conc100") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 
@@ -147,10 +161,11 @@ async def increment():
     counter["value"] += 1
     await asyncio.sleep(0.01)  # Simulate IO
     return {"count": counter["value"]}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
                     futures = [
@@ -158,7 +173,7 @@ async def increment():
                         for _ in range(100)
                     ]
                     results = [f.result() for f in futures]
-                
+
                 success = sum(1 for r in results if r.status_code == 200)
                 assert success >= 95, f"Only {success}/100 succeeded"
 
@@ -169,7 +184,9 @@ async def increment():
         """[HARDCORE-CONC-02] Async lock contention under load."""
         with HardcoreTestProject("lock") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 
@@ -184,10 +201,11 @@ async def critical_section():
         await asyncio.sleep(0.01)
         shared_resource["value"] = old + 1
     return {"value": shared_resource["value"]}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
                     futures = [
@@ -195,7 +213,7 @@ async def critical_section():
                         for _ in range(50)
                     ]
                     results = [f.result() for f in futures]
-                
+
                 # All should succeed, final value should be 50
                 success = sum(1 for r in results if r.status_code == 200)
                 assert success == 50
@@ -207,14 +225,17 @@ async def critical_section():
         """[HARDCORE-CONC-03] 1000 sequential rapid-fire requests."""
         with HardcoreTestProject("rapid") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": []})
     await send({"type": "http.response.body", "body": b"ok"})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 session = requests.Session()
                 success = 0
@@ -225,7 +246,7 @@ async def app(scope, receive, send):
                             success += 1
                     except:
                         pass
-                
+
                 assert success >= 950, f"Only {success}/1000 succeeded"
 
     @pytest.mark.tier4
@@ -235,7 +256,9 @@ async def app(scope, receive, send):
         """[HARDCORE-CONC-04] Mixed async and sync-to-thread operations."""
         with HardcoreTestProject("mixedsync") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 import time
@@ -252,18 +275,18 @@ async def mixed_ops():
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, blocking_io)
     return {"result": result}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                     futures = [
-                        executor.submit(requests.get, f"http://127.0.0.1:{p.port}/mixed", timeout=10)
-                        for _ in range(20)
+                        executor.submit(requests.get, f"http://127.0.0.1:{p.port}/mixed", timeout=10) for _ in range(20)
                     ]
                     results = [f.result() for f in futures]
-                
+
                 success = sum(1 for r in results if r.status_code == 200)
                 assert success >= 18
 
@@ -274,7 +297,9 @@ async def mixed_ops():
         """[HARDCORE-CONC-05] Cancelled tasks from client timeouts."""
         with HardcoreTestProject("timeout") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 
@@ -288,10 +313,11 @@ async def slow_endpoint():
 @app.get("/fast")
 async def fast_endpoint():
     return {"status": "fast"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 # Send requests that will timeout
                 def timeout_request():
@@ -299,13 +325,13 @@ async def fast_endpoint():
                         requests.get(f"http://127.0.0.1:{p.port}/slow", timeout=0.5)
                     except:
                         pass
-                
+
                 threads = [threading.Thread(target=timeout_request) for _ in range(10)]
                 for t in threads:
                     t.start()
                 for t in threads:
                     t.join()
-                
+
                 # Server should still work after cancelled tasks
                 r = requests.get(f"http://127.0.0.1:{p.port}/fast", timeout=5)
                 assert r.status_code == 200
@@ -314,6 +340,7 @@ async def fast_endpoint():
 # =============================================================================
 # CATEGORY 2: MEMORY & RESOURCE LEAKS (4)
 # =============================================================================
+
 
 class TestMemoryLeaks:
     """Find hidden memory and resource leaks."""
@@ -325,7 +352,9 @@ class TestMemoryLeaks:
         """[HARDCORE-MEM-01] Large request body memory handling."""
         with HardcoreTestProject("largebody") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 
 app = FastAPI()
@@ -334,10 +363,11 @@ app = FastAPI()
 async def upload(request: Request):
     body = await request.body()
     return {"size": len(body)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 large_body = b"x" * (10 * 1024 * 1024)  # 10MB
                 r = requests.post(f"http://127.0.0.1:{p.port}/upload", data=large_body, timeout=30)
@@ -351,7 +381,9 @@ async def upload(request: Request):
         """[HARDCORE-MEM-02] Large response body memory cleanup."""
         with HardcoreTestProject("largeresponse") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from fastapi.responses import Response
 
@@ -360,10 +392,11 @@ app = FastAPI()
 @app.get("/large")
 async def large_response():
     return Response(content=b"X" * (5 * 1024 * 1024), media_type="application/octet-stream")
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 for i in range(10):
                     r = requests.get(f"http://127.0.0.1:{p.port}/large", timeout=30)
@@ -377,17 +410,21 @@ async def large_response():
         """[HARDCORE-MEM-03] Connection pool exhaustion and recovery."""
         with HardcoreTestProject("connpool") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": []})
     await send({"type": "http.response.body", "body": b"ok"})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 # Open many connections without closing
                 import socket
+
                 sockets = []
                 for _ in range(100):
                     try:
@@ -397,11 +434,11 @@ async def app(scope, receive, send):
                         sockets.append(s)
                     except:
                         break
-                
+
                 # Server should still accept new connections
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r.status_code == 200
-                
+
                 for s in sockets:
                     s.close()
 
@@ -412,7 +449,9 @@ async def app(scope, receive, send):
         """[HARDCORE-MEM-04] Exception object memory cleanup after errors."""
         with HardcoreTestProject("excmem") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -424,10 +463,11 @@ async def error_endpoint():
 @app.get("/ok")
 async def ok_endpoint():
     return {"status": "ok"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 # Generate many errors
                 for _ in range(100):
@@ -435,7 +475,7 @@ async def ok_endpoint():
                         requests.get(f"http://127.0.0.1:{p.port}/error", timeout=5)
                     except:
                         pass
-                
+
                 # Server should still work
                 r = requests.get(f"http://127.0.0.1:{p.port}/ok", timeout=5)
                 assert r.status_code == 200
@@ -444,6 +484,7 @@ async def ok_endpoint():
 # =============================================================================
 # CATEGORY 3: PROTOCOL EDGE CASES (5)
 # =============================================================================
+
 
 class TestProtocolEdgeCases:
     """Malformed and edge-case protocol handling."""
@@ -454,7 +495,9 @@ class TestProtocolEdgeCases:
         """[HARDCORE-PROTO-01] Empty POST request body."""
         with HardcoreTestProject("emptybody") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 
 app = FastAPI()
@@ -463,10 +506,11 @@ app = FastAPI()
 async def empty_post(request: Request):
     body = await request.body()
     return {"size": len(body), "empty": len(body) == 0}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(f"http://127.0.0.1:{p.port}/empty", data=b"", timeout=5)
                 assert r.status_code == 200
@@ -478,7 +522,9 @@ async def empty_post(request: Request):
         """[HARDCORE-PROTO-02] Unicode characters in headers."""
         with HardcoreTestProject("unicode") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 
 app = FastAPI()
@@ -487,15 +533,16 @@ app = FastAPI()
 async def unicode_headers(request: Request):
     custom = request.headers.get("x-custom", "none")
     return {"header": custom}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(
                     f"http://127.0.0.1:{p.port}/unicode",
                     headers={"X-Custom": "test-value-123"},  # ASCII only for HTTP headers
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
 
@@ -505,7 +552,9 @@ async def unicode_headers(request: Request):
         """[HARDCORE-PROTO-03] Very long URL path."""
         with HardcoreTestProject("longurl") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 
 app = FastAPI()
@@ -513,10 +562,11 @@ app = FastAPI()
 @app.get("/{path:path}")
 async def long_path(path: str):
     return {"path_length": len(path)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 long_path = "a" * 4000
                 try:
@@ -532,7 +582,9 @@ async def long_path(path: str):
         """[HARDCORE-PROTO-04] Multiple query params with same key."""
         with HardcoreTestProject("multiquery") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 from typing import List
 
@@ -542,15 +594,13 @@ app = FastAPI()
 async def multi_params(request: Request):
     params = request.query_params.getlist("key")
     return {"values": params, "count": len(params)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.get(
-                    f"http://127.0.0.1:{p.port}/multi?key=a&key=b&key=c",
-                    timeout=5
-                )
+                r = requests.get(f"http://127.0.0.1:{p.port}/multi?key=a&key=b&key=c", timeout=5)
                 assert r.status_code == 200
                 data = r.json()
                 assert data["count"] == 3
@@ -561,7 +611,9 @@ async def multi_params(request: Request):
         """[HARDCORE-PROTO-05] Special characters in URL path."""
         with HardcoreTestProject("specialpath") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import urllib.parse
 
@@ -570,10 +622,11 @@ app = FastAPI()
 @app.get("/path/{item}")
 async def special_path(item: str):
     return {"item": item, "decoded": urllib.parse.unquote(item)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/path/hello%20world", timeout=5)
                 assert r.status_code == 200
@@ -582,6 +635,7 @@ async def special_path(item: str):
 # =============================================================================
 # CATEGORY 4: FRAMEWORK DEEP INTEGRATION (6)
 # =============================================================================
+
 
 class TestFrameworkDeepIntegration:
     """Real-world complex framework usage."""
@@ -593,7 +647,9 @@ class TestFrameworkDeepIntegration:
         """[HARDCORE-FW-01] Complex nested Pydantic models."""
         with HardcoreTestProject("pydantic") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "pydantic>=2.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional
@@ -614,10 +670,11 @@ class User(BaseModel):
 @app.post("/user")
 async def create_user(user: User):
     return {"name": user.name, "address_count": len(user.addresses)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/user",
@@ -628,9 +685,9 @@ async def create_user(user: User):
                             {"street": "123 Main St", "city": "NYC", "country": "USA"},
                             {"street": "456 Side St", "city": "LA", "country": "USA"},
                         ],
-                        "metadata": {"key": "value"}
+                        "metadata": {"key": "value"},
                     },
-                    timeout=10
+                    timeout=10,
                 )
                 assert r.status_code == 200
                 assert r.json()["address_count"] == 2
@@ -642,7 +699,9 @@ async def create_user(user: User):
         """[HARDCORE-FW-02] File upload with multipart/form-data."""
         with HardcoreTestProject("fileupload") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile
 
 app = FastAPI()
@@ -651,10 +710,11 @@ app = FastAPI()
 async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
     return {"filename": file.filename, "size": len(content)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 files = {"file": ("test.txt", b"Hello World Content", "text/plain")}
                 r = requests.post(f"http://127.0.0.1:{p.port}/upload", files=files, timeout=10)
@@ -668,7 +728,9 @@ async def upload_file(file: UploadFile = File(...)):
         """[HARDCORE-FW-03] Form data parsing."""
         with HardcoreTestProject("formdata") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Form
 
 app = FastAPI()
@@ -676,15 +738,16 @@ app = FastAPI()
 @app.post("/form")
 async def submit_form(username: str = Form(...), password: str = Form(...)):
     return {"username": username, "password_length": len(password)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/form",
                     data={"username": "testuser", "password": "secret123"},
-                    timeout=10
+                    timeout=10,
                 )
                 assert r.status_code == 200
                 assert r.json()["username"] == "testuser"
@@ -696,7 +759,9 @@ async def submit_form(username: str = Form(...), password: str = Form(...)):
         """[HARDCORE-FW-04] Cookie set and get."""
         with HardcoreTestProject("cookies") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Response, Cookie
 from typing import Optional
 
@@ -710,10 +775,11 @@ async def set_cookie(response: Response):
 @app.get("/get-cookie")
 async def get_cookie(session: Optional[str] = Cookie(None)):
     return {"session": session}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 session = requests.Session()
                 r1 = session.get(f"http://127.0.0.1:{p.port}/set-cookie", timeout=5)
@@ -729,7 +795,9 @@ async def get_cookie(session: Optional[str] = Cookie(None)):
         """[HARDCORE-FW-05] Custom response headers."""
         with HardcoreTestProject("respheaders") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -744,10 +812,11 @@ async def custom_headers():
         "Cache-Control": "no-cache",
     }
     return JSONResponse(content=content, headers=headers)
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/custom-headers", timeout=5)
                 assert r.status_code == 200
@@ -761,7 +830,9 @@ async def custom_headers():
         """[HARDCORE-FW-06] Various HTTP status codes."""
         with HardcoreTestProject("statuscodes") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from fastapi.responses import Response, JSONResponse
 
@@ -786,10 +857,11 @@ async def bad_request():
 @app.get("/404")
 async def not_found():
     return JSONResponse(content={"error": "not found"}, status_code=404)
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 assert requests.get(f"http://127.0.0.1:{p.port}/201", timeout=5).status_code == 201
                 assert requests.get(f"http://127.0.0.1:{p.port}/204", timeout=5).status_code == 204
@@ -801,6 +873,7 @@ async def not_found():
 # CATEGORY 5: PRODUCTION SCENARIOS (5)
 # =============================================================================
 
+
 class TestProductionScenarios:
     """What actually breaks in production."""
 
@@ -811,7 +884,9 @@ class TestProductionScenarios:
         """[HARDCORE-PROD-01] Health check must respond during heavy load."""
         with HardcoreTestProject("healthload") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 
@@ -825,10 +900,11 @@ async def health():
 async def heavy():
     await asyncio.sleep(2)
     return {"status": "done"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 # Start heavy requests
                 def heavy_request():
@@ -836,21 +912,21 @@ async def heavy():
                         requests.get(f"http://127.0.0.1:{p.port}/heavy", timeout=10)
                     except:
                         pass
-                
+
                 threads = [threading.Thread(target=heavy_request) for _ in range(20)]
                 for t in threads:
                     t.start()
-                
+
                 time.sleep(0.5)
-                
+
                 # Health check must still respond
                 start = time.time()
                 r = requests.get(f"http://127.0.0.1:{p.port}/health", timeout=5)
                 elapsed = time.time() - start
-                
+
                 assert r.status_code == 200
                 assert elapsed < 1.0, f"Health check took {elapsed:.2f}s"
-                
+
                 for t in threads:
                     t.join()
 
@@ -861,7 +937,9 @@ async def heavy():
         """[HARDCORE-PROD-02] Graceful degradation on dependency failure."""
         with HardcoreTestProject("degrade") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 import asyncio
 
@@ -879,16 +957,17 @@ async def toggle_db():
     global db_available
     db_available = not db_available
     return {"db_available": db_available}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/status", timeout=5)
                 assert r1.json()["status"] == "healthy"
-                
+
                 requests.post(f"http://127.0.0.1:{p.port}/toggle-db", timeout=5)
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/status", timeout=5)
                 assert r2.json()["status"] == "degraded"
 
@@ -899,7 +978,9 @@ async def toggle_db():
         """[HARDCORE-PROD-03] Request ID tracing through middleware."""
         with HardcoreTestProject("tracing") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 import uuid
@@ -918,17 +999,14 @@ app.add_middleware(TracingMiddleware)
 @app.get("/trace")
 async def trace(request: Request):
     return {"trace_id": request.headers.get("X-Request-ID")}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 custom_id = "test-trace-12345"
-                r = requests.get(
-                    f"http://127.0.0.1:{p.port}/trace",
-                    headers={"X-Request-ID": custom_id},
-                    timeout=5
-                )
+                r = requests.get(f"http://127.0.0.1:{p.port}/trace", headers={"X-Request-ID": custom_id}, timeout=5)
                 assert r.status_code == 200
                 assert r.headers.get("X-Request-ID") == custom_id
 
@@ -939,7 +1017,9 @@ async def trace(request: Request):
         """[HARDCORE-PROD-04] Structured JSON error responses."""
         with HardcoreTestProject("errors") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -956,10 +1036,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.get("/error/{code}")
 async def trigger_error(code: int):
     raise HTTPException(status_code=code, detail=f"Error {code}")
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/error/400", timeout=5)
                 assert r.status_code == 400
@@ -974,7 +1055,9 @@ async def trigger_error(code: int):
         """[HARDCORE-PROD-05] Rate limiting behavior simulation."""
         with HardcoreTestProject("ratelimit") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import time
@@ -1004,16 +1087,17 @@ async def rate_limit(request: Request, call_next):
 @app.get("/api")
 async def api():
     return {"status": "ok"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 # Rapid requests should eventually get rate limited
                 results = []
                 for _ in range(15):
                     r = requests.get(f"http://127.0.0.1:{p.port}/api", timeout=5)
                     results.append(r.status_code)
-                
+
                 # Some should be 429
                 assert 429 in results or all(r == 200 for r in results)

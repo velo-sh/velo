@@ -13,11 +13,9 @@ These tests are SLOW but verify real-world behavior.
 """
 
 import json
-import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -40,9 +38,7 @@ def velo_analyze_available() -> bool:
     """Check if velo analyze is implemented."""
     try:
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
     except:
         return False
@@ -291,9 +287,7 @@ print("DataScience OK")
             assert result.returncode == 0, f"Failed: {result.stderr}"
             output = result.stdout.lower()
             # Should identify slow imports (pandas, numpy, sklearn are heavy)
-            assert any(
-                pkg in output for pkg in ["pandas", "numpy", "sklearn", "slow", "ms"]
-            )
+            assert any(pkg in output for pkg in ["pandas", "numpy", "sklearn", "slow", "ms"])
 
     def test_datascience_fix_mode(self):
         """Test --fix on data science project generates preload config."""
@@ -421,12 +415,8 @@ print("OK")
             # Check if heavy imports are suggested for preload
             # pandas and numpy are typically heavy (>100ms)
             preload_section = pyproject.split("[tool.velo]")[-1]
-            heavy_suggested = any(
-                pkg in preload_section.lower() for pkg in ["pandas", "numpy"]
-            )
-            assert (
-                heavy_suggested
-            ), f"Expected heavy imports in preload: {preload_section}"
+            heavy_suggested = any(pkg in preload_section.lower() for pkg in ["pandas", "numpy"])
+            assert heavy_suggested, f"Expected heavy imports in preload: {preload_section}"
 
     def test_datascience_preload_improvement(self):
         """PERF-003: DataScience project should show significant improvement potential."""
@@ -456,9 +446,7 @@ print("OK")
             has_timing = "ms" in output_lower or "%" in output
             has_slow_marker = "slow" in output_lower or "←" in output
 
-            assert (
-                has_timing or has_slow_marker
-            ), f"Expected timing/slow markers: {output}"
+            assert has_timing or has_slow_marker, f"Expected timing/slow markers: {output}"
 
     @pytest.mark.xfail(reason="Expected: --fix only writes if slow imports found")
     def test_compare_before_after_preload(self):
@@ -467,8 +455,6 @@ print("OK")
             p.set_pyproject(deps=["pandas"])
             p.set_app("main.py", "import pandas as pd\nprint('OK')")
             p.setup()
-
-            import time
 
             # First: Run velo analyze to get suggestions
             result = p.analyze("main.py")
@@ -480,9 +466,7 @@ print("OK")
 
             # Verify [tool.velo] was added
             pyproject = (p.path / "pyproject.toml").read_text()
-            assert (
-                "[tool.velo]" in pyproject
-            ), "Expected [tool.velo] section after --fix"
+            assert "[tool.velo]" in pyproject, "Expected [tool.velo] section after --fix"
 
 
 if __name__ == "__main__":

@@ -1,6 +1,4 @@
-import pytest
-from velo_zygote.preflight import PreflightCheck, CheckResult
-from velo_zygote.env_profile import RunContext
+from velo_zygote.preflight import PreflightCheck
 
 
 class TestPreflightCheck:

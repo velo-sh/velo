@@ -15,9 +15,7 @@ Categories:
 """
 
 import os
-import resource
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
@@ -49,9 +47,7 @@ class BrutalTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -370,9 +366,7 @@ class TestCrashAttempts:
 
         for payload in safe_payloads:
             try:
-                result = subprocess.run(
-                    [velo, "serve", payload], capture_output=True, text=True, timeout=30
-                )
+                result = subprocess.run([velo, "serve", payload], capture_output=True, text=True, timeout=30)
                 # Should not crash (SIGSEGV = -11)
                 assert result.returncode != -11
             except ValueError:
@@ -411,9 +405,9 @@ class TestCrashAttempts:
 
         # Safe unicode payloads (no null)
         payloads = [
-            "\uFEFF",  # BOM
-            "\u202E",  # RTL override
-            "\uFFFF",  # Max BMP
+            "\ufeff",  # BOM
+            "\u202e",  # RTL override
+            "\uffff",  # Max BMP
             "𐀀",  # Surrogate pair
         ]
 

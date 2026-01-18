@@ -2,10 +2,9 @@
 # Tests the complete user workflow: Build -> Load -> Run -> Verify Output
 # This is the CORRECTNESS gate - performance is secondary.
 
-import pytest
-import os
 from pathlib import Path
 
+import pytest
 
 # --- Project Templates (Simulating Real User Projects) ---
 
@@ -111,30 +110,24 @@ class TestE2EGoldenPath:
 
         # 2. Build bundle
         build_result = env.run_velo("bundle", "build")
-        assert (
-            build_result.returncode == 0
-        ), f"Build failed for {framework}: {build_result.stderr}"
-        assert (
-            env.path / "bundle.veloc"
-        ).exists(), f"Bundle not created for {framework}"
+        assert build_result.returncode == 0, f"Build failed for {framework}: {build_result.stderr}"
+        assert (env.path / "bundle.veloc").exists(), f"Bundle not created for {framework}"
 
         # 3. Run with fast loader
         run_result = env.run_velo("run", "--fast", "main.py")
 
         # 4. Verify NO fallback (critical!)
-        assert (
-            "Fast loader failed" not in run_result.stdout
-        ), f"Fast loader fallback for {framework}: {run_result.stdout}"
+        assert "Fast loader failed" not in run_result.stdout, (
+            f"Fast loader fallback for {framework}: {run_result.stdout}"
+        )
 
         # 5. Verify business logic output (THE MOST IMPORTANT CHECK)
-        assert (
-            project["expected_output"] in run_result.stdout
-        ), f"Business logic failed for {framework}. Expected '{project['expected_output']}' in stdout: {run_result.stdout}"
+        assert project["expected_output"] in run_result.stdout, (
+            f"Business logic failed for {framework}. Expected '{project['expected_output']}' in stdout: {run_result.stdout}"
+        )
 
         # 6. Verify clean exit
-        assert (
-            run_result.returncode == 0
-        ), f"Non-zero exit for {framework}: {run_result.returncode}"
+        assert run_result.returncode == 0, f"Non-zero exit for {framework}: {run_result.returncode}"
 
     @pytest.mark.parametrize("framework", ["fastapi", "flask", "django"])
     def test_GOLD_002_rebuild_idempotency(self, isolated_env, framework):
@@ -151,9 +144,9 @@ class TestE2EGoldenPath:
         run2 = env.run_velo("run", "--fast", "main.py")
 
         # Both runs should produce identical output
-        assert (
-            run1.stdout == run2.stdout
-        ), f"Non-idempotent behavior for {framework}: '{run1.stdout}' != '{run2.stdout}'"
+        assert run1.stdout == run2.stdout, (
+            f"Non-idempotent behavior for {framework}: '{run1.stdout}' != '{run2.stdout}'"
+        )
 
     @pytest.mark.parametrize("framework", ["fastapi", "flask", "django"])
     def test_GOLD_003_no_bundle_fallback(self, isolated_env, framework):
@@ -167,6 +160,4 @@ class TestE2EGoldenPath:
 
         # Should still succeed via CPython fallback
         assert run_result.returncode == 0, f"CPython fallback failed for {framework}"
-        assert (
-            project["expected_output"] in run_result.stdout
-        ), f"CPython fallback output incorrect for {framework}"
+        assert project["expected_output"] in run_result.stdout, f"CPython fallback output incorrect for {framework}"

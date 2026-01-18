@@ -1,8 +1,8 @@
 import platform
-import subprocess
 import shutil
+import subprocess
+
 import pytest
-import sys
 
 
 def get_binary_arch(binary_path):
@@ -46,13 +46,11 @@ def assert_velo_compatible(velo_bin):
 
     # Case 1: Velo=arm64, Python=x86_64 -> Incompatible (Linker error)
     if velo_arch == "arm64" and python_arch == "x86_64":
-        pytest.skip(
-            f"Arch Mismatch: Velo is arm64 but Python is x86_64. Native loading will fail."
-        )
+        pytest.skip("Arch Mismatch: Velo is arm64 but Python is x86_64. Native loading will fail.")
 
     # Case 2: Velo=x86_64, Python=arm64 -> Incompatible
     if velo_arch == "x86_64" and python_arch == "arm64":
-        pytest.skip(f"Arch Mismatch: Velo is x86_64 but Python is arm64.")
+        pytest.skip("Arch Mismatch: Velo is x86_64 but Python is arm64.")
 
     # Note: We rely on the test runner's python being representative of what Velo picks up.
     # If Velo picks a different python, we might get false positives/negatives,

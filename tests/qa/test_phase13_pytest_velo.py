@@ -7,15 +7,10 @@ Per Developer Role: NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 These tests MUST fail initially until pytest_velo/plugin.py is implemented.
 """
 
-import atexit
 import os
-import sys
 import threading
-import time
-from pathlib import Path
 
 import pytest
-
 
 # =============================================================================
 # P0-1: Fixture Leakage Protection
@@ -253,12 +248,12 @@ class TestWorkerEnvironmentIsolation:
         if pid == 0:
             # Child process
             worker_base = worker_environment_isolation()
-            
+
             # Verify TMPDIR is set to worker-specific path
             assert os.environ.get("TMPDIR", "").startswith("/tmp/velo-worker-")
             assert os.environ.get("TMP", "").startswith("/tmp/velo-worker-")
             assert os.environ.get("TEMP", "").startswith("/tmp/velo-worker-")
-            
+
             os._exit(0)
         else:
             # Parent waits
@@ -272,12 +267,12 @@ class TestWorkerEnvironmentIsolation:
         pid = os.fork()
         if pid == 0:
             worker_base = worker_environment_isolation()
-            
+
             # Verify socket isolation env vars
             assert "VELO_WORKER_ID" in os.environ
             assert "VELO_WORKER_SOCKET_DIR" in os.environ
             assert os.path.exists(os.environ["VELO_WORKER_SOCKET_DIR"])
-            
+
             os._exit(0)
         else:
             _, status = os.waitpid(pid, 0)
@@ -290,11 +285,11 @@ class TestWorkerEnvironmentIsolation:
         pid = os.fork()
         if pid == 0:
             worker_base = worker_environment_isolation()
-            
+
             # Verify log isolation
             assert "VELO_WORKER_LOG_DIR" in os.environ
             assert os.path.exists(os.environ["VELO_WORKER_LOG_DIR"])
-            
+
             os._exit(0)
         else:
             _, status = os.waitpid(pid, 0)
@@ -317,4 +312,3 @@ class TestWorkerEnvironmentIsolation:
 
         # Should be removed
         assert not os.path.exists(test_dir)
-

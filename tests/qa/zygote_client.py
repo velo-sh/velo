@@ -1,7 +1,7 @@
 import asyncio
-import socket
-from typing import Dict, Optional, Any
-from velo_zygote.protocol import ZygoteTransport, ProtocolError
+from typing import Any
+
+from velo_zygote.protocol import ProtocolError, ZygoteTransport
 
 
 class ZygoteClient:
@@ -9,9 +9,9 @@ class ZygoteClient:
 
     def __init__(self, socket_path: str):
         self.socket_path = socket_path
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
-        self._transport: Optional[ZygoteTransport] = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._transport: ZygoteTransport | None = None
 
     async def connect(self, timeout: float = 2.0):
         """Connect to the Zygote and wait for the Ready message."""
@@ -25,28 +25,24 @@ class ZygoteClient:
             # Wait for greeting
             ready = await self.recv()
             if not ready or ready.get("type") != "Ready":
-                raise ProtocolError(
-                    f"Protocol Handshake Failed: Expected 'Ready', got {ready}"
-                )
+                raise ProtocolError(f"Protocol Handshake Failed: Expected 'Ready', got {ready}")
             return True
         except Exception as e:
-            raise ConnectionError(
-                f"Failed to connect to Zygote at {self.socket_path}: {e}"
-            )
+            raise ConnectionError(f"Failed to connect to Zygote at {self.socket_path}: {e}")
 
-    async def send(self, cmd: Dict[str, Any]):
+    async def send(self, cmd: dict[str, Any]):
         """Send a command to the Zygote."""
         if not self._transport:
             raise ConnectionError("Client not connected")
         await self._transport.send(cmd)
 
-    async def recv(self, timeout: float = 30.0) -> Optional[Dict[str, Any]]:
+    async def recv(self, timeout: float = 30.0) -> dict[str, Any] | None:
         """Receive a response from the Zygote."""
         if not self._transport:
             raise ConnectionError("Client not connected")
         try:
             return await asyncio.wait_for(self._transport.recv(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise TimeoutError("Zygote response timeout")
 
     async def close(self):

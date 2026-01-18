@@ -17,7 +17,6 @@ This proves the full integration from CLI → pytest → execution → results.
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -273,7 +272,7 @@ pytest_plugins = ["pytest_asyncio"]
 class TestE2EGoldenPath:
     """
     E2E Golden Path Tests - V1 Completion Criteria
-    
+
     This class contains tests that prove velo test works end-to-end
     with a real-world FastAPI project.
     """
@@ -281,7 +280,7 @@ class TestE2EGoldenPath:
     def test_e2e_velo_test_fastapi_project(self, fastapi_test_project):
         """
         GOLDEN PATH TEST: Run velo test on a real FastAPI project
-        
+
         This is the PRIMARY V1 completion criteria.
         If this test passes, the velo test feature is working.
         """
@@ -318,6 +317,7 @@ class TestE2EGoldenPath:
                 if "No module named" in line:
                     # Extract module name from: ModuleNotFoundError: No module named 'xxx'
                     import re
+
                     match = re.search(r"No module named ['\"]([^'\"]+)['\"]", line)
                     if match:
                         missing_module = match.group(1)
@@ -336,7 +336,7 @@ class TestE2EGoldenPath:
     def test_e2e_test_count_verification(self, fastapi_test_project):
         """
         Verify that all expected tests are discovered and run
-        
+
         Expected tests:
         - 2 health endpoint tests
         - 5 CRUD tests
@@ -366,6 +366,7 @@ class TestE2EGoldenPath:
         # Check that we ran the expected number of tests
         # Look for "X passed" in output
         import re
+
         match = re.search(r"(\d+) passed", result.stdout)
         assert match, "Could not find 'X passed' in output"
         passed_count = int(match.group(1))
@@ -374,7 +375,7 @@ class TestE2EGoldenPath:
     def test_e2e_exit_code_propagation(self, fastapi_test_project):
         """
         Verify that exit codes are properly propagated
-        
+
         - Success: exit code 0
         - Failure: exit code 1
         """
@@ -382,10 +383,10 @@ class TestE2EGoldenPath:
         velo_root = Path(__file__).parents[2]
 
         # Create a failing test
-        failing_test = '''
+        failing_test = """
 def test_intentional_failure():
     assert False, "This test should fail"
-'''
+"""
         failing_test_path = Path(project_dir) / "test_failing.py"
         failing_test_path.write_text(failing_test)
 
@@ -426,7 +427,7 @@ def test_intentional_failure():
 class TestE2EFailFast:
     """
     Fail-Fast Tests - Verify immediate failure on missing dependencies
-    
+
     These tests ensure velo test fails fast with clear error messages
     when dependencies are missing, rather than hanging or timing out.
     """
@@ -462,25 +463,26 @@ def test_should_not_run():
 
         # Verify fail-fast behavior
         assert result.returncode != 0, "Should fail with non-zero exit code"
-        assert "ModuleNotFoundError" in result.stdout or "No module named" in result.stdout, \
+        assert "ModuleNotFoundError" in result.stdout or "No module named" in result.stdout, (
             f"Should show clear ModuleNotFoundError in output: {result.stdout}"
-        assert "nonexistent_package_xyz_12345" in result.stdout, \
-            "Should show the missing package name"
+        )
+        assert "nonexistent_package_xyz_12345" in result.stdout, "Should show the missing package name"
 
     def test_missing_package_execution_time(self, tmp_path):
         """
         Verify that missing package error is detected quickly (< 5 seconds)
         """
         import time
+
         velo_root = Path(__file__).parents[2]
 
         test_file = tmp_path / "test_missing_quick.py"
-        test_file.write_text('''
+        test_file.write_text("""
 import some_fake_module_that_does_not_exist
 
 def test_never_runs():
     pass
-''')
+""")
 
         start = time.time()
         result = subprocess.run(
@@ -498,4 +500,3 @@ def test_never_runs():
         # Should fail fast, not hang
         assert elapsed < 5.0, f"Fail-fast took {elapsed:.1f}s, expected < 5s"
         assert result.returncode != 0
-

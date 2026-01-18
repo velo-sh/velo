@@ -12,13 +12,11 @@ Gaps identified:
 - PLAT-xxx: Platform compatibility tests
 """
 
-import os
-import subprocess
 import platform
-import pytest
-from pathlib import Path
+import subprocess
 
-from test_harness import run_velo, assert_no_crash
+import pytest
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import ZygoteTestEnv
 
 
@@ -92,9 +90,7 @@ except:
             run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
             # Run script
-            result = run_velo(
-                ["run", "--zygote", "mem_report.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "mem_report.py"], cwd=env.path, timeout=30)
 
             if result.success and "RSS_KB:" in result.stdout:
                 print(f"\n  Worker memory report: {result.stdout.strip()}")
@@ -129,11 +125,7 @@ print("done")
             # Run 10 workers concurrently
             threads = []
             for _ in range(10):
-                t = threading.Thread(
-                    target=lambda: run_velo(
-                        ["run", "--zygote", "hold.py"], cwd=env.path, timeout=30
-                    )
-                )
+                t = threading.Thread(target=lambda: run_velo(["run", "--zygote", "hold.py"], cwd=env.path, timeout=30))
                 threads.append(t)
                 t.start()
 
@@ -179,9 +171,7 @@ print(f"RESULT:{result}")
 """,
             )
 
-            result = run_velo(
-                ["run", "--zygote", "use_custom.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "use_custom.py"], cwd=env.path, timeout=30)
 
             assert_no_crash(result)
             if result.success:
@@ -227,9 +217,7 @@ print("app started")
             if pyproject_path.exists():
                 content = pyproject_path.read_text()
                 if "[tool.velo]" in content:
-                    print(
-                        f"\n  Auto-generated config in pyproject.toml:\n{content[:200]}"
-                    )
+                    print(f"\n  Auto-generated config in pyproject.toml:\n{content[:200]}")
         finally:
             env.cleanup()
 
@@ -256,10 +244,7 @@ class TestPlatformCompatibility:
             result = run_velo(["run", "--zygote", "test.py"], cwd=env.path, timeout=30)
 
             # Should warn about Windows
-            assert (
-                "warning" in result.stderr.lower()
-                or "fallback" in result.stderr.lower()
-            )
+            assert "warning" in result.stderr.lower() or "fallback" in result.stderr.lower()
 
             # But should still work
             if result.success:

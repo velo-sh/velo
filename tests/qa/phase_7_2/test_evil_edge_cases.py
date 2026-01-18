@@ -18,15 +18,16 @@ Author: Velo QA Team
 Date: 2026-01-15
 """
 
-import pytest
-import os
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import time
-import requests
 from pathlib import Path
+
+import pytest
+import requests
 
 
 def get_velo_binary() -> str:
@@ -71,25 +72,29 @@ dev-dependencies = []
     def start_server(self, app_module: str, port: int = None):
         if port is None:
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("", 0))
                 port = s.getsockname()[1]
-        
+
         self._port = port
         run_env = os.environ.copy()
         run_env["VELO_TEST_MODE"] = "1"
         run_env["VIRTUAL_ENV"] = str(self.path / ".venv")
         run_env["PATH"] = f"{self.path / '.venv' / 'bin'}:{os.environ.get('PATH', '')}"
-        
+
         venv_lib = self.path / ".venv" / "lib"
         site_dirs = list(venv_lib.glob("python*/site-packages"))
         if site_dirs:
             run_env["PYTHONPATH"] = str(site_dirs[0])
-        
+
         self._proc = subprocess.Popen(
             [self.velo, "serve", app_module, "--rsgi", "--no-zygote", "--port", str(port)],
-            cwd=self.path, env=run_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=self.path,
+            env=run_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         time.sleep(8)
         return self
@@ -119,6 +124,7 @@ dev-dependencies = []
 # CATEGORY 1: POST Body Parsing (8) - THE KNOWN GAP
 # =============================================================================
 
+
 class TestPostBodyParsing:
     """Evil tests targeting POST body parsing - the known weak point."""
 
@@ -128,7 +134,9 @@ class TestPostBodyParsing:
         """[EVIL-POST-01] POST with empty body."""
         with EvilTestProject("post-empty") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -142,10 +150,11 @@ async def app(scope, receive, send):
     response = json.dumps({"size": len(body), "empty": len(body) == 0}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(f"http://127.0.0.1:{p.port}/", data=b"", timeout=5)
                 assert r.status_code == 200
@@ -157,7 +166,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-02] POST with plain text body."""
         with EvilTestProject("post-text") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -171,16 +182,14 @@ async def app(scope, receive, send):
     response = json.dumps({"text": body.decode("utf-8")}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
-                    f"http://127.0.0.1:{p.port}/",
-                    data="Hello World",
-                    headers={"Content-Type": "text/plain"},
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/", data="Hello World", headers={"Content-Type": "text/plain"}, timeout=5
                 )
                 assert r.status_code == 200
                 assert r.json()["text"] == "Hello World"
@@ -191,7 +200,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-03] POST with simple JSON body."""
         with EvilTestProject("post-json") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -212,16 +223,13 @@ async def app(scope, receive, send):
     
     await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.post(
-                    f"http://127.0.0.1:{p.port}/",
-                    json={"key": "value", "number": 42},
-                    timeout=5
-                )
+                r = requests.post(f"http://127.0.0.1:{p.port}/", json={"key": "value", "number": 42}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["received"]["key"] == "value"
 
@@ -231,7 +239,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-04] POST with deeply nested JSON."""
         with EvilTestProject("post-nested") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -246,10 +256,11 @@ async def app(scope, receive, send):
     response = json.dumps({"depth": len(str(data))}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 nested = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
                 r = requests.post(f"http://127.0.0.1:{p.port}/", json=nested, timeout=5)
@@ -261,7 +272,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-05] POST with URL-encoded form data."""
         with EvilTestProject("post-urlencoded") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 from urllib.parse import parse_qs
 
@@ -277,15 +290,14 @@ async def app(scope, receive, send):
     response = json.dumps({"form": {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
-                    f"http://127.0.0.1:{p.port}/",
-                    data={"username": "testuser", "password": "secret123"},
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/", data={"username": "testuser", "password": "secret123"}, timeout=5
                 )
                 assert r.status_code == 200
                 assert r.json()["form"]["username"] == "testuser"
@@ -296,7 +308,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-06] POST with binary data."""
         with EvilTestProject("post-binary") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 import base64
 
@@ -314,17 +328,18 @@ async def app(scope, receive, send):
     }).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 binary = bytes(range(256))
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
                     data=binary,
                     headers={"Content-Type": "application/octet-stream"},
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
                 assert r.json()["size"] == 256
@@ -335,7 +350,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-07] POST with Unicode characters."""
         with EvilTestProject("post-unicode") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -350,16 +367,17 @@ async def app(scope, receive, send):
     response = json.dumps({"text": text, "length": len(text)}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
-                    data="Hello World - Emoji: 🚀🔥".encode("utf-8"),
+                    data="Hello World - Emoji: 🚀🔥".encode(),
                     headers={"Content-Type": "text/plain; charset=utf-8"},
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
                 assert "🚀" in r.json()["text"]
@@ -370,7 +388,9 @@ async def app(scope, receive, send):
         """[EVIL-POST-08] POST with special characters URL-encoded."""
         with EvilTestProject("post-special") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 from urllib.parse import parse_qs
 
@@ -386,15 +406,16 @@ async def app(scope, receive, send):
     response = json.dumps({"form": {k: v[0] for k, v in parsed.items()}}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
                     data={"query": "hello+world&special=test", "symbols": "a=b&c=d"},
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
 
@@ -402,6 +423,7 @@ async def app(scope, receive, send):
 # =============================================================================
 # CATEGORY 2: Multipart/Form Data (5) - File Uploads
 # =============================================================================
+
 
 class TestMultipartFormData:
     """Evil tests for multipart form data and file uploads."""
@@ -413,7 +435,9 @@ class TestMultipartFormData:
         """[EVIL-MULTI-01] Simple file upload."""
         with EvilTestProject("multi-file") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile
 app = FastAPI()
 
@@ -421,10 +445,11 @@ app = FastAPI()
 async def upload(file: UploadFile = File(...)):
     content = await file.read()
     return {"filename": file.filename, "size": len(content)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 files = {"file": ("test.txt", b"Hello World", "text/plain")}
                 r = requests.post(f"http://127.0.0.1:{p.port}/upload", files=files, timeout=10)
@@ -438,7 +463,9 @@ async def upload(file: UploadFile = File(...)):
         """[EVIL-MULTI-02] Multiple file upload."""
         with EvilTestProject("multi-files") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile
 from typing import List
 app = FastAPI()
@@ -450,10 +477,11 @@ async def upload(files: List[UploadFile] = File(...)):
         content = await f.read()
         result.append({"name": f.filename, "size": len(content)})
     return {"files": result}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 files = [
                     ("files", ("a.txt", b"AAA", "text/plain")),
@@ -470,7 +498,9 @@ async def upload(files: List[UploadFile] = File(...)):
         """[EVIL-MULTI-03] File upload with form fields."""
         with EvilTestProject("multi-mixed") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile, Form
 app = FastAPI()
 
@@ -487,16 +517,17 @@ async def upload(
         "filename": file.filename,
         "size": len(content)
     }
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/upload",
                     data={"name": "test", "description": "desc"},
                     files={"file": ("doc.pdf", b"PDF content", "application/pdf")},
-                    timeout=10
+                    timeout=10,
                 )
                 assert r.status_code == 200
 
@@ -507,7 +538,9 @@ async def upload(
         """[EVIL-MULTI-04] Large file upload (1MB)."""
         with EvilTestProject("multi-large") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile
 app = FastAPI()
 
@@ -515,10 +548,11 @@ app = FastAPI()
 async def upload(file: UploadFile = File(...)):
     content = await file.read()
     return {"size": len(content)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 large_file = b"X" * (1024 * 1024)  # 1MB
                 files = {"file": ("large.bin", large_file, "application/octet-stream")}
@@ -533,7 +567,9 @@ async def upload(file: UploadFile = File(...)):
         """[EVIL-MULTI-05] Binary file with all byte values."""
         with EvilTestProject("multi-binary") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "python-multipart>=0.0.6"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, File, UploadFile
 import hashlib
 app = FastAPI()
@@ -545,10 +581,11 @@ async def upload(file: UploadFile = File(...)):
         "size": len(content),
         "md5": hashlib.md5(content).hexdigest()
     }
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 binary = bytes(range(256)) * 100
                 files = {"file": ("binary.bin", binary, "application/octet-stream")}
@@ -560,6 +597,7 @@ async def upload(file: UploadFile = File(...)):
 # CATEGORY 3: Chunked Encoding (4) - Streaming Bodies
 # =============================================================================
 
+
 class TestChunkedEncoding:
     """Evil tests for chunked transfer encoding."""
 
@@ -570,7 +608,9 @@ class TestChunkedEncoding:
         """[EVIL-CHUNK-01] Chunked transfer encoded request."""
         with EvilTestProject("chunk-req") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -584,15 +624,17 @@ async def app(scope, receive, send):
     response = json.dumps({"size": len(body)}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
+
                 def gen():
                     for i in range(5):
                         yield f"chunk{i}".encode()
-                
+
                 r = requests.post(f"http://127.0.0.1:{p.port}/", data=gen(), timeout=10)
                 assert r.status_code == 200
 
@@ -603,7 +645,9 @@ async def app(scope, receive, send):
         """[EVIL-CHUNK-02] Chunked transfer encoded response."""
         with EvilTestProject("chunk-resp") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
@@ -618,10 +662,11 @@ async def stream_response(request):
     return StreamingResponse(generate(), media_type="text/plain")
 
 app = Starlette(routes=[Route("/stream", stream_response)])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/stream", timeout=10)
                 assert r.status_code == 200
@@ -634,7 +679,9 @@ app = Starlette(routes=[Route("/stream", stream_response)])
         """[EVIL-CHUNK-03] Streaming JSON lines (NDJSON)."""
         with EvilTestProject("jsonlines") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
@@ -650,10 +697,11 @@ async def stream_json(request):
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 app = Starlette(routes=[Route("/", stream_json)])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=10)
                 assert r.status_code == 200
@@ -667,7 +715,9 @@ app = Starlette(routes=[Route("/", stream_json)])
         """[EVIL-CHUNK-04] Large streaming response (10MB)."""
         with EvilTestProject("chunk-large") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
@@ -680,10 +730,11 @@ async def large_stream(request):
     return StreamingResponse(generate(), media_type="application/octet-stream")
 
 app = Starlette(routes=[Route("/", large_stream)])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=60)
                 assert r.status_code == 200
@@ -694,6 +745,7 @@ app = Starlette(routes=[Route("/", large_stream)])
 # CATEGORY 4: Large Payloads (4) - Memory Handling
 # =============================================================================
 
+
 class TestLargePayloads:
     """Evil tests for large payload handling."""
 
@@ -703,7 +755,9 @@ class TestLargePayloads:
         """[EVIL-LARGE-01] 100KB JSON request body."""
         with EvilTestProject("large-100k") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -718,10 +772,11 @@ async def app(scope, receive, send):
     response = json.dumps({"items": len(data.get("items", []))}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 large_json = {"items": ["item" * 100 for _ in range(100)]}
                 r = requests.post(f"http://127.0.0.1:{p.port}/", json=large_json, timeout=15)
@@ -734,7 +789,9 @@ async def app(scope, receive, send):
         """[EVIL-LARGE-02] 1MB request body."""
         with EvilTestProject("large-1m") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -748,17 +805,18 @@ async def app(scope, receive, send):
     response = json.dumps({"size": len(body)}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 large_body = b"X" * (1024 * 1024)
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
                     data=large_body,
                     headers={"Content-Type": "application/octet-stream"},
-                    timeout=30
+                    timeout=30,
                 )
                 assert r.status_code == 200
                 assert r.json()["size"] == 1024 * 1024
@@ -770,15 +828,18 @@ async def app(scope, receive, send):
         """[EVIL-LARGE-03] 5MB response body."""
         with EvilTestProject("large-resp") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     body = b"X" * (5 * 1024 * 1024)
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/octet-stream")]})
     await send({"type": "http.response.body", "body": body})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=60)
                 assert r.status_code == 200
@@ -790,16 +851,19 @@ async def app(scope, receive, send):
         """[EVIL-LARGE-04] Many small requests in sequence."""
         with EvilTestProject("many-small") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": b'{"ok":true}'})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 success = 0
                 for _ in range(200):
@@ -809,13 +873,14 @@ async def app(scope, receive, send):
                             success += 1
                     except:
                         pass
-                
+
                 assert success >= 180
 
 
 # =============================================================================
 # CATEGORY 5: Edge Case Headers (5) - Malformed Requests
 # =============================================================================
+
 
 class TestEdgeCaseHeaders:
     """Evil tests for edge case headers."""
@@ -826,7 +891,9 @@ class TestEdgeCaseHeaders:
         """[EVIL-HDR-01] POST without Content-Type header."""
         with EvilTestProject("no-ct") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -843,17 +910,15 @@ async def app(scope, receive, send):
     response = json.dumps({"content_type": ct, "body_size": len(body)}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 import urllib.request
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{p.port}/",
-                    data=b"raw body",
-                    method="POST"
-                )
+
+                req = urllib.request.Request(f"http://127.0.0.1:{p.port}/", data=b"raw body", method="POST")
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     assert resp.status == 200
 
@@ -863,7 +928,9 @@ async def app(scope, receive, send):
         """[EVIL-HDR-02] Duplicate header values."""
         with EvilTestProject("dup-hdr") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -873,15 +940,16 @@ async def app(scope, receive, send):
     response = json.dumps({"x_custom_values": x_custom}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(
                     f"http://127.0.0.1:{p.port}/",
                     headers={"X-Custom": "value1"},  # requests can't send duplicates easily
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
 
@@ -891,7 +959,9 @@ async def app(scope, receive, send):
         """[EVIL-HDR-03] Very long header value."""
         with EvilTestProject("long-hdr") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -901,17 +971,14 @@ async def app(scope, receive, send):
     response = json.dumps({"length": len(long_val)}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 long_value = "A" * 4000
-                r = requests.get(
-                    f"http://127.0.0.1:{p.port}/",
-                    headers={"X-Long": long_value},
-                    timeout=5
-                )
+                r = requests.get(f"http://127.0.0.1:{p.port}/", headers={"X-Long": long_value}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["length"] == 4000
 
@@ -921,7 +988,9 @@ async def app(scope, receive, send):
         """[EVIL-HDR-04] Many custom headers."""
         with EvilTestProject("many-hdr") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -930,10 +999,11 @@ async def app(scope, receive, send):
     response = json.dumps({"header_count": header_count}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 headers = {f"X-Header-{i}": f"value-{i}" for i in range(50)}
                 r = requests.get(f"http://127.0.0.1:{p.port}/", headers=headers, timeout=5)
@@ -946,7 +1016,9 @@ async def app(scope, receive, send):
         """[EVIL-HDR-05] Accept-Encoding: gzip handling."""
         with EvilTestProject("accept-gzip") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -956,15 +1028,14 @@ async def app(scope, receive, send):
     response = json.dumps({"accept_encoding": accept_encoding}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(
-                    f"http://127.0.0.1:{p.port}/",
-                    headers={"Accept-Encoding": "gzip, deflate, br"},
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/", headers={"Accept-Encoding": "gzip, deflate, br"}, timeout=5
                 )
                 assert r.status_code == 200
 
@@ -972,6 +1043,7 @@ async def app(scope, receive, send):
 # =============================================================================
 # CATEGORY 6: Content Negotiation (4) - Content-Type Variations
 # =============================================================================
+
 
 class TestContentNegotiation:
     """Evil tests for content type variations."""
@@ -982,7 +1054,9 @@ class TestContentNegotiation:
         """[EVIL-CT-01] Content-Type with charset parameter."""
         with EvilTestProject("ct-charset") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -992,16 +1066,17 @@ async def app(scope, receive, send):
     response = json.dumps({"content_type": ct}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json; charset=utf-8")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
                     json={"test": "data"},
                     headers={"Content-Type": "application/json; charset=utf-8"},
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
 
@@ -1011,7 +1086,9 @@ async def app(scope, receive, send):
         """[EVIL-CT-02] Accept: application/json."""
         with EvilTestProject("accept-json") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -1021,16 +1098,13 @@ async def app(scope, receive, send):
     response = json.dumps({"accept": accept}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.get(
-                    f"http://127.0.0.1:{p.port}/",
-                    headers={"Accept": "application/json"},
-                    timeout=5
-                )
+                r = requests.get(f"http://127.0.0.1:{p.port}/", headers={"Accept": "application/json"}, timeout=5)
                 assert r.status_code == 200
                 assert "application/json" in r.json()["accept"]
 
@@ -1040,7 +1114,9 @@ async def app(scope, receive, send):
         """[EVIL-CT-03] XML content type."""
         with EvilTestProject("ct-xml") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -1054,17 +1130,15 @@ async def app(scope, receive, send):
     response = json.dumps({"xml_body": body.decode()}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 xml = '<?xml version="1.0"?><root><item>test</item></root>'
                 r = requests.post(
-                    f"http://127.0.0.1:{p.port}/",
-                    data=xml,
-                    headers={"Content-Type": "application/xml"},
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/", data=xml, headers={"Content-Type": "application/xml"}, timeout=5
                 )
                 assert r.status_code == 200
                 assert "<root>" in r.json()["xml_body"]
@@ -1075,7 +1149,9 @@ async def app(scope, receive, send):
         """[EVIL-CT-04] Custom vendor content type."""
         with EvilTestProject("ct-vendor") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -1092,16 +1168,17 @@ async def app(scope, receive, send):
     response = json.dumps({"content_type": ct, "body": body.decode()}).encode()
     await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
     await send({"type": "http.response.body", "body": response})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
                     f"http://127.0.0.1:{p.port}/",
                     data='{"custom": true}',
                     headers={"Content-Type": "application/vnd.myapp+json"},
-                    timeout=5
+                    timeout=5,
                 )
                 assert r.status_code == 200
                 assert "vnd.myapp" in r.json()["content_type"]

@@ -34,9 +34,7 @@ def velo_analyze_available() -> bool:
     """Check if velo analyze is implemented."""
     try:
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
     except:
         return False
@@ -143,10 +141,7 @@ class TestFileSystemSecurity:
                 result = p.analyze("--fix")
                 # Should error, not crash
                 if result.returncode != 0:
-                    assert (
-                        "permission" in result.stderr.lower()
-                        or "error" in result.stderr.lower()
-                    )
+                    assert "permission" in result.stderr.lower() or "error" in result.stderr.lower()
             finally:
                 os.chmod(pyproject, 0o644)
 
@@ -201,9 +196,7 @@ builtins.__import__ = evil_import
             # Check that the evil code didn't create the marker file
             assert not os.path.exists("/tmp/velo_pwned"), "Import hook escaped sandbox!"
 
-    @pytest.mark.xfail(
-        reason="DEF-4.0-004: velo analyze executes code - TODO: add sandbox in future"
-    )
+    @pytest.mark.xfail(reason="DEF-4.0-004: velo analyze executes code - TODO: add sandbox in future")
     def test_c2_3_os_system_not_executed(self):
         """C2-3: os.system() in analyzed file shouldn't execute.
 
@@ -249,9 +242,7 @@ class TestInformationDisclosure:
             # The temp path contains random strings
             combined = result.stdout + result.stderr
             # This is a soft check - absolute paths starting with tmpdir are suspicious
-            assert (
-                not combined.count("/var/folders/") > 0 or "error" in combined.lower()
-            )
+            assert not combined.count("/var/folders/") > 0 or "error" in combined.lower()
 
     def test_c3_2_output_file_permissions(self):
         """C3-2: Profile output file has secure permissions."""
@@ -332,9 +323,7 @@ class TestInputValidation:
             import getpass
 
             username = getpass.getuser()
-            assert not os.path.exists(
-                p.path / f"{username}.json"
-            ), f"Command substitution executed!"
+            assert not os.path.exists(p.path / f"{username}.json"), "Command substitution executed!"
 
 
 if __name__ == "__main__":

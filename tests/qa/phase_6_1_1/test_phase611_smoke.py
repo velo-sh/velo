@@ -10,17 +10,16 @@ If any L0 test fails, do NOT proceed to L1+.
 Following QA SOP v2.2 Fail-Fast Rule.
 """
 
+import sys
 from pathlib import Path
 
 import psutil
 import pytest
-import sys
 import requests
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
-
+from conftest_utils import T_SHORT
 
 # Smoke tests are now verified to pass with the new implementation
 pytestmark = [pytest.mark.smoke]
@@ -42,7 +41,6 @@ class TestL0Smoke:
         4. Send HTTP request
         5. Verify 200 OK response
         """
-        import requests
 
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
@@ -73,7 +71,6 @@ class TestL0Smoke:
         assert proc.zygote_pid is not None, "Zygote process not detected"
 
         # Verify workers are descendants of Zygote
-        import psutil
 
         for worker_pid in workers:
             # Walk up the process tree to find Zygote
@@ -87,9 +84,9 @@ class TestL0Smoke:
                         break
                     if parent.pid <= 1:
                         break
-                assert (
-                    found_zygote
-                ), f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
+                assert found_zygote, (
+                    f"Worker {worker_pid} (PPID={worker_proc.ppid()}) is not a Zygote ({proc.zygote_pid}) descendant"
+                )
             except psutil.NoSuchProcess:
                 pytest.skip(f"Worker {worker_pid} died during verification")
 
@@ -104,7 +101,6 @@ class TestL0Smoke:
         2. Send HTTP GET request
         3. Verify 200 OK response with correct body
         """
-        import requests
 
         proc = velo_serve_fixture.start("main:app", workers=2)
         proc.wait_ready()

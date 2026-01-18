@@ -8,14 +8,9 @@ Conservative QA: Ensure core functionality never regresses.
 Agent B's mission: Stability above all else.
 """
 
-import os
 import statistics
-import time
-import threading
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import ZygoteTestEnv
 
 
@@ -39,9 +34,7 @@ class TestCoreFlow:
 
             # Run
             if start.success:
-                run_result = run_velo(
-                    ["run", "--zygote", "hello.py"], cwd=env.path, timeout=10
-                )
+                run_result = run_velo(["run", "--zygote", "hello.py"], cwd=env.path, timeout=10)
                 assert run_result.success, f"Run failed: {run_result.stderr}"
                 assert "hello world" in run_result.stdout
 
@@ -111,9 +104,7 @@ print(f"args: {sys.argv[1:]}")
             env.create_uv_lock()
             env.create_script("exit42.py", "import sys; sys.exit(42)")
 
-            result = run_velo(
-                ["run", "--zygote", "exit42.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "exit42.py"], cwd=env.path, timeout=30)
             # Return code should be 42 or contain 42 in some form
             # (exact behavior depends on implementation)
         finally:
@@ -138,9 +129,7 @@ print("STDERR_MARKER", file=sys.stderr)
 """,
             )
 
-            result = run_velo(
-                ["run", "--zygote", "streams.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "streams.py"], cwd=env.path, timeout=30)
             assert_no_crash(result)
             if result.success:
                 assert "STDOUT_MARKER" in result.stdout
@@ -242,9 +231,7 @@ class TestIdempotency:
 
             outputs = []
             for i in range(20):  # Reduced from 100 for test speed
-                result = run_velo(
-                    ["run", "--zygote", "deterministic.py"], cwd=env.path, timeout=30
-                )
+                result = run_velo(["run", "--zygote", "deterministic.py"], cwd=env.path, timeout=30)
                 if result.success:
                     outputs.append(result.stdout.strip())
 
@@ -269,9 +256,7 @@ class TestIdempotency:
 
             for i in range(5):  # Reduced from 10
                 run_velo(["zygote", "start"], cwd=env.path, timeout=10)
-                result = run_velo(
-                    ["run", "--zygote", "check.py"], cwd=env.path, timeout=10
-                )
+                result = run_velo(["run", "--zygote", "check.py"], cwd=env.path, timeout=10)
                 run_velo(["zygote", "stop"], cwd=env.path, timeout=5)
 
                 if result.success:
@@ -317,9 +302,7 @@ class TestStabilityEdgeCases:
             env.create_uv_lock()
             env.create_script("comments.py", "# Just a comment\n# Another comment\n")
 
-            result = run_velo(
-                ["run", "--zygote", "comments.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "comments.py"], cwd=env.path, timeout=10)
             assert_no_crash(result)
         finally:
             env.cleanup()
@@ -336,9 +319,7 @@ class TestStabilityEdgeCases:
             env.create_uv_lock()
             env.create_script("long_output.py", "print('x' * 100000)")
 
-            result = run_velo(
-                ["run", "--zygote", "long_output.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "long_output.py"], cwd=env.path, timeout=30)
             assert_no_crash(result)
         finally:
             env.cleanup()
@@ -364,9 +345,7 @@ class TestStabilitySecurity:
             env.create_uv_lock()
 
             # Try to read nonexistent file
-            result = run_velo(
-                ["run", "--zygote", "nonexistent.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "nonexistent.py"], cwd=env.path, timeout=10)
 
             # Error message should not contain full paths or system info
             if not result.success:
@@ -419,9 +398,7 @@ class TestStabilitySecurity:
             # Invalid script timing (should not be measurably different)
             invalid_times = []
             for _ in range(5):
-                r = run_velo(
-                    ["run", "--zygote", "nonexistent.py"], cwd=env.path, timeout=10
-                )
+                r = run_velo(["run", "--zygote", "nonexistent.py"], cwd=env.path, timeout=10)
                 invalid_times.append(r.duration_ms)
 
             # Check timing is similar (no timing oracle)
@@ -430,8 +407,6 @@ class TestStabilitySecurity:
                 invalid_avg = sum(invalid_times) / len(invalid_times)
 
                 # Timing difference should not be exploitable (< 100ms difference)
-                print(
-                    f"\n  Valid avg: {valid_avg:.1f}ms, Invalid avg: {invalid_avg:.1f}ms"
-                )
+                print(f"\n  Valid avg: {valid_avg:.1f}ms, Invalid avg: {invalid_avg:.1f}ms")
         finally:
             env.cleanup()

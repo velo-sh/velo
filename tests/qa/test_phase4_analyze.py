@@ -7,12 +7,12 @@ pyproject.toml, uv.lock, and .venv. Tests do NOT import user dependencies.
 See docs/TEST_ARCHITECTURE.md for full explanation.
 """
 
+import json
 import subprocess
 import tempfile
-import json
 from pathlib import Path
-import pytest
 
+import pytest
 
 # Path to velo binary (built with cargo build)
 VELO_BIN = Path(__file__).parent.parent.parent / "target" / "debug" / "velo"

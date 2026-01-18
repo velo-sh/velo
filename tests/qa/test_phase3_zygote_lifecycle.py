@@ -11,10 +11,8 @@ Goal: Break the Zygote daemon through unexpected lifecycle events!
 import os
 import signal
 import time
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import (
     ZygoteTestEnv,
     count_zombie_processes,
@@ -48,9 +46,7 @@ class TestZygoteLifecycleCHAOS:
 
             # Check no zombie processes created
             final_zombies = count_zombie_processes()
-            assert (
-                final_zombies <= initial_zombies
-            ), f"Zombie processes created: {final_zombies - initial_zombies}"
+            assert final_zombies <= initial_zombies, f"Zombie processes created: {final_zombies - initial_zombies}"
 
             # Socket should not exist or should be cleaned
             # (depending on implementation)
@@ -79,9 +75,7 @@ class TestZygoteLifecycleCHAOS:
                 assert_no_crash(result2)
                 # Should fail gracefully
                 assert (
-                    not result2.success
-                    or "already" in result2.stdout.lower()
-                    or "running" in result2.stdout.lower()
+                    not result2.success or "already" in result2.stdout.lower() or "running" in result2.stdout.lower()
                 ), "Second start should fail or indicate already running"
         finally:
             env.cleanup()
@@ -153,9 +147,9 @@ class TestZygoteLifecycleCHAOS:
             final_zombies = count_zombie_processes()
 
             # No zombie accumulation
-            assert (
-                final_zombies <= initial_zombies + 1
-            ), f"Zombie leak after rapid cycles: {final_zombies - initial_zombies}"
+            assert final_zombies <= initial_zombies + 1, (
+                f"Zombie leak after rapid cycles: {final_zombies - initial_zombies}"
+            )
         finally:
             env.cleanup()
 
@@ -181,9 +175,9 @@ class TestZygoteStatus:
                 if status_result.success:
                     # Should contain some status info
                     output = status_result.stdout.lower()
-                    assert any(
-                        word in output for word in ["running", "pid", "uptime"]
-                    ), "Status should show running state"
+                    assert any(word in output for word in ["running", "pid", "uptime"]), (
+                        "Status should show running state"
+                    )
         finally:
             env.cleanup()
 

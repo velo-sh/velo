@@ -1,11 +1,11 @@
-import os
-import subprocess
-import pytest
-import time
 import json
+import os
 import signal
-import socket
+import subprocess
+import time
 from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier4
@@ -39,12 +39,12 @@ def test_SEC_621_cross_uid_hijack(isolated_env):
     # Instead, we perform a Negative Audit: check the source for PEERCRED.
 
     zygote_src = Path(__file__).parent.parent.parent / "velo_zygote" / "main.py"
-    with open(zygote_src, "r") as f:
+    with open(zygote_src) as f:
         content = f.read()
 
-    assert (
-        "SO_PEERCRED" in content or "getpeereid" in content or "ucred" in content
-    ), "P0 Security Violation: Zygote implementation lacks peer identity verification (SEC-001)"
+    assert "SO_PEERCRED" in content or "getpeereid" in content or "ucred" in content, (
+        "P0 Security Violation: Zygote implementation lacks peer identity verification (SEC-001)"
+    )
 
 
 @pytest.mark.tier4

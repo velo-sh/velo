@@ -10,22 +10,11 @@ Test Coverage:
 - L2-SHM-05: TLB miss / HugePage profiling - H-20, H-25, H-28
 """
 
-import os
-import sys
-import time
-import mmap
 import pytest
-import subprocess
-import multiprocessing
-from pathlib import Path
-from typing import List
-
 from conftest import (
     VeloTestEnv,
-    IS_LINUX,
-    IS_MACOS,
-    skip_unless_linux,
     skip_on_macos_hugepages,
+    skip_unless_linux,
 )
 
 
@@ -155,9 +144,7 @@ if __name__ == "__main__":
 
         result = env.run_python(test_script, timeout=60)
 
-        assert (
-            result.returncode == 0
-        ), f"Multi-model scalability test failed: {result.stderr}"
+        assert result.returncode == 0, f"Multi-model scalability test failed: {result.stderr}"
         assert "PASS" in result.stdout, f"Not all workers succeeded: {result.stdout}"
 
     @pytest.mark.tier2
@@ -558,7 +545,5 @@ if __name__ == "__main__":
         result = env.run_python(test_script, timeout=30)
 
         # This test is informational on simple setups
-        assert (
-            result.returncode == 0
-        ), f"Host survivability test failed: {result.stderr}"
+        assert result.returncode == 0, f"Host survivability test failed: {result.stderr}"
         assert "PASS" in result.stdout or "Test completed" in result.stdout

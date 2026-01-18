@@ -9,10 +9,8 @@ Goal: Break the config parser with malformed input!
 """
 
 import os
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import ZygoteTestEnv
 
 
@@ -33,9 +31,7 @@ class TestConfigChaos:
 
             # Create pyproject.toml with corrupt [tool.velo]
             pyproject = env.path / "pyproject.toml"
-            pyproject.write_text(
-                "[tool.velo]\npreload = " + os.urandom(512).hex()[:100]
-            )
+            pyproject.write_text("[tool.velo]\npreload = " + os.urandom(512).hex()[:100])
 
             result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
@@ -82,9 +78,7 @@ class TestConfigChaos:
 
             # Config with fake module in pyproject.toml
             pyproject = env.path / "pyproject.toml"
-            pyproject.write_text(
-                '[tool.velo]\npreload = ["this_module_definitely_does_not_exist_xyz123"]\n'
-            )
+            pyproject.write_text('[tool.velo]\npreload = ["this_module_definitely_does_not_exist_xyz123"]\n')
 
             result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
@@ -107,9 +101,7 @@ class TestConfigChaos:
 
             # Config with path traversal in pyproject.toml
             pyproject = env.path / "pyproject.toml"
-            pyproject.write_text(
-                '[tool.velo]\npreload = ["../../etc/passwd", "../../../usr/bin/python"]\n'
-            )
+            pyproject.write_text('[tool.velo]\npreload = ["../../etc/passwd", "../../../usr/bin/python"]\n')
 
             result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
@@ -192,9 +184,7 @@ class TestConfigEdgeCases:
 
             # Valid config in pyproject.toml
             pyproject = env.path / "pyproject.toml"
-            pyproject.write_text(
-                '[tool.velo]\npreload = ["os", "sys", "json"]\nidle_timeout = 300\n'
-            )
+            pyproject.write_text('[tool.velo]\npreload = ["os", "sys", "json"]\nidle_timeout = 300\n')
 
             result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 

@@ -1,10 +1,10 @@
 import os
 import subprocess
+import sys
 import time
+
 import pytest
 import requests
-import shutil
-import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
 import arch_guard
@@ -119,9 +119,7 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
 
         # Debug: List socket dirs
         print("\n[DEBUG] Socket Dirs found:")
-        os.system(
-            f"ls -d {os.environ.get('TMPDIR', '/tmp')}velo-secure-* || echo 'None'"
-        )
+        os.system(f"ls -d {os.environ.get('TMPDIR', '/tmp')}velo-secure-* || echo 'None'")
 
 
 def test_socket_path_determinism():

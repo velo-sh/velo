@@ -1,49 +1,50 @@
-import pytest
-import subprocess
-import time
-import socket
 import os
-import sys
-from pathlib import Path
-import textwrap
 import signal
+import socket
+import subprocess
+import textwrap
+import time
 import uuid
+from pathlib import Path
+
+import pytest
 import requests
-import json
+
 
 @pytest.fixture
 def run_velo_native(isolated_env):
     """Start a real velo process in native RSGI mode."""
+
     def _run(app_code, env=None, extra_args=None):
         app_path = isolated_env.home / "main.py"
         app_path.write_text(textwrap.dedent(app_code))
-        
+
         env_vars = os.environ.copy()
         env_vars["PYTHONPATH"] = f"{os.getcwd()}:{env_vars.get('PYTHONPATH', '')}"
         env_vars["VELO_TEST_MODE"] = "1"
-        
+
         short_id = str(uuid.uuid4())[:8]
         socket_dir = Path(f"/tmp/v-{short_id}")
         socket_dir.mkdir(parents=True, exist_ok=True)
         env_vars["VELO_SOCKET_DIR"] = str(socket_dir)
-        
+
         if env:
             env_vars.update(env)
-            
+
         port = isolated_env.next_port()
-        
+
         stdout_path = isolated_env.home / f"velo_stdout_{short_id}.log"
         stderr_path = isolated_env.home / f"velo_stderr_{short_id}.log"
-        
+
         stdout_f = open(stdout_path, "w")
         stderr_f = open(stderr_path, "w")
-        
+
         # We MUST ensure the binary used is the one with granian_native
         # VeloTestEnv already copies the binary to self.velo
         cmd = [isolated_env.velo, "serve", "main:app", "--rsgi", "--port", str(port), "--workers", "1"]
         if extra_args:
             cmd.extend(extra_args)
-            
+
         proc = subprocess.Popen(
             cmd,
             cwd=isolated_env.home,
@@ -51,9 +52,9 @@ def run_velo_native(isolated_env):
             stdout=stdout_f,
             stderr=stderr_f,
             text=True,
-            start_new_session=True
+            start_new_session=True,
         )
-        
+
         # Wait for port to be available
         start = time.time()
         success = False
@@ -64,17 +65,19 @@ def run_velo_native(isolated_env):
                     break
             except:
                 time.sleep(0.5)
-        
+
         if not success:
             proc.kill()
             stdout_f.close()
             stderr_f.close()
-            with open(stderr_path, "r") as f:
+            with open(stderr_path) as f:
                 print(f"Server failed to start. Stderr:\n{f.read()}")
             pytest.fail("Velo failed to start in native mode")
-            
+
         return proc, port, stdout_path, stderr_path, socket_dir, stdout_f, stderr_f
+
     return _run
+
 
 @pytest.mark.tier1
 def test_rsgi_native_http_basic(run_velo_native):
@@ -99,6 +102,7 @@ def test_rsgi_native_http_basic(run_velo_native):
         out_f.close()
         err_f.close()
 
+
 @pytest.mark.tier1
 def test_rsgi_native_websocket_echo(run_velo_native):
     """Verify WebSocket echo in native RSGI mode."""
@@ -118,15 +122,16 @@ def test_rsgi_native_websocket_echo(run_velo_native):
     proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
     try:
         import websocket
+
         ws = websocket.create_connection(f"ws://127.0.0.1:{port}/")
         ws.send("hello native")
         result = ws.recv()
         assert result == "echo: hello native"
-        
+
         ws.send_binary(b"\xde\xad\xbe\xef")
         result = ws.recv()
         assert result == b"\xde\xad\xbe\xef"
-        
+
         ws.close()
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -146,15 +151,17 @@ def test_rsgi_native_ipc_timeout(run_velo_native):
     """
     proc, port, stdout_p, stderr_p, sdir, out_f, err_f = run_velo_native(app_code)
     try:
-        import requests
         import time
+
+        import requests
+
         start = time.time()
         # Request should return 500 after ~10s
         resp = requests.get(f"http://127.0.0.1:{port}/", timeout=20)
         duration = time.time() - start
-        
+
         assert resp.status_code == 500
-        assert 10 <= duration <= 13 # Allow for some overhead
+        assert 10 <= duration <= 13  # Allow for some overhead
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait()
@@ -172,9 +179,10 @@ def test_rsgi_native_header_timeout(run_velo_native):
     try:
         import socket
         import time
+
         s = socket.create_connection(("127.0.0.1", port))
         s.send(b"GET / HTTP/1.1\r\n")
-        time.sleep(7) # Exceeds 5s header timeout
+        time.sleep(7)  # Exceeds 5s header timeout
         try:
             s.send(b"Host: localhost\r\n\r\n")
             # Connection should have been closed by server
@@ -182,8 +190,8 @@ def test_rsgi_native_header_timeout(run_velo_native):
             data = s.recv(1024)
             # If server closed, recv returns b'' or raises error
             assert data == b""
-        except (ConnectionResetError, BrokenPipeError, socket.timeout):
-            pass # Success: connection closed
+        except (TimeoutError, ConnectionResetError, BrokenPipeError):
+            pass  # Success: connection closed
     finally:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         proc.wait()

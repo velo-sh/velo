@@ -7,11 +7,10 @@ Note: Detection tests that require module reload are slow and skipped.
 These tests focus on EnvProfile property behavior which is fast.
 """
 
-import pytest
 import os
 from unittest.mock import patch
 
-from velo_zygote.env_profile import EnvProfile, RunContext, OsType
+from velo_zygote.env_profile import EnvProfile, OsType, RunContext
 
 
 class TestEnvProfileProperties:
@@ -71,11 +70,11 @@ class TestEnvProfileProperties:
             # All conditions met: Linux + PRODUCTION + env var
             profile = EnvProfile(os_type=OsType.LINUX, run_context=RunContext.PRODUCTION)
             assert profile.strict_numa is True
-            
+
             # macOS - fails (Linux only)
             profile = EnvProfile(os_type=OsType.MACOS, run_context=RunContext.PRODUCTION)
             assert profile.strict_numa is False
-            
+
             # Not production - fails
             profile = EnvProfile(os_type=OsType.LINUX, run_context=RunContext.DEV)
             assert profile.strict_numa is False
@@ -84,7 +83,7 @@ class TestEnvProfileProperties:
         """Abstract sockets only supported on Linux."""
         linux = EnvProfile(os_type=OsType.LINUX, run_context=RunContext.DEV)
         assert linux.supports_abstract_sockets is True
-        
+
         macos = EnvProfile(os_type=OsType.MACOS, run_context=RunContext.DEV)
         assert macos.supports_abstract_sockets is False
 
@@ -92,7 +91,7 @@ class TestEnvProfileProperties:
         """fd_dir should be /dev/fd on macOS, /proc/self/fd on Linux."""
         linux = EnvProfile(os_type=OsType.LINUX, run_context=RunContext.DEV)
         assert linux.fd_dir == "/proc/self/fd"
-        
+
         macos = EnvProfile(os_type=OsType.MACOS, run_context=RunContext.DEV)
         assert macos.fd_dir == "/dev/fd"
 
@@ -111,7 +110,7 @@ class TestEnvProfileDiagnostics:
         """to_dict() should include all key properties."""
         profile = EnvProfile(os_type=OsType.LINUX, run_context=RunContext.CI)
         d = profile.to_dict()
-        
+
         assert "os_type" in d
         assert "run_context" in d
         assert "is_container" in d
@@ -133,13 +132,13 @@ class TestEnvProfileDetection:
         """detect() should capture raw env var values for diagnostics."""
         profile = EnvProfile.detect()
         # Should have diagnostic fields
-        assert hasattr(profile, '_velo_env_raw')
-        assert hasattr(profile, '_ci_raw')
+        assert hasattr(profile, "_velo_env_raw")
+        assert hasattr(profile, "_ci_raw")
 
 
 class TestEnvProfilePriority:
     """Subprocess-based tests for VELO_ENV/CI detection priority.
-    
+
     These tests run in isolated processes to avoid slow module reloads.
     Each test spawns a Python subprocess with specific env vars.
     """
@@ -148,7 +147,7 @@ class TestEnvProfilePriority:
         """Run EnvProfile.detect() in subprocess and return run_context name."""
         import subprocess
         import sys
-        
+
         code = """
 import sys; sys.path.insert(0, '.')
 from velo_zygote.env_profile import EnvProfile
@@ -161,14 +160,8 @@ print(EnvProfile.detect().run_context.name)
                 del env[k]
         # Apply test env vars
         env.update(env_vars)
-        
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=5
-        )
+
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=5)
         return result.stdout.strip()
 
     def test_VELO_ENV_production_highest_priority(self):

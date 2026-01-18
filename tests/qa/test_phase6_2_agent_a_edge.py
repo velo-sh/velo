@@ -3,8 +3,9 @@ import socket
 import struct
 import threading
 import time
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def send_msgpack(conn, data):
@@ -37,7 +38,7 @@ class DeletingZygote:
                 self.server.settimeout(0.5)
                 try:
                     conn, _ = self.server.accept()
-                except socket.timeout:
+                except TimeoutError:
                     continue
 
                 # Delete socket path immediately upon connection

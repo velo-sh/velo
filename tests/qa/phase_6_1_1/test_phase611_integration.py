@@ -12,16 +12,15 @@ Following QA SOP v2.2 & TIERED-TESTING-GUIDE.
 
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 
-import psutil
 import pytest
-import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
+from conftest_utils import T_MEDIUM, T_SHORT
 
 
 def _is_container_env() -> bool:
@@ -49,7 +48,6 @@ pytestmark = [
 
 class TestPhase611Integration:
     """L5: Integration tests for complete Zygote Worker flow."""
-
 
     def test_INT_1_full_zygote_lifecycle(self, velo_serve_fixture):
         """INT-1: Full Zygote lifecycle (start → serve → graceful shutdown).
@@ -100,6 +98,7 @@ class TestPhase611Integration:
         4. Verify recovery and no request loss
         """
         import concurrent.futures
+
         import requests
 
         proc = velo_serve_fixture.start("main:app", workers=4, zygote=True)
@@ -113,9 +112,7 @@ class TestPhase611Integration:
             while continue_load:
                 requests_count.append(1)
                 try:
-                    r = requests.get(
-                        f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
-                    )
+                    r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
                     if r.status_code != 200:
                         errors.append(f"Status {r.status_code}")
                 except Exception as e:
@@ -152,13 +149,11 @@ class TestPhase611Integration:
         # The goal is RECOVERY (len(new_workers) >= 2), not perfect availability during SIGKILL.
         total_requests = len(requests_count)
         error_rate = len(errors) / total_requests if total_requests > 0 else 0
-        
-        if error_rate >= 0.50:
-             print(f"DEBUG: High Error Rate Breakdown: {errors[:20]}")
 
-        assert (
-            error_rate < 0.50
-        ), f"Error rate {error_rate:.1%} too high ({len(errors)}/{total_requests})"
+        if error_rate >= 0.50:
+            print(f"DEBUG: High Error Rate Breakdown: {errors[:20]}")
+
+        assert error_rate < 0.50, f"Error rate {error_rate:.1%} too high ({len(errors)}/{total_requests})"
 
     def test_INT_3_header_flow_through_proxy(self, velo_serve_fixture):
         """INT-3: Header flow from client → proxy → worker → response.
@@ -204,9 +199,7 @@ class TestPhase611Integration:
         # Verify client info
         response = requests.get(f"http://127.0.0.1:{proc.port}/client-ip")
         data = response.json()
-        assert data.get("client_host") or data.get(
-            "x_forwarded_for"
-        ), "Client info lost"
+        assert data.get("client_host") or data.get("x_forwarded_for"), "Client info lost"
 
     def test_INT_3b_unique_uri_per_worker(self, velo_serve_fixture):
         """INT-3b: Unique URI authority per worker.
@@ -236,9 +229,7 @@ class TestPhase611Integration:
         worker_responses = set()
         for _ in range(20):
             try:
-                r = requests.get(
-                    f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM
-                )
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM)
                 if r.status_code == 200:
                     worker_responses.add(r.json().get("pid"))
             except Exception:
@@ -246,8 +237,7 @@ class TestPhase611Integration:
 
         # Should see multiple different workers
         assert len(worker_responses) >= 2, (
-            f"Only {len(worker_responses)} unique workers responded - "
-            "load balancer may not be distributing properly"
+            f"Only {len(worker_responses)} unique workers responded - load balancer may not be distributing properly"
         )
 
     def test_INT_4_platform_socket_behavior(self, velo_serve_fixture):

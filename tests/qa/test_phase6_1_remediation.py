@@ -1,8 +1,9 @@
+import json
 import os
 import subprocess
-import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def get_velo_binary():

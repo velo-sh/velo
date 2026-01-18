@@ -4,18 +4,15 @@ Focus: Security Red Lines and Implementation Integrity.
 """
 
 import subprocess
-import time
-import os
 from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
     return "velo"
@@ -75,9 +72,7 @@ max_bundle_size = 512
         )
         config_path = Path(__file__).parent.parent.parent.parent / "src" / "config.rs"
         content = config_path.read_text()
-        assert (
-            "max_bundle_size" in content
-        ), "Developer has implemented 'max_bundle_size' in src/config.rs"
+        assert "max_bundle_size" in content, "Developer has implemented 'max_bundle_size' in src/config.rs"
 
     @pytest.mark.security
     def test_invariant_004_marshal_limit(self, velo_binary):
@@ -85,15 +80,13 @@ max_bundle_size = 512
         INVARIANT-4: 验证 marshal 递归限制是否为 500
         证明: 目前 python/velo_loader.py 硬编码为 1000
         """
-        loader_path = (
-            Path(__file__).parent.parent.parent.parent / "python" / "velo_loader.py"
-        )
+        loader_path = Path(__file__).parent.parent.parent.parent / "python" / "velo_loader.py"
         content = loader_path.read_text()
 
         # Hard check for the constant
-        assert (
-            "MARSHAL_RECURSION_LIMIT = 500" in content
-        ), f"Security Invariant #4 failed: Limit is not 500 in {loader_path}"
+        assert "MARSHAL_RECURSION_LIMIT = 500" in content, (
+            f"Security Invariant #4 failed: Limit is not 500 in {loader_path}"
+        )
 
     @pytest.mark.security
     def test_invariant_001_global_hash(self, velo_binary):
@@ -101,16 +94,12 @@ max_bundle_size = 512
         INVARIANT-1: 验证哈希是否覆盖 Header
         证明: 目前 src/loader/verify.rs 只从 128 字节开始校验
         """
-        verify_path = (
-            Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
-        )
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
         content = verify_path.read_text()
 
         # Current implementation: verify_blake3(&data[header_end..], &expected_hash)?;
         # Expected: verify_blake3(&data, &expected_hash)?;
-        assert (
-            "verify_blake3(&data," in content
-        ), "Security Invariant #1 failed: Hash does not cover header"
+        assert "verify_blake3(&data," in content, "Security Invariant #1 failed: Hash does not cover header"
 
     @pytest.mark.security
     def test_invariant_005_read_atomicity(self, velo_binary):
@@ -118,15 +107,13 @@ max_bundle_size = 512
         INVARIANT-5: 验证大文件读取是否使用了 flock(LockShared)
         证明: 目前 src/loader/verify.rs 直接使用 std::fs::read
         """
-        verify_path = (
-            Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
-        )
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
         content = verify_path.read_text()
 
         # We look for integration of lock.rs or flock calls in the loading path
-        assert (
-            "use crate::loader::lock" in content or "lock_shared" in content.lower()
-        ), "Security Invariant #5 failed: No flock(LockShared) found in load_and_verify path"
+        assert "use crate::loader::lock" in content or "lock_shared" in content.lower(), (
+            "Security Invariant #5 failed: No flock(LockShared) found in load_and_verify path"
+        )
 
     @pytest.mark.sad_path
     def test_sec_002_malformed_config_fallback(self, velo_binary, tmp_path):
@@ -147,17 +134,14 @@ max_bundle_size = "not_a_number"
         """
         INVARIANT-2: 验证 data_offset 是否与物理长度对齐校验
         """
-        verify_path = (
-            Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
-        )
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
         content = verify_path.read_text()
 
         # We expect a check like: if offset > data.len() or offset < MIN_HEADER_SIZE
         assert "data.len() < 40" in content, "Basic length check present"
-        assert (
-            "index_offset > data.len()" in content
-            or "index_offset > data.len()" in content.replace(" ", "")
-        ), "Boundary check present"
+        assert "index_offset > data.len()" in content or "index_offset > data.len()" in content.replace(" ", ""), (
+            "Boundary check present"
+        )
 
     @pytest.mark.security
     def test_invariant_003_path_resolution(self, velo_binary):
@@ -165,12 +149,7 @@ max_bundle_size = "not_a_number"
         INVARIANT-3: 验证路径校验是否包含三层逻辑 (Raw, Link, Canonical)
         证明: 目前 src/loader/security.rs 已经初步实现了三层逻辑，需要通过 E2E 确认
         """
-        security_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "src"
-            / "loader"
-            / "security.rs"
-        )
+        security_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "security.rs"
         content = security_path.read_text()
 
         # Layer 1: Raw
@@ -187,9 +166,7 @@ max_bundle_size = "not_a_number"
         INVARIANT-6: 验证 ABI/Python 版本强制匹配
         证明: 目前 src/loader/header.rs 虽有检查函数，但 loader 尚未强制调用
         """
-        header_path = (
-            Path(__file__).parent.parent.parent.parent / "src" / "loader" / "header.rs"
-        )
+        header_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "header.rs"
         content = header_path.read_text()
 
         # Check if check_python_version and check_cache_tag exist
@@ -197,10 +174,8 @@ max_bundle_size = "not_a_number"
         assert "fn check_cache_tag" in content
 
         # Now check if verify.rs or run.rs CALLS them
-        verify_path = (
-            Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
-        )
+        verify_path = Path(__file__).parent.parent.parent.parent / "src" / "loader" / "verify.rs"
         verify_content = verify_path.read_text()
-        assert (
-            "check_python_version" in verify_content
-        ), "Security Invariant #6 failed: ABI version check not enforced in loader path"
+        assert "check_python_version" in verify_content, (
+            "Security Invariant #6 failed: ABI version check not enforced in loader path"
+        )

@@ -9,11 +9,10 @@ Run with: uv run python tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py
 """
 
 import os
-import sys
 import socket
-import time
 import subprocess
-import tempfile
+import sys
+import time
 from pathlib import Path
 
 # Add project root to path
@@ -41,7 +40,7 @@ def wait_for_socket(socket_path: str, timeout: float = 10.0) -> float:
                     s.settimeout(0.1)
                     s.connect(socket_path)
                     return time.perf_counter() - start
-            except (ConnectionRefusedError, socket.timeout):
+            except (TimeoutError, ConnectionRefusedError):
                 pass
         time.sleep(0.01)
     raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s")
@@ -57,24 +56,18 @@ def send_handshake(socket_path: str) -> dict:
 
         # Read Ready
         length_bytes = s.recv(4)
-        length = int.from_bytes(
-            length_bytes, "little"
-        )  # P1 FIX: Match Rust little-endian
+        length = int.from_bytes(length_bytes, "little")  # P1 FIX: Match Rust little-endian
         data = s.recv(length)
         ready = msgpack.unpackb(data, raw=False)
 
         # Send Handshake
         handshake = {"type": "Handshake", "version": 0x01, "capabilities": []}
         packed = msgpack.packb(handshake)
-        s.sendall(
-            len(packed).to_bytes(4, "little") + packed
-        )  # P1 FIX: Match Rust little-endian
+        s.sendall(len(packed).to_bytes(4, "little") + packed)  # P1 FIX: Match Rust little-endian
 
         # Read response
         length_bytes = s.recv(4)
-        length = int.from_bytes(
-            length_bytes, "little"
-        )  # P1 FIX: Match Rust little-endian
+        length = int.from_bytes(length_bytes, "little")  # P1 FIX: Match Rust little-endian
         data = s.recv(length)
         response = msgpack.unpackb(data, raw=False)
 
@@ -91,7 +84,7 @@ def wait_for_preload_ready(socket_path: str, timeout: float = 30.0) -> float:
             preload_caps = [c for c in caps if c.startswith("preload:")]
             if preload_caps and preload_caps[0] == "preload:ready":
                 return time.perf_counter() - start
-        except Exception as e:
+        except Exception:
             pass
         time.sleep(0.05)
     raise TimeoutError(f"Preload not ready after {timeout}s")
@@ -122,7 +115,7 @@ def run_benchmark():
     print(f"\n📦 Preload modules: {preload_modules}")
     print("📏 Measuring baseline preload time...")
     preload_time = measure_preload_time(preload_modules)
-    print(f"   Baseline: {preload_time*1000:.1f}ms")
+    print(f"   Baseline: {preload_time * 1000:.1f}ms")
 
     # Clean up any existing socket
     socket_path = find_socket_path()
@@ -133,7 +126,7 @@ def run_benchmark():
     python_path = sys.executable
     zygote_script = PROJECT_ROOT / "velo_zygote" / "main.py"
 
-    print(f"\n� Starting Zygote with Shadow Preloading...")
+    print("\n� Starting Zygote with Shadow Preloading...")
 
     cmd = [
         python_path,
@@ -149,24 +142,22 @@ def run_benchmark():
 
     try:
         socket_ready_time = wait_for_socket(socket_path)
-        print(f"✅ Socket Ready:    {socket_ready_time*1000:.1f}ms")
+        print(f"✅ Socket Ready:    {socket_ready_time * 1000:.1f}ms")
 
         # Summary
         print("\n" + "=" * 60)
         print("📈 RESULTS")
         print("=" * 60)
-        print(f"  Preload Time (baseline):  {preload_time*1000:>8.1f}ms")
-        print(f"  Socket Ready (shadow):    {socket_ready_time*1000:>8.1f}ms")
+        print(f"  Preload Time (baseline):  {preload_time * 1000:>8.1f}ms")
+        print(f"  Socket Ready (shadow):    {socket_ready_time * 1000:>8.1f}ms")
         print()
 
         saved = preload_time - socket_ready_time
         if saved > 0:
             improvement = preload_time / socket_ready_time
-            print(
-                f"  💡 Saved: {saved*1000:.0f}ms ({improvement:.1f}x faster socket ready)"
-            )
+            print(f"  💡 Saved: {saved * 1000:.0f}ms ({improvement:.1f}x faster socket ready)")
         else:
-            print(f"  ℹ️  Preload faster than socket setup")
+            print("  ℹ️  Preload faster than socket setup")
 
         print("=" * 60)
 

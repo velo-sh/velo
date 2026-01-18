@@ -19,16 +19,10 @@ Acceptance Methods:
 """
 
 import os
+import resource
 import subprocess
 import sys
-import tempfile
 import time
-import resource
-from pathlib import Path
-from typing import Tuple
-
-import pytest
-
 
 # =============================================================================
 # METRIC 1: FORK LATENCY < 2ms
@@ -45,7 +39,7 @@ class TestMetric_ForkLatency:
 
         latencies = sorted([measure_fork_latency() for _ in range(100)])
         p50 = latencies[50]
-        
+
         assert p50 < 2.0, f"P50 latency {p50:.2f}ms exceeds 2ms target"
 
     def test_single_fork_latency_p99(self):
@@ -54,7 +48,7 @@ class TestMetric_ForkLatency:
 
         latencies = sorted([measure_fork_latency() for _ in range(100)])
         p99 = latencies[99]
-        
+
         assert p99 < 5.0, f"P99 latency {p99:.2f}ms exceeds 5ms target"
 
     def test_fork_latency_stability(self):
@@ -64,8 +58,8 @@ class TestMetric_ForkLatency:
         latencies = [measure_fork_latency() for _ in range(50)]
         avg = sum(latencies) / len(latencies)
         variance = sum((x - avg) ** 2 for x in latencies) / len(latencies)
-        std_dev = variance ** 0.5
-        
+        std_dev = variance**0.5
+
         assert std_dev < 2.0, f"Latency std_dev {std_dev:.2f}ms too high"
 
 
@@ -82,7 +76,7 @@ class TestMetric_WorkerStartup:
         """Measure subprocess.Popen Python startup time"""
         start = time.perf_counter()
         proc = subprocess.Popen(
-            [sys.executable, '-c', 'pass'],
+            [sys.executable, "-c", "pass"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -108,9 +102,9 @@ class TestMetric_WorkerStartup:
 
         fork_avg = sum(fork_times) / len(fork_times)
         subprocess_avg = sum(subprocess_times) / len(subprocess_times)
-        
+
         speedup = subprocess_avg / fork_avg
-        
+
         # macOS subprocess is fast (~10ms), so 5x speedup is acceptable
         # On Linux with heavy deps, speedup would be > 100x
         assert speedup > 5, f"Speedup {speedup:.1f}x should be > 5x"
@@ -119,7 +113,7 @@ class TestMetric_WorkerStartup:
         """Fork startup should be < 2ms"""
         times = [self.measure_fork_startup() for _ in range(20)]
         avg = sum(times) / len(times)
-        
+
         assert avg < 2.0, f"Fork startup {avg:.2f}ms exceeds 2ms target"
 
 
@@ -142,10 +136,10 @@ class TestMetric_MemoryOverhead:
         # This measures fork + simple operations
 
         memory_deltas = []
-        
+
         for _ in range(5):
             parent_mem_before = self.get_memory_usage_kb()
-            
+
             pid = os.fork()
             if pid == 0:
                 # Child: do some operations to trigger COW
@@ -160,11 +154,11 @@ class TestMetric_MemoryOverhead:
 
         avg_delta_kb = sum(memory_deltas) / len(memory_deltas)
         avg_delta_mb = avg_delta_kb / 1024
-        
+
         # macOS returns bytes, Linux returns KB
-        if sys.platform == 'darwin':
+        if sys.platform == "darwin":
             avg_delta_mb = avg_delta_kb / (1024 * 1024)
-        
+
         assert avg_delta_mb < 2.0, f"Memory overhead {avg_delta_mb:.2f}MB exceeds 2MB"
 
 
@@ -184,18 +178,16 @@ class TestMetric_Throughput:
         start = time.perf_counter()
         count = 0
         target_duration = 1.0  # 1 second
-        
+
         while time.perf_counter() - start < target_duration:
             measure_fork_latency()
             count += 1
-        
+
         elapsed = time.perf_counter() - start
         forks_per_second = count / elapsed
-        
+
         # RFC target: 1000 tests / 30 sec = 33 tests/sec
-        assert forks_per_second > 30, (
-            f"Throughput {forks_per_second:.1f} forks/sec < 30 target"
-        )
+        assert forks_per_second > 30, f"Throughput {forks_per_second:.1f} forks/sec < 30 target"
 
     def test_sustained_fork_performance(self):
         """Sustained forks should not degrade performance"""
@@ -204,17 +196,15 @@ class TestMetric_Throughput:
         # First 50 forks
         first_batch = [measure_fork_latency() for _ in range(50)]
         first_avg = sum(first_batch) / len(first_batch)
-        
+
         # Next 50 forks
         second_batch = [measure_fork_latency() for _ in range(50)]
         second_avg = sum(second_batch) / len(second_batch)
-        
+
         # Later forks should not be > 50% slower
         degradation = (second_avg - first_avg) / first_avg * 100
-        
-        assert degradation < 50, (
-            f"Performance degraded {degradation:.1f}% after sustained forks"
-        )
+
+        assert degradation < 50, f"Performance degraded {degradation:.1f}% after sustained forks"
 
 
 # =============================================================================
@@ -230,17 +220,17 @@ class TestMetric_SpeedupRatio:
         """Theoretical speedup should be > 60x"""
         # Standard pytest worker startup: ~500ms (conservative)
         # Velo fork: ~1ms
-        
+
         from pytest_velo.plugin import measure_fork_latency
-        
+
         velo_latency = sum(measure_fork_latency() for _ in range(10)) / 10
-        
+
         # Conservative estimate: subprocess.Popen starts Python in ~50-100ms
         # With module loading etc., approximately 500ms
         standard_latency = 500.0  # ms
-        
+
         speedup = standard_latency / velo_latency
-        
+
         # Should achieve at least 50x
         assert speedup > 50, f"Speedup {speedup:.0f}x should be > 50x"
 
@@ -259,7 +249,7 @@ class TestBenchmarkReport:
 
         # Collect data
         latencies = sorted([measure_fork_latency() for _ in range(100)])
-        
+
         p50 = latencies[50]
         p99 = latencies[99]
         avg = sum(latencies) / len(latencies)
@@ -276,16 +266,16 @@ class TestBenchmarkReport:
         print("\n" + "=" * 50)
         print("RFC-0028 PERFORMANCE BENCHMARK REPORT")
         print("=" * 50)
-        print(f"\nFork Latency:")
+        print("\nFork Latency:")
         print(f"  Min:  {min_val:.2f} ms")
         print(f"  P50:  {p50:.2f} ms (target: < 2ms)")
         print(f"  P99:  {p99:.2f} ms")
         print(f"  Max:  {max_val:.2f} ms")
         print(f"  Avg:  {avg:.2f} ms")
-        print(f"\nThroughput:")
+        print("\nThroughput:")
         print(f"  {throughput:.0f} forks/sec (target: > 33/sec)")
-        print(f"\nSpeedup vs subprocess:")
-        print(f"  ~{500/avg:.0f}x (target: > 60x)")
+        print("\nSpeedup vs subprocess:")
+        print(f"  ~{500 / avg:.0f}x (target: > 60x)")
         print("=" * 50 + "\n")
 
         # Verify targets

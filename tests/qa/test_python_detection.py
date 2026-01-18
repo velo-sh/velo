@@ -15,15 +15,12 @@ Goal: Velo should detect issues and fail gracefully with clear errors.
 """
 
 import os
-import pytest
-import stat
-from pathlib import Path
 
+import pytest
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
-    assert_velo_fails_gracefully,
+    run_velo,
 )
 
 
@@ -209,9 +206,7 @@ class TestPythonDetectionFALLBACK:
             # Use system python instead of venv
             import sys
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"VELO_PYTHON": sys.executable}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"VELO_PYTHON": sys.executable})
             assert_no_crash(result)
             assert result.success
         finally:

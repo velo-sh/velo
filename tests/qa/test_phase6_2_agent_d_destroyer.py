@@ -2,11 +2,11 @@ import os
 import signal
 import socket
 import struct
-import time
-import pytest
 import subprocess
+import time
 from pathlib import Path
-from typing import Generator
+
+import pytest
 
 # TITANIUM Grade: Agent D (Destroyer) Chaos Suite
 # Based on QA-SOP §4.4 (Agent D responsibilities)
@@ -15,8 +15,8 @@ from typing import Generator
 @pytest.mark.tier4
 @pytest.mark.xfail(
     reason="DEF-72-FLOOD: Zygote _read_exactly lacks timeout protection. "
-           "Malformed length prefix causes indefinite blocking then crash. "
-           "Fix: Add socket timeout to ZygoteTransport._read_exactly()",
+    "Malformed length prefix causes indefinite blocking then crash. "
+    "Fix: Add socket timeout to ZygoteTransport._read_exactly()",
     strict=False,  # May pass on some systems due to timing
 )
 def test_CHAOS_621_protocol_flood(isolated_env):
@@ -98,9 +98,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
     # Start Zygote
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-    proc = subprocess.Popen(
-        [env.velo, "zygote", "start", "--preload", "main"], env=cmd_env, cwd=app_dir
-    )
+    proc = subprocess.Popen([env.velo, "zygote", "start", "--preload", "main"], env=cmd_env, cwd=app_dir)
     # Wait for socket
     timeout = time.time() + 30
     while not socket_path.exists() and time.time() < timeout:
@@ -169,9 +167,9 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
             capture_output=True,
             timeout=30,
         )
-        assert (
-            res.returncode == 0
-        ), f"Zygote non-responsive after socket pressure. STDOUT: {res.stdout.decode()} STDERR: {res.stderr.decode()}"
+        assert res.returncode == 0, (
+            f"Zygote non-responsive after socket pressure. STDOUT: {res.stdout.decode()} STDERR: {res.stderr.decode()}"
+        )
 
     finally:
         for s in sockets:

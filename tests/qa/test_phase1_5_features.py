@@ -10,14 +10,11 @@ Adversarial tests for Phase 1.5 RFC-0001 features:
 Goal: Break the new features with edge cases!
 """
 
-import os
-import pytest
-from pathlib import Path
 
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
+    run_velo,
 )
 
 
@@ -61,9 +58,7 @@ class TestVeloInfo:
             venv_bin = env.venv_path / "bin"
             venv_bin.mkdir(parents=True)
 
-            result = run_velo(
-                ["info"], cwd=env.path, env={"VELO_PYTHON": "/nonexistent"}
-            )
+            result = run_velo(["info"], cwd=env.path, env={"VELO_PYTHON": "/nonexistent"})
             assert_no_crash(result)
         finally:
             env.cleanup()

@@ -5,7 +5,7 @@ Design Principle: Derive acceptance criteria from RFC-0028 design goals
 
 RFC-0028 Core Promises:
 1. Drop-in enhancement - no changes to existing tests
-2. Per-worker startup < 2ms (vs 500ms-2s)  
+2. Per-worker startup < 2ms (vs 500ms-2s)
 3. 100% pytest feature parity
 4. P0 fork safety guarantees
 
@@ -17,10 +17,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 
 import pytest
-
 
 # =============================================================================
 # DESIGN GOAL 1: DROP-IN ENHANCEMENT
@@ -33,7 +31,7 @@ class TestDesignGoal_DropInEnhancement:
 
     def test_vanilla_pytest_test_works_with_velo_flag(self):
         """Standard pytest test with --velo should run normally"""
-        test_code = '''
+        test_code = """
 def test_simple_assertion():
     assert 1 + 1 == 2
 
@@ -41,24 +39,22 @@ def test_list_operations():
     items = [1, 2, 3]
     items.append(4)
     assert len(items) == 4
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             test_file = f.name
 
         try:
             # Without --velo
             result_without = subprocess.run(
-                [sys.executable, '-m', 'pytest', test_file, '-v'],
-                capture_output=True, text=True, timeout=30
+                [sys.executable, "-m", "pytest", test_file, "-v"], capture_output=True, text=True, timeout=30
             )
-            
+
             # With --velo
             result_with = subprocess.run(
-                [sys.executable, '-m', 'pytest', test_file, '--velo', '-v'],
-                capture_output=True, text=True, timeout=30
+                [sys.executable, "-m", "pytest", test_file, "--velo", "-v"], capture_output=True, text=True, timeout=30
             )
-            
+
             # Both results should be consistent (both pass)
             assert result_without.returncode == 0, f"Without --velo failed: {result_without.stdout}"
             # Note: With --velo may differ if ZygoteServer not running
@@ -69,7 +65,7 @@ def test_list_operations():
 
     def test_existing_fixtures_work_unchanged(self):
         """Existing pytest fixtures should work as usual"""
-        test_code = '''
+        test_code = """
 import pytest
 
 @pytest.fixture
@@ -79,15 +75,14 @@ def sample_data():
 def test_with_fixture(sample_data):
     assert sample_data["key"] == "value"
     assert sample_data["count"] == 42
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             test_file = f.name
 
         try:
             result = subprocess.run(
-                [sys.executable, '-m', 'pytest', test_file, '--velo', '-v'],
-                capture_output=True, text=True, timeout=30
+                [sys.executable, "-m", "pytest", test_file, "--velo", "-v"], capture_output=True, text=True, timeout=30
             )
             # Should not crash, fixture should work
             assert "passed" in result.stdout.lower() or result.returncode == 0
@@ -112,13 +107,13 @@ class TestDesignGoal_Performance:
         latencies = [measure_fork_latency() for _ in range(10)]
         avg = sum(latencies) / len(latencies)
         median = sorted(latencies)[len(latencies) // 2]
-        
+
         # RFC target is < 2ms
         assert median < 2.0, f"Median latency {median:.2f}ms exceeds 2ms target"
 
     def test_1000x_speedup_potential(self):
         """RFC promise: 1000 tests from 30+ min to ~30 sec (60x speedup)
-        
+
         Verify single fork is fast enough to support this goal:
         - 30 min = 1800s for 1000 tests with standard pytest
         - 30 sec = 30s for 1000 tests with velo
@@ -128,7 +123,7 @@ class TestDesignGoal_Performance:
 
         latencies = [measure_fork_latency() for _ in range(100)]
         avg = sum(latencies) / len(latencies)
-        
+
         # Each fork needs < 30ms to reach target
         assert avg < 30.0, f"Average latency {avg:.2f}ms exceeds 30ms budget"
 
@@ -144,7 +139,7 @@ class TestDesignGoal_PytestParity:
 
     def test_pytest_marks_work(self):
         """pytest markers should work"""
-        test_code = '''
+        test_code = """
 import pytest
 
 @pytest.mark.skip(reason="testing skip marker")
@@ -157,15 +152,14 @@ def test_xfail():
 
 def test_normal():
     assert True
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             test_file = f.name
 
         try:
             result = subprocess.run(
-                [sys.executable, '-m', 'pytest', test_file, '-v'],
-                capture_output=True, text=True, timeout=30
+                [sys.executable, "-m", "pytest", test_file, "-v"], capture_output=True, text=True, timeout=30
             )
             # 1 passed, 1 skipped, 1 xfailed
             assert "1 passed" in result.stdout
@@ -175,7 +169,7 @@ def test_normal():
 
     def test_pytest_parametrize_works(self):
         """pytest.mark.parametrize should work"""
-        test_code = '''
+        test_code = """
 import pytest
 
 @pytest.mark.parametrize("a,b,expected", [
@@ -185,15 +179,14 @@ import pytest
 ])
 def test_addition(a, b, expected):
     assert a + b == expected
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             test_file = f.name
 
         try:
             result = subprocess.run(
-                [sys.executable, '-m', 'pytest', test_file, '-v'],
-                capture_output=True, text=True, timeout=30
+                [sys.executable, "-m", "pytest", test_file, "-v"], capture_output=True, text=True, timeout=30
             )
             assert "3 passed" in result.stdout
         finally:
@@ -211,30 +204,30 @@ class TestDesignGoal_P0_Safety:
 
     def test_p0_1_fixture_reinit_hook_exists(self):
         """P0-1: velo_fork_reinit hook exists"""
-        from pytest_velo.plugin import velo_fork_reinit, register_fork_reinit
+        from pytest_velo.plugin import register_fork_reinit, velo_fork_reinit
 
         assert callable(velo_fork_reinit)
         assert callable(register_fork_reinit)
 
     def test_p0_2_single_threaded_fork_enforced(self):
         """P0-2: Fork ONLY from single-threaded Zygote"""
-        from pytest_velo.plugin import assert_single_threaded
         import threading
+
+        from pytest_velo.plugin import assert_single_threaded
 
         # Single-threaded should not raise
         assert_single_threaded()  # Should not raise
 
         # Multi-threaded must raise
-        import threading
         barrier = threading.Barrier(2)
-        
+
         def worker():
             barrier.wait()
             time.sleep(0.05)
-        
+
         t = threading.Thread(target=worker)
         t.start()
-        
+
         try:
             barrier.wait()
             with pytest.raises(RuntimeError, match="threads active"):
@@ -244,9 +237,10 @@ class TestDesignGoal_P0_Safety:
 
     def test_p0_3_child_uses_os_exit_not_sys_exit(self):
         """P0-3: Child calls os._exit(), NOT sys.exit()"""
-        from pytest_velo.plugin import run_in_zygote_fork
         import ast
         import inspect
+
+        from pytest_velo.plugin import run_in_zygote_fork
 
         source = inspect.getsource(run_in_zygote_fork)
         tree = ast.parse(source)
@@ -258,10 +252,10 @@ class TestDesignGoal_P0_Safety:
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute):
-                    if node.func.attr == '_exit':
+                    if node.func.attr == "_exit":
                         os_exit_found = True
-                    if node.func.attr == 'exit' and hasattr(node.func.value, 'id'):
-                        if node.func.value.id == 'sys':
+                    if node.func.attr == "exit" and hasattr(node.func.value, "id"):
+                        if node.func.value.id == "sys":
                             sys_exit_found = True
 
         assert os_exit_found, "MUST use os._exit() in child"
@@ -269,8 +263,9 @@ class TestDesignGoal_P0_Safety:
 
     def test_p0_3_atexit_clear_called(self):
         """P0-3: Child calls atexit._clear()"""
-        from pytest_velo.plugin import child_process_hygiene
         import inspect
+
+        from pytest_velo.plugin import child_process_hygiene
 
         source = inspect.getsource(child_process_hygiene)
         assert "atexit._clear()" in source, "MUST call atexit._clear()"
@@ -331,11 +326,13 @@ class TestDesignGoal_P1_Concerns:
             class Option:
                 velo = True
                 velo_preload = ""
+
             option = Option()
 
         import pytest_velo.plugin as plugin
+
         original = plugin._zygote
-        
+
         try:
             pytest_configure(MockConfig())
             # Should have set PYTHONDONTWRITEBYTECODE

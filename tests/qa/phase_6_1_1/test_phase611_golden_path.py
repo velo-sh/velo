@@ -11,19 +11,17 @@ import os
 import signal
 import socket
 import struct
+import sys
 import time
+from pathlib import Path
 
 import psutil
 import pytest
-import sys
-from pathlib import Path
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
-
 import requests
-
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 # RFC-0017: Tier 2 - E2E tests, full Zygote runtime
 pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required]
@@ -65,9 +63,7 @@ class TestGoldenPathE2E:
         for pid in workers:
             try:
                 p = psutil.Process(pid)
-                assert (
-                    p.ppid() == zygote_pid
-                ), f"Worker {pid} parent is {p.ppid()}, expected Zygote {zygote_pid}"
+                assert p.ppid() == zygote_pid, f"Worker {pid} parent is {p.ppid()}, expected Zygote {zygote_pid}"
             except psutil.NoSuchProcess:
                 pass  # Worker may have restarted
 
@@ -81,9 +77,7 @@ class TestGoldenPathE2E:
 
         # Phase 4: Verify request actually went through workers
         # (not some cached response)
-        response2 = requests.get(
-            f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
-        )
+        response2 = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
         assert response2.status_code == 200
 
         # Phase 5: Graceful shutdown verification is handled by fixture
@@ -107,9 +101,7 @@ class TestGoldenPathE2E:
         for i in range(100):
             try:
                 # Use /whoami endpoint which returns worker's PID
-                r = requests.get(
-                    f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT
-                )
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)
                 if r.status_code == 200:
                     success_count += 1
                     data = r.json()
@@ -157,18 +149,14 @@ class TestGoldenPathE2E:
             timeout=T_MEDIUM,
         )
 
-        assert (
-            response.status_code == 200
-        ), f"Headers endpoint failed: {response.status_code}"
+        assert response.status_code == 200, f"Headers endpoint failed: {response.status_code}"
 
         try:
             headers = response.json()
 
             # Normalize to lowercase for comparison
             header_names = (
-                [h.lower() for h in headers]
-                if isinstance(headers, list)
-                else [h.lower() for h in headers.keys()]
+                [h.lower() for h in headers] if isinstance(headers, list) else [h.lower() for h in headers.keys()]
             )
 
             # Verify X-Forwarded-For was added by proxy
@@ -219,9 +207,7 @@ class TestGoldenPathE2E:
             all_pids.append(zygote_pid)
         all_pids.extend(worker_pids)
 
-        print(
-            f"PIDs before shutdown: main={main_pid}, zygote={zygote_pid}, workers={worker_pids}"
-        )
+        print(f"PIDs before shutdown: main={main_pid}, zygote={zygote_pid}, workers={worker_pids}")
 
         # Send SIGTERM
         os.kill(main_pid, signal.SIGTERM)
@@ -329,17 +315,16 @@ class TestGoldenPathE2E:
         for attempt in range(max_attempts):
             time.sleep(5)
             try:
-                response = requests.get(
-                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
-                )
+                response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
                 if response.status_code == 200:
                     print(f"Service recovered on attempt {attempt + 1}")
                     break
             except requests.exceptions.RequestException as e:
                 print(f"Recovery attempt {attempt + 1}/{max_attempts}: {e}")
 
-        assert response is not None and response.status_code == 200, \
+        assert response is not None and response.status_code == 200, (
             "Service not responding after worker crash (60s timeout)"
+        )
 
         # Verify worker count restored
         new_workers = set(proc.get_worker_pids())
@@ -379,11 +364,10 @@ class TestGoldenPathE2E:
 
         # CI is slower/flakier, lower threshold (TIMEOUT_MULTIPLIER > 1 means CI)
         from conftest_utils import TIMEOUT_MULTIPLIER
+
         min_threshold = 95 if TIMEOUT_MULTIPLIER > 1 else 99
-        
-        assert (
-            success_rate >= min_threshold
-        ), f"Success rate {success_rate:.1f}% below {min_threshold}% threshold"
+
+        assert success_rate >= min_threshold, f"Success rate {success_rate:.1f}% below {min_threshold}% threshold"
 
     def test_GOLD_008_zygote_mode_verification_via_whoami(self, velo_serve_fixture):
         """GOLD-008: Verify we're ACTUALLY running in Zygote mode, not fallback.
@@ -406,12 +390,8 @@ class TestGoldenPathE2E:
             pytest.fail("GOLD-008: Zygote process not found - FALLBACK MODE DETECTED!")
 
         # Get worker's view of its own PPID via HTTP
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM
-        )
-        assert (
-            response.status_code == 200
-        ), f"whoami endpoint failed: {response.status_code}"
+        response = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_MEDIUM)
+        assert response.status_code == 200, f"whoami endpoint failed: {response.status_code}"
 
         data = response.json()
         worker_pid = data.get("pid")
@@ -458,9 +438,7 @@ class TestGoldenPathE2E:
         assert r3.json() == {"ping": "pong"}, f"Ping-pong failed: {r3.json()}"
 
         # Test slow endpoint (async works)
-        r4 = requests.get(
-            f"http://127.0.0.1:{proc.port}/slow?seconds=1", timeout=T_MEDIUM
-        )
+        r4 = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=1", timeout=T_MEDIUM)
         assert r4.status_code == 200
         assert r4.json() == {"slept": 1}
 
@@ -481,13 +459,9 @@ class TestGoldenPathE2E:
             # Try to find socket via process inspection
             zygote_pid = proc.zygote_pid
             if zygote_pid is None:
-                pytest.fail(
-                    "GOLD-010: Neither Zygote process nor socket found - FALLBACK MODE!"
-                )
+                pytest.fail("GOLD-010: Neither Zygote process nor socket found - FALLBACK MODE!")
             else:
-                pytest.fail(
-                    f"GOLD-010: Zygote PID={zygote_pid} found but socket path unknown"
-                )
+                pytest.fail(f"GOLD-010: Zygote PID={zygote_pid} found but socket path unknown")
 
         from pathlib import Path
 
@@ -540,23 +514,17 @@ class TestGoldenPathE2E:
             if workers:
                 try:
                     first_worker = psutil.Process(workers[0])
-                    mode_evidence["workers_are_zygote_children"] = (
-                        first_worker.ppid() == zygote_pid
-                    )
+                    mode_evidence["workers_are_zygote_children"] = first_worker.ppid() == zygote_pid
                 except psutil.NoSuchProcess:
                     pass
 
         # Check 4: /whoami endpoint confirmation
         if zygote_pid:
             try:
-                r = requests.get(
-                    f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT
-                )
+                r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)
                 if r.status_code == 200:
                     data = r.json()
-                    mode_evidence["whoami_confirms_zygote"] = (
-                        data.get("ppid") == zygote_pid
-                    )
+                    mode_evidence["whoami_confirms_zygote"] = data.get("ppid") == zygote_pid
             except Exception:
                 pass
 
@@ -592,16 +560,12 @@ class TestGoldenPathDemonCatching:
 
         test_body = {"message": "Hello from QA!", "number": 42}
 
-        response = requests.post(
-            f"http://127.0.0.1:{proc.port}/echo", json=test_body, timeout=T_MEDIUM
-        )
+        response = requests.post(f"http://127.0.0.1:{proc.port}/echo", json=test_body, timeout=T_MEDIUM)
 
         assert response.status_code == 200, f"POST failed: {response.status_code}"
 
         data = response.json()
-        assert (
-            data["received_message"] == "Hello from QA!"
-        ), f"Message corrupted: {data}"
+        assert data["received_message"] == "Hello from QA!", f"Message corrupted: {data}"
         assert data["received_number"] == 42, f"Number corrupted: {data}"
 
         print(f"✅ POST body correctly echoed by worker {data.get('worker_pid')}")
@@ -609,7 +573,7 @@ class TestGoldenPathDemonCatching:
     @pytest.mark.parametrize("rsgi_mode", [True, False])
     def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture, rsgi_mode):
         """GOLD-013: ASGI scope["client"] is correctly populated.
-        
+
         Demon: Proxy strips client IP, leaving scope["client"] as None or wrong.
         RFC-0011 requires: scope["client"] should have real client info.
         """
@@ -625,25 +589,19 @@ class TestGoldenPathDemonCatching:
         print(f"ASGI Scope: {scope}")
 
         # scope["client"] should be populated
-        assert (
-            scope.get("client") is not None
-        ), "ASGI scope['client'] is None - proxy didn't preserve client info!"
+        assert scope.get("client") is not None, "ASGI scope['client'] is None - proxy didn't preserve client info!"
 
         # Client should be a [host, port] pair
         client = scope["client"]
         assert len(client) == 2, f"Invalid client format: {client}"
 
         # Get detailed client-ip info
-        response2 = requests.get(
-            f"http://127.0.0.1:{proc.port}/client-ip", timeout=T_MEDIUM
-        )
+        response2 = requests.get(f"http://127.0.0.1:{proc.port}/client-ip", timeout=T_MEDIUM)
         client_info = response2.json()
         print(f"Client IP info: {client_info}")
 
         # client_host should have something (either 127.0.0.1 or from X-Forwarded-For)
-        assert client_info.get(
-            "client_host"
-        ), "request.client.host is empty - client IP lost through proxy!"
+        assert client_info.get("client_host"), "request.client.host is empty - client IP lost through proxy!"
 
     def test_GOLD_014_async_concurrent_handling(self, velo_serve_fixture):
         """GOLD-014: Async requests are handled concurrently, not sequentially.
@@ -663,11 +621,7 @@ class TestGoldenPathDemonCatching:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
             futures = [
-                pool.submit(
-                    lambda: requests.get(
-                        f"http://127.0.0.1:{proc.port}/concurrent", timeout=T_MEDIUM
-                    )
-                )
+                pool.submit(lambda: requests.get(f"http://127.0.0.1:{proc.port}/concurrent", timeout=T_MEDIUM))
                 for _ in range(10)
             ]
             responses = [f.result() for f in futures]
@@ -675,24 +629,16 @@ class TestGoldenPathDemonCatching:
         elapsed = time.time() - start_time
 
         # Check responses
-        max_concurrent_seen = max(
-            r.json().get("max_concurrent_seen", 0)
-            for r in responses
-            if r.status_code == 200
-        )
+        max_concurrent_seen = max(r.json().get("max_concurrent_seen", 0) for r in responses if r.status_code == 200)
 
         print(f"Elapsed: {elapsed:.2f}s, Max concurrent: {max_concurrent_seen}")
 
         # If truly concurrent, we should see > 1 concurrent requests
         # (May not always reach 10 due to timing, but should be > 1)
-        assert (
-            max_concurrent_seen > 1
-        ), f"Only {max_concurrent_seen} concurrent requests seen - async may be blocked!"
+        assert max_concurrent_seen > 1, f"Only {max_concurrent_seen} concurrent requests seen - async may be blocked!"
 
         # Total time should be much less than 10 * 0.1s = 1.0s
-        assert (
-            elapsed < 0.8
-        ), f"Took {elapsed:.2f}s for 10 concurrent requests - possible sequential processing!"
+        assert elapsed < 0.8, f"Took {elapsed:.2f}s for 10 concurrent requests - possible sequential processing!"
 
     def test_GOLD_015_error_response_flow(self, velo_serve_fixture):
         """GOLD-015: Error responses flow correctly through proxy.
@@ -727,13 +673,9 @@ class TestGoldenPathDemonCatching:
         proc.wait_ready()
 
         # Request 100KB response
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/large?size_kb=100", timeout=T_LONG
-        )
+        response = requests.get(f"http://127.0.0.1:{proc.port}/large?size_kb=100", timeout=T_LONG)
 
-        assert (
-            response.status_code == 200
-        ), f"Large response failed: {response.status_code}"
+        assert response.status_code == 200, f"Large response failed: {response.status_code}"
 
         data = response.json()
         received_size = len(data.get("data", ""))
@@ -742,12 +684,12 @@ class TestGoldenPathDemonCatching:
         print(f"Expected: {expected_size} bytes, Received: {received_size} bytes")
 
         # Allow 1% tolerance for JSON overhead
-        assert (
-            abs(received_size - expected_size) < expected_size * 0.01
-        ), f"Response truncated or corrupted: {received_size} vs {expected_size}"
-        assert (
-            abs(received_size - expected_size) < expected_size * 0.01
-        ), f"Response truncated or corrupted: {received_size} vs {expected_size}"
+        assert abs(received_size - expected_size) < expected_size * 0.01, (
+            f"Response truncated or corrupted: {received_size} vs {expected_size}"
+        )
+        assert abs(received_size - expected_size) < expected_size * 0.01, (
+            f"Response truncated or corrupted: {received_size} vs {expected_size}"
+        )
 
     def test_GOLD_017_timeout_enforcement(self, velo_serve_fixture):
         """GOLD-017: Proxy enforces timeouts on slow workers.
@@ -758,9 +700,7 @@ class TestGoldenPathDemonCatching:
         proc.wait_ready()
 
         t0 = time.time()
-        response = requests.get(
-            f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=T_SHORT
-        )
+        response = requests.get(f"http://127.0.0.1:{proc.port}/slow?seconds=2", timeout=T_SHORT)
         duration = time.time() - t0
 
         assert response.status_code == 200
@@ -790,17 +730,11 @@ class TestGoldenPathDemonCatching:
             timeout=T_MEDIUM,
         )
 
-        assert (
-            response.status_code == 200
-        ), f"Chunked upload failed: {response.status_code}"
+        assert response.status_code == 200, f"Chunked upload failed: {response.status_code}"
 
         data = response.json()
-        assert (
-            data["received_message"] == "chunked_world"
-        ), f"Message corrupted during reassembly: {data}"
-        assert (
-            data["received_number"] == 99
-        ), f"Number corrupted during reassembly: {data}"
+        assert data["received_message"] == "chunked_world", f"Message corrupted during reassembly: {data}"
+        assert data["received_number"] == 99, f"Number corrupted during reassembly: {data}"
 
         print("✅ Chunked request correctly reassembled and handled by application")
 
@@ -830,9 +764,7 @@ class TestGoldenPathSecurity:
         dir_mode = sock_dir.stat().st_mode & 0o777
 
         # Should be 0700 (owner rwx only)
-        assert (
-            dir_mode & 0o077
-        ) == 0, f"Socket dir {sock_dir} permissions {oct(dir_mode)} allow group/world access"
+        assert (dir_mode & 0o077) == 0, f"Socket dir {sock_dir} permissions {oct(dir_mode)} allow group/world access"
 
     def test_GOLD_SEC_002_no_fd_leak(self, velo_serve_fixture):
         """GOLD-SEC-002: Workers don't leak file descriptors.

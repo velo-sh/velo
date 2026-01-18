@@ -1,4 +1,3 @@
-import os
 import re
 import sys
 from pathlib import Path
@@ -6,6 +5,7 @@ from pathlib import Path
 # SOP-005: Governance Enforcement Script
 # This script is the "Institutionalized" gatekeeper for Velo's architectural standards.
 # FAILURE = HARD REJECT
+
 
 class VeloEnforcer:
     def __init__(self):
@@ -24,9 +24,9 @@ class VeloEnforcer:
             (r'"/Users/[^"]+"', "Hardcoded Developer Home"),
             (r'"/home/[^"]+"', "Hardcoded Linux Home"),
             (r'"/tmp/[^"]+"', "Hardcoded /tmp (Use std::env::temp_dir)"),
-            (r'"/private/var/[^"]+"', "Hardcoded macOS Var Path")
+            (r'"/private/var/[^"]+"', "Hardcoded macOS Var Path"),
         ]
-        
+
         # Check src/ for string toxins
         for f in self.src.glob("**/*.rs"):
             content = f.read_text()
@@ -46,27 +46,30 @@ class VeloEnforcer:
         """[SPEC-0006] Naming Taxonomy Enforcement."""
         mandatory_prefixes = ["core_", "bridge_", "v_", "util_", "compat_"]
         prefix_regex = r"\b(" + "|".join(mandatory_prefixes) + r")[a-zA-Z0-9_]+"
-        
+
         found_any = False
         for f in self.src.glob("**/*.rs"):
             if re.search(prefix_regex, f.read_text()):
                 found_any = True
                 break
-        
+
         if not found_any:
-            self.log_error("No mandatory taxonomy prefixes (core_, bridge_, etc.) found in src/. Naming convention violation.")
+            self.log_error(
+                "No mandatory taxonomy prefixes (core_, bridge_, etc.) found in src/. Naming convention violation."
+            )
 
     def run(self):
         print("🚀 Starting Velo Governance Enforcement (SOP-005)...")
         self.check_zhc()
         self.check_taxonomy()
-        
+
         if self.errors:
             print(f"\n🛑 [TOTAL FAILURES: {len(self.errors)}] - REJECTED")
             sys.exit(1)
         else:
             print("\n✅ [GOVERNANCE CLEAN] - PASS")
             sys.exit(0)
+
 
 if __name__ == "__main__":
     VeloEnforcer().run()

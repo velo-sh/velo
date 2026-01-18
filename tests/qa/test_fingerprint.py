@@ -14,15 +14,14 @@ Goal: Velo should handle fingerprint edge cases gracefully.
 """
 
 import os
-import pytest
 import threading
 import time
-from pathlib import Path
 
+import pytest
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
+    run_velo,
 )
 
 # RFC-0017: Tier 0 - Unit tests, no binary deps

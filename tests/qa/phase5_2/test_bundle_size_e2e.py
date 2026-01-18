@@ -1,4 +1,3 @@
-import os
 import subprocess
 from pathlib import Path
 
@@ -26,9 +25,7 @@ def setup_project():
 
 def build_bundle(project_dir):
     # Use bundle_builder.py to create bundle
-    subprocess.run(
-        ["python3", "python/bundle_builder.py", str(project_dir)], check=True
-    )
+    subprocess.run(["python3", "python/bundle_builder.py", str(project_dir)], check=True)
     bundle_path = project_dir / "bundle.veloc"
 
     # Append padding to make it truly large (e.g., 300MB)
@@ -39,9 +36,7 @@ def build_bundle(project_dir):
     with open(bundle_path, "ab") as f:
         f.write(b"\0" * (300 * 1024 * 1024))
 
-    print(
-        f"Bundle created at {bundle_path}, size: {bundle_path.stat().st_size / 1024 / 1024:.2f} MB"
-    )
+    print(f"Bundle created at {bundle_path}, size: {bundle_path.stat().st_size / 1024 / 1024:.2f} MB")
     return bundle_path
 
 

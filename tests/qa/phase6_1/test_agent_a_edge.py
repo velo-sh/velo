@@ -1,10 +1,8 @@
 # Agent A (Edge Case Hunter) - Phase 6.1 Serve & Analyze
 # 激进派 QA: "Break it before users do."
 
+
 import pytest
-import os
-import subprocess
-from pathlib import Path
 
 
 @pytest.mark.tier1
@@ -150,9 +148,7 @@ if os.environ.get('DEBUG'):
         """--relod → 'Did you mean --reload?'"""
         result = isolated_env.run_velo("serve", "--relod", timeout=2)
         assert result.returncode != 0
-        assert (
-            "did you mean" in result.stderr.lower() or "reload" in result.stderr.lower()
-        )
+        assert "did you mean" in result.stderr.lower() or "reload" in result.stderr.lower()
 
     @pytest.mark.skip(reason="Awaiting D12: Source-pointing diagnostics")
     def test_EDGE_61_DX_002_source_pointing_error(self, isolated_env):

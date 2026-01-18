@@ -12,13 +12,11 @@ Previous agents tested edge cases and security. Agent D tests:
 If Agent D finds bugs, the feature is NOT READY.
 """
 
-import os
-import socket
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -26,7 +24,7 @@ import pytest
 import requests
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_MEDIUM, T_SHORT
 
 
 def get_velo_binary():
@@ -50,7 +48,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return False
 
 
@@ -75,9 +73,7 @@ class DestroyerTestEnv:
         self.procs = []
 
     def setup(self):
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -169,12 +165,8 @@ def health():
                 stdout = proc.stdout.read() if proc.stdout else ""
                 # If uvicorn dependency check, skip this test
                 if "uvicorn" in stderr.lower() and "missing" in stderr.lower():
-                    pytest.skip(
-                        "velo serve requires uvicorn in project venv - test customer env issue"
-                    )
-                pytest.fail(
-                    f"Server did not start!\nstderr: {stderr}\nstdout: {stdout}"
-                )
+                    pytest.skip("velo serve requires uvicorn in project venv - test customer env issue")
+                pytest.fail(f"Server did not start!\nstderr: {stderr}\nstdout: {stdout}")
 
             # Try to make a request
             try:
@@ -214,9 +206,7 @@ def root():
             else:
                 stderr = proc.stderr.read() if proc.stderr else ""
                 # If uvicorn dependency check, skip this test
-                if "uvicorn" in stderr.lower() and (
-                    "missing" in stderr.lower() or "dependency" in stderr.lower()
-                ):
+                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
                     pytest.skip("velo serve requires uvicorn in project venv")
                 if "not implemented" not in stderr.lower():
                     pytest.fail(f"Port option not respected: {stderr}")
@@ -249,9 +239,7 @@ def get_pid():
 
             if not wait_for_port(port, timeout=T_MEDIUM):
                 stderr = proc.stderr.read() if proc.stderr else ""
-                if "uvicorn" in stderr.lower() and (
-                    "missing" in stderr.lower() or "dependency" in stderr.lower()
-                ):
+                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
                     pytest.skip("velo serve requires uvicorn in project venv")
                 if "not implemented" in stderr.lower():
                     pytest.skip("Workers not implemented yet")
@@ -261,9 +249,7 @@ def get_pid():
             pids = set()
             for _ in range(20):
                 try:
-                    response = requests.get(
-                        f"http://127.0.0.1:{port}/pid", timeout=T_SHORT
-                    )
+                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json().get("pid"))
                 except:
@@ -272,7 +258,7 @@ def get_pid():
             # With 4 workers, we should see multiple PIDs
             # (if load balancing works)
             if len(pids) == 1:
-                print(f"Warning: Only saw 1 PID, workers may not be load-balanced")
+                print("Warning: Only saw 1 PID, workers may not be load-balanced")
 
 
 class TestErrorRecovery:
@@ -347,11 +333,7 @@ y = 2
 
             stderr = proc.stderr.read()
             # Should mention that 'app' was not found
-            assert (
-                "app" in stderr.lower()
-                or "attribute" in stderr.lower()
-                or "error" in stderr.lower()
-            )
+            assert "app" in stderr.lower() or "attribute" in stderr.lower() or "error" in stderr.lower()
 
 
 class TestPromisedFeatures:
@@ -360,9 +342,7 @@ class TestPromisedFeatures:
     def test_promise_001_help_mentions_port(self):
         """PROMISE-001: --help should mention --port option."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=T_SHORT
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_SHORT)
 
         # PORT should be documented
         assert "port" in result.stdout.lower() or "PORT" in result.stdout
@@ -370,9 +350,7 @@ class TestPromisedFeatures:
     def test_promise_002_help_mentions_workers(self):
         """PROMISE-002: --help should mention --workers option."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=T_SHORT
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_SHORT)
 
         # WORKERS should be documented
         assert "worker" in result.stdout.lower()
@@ -383,25 +361,17 @@ class TestPromisedFeatures:
         BUG DEF-3.5-001: Currently fails!
         """
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "--help"], capture_output=True, text=True, timeout=T_SHORT
-        )
+        result = subprocess.run([velo, "serve", "--help"], capture_output=True, text=True, timeout=T_SHORT)
 
         # Check if serve help is working
         # Dev fixed this! Help output goes to stderr
         if result.returncode == 0:
             # Help worked! Check for expected content (may be in stdout or stderr)
             output = result.stdout + result.stderr
-            assert (
-                "port" in output.lower()
-                or "app" in output.lower()
-                or "serve" in output.lower()
-            )
+            assert "port" in output.lower() or "app" in output.lower() or "serve" in output.lower()
         else:
             if "invalid app format" in result.stderr:
-                pytest.fail(
-                    "BUG DEF-3.5-001: 'velo serve --help' returns error instead of help"
-                )
+                pytest.fail("BUG DEF-3.5-001: 'velo serve --help' returns error instead of help")
             # Dependency message is acceptable - at least it didn't crash
             if "uvicorn" in result.stderr.lower():
                 pytest.skip("Dependency check runs before help - acceptable behavior")
@@ -579,9 +549,7 @@ def framework():
             proc = env.start_serve("main:app", port)
 
             if wait_for_port(port, timeout=T_MEDIUM):
-                response = requests.get(
-                    f"http://127.0.0.1:{port}/framework", timeout=T_SHORT
-                )
+                response = requests.get(f"http://127.0.0.1:{port}/framework", timeout=T_SHORT)
                 assert response.status_code == 200
                 assert response.json()["framework"] == "fastapi"
             else:

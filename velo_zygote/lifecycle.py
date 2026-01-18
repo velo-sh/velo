@@ -8,10 +8,9 @@ import signal
 import sys
 import threading
 import time
-from enum import Enum, auto
-from typing import Any, Optional, Dict, Tuple
 from collections import deque
-import json
+from enum import Enum, auto
+from typing import Any
 
 
 class IdlePool:
@@ -22,14 +21,14 @@ class IdlePool:
 
     def __init__(self, size: int = 10):
         self._target_size = size
-        self.pool: deque[Tuple[int, int]] = deque()  # (pid, control_pipe_fd)
+        self.pool: deque[tuple[int, int]] = deque()  # (pid, control_pipe_fd)
         self.lock = threading.Lock()
 
     def add(self, pid: int, pipe_fd: int) -> None:
         with self.lock:
             self.pool.append((pid, pipe_fd))
 
-    def pop(self) -> Optional[Tuple[int, int]]:
+    def pop(self) -> tuple[int, int] | None:
         with self.lock:
             if self.pool:
                 return self.pool.popleft()

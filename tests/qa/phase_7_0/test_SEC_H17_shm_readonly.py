@@ -1,9 +1,8 @@
-import os
-import pytest
-import sys
 import subprocess
+import sys
 from pathlib import Path
-import re
+
+import pytest
 
 try:
     from tests.qa.phase_7_0.conftest import T_SHORT
@@ -26,9 +25,7 @@ class TestSecH17ShmReadonly:
     - Knowledge: Ritual 21 (SHM ReadOnly), Ritual 30 (Identity Alignment)
     """
 
-    @pytest.mark.skipif(
-        sys.platform != "linux", reason="Linux only ritual (uses /proc)"
-    )
+    @pytest.mark.skipif(sys.platform != "linux", reason="Linux only ritual (uses /proc)")
     def test_SEC_H17_ritual_21_shm_readonly_invariant(self, shm_test_env):
         """
         [SEC-H17] SHM ReadOnly Verification.
@@ -105,9 +102,7 @@ time.sleep(10)
 
             if not maps_content:
                 stdout_rem, stderr = proc.communicate(timeout=5)
-                pytest.fail(
-                    f"Failed to capture maps dump from worker! STDOUT={maps_content} STDERR={stderr}"
-                )
+                pytest.fail(f"Failed to capture maps dump from worker! STDOUT={maps_content} STDERR={stderr}")
 
             # Phase 3: Forensic Audit of the maps content
             # RFC-0015: Support both file-backed (cold start) and memfd-backed (SHM)
@@ -120,13 +115,9 @@ time.sleep(10)
                     # 3. Permission Assertion: Verify r--p (or r--s for shared)
                     perms = line.split()[1]
                     if "w" in perms:
-                        pytest.fail(
-                            f"🚨 [RITUAL 21 FAILURE] SHM Segment is WRITABLE! Perms: {perms} Line: {line}"
-                        )
+                        pytest.fail(f"🚨 [RITUAL 21 FAILURE] SHM Segment is WRITABLE! Perms: {perms} Line: {line}")
 
-                    print(
-                        f"✅ [RITUAL 21] Verified Read-Only mapping: {perms} for {line}"
-                    )
+                    print(f"✅ [RITUAL 21] Verified Read-Only mapping: {perms} for {line}")
 
             if not found:
                 # Forensic Audit: Capture Zygote logs to see why SHM failed
@@ -134,7 +125,7 @@ time.sleep(10)
                 log_content = ""
                 if zygote_log.exists():
                     log_content = zygote_log.read_text()
-                
+
                 # Kill the process and wait for termination
                 stderr = "(could not capture stderr)"
                 if proc.poll() is None:
@@ -143,7 +134,7 @@ time.sleep(10)
                         proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
                         pass
-                
+
                 # Capture remaining stderr (may already be closed)
                 try:
                     _, stderr = proc.communicate(timeout=2)
@@ -151,15 +142,13 @@ time.sleep(10)
                     stderr = "(stderr capture timed out)"
                 except Exception as e:
                     stderr = f"(stderr capture failed: {e})"
-                
+
                 pytest.fail(
                     f"🚨 [RITUAL 21 FAILURE] Mapping matching patterns {patterns} not found in worker maps!\n"
                     f"MAPS CONTENT:\n{maps_content}\n"
                     f"VELO STDERR:\n{stderr}\n"
                     f"ZYGOTE LOG:\n{log_content}"
                 )
-
-
 
         finally:
             if proc.poll() is None:
@@ -181,13 +170,9 @@ time.sleep(10)
         try:
             actual_page_size = env.get_actual_page_size()
         except Exception as e:
-            pytest.skip(
-                f"Ritual 30 skipped: could not determine actual page size from binary. Error: {e}"
-            )
+            pytest.skip(f"Ritual 30 skipped: could not determine actual page size from binary. Error: {e}")
 
-        print(
-            f"\n[RITUAL 30] Architecturally Reported Page Size: {actual_page_size} bytes"
-        )
+        print(f"\n[RITUAL 30] Architecturally Reported Page Size: {actual_page_size} bytes")
 
         # 2. Create a synthetic safetensors file
         import struct
@@ -207,6 +192,4 @@ time.sleep(10)
                 "This indicates a violation of the Memory Gravity alignment invariant."
             )
 
-        print(
-            f"✅ [RITUAL 30] Verified Alignment Invariant: {file_size} % {actual_page_size} == 0"
-        )
+        print(f"✅ [RITUAL 30] Verified Alignment Invariant: {file_size} % {actual_page_size} == 0")

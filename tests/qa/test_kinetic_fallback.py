@@ -1,12 +1,11 @@
 import os
 import subprocess
 import time
-import pytest
 from pathlib import Path
 
-VELO_BIN = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../target/debug/velo")
-)
+import pytest
+
+VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../target/debug/velo"))
 
 
 @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")
@@ -55,9 +54,7 @@ def test_kinetic_silent_fallback_on_corrupt_zygote(tmp_path):
         stdout, stderr = proc.communicate(timeout=5)
 
         print(f"STDERR SUMMARY:\n{stderr[:1000]}")
-        assert (
-            "KINETIC_FALLBACK" in stderr
-        ), "Fallback marker 'KINETIC_FALLBACK' not found in stderr!"
+        assert "KINETIC_FALLBACK" in stderr, "Fallback marker 'KINETIC_FALLBACK' not found in stderr!"
 
     finally:
         if socket_base.exists():

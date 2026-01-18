@@ -9,7 +9,6 @@ Critical: These tests run OUTSIDE the velo source directory to catch
 path-related bugs like DEF-003 (velo_zygote/main.py not found).
 """
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -103,9 +102,9 @@ class TestZygoteInRealUserEnv:
             code, stdout, stderr, _ = env.run_velo(["run", "--zygote", "hello.py"])
 
             # Should NOT fail with "Could not find velo_zygote/main.py"
-            assert (
-                "Could not find velo_zygote" not in stderr
-            ), f"DEF-003: Zygote can't find main.py in user project!\n{stderr}"
+            assert "Could not find velo_zygote" not in stderr, (
+                f"DEF-003: Zygote can't find main.py in user project!\n{stderr}"
+            )
 
             # Should actually work
             assert "hello" in stdout or code == 0
@@ -131,14 +130,10 @@ class TestZygoteInRealUserEnv:
             _, stdout2, stderr2, time2 = env.run_velo(["run", "--zygote", "quick.py"])
 
             # Should NOT start Zygote again
-            assert (
-                "Starting Zygote" not in stderr2
-            ), f"Zygote restarted on second run! Should reuse daemon.\n{stderr2}"
+            assert "Starting Zygote" not in stderr2, f"Zygote restarted on second run! Should reuse daemon.\n{stderr2}"
 
             # Second run should be fast
-            assert (
-                time2 < 100
-            ), f"Second run too slow ({time2:.1f}ms) - Zygote not persisting"
+            assert time2 < 100, f"Second run too slow ({time2:.1f}ms) - Zygote not persisting"
 
     def test_e2e_003_zygote_preload_works(self):
         """
@@ -203,9 +198,9 @@ print("imported")
                 print(f"  Speedup: {speedup:.1f}x")
 
                 # Warm should be at least 2x faster to count as "working"
-                assert (
-                    speedup > 2.0 or warm_time < 50
-                ), f"No speedup detected: cold={cold_time:.1f}ms, warm={warm_time:.1f}ms"
+                assert speedup > 2.0 or warm_time < 50, (
+                    f"No speedup detected: cold={cold_time:.1f}ms, warm={warm_time:.1f}ms"
+                )
 
     def test_e2e_005_zygote_status_works(self):
         """
@@ -219,11 +214,7 @@ print("imported")
             code, stdout, stderr, _ = env.run_velo(["zygote", "status"], timeout=5)
 
             # Should not error
-            assert (
-                code == 0
-                or "not running" in stdout.lower()
-                or "running" in stdout.lower()
-            )
+            assert code == 0 or "not running" in stdout.lower() or "running" in stdout.lower()
 
     def test_e2e_006_fallback_when_zygote_fails(self):
         """
@@ -231,7 +222,6 @@ print("imported")
 
         We simulate failure by killing Zygote after it starts.
         """
-        import signal
 
         with RealUserEnv() as env:
             env.create_script("test.py", 'print("fallback_works")')
@@ -252,9 +242,9 @@ print("imported")
             # Either fallback message, blocked fallback message, OR script executed
             # strict_optimizations=true blocks fallback with H-GOV CRITICAL message
             assert (
-                "Falling back" in stderr 
+                "Falling back" in stderr
                 or "H-GOV CRITICAL" in stderr  # Blocked fallback is also acceptable
-                or "fallback_works" in stdout 
+                or "fallback_works" in stdout
                 or code == 0
             ), f"Neither fallback nor success! code={code}, stdout={stdout}, stderr={stderr}"
 
@@ -278,9 +268,7 @@ print("line3")
             code, stdout, stderr, _ = env.run_velo(["run", "--zygote", "output.py"])
 
             # Stdout must contain the output
-            assert (
-                "line1" in stdout
-            ), f"stdout missing! stdout={repr(stdout)}, stderr={stderr}"
+            assert "line1" in stdout, f"stdout missing! stdout={repr(stdout)}, stderr={stderr}"
             assert "line2" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
             assert "line3" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
 
@@ -333,9 +321,7 @@ class TestZygotePerformanceRequirements:
                 print(f"  Average: {avg:.1f}ms, Min: {min_time:.1f}ms")
 
                 # Target: < 50ms
-                assert (
-                    min_time < 50
-                ), f"Warm start too slow: {min_time:.1f}ms > 50ms target"
+                assert min_time < 50, f"Warm start too slow: {min_time:.1f}ms > 50ms target"
             else:
                 pytest.fail("All runs fell back to normal mode - Zygote not working")
 

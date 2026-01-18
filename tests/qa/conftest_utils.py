@@ -1,11 +1,12 @@
+import contextlib
 import os
+import platform
 import subprocess
 import sys
-import platform
-import pytest
-import contextlib
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
+
+import pytest
 
 # =============================================================================
 # PLATFORM DETECTION
@@ -14,13 +15,12 @@ from typing import Any, List, Optional
 IS_LINUX = platform.system() == "Linux"
 IS_MACOS = platform.system() == "Darwin"
 
-skip_unless_linux = pytest.mark.skipif(
-    not IS_LINUX, reason="Test requires Linux"
-)
+skip_unless_linux = pytest.mark.skipif(not IS_LINUX, reason="Test requires Linux")
 
 # =============================================================================
 # CI TIMEOUT CONFIGURATION
 # =============================================================================
+
 
 def get_timeout_multiplier() -> float:
     if os.environ.get("VELO_TIMEOUT_MULTIPLIER"):
@@ -29,8 +29,10 @@ def get_timeout_multiplier() -> float:
         return 6.0
     return 1.0
 
+
 def ci_timeout(base_seconds: float) -> float:
     return base_seconds * get_timeout_multiplier()
+
 
 TIMEOUT_MULTIPLIER = get_timeout_multiplier()
 CI_TIMEOUT = ci_timeout
@@ -48,50 +50,55 @@ T_LONG = _T_LONG_BASE * TIMEOUT_MULTIPLIER
 # MEMORY & PROCESS HELPERS
 # =============================================================================
 
+
 def get_rss(pid: int) -> int:
     try:
         import psutil
+
         p = psutil.Process(pid)
         return p.memory_info().rss
     except Exception:
         return 0
 
+
 def get_pss(pid: int) -> int:
     """Get Proportional Set Size. Falls back to RSS on macOS."""
     try:
         import psutil
+
         p = psutil.Process(pid)
         try:
             # PSS is only available on Linux via memory_full_info()
             mem_info = p.memory_full_info()
-            return getattr(mem_info, 'pss', mem_info.rss)
+            return getattr(mem_info, "pss", mem_info.rss)
         except (AttributeError, psutil.AccessDenied):
             # macOS: fallback to RSS (PSS not available)
             return p.memory_info().rss
     except Exception:
         return 0
 
+
 def get_ppid(pid: int) -> int:
     try:
         import psutil
+
         return psutil.Process(pid).ppid()
     except Exception:
         return 0
+
 
 def get_process_rss_kb(pid: int) -> int:
     """Get Resident Set Size of a process in KB."""
     if IS_LINUX:
         try:
-            with open(f"/proc/{pid}/status", "r") as f:
+            with open(f"/proc/{pid}/status") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         return int(line.split()[1])
         except (FileNotFoundError, PermissionError):
             pass
     elif IS_MACOS:
-        result = subprocess.run(
-            ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True
-        )
+        result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
         if result.returncode == 0:
             return int(result.stdout.strip())
     return 0
@@ -99,20 +106,20 @@ def get_process_rss_kb(pid: int) -> int:
 
 def get_cow_stats(pid: int) -> dict:
     """Get COW (Copy-on-Write) memory stats for a process.
-    
+
     On Linux: Uses PSS from /proc/[pid]/smaps
     On macOS: Uses vmmap to get DIRTY/RESIDENT ratio
-    
+
     Returns:
         dict with 'resident_kb', 'dirty_kb', 'cow_efficiency' (0-100%)
     """
     result = {"resident_kb": 0, "dirty_kb": 0, "cow_efficiency": 0.0}
-    
+
     if IS_LINUX:
         try:
             pss = 0
             rss = 0
-            with open(f"/proc/{pid}/smaps_rollup", "r") as f:
+            with open(f"/proc/{pid}/smaps_rollup") as f:
                 for line in f:
                     if line.startswith("Pss:"):
                         pss = int(line.split()[1])
@@ -128,25 +135,23 @@ def get_cow_stats(pid: int) -> dict:
         try:
             # Parse vmmap output for TOTAL line
             # Format: TOTAL  VSIZE  RESIDENT  DIRTY  SWAPPED ...
-            proc = subprocess.run(
-                ["vmmap", "-summary", str(pid)],
-                capture_output=True, text=True, timeout=5
-            )
+            proc = subprocess.run(["vmmap", "-summary", str(pid)], capture_output=True, text=True, timeout=5)
             if proc.returncode == 0:
-                for line in proc.stdout.split('\n'):
+                for line in proc.stdout.split("\n"):
                     if line.startswith("TOTAL"):
                         parts = line.split()
+
                         # Parse size values (e.g., "87.0M", "1456K")
                         def parse_size(s):
                             s = s.strip()
-                            if s.endswith('G'):
+                            if s.endswith("G"):
                                 return int(float(s[:-1]) * 1024 * 1024)
-                            elif s.endswith('M'):
+                            elif s.endswith("M"):
                                 return int(float(s[:-1]) * 1024)
-                            elif s.endswith('K'):
+                            elif s.endswith("K"):
                                 return int(float(s[:-1]))
                             return int(s) if s.isdigit() else 0
-                        
+
                         if len(parts) >= 4:
                             result["resident_kb"] = parse_size(parts[2])
                             result["dirty_kb"] = parse_size(parts[3])
@@ -157,7 +162,7 @@ def get_cow_stats(pid: int) -> dict:
                         break
         except (subprocess.TimeoutExpired, Exception):
             pass
-    
+
     return result
 
 
@@ -165,9 +170,10 @@ def get_cow_stats(pid: int) -> dict:
 # BINARY RESOLUTION
 # =============================================================================
 
+
 def get_velo_binary() -> str:
     """Find the primary Velo binary (source of truth).
-    
+
     Priority order:
     1. VELO_BINARY environment variable (explicit override)
     2. Release binary (preferred for production-like testing)
@@ -175,7 +181,7 @@ def get_velo_binary() -> str:
     4. Auto-build (only outside CI)
     """
     root_dir = Path(__file__).parents[2]
-    
+
     # 1. Environment variable override (highest priority)
     env_binary = os.environ.get("VELO_BINARY")
     if env_binary and Path(env_binary).exists():
@@ -184,7 +190,7 @@ def get_velo_binary() -> str:
     # 2. Local build detection - PREFER RELEASE over debug
     release_bin = root_dir / "target" / "release" / "velo"
     debug_bin = root_dir / "target" / "debug" / "velo"
-    
+
     # Prefer release if it exists and is newer than debug
     if release_bin.exists():
         if debug_bin.exists():
@@ -192,7 +198,7 @@ def get_velo_binary() -> str:
             if debug_bin.stat().st_mtime > release_bin.stat().st_mtime:
                 print("⚠️  Warning: debug binary is newer than release. Consider running 'cargo build --release'")
         return str(release_bin.resolve())
-    
+
     if debug_bin.exists():
         print("⚠️  Using debug binary. For accurate testing, use: VELO_BINARY=./target/release/velo")
         return str(debug_bin.resolve())
@@ -203,12 +209,14 @@ def get_velo_binary() -> str:
         subprocess.run(["cargo", "build", "--release"], cwd=root_dir, check=True)
         if release_bin.exists():
             return str(release_bin.resolve())
-            
+
     raise RuntimeError("Velo binary not found. Run 'cargo build --release' first.")
+
 
 # =============================================================================
 # HERMETIC ENVIRONMENT (RFC-0012)
 # =============================================================================
+
 
 class VeloTestEnv:
     def __init__(self, root: Path, source_binary: str):
@@ -224,6 +232,7 @@ class VeloTestEnv:
 
         # Hermetic Install: Copy the source binary to our isolated environment
         import shutil
+
         self.velo = str((self.bin_dir / "velo").resolve())
         shutil.copy2(source_binary, self.velo)
         os.chmod(self.velo, 0o755)
@@ -231,15 +240,17 @@ class VeloTestEnv:
         self.env = os.environ.copy()
         current_venv = os.environ.get("VIRTUAL_ENV") or sys.prefix
 
-        self.env.update({
-            "TMPDIR": str(self.tmp),
-            "HOME": str(self.home),
-            "XDG_RUNTIME_DIR": str(self.xdg),
-            "VIRTUAL_ENV": current_venv,
-            "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
-            "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
-            "PYTHONUNBUFFERED": "1",
-        })
+        self.env.update(
+            {
+                "TMPDIR": str(self.tmp),
+                "HOME": str(self.home),
+                "XDG_RUNTIME_DIR": str(self.xdg),
+                "VIRTUAL_ENV": current_venv,
+                "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
+                "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
+                "PYTHONUNBUFFERED": "1",
+            }
+        )
 
         # RFC-0012: First Principles Isolation
         # We must NOT inherit PYTHONHOME from the host, as it overrides VIRTUAL_ENV
@@ -279,7 +290,7 @@ class VeloTestEnv:
         env = self.env.copy()
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
-        
+
         # Auto-scale timeout if provided as a number
         timeout = kwargs.pop("timeout", 30)
         if isinstance(timeout, (int, float)):
@@ -301,9 +312,7 @@ class VeloTestEnv:
             env.update(kwargs.pop("env"))
         if "text" not in kwargs:
             kwargs["text"] = True
-        return subprocess.Popen(
-            [self.velo, *args], env=env, cwd=kwargs.pop("cwd", self.root), **kwargs
-        )
+        return subprocess.Popen([self.velo, *args], env=env, cwd=kwargs.pop("cwd", self.root), **kwargs)
 
     def create_app(self, name: str, code: str) -> Path:
         p = self.root / name

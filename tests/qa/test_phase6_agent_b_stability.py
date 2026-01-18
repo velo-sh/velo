@@ -1,18 +1,15 @@
 # Agent B (Stability) Test Suite: RFC-0009 Static Graph
 
-import pytest
 import os
-import sys
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier1
 class TestAgentBStability:
     """Agent B specialized core flow and stability tests for Phase 6.0."""
 
-    @pytest.mark.xfail(
-        reason="Design: __path__ mutation requires CPython fallback, not static graph"
-    )
+    @pytest.mark.xfail(reason="Design: __path__ mutation requires CPython fallback, not static graph")
     def test_FUNC_601_recursive_path_mutation(self, isolated_env):
         """FUNC-601-EXT: Verify recursive fallback when nested package mutates __path__."""
         env = isolated_env
@@ -33,9 +30,7 @@ __path__.append(os.path.join(os.path.dirname(__file__), 'extra'))
         os.makedirs(extra_dir, exist_ok=True)
         env.create_app("pkg_root/sub_pkg/extra/module_c.py", "VAL = 'nested_detected'")
 
-        env.create_app(
-            "main.py", "from pkg_root.sub_pkg import module_c; print(module_c.VAL)"
-        )
+        env.create_app("main.py", "from pkg_root.sub_pkg import module_c; print(module_c.VAL)")
 
         env.run_velo("bundle", "build")
         result = env.run_velo("run", "--fast", "main.py")

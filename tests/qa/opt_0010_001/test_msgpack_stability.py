@@ -7,11 +7,11 @@ Tests stability of MessagePack IPC protocol:
 - STAB-OPT-003: Memory usage under load
 """
 
-import unittest
-import sys
-from pathlib import Path
-import threading
 import gc
+import sys
+import threading
+import unittest
+from pathlib import Path
 
 # Add vendor path
 vendor_path = Path(__file__).parent.parent.parent.parent / "python" / "velo" / "_vendor"
@@ -48,9 +48,7 @@ class TestMsgpackStability(unittest.TestCase):
         # Repeat 1000 times
         for i in range(1000):
             packed = umsgpack.packb(test_msg)
-            self.assertEqual(
-                packed, baseline, f"Iteration {i}: Output must be identical"
-            )
+            self.assertEqual(packed, baseline, f"Iteration {i}: Output must be identical")
 
         # Verify deserialize works
         for i in range(100):
