@@ -220,13 +220,21 @@ run_python_tests() {
     local venv_path="${1:-.venv}"
     local test_paths="${2:-tests/qa}"
     
-    log_step "Running Python tests..."
+    log_step "Running Python tests (parallel mode)..."
     
     # Activate and run
     source "$venv_path/bin/activate"
     
+    # Determine parallelism
+    # Use loadscope to group tests by module (prevents resource conflicts)
+    local parallel_args=""
+    if python -c "import xdist" 2>/dev/null; then
+        parallel_args="-n auto --dist loadscope"
+        log_step "Using pytest-xdist: $parallel_args"
+    fi
+    
     set +e # Allow test failure to capture artifacts
-    pytest $test_paths -v
+    pytest $test_paths $parallel_args -v
     EXIT_CODE=$?
     set -e
 
