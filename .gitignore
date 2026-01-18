@@ -44,3 +44,4 @@ assets/uv.*
 # Test artifacts
 test_deploy_tmp/
 artifacts/
+tests/qa/forensic_benchmarks/
