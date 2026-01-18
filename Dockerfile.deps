@@ -11,7 +11,7 @@
 
 ARG BASE_IMAGE=ghcr.io/velo-sh/velo-ci-base:latest
 FROM ${BASE_IMAGE} AS chef
-WORKDIR /workspace
+WORKDIR /build
 
 # Stage 1: Prepare the recipe (dependency manifest)
 FROM chef AS planner
@@ -23,22 +23,28 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2: Cook the dependencies (compile them)
 FROM chef AS builder
-COPY --from=planner /workspace/recipe.json recipe.json
+COPY --from=planner /build/recipe.json recipe.json
 COPY vendor ./vendor
 # Build dependencies only (this is the expensive step, but cached)
 RUN cargo chef cook --release --recipe-path recipe.json
 
-# Stage 3: Final image with pre-compiled deps
-FROM chef AS runtime
-# Copy the compiled target directory (contains all dependencies)
-COPY --from=builder /workspace/target /workspace/target
+# Stage 3: Final image with pre-compiled deps at a FIXED location
+FROM ${BASE_IMAGE} AS runtime
+WORKDIR /
+
+# Copy pre-compiled deps to a fixed, accessible location
+COPY --from=builder /build/target /cargo-cache/target
+
+# Keep vendor for project build
+COPY vendor /cargo-cache/vendor
+
+# Environment hint for CI to find the cache
+ENV CARGO_CACHE_DIR=/cargo-cache
 
 # Metadata
 LABEL maintainer="velo-sh" \
-    description="Velo CI with pre-compiled dependencies"
-
-# Keep vendor for project build
-COPY vendor ./vendor
+    description="Velo CI with pre-compiled dependencies at /cargo-cache"
 
 # Ready for project code to be added in CI
-CMD ["bash", "-c", "echo 'Velo CI Dependencies Ready - Run: cargo build --release'"]
+CMD ["bash", "-c", "echo 'Velo CI Dependencies Ready - Cache at /cargo-cache'"]
+
