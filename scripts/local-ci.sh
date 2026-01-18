@@ -38,6 +38,7 @@ print_usage() {
     echo ""
     echo "Options:"
     echo "  (no args)    Run full CI locally (macOS)"
+    echo "  --setup      First-time setup (install dependencies, git hooks, cross-targets)"
     echo "  --docker     Run full CI in Docker (Ubuntu simulation)"
     echo "  --build      Build Docker base image"
     echo "  --shell      Interactive Docker shell for debugging"
@@ -47,10 +48,11 @@ print_usage() {
     echo "  --help       Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0                 # Full local CI"
-    echo "  $0 --docker        # Simulate Ubuntu CI"
-    echo "  $0 --check         # Quick environment validation"
-    echo "  $0 --clean         # Reset Docker caches"
+    echo "  $0 --setup           # First-time setup"
+    echo "  $0                   # Full local CI"
+    echo "  $0 --docker          # Simulate Ubuntu CI"
+    echo "  $0 --check           # Quick environment validation"
+    echo "  $0 --clean           # Reset Docker caches"
 }
 
 # =============================================================================
@@ -145,6 +147,53 @@ run_local_ci() {
     run_full_ci ".venv" "$TEST_PATHS_DOCKER"
 }
 
+run_setup() {
+    echo ""
+    echo "🔧 Velo Development Setup"
+    echo "========================="
+    echo ""
+
+    log_step "Checking Rust toolchain..."
+    if ! command -v rustup &> /dev/null; then
+        log_error "rustup not found. Install from https://rustup.rs"
+        exit 1
+    fi
+    log_success "Rust toolchain found"
+
+    log_step "Installing Linux cross-compilation target..."
+    rustup target add x86_64-unknown-linux-gnu
+    log_success "Linux target installed (for pre-commit cross-checking)"
+
+    log_step "Checking Python/uv..."
+    if ! command -v uv &> /dev/null; then
+        log_error "uv not found. Install from https://docs.astral.sh/uv/"
+        exit 1
+    fi
+    log_success "uv found"
+
+    log_step "Setting up Python environment..."
+    uv sync
+    log_success "Python dependencies installed"
+
+    log_step "Configuring git hooks..."
+    git config core.hooksPath .githooks
+    log_success "Git hooks configured (using .githooks/)"
+
+    log_step "Installing pre-commit framework..."
+    uv run pre-commit install || true
+    log_success "Pre-commit installed"
+
+    echo ""
+    echo "==========================================="
+    log_success "Setup complete! You can now commit with cross-platform checks."
+    echo "==========================================="
+    echo ""
+    echo "Next steps:"
+    echo "  1. Run './scripts/local-ci.sh --quick' to verify"
+    echo "  2. Make changes and commit normally"
+    echo ""
+}
+
 run_quick_check() {
     echo ""
     echo "⚡ Velo Quick Check"
@@ -169,6 +218,9 @@ run_quick_check() {
 # Main
 # =============================================================================
 case "${1:-}" in
+    --setup)
+        run_setup
+        ;;
     --docker)
         export CHECK_DOCKER=true
         check_env_fast
