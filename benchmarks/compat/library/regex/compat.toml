@@ -1,0 +1,17 @@
+[meta]
+package = "regex"
+category = "library"
+tier = 0
+
+description = "regex compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/mrabarnett/mrab-regex.git"
+git_ref = "2023.10.3"
+test_path = "regex_3/test_regex.py"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

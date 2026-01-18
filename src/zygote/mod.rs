@@ -112,6 +112,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         },
         None,
+        std::time::Duration::from_secs(30),
     )
 }
 
@@ -989,6 +990,7 @@ impl ZygoteLauncher {
                 request_id: Some(uuid::Uuid::now_v7().to_string()),
             },
             fd_to_pass,
+            std::time::Duration::from_secs(config.worker_spawn_timeout),
         )?;
 
         match response {

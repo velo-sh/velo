@@ -1,0 +1,18 @@
+[meta]
+package = "grpcio"
+category = "library"
+tier = 3
+
+description = "grpcio compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/grpc/grpc.git"
+git_ref = "v1.59.3"
+test_path = "src/python/grpcio_tests/tests"
+test_dependencies = ["pytest", "six", "protobuf", "requests", "grpcio", "grpcio-tools", "grpcio-admin", "grpcio-channelz", "grpcio-status", "grpcio-reflection", "grpcio-testing"]
+enable_submodules = false
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

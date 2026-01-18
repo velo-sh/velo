@@ -1,0 +1,17 @@
+[meta]
+package = "docutils"
+category = "library"
+tier = 0
+
+description = "docutils compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/docutils/docutils.git"
+git_ref = "master"
+test_path = "docutils/test"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

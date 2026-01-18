@@ -1,0 +1,18 @@
+[meta]
+package = "pandas"
+category = "library"
+tier = 2
+description = "Powerful data structures for data analysis, time series, and statistics"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pandas-dev/pandas.git"
+git_ref = "v2.2.3"
+test_path = ""
+test_dependencies = ["pytest", "hypothesis", "numpy", "python-dateutil", "pytz"]
+pytest_args = ["--pyargs", "pandas"]
+run_cwd_strategy = "parent"
+exclude_markers = []
+timeout = 7200
+known_failures = []
