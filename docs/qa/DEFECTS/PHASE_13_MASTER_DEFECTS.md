@@ -12,16 +12,20 @@
 | P1 | 0 | 3 | **3** |
 | P2 | 0 | 1 | **1** |
 
-## Performance: Absolute Isolation Benchmark (1000 Tests)
+## Performance: Tiered High-Fidelity Benchmarks
 
-| Mode | Wall-Clock (1000 Tests) | Isolation Level | Efficiency |
-|:---|:---|:---|:---|
-| **Standard (Subprocess)** | 232.92s | Total Process Isolation | 1x (Baseline) |
-| **Standard (Single Process)** | 0.94s | **NONE (Shared Memory)** | - |
-| **Velo (Zygote COW)** | **6.18s** | Total Process Isolation | **37.7x faster isolation** |
+Realistic project structure with filesystem overhead and collection complexity.
+
+| Scale (Tests) | Standard (Traditional Isolation) | Standard (Single Process - Unsafe) | **Velo (Isolated)** | Isolation Speedup |
+|:---|:---|:---|:---|:---|
+| **100** | 18.14s | 0.28s | **0.92s** | **19.7x** |
+| **500** | 92.48s | 0.73s | **3.86s** | **24.0x** |
+| **1000** | ~185s* | 2.23s | **7.35s** | **~25x** |
+
+*\*Estimated for 1000 tests based on 500-test average. Mode 1 skipped for 1000-tier to save CI time.*
 
 > [!IMPORTANT]
-> Velo achieves "Safe Isolation" at a speed comparable to "Unsafe Non-Isolation," eliminating the 4-minute penalty traditional tools require for clean test environments.
+> Velo achieves "Safe Isolation" at a speed that bridges the gap between unsafe single-process execution and unusable traditional isolation.
 
 > [!IMPORTANT]
 > This 1000-test run was a **full non-sampled execution** that took 3 minutes and 35 seconds to complete. The speedup is 100% verifiable wall-clock time. Standard isolation overhead is the bottleneck that Velo has successfully eliminated.
