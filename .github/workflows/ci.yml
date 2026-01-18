@@ -181,7 +181,7 @@ jobs:
           python-version: '3.11'
 
       - name: Sync Python deps
-        run: uv sync
+        run: uv sync --python 3.11
 
       - name: Build Release
         run: cargo build --release --all-features
@@ -241,7 +241,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: uv sync
+      - run: uv sync --python 3.11
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
