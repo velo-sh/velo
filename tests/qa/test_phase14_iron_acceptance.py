@@ -187,9 +187,14 @@ def test_phase14_iron_environment_persistence():
     test_file.write_text("""
 import os
 import sys
+from pathlib import Path
 
 def test_verify_env():
-    # Verify PYTHONPATH is preserved in Zygote-forked workers
+    # RFC Requirement 1: CWD must be project root (v_fork.py must call os.chdir(project_root))
+    cwd = Path(os.getcwd())
+    assert "gold_200_phase14" in str(cwd), f"CWD not set to project root: {cwd}"
+    
+    # RFC Requirement 2: PYTHONPATH must be preserved
     # The 'velo_app' should be importable if PYTHONPATH was correctly propagated
     try:
         import velo_app
@@ -197,13 +202,14 @@ def test_verify_env():
     except ImportError:
         print(f"DEBUG: sys.path = {sys.path}")
         print(f"DEBUG: PYTHONPATH = {os.environ.get('PYTHONPATH', 'NOT SET')}")
+        print(f"DEBUG: CWD = {os.getcwd()}")
         assert False, "CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
 """)
 
     try:
         env = gold_200_env()
 
-        print("\\n[Audit] Verifying Environment Persistence...")
+        print("\n[Audit] Verifying Environment Persistence...")
         res, _ = run_cmd([str(VELO_BIN), "test", str(test_file), "-n", "1", "--zygote"], env=env)
 
         if res.returncode != 0:
