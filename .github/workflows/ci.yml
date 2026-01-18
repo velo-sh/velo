@@ -291,10 +291,9 @@ jobs:
   # QA Test Suite - Layered by Purpose
   # ============================================
   
-  # SSOT: Matrix-based QA job for automatic test discovery
-  # All test subdirectories are run in parallel
-  qa-phases-suite:
-    name: "QA: Full Phase Suites (7.0-7.2)"
+  # Phase 7.x: Split into separate jobs for GitHub Actions visibility
+  qa-phase-7-0:
+    name: "QA 7.0: Memory Gravity (RFC-0015)"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -303,28 +302,40 @@ jobs:
       needs.changes.outputs.qa_infra == 'true'
     steps:
       - uses: actions/checkout@v4
-      - name: Download Velo binary
-        uses: actions/download-artifact@v4
+      - uses: ./.github/actions/run-tests
         with:
-          name: velo-binary-ubuntu
-          path: ./bin
-      - name: Make binary executable
-        run: chmod +x ./bin/velo
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
-      - name: Run Phase Test Suites
-        run: |
-          uv run pytest \
-            tests/qa/phase_7_0 \
-            tests/qa/phase_7_1 \
-            tests/qa/phase_7_2 \
-            -n auto --dist loadscope -v --tb=short
-        env:
-          VELO_TEST_MODE: "1"
-          VELO_BINARY: ${{ github.workspace }}/bin/velo
+          command: uv run pytest tests/qa/phase_7_0 -n auto --dist loadscope -v --tb=short
+
+  qa-phase-7-1:
+    name: "QA 7.1: Custody & Forensics"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_7_1 -n auto --dist loadscope -v --tb=short
+
+  qa-phase-7-2:
+    name: "QA 7.2: ASGI Bridge Compatibility"
+    runs-on: ubuntu-latest
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short
 
 
   qa-zygote-suite:
