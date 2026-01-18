@@ -36,6 +36,10 @@ echo "🔧 Installing Rust toolchain..."
 rustup show active-toolchain || rustup default stable
 rustup component add clippy rustfmt llvm-tools-preview 2>/dev/null || true
 
+# Install Linux cross-target for pre-commit checks (catches #[cfg(linux)] bugs on macOS)
+echo "🐧 Installing Linux cross-compilation target..."
+rustup target add x86_64-unknown-linux-gnu
+
 # Create Python venv and install deps from pyproject.toml (Single Source of Truth)
 echo
 echo "🐍 Setting up Python environment from pyproject.toml..."
