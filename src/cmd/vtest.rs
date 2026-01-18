@@ -100,12 +100,12 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
             .parent()
             .and_then(|p| p.parent())
             .and_then(|p| p.parent())
-        {
-            let pythonpath = std::env::var("PYTHONPATH")
-                .map(|p| format!("{}:{}", project_root.display(), p))
-                .unwrap_or_else(|_| project_root.display().to_string());
-            cmd.env("PYTHONPATH", pythonpath);
-        }
+    {
+        let pythonpath = std::env::var("PYTHONPATH")
+            .map(|p| format!("{}:{}", project_root.display(), p))
+            .unwrap_or_else(|_| project_root.display().to_string());
+        cmd.env("PYTHONPATH", pythonpath);
+    }
 
     // Add test path
     cmd.arg(test_path);
