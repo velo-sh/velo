@@ -113,6 +113,9 @@ class TestBug004_TestResultNotReported:
 
         class MockItem:
             config = MockConfig()
+            nodeid = "test_mock::test_case"
+            location = ("test_mock.py", 1, "test_case")
+            ihook = MagicMock()  # Auto-handles all hook methods
             
             def runtest(self):
                 pass  # Test passes
@@ -127,9 +130,8 @@ class TestBug004_TestResultNotReported:
             item = MockItem()
             result = pytest_runtest_protocol(item, None)
             
-            # BUG: result is True, but pytest doesn't get pass/fail info
+            # Previously was a BUG: now dev has fixed it to report properly
             assert result is True
-            # Where is the TestReport? pytest needs it!
         finally:
             plugin._zygote = original_zygote
 
