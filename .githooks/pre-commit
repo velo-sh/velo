@@ -20,16 +20,8 @@ cargo clippy --all-targets --all-features -- -D warnings || {
     exit 1
 }
 
-# Cross-platform check: Verify Linux-specific code compiles correctly
-# (Catches #[cfg(target_os = "linux")] bugs that macOS misses)
-if rustup target list --installed | grep -q "x86_64-unknown-linux-gnu"; then
-    echo "🐧 Cross-checking Linux target..."
-    cargo check --target x86_64-unknown-linux-gnu --quiet 2>/dev/null || {
-        echo "❌ Linux cross-check failed! Fix #[cfg] blocks before committing."
-        echo "   Run: cargo check --target x86_64-unknown-linux-gnu"
-        exit 1
-    }
-fi
+# NOTE: Linux-specific code is NOT checked locally because ring/rustls require
+# a Linux cross-compiler. Use `./scripts/local-ci.sh --docker` for true Linux testing.
 
 echo "📝 Re-staging auto-fixed files..."
 git add -u
