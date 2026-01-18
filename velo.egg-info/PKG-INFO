@@ -138,6 +138,10 @@ velo serve main:app --no-zygote       # Standard mode
 # 📊 Analyze import times (⚠️ executes the script!)
 velo analyze main.py                  # Analyze imports
 velo analyze --fix                    # Auto-update pyproject.toml
+
+# 🧪 Accelerate Pytest (40x faster!)
+# See: docs/guides/pytest-velo-user-guide.md
+pytest --velo
 ```
 
 
@@ -216,6 +220,8 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 5: Fast Loader & 14x Zygote speedup 🚀
 - [x] Phase 6: Static Import Graph & Security Hardening (H1-H10)
 - [x] **Phase 6.1: velo serve + velo analyze (The Hook)** 🎣
+- [x] **Phase 13: Zygote-accelerated testing (`pytest --velo`)** 🧪
+- [ ] Phase 14: Parallel Velo Testing (`pytest-xdist` integration) 🛰️
 
 ## License
 
