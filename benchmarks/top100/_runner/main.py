@@ -15,9 +15,11 @@ import platform
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +43,11 @@ ROOT_DIR = Path(__file__).parent.parent.parent.parent
 BENCHMARKS_DIR = ROOT_DIR / "benchmarks" / "top100"
 SHARED_VENV_DIR = (BENCHMARKS_DIR / ".shared_venv").resolve()
 RESULTS_FILE = BENCHMARKS_DIR / "top100_v2_results.json"
-VELO_BIN = (ROOT_DIR / "target/release/velo").resolve()
+VELO_BIN_ENV = os.environ.get("VELO_BIN")
+if VELO_BIN_ENV:
+    VELO_BIN = Path(VELO_BIN_ENV).resolve()
+else:
+    VELO_BIN = (ROOT_DIR / "target/release/velo").resolve()
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("runner")
