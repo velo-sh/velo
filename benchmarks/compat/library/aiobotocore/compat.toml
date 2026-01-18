@@ -1,0 +1,17 @@
+[meta]
+package = "aiobotocore"
+category = "library"
+tier = 3
+
+description = "aiobotocore compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/aio-libs/aiobotocore.git"
+git_ref = "2.8.0"
+test_path = "tests"
+test_dependencies = ["pytest", "flask-cors", "moto", "flask", "werkzeug", "docutils", "pip"]
+pytest_args = ["-x", "--ignore=tests/test_version.py"]
+timeout = 300
+known_failures = []

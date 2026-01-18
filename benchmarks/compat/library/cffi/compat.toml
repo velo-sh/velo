@@ -1,0 +1,18 @@
+[meta]
+package = "cffi"
+category = "library"
+tier = 3
+
+description = "cffi compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/python-cffi/cffi.git"
+git_ref = "v1.16.0"
+test_path = "testing"
+test_dependencies = ["pytest"]
+run_cmd = ["/bin/sh", "-c", "python3 setup.py build_ext --inplace && pytest testing"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

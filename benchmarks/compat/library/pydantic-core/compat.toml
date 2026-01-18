@@ -1,0 +1,17 @@
+[meta]
+package = "pydantic-core"
+category = "library"
+tier = 3
+
+description = "pydantic-core compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pydantic/pydantic-core.git"
+git_ref = "v2.14.5"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

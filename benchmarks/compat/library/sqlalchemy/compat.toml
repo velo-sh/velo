@@ -1,0 +1,17 @@
+[meta]
+package = "sqlalchemy"
+category = "library"
+tier = 3
+description = "Database Abstraction Library."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/sqlalchemy/sqlalchemy.git"
+git_ref = "rel_2_0_30"
+test_path = "test"
+test_dependencies = ["pytest", "mock", "typing-extensions", "greenlet"]
+pytest_args = ["-x", "--timeout=120", "-k", "not (profiling or timing)"]
+timeout = 1800
+env = { "VELO_WORKER_SPAWN_TIMEOUT" = "600", "VELO_ZYGOTE_SOCKET_TIMEOUT" = "600" }
+known_failures = []

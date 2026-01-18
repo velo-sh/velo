@@ -1,0 +1,17 @@
+[meta]
+package = "pycparser"
+category = "library"
+tier = 3
+
+description = "pycparser compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/eliben/pycparser.git"
+git_ref = "release_v2.21"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

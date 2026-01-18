@@ -1,0 +1,17 @@
+[meta]
+package = "packaging"
+category = "library"
+tier = 3
+
+description = "packaging compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pypa/packaging.git"
+git_ref = "23.2"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

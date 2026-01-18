@@ -1,0 +1,21 @@
+[meta]
+package = "django"
+category = "web"
+tier = 1
+description = "The Web framework for perfectionists with deadlines"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/django/django.git"
+git_ref = "5.1.4"
+test_path = "tests"
+test_dependencies = ["pytest", "pytest-django", "asgiref", "sqlparse", "tblib"]
+timeout = 300
+# Use native Django test runner - run a small subset for compatibility verification
+run_cmd = ["python", "tests/runtests.py", "--settings=tests.test_sqlite", "--parallel=1", "--verbosity=2", "admin_changelist", "admin_checks"]
+run_cwd_strategy = "repo"
+
+[compat.env]
+DJANGO_SETTINGS_MODULE = "tests.test_sqlite"
+PYTHONPATH = "."

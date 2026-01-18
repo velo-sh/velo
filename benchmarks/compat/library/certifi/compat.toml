@@ -1,0 +1,17 @@
+[meta]
+package = "certifi"
+category = "library"
+tier = 3
+
+description = "certifi compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/certifi/python-certifi.git"
+git_ref = "2023.07.22"
+test_path = "certifi/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []
