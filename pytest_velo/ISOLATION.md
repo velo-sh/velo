@@ -75,3 +75,34 @@ jobs:
 | CI quick check | `velo test` |
 | Pre-merge gate | `pytest` (canonical) |
 | Debugging isolation issues | `pytest -v` |
+
+---
+
+## Future: `--strict-compat` Mode (Roadmap)
+
+> **Status**: Planned for future implementation
+
+A `--strict-compat` flag that mimics vanilla pytest behavior:
+
+```bash
+velo test --strict-compat tests/
+```
+
+| Behavior | Default | `--strict-compat` |
+|:---|:---|:---|
+| TMPDIR isolation | Yes | No |
+| Socket isolation | Yes | No |
+| Per-test fork | Yes | Yes |
+| Global state reset | No | No (like pytest) |
+
+This would help catch shared-state bugs without switching to vanilla pytest.
+
+### Implementation Notes
+
+```python
+def worker_environment_isolation(strict_compat: bool = False) -> str:
+    if strict_compat:
+        return ""  # Skip isolation, mimic pytest
+    # ... normal isolation
+```
+
