@@ -47,7 +47,9 @@ def test_worker_identity():
     # We set VELO_DEBUG=1 to see the hijack logs if we added them
     env = os.environ.copy()
     env["PYTHONPATH"] = str(project_root)
-    env["PATH"] = str(project_root / "target" / "debug") + os.pathsep + env.get("PATH", "")
+    # RFC-0028: Use the discovered velo_bin directory instead of hardcoded target/debug
+    velo_bin_path = Path(velo_bin)
+    env["PATH"] = str(velo_bin_path.parent) + os.pathsep + env.get("PATH", "")
     env["VELO_ENV"] = "dev"
 
     # We also set VELO_ZYGOTE_AUTH to something known to make it easier to trace
