@@ -192,7 +192,7 @@ impl ZygoteGuardian {
         }
         #[cfg(target_os = "linux")]
         {
-            if let Ok(statm) = std::fs::read_to_string(format!("/proc/{}/statm", pid)) {
+            if let Ok(statm) = std::fs::read_to_string(format!("/proc/{}/statm", _pid)) {
                 let parts: Vec<&str> = statm.split_whitespace().collect();
                 if parts.len() > 1 {
                     if let Ok(rss_pages) = parts[1].parse::<u64>() {
