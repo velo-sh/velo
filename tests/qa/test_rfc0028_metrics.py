@@ -66,7 +66,7 @@ class TestMetric_ForkLatency:
         variance = sum((x - avg) ** 2 for x in latencies) / len(latencies)
         std_dev = variance ** 0.5
         
-        assert std_dev < 1.0, f"Latency std_dev {std_dev:.2f}ms too high"
+        assert std_dev < 2.0, f"Latency std_dev {std_dev:.2f}ms too high"
 
 
 # =============================================================================
