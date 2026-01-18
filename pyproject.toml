@@ -16,6 +16,10 @@ dependencies = [
     "websocket-client>=1.8.0",
 ]
 
+# RFC-0028: pytest-velo plugin registration
+[project.entry-points."pytest11"]
+velo = "pytest_velo.plugin"
+
 [tool.uv]
 python-preference = "only-managed"
 

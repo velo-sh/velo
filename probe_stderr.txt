@@ -1,2 +1,0 @@
-[Zygote] Starting ParentMonitor thread for parent 1170
-[Zygote] Monitor started for Parent 1170 (Polling Mode)

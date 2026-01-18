@@ -16,6 +16,7 @@ velo - The high-performance Python runtime for the AI era
 USAGE:
     velo run [OPTIONS] <script.py>
     velo serve <app> [OPTIONS]
+    velo test [path] [OPTIONS]       # Zygote-accelerated testing (RFC-0028)
     velo python <args>               # Managed Python (RFC-0018)
     velo analyze [OPTIONS] [file.py]
     velo bundle <inspect|build> [OPTIONS]
@@ -28,6 +29,7 @@ USAGE:
 COMMANDS:
     run      Run a Python script
     serve    Serve a Python ASGI/WSGI application
+    test     Run tests with Zygote acceleration (RFC-0028)
     python   Run Python via managed uv toolchain
     analyze  Analyze import times and suggest optimizations
     bundle   Bundle management (inspect, build)
@@ -68,8 +70,8 @@ OPTIONS:
 
 fn suggest_command(target: &str) -> Option<&'static str> {
     const COMMANDS: &[&str] = &[
-        "run", "serve", "python", "pip", "analyze", "bench", "bundle", "info", "audit", "zygote",
-        "graph",
+        "run", "serve", "test", "python", "pip", "analyze", "bench", "bundle", "info", "audit",
+        "zygote", "graph",
     ];
     let mut best_match = None;
     let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
@@ -108,6 +110,7 @@ pub fn run() -> Result<()> {
         }
         "run" => cmd::cmd_run(&args),
         "serve" => cmd::cmd_serve(&args),
+        "test" => cmd::cmd_vtest(&args), // RFC-0028: Zygote-accelerated testing
         "python" => cmd::cmd_python(&args), // RFC-0018: managed Python
         "analyze" => cmd::cmd_analyze(&args),
         "bench" => cmd::cmd_bench(&args),
