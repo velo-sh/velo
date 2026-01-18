@@ -109,18 +109,18 @@ Pytest Velo is built with "Safety-First" principles (RFC-0028 P0 requirements):
 
 ---
 
-## 📊 Performance Benchmark (1,000 Tests)
+## 📊 Performance Benchmark (High-Fidelity Tiers)
 
-Actual measured results on a standard 1,000-test suite:
+Actual measured results on a realistic project structure:
 
-| Mode | Isolation | Wall-Clock Time | Speedup |
-| :--- | :--- | :--- | :--- |
-| **Standard (Subprocess)** | ✅ Total | 232.92s | 1x (Baseline) |
-| **Standard (Single Process)**| ❌ None | **0.94s** | - |
-| **Pytest Velo (Zygote)** | ✅ Total | **6.18s** | **37.7x** 🚀 |
+| Scale (Tests) | Trad. Isolation | Unsafe Run | **Velo (Isolated)** | Improvement |
+| :--- | :--- | :--- | :--- | :--- |
+| **100 Tests** | 18.14s | 0.28s | **0.92s** | **~20x** |
+| **500 Tests** | 92.48s | 0.73s | **3.86s** | **~24x** |
+| **1000 Tests** | ~185s | 2.23s | **7.35s** | **~25x** 🚀 |
 
 > [!NOTE]
-> While Single-Process is faster for trivial tests, it provides **zero isolation**. Velo is the fastest way to run **safe, isolated** production tests.
+> Velo is the only tool that allows you to maintain **total process isolation** without the heavy "Time Tax" usually required by traditional subprocess-based testing.
 
 ---
 
