@@ -1,15 +1,15 @@
 """
 RFC-0028 First Principles Acceptance Tests
 
-设计原则：从 RFC-0028 设计目标倒推验收标准
+Design Principle: Derive acceptance criteria from RFC-0028 design goals
 
-RFC-0028 核心承诺:
-1. Drop-in enhancement - 无需修改现有测试
+RFC-0028 Core Promises:
+1. Drop-in enhancement - no changes to existing tests
 2. Per-worker startup < 2ms (vs 500ms-2s)  
 3. 100% pytest feature parity
 4. P0 fork safety guarantees
 
-这些测试验证这些承诺是否兑现。
+These tests verify whether these promises are fulfilled.
 """
 
 import os
@@ -23,20 +23,19 @@ import pytest
 
 
 # =============================================================================
-# 设计目标 1: DROP-IN ENHANCEMENT
+# DESIGN GOAL 1: DROP-IN ENHANCEMENT
 # RFC: "a drop-in enhancement that requires no changes to existing tests"
 # =============================================================================
 
 
 class TestDesignGoal_DropInEnhancement:
-    """验证 --velo 是真正的 drop-in，不破坏现有测试"""
+    """Verify --velo is a true drop-in that doesn't break existing tests"""
 
     @pytest.mark.xfail(
         reason="DEF-13-006: pytest-velo plugin not registered as entry point"
     )
     def test_vanilla_pytest_test_works_with_velo_flag(self):
-        """普通 pytest 测试加 --velo 应该正常运行"""
-        # 创建一个标准的 pytest 测试
+        """Standard pytest test with --velo should run normally"""
         test_code = '''
 def test_simple_assertion():
     assert 1 + 1 == 2
@@ -51,19 +50,19 @@ def test_list_operations():
             test_file = f.name
 
         try:
-            # 不带 --velo
+            # Without --velo
             result_without = subprocess.run(
                 [sys.executable, '-m', 'pytest', test_file, '-v'],
                 capture_output=True, text=True, timeout=30
             )
             
-            # 带 --velo
+            # With --velo
             result_with = subprocess.run(
                 [sys.executable, '-m', 'pytest', test_file, '--velo', '-v'],
                 capture_output=True, text=True, timeout=30
             )
             
-            # 两者结果应该一致（都通过）
+            # Both results should be consistent (both pass)
             assert result_without.returncode == 0, f"Without --velo failed: {result_without.stdout}"
             # Note: With --velo may differ if ZygoteServer not running
             # The key is that it should not CRASH
@@ -75,7 +74,7 @@ def test_list_operations():
         reason="DEF-13-006: pytest-velo plugin not registered as entry point"
     )
     def test_existing_fixtures_work_unchanged(self):
-        """现有的 pytest fixtures 应该照常工作"""
+        """Existing pytest fixtures should work as usual"""
         test_code = '''
 import pytest
 
@@ -103,30 +102,30 @@ def test_with_fixture(sample_data):
 
 
 # =============================================================================
-# 设计目标 2: PERFORMANCE TARGET
+# DESIGN GOAL 2: PERFORMANCE TARGET
 # RFC: "Per-worker startup: ~1ms" and "Fork latency < 2ms"
 # =============================================================================
 
 
 class TestDesignGoal_Performance:
-    """验证性能目标: fork latency < 2ms"""
+    """Verify performance target: fork latency < 2ms"""
 
     def test_fork_latency_under_2ms_target(self):
-        """RFC 目标: Fork latency < 2ms"""
+        """RFC target: Fork latency < 2ms"""
         from pytest_velo.plugin import measure_fork_latency
 
-        # 多次采样
+        # Multiple samples
         latencies = [measure_fork_latency() for _ in range(10)]
         avg = sum(latencies) / len(latencies)
         median = sorted(latencies)[len(latencies) // 2]
         
-        # RFC 目标是 < 2ms
+        # RFC target is < 2ms
         assert median < 2.0, f"Median latency {median:.2f}ms exceeds 2ms target"
 
     def test_1000x_speedup_potential(self):
-        """RFC 承诺: 1000 tests 从 30+ min 到 ~30 sec (60x speedup)
+        """RFC promise: 1000 tests from 30+ min to ~30 sec (60x speedup)
         
-        这里验证单个 fork 足够快以支撑这个目标:
+        Verify single fork is fast enough to support this goal:
         - 30 min = 1800s for 1000 tests with standard pytest
         - 30 sec = 30s for 1000 tests with velo
         - Per-fork budget: 30s / 1000 = 30ms
@@ -136,21 +135,21 @@ class TestDesignGoal_Performance:
         latencies = [measure_fork_latency() for _ in range(100)]
         avg = sum(latencies) / len(latencies)
         
-        # 每个 fork 需要 < 30ms 才能达到目标
+        # Each fork needs < 30ms to reach target
         assert avg < 30.0, f"Average latency {avg:.2f}ms exceeds 30ms budget"
 
 
 # =============================================================================
-# 设计目标 3: PYTEST FEATURE PARITY
+# DESIGN GOAL 3: PYTEST FEATURE PARITY
 # RFC: "Compatibility: 100% pytest feature parity"
 # =============================================================================
 
 
 class TestDesignGoal_PytestParity:
-    """验证 100% pytest 功能兼容"""
+    """Verify 100% pytest feature compatibility"""
 
     def test_pytest_marks_work(self):
-        """pytest markers 应该工作"""
+        """pytest markers should work"""
         test_code = '''
 import pytest
 
@@ -181,7 +180,7 @@ def test_normal():
             os.unlink(test_file)
 
     def test_pytest_parametrize_works(self):
-        """pytest.mark.parametrize 应该工作"""
+        """pytest.mark.parametrize should work"""
         test_code = '''
 import pytest
 
@@ -208,16 +207,16 @@ def test_addition(a, b, expected):
 
 
 # =============================================================================
-# 设计目标 4: P0 FORK SAFETY
+# DESIGN GOAL 4: P0 FORK SAFETY
 # RFC 12.1: P0 Blockers (Must Implement)
 # =============================================================================
 
 
 class TestDesignGoal_P0_Safety:
-    """验证 P0 安全要求已实现"""
+    """Verify P0 safety requirements are implemented"""
 
     def test_p0_1_fixture_reinit_hook_exists(self):
-        """P0-1: pytest_velo_fork_reinit hook 存在"""
+        """P0-1: velo_fork_reinit hook exists"""
         from pytest_velo.plugin import velo_fork_reinit, register_fork_reinit
 
         assert callable(velo_fork_reinit)
@@ -228,10 +227,10 @@ class TestDesignGoal_P0_Safety:
         from pytest_velo.plugin import assert_single_threaded
         import threading
 
-        # 单线程时不应该 raise
+        # Single-threaded should not raise
         assert_single_threaded()  # Should not raise
 
-        # 多线程时必须 raise
+        # Multi-threaded must raise
         import threading
         barrier = threading.Barrier(2)
         
@@ -258,7 +257,7 @@ class TestDesignGoal_P0_Safety:
         source = inspect.getsource(run_in_zygote_fork)
         tree = ast.parse(source)
 
-        # 确认 os._exit 被使用
+        # Verify os._exit is used
         os_exit_found = False
         sys_exit_found = False
 
@@ -284,7 +283,7 @@ class TestDesignGoal_P0_Safety:
 
 
 # =============================================================================
-# 设计目标 5: QUALITY GATES
+# DESIGN GOAL 5: QUALITY GATES
 # RFC Section 8: Quality Gates
 # =============================================================================
 
@@ -293,18 +292,18 @@ class TestQualityGate_A_PytestFeaturesWork:
     """Gate A: All pytest features work unchanged"""
 
     def test_assertions_work(self):
-        """标准 assert 语句工作"""
+        """Standard assert statements work"""
         assert 1 == 1
         assert "hello" in "hello world"
         assert [1, 2, 3] == [1, 2, 3]
 
     def test_exception_assertions_work(self):
-        """pytest.raises 工作"""
+        """pytest.raises works"""
         with pytest.raises(ZeroDivisionError):
             1 / 0
 
     def test_approx_assertions_work(self):
-        """pytest.approx 工作"""
+        """pytest.approx works"""
         assert 0.1 + 0.2 == pytest.approx(0.3)
 
 
@@ -312,26 +311,26 @@ class TestQualityGate_C_ForkLatency:
     """Gate C: Fork latency < 2ms"""
 
     def test_gate_c_fork_latency(self):
-        """Quality Gate C: Fork latency 必须 < 2ms"""
+        """Quality Gate C: Fork latency must be < 2ms"""
         from pytest_velo.plugin import measure_fork_latency
 
-        # RFC 明确规定: Fork latency < 2ms
+        # RFC specifies: Fork latency < 2ms
         latency = measure_fork_latency()
-        # 单次测量可能有波动，但应该 < 5ms
+        # Single measurement may vary, but should be < 5ms
         assert latency < 5.0, f"Fork latency {latency:.2f}ms too high"
 
 
 # =============================================================================
-# 设计目标 6: P1 CONCERNS
+# DESIGN GOAL 6: P1 CONCERNS
 # RFC 12.2: P1 Concerns (Address in Phase 1)
 # =============================================================================
 
 
 class TestDesignGoal_P1_Concerns:
-    """验证 P1 问题已处理"""
+    """Verify P1 concerns are addressed"""
 
     def test_p1_2_pythondontwritebytecode_set(self):
-        """P1-2: COW thrashing via PYTHONDONTWRITEBYTECODE=1"""
+        """P1-2: COW thrashing prevention via PYTHONDONTWRITEBYTECODE=1"""
         from pytest_velo.plugin import pytest_configure
 
         class MockConfig:
@@ -340,13 +339,12 @@ class TestDesignGoal_P1_Concerns:
                 velo_preload = ""
             option = Option()
 
-        # 调用 pytest_configure
         import pytest_velo.plugin as plugin
         original = plugin._zygote
         
         try:
             pytest_configure(MockConfig())
-            # 应该设置了 PYTHONDONTWRITEBYTECODE
+            # Should have set PYTHONDONTWRITEBYTECODE
             assert os.environ.get("PYTHONDONTWRITEBYTECODE") == "1"
         finally:
             plugin._zygote = original
