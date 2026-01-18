@@ -14,50 +14,58 @@
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Setup
 
-For now, `pytest-velo` lives within the Velo core repository. To get the turbo-boosted experience, you'll need to set up the development environment and build the engine.
+To use `pytest-velo` in this repository, you need to set up both the Python environment and the Rust Zygote engine. Follow these **3 simple steps**:
 
-### 1. Setup the Environment
-
-We use `uv` for lightning-fast Python dependency management. Run our one-click setup script to prepare your virtual environment:
+### 1. Initialize the Environment
+We use `uv` for lightning-fast, reproducible environments. This will create a `.venv` and install all necessary dependencies (including the `pytest-velo` plugin itself in editable mode).
 
 ```bash
-# Clone the repository (if you haven't)
-git clone https://github.com/velo-sh/velo.git
-cd velo
-
-# Run the setup script
+# Run the one-click setup script
 ./setup-dev.sh
 ```
 
 ### 2. Build the Zygote Engine
-
-The high-performance core of Velo is written in Rust. You need to build it once locally (this takes ~1 min for the first run):
+The core of Velo's speed is a high-performance Rust binary. You need to compile it once:
 
 ```bash
+# Build the 'velo' CLI and Zygote server
 cargo build --release
 ```
 
-### 3. Add to your PATH
-
-The pytest plugin needs to find the `velo` binary to manage the Zygote daemon. Add the build directory to your path:
+### 3. Connect the Engine
+The pytest plugin needs to know where to find the `velo` binary. Add the build directory to your session's `PATH`:
 
 ```bash
+# Point to your local build
 export PATH="$PWD/target/release:$PATH"
 ```
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start: Your First Velo Run
 
-With the environment ready, you can now run any pytest suite and simply add the `--velo` flag.
+Once you've done the setup, using Velo is as simple as adding a single flag.
 
-### Run your tests
+### Run tests with Zygote
+Use `uv run` to ensure you are using the project's virtual environment:
 
 ```bash
 uv run pytest --velo
 ```
+
+### How to know it worked?
+Look for the **Velo Magic** in your terminal output:
+
+```text
+platform darwin -- Python 3.11.x, pytest-x.y.z
+plugins: velo-0.1.0, ...
+[Session] Log dir: /tmp/velo-sessions/...
+[Zygote] Warm-up complete. Forking workers...  <-- THIS!
+```
+
+If you see the `[Zygote]` line, you are now running tests with **Copy-on-Write memory isolation**.
 
 ### Verify it's working
 
