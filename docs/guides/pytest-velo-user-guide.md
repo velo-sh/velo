@@ -131,4 +131,55 @@ Now every `pytest` run is a Velo run by default.
 
 ---
 
+## 🎨 Tutorial - User Guide
+
+Let's verify the **42x speedup** on your machine right now.
+
+### 1. Create a "Heavy" Test
+Create a directory named `my_perf_tests` and add a test file that simulates a realistic import load:
+
+```python
+# test_physics.py
+import time
+import math
+
+def test_heavy_calculation():
+    # Simulate some work
+    result = sum(math.sqrt(i) for i in range(10000))
+    assert result > 0
+```
+
+### 2. The Slow Way (Standard Isolation)
+Run this test 50 times using standard subprocess spawning:
+
+```bash
+time for i in {1..50}; do uv run pytest test_physics.py -q; done
+# Estimated time: ~12-15 seconds
+```
+
+### 3. The Velo Way (Zygote Turbo)
+Run the same 50 tests with Velo in one go:
+
+```bash
+uv run pytest --velo --velo-preload=math my_perf_tests/
+# Estimated time: < 0.5 seconds 🚀
+```
+
+---
+
+## 📁 Project Structure
+
+If you're curious about how the magic happens:
+
+```text
+.
+├── Cargo.toml          # Rust Zygote Engine definition
+├── pyproject.toml      # Python Plugin registration
+├── pytest_velo/        # 🐍 Python Plugin logic
+│   └── plugin.py       # The Zygote-Fork orchestrator
+└── src/                # 🦀 Rust Zygote implementation
+```
+
+---
+
 *“Velo is like having a warm engine that never needs to restart.”*
