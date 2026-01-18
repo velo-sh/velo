@@ -158,11 +158,17 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
       - uses: actions/checkout@v4
 
       - name: Verify Rust Toolchain
         run: rustup show
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -181,11 +187,12 @@ jobs:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
-      - name: Pre-Flight Diagnostic
-        run: cargo run --release --all-features -- debug pre-flight
-
-      - name: Build
+      # NOTE: cargo run --release compiles AND runs, so no separate cargo build needed
+      - name: Build + Pre-Flight Diagnostic
         run: cargo build --release --all-features
+
+      - name: "RFC-0020: Pre-Flight Check"
+        run: ./target/release/velo debug pre-flight && ./target/release/velo debug zygote --json
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
@@ -194,19 +201,42 @@ jobs:
           path: target/release/velo
           if-no-files-found: error
 
-      - name: Run Rust tests
-        run: cargo test
-
       - name: Run Python tests
         run: uv run run_tests.py
-
-      - name: "RFC-0020: Pre-Flight Check"
-        run: ./target/release/velo debug zygote --json
 
       - name: Check binary size
         run: |
           echo "Binary size:"
           ls -lh target/release/velo
+          echo "sccache stats:"
+          sccache --show-stats
+
+  # Rust tests run in parallel with other QA jobs
+  rust-tests:
+    name: Rust Tests
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-rust-${{ runner.os }}"
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Run Rust tests
+        run: cargo test
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough

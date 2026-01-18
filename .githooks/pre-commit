@@ -32,21 +32,5 @@ cargo build --quiet || {
     exit 1
 }
 
-# Detect changes in Zygote or Serve core
-DIFF_FILES=$(git diff --cached --name-only)
-if echo "$DIFF_FILES" | grep -qE "velo_zygote/|src/zygote/|src/serve/"; then
-    echo "🧪 Kinetic/Zygote core changed. Running Agent D CHAOS suite..."
-    
-    # Set path to local debug binary to ensure path alignment
-    export PATH="$(pwd)/target/debug:$PATH"
-    
-    uv run pytest tests/qa/test_phase6_2_agent_d_destroyer.py --quiet || {
-        echo "❌ KINETIC REGRESSION DETECTED!"
-        echo "   The Agent D CHAOS suite failed. This is likely a timing or pollution issue."
-        echo "   Please verify your changes and resolve the regression before committing."
-        exit 1
-    }
-    echo "✅ Agent D CHAOS suite passed."
-fi
 
 echo "✅ All pre-commit checks passed!"
