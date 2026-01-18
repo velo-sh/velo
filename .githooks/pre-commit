@@ -1,21 +1,27 @@
 #!/bin/sh
 # Pre-commit hook for Velo
-# Run format, lint, and test checks before commit
+# Auto-format and auto-fix safe issues before commit
 # IMPORTANT: These commands MUST match CI (.github/workflows/ci.yml)
 
 set -e
 
-echo "🔍 Running cargo fmt..."
-cargo fmt --check || {
-    echo "❌ Format check failed. Run 'cargo fmt' to fix."
+echo "� Auto-formatting with cargo fmt..."
+cargo fmt
+
+echo "🔧 Auto-fixing clippy (machine-applicable only)..."
+# --fix: auto-apply fixes, --allow-staged: work on staged files
+# --allow-dirty: don't fail if there are unstaged changes
+# Only apply machine-applicable fixes (safe, no semantic changes)
+cargo clippy --fix --allow-staged --allow-dirty --all-targets --all-features 2>/dev/null || true
+
+echo "🔍 Running cargo clippy check..."
+cargo clippy --all-targets --all-features -- -D warnings || {
+    echo "❌ Clippy check failed. Some warnings cannot be auto-fixed."
     exit 1
 }
 
-echo "🔍 Running cargo clippy (Single Source of Truth: Cargo.toml)..."
-cargo clippy --all-targets --all-features -- -D warnings || {
-    echo "❌ Clippy check failed. Fix the warnings above."
-    exit 1
-}
+echo "📝 Re-staging auto-fixed files..."
+git add -u
 
 echo "🔍 Running cargo test (lib only for speed)..."
 cargo test --lib || {
@@ -23,14 +29,10 @@ cargo test --lib || {
     exit 1
 }
 
-# -------------------------------------------------------------------
-# KINETIC GUARDRAILS (RFC-0013 Compliance)
-# -------------------------------------------------------------------
 echo "🏗️  Enforcing fresh build for path alignment..."
 cargo build --quiet || {
     echo "❌ Build failed. Please fix compilation issues."
     exit 1
 }
-
 
 echo "✅ All pre-commit checks passed!"
