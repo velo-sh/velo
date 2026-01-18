@@ -202,8 +202,6 @@ jobs:
         run: |
           echo "Binary size:"
           ls -lh target/release/velo
-          echo "sccache stats:"
-          sccache --show-stats
 
   # Rust tests run in parallel with other QA jobs
   rust-tests:
