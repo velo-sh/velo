@@ -106,6 +106,12 @@ pub enum ZygoteCommand {
         #[serde(default)]
         request_id: Option<String>,
     },
+    /// Replenish the pre-forked worker pool (P2)
+    ReplenishPool {
+        target_count: usize,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -125,6 +131,12 @@ pub enum ZygoteResponse {
         /// Preload state (e.g., "READY", "LOADING")
         #[serde(default)]
         state: String,
+        /// Current number of workers in the idle pool (P2)
+        #[serde(default)]
+        pool_count: usize,
+        /// Current target pool size (P2)
+        #[serde(default)]
+        target_pool_size: usize,
     },
     /// A worker was successfully forked
     Forked {
@@ -596,6 +608,8 @@ mod tests {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
             state: "READY".to_string(),
+            pool_count: 5,
+            target_pool_size: 10,
         };
 
         // Test MessagePack roundtrip
@@ -607,6 +621,7 @@ mod tests {
             pid,
             preload,
             state,
+            ..
         } = decoded
         {
             assert_eq!(pid, 1234);

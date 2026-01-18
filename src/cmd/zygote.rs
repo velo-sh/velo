@@ -183,7 +183,18 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
                 );
                 println!("✅ Zygote started");
                 println!("   Socket: {}", socket_path.display());
-                // Keep launcher alive by forgetting it (daemon mode)
+
+                if daemon {
+                    println!(
+                        "🛡️  Guardian engaged. Press Ctrl+C to stop (or use 'velo zygote stop')"
+                    );
+                    // Keep the process alive to monitor the Zygote
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(3600));
+                    }
+                }
+
+                // Keep launcher alive by forgetting it
                 std::mem::forget(launcher);
             }
             Err(e) => {

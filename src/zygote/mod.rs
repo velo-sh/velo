@@ -20,6 +20,7 @@ pub mod auto_config;
 pub mod cli;
 pub mod core_ipc;
 pub mod error;
+pub mod guardian;
 pub mod peer_check;
 
 extern crate log;
@@ -401,6 +402,8 @@ impl ZygoteLauncher {
         if self.is_running() {
             return Ok(());
         }
+
+        // ... existing implementation ...
 
         // Find Python interpreter using standardized detection (respects VELO_PYTHON)
         let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -797,6 +800,22 @@ impl ZygoteLauncher {
                 );
             }
             log::info!("Zygote deep probe successful (PID: {}).", pid);
+
+            // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
+            let params = guardian::ZygoteStartParams {
+                preload: preload.iter().map(|s| s.to_string()).collect(),
+                app_name: app_name.map(|s| s.to_string()),
+                python_path: python.clone(),
+                config: config.clone(),
+            };
+
+            let guardian =
+                guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
+            if let Err(e) = guardian.start() {
+                log::warn!("[Guardian] Failed to start background supervisor: {}", e);
+            } else {
+                log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
+            }
         } else {
             return Err(ZygoteError::StartFailed(
                 "Deep probe failed: invalid response".to_string(),
