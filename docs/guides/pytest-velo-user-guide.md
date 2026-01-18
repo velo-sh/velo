@@ -14,33 +14,63 @@
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Installation
 
-### 1. Installation
+For now, `pytest-velo` lives within the Velo core repository. To get the turbo-boosted experience, you'll need to set up the development environment and build the engine.
 
-Since `pytest-velo` is currently part of the Velo core repository, follow these steps to set up your environment:
+### 1. Setup the Environment
+
+We use `uv` for lightning-fast Python dependency management. Run our one-click setup script to prepare your virtual environment:
 
 ```bash
-# 1. Setup the development environment (creates venv & installs deps)
+# Clone the repository (if you haven't)
+git clone https://github.com/velo-sh/velo.git
+cd velo
+
+# Run the setup script
 ./setup-dev.sh
+```
 
-# 2. Build the Velo Rust binary (the Zygote engine)
+### 2. Build the Zygote Engine
+
+The high-performance core of Velo is written in Rust. You need to build it once locally (this takes ~1 min for the first run):
+
+```bash
 cargo build --release
+```
 
-# 3. Add Velo to your PATH so the plugin can find it
+### 3. Add to your PATH
+
+The pytest plugin needs to find the `velo` binary to manage the Zygote daemon. Add the build directory to your path:
+
+```bash
 export PATH="$PWD/target/release:$PATH"
 ```
 
-### 2. Run with Turbo
+---
 
-Simply add the `--velo` flag to your `pytest` command:
+## ⚡ Quick Start
+
+With the environment ready, you can now run any pytest suite and simply add the `--velo` flag.
+
+### Run your tests
 
 ```bash
 uv run pytest --velo
 ```
 
-> [!TIP]
-> You can verify the plugin is active by looking for the `[Session] Log dir: ...` and `Zygote` mentions in the pytest output.
+### Verify it's working
+
+You should see an output like this:
+
+```text
+platform darwin -- Python 3.11.x, pytest-x.y.z
+plugins: velo-0.1.0, ...
+[Session] Log dir: /tmp/velo-sessions/...
+[Zygote] Warm-up complete. Forking workers...
+```
+
+If you see these logs, **congratulations!** You are now running tests at the speed of physics.
 
 ---
 
