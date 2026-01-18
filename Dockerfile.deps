@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1.4
+# =============================================================================
+# Velo CI Dependencies Image (Layer 2)
+# =============================================================================
+# Pre-compiles all Rust dependencies using cargo-chef
+# Built on top of velo-ci-base (Layer 1)
+#
+# Rebuild triggers: Cargo.toml, Cargo.lock changes
+# Expected build time: ~5-8min (but cached and reused)
+# =============================================================================
+
+ARG BASE_IMAGE=ghcr.io/velo-sh/velo-ci-base:latest
+FROM ${BASE_IMAGE} AS chef
+WORKDIR /workspace
+
+# Stage 1: Prepare the recipe (dependency manifest)
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
+# Create minimal source structure for cargo-chef
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 2: Cook the dependencies (compile them)
+FROM chef AS builder
+COPY --from=planner /workspace/recipe.json recipe.json
+COPY vendor ./vendor
+# Build dependencies only (this is the expensive step, but cached)
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Stage 3: Final image with pre-compiled deps
+FROM chef AS runtime
+# Copy the compiled target directory (contains all dependencies)
+COPY --from=builder /workspace/target /workspace/target
+COPY --from=builder /root/.cargo /root/.cargo
+
+# Metadata
+LABEL maintainer="velo-sh" \
+    description="Velo CI with pre-compiled dependencies"
+
+# Keep vendor for project build
+COPY vendor ./vendor
+
+# Ready for project code to be added in CI
+CMD ["bash", "-c", "echo 'Velo CI Dependencies Ready - Run: cargo build --release'"]
