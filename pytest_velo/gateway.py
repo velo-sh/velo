@@ -54,7 +54,17 @@ class ZygoteGateway(execnet.gateway.Gateway):
             sock.close()
             raise RuntimeError(f"Velo Gateway Handover failed (Ready expected): {ready}")
 
-        # B. Authenticate if needed
+        # B. Authenticate (SEC-005: Auto-discover secret from .auth file)
+        if secret is None:
+            # Try to read secret from .auth file (SEC-005 parity with Rust)
+            try:
+                from pathlib import Path
+                auth_path = Path(socket_path).with_suffix(".auth")
+                if auth_path.exists():
+                    secret = auth_path.read_text().strip()
+            except Exception:
+                pass  # No auth file or unreadable - proceed without auth
+
         if secret:
             transport.send({"type": "Auth", "secret": secret})
             auth_resp = transport.recv()

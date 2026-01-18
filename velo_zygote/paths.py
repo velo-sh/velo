@@ -150,6 +150,11 @@ class VeloPaths:
         return directory / f"w-{worker_id}.s"
 
     @staticmethod
+    def auth_file_for_socket(socket_path: Path) -> Path:
+        """Get the .auth file path for a given socket (SEC-005 parity with Rust)."""
+        return socket_path.with_suffix(".auth")
+
+    @staticmethod
     def zygote_log() -> Path:
         """Get the log path for the Zygote."""
         if os.environ.get("VELO_ZYGOTE_LOG"):
