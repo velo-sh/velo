@@ -146,7 +146,7 @@ jobs:
               - 'run_tests.py'
 
   build:
-    name: Build (Container)
+    name: Build
     needs: changes
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -158,29 +158,25 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/velo-sh/velo-ci-deps:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use pre-compiled deps
-        run: |
-          if [ -d /cargo-cache/target ]; then
-            echo "Copying pre-compiled deps from /cargo-cache..."
-            cp -r /cargo-cache/target .
-            echo "Done! $(du -sh target | cut -f1) of cached deps"
-          else
-            echo "No cache at /cargo-cache/target - will build from scratch"
-          fi
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
-      - name: Verify Environment
-        run: |
-          echo "Rust:" && rustc --version
-          echo "Python:" && python --version
-          echo "uv:" && uv --version
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-build"
+          cache-on-failure: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Setup Python
+        run: uv python install 3.12
 
       - name: Sync Python deps
         run: uv sync
@@ -214,15 +210,12 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/velo-sh/velo-ci-deps:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Use pre-compiled deps
-        run: cp -r /cargo-cache/target . 2>/dev/null || true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-build"
       - name: Run Rust tests
         run: cargo test
 
@@ -234,17 +227,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/velo-sh/velo-ci-deps:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Use pre-compiled deps
-        run: cp -r /cargo-cache/target . 2>/dev/null || true
-      - name: Sync Python deps
-        run: uv sync
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-build"
+      - uses: astral-sh/setup-uv@v4
+      - run: uv python install 3.12 && uv sync
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -253,13 +245,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/velo-sh/velo-ci-deps:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - name: Check Format
         run: cargo fmt --check
 
