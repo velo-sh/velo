@@ -68,13 +68,18 @@ def test_guardian_basic_health_check():
     """
     Verify the Guardian starts successfully and Zygote reports health metrics.
     """
-    subprocess.Popen(
-        ["./target/debug/velo", "zygote", "start", "--daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    # Start Zygote and wait for it to be ready
+    result = subprocess.run(
+        ["./target/debug/velo", "zygote", "start", "--daemon"],
+        capture_output=True, text=True, timeout=15
     )
-    time.sleep(3)
+    if result.returncode != 0:
+        print(f"Zygote start failed: {result.stderr}")
+    time.sleep(4)  # Extra time for Guardian to initialize
 
     status = get_zygote_status()
     assert "Running ✅" in status, f"Zygote should be running. Got: {status}"
 
     pid = get_zygote_pid()
     assert pid is not None, "Should be able to extract PID from status"
+
