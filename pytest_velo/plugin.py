@@ -319,7 +319,9 @@ def pytest_configure(config: Any) -> None:
                 socket_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
                 socket_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                 _session_socket_path = socket_dir / socket_name
-                os.environ["VELO_ZYGOTE_SOCKET"] = str(_session_socket_path)
+                # Respect user-provided socket path (allows external Zygote sharing)
+                if not os.environ.get("VELO_ZYGOTE_SOCKET"):
+                    os.environ["VELO_ZYGOTE_SOCKET"] = str(_session_socket_path)
                 
                 # SEC-005: Generate forensic secret for this session if not provided
                 if not os.environ.get("VELO_ZYGOTE_AUTH"):
