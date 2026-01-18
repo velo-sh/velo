@@ -23,6 +23,9 @@ velo = "pytest_velo.plugin"
 [tool.uv]
 python-preference = "only-managed"
 
+[tool.setuptools]
+packages = ["pytest_velo"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

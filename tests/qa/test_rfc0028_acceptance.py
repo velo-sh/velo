@@ -31,9 +31,6 @@ import pytest
 class TestDesignGoal_DropInEnhancement:
     """Verify --velo is a true drop-in that doesn't break existing tests"""
 
-    @pytest.mark.xfail(
-        reason="DEF-13-006: pytest-velo plugin not registered as entry point"
-    )
     def test_vanilla_pytest_test_works_with_velo_flag(self):
         """Standard pytest test with --velo should run normally"""
         test_code = '''
@@ -70,9 +67,6 @@ def test_list_operations():
         finally:
             os.unlink(test_file)
 
-    @pytest.mark.xfail(
-        reason="DEF-13-006: pytest-velo plugin not registered as entry point"
-    )
     def test_existing_fixtures_work_unchanged(self):
         """Existing pytest fixtures should work as usual"""
         test_code = '''

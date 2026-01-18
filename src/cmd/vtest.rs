@@ -112,6 +112,7 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
 
     // Add Zygote flags if enabled
     if use_zygote {
+        cmd.arg("-p").arg("pytest_velo.plugin"); // Force load plugin
         cmd.arg("--velo");
         if let Some(modules) = preload {
             cmd.arg(format!("--velo-preload={}", modules));
