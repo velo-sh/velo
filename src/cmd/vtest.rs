@@ -46,6 +46,14 @@ fn build_cli() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("cov")
+                .long("cov")
+                .help("Enable coverage measurement (passes --cov to pytest)")
+                .value_name("PATH")
+                .num_args(0..=1)
+                .default_missing_value("."),
+        )
+        .arg(
             Arg::new("verbose")
                 .short('v')
                 .long("verbose")
@@ -74,6 +82,7 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
     let tier = matches.get_one::<String>("tier");
     let preload = matches.get_one::<String>("preload");
     let use_zygote = matches.get_flag("zygote");
+    let cov_path = matches.get_one::<String>("cov");
     let verbose = matches.get_flag("verbose");
     let extra_args: Vec<&String> = matches
         .get_many::<String>("pytest_args")
@@ -103,6 +112,12 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
     // Add verbosity
     if verbose {
         cmd.arg("-v");
+    }
+
+    // Add coverage if requested
+    if let Some(path) = cov_path {
+        cmd.arg(format!("--cov={}", path));
+        cmd.arg("--cov-report=term-missing");
     }
 
     // Parallel workers (only if > 1 and not using zygote)
