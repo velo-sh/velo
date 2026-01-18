@@ -159,7 +159,7 @@ jobs:
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/velo-sh/velo-ci-base:latest
+      image: ghcr.io/velo-sh/velo-ci-deps:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -205,7 +205,7 @@ jobs:
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/velo-sh/velo-ci-base:latest
+      image: ghcr.io/velo-sh/velo-ci-deps:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -223,7 +223,7 @@ jobs:
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/velo-sh/velo-ci-base:latest
+      image: ghcr.io/velo-sh/velo-ci-deps:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -240,7 +240,7 @@ jobs:
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/velo-sh/velo-ci-base:latest
+      image: ghcr.io/velo-sh/velo-ci-deps:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
