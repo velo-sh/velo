@@ -243,6 +243,84 @@ def test_verify_env():
             test_file.unlink()
 
 
+@pytest.mark.tier1
+def test_phase14_orphan_storm_prevention():
+    """
+    CRITICAL: Zygote MUST NOT leak orphan worker processes.
+    
+    Discovered in QA Round 14: Zygote was spawning 33+ orphan processes that
+    never exited, consuming system resources indefinitely.
+    
+    Acceptance Criteria:
+    - After starting Zygote, there should be exactly 1 main process
+    - After running tests, workers should exit cleanly
+    - After stopping Zygote, there should be 0 processes
+    """
+    import subprocess
+    
+    # 1. Clean slate - kill any existing Zygote processes
+    subprocess.run(["pkill", "-9", "-f", "velo_zygote/main.py"], capture_output=True)
+    time.sleep(0.5)
+    
+    def count_zygote_processes():
+        result = subprocess.run(
+            ["pgrep", "-f", "velo_zygote/main.py"],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            return 0
+        return len([x for x in result.stdout.strip().split("\\n") if x])
+    
+    # 2. Start Zygote
+    print("\\n[Orphan Test] Starting Zygote...")
+    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True)
+    time.sleep(1.0)
+    
+    initial_count = count_zygote_processes()
+    print(f"[Orphan Test] Initial process count: {initial_count}")
+    
+    # Should be exactly 1 main Zygote process
+    assert initial_count == 1, (
+        f"ORPHAN STORM: Expected 1 Zygote process after start, found {initial_count}. "
+        "Zygote is leaking processes on startup!"
+    )
+    
+    # 3. Run a simple test
+    print("[Orphan Test] Running a quick test...")
+    env = gold_200_env()
+    subprocess.run(
+        [str(VELO_BIN), "test", str(GOLD_DIR / "tests" / "layer_1_auth"), "-n", "2", "--zygote"],
+        capture_output=True, env=env, timeout=30
+    )
+    time.sleep(1.0)
+    
+    post_test_count = count_zygote_processes()
+    print(f"[Orphan Test] Post-test process count: {post_test_count}")
+    
+    # After test, should still be reasonable (1 main + maybe a few workers, but not 30+)
+    assert post_test_count <= 5, (
+        f"ORPHAN STORM: Expected <= 5 processes after test, found {post_test_count}. "
+        "Workers are not exiting after test completion!"
+    )
+    
+    # 4. Stop Zygote
+    print("[Orphan Test] Stopping Zygote...")
+    subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
+    time.sleep(1.0)
+    
+    final_count = count_zygote_processes()
+    print(f"[Orphan Test] Final process count: {final_count}")
+    
+    # After stop, should be ZERO
+    assert final_count == 0, (
+        f"ORPHAN STORM: Expected 0 processes after stop, found {final_count}. "
+        "Zygote stop is not cleaning up child processes!"
+    )
+    
+    print("✅ Orphan Storm Prevention: PASSED")
+
+
 if __name__ == "__main__":
     # Diagnostic run
     pytest.main([__file__, "-v", "-s"])
+
