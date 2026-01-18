@@ -216,6 +216,11 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
 
     if report.when == "call" and report.failed:
+        # Skip bundling for simple assertion failures or import errors
+        # to ensure fast failure feedback
+        if "ImportError" in str(report.longrepr) or "ModuleNotFoundError" in str(report.longrepr):
+            return
+
         sys.stderr.write(
             f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n"
         )
@@ -256,6 +261,9 @@ def pytest_runtest_makereport(item, call):
                     filename = f"failure-{safe_name}-{ts}.tar.gz"
                     cmd.extend(["--output", filename])
 
-                subprocess.run(cmd, check=False)
+                # Add timeout to prevent hanging (fail fast principle)
+                subprocess.run(cmd, check=False, timeout=5)
+        except subprocess.TimeoutExpired:
+            sys.stderr.write("[Artifacts] Bundle collection timed out (5s limit)\n")
         except Exception as e:
             sys.stderr.write(f"[Artifacts] Failed to bundle: {e}\n")
