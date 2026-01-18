@@ -32,7 +32,6 @@ RUN cargo chef cook --release --recipe-path recipe.json
 FROM chef AS runtime
 # Copy the compiled target directory (contains all dependencies)
 COPY --from=builder /workspace/target /workspace/target
-COPY --from=builder /root/.cargo /root/.cargo
 
 # Metadata
 LABEL maintainer="velo-sh" \
