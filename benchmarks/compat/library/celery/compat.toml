@@ -1,0 +1,18 @@
+[meta]
+package = "celery"
+category = "library"
+tier = 1
+description = "Distributed Task Queue"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/celery/celery.git"
+git_ref = "v5.4.0"
+test_path = "t/unit"
+test_dependencies = ["pytest", "pytest-timeout", "hypothesis", "case", "pytz", "google-cloud-storage", "boto3", "moto", "pymongo", "redis", "pytest-subtests"]
+# Celery tests are complex, run unit tests only for compatibility baseline
+pytest_args = []
+exclude_markers = ["integration", "network", "slow"]
+timeout = 600
+known_failures = []

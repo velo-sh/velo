@@ -1,0 +1,17 @@
+[meta]
+package = "cachetools"
+category = "library"
+tier = 3
+
+description = "cachetools compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/tkem/cachetools.git"
+git_ref = "v5.3.2"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

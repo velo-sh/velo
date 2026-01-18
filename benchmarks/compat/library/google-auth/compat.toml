@@ -1,0 +1,33 @@
+[meta]
+package = "google-auth"
+category = "library"
+tier = 3
+
+description = "google-auth compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/googleapis/google-auth-library-python.git"
+git_ref = "v2.23.4"
+test_path = "tests"
+test_dependencies = [
+    "pytest",
+    "flask",
+    "freezegun",
+    "mock",
+    "oauth2client",
+    "pyopenssl",
+    "pytest-localserver",
+    "pyu2f",
+    "requests",
+    "urllib3",
+    "responses",
+    "grpcio",
+    "pytest-asyncio",
+    "aioresponses",
+    "aiohttp"
+]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

@@ -1,0 +1,16 @@
+[meta]
+package = "isort"
+category = "cli"
+tier = 3
+description = "A Python utility / library to sort imports alphabetically."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/PyCQA/isort.git"
+git_ref = "5.13.2"
+test_path = "tests/unit"
+test_dependencies = ["pytest", "hypothesis", "setuptools"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

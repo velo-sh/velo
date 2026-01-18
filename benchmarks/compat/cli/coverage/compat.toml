@@ -1,0 +1,17 @@
+[meta]
+package = "coverage"
+category = "cli"
+tier = 3
+
+description = "coverage compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/nedbat/coveragepy.git"
+git_ref = "7.3.2"
+test_path = "tests"
+test_dependencies = ["pytest", "flaky", "hypothesis"]
+pytest_args = ["-n0", "-p", "no:relaxed", "-o", "addopts="]
+timeout = 300
+known_failures = []

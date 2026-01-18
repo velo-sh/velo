@@ -1,0 +1,20 @@
+[meta]
+package = "decorator"
+category = "library"
+tier = 3
+
+description = "decorator compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/micheles/decorator.git"
+git_ref = "5.1.1"
+test_path = "src/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-o", "python_files=test.py", "-p", "no:asyncio"]
+timeout = 300
+known_failures = [
+    "src/tests/test.py::CoroutineTestCase::test_before_after",
+    "src/tests/test.py::CoroutineTestCase::test_coro_to_func"
+]
