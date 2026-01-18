@@ -354,4 +354,24 @@ def pytest_velo_fork_reinit(item):
 
 ---
 
-**Last Updated**: 2026-01-18 (Council Review Added)
+## 14. Roadmap
+
+### 14.1 Short-Term (Phase 13 Enhancements)
+
+| Feature | Priority | Description |
+|:---|:---|:---|
+| `--workers N` | P2 | Parallel test execution with N workers |
+| pytest entry point | P1 | `--velo` flag via `uv pip install -e .` |
+| `--strict-compat` | P2 | Mimic vanilla pytest isolation |
+
+### 14.2 Mid-Term (Phase 14 Candidates)
+
+| Feature | Value | Complexity |
+|:---|:---|:---|
+| **TestCoordinator Full IPC** | True Zygote dispatch | High |
+| **pytest-xdist Integration** | Zygote-accelerate xdist workers | Medium |
+| **Coverage Integration** | `velo test --cov` | Low |
+
+---
+
+**Last Updated**: 2026-01-18 (Roadmap Added)
