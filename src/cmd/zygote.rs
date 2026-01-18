@@ -25,7 +25,7 @@ pub enum ZygoteSubcommand {
         /// Comma-separated list of modules to preload
         #[arg(long)]
         preload: Option<String>,
-        /// Start as a background daemon
+        /// Run in daemon mode (non-blocking)
         #[arg(long, default_value_t = false)]
         daemon: bool,
     },
@@ -170,7 +170,10 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
         let config =
             crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
 
-        println!("🚀 Starting Zygote daemon...");
+        println!(
+            "🚀 Starting Zygote{}...",
+            if daemon { " daemon" } else { "" }
+        );
         match launcher.start(&preload, None, daemon, &config) {
             Ok(()) => {
                 log::info!(
@@ -193,7 +196,11 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
 }
 
 #[cfg(not(unix))]
-fn cmd_zygote_start(_project_dir: &Path, _preload_arg: Option<String>) -> Result<()> {
+fn cmd_zygote_start(
+    _project_dir: &Path,
+    _preload_arg: Option<String>,
+    _daemon: bool,
+) -> Result<()> {
     bail!("Zygote not supported on this platform");
 }
 
@@ -321,8 +328,9 @@ mod tests {
     fn test_parse_start_subcommand() {
         let cmd = ZygoteCmd::try_parse_from(["zygote", "start"]).unwrap();
         match cmd.command {
-            ZygoteSubcommand::Start { preload, .. } => {
+            ZygoteSubcommand::Start { preload, daemon } => {
                 assert!(preload.is_none());
+                assert!(!daemon);
             }
             _ => panic!("Expected Start subcommand"),
         }
@@ -333,8 +341,9 @@ mod tests {
         let cmd =
             ZygoteCmd::try_parse_from(["zygote", "start", "--preload", "fastapi,uvicorn"]).unwrap();
         match cmd.command {
-            ZygoteSubcommand::Start { preload, .. } => {
+            ZygoteSubcommand::Start { preload, daemon } => {
                 assert_eq!(preload.unwrap(), "fastapi,uvicorn");
+                assert!(!daemon);
             }
             _ => panic!("Expected Start subcommand"),
         }
