@@ -5,7 +5,7 @@ RFC-0028 Implementation
 Per TITANIUM Standard: Minimal code to pass tests (GREEN phase)
 
 P0 Safety Requirements:
-- P0-1: Fixture scope leakage protection via pytest_velo_fork_reinit hook
+- P0-1: Fixture scope leakage protection via velo_fork_reinit hook
 - P0-2: GIL deadlock prevention via single-threaded fork assertion
 - P0-3: FD corruption prevention via atexit._clear() and os._exit()
 """
@@ -32,12 +32,14 @@ _fork_reinit_callbacks: list[Callable[[], None]] = []
 # =============================================================================
 
 
-def pytest_velo_fork_reinit(item: Any) -> None:
+def velo_fork_reinit(item: Any) -> None:
     """
-    Hook called in child process after fork to reinit resources.
+    Called in child process after fork to reinit resources.
 
     Users can register callbacks via register_fork_reinit() to reconnect
     databases, Redis, etc.
+    
+    Note: Renamed from pytest_velo_fork_reinit to avoid pytest hook validation.
     """
     for callback in _fork_reinit_callbacks:
         try:
@@ -87,23 +89,35 @@ def child_process_hygiene() -> None:
 
 
 # =============================================================================
-# Gate B: xdist Mutual Exclusivity
+# xdist Integration
 # =============================================================================
 
 
-def validate_xdist_exclusivity(config: Any) -> None:
-    """
-    Validate that --velo and -n are not both enabled.
+def is_xdist_worker() -> bool:
+    """Check if running as pytest-xdist worker process."""
+    return "PYTEST_XDIST_WORKER" in os.environ
 
-    Raises pytest.UsageError if both are enabled.
+
+def is_xdist_controller() -> bool:
+    """Check if running as pytest-xdist controller (master) process."""
+    return "PYTEST_XDIST_WORKER" not in os.environ
+
+
+def validate_xdist_compatibility(config: Any) -> None:
+    """
+    Log info when --velo and -n are both enabled.
+
+    Phase 14: xdist + velo combo is now supported.
+    Each xdist worker connects to shared Zygote for COW fork acceleration.
     """
     velo_enabled = getattr(config.option, "velo", False)
     numprocesses = getattr(config.option, "numprocesses", 0)
 
     if velo_enabled and numprocesses and numprocesses > 0:
-        raise pytest.UsageError(
-            "--velo and -n (pytest-xdist) are mutually exclusive. "
-            "Use --velo for Zygote acceleration OR -n for xdist parallelism."
+        import logging
+        logging.info(
+            f"pytest-velo: Running with xdist (-n {numprocesses}) + Zygote acceleration. "
+            "Each worker will use COW forks for test execution."
         )
 
 
@@ -158,8 +172,8 @@ def pytest_configure(config: Any) -> None:
     global _zygote
 
     if config.option.velo:
-        # Validate xdist exclusivity
-        validate_xdist_exclusivity(config)
+        # Check xdist compatibility (info log, no longer blocking)
+        validate_xdist_compatibility(config)
 
         # P1-2: Prevent COW thrashing from .pyc writes
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -253,7 +267,7 @@ def run_in_zygote_fork(item: Any) -> bool:
         child_process_hygiene()
 
         # P0-1: Call reinit hooks for resource reconnection
-        pytest_velo_fork_reinit(item)
+        velo_fork_reinit(item)
 
         try:
             # Run the actual test
@@ -285,15 +299,15 @@ def pytest_runtest_protocol(item: Any, nextitem: Any) -> bool | None:
     Run test in Zygote fork if --velo is enabled.
 
     Returns True if handled, None to fallback to default.
+    Works for both standalone mode and as xdist worker.
     """
     if not getattr(item.config.option, "velo", False) or not _zygote:
         return None  # Fallback to default pytest behavior
 
     # Execute in forked child with full P0 compliance
-    # TODO: When Zygote integration is complete, use Zygote fork
-    # For now, use direct fork for testing
-    # success = run_in_zygote_fork(item)
-    # return success
+    success = run_in_zygote_fork(item)
+    
+    # Return True to indicate we handled the test
+    # pytest will use our result instead of running the test again
+    return True
 
-    # Fallback for now until Zygote server is wired
-    return None

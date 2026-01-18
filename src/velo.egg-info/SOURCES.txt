@@ -1,0 +1,9 @@
+LICENSE
+README.md
+pyproject.toml
+src/velo.egg-info/PKG-INFO
+src/velo.egg-info/SOURCES.txt
+src/velo.egg-info/dependency_links.txt
+src/velo.egg-info/entry_points.txt
+src/velo.egg-info/requires.txt
+src/velo.egg-info/top_level.txt

@@ -114,11 +114,11 @@ def test_with_threads():
             os.unlink(temp_path)
 
     def test_b2_p0_1_fork_reinit_hook_exists(self):
-        """B.2 (P0-1): pytest_velo_fork_reinit hook is available"""
-        from pytest_velo.plugin import pytest_velo_fork_reinit
+        """B.2 (P0-1): velo_fork_reinit hook is available"""
+        from pytest_velo.plugin import velo_fork_reinit
 
         # Should be callable
-        assert callable(pytest_velo_fork_reinit)
+        assert callable(velo_fork_reinit)
 
     def test_b3_p0_3_atexit_clear_exists(self):
         """B.3 (P0-3): child_process_hygiene calls atexit._clear"""
@@ -183,9 +183,9 @@ class TestGateC_Performance:
 class TestGateD_Compatibility:
     """Gate D: pytest features and xdist compatibility"""
 
-    def test_d2_xdist_mutual_exclusivity_validation(self):
-        """D.2 (P1-1): validate_xdist_exclusivity raises on conflict"""
-        from pytest_velo.plugin import validate_xdist_exclusivity
+    def test_d2_xdist_compatibility_no_error(self):
+        """D.2 (P1-1): validate_xdist_compatibility logs info (no longer blocks)"""
+        from pytest_velo.plugin import validate_xdist_compatibility
 
         class MockConfig:
             class Option:
@@ -195,26 +195,21 @@ class TestGateD_Compatibility:
 
         config = MockConfig()
         config.option.velo = True
+        config.option.numprocesses = 4
 
-        # Simulate xdist with -n flag
-        with pytest.raises(pytest.UsageError, match="mutually exclusive"):
-            validate_xdist_exclusivity(config, numprocesses=4)
+        # Should NOT raise - xdist + velo now supported (Phase 14)
+        validate_xdist_compatibility(config)  # Should pass without error
 
-    def test_d2_xdist_no_error_when_no_conflict(self):
-        """D.2: No error when only one of --velo or -n is set"""
-        from pytest_velo.plugin import validate_xdist_exclusivity
+    def test_d2_xdist_worker_detection(self):
+        """D.2: is_xdist_worker detection function exists"""
+        from pytest_velo.plugin import is_xdist_worker, is_xdist_controller
 
-        class MockConfig:
-            class Option:
-                pass
-
-            option = Option()
-
-        config = MockConfig()
-        config.option.velo = False
-
-        # Should not raise when --velo is disabled
-        validate_xdist_exclusivity(config, numprocesses=4)  # Should pass
+        # Both functions should be callable
+        assert callable(is_xdist_worker)
+        assert callable(is_xdist_controller)
+        
+        # When not running under xdist, should be controller
+        assert is_xdist_controller() is True
 
 
 # ============================================================================
