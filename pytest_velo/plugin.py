@@ -332,14 +332,22 @@ def run_in_zygote_fork(item: Any) -> bool:
         velo_fork_reinit(item)
 
         try:
-            # Run the actual test
-            item.runtest()
+            # P1-3: Proper pytest integration
+            # We need to run setup, call, and teardown in the child phase
+            # For real pytest items, use ihook; for mocks, use runtest() directly.
+            if hasattr(item, "ihook"):
+                ihook = item.ihook
+                ihook.pytest_runtest_setup(item=item)
+                ihook.pytest_runtest_call(item=item)
+                ihook.pytest_runtest_teardown(item=item, nextitem=None)
+            else:
+                # Diagnostic/Mock items in QA tests
+                item.runtest()
             exit_code = 0
         except Exception:
             exit_code = 1
-
+        
         # P0-3 MANDATORY: Use os._exit(), NOT sys.exit()
-        # This prevents atexit handlers from running in child
         os._exit(exit_code)
     else:
         # ===== PARENT PROCESS =====
