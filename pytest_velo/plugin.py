@@ -40,6 +40,37 @@ except ImportError:
 
 _zygote: Any | None = None
 _fork_reinit_callbacks: list[Callable[[], None]] = []
+_session_socket_path: Path | None = None  # Session-scoped socket for isolation
+
+
+# =============================================================================
+# Session Isolation Helpers (SPEC-0005 INV-SSOT-002: Pool Sovereignty)
+# =============================================================================
+
+
+def _short_hash(s: str) -> str:
+    """Generate 6-char hex hash using blake3 (project standard)."""
+    import blake3
+    return blake3.blake3(s.encode()).hexdigest()[:6]
+
+
+def _sanitize_name(path: str) -> str:
+    """8-char alphanumeric name (Rust parity with paths.rs:142-161)."""
+    name = Path(path).name if path else "sess"
+    clean = ''.join(c for c in name if c.isalnum() or c == '_')[:8]
+    return clean or "sess"
+
+
+def _session_socket_name(rootdir: str) -> str:
+    """Generate unique readable socket name (Rust parity with paths.rs:200).
+    
+    Format: velo-zygote-{name}-{hash}-v01.sock
+    Example: velo-zygote-velo-3f4a2b-v01.sock
+    """
+    name = _sanitize_name(rootdir)
+    # Include PID to ensure uniqueness across parallel sessions
+    hash_val = _short_hash(f"{rootdir}:{os.getpid()}")
+    return f"velo-zygote-{name}-{hash_val}-v01.sock"
 
 
 # =============================================================================
@@ -272,6 +303,18 @@ def pytest_configure(config: Any) -> None:
         if velo_bin:
             # Phase 14: Only the controller (or standalone) starts/stops the Zygote
             if is_xdist_controller():
+                global _session_socket_path
+                
+                # Session Isolation: Generate unique socket path for this session
+                rootdir = str(config.rootdir)
+                socket_name = _session_socket_name(rootdir)
+                uid = os.getuid() if hasattr(os, 'getuid') else 0
+                import tempfile
+                socket_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+                socket_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                _session_socket_path = socket_dir / socket_name
+                os.environ["VELO_ZYGOTE_SOCKET"] = str(_session_socket_path)
+                
                 # SEC-005: Generate forensic secret for this session if not provided
                 if not os.environ.get("VELO_ZYGOTE_AUTH"):
                     import uuid
@@ -280,9 +323,19 @@ def pytest_configure(config: Any) -> None:
 
                 # P1 Miracle: Hijack execnet node creation
                 hijack_execnet()
+                
+                # RAII-style cleanup: register atexit handler
+                def _cleanup_zygote() -> None:
+                    try:
+                        subprocess.run([velo_bin, "zygote", "stop"], capture_output=True, timeout=5)
+                        if _session_socket_path and _session_socket_path.exists():
+                            _session_socket_path.unlink()
+                    except Exception:
+                        pass
+                atexit.register(_cleanup_zygote)
 
                 try:
-                    # Start Zygote in daemon mode
+                    # Start Zygote in daemon mode with session-specific socket
                     result = subprocess.run(
                         [velo_bin, "zygote", "start", "--daemon"] + preload_args,
                         capture_output=True,
