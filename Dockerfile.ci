@@ -30,25 +30,27 @@ ENV RUST_BACKTRACE=1
 
 WORKDIR /workspace
 
-# Copy dependency manifests first (for layer caching)
-COPY Cargo.toml Cargo.lock rust-toolchain.toml pyproject.toml uv.lock ./
+# Stage 1: Recipe Creation (FAST)
+FROM ${BASE_IMAGE} AS planner
+WORKDIR /workspace
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Create stub src for cargo dependency caching
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-
-# Cache cargo dependencies (BuildKit cache mount)
+# Stage 2: Dependency Builder (CACHED)
+FROM ${BASE_IMAGE} AS cacher
+WORKDIR /workspace
+COPY --from=planner /workspace/recipe.json recipe.json
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/workspace/target \
-    cargo build --release 2>/dev/null || true && \
-    rm -rf src
+    cargo chef cook --release --recipe-path recipe.json
 
-# Cache Python dependencies
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen 2>/dev/null || uv sync || true
-
-# Now copy the full source
+# Stage 3: Real Builder
+FROM ${BASE_IMAGE} AS builder
+WORKDIR /workspace
 COPY . .
+# Copy pre-compiled dependencies from cacher
+COPY --from=cacher /workspace/target /workspace/target
 
 # Rebuild with real source (using cached dependencies)
 # Build both release AND debug for tests that use target/debug/velo
@@ -62,6 +64,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 # Ensure Python deps are synced with full pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
+
 
 # Default: run local-ci.sh (SSOT for CI logic)
 CMD ["bash", "scripts/local-ci.sh"]
