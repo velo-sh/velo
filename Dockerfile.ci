@@ -1,104 +1,67 @@
-FROM ubuntu:22.04
+# syntax=docker/dockerfile:1.4
+# =============================================================================
+# Velo Local CI Image (Optimized)
+# =============================================================================
+# Uses velo-ci-base for toolchain, adds BuildKit cache for fast rebuilds
+#
+# Prerequisites:
+#   docker build -t velo-ci-base -f Dockerfile.base .
+#
+# Build:
+#   DOCKER_BUILDKIT=1 docker build -t velo-ci -f Dockerfile.ci .
+#
+# Run:
+#   ./scripts/docker-ci.sh
+# =============================================================================
 
-# Environment variables to mimic GitHub Actions
+ARG BASE_IMAGE=velo-ci-base
+FROM ${BASE_IMAGE}
+
+# Metadata
+LABEL maintainer="velo-sh" \
+    description="Velo CI runner with BuildKit cache optimization"
+
+# CI environment
 ENV GITHUB_ACTIONS=true
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
+ENV CI=true
+ENV VELO_ENV=ci
+ENV CARGO_INCREMENTAL=0
+ENV RUST_BACKTRACE=1
 
-# Install strict dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    build-essential \
-    pkg-config \
-    libssl-dev \
-    python3 \
-    python3-pip \
-    python3-venv \
-    # Key libraries for Velo
-    libseccomp-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust (same as actions-rs/toolchain)
-# Install Rust using rust-toolchain.toml as SSOT
-COPY rust-toolchain.toml ./
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none \
-    && . "$HOME/.cargo/env" \
-    && rustup show \
-    && rustup component add clippy rustfmt llvm-tools-preview
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install uv (Modern Python Manager)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
-
-# Create CI workspace
 WORKDIR /workspace
 
-# Pre-install dependencies (optional optimization)
-# COPY Cargo.toml Cargo.lock ./
-# RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
+# Copy dependency manifests first (for layer caching)
+COPY Cargo.toml Cargo.lock rust-toolchain.toml pyproject.toml uv.lock ./
 
-# Default command: run full CI check with FAIL FAST
-CMD ["bash", "-c", "\
-    echo '' && \
-    echo '🚀 Velo Local CI Simulation (Ubuntu 22.04)' && \
-    echo '===========================================' && \
-    echo '' && \
-    echo '==================== Phase 0: Environment Check (FAIL FAST) ====================' && \
-    echo '' && \
-    echo '▶ Checking environment...' && \
-    uname -a && \
-    rustc --version && \
-    uv --version && \
-    echo '✅ Environment OK' && \
-    echo '' && \
-    echo '==================== Phase 1: Setup ====================' && \
-    echo '' && \
-    echo '▶ Setting up Python environment...' && \
-    echo '▶ Setting up Python environment...' && \
-    uv sync && \
-    echo '✅ Python environment ready' && \
-    echo '' && \
-    echo '==================== Phase 2: Build ====================' && \
-    echo '' && \
-    echo '▶ Building Rust (release)...' && \
+# Create stub src for cargo dependency caching
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+
+# Cache cargo dependencies (BuildKit cache mount)
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/workspace/target \
+    cargo build --release 2>/dev/null || true && \
+    rm -rf src
+
+# Cache Python dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen 2>/dev/null || uv sync || true
+
+# Now copy the full source
+COPY . .
+
+# Rebuild with real source (using cached dependencies)
+# Build both release AND debug for tests that use target/debug/velo
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/workspace/target \
     cargo build --release && \
-    echo '✅ Rust build complete' && \
-    echo '' && \
-    echo '==================== Phase 3: Test ====================' && \
-    echo '' && \
-    echo '▶ Running Rust tests...' && \
-    cargo test --lib && \
-    echo '✅ Rust tests passed' && \
-    echo '' && \
-    echo '▶ Running Python tests...' && \
-    . .venv/bin/activate && \
-    echo '' && \
-    echo '--- QA: Basic Harness ---' && \
-    pytest tests/qa/test_harness.py tests/qa/test_fingerprint.py -v --tb=short && \
-    echo '' && \
-    echo '--- Phase 7.0: Memory Gravity ---' && \
-    pytest tests/qa/phase_7_0/ -v --tb=short && \
-    echo '' && \
-    echo '--- Phase 6.2: Environment & Regression ---' && \
-    pytest tests/qa/test_phase6_2_env_pollution.py tests/qa/test_phase6_2_regression.py -v --tb=short && \
-    echo '' && \
-    echo '--- Phase 6.1: Security Hardened ---' && \
-    pytest tests/qa/test_phase6_1_security_hardened.py -v --tb=short && \
-    echo '' && \
-    echo '--- Phase 6.1: Stability Hardened ---' && \
-    pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short && \
-    echo '' && \
-    echo '✅ All Python tests passed' && \
-    echo '' && \
-    echo '==================== Phase 4: Lint ====================' && \
-    echo '' && \
-    echo '▶ Running linting via pre-commit (SSOT)...' && \
-    uv run pre-commit run --all-files && \
-    echo '✅ Format OK' && \
-    echo '' && \
-    echo '==========================================' && \
-    echo '✅ ALL CI CHECKS PASSED!' && \
-    echo '==========================================' \
-    "]
+    cargo build && \
+    cp target/release/velo ./velo-bin 2>/dev/null || true
+
+# Ensure Python deps are synced with full pyproject.toml
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync
+
+# Default: run local-ci.sh (SSOT for CI logic)
+CMD ["bash", "scripts/local-ci.sh"]
