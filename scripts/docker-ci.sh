@@ -73,8 +73,12 @@ run_ci() {
     log_info "Running CI in Docker container..."
     echo ""
     
+    # NOTE: We use anonymous volumes for target/ and .venv/ to prevent
+    # host's macOS binaries from overwriting container's Linux binaries
     docker run --rm \
         -v "$PROJECT_ROOT:/workspace:delegated" \
+        -v /workspace/target \
+        -v /workspace/.venv \
         -e GITHUB_ACTIONS=true \
         -e CI=true \
         -e VELO_ENV=ci \
@@ -87,6 +91,8 @@ run_shell() {
     log_info "Starting interactive shell..."
     docker run --rm -it \
         -v "$PROJECT_ROOT:/workspace:delegated" \
+        -v /workspace/target \
+        -v /workspace/.venv \
         -e GITHUB_ACTIONS=true \
         -e CI=true \
         -e VELO_ENV=ci \
