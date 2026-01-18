@@ -168,10 +168,12 @@ jobs:
 
       - name: Use pre-compiled deps
         run: |
-          if [ -d /workspace/target ]; then
-            echo "Copying pre-compiled deps from container..."
-            cp -r /workspace/target .
+          if [ -d /cargo-cache/target ]; then
+            echo "Copying pre-compiled deps from /cargo-cache..."
+            cp -r /cargo-cache/target .
             echo "Done! $(du -sh target | cut -f1) of cached deps"
+          else
+            echo "No cache at /cargo-cache/target - will build from scratch"
           fi
 
       - name: Verify Environment
@@ -220,7 +222,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Use pre-compiled deps
-        run: cp -r /workspace/target . 2>/dev/null || true
+        run: cp -r /cargo-cache/target . 2>/dev/null || true
       - name: Run Rust tests
         run: cargo test
 
@@ -240,7 +242,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Use pre-compiled deps
-        run: cp -r /workspace/target . 2>/dev/null || true
+        run: cp -r /cargo-cache/target . 2>/dev/null || true
       - name: Sync Python deps
         run: uv sync
       - name: Run Clippy
