@@ -18,21 +18,29 @@
 
 ### 1. Installation
 
+Since `pytest-velo` is currently part of the Velo core repository, follow these steps to set up your environment:
+
 ```bash
-uv pip install pytest-velo
-# or
-pip install pytest-velo
+# 1. Setup the development environment (creates venv & installs deps)
+./setup-dev.sh
+
+# 2. Build the Velo Rust binary (the Zygote engine)
+cargo build --release
+
+# 3. Add Velo to your PATH so the plugin can find it
+export PATH="$PWD/target/release:$PATH"
 ```
 
 ### 2. Run with Turbo
 
-Simply add the `--velo` flag to your usual pytest command:
+Simply add the `--velo` flag to your `pytest` command:
 
 ```bash
-pytest --velo
+uv run pytest --velo
 ```
 
-That's it. You've just saved minutes of wall-clock time.
+> [!TIP]
+> You can verify the plugin is active by looking for the `[Session] Log dir: ...` and `Zygote` mentions in the pytest output.
 
 ---
 
@@ -52,7 +60,7 @@ Total time: **~6 seconds** with **100% isolation**.
 If your application has a heavy startup cost (e.g., loading a large AI model or a complex web framework), you can "bake" those modules into the Zygote.
 
 ```bash
-pytest --velo --velo-preload="fastapi,torch,numpy"
+uv run pytest --velo --velo-preload="fastapi,torch,numpy"
 ```
 
 The Zygote will import these once, and every subsequent test fork will inherit them via **Copy-on-Write** memory, making imports effectively free.
