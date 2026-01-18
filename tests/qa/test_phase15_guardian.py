@@ -30,7 +30,6 @@ def cleanup_zygote():
 
 
 @pytest.mark.tier1
-@pytest.mark.xfail(reason="P1.5: Restart loop requires socket cleanup timing refinement")
 def test_guardian_auto_restart():
     """
     Forensic Test: Verify Rust Guardian detects Zygote death and restarts it.
