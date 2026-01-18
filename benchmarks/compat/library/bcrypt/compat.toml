@@ -1,0 +1,17 @@
+[meta]
+package = "bcrypt"
+category = "library"
+tier = 3
+
+description = "bcrypt compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pyca/bcrypt.git"
+git_ref = "4.1.2"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

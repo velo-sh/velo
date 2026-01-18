@@ -1,0 +1,16 @@
+[meta]
+package = "urllib3"
+category = "library"
+tier = 3
+description = "HTTP client library for Python."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/urllib3/urllib3.git"
+git_ref = "2.1.0"
+test_path = "test"
+test_dependencies = ["pytest", "mock", "trustme", "tornado", "PySocks"]
+pytest_args = ["-x", "-Wignore"]
+timeout = 600
+known_failures = []

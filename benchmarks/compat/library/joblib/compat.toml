@@ -1,0 +1,17 @@
+[meta]
+package = "joblib"
+category = "library"
+tier = 3
+
+description = "joblib compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/joblib/joblib.git"
+git_ref = "1.3.2"
+test_path = "joblib/test"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

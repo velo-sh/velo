@@ -1,0 +1,16 @@
+[meta]
+package = "charset-normalizer"
+category = "library"
+tier = 3
+description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/jawah/charset_normalizer.git"
+git_ref = "3.3.2"
+test_path = "."
+test_dependencies = ["pytest"]
+pytest_args = ["-x", "--timeout=60"]
+timeout = 300
+known_failures = []

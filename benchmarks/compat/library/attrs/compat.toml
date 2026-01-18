@@ -1,0 +1,16 @@
+[meta]
+package = "attrs"
+category = "library"
+tier = 1
+description = "Classes Without Boilerplate"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/python-attrs/attrs.git"
+git_ref = "24.3.0"
+test_path = "tests"
+test_dependencies = ["pytest", "hypothesis", "pytest-timeout"]
+pytest_args = ["-x", "--ignore=tests/test_mypy.py"]
+exclude_markers = ["slow"]
+timeout = 180

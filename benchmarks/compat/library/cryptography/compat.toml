@@ -1,0 +1,17 @@
+[meta]
+package = "cryptography"
+category = "library"
+tier = 3
+
+description = "cryptography compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pyca/cryptography.git"
+git_ref = "41.0.5"
+test_path = "tests"
+test_dependencies = ["pytest", "hypothesis", "iso8601", "pretend", "cryptography_vectors"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

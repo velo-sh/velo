@@ -1,0 +1,18 @@
+[meta]
+package = "importlib-metadata"
+category = "library"
+tier = 3
+
+description = "importlib-metadata compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/python/importlib_metadata.git"
+git_ref = "v6.8.0"
+test_path = "tests"
+test_dependencies = ["pytest", "pyfakefs"]
+pytest_args = ["-p", "no:relaxed", "--ignore=tests/test_py39compat.py"]
+run_cmd = ["/bin/sh", "-c", "rm -f tests/__init__.py && python -m pytest tests -p no:relaxed --ignore=tests/test_py39compat.py --json-report --json-report-file=.report.json; cat .report.json"]
+timeout = 300
+known_failures = []

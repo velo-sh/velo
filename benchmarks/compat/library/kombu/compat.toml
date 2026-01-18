@@ -1,0 +1,17 @@
+[meta]
+package = "kombu"
+category = "library"
+tier = 3
+
+description = "kombu compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/celery/kombu.git"
+git_ref = "v5.3.3"
+test_path = "t"
+test_dependencies = ["pytest<8.0", "pytest-sugar", "Pyro4", "hypothesis", "pytest-freezer", "case"]
+pytest_args = ["-x", "--ignore-glob=t/unit/transport/test_azure*.py"]
+timeout = 300
+known_failures = []
