@@ -51,10 +51,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . .
 
 # Rebuild with real source (using cached dependencies)
+# Build both release AND debug for tests that use target/debug/velo
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/workspace/target \
     cargo build --release && \
+    cargo build && \
     cp target/release/velo ./velo-bin 2>/dev/null || true
 
 # Ensure Python deps are synced with full pyproject.toml
