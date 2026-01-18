@@ -19,6 +19,8 @@
 //! ```
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -26,6 +28,85 @@ use anyhow::{Context, Result};
 
 use crate::config::VeloConfig;
 use crate::zygote::ZygoteLauncher;
+
+// =============================================================================
+// P1-3: WorkerPool - Prevents concurrent fork races via semaphore
+// =============================================================================
+
+/// Worker pool with semaphore-based concurrency control
+///
+/// This prevents concurrent fork races by limiting the number of
+/// simultaneous Zygote forks. Uses atomic counter as a lightweight semaphore.
+#[derive(Debug)]
+pub struct WorkerPool {
+    /// Maximum concurrent workers
+    max_concurrent: usize,
+    /// Current active worker count (atomic for thread-safety)
+    active: Arc<AtomicUsize>,
+}
+
+impl WorkerPool {
+    /// Create a new worker pool with specified concurrency limit
+    pub fn new(max_concurrent: usize) -> Self {
+        Self {
+            max_concurrent: max_concurrent.max(1),
+            active: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Try to acquire a permit. Returns None if pool is at capacity.
+    pub fn try_acquire(&self) -> Option<WorkerPermit> {
+        loop {
+            let current = self.active.load(Ordering::SeqCst);
+            if current >= self.max_concurrent {
+                return None;
+            }
+            if self
+                .active
+                .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Some(WorkerPermit {
+                    active: Arc::clone(&self.active),
+                });
+            }
+            // CAS failed, retry
+        }
+    }
+
+    /// Acquire a permit, blocking until available
+    pub fn acquire(&self) -> WorkerPermit {
+        loop {
+            if let Some(permit) = self.try_acquire() {
+                return permit;
+            }
+            // Spin wait with backoff
+            std::thread::sleep(Duration::from_micros(100));
+        }
+    }
+
+    /// Get current active worker count
+    pub fn active_count(&self) -> usize {
+        self.active.load(Ordering::SeqCst)
+    }
+
+    /// Get maximum concurrent workers
+    pub fn max_concurrent(&self) -> usize {
+        self.max_concurrent
+    }
+}
+
+/// RAII permit that releases on drop
+#[derive(Debug)]
+pub struct WorkerPermit {
+    active: Arc<AtomicUsize>,
+}
+
+impl Drop for WorkerPermit {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 /// Result of a single test execution
 #[derive(Debug, Clone)]
@@ -80,6 +161,7 @@ impl TestReport {
 /// - P0-1: Fixture leakage - handled by pytest_velo_fork_reinit in plugin
 /// - P0-2: GIL deadlock - Zygote is single-threaded before fork
 /// - P0-3: FD corruption - workers use atexit._clear() + os._exit()
+/// - P1-3: Concurrent fork races - WorkerPool semaphore
 #[allow(dead_code)] // Fields used in future Phase 2 implementation
 pub struct TestCoordinator {
     /// Zygote launcher for spawning workers
@@ -94,10 +176,8 @@ pub struct TestCoordinator {
     results_tx: Sender<TestResult>,
     /// Pending test items
     pending: Vec<String>,
-    /// Active worker count
-    active_workers: usize,
-    /// Maximum concurrent workers
-    max_workers: usize,
+    /// P1-3: Worker pool for concurrency control
+    pool: WorkerPool,
 }
 
 impl TestCoordinator {
@@ -118,8 +198,7 @@ impl TestCoordinator {
             results_rx,
             results_tx,
             pending: Vec::new(),
-            active_workers: 0,
-            max_workers: max_workers.max(1),
+            pool: WorkerPool::new(max_workers),
         })
     }
 
@@ -248,5 +327,56 @@ mod tests {
         };
         assert!(!report.all_passed());
         assert_eq!(report.exit_code(), 1);
+    }
+
+    // P1-3: WorkerPool tests
+
+    #[test]
+    fn test_worker_pool_creation() {
+        let pool = WorkerPool::new(4);
+        assert_eq!(pool.max_concurrent(), 4);
+        assert_eq!(pool.active_count(), 0);
+    }
+
+    #[test]
+    fn test_worker_pool_acquire_release() {
+        let pool = WorkerPool::new(2);
+        assert_eq!(pool.active_count(), 0);
+
+        {
+            let _permit1 = pool.acquire();
+            assert_eq!(pool.active_count(), 1);
+
+            let _permit2 = pool.acquire();
+            assert_eq!(pool.active_count(), 2);
+        } // permits drop here
+
+        assert_eq!(pool.active_count(), 0);
+    }
+
+    #[test]
+    fn test_worker_pool_try_acquire_at_capacity() {
+        let pool = WorkerPool::new(1);
+
+        let permit1 = pool.try_acquire();
+        assert!(permit1.is_some());
+        assert_eq!(pool.active_count(), 1);
+
+        // Pool at capacity, should fail
+        let permit2 = pool.try_acquire();
+        assert!(permit2.is_none());
+        assert_eq!(pool.active_count(), 1);
+
+        // Drop permit1, should allow new acquire
+        drop(permit1);
+        let permit3 = pool.try_acquire();
+        assert!(permit3.is_some());
+    }
+
+    #[test]
+    fn test_worker_pool_min_capacity() {
+        // Pool should have minimum capacity of 1
+        let pool = WorkerPool::new(0);
+        assert_eq!(pool.max_concurrent(), 1);
     }
 }
