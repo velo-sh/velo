@@ -8,17 +8,12 @@ Adversarial tests targeting Zygote fork mechanism.
 Goal: Break the fork mechanism with resource attacks!
 """
 
-import os
-import signal
 import time
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import (
     ZygoteTestEnv,
     count_zombie_processes,
-    count_child_processes,
 )
 
 
@@ -62,9 +57,7 @@ print(f"Forked {forked} times")
             initial_zombies = count_zombie_processes()
 
             # Run with zygote
-            result = run_velo(
-                ["run", "--zygote", "fork_bomb.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "fork_bomb.py"], cwd=env.path, timeout=30)
 
             # Should either block forks or handle gracefully
             assert_no_crash(result)
@@ -76,9 +69,7 @@ print(f"Forked {forked} times")
             final_zombies = count_zombie_processes()
             zombie_increase = final_zombies - initial_zombies
 
-            assert (
-                zombie_increase < 10
-            ), f"Too many zombies created by fork bomb: {zombie_increase}"
+            assert zombie_increase < 10, f"Too many zombies created by fork bomb: {zombie_increase}"
         finally:
             env.cleanup()
 
@@ -111,9 +102,7 @@ except MemoryError:
             )
 
             # Run with zygote
-            result = run_velo(
-                ["run", "--zygote", "mem_hog.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "mem_hog.py"], cwd=env.path, timeout=30)
 
             assert_no_crash(result)
             # Either succeeds or fails gracefully
@@ -144,18 +133,16 @@ os._exit(42)  # Abrupt exit without cleanup
             initial_zombies = count_zombie_processes()
 
             # Run with zygote
-            result = run_velo(
-                ["run", "--zygote", "abrupt_exit.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "abrupt_exit.py"], cwd=env.path, timeout=10)
 
             # Give time for cleanup
             time.sleep(0.5)
 
             final_zombies = count_zombie_processes()
 
-            assert (
-                final_zombies <= initial_zombies
-            ), f"Zombie process left after abrupt exit: {final_zombies - initial_zombies}"
+            assert final_zombies <= initial_zombies, (
+                f"Zombie process left after abrupt exit: {final_zombies - initial_zombies}"
+            )
         finally:
             env.cleanup()
 
@@ -183,9 +170,7 @@ while True:
 
             # Run with short timeout (handled by velo, not test harness)
             start = time.perf_counter()
-            result = run_velo(
-                ["run", "--zygote", "infinite.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "infinite.py"], cwd=env.path, timeout=10)
             elapsed = time.perf_counter() - start
 
             # Should timeout eventually (test harness timeout catches this)

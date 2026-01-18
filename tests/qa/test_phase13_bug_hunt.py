@@ -5,12 +5,10 @@ These tests were written by QA to find actual bugs in pytest-velo implementation
 """
 
 import os
-import subprocess
 import tempfile
 import threading
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,11 +26,11 @@ class TestBug001_WorkerBaseNotUsed:
                 # Check that isolation directories exist
                 worker_id = os.environ.get("VELO_WORKER_ID")
                 assert worker_id is not None, "VELO_WORKER_ID not set"
-                
+
                 tmpdir = os.environ.get("TMPDIR")
                 assert tmpdir is not None, "TMPDIR not set"
                 assert os.path.exists(tmpdir), f"TMPDIR {tmpdir} does not exist"
-                
+
                 socket_dir = os.environ.get("VELO_WORKER_SOCKET_DIR")
                 assert socket_dir is not None, "VELO_WORKER_SOCKET_DIR not set"
                 assert os.path.exists(socket_dir), f"Socket dir {socket_dir} does not exist"
@@ -54,13 +52,13 @@ class TestBug002_RaceConditionOnCleanup:
 
     def test_cleanup_handles_partial_dir(self):
         """cleanup should handle partially created directories"""
+
         from pytest_velo.plugin import cleanup_worker_environment
 
-        import shutil
         partial_dir = "/tmp/velo-worker-88888888"
         os.makedirs(f"{partial_dir}/tmp", exist_ok=True)
         # Only tmp exists, not sockets or logs
-        
+
         cleanup_worker_environment(partial_dir)
         assert not os.path.exists(partial_dir), "Partial dir not cleaned"
 
@@ -70,7 +68,7 @@ class TestBug003_SilentReinitFailure:
 
     def test_reinit_failure_is_not_logged(self):
         """Reinit callback failures are silently ignored - this is a bug"""
-        from pytest_velo.plugin import register_fork_reinit, velo_fork_reinit, _fork_reinit_callbacks
+        from pytest_velo.plugin import _fork_reinit_callbacks, register_fork_reinit, velo_fork_reinit
 
         # Save original callbacks
         original_callbacks = _fork_reinit_callbacks.copy()
@@ -98,7 +96,7 @@ class TestBug003_SilentReinitFailure:
 
 class TestBug004_TestResultNotReported:
     """BUG-004: pytest_runtest_protocol returns True but doesn't report result
-    
+
     Status: FIXED in DEF-13-004
     The plugin now uses CallInfo and ihook to properly report test outcomes.
     """
@@ -108,7 +106,7 @@ class TestBug004_TestResultNotReported:
         """
         When run_in_zygote_fork returns, pytest_runtest_protocol returns True
         but the test result (passed/failed) is never communicated to pytest.
-        
+
         FIXED: Now uses CallInfo to properly report pass/fail.
         """
         pass
@@ -139,14 +137,14 @@ class TestEdgeCase_ForkWithOpenFiles:
         """Forking with open files should not corrupt them"""
         from pytest_velo.plugin import run_in_zygote_fork
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             f.write("before fork\n")
             temp_path = f.name
 
         class MockItem:
             def runtest(self):
                 # Child writes to the same file
-                with open(temp_path, 'a') as f:
+                with open(temp_path, "a") as f:
                     f.write(f"child pid={os.getpid()}\n")
 
         try:
@@ -156,7 +154,7 @@ class TestEdgeCase_ForkWithOpenFiles:
             # Parent reads file
             with open(temp_path) as f:
                 content = f.read()
-            
+
             assert "before fork" in content
             assert "child pid=" in content
         finally:

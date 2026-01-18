@@ -1,7 +1,5 @@
-import subprocess
 import os
-import sys
-from pathlib import Path
+import subprocess
 
 VELO_BIN = "./target/release/velo"
 TEST_ST = "tests/qa/governance/test.safetensors"
@@ -13,11 +11,9 @@ def run_velo(env, args):
     full_env = os.environ.copy()
     full_env.update(env)
 
-    result = subprocess.run(
-        [VELO_BIN] + args, env=full_env, capture_output=True, text=True
-    )
+    result = subprocess.run([VELO_BIN] + args, env=full_env, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"--- FAILURE DETAILS ---")
+        print("--- FAILURE DETAILS ---")
         print(f"STDOUT: {result.stdout}")
         print(f"STDERR: {result.stderr}")
     return result
@@ -64,9 +60,7 @@ def test_h_gov_resilience():
     # 4. Prod Mode: Relaxed Memory Gravity (SHM Creation Failure)
     print("\n[Scenario 4] VELO_ENV=prod (Relaxed) + SHM Creation Failure")
     # Passing a directory instead of a file to trigger open error
-    res4 = run_velo(
-        {"VELO_ENV": "prod"}, ["run", "--shm", "tests/qa/governance", SIMPLE_PY]
-    )
+    res4 = run_velo({"VELO_ENV": "prod"}, ["run", "--shm", "tests/qa/governance", SIMPLE_PY])
     assert res4.returncode == 0
     assert "H-GOV AUDIT" in res4.stderr
     assert "MemoryGravity/SHM" in res4.stderr

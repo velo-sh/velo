@@ -14,16 +14,14 @@ Reference: docs/qa/DEFECTS/DEF-61-004-qa-review.md
 import os
 import socket
 import sys
-import tempfile
 import time
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Import the actual implementation from velo_zygote
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "velo_zygote"))
-from paths import get_socket_dir, ensure_socket_dir
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
-
+from paths import get_socket_dir
 
 # ============================================================================
 # Performance Thresholds
@@ -111,9 +109,9 @@ class TestPerformance:
         elapsed_ms = (time.perf_counter() - start) * 1000
         avg_ms = elapsed_ms / iterations
 
-        assert (
-            avg_ms < THRESHOLD_GET_SOCKET_DIR_MS
-        ), f"get_socket_dir() avg {avg_ms:.3f}ms > {THRESHOLD_GET_SOCKET_DIR_MS}ms threshold"
+        assert avg_ms < THRESHOLD_GET_SOCKET_DIR_MS, (
+            f"get_socket_dir() avg {avg_ms:.3f}ms > {THRESHOLD_GET_SOCKET_DIR_MS}ms threshold"
+        )
 
     def test_ac10_cleanup_latency_10_sockets(self, temp_socket_dir, stale_sockets):
         """AC-10: cleanup_stale_sockets() should complete in < 100ms.
@@ -134,15 +132,15 @@ class TestPerformance:
                 sock.settimeout(0.001)
                 sock.connect(str(socket_path))
                 sock.close()
-            except (socket.error, OSError):
+            except OSError:
                 # Stale socket - would be deleted in real cleanup
                 pass
 
         elapsed_ms = (time.perf_counter() - start) * 1000
 
-        assert (
-            elapsed_ms < THRESHOLD_CLEANUP_MS
-        ), f"cleanup_stale_sockets() took {elapsed_ms:.3f}ms > {THRESHOLD_CLEANUP_MS}ms threshold"
+        assert elapsed_ms < THRESHOLD_CLEANUP_MS, (
+            f"cleanup_stale_sockets() took {elapsed_ms:.3f}ms > {THRESHOLD_CLEANUP_MS}ms threshold"
+        )
 
     def test_ac11_socket_connection_latency(self, listening_socket):
         """AC-11: Socket connection should complete in < 5ms.
@@ -165,7 +163,7 @@ class TestPerformance:
                     conn, _ = server_sock.accept()
                     connections_accepted.append(conn)
                     conn.close()
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
@@ -187,9 +185,9 @@ class TestPerformance:
             elapsed_ms = (time.perf_counter() - start) * 1000
             avg_ms = elapsed_ms / iterations
 
-            assert (
-                avg_ms < THRESHOLD_SOCKET_CONNECT_MS
-            ), f"Socket connect avg {avg_ms:.3f}ms > {THRESHOLD_SOCKET_CONNECT_MS}ms threshold"
+            assert avg_ms < THRESHOLD_SOCKET_CONNECT_MS, (
+                f"Socket connect avg {avg_ms:.3f}ms > {THRESHOLD_SOCKET_CONNECT_MS}ms threshold"
+            )
         finally:
             stop_event.set()
             acceptor.join(timeout=1.0)
@@ -242,7 +240,7 @@ class TestBenchmarkReport:
         print(f"  AC-10: cleanup_stale_sockets() = {ac10_ms:.3f} ms ({ac10_pass})")
 
         # AC-11 is tested separately with actual listening socket
-        print(f"  AC-11: socket_connect() = (tested separately)")
+        print("  AC-11: socket_connect() = (tested separately)")
 
         print("=" * 60)
 

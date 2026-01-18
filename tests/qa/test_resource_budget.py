@@ -1,7 +1,7 @@
-import pytest
-import psutil
 import time
-from conftest_utils import T_SHORT, T_MEDIUM
+
+import psutil
+import pytest
 
 
 @pytest.mark.tier1
@@ -22,8 +22,8 @@ app = FastAPI()
         )
 
         # Using subprocess directly for finer control
-        import subprocess
         import os
+        import subprocess
 
         # PROPER ENV HANDLING (from TestL0Smoke)
         # 1. Clear VIRTUAL_ENV to match ComprehensiveTestEnv behavior
@@ -48,9 +48,7 @@ app = FastAPI()
                 stdout, stderr = process.communicate()
                 print(f"\nSTDOUT:\n{stdout.decode()}")
                 print(f"\nSTDERR:\n{stderr.decode()}")
-                pytest.fail(
-                    f"Process exited prematurely with code {process.returncode}"
-                )
+                pytest.fail(f"Process exited prematurely with code {process.returncode}")
 
             p = psutil.Process(process.pid)
             # Accessing memory_info on a zombie raises ZombieProcess, verify status first
@@ -73,8 +71,8 @@ app = FastAPI()
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
 
         # Using subprocess directly for finer control
-        import subprocess
         import os
+        import subprocess
 
         run_env = os.environ.copy()
         # NOTE: logic to del VIRTUAL_ENV removed to allow inheritance of dev dependencies (uvicorn/fastapi)
@@ -108,16 +106,12 @@ app = FastAPI()
                 f.path
                 for f in fds
                 if not (
-                    "log" in f.path
-                    or "velo" in f.path
-                    or ".lock" in f.path  # The binary itself  # uv lock files
+                    "log" in f.path or "velo" in f.path or ".lock" in f.path  # The binary itself  # uv lock files
                 )
             ]
 
             # On generic linux/mac, there shouldn't be random files open
-            assert (
-                len(suspicious_files) == 0
-            ), f"Unexpected open files: {suspicious_files}"
+            assert len(suspicious_files) == 0, f"Unexpected open files: {suspicious_files}"
 
             # Networking: Should listen on 1 port
             listening = [c for c in connections if c.status == "LISTEN"]
@@ -132,8 +126,8 @@ app = FastAPI()
         env = isolated_env
         env.create_app("main.py", "from fastapi import FastAPI\napp = FastAPI()")
 
-        import subprocess
         import os
+        import subprocess
 
         run_env = os.environ.copy()
         # NOTE: logic to del VIRTUAL_ENV removed to allow inheritance of dev dependencies (uvicorn/fastapi)

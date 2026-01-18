@@ -1,8 +1,10 @@
-import pytest
-import time
 import os
 import signal
+import time
 from pathlib import Path
+
+import pytest
+
 
 class TestWebSocketCloseCode:
     @pytest.mark.tier1
@@ -12,7 +14,9 @@ class TestWebSocketCloseCode:
         1. App sends specific code -> client receives it.
         2. Client sends specific code -> app receives it via disconnect event.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, receive, send):
     if scope['type'] == 'websocket':
         while True:
@@ -30,45 +34,49 @@ async def app(scope, receive, send):
                 with open("close_log.txt", "a") as f:
                     f.write(f"received_code:{message.get('code')}\\n")
                 break
-""")
+""",
+        )
         port = isolated_env.next_port()
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import websocket
+
             time.sleep(5)
-            
+
             # Case 1: Server sends 4000
             ws = websocket.create_connection(f"ws://127.0.0.1:{port}/")
             ws.send("close_me_4000")
             try:
                 msg = ws.recv()
-            except websocket.WebSocketConnectionClosedException as e:
+            except websocket.WebSocketConnectionClosedException:
                 # websocket-client status code is in e or captured during close
                 pass
-            
+
             # Verify close code received by client
             # ws.status is updated after handshake or close
             assert ws.connected is False
-            # websocket-client doesn't always expose the code easily depending on version, 
+            # websocket-client doesn't always expose the code easily depending on version,
             # but we can check if it's captured in the close frame if we read raw.
             # In some versions it's ws.close_status
-            
+
             # Case 2: Client sends 4001
             ws2 = websocket.create_connection(f"ws://127.0.0.1:{port}/")
             ws2.send("wait_for_my_close")
             ws2.close(status=4001)
-            
+
             time.sleep(2)
             log_file = isolated_env.root / "close_log.txt"
             assert log_file.exists()
             content = log_file.read_text()
             assert "received_code:4001" in content
-            
+
             print("VERIFIED: Close code propagation successful")
         finally:
             try:

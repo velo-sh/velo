@@ -1,12 +1,10 @@
 import sys
-import os
 
 try:
     import tomllib
 except ImportError:
     import toml as tomllib  # Fallback if someone installs it, but 3.11 has tomllib
 import unittest
-import importlib.util
 from pathlib import Path
 
 # Adjust path to find velo_zygote
@@ -29,7 +27,7 @@ class TestSSOTParity(unittest.TestCase):
                 self.toml_data = tomllib.load(f)
         except (TypeError, AttributeError):
             # Fallback for toml library which expects str
-            with open(self.toml_path, "r") as f:
+            with open(self.toml_path) as f:
                 self.toml_data = tomllib.load(f)
 
     def tearDown(self):

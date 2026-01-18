@@ -1,7 +1,8 @@
+import os
+import time
+
 import pytest
 import requests
-import time
-import os
 
 
 class TestSecurityHardening:
@@ -36,9 +37,7 @@ def get_env():
             data = resp.json()
 
             # Parent secret should NOT be present in worker
-            assert (
-                "SECRET_KEY_PARENT" not in data
-            ), "Security Breach: Parent environment leaked to worker!"
+            assert "SECRET_KEY_PARENT" not in data, "Security Breach: Parent environment leaked to worker!"
         finally:
             if "SECRET_KEY_PARENT" in os.environ:
                 del os.environ["SECRET_KEY_PARENT"]

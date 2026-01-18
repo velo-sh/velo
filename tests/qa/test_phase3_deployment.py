@@ -48,9 +48,7 @@ class DeployEnv:
         # Create project dir
         self.project_dir = self.path / "project"
         self.project_dir.mkdir()
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.project_dir, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.project_dir, capture_output=True)
         (self.project_dir / "uv.lock").write_text("{}")
 
         return self
@@ -107,9 +105,7 @@ class TestDeploymentScenarios:
 
             env.create_script("test.py", 'print("deployed")')
 
-            code, stdout, stderr = env.run(
-                installed_velo, ["run", "--zygote", "test.py"]
-            )
+            code, stdout, stderr = env.run(installed_velo, ["run", "--zygote", "test.py"])
 
             # When binary is isolated without velo_zygote module:
             # 1. Zygote fails to start (expected when module not bundled)
@@ -120,8 +116,7 @@ class TestDeploymentScenarios:
             if "Could not find velo_zygote" in stderr:
                 # Module not found - check fallback works
                 assert "Falling back" in stderr, (
-                    f"DEPLOY-001: No graceful fallback when module missing!\n"
-                    f"stderr: {stderr}"
+                    f"DEPLOY-001: No graceful fallback when module missing!\nstderr: {stderr}"
                 )
                 assert code == 0, f"Fallback failed! code={code}"
             else:
@@ -140,9 +135,7 @@ class TestDeploymentScenarios:
             deep_project = env.path / "a" / "b" / "c" / "d" / "e" / "project"
             deep_project.mkdir(parents=True)
 
-            subprocess.run(
-                ["uv", "venv", "--quiet"], cwd=deep_project, capture_output=True
-            )
+            subprocess.run(["uv", "venv", "--quiet"], cwd=deep_project, capture_output=True)
             (deep_project / "uv.lock").write_text("{}")
             (deep_project / "test.py").write_text('print("deep")')
 
@@ -155,7 +148,7 @@ class TestDeploymentScenarios:
             )
 
             print(f"  Deep project: {deep_project}")
-            print(f"  Depth from root: 6 levels")
+            print("  Depth from root: 6 levels")
             print(f"  Result: code={result.returncode}")
 
             if "Could not find velo_zygote" in result.stderr:
@@ -173,18 +166,14 @@ class TestDeploymentScenarios:
 
             # Create symlink to binary
             symlink_path = (
-                self.path / "usr_local_bin" / "velo"
-                if hasattr(self, "path")
-                else env.path / "usr_local_bin" / "velo"
+                self.path / "usr_local_bin" / "velo" if hasattr(self, "path") else env.path / "usr_local_bin" / "velo"
             )
             symlink_path.parent.mkdir(parents=True, exist_ok=True)
             symlink_path.symlink_to(installed_velo)
 
             env.create_script("test.py", 'print("symlinked")')
 
-            code, stdout, stderr = env.run(
-                str(symlink_path), ["run", "--zygote", "test.py"]
-            )
+            code, stdout, stderr = env.run(str(symlink_path), ["run", "--zygote", "test.py"])
 
             print(f"  Symlink: {symlink_path} -> {installed_velo}")
             print(f"  Result: code={code}")
@@ -207,9 +196,7 @@ class TestDeploymentScenarios:
             env.create_script("test.py", 'print("readonly")')
 
             try:
-                code, stdout, stderr = env.run(
-                    installed_velo, ["run", "--zygote", "test.py"]
-                )
+                code, stdout, stderr = env.run(installed_velo, ["run", "--zygote", "test.py"])
                 print(f"  Result: code={code}")
             finally:
                 os.chmod(str(env.bin_dir), 0o755)
@@ -228,16 +215,12 @@ class TestDeploymentScenarios:
 
             env.create_script("test.py", 'print("no_module")')
 
-            code, stdout, stderr = env.run(
-                installed_velo, ["run", "--zygote", "test.py"]
-            )
+            code, stdout, stderr = env.run(installed_velo, ["run", "--zygote", "test.py"])
 
             # Should fail gracefully with clear error
-            assert (
-                "velo_zygote" in stderr.lower()
-                or "not found" in stderr.lower()
-                or code == 0
-            ), f"Unclear error message! stderr={stderr}"
+            assert "velo_zygote" in stderr.lower() or "not found" in stderr.lower() or code == 0, (
+                f"Unclear error message! stderr={stderr}"
+            )
 
             # Check if it fell back to non-zygote mode
             if "Falling back" in stderr:
@@ -360,13 +343,11 @@ class TestInstallDirectoryStructures:
 
             env.create_script("test.py", 'print("pip_structure")')
 
-            code, stdout, stderr = env.run(
-                str(pip_velo), ["run", "--zygote", "test.py"]
-            )
+            code, stdout, stderr = env.run(str(pip_velo), ["run", "--zygote", "test.py"])
 
             print(f"  Binary: {pip_velo}")
             print(f"  Module: {zygote_pkg}")
-            print(f"  Distance: many levels apart!")
+            print("  Distance: many levels apart!")
             # pip install structure MUST be supported
             assert "Could not find velo_zygote" not in stderr, (
                 f"STRUCT-001 BUG: pip install structure not supported!\n"
@@ -408,9 +389,7 @@ class TestInstallDirectoryStructures:
 
             env.create_script("test.py", 'print("homebrew_structure")')
 
-            code, stdout, stderr = env.run(
-                str(brew_link), ["run", "--zygote", "test.py"]
-            )
+            code, stdout, stderr = env.run(str(brew_link), ["run", "--zygote", "test.py"])
 
             print(f"  Symlink: {brew_link}")
             print(f"  Real binary: {real_velo}")

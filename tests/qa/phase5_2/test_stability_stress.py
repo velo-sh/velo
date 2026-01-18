@@ -15,14 +15,12 @@ security vulnerabilities in the Developer's delivery. They serve as
 **VERDICT**: REJECTED. Dev must fix before re-submission.
 """
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
-import subprocess
-import os
-import sys
-import marshal
-import struct
-from pathlib import Path
 
 # Add python/ to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
@@ -31,14 +29,10 @@ from bundle_builder import VeloBundleBuilder
 
 @pytest.fixture
 def velo_binary():
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     pytest.skip("velo binary not found")
@@ -97,9 +91,7 @@ def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     Currently, Zygote ignores --fast.
     """
     main_py = tmp_path / "main.py"
-    main_py.write_text(
-        "import sys; print('Fast Loader Active' if 'velo_loader' in sys.modules else 'Standard Loader')"
-    )
+    main_py.write_text("import sys; print('Fast Loader Active' if 'velo_loader' in sys.modules else 'Standard Loader')")
 
     # Build a bundle first
     from bundle_builder import build_from_project
@@ -125,8 +117,6 @@ def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     print(f"DEBUG returncode: {result.returncode}")
 
     if "Standard Loader" in result.stdout:
-        pytest.fail(
-            "BUG-51-001: --zygote ignored --fast flag. Fast loader not active in Zygote worker."
-        )
+        pytest.fail("BUG-51-001: --zygote ignored --fast flag. Fast loader not active in Zygote worker.")
 
     assert "Fast Loader Active" in result.stdout

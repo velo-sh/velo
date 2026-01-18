@@ -11,24 +11,10 @@ Test Coverage:
 These tests verify HFT-grade performance guarantees.
 """
 
-import os
-import sys
-import json
-import struct
-import mmap
 import pytest
-import subprocess
-from pathlib import Path
-from typing import List, Tuple
-
 from conftest import (
     VeloTestEnv,
-    IS_LINUX,
-    IS_MACOS,
-    skip_unless_linux,
     skip_on_macos_numa,
-    create_synthetic_safetensors,
-    check_alignment,
 )
 
 
@@ -289,9 +275,7 @@ if __name__ == "__main__":
 
         result = env.run_python(test_script, timeout=30)
 
-        assert (
-            result.returncode == 0
-        ), f"Real safetensors alignment test failed: {result.stderr}"
+        assert result.returncode == 0, f"Real safetensors alignment test failed: {result.stderr}"
         assert "PASS" in result.stdout
 
     @pytest.mark.tier4
@@ -554,7 +538,5 @@ if __name__ == "__main__":
 
         result = env.run_python(test_script, timeout=60)
 
-        assert (
-            result.returncode == 0
-        ), f"Performance baseline test failed: {result.stderr}"
+        assert result.returncode == 0, f"Performance baseline test failed: {result.stderr}"
         assert "PASS" in result.stdout or "Speedup" in result.stdout

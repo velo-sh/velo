@@ -1,10 +1,9 @@
 import os
-import sys
-import subprocess
 import shutil
+import struct
+import subprocess
 import tempfile
 import unittest
-import struct
 from pathlib import Path
 
 # SOP Ritual 11.2: Hostile Hygiene - Strict Initialization
@@ -39,9 +38,7 @@ class TestHGovEnforcement(unittest.TestCase):
         env["CLICOLOR_FORCE"] = "1"
         env["FORCE_COLOR"] = "1"
 
-        return subprocess.run(
-            [VELO_BIN] + args, env=env, cwd=self.tmp_dir, capture_output=True, text=True
-        )
+        return subprocess.run([VELO_BIN] + args, env=env, cwd=self.tmp_dir, capture_output=True, text=True)
 
     def test_SEC_H70_ritual_70_1_signal_format(self):
         """Verify Ritual 70.1: Audit Signal Structure and ANSI Colors"""
@@ -90,7 +87,7 @@ class TestHGovEnforcement(unittest.TestCase):
             ["run", "--zygote", "simple.py"],
         )
         if res_dev.returncode == 0:
-            print(f"DEBUG: Dev mode incorrectly returned 0!")
+            print("DEBUG: Dev mode incorrectly returned 0!")
             print(f"DEBUG: STDERR: {res_dev.stderr}")
             print(f"DEBUG: STDOUT: {res_dev.stdout}")
 
@@ -118,28 +115,20 @@ class TestHGovEnforcement(unittest.TestCase):
         shm_file.write_bytes(struct.pack("<Q", 1000000) + b'{"data": [0, 1024]}')
 
         # 1. Dev Mode (Strict) - Should crash
-        res_dev = self.run_velo(
-            {"VELO_ENV": "dev"}, ["run", "--shm", "mangled.safetensors", "simple.py"]
-        )
+        res_dev = self.run_velo({"VELO_ENV": "dev"}, ["run", "--shm", "mangled.safetensors", "simple.py"])
         self.assertNotEqual(res_dev.returncode, 0, "Dev mode should crash on SHM error")
 
         # 2. Prod Mode (Relaxed) - Should fallback to disk
-        res_prod = self.run_velo(
-            {"VELO_ENV": "prod"}, ["run", "--shm", "mangled.safetensors", "simple.py"]
-        )
+        res_prod = self.run_velo({"VELO_ENV": "prod"}, ["run", "--shm", "mangled.safetensors", "simple.py"])
 
         if res_prod.returncode != 0:
-            print(
-                f"\n🚨 [H-GOV DEFECT] SHM creation failure causes crash in PROD! RC={res_prod.returncode}"
-            )
+            print(f"\n🚨 [H-GOV DEFECT] SHM creation failure causes crash in PROD! RC={res_prod.returncode}")
             print(f"STDERR: {res_prod.stderr}")
             # We fail the test to report the defect
             self.fail("SHM failure must fallback to standard execution in Prod mode")
 
         self.assertIn("H-GOV AUDIT", res_prod.stderr)
-        print(
-            "\n[HOSTILE] Ritual 70.3 PASSED: SHM fallback gracefully degrades in Prod."
-        )
+        print("\n[HOSTILE] Ritual 70.3 PASSED: SHM fallback gracefully degrades in Prod.")
 
     def test_SEC_H70_ritual_70_4_fast_loader_fallback(self):
         """Verify Ritual 70.4: Fast Loader Fallback (Corrupted Bundle)"""
@@ -153,13 +142,9 @@ class TestHGovEnforcement(unittest.TestCase):
 
         # PROBE: run_with_fast_loader uses '?' during canonicalize/verify
         if res.returncode != 0:
-            print(
-                f"\n🚨 [H-GOV DEFECT] Fast Loader failure causes crash in PROD! RC={res.returncode}"
-            )
+            print(f"\n🚨 [H-GOV DEFECT] Fast Loader failure causes crash in PROD! RC={res.returncode}")
             print(f"STDERR: {res.stderr}")
-            self.fail(
-                "Fast Loader failure must fallback to standard execution in Prod mode"
-            )
+            self.fail("Fast Loader failure must fallback to standard execution in Prod mode")
 
         self.assertIn("HEARTBEAT_ACK", res.stdout)
         print("\n[HOSTILE] Ritual 70.4 PASSED: Fast Loader fallback is functional.")
@@ -181,13 +166,9 @@ class TestHGovEnforcement(unittest.TestCase):
         )
 
         if res_prod.returncode != 0:
-            print(
-                f"\n🚨 [H-GOV DEFECT] Invalid SHM path causes crash in PROD! RC={res_prod.returncode}"
-            )
+            print(f"\n🚨 [H-GOV DEFECT] Invalid SHM path causes crash in PROD! RC={res_prod.returncode}")
             print(f"STDERR: {res_prod.stderr}")
-            self.fail(
-                "Invalid SHM path must fallback to standard execution in Prod mode"
-            )
+            self.fail("Invalid SHM path must fallback to standard execution in Prod mode")
 
         print("\n[HOSTILE] Ritual 70.5 PASSED: Invalid SHM path handles gracefully.")
 
@@ -203,119 +184,123 @@ class TestHGovEnforcement(unittest.TestCase):
         )
 
         if res.returncode == 0:
-            print(f"DEBUG: Chaos env incorrectly returned 0!")
+            print("DEBUG: Chaos env incorrectly returned 0!")
             print(f"DEBUG: STDERR: {res.stderr}")
 
-        self.assertNotEqual(
-            res.returncode, 0, "Unknown VELO_ENV must be strict (RC != 0)"
-        )
+        self.assertNotEqual(res.returncode, 0, "Unknown VELO_ENV must be strict (RC != 0)")
         self.assertIn("H-GOV CRITICAL:", res.stderr)
 
         print("\n[HOSTILE] Environment Isolation PASSED: Unknown VELO_ENV is strict.")
 
     def test_SEC_H70_ritual_70_7_analyze_shm_fallback(self):
         """Verify Ritual 70.7: Analyze SHM Fallback (Architectural Debt Probe)"""
-        
+
         shm_file = self.work_dir / "mangled_analyze.safetensors"
         # Mangled header: length > file size
         shm_file.write_bytes(struct.pack("<Q", 1000000) + b'{"data": [0, 1024]}')
-        
+
         # Prod Mode: Should NOT crash
-        res = self.run_velo(
-            {"VELO_ENV": "prod"},
-            ["analyze", "--shm", "mangled_analyze.safetensors", "simple.py"]
-        )
-        
+        res = self.run_velo({"VELO_ENV": "prod"}, ["analyze", "--shm", "mangled_analyze.safetensors", "simple.py"])
+
         if res.returncode != 0:
             print(f"\n🚨 [H-GOV DEFECT] Analyze SHM failure causes crash in PROD! RC={res.returncode}")
             print(f"STDERR: {res.stderr}")
             self.fail("Analyze SHM failure must be handled by H-Gov in Prod mode")
-            
+
         print("\n[HOSTILE] Ritual 70.7 PASSED: Analyze SHM fallback is functional.")
 
     def test_SEC_H70_ritual_70_8_serve_respawn_fallback(self):
         """Verify Ritual 70.8: Serve Respawn Fallback (SEC-H78)"""
-        
+
         # Scenario: Start serve, kill Zygote, then kill a worker.
         # Prod mode supervisor should NOT bail when respawn fails.
-        
+
         # We start serve in a background thread or non-blocking way
         # Since we are in a test, we can use a shorter timeout
         os.environ["VELO_ENV"] = "prod"
-        os.environ["VELO_FAIL_FAST_LIMIT"] = "2" # Faster failure for testing
-        
+        os.environ["VELO_FAIL_FAST_LIMIT"] = "2"  # Faster failure for testing
+
         # We need a dummy app
         self.script_file.write_text("def app(scope, receive, send): pass\n")
-        
+
         # Start Zygote first to ensure it's available
         subprocess.run([VELO_BIN, "debug", "zygote"], capture_output=True)
-        
+
         # Find Zygote socket
         socket_path = Path("/tmp/velo-zygote.sock")
         if socket_path.exists():
             socket_path.unlink()
-        socket_path.touch() # Create a fake stale socket to ensure Zygote start fails
-        
+        socket_path.touch()  # Create a fake stale socket to ensure Zygote start fails
+
         res = self.run_velo(
             {"VELO_ENV": "prod"},
-            ["serve", "--zygote", "--host", "127.0.0.1", "--port", "19998", "--workers", "1", "--dry-run", "simple:app"]
+            [
+                "serve",
+                "--zygote",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "19998",
+                "--workers",
+                "1",
+                "--dry-run",
+                "simple:app",
+            ],
         )
-        
+
         # Probe: If Zygote fails to start, supervisor must report fallback
         # Current implementation uses 'Continuing without Zygote optimization'
         if "Continuing without Zygote optimization" not in res.stderr:
             print(f"\n🚨 [H-GOV DEFECT] Serve failed to report Zygote fallback! RC={res.returncode}")
             print(f"STDERR: {res.stderr}")
             self.fail("Serve must report Zygote fallback in Prod")
-            
+
         self.assertEqual(res.returncode, 0)
         print("\n[HOSTILE] Ritual 70.8 PASSED: Serve handles initial Zygote failure.")
 
     def test_SEC_H70_ritual_70_9_analyze_zygote_fallback(self):
         """Verify Ritual 70.9: Analyze Zygote Fallback (SEC-H79)"""
-        
+
         # Scenario: Zygote is dead, analyze should fallback to cold analysis
         socket_path = Path("/tmp/velo-zygote.sock")
         if socket_path.exists():
             socket_path.unlink()
-        
+
         # We can't easily force Zygote start failure without breaking permissions
         # because the launcher is quite robust.
         # But we can check if it uses the bubble operator for Zygote::start()
         # PROBE: Current analyze.rs line 429 uses .context(...)?
-        
+
         # Let's try to pass an invalid preload but that's hard to trigger from CLI.
         # Let's use a non-existent socket directory if possible?
-        
+
         res = self.run_velo(
-            {"VELO_ENV": "prod", "VELO_ZYGOTE_SOCKET": "/non_existent_dir/fail.sock"},
-            ["analyze", "simple.py"]
+            {"VELO_ENV": "prod", "VELO_ZYGOTE_SOCKET": "/non_existent_dir/fail.sock"}, ["analyze", "simple.py"]
         )
-        
+
         if res.returncode != 0:
             print(f"\n🚨 [H-GOV DEFECT] Analyze Zygote failure causes crash! RC={res.returncode}")
             print(f"STDERR: {res.stderr}")
             self.fail("Analyze must fallback to cold analysis if Zygote fails")
-            
+
         print("\n[HOSTILE] Ritual 70.9 PASSED: Analyze handles Zygote failure.")
 
     def test_SEC_H70_ritual_70_10_fast_loader_setup_fallback(self):
         """Verify Ritual 70.10: Fast Loader Setup Fallback"""
-        
+
         # Scenario: Break temp dir creation in run --fast
         # We point TMPDIR to a non-existent location
-        
+
         res = self.run_velo(
-            {"VELO_ENV": "prod", "TMPDIR": "/tmp/non_existent_dir_12345"},
-            ["run", "--fast", "simple.py"]
+            {"VELO_ENV": "prod", "TMPDIR": "/tmp/non_existent_dir_12345"}, ["run", "--fast", "simple.py"]
         )
-        
+
         if res.returncode != 0:
             print(f"\n🚨 [H-GOV DEFECT] Fast Loader setup failure causes crash! RC={res.returncode}")
             print(f"STDERR: {res.stderr}")
             # Current run_with_fast_loader line 501 uses tempfile::tempdir()?
             self.fail("Fast Loader setup failure must fallback to disk in Prod")
-            
+
         print("\n[HOSTILE] Ritual 70.10 PASSED: Fast Loader handles setup failure.")
 
 

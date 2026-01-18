@@ -1,11 +1,12 @@
-import socket
 import os
-import time
-import subprocess
+import socket
 import struct
+import subprocess
+import time
+from pathlib import Path
+
 import msgpack
 import pytest
-from pathlib import Path
 
 # RFC-0017: Tier 1 - Integration tests, needs binary
 pytestmark = pytest.mark.tier1

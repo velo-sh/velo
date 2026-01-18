@@ -1,11 +1,12 @@
 import os
-import subprocess
 import socket
 import struct
+import subprocess
 import threading
 import time
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def send_msgpack(conn, data):
@@ -40,7 +41,7 @@ class SlowZygote:
                 self.server.settimeout(0.5)
                 try:
                     conn, _ = self.server.accept()
-                except socket.timeout:
+                except TimeoutError:
                     continue
 
                 if self.connect_delay:
@@ -93,8 +94,7 @@ def test_STAB_621_cumulative_timeout(isolated_env):
     # Verification: Must have fallen back
     assert "Zygote" in proc.stderr
     assert any(
-        term in proc.stderr.lower()
-        for term in ["failed", "timeout", "fallback", "timed out", "continuing without"]
+        term in proc.stderr.lower() for term in ["failed", "timeout", "fallback", "timed out", "continuing without"]
     )
 
 
@@ -107,9 +107,7 @@ def test_STAB_622_high_concurrency_pressure(isolated_env):
     socket_path = env.path / "zygote.sock"
     app_dir = env.path / "app"
     app_dir.mkdir()
-    (app_dir / "main.py").write_text(
-        "import time\nprint('Worker started')\ntime.sleep(0.1)"
-    )
+    (app_dir / "main.py").write_text("import time\nprint('Worker started')\ntime.sleep(0.1)")
 
     # Start Zygote
     import subprocess
@@ -136,9 +134,7 @@ def test_STAB_622_high_concurrency_pressure(isolated_env):
 
         # Verify all succeeded (Titanium reliability)
         success_count = sum(1 for p in processes if p.returncode == 0)
-        assert (
-            success_count == 20
-        ), f"Only {success_count}/20 workers spawned successfully under pressure"
+        assert success_count == 20, f"Only {success_count}/20 workers spawned successfully under pressure"
 
     finally:
         proc.terminate()

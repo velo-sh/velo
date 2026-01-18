@@ -16,7 +16,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
 
 import psutil
 import pytest
@@ -24,15 +23,9 @@ import pytest
 # Import CI-aware timeout constants from centralized utils
 sys.path.append(str(Path(__file__).parent.parent))
 from conftest_utils import (
-    T_SHORT,
     T_MEDIUM,
-    T_LONG,
-    get_timeout_multiplier,
-    get_rss,
-    get_pss,
-    get_ppid,
+    T_SHORT,
 )
-
 
 # =============================================================================
 # CONTAINER DETECTION & AUTO-XFAIL
@@ -57,18 +50,18 @@ IS_CONTAINER = _is_container_env()
 
 def pytest_collection_modifyitems(config, items):
     """Auto-xfail velo_serve_fixture tests in container environments.
-    
+
     Zygote/UDS socket behavior differs in containerized environments,
     causing integration tests to fail. Mark them as xfail to allow
     CI to pass while documenting the known limitation.
     """
     if not IS_CONTAINER:
         return
-    
+
     xfail_marker = pytest.mark.xfail(
         reason="Integration tests require native Zygote/UDS behavior which differs in containers"
     )
-    
+
     for item in items:
         # Check if test uses velo_serve_fixture
         if "velo_serve_fixture" in getattr(item, "fixturenames", []):
@@ -85,7 +78,7 @@ class VeloServeProcess:
         self.zygote_pid = None
         self.socket_path = socket_path
         self.forensic_secret = forensic_secret
-        self._worker_pids: List[int] = []
+        self._worker_pids: list[int] = []
 
     def is_running(self) -> bool:
         """Check if the main process is still running."""
@@ -104,23 +97,18 @@ class VeloServeProcess:
                 exit_code = self.proc.returncode
                 # Give stderr a moment to flush (CI buffer delay)
                 time.sleep(0.2)
-                print(
-                    f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}"
-                )
+                print(f"\n🔴 [DIAGNOSTIC] Server process died with exit code: {exit_code}")
                 print(f"    PID: {self.pid}, Port: {self.port}")
                 print(f"    Socket: {self.socket_path}")
                 print(f"    Elapsed: {time.time() - start:.2f}s")
                 # RFC-0011: Print Zygote log if it exists
-                log_path = (
-                    Path(os.environ.get("HOME", "/tmp"))
-                    / ".local/state/velo/zygote.log"
-                )
+                log_path = Path(os.environ.get("HOME", "/tmp")) / ".local/state/velo/zygote.log"
                 if log_path.exists():
                     print(f"\n📄 [ZYGOTE LOG] {log_path}")
                     print(log_path.read_text())
-                
+
                 raise RuntimeError(f"Server process died (exit code: {exit_code})")
-            
+
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
                 if r.status_code == 200:
@@ -177,9 +165,9 @@ class VeloServeProcess:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
-    def get_worker_pids(self) -> List[int]:
+    def get_worker_pids(self) -> list[int]:
         """Get list of worker PIDs.
-        
+
         Workers can be:
         1. Children of the Zygote (Zygote mode)
         2. Children of the Supervisor (Native mode / Cold start)
@@ -189,17 +177,15 @@ class VeloServeProcess:
                 self._detect_zygote_pid()
 
             workers = []
-            
+
             # Source 1: Children of Zygote (Uvicorn Zygote mode)
             if self.zygote_pid:
                 try:
                     zygote_proc = psutil.Process(self.zygote_pid)
-                    workers.extend([
-                        child.pid for child in zygote_proc.children(recursive=True)
-                    ])
+                    workers.extend([child.pid for child in zygote_proc.children(recursive=True)])
                 except psutil.NoSuchProcess:
                     self.zygote_pid = None
-            
+
             # Source 2: Children of Supervisor (Native mode / Cold start)
             try:
                 supervisor = psutil.Process(self.pid)
@@ -207,8 +193,8 @@ class VeloServeProcess:
                     try:
                         cmdline = " ".join(child.cmdline()).lower()
                         if (
-                            "python" in cmdline 
-                            or "granian" in cmdline 
+                            "python" in cmdline
+                            or "granian" in cmdline
                             or "uvicorn" in cmdline
                             or "worker-native" in cmdline
                         ):
@@ -235,7 +221,7 @@ class VeloServeProcess:
         """Get server metrics (placeholder for future implementation)."""
         return {"worker_requests": {}}
 
-    def get_socket_path(self) -> Optional[str]:
+    def get_socket_path(self) -> str | None:
         """Find the Zygote socket path by inspecting Zygote command line."""
         if self.socket_path:
             return self.socket_path
@@ -274,16 +260,16 @@ class VeloServeFactory:
         self.test_env = test_env
         self.tmp_path = test_env.root  # Compatibility
         self.velo_binary = velo_binary
-        self.processes: List[VeloServeProcess] = []
+        self.processes: list[VeloServeProcess] = []
 
     def start(
         self,
         app: str,
         workers: int = 1,
         zygote: bool = True,  # Default to True as per new Velo default
-        port: Optional[int] = None,
+        port: int | None = None,
         rsgi: bool = False,
-        extra_args: Optional[List[str]] = None,
+        extra_args: list[str] | None = None,
     ) -> VeloServeProcess:
         """Start a velo serve process."""
         if port is None:
@@ -354,9 +340,10 @@ class VeloServeFactory:
         # Without this, worker sockets go to /tmp/velo-{uid}/ which is shared across tests
         env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-        
+
         # SEC-005: Generate and inject Forensic Secret for Zygote Auth
         import uuid
+
         forensic_secret = str(uuid.uuid4())
         env["VELO_ZYGOTE_AUTH"] = forensic_secret
 

@@ -1,7 +1,7 @@
-import pytest
-import requests
-import time
 import os
+import time
+
+import requests
 
 
 class TestIsolation:
@@ -42,10 +42,9 @@ def read_root():
             assert data["status"] == "SHIELDED"
             # Accept either ImportShield message or path-sanitization message.
             # Both indicate the security mechanism is working correctly.
-            assert (
-                "Unauthorized access" in data["error"]
-                or "No module named" in data["error"]
-            ), f"Unexpected error: {data['error']}"
+            assert "Unauthorized access" in data["error"] or "No module named" in data["error"], (
+                f"Unexpected error: {data['error']}"
+            )
         finally:
             if os.path.exists("isolated_app.py"):
                 os.remove("isolated_app.py")

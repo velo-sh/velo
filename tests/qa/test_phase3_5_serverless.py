@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional, Tuple, List, Any
 
 import pytest
 
@@ -55,23 +54,21 @@ def wait_for_port(port: int, timeout: float = 30) -> bool:
     return False
 
 
-def wait_for_server_ready(
-    port: int, timeout: float = 60, path: str = "/"
-) -> Tuple[bool, Optional[str]]:
+def wait_for_server_ready(port: int, timeout: float = 60, path: str = "/") -> tuple[bool, str | None]:
     """
     Wait for server to be truly ready to handle HTTP requests.
-    
+
     Unlike wait_for_port which only checks TCP, this actually makes HTTP requests
     to verify the worker is ready. Returns (success, error_message).
     """
     if not HAS_REQUESTS:
         # Fallback to port check if requests not available
         return wait_for_port(port, timeout), None
-    
+
     start = time.time()
     last_error = None
     delay = 0.5  # Start with 0.5s delay, increase gradually
-    
+
     while time.time() - start < timeout:
         try:
             response = requests.get(f"http://127.0.0.1:{port}{path}", timeout=5)
@@ -83,10 +80,10 @@ def wait_for_server_ready(
             last_error = "Request timeout"
         except Exception as e:
             last_error = str(e)
-        
+
         time.sleep(delay)
         delay = min(delay * 1.5, 3.0)  # Exponential backoff, max 3s
-    
+
     return False, last_error
 
 
@@ -191,9 +188,7 @@ dependencies = [
         subprocess.run(["uv", "sync", "--quiet"], cwd=self.path, capture_output=True)
         return self
 
-    def serve(
-        self, app: str, port: int = None, wait: bool = True, **opts
-    ) -> subprocess.Popen:
+    def serve(self, app: str, port: int = None, wait: bool = True, **opts) -> subprocess.Popen:
         """Run velo serve."""
         if port is None:
             port = self.next_port()
@@ -348,7 +343,8 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
             time.sleep(3)
 
             # Read stderr
-            import fcntl, os
+            import fcntl
+            import os
 
             fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
             try:
@@ -360,11 +356,9 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
 
             # REGRESSION CHECK: Error should be displayed, not swallowed
             stderr_lower = stderr.lower()
-            assert (
-                "traceback" in stderr_lower
-                or "runtimeerror" in stderr_lower
-                or "crash" in stderr_lower
-            ), f"DEF-3.5-003 regression: crash error not displayed! stderr: {stderr[:500]}"
+            assert "traceback" in stderr_lower or "runtimeerror" in stderr_lower or "crash" in stderr_lower, (
+                f"DEF-3.5-003 regression: crash error not displayed! stderr: {stderr[:500]}"
+            )
 
     def test_def_3_5_004_framework_detection(self):
         """
@@ -390,7 +384,8 @@ def root():
             time.sleep(2)
 
             # Read stderr
-            import fcntl, os
+            import fcntl
+            import os
 
             fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
             try:
@@ -402,12 +397,12 @@ def root():
 
             # REGRESSION CHECK: Should detect FastAPI, not show Unknown
             stderr_lower = stderr.lower()
-            assert (
-                "detected" in stderr_lower and "fastapi" in stderr_lower
-            ), f"DEF-3.5-004 regression: framework not detected! stderr: {stderr[:500]}"
-            assert (
-                "unknown" not in stderr_lower or "detected: fastapi" in stderr_lower
-            ), f"DEF-3.5-004 regression: still showing 'Unknown'! stderr: {stderr[:500]}"
+            assert "detected" in stderr_lower and "fastapi" in stderr_lower, (
+                f"DEF-3.5-004 regression: framework not detected! stderr: {stderr[:500]}"
+            )
+            assert "unknown" not in stderr_lower or "detected: fastapi" in stderr_lower, (
+                f"DEF-3.5-004 regression: still showing 'Unknown'! stderr: {stderr[:500]}"
+            )
 
 
 # =============================================================================
@@ -450,15 +445,13 @@ def health():
             if not ready:
                 # Capture server stderr for debugging
                 import fcntl
+
                 try:
                     fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
                     stderr = proc.stderr.read() or ""
                 except:
                     stderr = ""
-                pytest.fail(
-                    f"Server did not become ready. Error: {error}\n"
-                    f"stderr: {stderr[:2000]}"
-                )
+                pytest.fail(f"Server did not become ready. Error: {error}\nstderr: {stderr[:2000]}")
 
             # Server is ready, now verify the response
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
@@ -538,7 +531,6 @@ class TestGracefulShutdown:
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_sigterm_graceful_exit(self):
         """SIGTERM causes graceful shutdown."""
-        import signal
 
         with ClientProject() as project:
             project.set_pyproject()

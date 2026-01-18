@@ -17,15 +17,16 @@ Author: Velo QA Team
 Date: 2026-01-14
 """
 
-import pytest
-import os
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import time
-import requests
 from pathlib import Path
+
+import pytest
+import requests
 
 
 def get_velo_binary() -> str:
@@ -70,25 +71,29 @@ dev-dependencies = []
     def start_server(self, app_module: str, port: int = None):
         if port is None:
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("", 0))
                 port = s.getsockname()[1]
-        
+
         self._port = port
         run_env = os.environ.copy()
         run_env["VELO_TEST_MODE"] = "1"
         run_env["VIRTUAL_ENV"] = str(self.path / ".venv")
         run_env["PATH"] = f"{self.path / '.venv' / 'bin'}:{os.environ.get('PATH', '')}"
-        
+
         venv_lib = self.path / ".venv" / "lib"
         site_dirs = list(venv_lib.glob("python*/site-packages"))
         if site_dirs:
             run_env["PYTHONPATH"] = str(site_dirs[0])
-        
+
         self._proc = subprocess.Popen(
             [self.velo, "serve", app_module, "--rsgi", "--no-zygote", "--port", str(port)],
-            cwd=self.path, env=run_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=self.path,
+            env=run_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         time.sleep(8)
         return self
@@ -118,6 +123,7 @@ dev-dependencies = []
 # CATEGORY 1: FastAPI Real-World Patterns (8)
 # =============================================================================
 
+
 class TestFastapiDropIn:
     """FastAPI patterns that real apps use."""
 
@@ -128,7 +134,9 @@ class TestFastapiDropIn:
         """[DROPIN-FA-01] FastAPI path parameters."""
         with DropInTestProject("fa-path") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -140,15 +148,16 @@ async def get_user(user_id: int):
 @app.get("/items/{item_name}")
 async def get_item(item_name: str):
     return {"item_name": item_name, "type": "str"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/users/123", timeout=5)
                 assert r1.status_code == 200
                 assert r1.json()["user_id"] == 123
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/items/widget", timeout=5)
                 assert r2.status_code == 200
                 assert r2.json()["item_name"] == "widget"
@@ -160,7 +169,9 @@ async def get_item(item_name: str):
         """[DROPIN-FA-02] FastAPI query parameters."""
         with DropInTestProject("fa-query") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from typing import Optional
 
@@ -169,10 +180,11 @@ app = FastAPI()
 @app.get("/search")
 async def search(q: str, limit: int = 10, offset: Optional[int] = None):
     return {"query": q, "limit": limit, "offset": offset}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/search?q=test&limit=20", timeout=5)
                 assert r.status_code == 200
@@ -187,7 +199,9 @@ async def search(q: str, limit: int = 10, offset: Optional[int] = None):
         """[DROPIN-FA-03] FastAPI JSON request body."""
         with DropInTestProject("fa-json") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "pydantic>=2.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -201,15 +215,14 @@ class Item(BaseModel):
 @app.post("/items")
 async def create_item(item: Item):
     return {"name": item.name, "total": item.price * item.quantity}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.post(
-                    f"http://127.0.0.1:{p.port}/items",
-                    json={"name": "Widget", "price": 9.99, "quantity": 3},
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/items", json={"name": "Widget", "price": 9.99, "quantity": 3}, timeout=5
                 )
                 assert r.status_code == 200
                 assert r.json()["total"] == pytest.approx(29.97, 0.01)
@@ -221,7 +234,9 @@ async def create_item(item: Item):
         """[DROPIN-FA-04] FastAPI response model."""
         with DropInTestProject("fa-response") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "pydantic>=2.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -235,10 +250,11 @@ class UserResponse(BaseModel):
 @app.get("/user", response_model=UserResponse)
 async def get_user():
     return {"id": 1, "name": "John", "email": "john@example.com", "password": "secret"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/user", timeout=5)
                 assert r.status_code == 200
@@ -252,7 +268,9 @@ async def get_user():
         """[DROPIN-FA-05] FastAPI HTTPException."""
         with DropInTestProject("fa-exception") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
@@ -262,14 +280,15 @@ async def get_item(item_id: int):
     if item_id == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"item_id": item_id}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/items/1", timeout=5)
                 assert r1.status_code == 200
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/items/0", timeout=5)
                 assert r2.status_code == 404
 
@@ -280,7 +299,9 @@ async def get_item(item_id: int):
         """[DROPIN-FA-06] FastAPI APIRouter."""
         with DropInTestProject("fa-router") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, APIRouter
 
 app = FastAPI()
@@ -298,14 +319,15 @@ async def list_items():
 
 app.include_router(users_router)
 app.include_router(items_router)
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/users/", timeout=5)
                 assert r1.status_code == 200
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/items/", timeout=5)
                 assert r2.status_code == 200
 
@@ -316,7 +338,9 @@ app.include_router(items_router)
         """[DROPIN-FA-07] FastAPI lifespan context manager."""
         with DropInTestProject("fa-lifespan") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
@@ -333,10 +357,11 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/status")
 async def status():
     return {"db_connected": db.get("connected", False)}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/status", timeout=5)
                 assert r.status_code == 200
@@ -349,7 +374,9 @@ async def status():
         """[DROPIN-FA-08] FastAPI OpenAPI schema."""
         with DropInTestProject("fa-openapi") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 
 app = FastAPI(title="Test API", version="1.0.0")
@@ -357,10 +384,11 @@ app = FastAPI(title="Test API", version="1.0.0")
 @app.get("/")
 async def root():
     return {"message": "Hello"}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/openapi.json", timeout=5)
                 assert r.status_code == 200
@@ -372,6 +400,7 @@ async def root():
 # CATEGORY 2: Starlette Real-World Patterns (5)
 # =============================================================================
 
+
 class TestStarletteDropIn:
     """Starlette patterns that real apps use."""
 
@@ -382,7 +411,9 @@ class TestStarletteDropIn:
         """[DROPIN-ST-01] Starlette routing."""
         with DropInTestProject("st-routing") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -397,14 +428,15 @@ app = Starlette(routes=[
     Route("/", homepage),
     Route("/about", about),
 ])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r1.json()["page"] == "home"
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/about", timeout=5)
                 assert r2.json()["page"] == "about"
 
@@ -415,7 +447,9 @@ app = Starlette(routes=[
         """[DROPIN-ST-02] Starlette path parameters."""
         with DropInTestProject("st-path") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -427,10 +461,11 @@ async def get_user(request):
 app = Starlette(routes=[
     Route("/users/{user_id:int}", get_user),
 ])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/users/42", timeout=5)
                 assert r.status_code == 200
@@ -443,7 +478,9 @@ app = Starlette(routes=[
         """[DROPIN-ST-03] Starlette request body."""
         with DropInTestProject("st-body") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -455,16 +492,13 @@ async def create_item(request):
 app = Starlette(routes=[
     Route("/items", create_item, methods=["POST"]),
 ])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.post(
-                    f"http://127.0.0.1:{p.port}/items",
-                    json={"name": "test"},
-                    timeout=5
-                )
+                r = requests.post(f"http://127.0.0.1:{p.port}/items", json={"name": "test"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["received"]["name"] == "test"
 
@@ -475,7 +509,9 @@ app = Starlette(routes=[
         """[DROPIN-ST-04] Starlette HTML response."""
         with DropInTestProject("st-html") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import HTMLResponse
 from starlette.routing import Route
@@ -486,10 +522,11 @@ async def homepage(request):
 app = Starlette(routes=[
     Route("/", homepage),
 ])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r.status_code == 200
@@ -503,7 +540,9 @@ app = Starlette(routes=[
         """[DROPIN-ST-05] Starlette redirect response."""
         with DropInTestProject("st-redirect") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from starlette.applications import Starlette
 from starlette.responses import RedirectResponse, JSONResponse
 from starlette.routing import Route
@@ -518,10 +557,11 @@ app = Starlette(routes=[
     Route("/old-page", old_page),
     Route("/new-page", new_page),
 ])
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/old-page", timeout=5, allow_redirects=True)
                 assert r.json()["page"] == "new"
@@ -530,6 +570,7 @@ app = Starlette(routes=[
 # =============================================================================
 # CATEGORY 3: Common ASGI Patterns (5)
 # =============================================================================
+
 
 class TestCommonAsgiPatterns:
     """Common ASGI patterns that all apps use."""
@@ -540,7 +581,9 @@ class TestCommonAsgiPatterns:
         """[DROPIN-ASGI-01] Pure ASGI hello world."""
         with DropInTestProject("asgi-hello") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     assert scope["type"] == "http"
     await send({
@@ -552,10 +595,11 @@ async def app(scope, receive, send):
         "type": "http.response.body",
         "body": b"Hello, World!",
     })
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r.status_code == 200
@@ -567,7 +611,9 @@ async def app(scope, receive, send):
         """[DROPIN-ASGI-02] Pure ASGI JSON response."""
         with DropInTestProject("asgi-json") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -581,10 +627,11 @@ async def app(scope, receive, send):
         "type": "http.response.body",
         "body": body,
     })
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r.status_code == 200
@@ -596,7 +643,9 @@ async def app(scope, receive, send):
         """[DROPIN-ASGI-03] Pure ASGI read request body."""
         with DropInTestProject("asgi-body") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -619,16 +668,13 @@ async def app(scope, receive, send):
         "type": "http.response.body",
         "body": response,
     })
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.post(
-                    f"http://127.0.0.1:{p.port}/",
-                    json={"key": "value"},
-                    timeout=5
-                )
+                r = requests.post(f"http://127.0.0.1:{p.port}/", json={"key": "value"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["received"]["key"] == "value"
 
@@ -638,7 +684,9 @@ async def app(scope, receive, send):
         """[DROPIN-ASGI-04] Pure ASGI read and write headers."""
         with DropInTestProject("asgi-headers") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -657,10 +705,11 @@ async def app(scope, receive, send):
         "type": "http.response.body",
         "body": json.dumps({"user_agent": user_agent}).encode(),
     })
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r.status_code == 200
@@ -672,7 +721,9 @@ async def app(scope, receive, send):
         """[DROPIN-ASGI-05] Pure ASGI path-based routing."""
         with DropInTestProject("asgi-routing") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 import json
 
 async def app(scope, receive, send):
@@ -694,14 +745,15 @@ async def app(scope, receive, send):
         "type": "http.response.body",
         "body": json.dumps(response).encode(),
     })
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/", timeout=5)
                 assert r1.json()["page"] == "home"
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/api", timeout=5)
                 assert r2.json()["page"] == "api"
 
@@ -709,6 +761,7 @@ async def app(scope, receive, send):
 # =============================================================================
 # CATEGORY 4: HTTP Methods & Routing (5)
 # =============================================================================
+
 
 class TestHttpMethods:
     """HTTP methods that real apps use."""
@@ -720,17 +773,20 @@ class TestHttpMethods:
         """[DROPIN-HTTP-01] HTTP GET method."""
         with DropInTestProject("http-get") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.get("/resource")
 async def get_resource():
     return {"method": "GET", "data": [1, 2, 3]}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/resource", timeout=5)
                 assert r.status_code == 200
@@ -743,23 +799,22 @@ async def get_resource():
         """[DROPIN-HTTP-02] HTTP POST method."""
         with DropInTestProject("http-post") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.post("/resource")
 async def create_resource(data: dict):
     return {"method": "POST", "created": data}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.post(
-                    f"http://127.0.0.1:{p.port}/resource",
-                    json={"name": "test"},
-                    timeout=5
-                )
+                r = requests.post(f"http://127.0.0.1:{p.port}/resource", json={"name": "test"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["method"] == "POST"
 
@@ -770,23 +825,22 @@ async def create_resource(data: dict):
         """[DROPIN-HTTP-03] HTTP PUT method."""
         with DropInTestProject("http-put") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.put("/resource/{id}")
 async def update_resource(id: int, data: dict):
     return {"method": "PUT", "id": id, "updated": data}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.put(
-                    f"http://127.0.0.1:{p.port}/resource/1",
-                    json={"name": "updated"},
-                    timeout=5
-                )
+                r = requests.put(f"http://127.0.0.1:{p.port}/resource/1", json={"name": "updated"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["method"] == "PUT"
 
@@ -797,23 +851,22 @@ async def update_resource(id: int, data: dict):
         """[DROPIN-HTTP-04] HTTP PATCH method."""
         with DropInTestProject("http-patch") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.patch("/resource/{id}")
 async def patch_resource(id: int, data: dict):
     return {"method": "PATCH", "id": id, "patched": data}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.patch(
-                    f"http://127.0.0.1:{p.port}/resource/1",
-                    json={"field": "value"},
-                    timeout=5
-                )
+                r = requests.patch(f"http://127.0.0.1:{p.port}/resource/1", json={"field": "value"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["method"] == "PATCH"
 
@@ -824,17 +877,20 @@ async def patch_resource(id: int, data: dict):
         """[DROPIN-HTTP-05] HTTP DELETE method."""
         with DropInTestProject("http-delete") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 app = FastAPI()
 
 @app.delete("/resource/{id}")
 async def delete_resource(id: int):
     return {"method": "DELETE", "id": id, "deleted": True}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.delete(f"http://127.0.0.1:{p.port}/resource/1", timeout=5)
                 assert r.status_code == 200
@@ -844,6 +900,7 @@ async def delete_resource(id: int):
 # =============================================================================
 # CATEGORY 5: Request/Response Patterns (5)
 # =============================================================================
+
 
 class TestRequestResponsePatterns:
     """Request/Response patterns that real apps need."""
@@ -855,7 +912,9 @@ class TestRequestResponsePatterns:
         """[DROPIN-REQ-01] Request URL information."""
         with DropInTestProject("req-url") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 app = FastAPI()
 
@@ -866,10 +925,11 @@ async def url_info(request: Request):
         "path": request.url.path,
         "method": request.method,
     }
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(f"http://127.0.0.1:{p.port}/info", timeout=5)
                 assert r.status_code == 200
@@ -884,7 +944,9 @@ async def url_info(request: Request):
         """[DROPIN-REQ-02] Request headers access."""
         with DropInTestProject("req-headers") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Request
 app = FastAPI()
 
@@ -895,16 +957,13 @@ async def get_headers(request: Request):
         "accept": request.headers.get("accept"),
         "custom": request.headers.get("x-custom"),
     }
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
-                r = requests.get(
-                    f"http://127.0.0.1:{p.port}/headers",
-                    headers={"X-Custom": "test-value"},
-                    timeout=5
-                )
+                r = requests.get(f"http://127.0.0.1:{p.port}/headers", headers={"X-Custom": "test-value"}, timeout=5)
                 assert r.status_code == 200
                 assert r.json()["custom"] == "test-value"
 
@@ -915,7 +974,9 @@ async def get_headers(request: Request):
         """[DROPIN-REQ-03] Response with various status codes."""
         with DropInTestProject("resp-status") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 app = FastAPI()
@@ -927,14 +988,15 @@ async def created():
 @app.get("/accepted")
 async def accepted():
     return JSONResponse({"status": "accepted"}, status_code=202)
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/created", timeout=5)
                 assert r1.status_code == 201
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/accepted", timeout=5)
                 assert r2.status_code == 202
 
@@ -945,7 +1007,9 @@ async def accepted():
         """[DROPIN-REQ-04] Query string parsing."""
         with DropInTestProject("query-parse") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, Query
 from typing import List
 app = FastAPI()
@@ -957,14 +1021,14 @@ async def filter_items(
     page: int = Query(default=1, ge=1),
 ):
     return {"category": category, "tags": tags, "page": page}
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r = requests.get(
-                    f"http://127.0.0.1:{p.port}/filter?category=books&tags=fiction&tags=new&page=2",
-                    timeout=5
+                    f"http://127.0.0.1:{p.port}/filter?category=books&tags=fiction&tags=new&page=2", timeout=5
                 )
                 assert r.status_code == 200
                 data = r.json()
@@ -978,7 +1042,9 @@ async def filter_items(
         """[DROPIN-REQ-05] Content type in response."""
         with DropInTestProject("content-type") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", '''
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, HTMLResponse, JSONResponse
 app = FastAPI()
@@ -994,16 +1060,17 @@ async def html():
 @app.get("/json")
 async def json_resp():
     return JSONResponse({"type": "json"})
-''')
+""",
+            )
             p.install_deps()
             p.start_server("main:app")
-            
+
             if p.alive:
                 r1 = requests.get(f"http://127.0.0.1:{p.port}/text", timeout=5)
                 assert "text/plain" in r1.headers.get("content-type", "")
-                
+
                 r2 = requests.get(f"http://127.0.0.1:{p.port}/html", timeout=5)
                 assert "text/html" in r2.headers.get("content-type", "")
-                
+
                 r3 = requests.get(f"http://127.0.0.1:{p.port}/json", timeout=5)
                 assert "application/json" in r3.headers.get("content-type", "")

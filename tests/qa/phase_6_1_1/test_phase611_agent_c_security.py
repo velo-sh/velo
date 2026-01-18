@@ -15,16 +15,14 @@ Following QA SOP v2.2.
 import os
 import socket
 import subprocess
+import sys
 from pathlib import Path
 
-import psutil
 import pytest
-import sys
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier
-
+from conftest_utils import T_SHORT
 
 # Mark all tests in this module as security tests
 pytestmark = pytest.mark.security
@@ -83,9 +81,7 @@ class TestL4Security:
                         if not is_expected:
                             unexpected.append(line)
 
-                assert (
-                    len(unexpected) == 0
-                ), f"Unexpected FDs in worker {worker_pid}: {unexpected}"
+                assert len(unexpected) == 0, f"Unexpected FDs in worker {worker_pid}: {unexpected}"
 
             except FileNotFoundError:
                 pytest.skip("lsof not available")
@@ -115,19 +111,11 @@ class TestL4Security:
 
         # SIGINT and SIGTERM should be reset
         # Acceptable values: SIG_DFL, SIG_IGN, or explicit worker handler
-        valid_sigint = any(
-            x in signals.get("SIGINT", "")
-            for x in ["SIG_DFL", "SIG_IGN", "handler", "function"]
-        )
-        valid_sigterm = any(
-            x in signals.get("SIGTERM", "")
-            for x in ["SIG_DFL", "SIG_IGN", "handler", "function"]
-        )
+        valid_sigint = any(x in signals.get("SIGINT", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
+        valid_sigterm = any(x in signals.get("SIGTERM", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
 
         # At minimum, should not contain uvloop or asyncio pollution markers
-        assert (
-            "uvloop" not in str(signals).lower()
-        ), f"uvloop pollution detected: {signals}"
+        assert "uvloop" not in str(signals).lower(), f"uvloop pollution detected: {signals}"
 
     def test_SEC_603_http_request_smuggling(self, velo_serve_fixture):
         """SEC-603: HTTP Request Smuggling prevention (CL.TE).
@@ -145,13 +133,7 @@ class TestL4Security:
 
         # Attempt CL.TE smuggling
         smuggle_request = (
-            b"POST / HTTP/1.1\r\n"
-            b"Host: localhost\r\n"
-            b"Content-Length: 4\r\n"
-            b"Transfer-Encoding: chunked\r\n"
-            b"\r\n"
-            b"0\r\n"
-            b"\r\n"
+            b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
         )
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -166,9 +148,7 @@ class TestL4Security:
             # 2. Accept and handle safely (200)
             # 3. Safe connection closure (b"")
             # Should NOT allow request smuggling
-            assert (
-                b"400" in response or b"200" in response or response == b""
-            ), f"Unexpected response: {response[:100]}"
+            assert b"400" in response or b"200" in response or response == b"", f"Unexpected response: {response[:100]}"
 
         finally:
             s.close()
@@ -219,8 +199,7 @@ class TestL4Security:
         # For now, we verify at least "connection" is stripped
         assert (
             "connection" not in header_keys
-            or received_headers.get("connection", "").lower()
-            != "keep-alive, transfer-encoding"
+            or received_headers.get("connection", "").lower() != "keep-alive, transfer-encoding"
         ), f"Hop-by-hop headers leaked: {leaked}"
 
     def test_SEC_605_uds_permission(self, velo_serve_fixture):
@@ -234,7 +213,6 @@ class TestL4Security:
         2. Check socket directory permissions (0700)
         3. Check socket file permissions (no world access)
         """
-        from pathlib import Path
 
     def test_SEC_605_uds_permission(self, isolated_env, velo_binary):
         """SEC-605: Verify UDS socket directory permissions (0700).
@@ -242,9 +220,8 @@ class TestL4Security:
         Requirement: BLOCK-005, SEC-005, H-29
         Priority: P0 (BLOCKING)
         """
-        import time
-        import signal
         import shutil
+        import time
 
         # Use /tmp to ensure short path and predictable location
         tmp_dir = Path("/tmp")
@@ -266,9 +243,7 @@ class TestL4Security:
         # Create a dummy app manually since isolated_env is just a path here
         app_code = "from fastapi import FastAPI\napp = FastAPI()"
         (isolated_env.root / "main.py").write_text(app_code)
-        (isolated_env.root / "pyproject.toml").write_text(
-            '[project]\ndependencies = ["fastapi"]'
-        )
+        (isolated_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
 
         # Find free port
         import socket

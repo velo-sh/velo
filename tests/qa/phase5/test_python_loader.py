@@ -17,12 +17,11 @@ from pathlib import Path
 
 import pytest
 
-
 # Add python/ to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 
-from velo_loader import VeloBundle, VeloFinder, VeloLoader, MAX_BUNDLE_SIZE, MAGIC
-from bundle_builder import VeloBundleBuilder, HEADER_SIZE
+from bundle_builder import HEADER_SIZE, VeloBundleBuilder
+from velo_loader import MAGIC, MAX_BUNDLE_SIZE, VeloBundle, VeloFinder
 
 
 class TestBundleSecurity:

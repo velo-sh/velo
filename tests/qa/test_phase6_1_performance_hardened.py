@@ -1,11 +1,8 @@
-import os
-
-import time
-import pytest
 import subprocess
+import time
+
 import psutil
-import socket
-from pathlib import Path
+import pytest
 
 # QA Agent D: Hardened Performance Benchmarks
 # Requirements: RFC-0010 §3.1, §4.14 (PERF-01 to PERF-03)
@@ -19,12 +16,7 @@ class TestPhase61PerformanceHardened:
         Goal: Verify restart latency is < 50ms (P50).
         """
         env = isolated_env
-        code = (
-            "import time\n"
-            "from fastapi import FastAPI\n"
-            "print(f'STARTED_{time.time()}', flush=True)\n"
-            "app = FastAPI()"
-        )
+        code = "import time\nfrom fastapi import FastAPI\nprint(f'STARTED_{time.time()}', flush=True)\napp = FastAPI()"
         env.create_app("main.py", code)
         port = env.next_port()
 
@@ -73,9 +65,7 @@ class TestPhase61PerformanceHardened:
                             # Fallback if log missed or race (use trigger time, but overhead is high)
                             # Actually, if we miss the log, we can't measure restart-only latency.
                             # We'll use trigger_time as a worst case but subtract 300ms estimate? No.
-                            print(
-                                "Warning: Missed reload log, strictly using trigger time (includes debounce)"
-                            )
+                            print("Warning: Missed reload log, strictly using trigger time (includes debounce)")
                             receive_time = float(line.split("_")[1].strip())
                             latencies.append((receive_time - trigger_time) * 1000)
                         else:
@@ -113,9 +103,7 @@ class TestPhase61PerformanceHardened:
 
         time.sleep(3)
         if proc.poll() is not None:
-            raise RuntimeError(
-                f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}"
-            )
+            raise RuntimeError(f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}")
         try:
             p = psutil.Process(proc.pid)
             total_rss = p.memory_info().rss
@@ -127,9 +115,7 @@ class TestPhase61PerformanceHardened:
 
             rss_mb = total_rss / (1024 * 1024)
             print(f"Total Memory occupancy: {rss_mb:.2f}MB")
-            assert (
-                rss_mb < 500
-            ), f"Memory Leak: RSS too high ({rss_mb}MB)"  # Baseline: ~100-200MB
+            assert rss_mb < 500, f"Memory Leak: RSS too high ({rss_mb}MB)"  # Baseline: ~100-200MB
         finally:
             proc.kill()
 
@@ -154,9 +140,7 @@ class TestPhase61PerformanceHardened:
         assert result.returncode == 0
         # Requirement: Analyze should still be "instant" (< 2s) for local scan
         # even with high line count but low complexity
-        assert (
-            duration < 2.0
-        ), f"Performance Regression: Scanning huge __init__.py took {duration:.2f}s"
+        assert duration < 2.0, f"Performance Regression: Scanning huge __init__.py took {duration:.2f}s"
 
     def test_perf_03_fd_stability(self, isolated_env):
         """
@@ -177,9 +161,7 @@ class TestPhase61PerformanceHardened:
             time.sleep(2)
             if proc.poll() is not None:
                 stdout, stderr = proc.communicate()
-                raise RuntimeError(
-                    f"Velo crashed: {proc.returncode}\nSTDOUT: {stdout}\nSTDERR: {stderr}"
-                )
+                raise RuntimeError(f"Velo crashed: {proc.returncode}\nSTDOUT: {stdout}\nSTDERR: {stderr}")
             p = psutil.Process(proc.pid)
             initial_fds = p.num_fds()
 

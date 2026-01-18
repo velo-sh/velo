@@ -16,17 +16,18 @@ Author: Velo QA Team
 Date: 2026-01-15
 """
 
-import pytest
-import os
+import concurrent.futures
 import json
+import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
-import requests
-import signal
-import concurrent.futures
 from pathlib import Path
+
+import pytest
+import requests
 
 
 def get_velo_binary() -> str:
@@ -70,33 +71,33 @@ dev-dependencies = []
 
     def start_server(self, app_module: str, workers: int = 2, extra_args: list = None):
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
             port = s.getsockname()[1]
-        
+
         self._port = port
         run_env = os.environ.copy()
         run_env["VELO_TEST_MODE"] = "1"
         run_env["VIRTUAL_ENV"] = str(self.path / ".venv")
         run_env["PATH"] = f"{self.path / '.venv' / 'bin'}:{os.environ.get('PATH', '')}"
-        
+
         venv_lib = self.path / ".venv" / "lib"
         site_dirs = list(venv_lib.glob("python*/site-packages"))
         if site_dirs:
             run_env["PYTHONPATH"] = str(site_dirs[0])
-        
-        args = [
-            self.velo, "serve", app_module, 
-            "--rsgi", "--no-zygote", 
-            "--port", str(port),
-            "--workers", str(workers)
-        ]
+
+        args = [self.velo, "serve", app_module, "--rsgi", "--no-zygote", "--port", str(port), "--workers", str(workers)]
         if extra_args:
             args.extend(extra_args)
-            
+
         self._proc = subprocess.Popen(
-            args, cwd=self.path, env=run_env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            args,
+            cwd=self.path,
+            env=run_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         time.sleep(8)
         return self
@@ -126,6 +127,7 @@ dev-dependencies = []
 # CATEGORY 1: Header Smuggling & Corruption (8)
 # =============================================================================
 
+
 class TestHeaderChaos:
     """Insane tests for header handling."""
 
@@ -135,10 +137,13 @@ class TestHeaderChaos:
         """[CHAOS-HDR-01] Request with 32KB of headers."""
         with ChaosTestProject("hd-giant") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            
-            headers = {f"X-Chaos-{i}": "V" * 500 for i in range(60)} # ~30KB
+
+            headers = {f"X-Chaos-{i}": "V" * 500 for i in range(60)}  # ~30KB
             r = requests.get(f"http://127.0.0.1:{p.port}/", headers=headers, timeout=5)
             assert r.status_code == 200
 
@@ -148,10 +153,14 @@ class TestHeaderChaos:
         """[CHAOS-HDR-02] Headers containing null bytes."""
         with ChaosTestProject("hd-null") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            
+
             import urllib.request
+
             req = urllib.request.Request(f"http://127.0.0.1:{p.port}/")
             # Manually add header with null byte if possible, or just invalid chars
             req.add_header("X-Null", "value\0byte")
@@ -159,7 +168,7 @@ class TestHeaderChaos:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     assert resp.status == 200
             except:
-                pass # Many clients block this, but we check if server crashes
+                pass  # Many clients block this, but we check if server crashes
 
     @pytest.mark.tier5
     @pytest.mark.slow
@@ -167,11 +176,15 @@ class TestHeaderChaos:
         """[CHAOS-HDR-03] Smuggling: Duplicate Content-Length headers."""
         with ChaosTestProject("hd-smuggle") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            
+
             # Use raw socket to send duplicate headers
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 raw = b"GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nContent-Length: 5\r\n\r\n"
                 sock.sendall(raw)
@@ -183,10 +196,14 @@ class TestHeaderChaos:
         """[CHAOS-HDR-04] Headers with non-ASCII keys."""
         with ChaosTestProject("hd-nonascii") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             # Check if server survives illegal header keys
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nX-\xff-Key: value\r\n\r\n")
 
@@ -195,7 +212,10 @@ class TestHeaderChaos:
         """[CHAOS-HDR-05] Random casing in standard headers."""
         with ChaosTestProject("hd-case") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             r = requests.get(f"http://127.0.0.1:{p.port}/", headers={"cOnTeNt-tYpE": "TeXt/PlAiN"})
             assert r.status_code == 200
@@ -205,9 +225,13 @@ class TestHeaderChaos:
         """[CHAOS-HDR-06] Obsolete multiline headers (RFC 7230)."""
         with ChaosTestProject("hd-multi") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Multi: part1\r\n  part2\r\n\r\n")
 
@@ -216,9 +240,13 @@ class TestHeaderChaos:
         """[CHAOS-HDR-07] Weird HTTP versions like HTTP/1.2 or HTTP/0.9."""
         with ChaosTestProject("hd-proto") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"GET / HTTP/1.2\r\nHost: localhost\r\n\r\n")
 
@@ -227,7 +255,10 @@ class TestHeaderChaos:
         """[CHAOS-HDR-08] 1000+ tiny headers."""
         with ChaosTestProject("hd-count") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             headers = {f"X-{i}": "1" for i in range(1000)}
             r = requests.get(f"http://127.0.0.1:{p.port}/", headers=headers, timeout=5)
@@ -239,6 +270,7 @@ class TestHeaderChaos:
 # CATEGORY 2: Streaming Body Chaos (8)
 # =============================================================================
 
+
 class TestBodyChaos:
     """Insane tests for body handling."""
 
@@ -248,7 +280,9 @@ class TestBodyChaos:
         """[CHAOS-BODY-01] Sending body bytes extremely slowly."""
         with ChaosTestProject("bd-slow") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", """
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     count = 0
     while True:
@@ -257,9 +291,11 @@ async def app(scope, receive, send):
         if not msg.get('more_body', False): break
     await send({'type': 'http.response.start', 'status': 200, 'headers': []})
     await send({'type': 'http.response.body', 'body': str(count).encode()})
-""")
+""",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n")
                 for i in range(10):
@@ -275,19 +311,24 @@ async def app(scope, receive, send):
             p.set_app("main.py", "async def app(scope, receive, send): await receive()")
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n")
                 sock.sendall(b"data")
-                sock.close() # Bang!
+                sock.close()  # Bang!
 
     @pytest.mark.tier5
     def test_body_larger_than_content_length(self):
         """[CHAOS-BODY-03] Sending more bytes than specified."""
         with ChaosTestProject("bd-extra") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n while True: \n  m = await receive() \n  if not m.get('more_body'): break")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n while True: \n  m = await receive() \n  if not m.get('more_body'): break",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\n")
                 sock.sendall(b"1234567890")
@@ -300,6 +341,7 @@ async def app(scope, receive, send):
             p.set_app("main.py", "async def app(scope, receive, send): await receive()")
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n")
                 sock.sendall(b"missing data")
@@ -312,16 +354,19 @@ async def app(scope, receive, send):
             p.set_app("main.py", "async def app(scope, receive, send): await receive()")
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n")
-                sock.sendall(b"G\r\nhello\r\n0\r\n\r\n") # 'G' is not hex
+                sock.sendall(b"G\r\nhello\r\n0\r\n\r\n")  # 'G' is not hex
 
     @pytest.mark.tier5
     def test_multiple_body_messages_pure_rsgi(self):
         """[CHAOS-BODY-06] RSGI app reading multiple small body increments."""
         with ChaosTestProject("bd-multi-read") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", """
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     chunks = []
     while True:
@@ -330,10 +375,12 @@ async def app(scope, receive, send):
         if not msg.get('more_body', False): break
     await send({'type': 'http.response.start', 'status': 200, 'headers': []})
     await send({'type': 'http.response.body', 'body': f"count:{len(chunks)}".encode()})
-""")
+""",
+            )
             p.install_deps().start_server("main:app")
             # Logic: Send body in tiny TCP packets to force multiple RSGI body messages
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 50\r\n\r\n")
                 for i in range(50):
@@ -345,13 +392,16 @@ async def app(scope, receive, send):
         """[CHAOS-BODY-07] Reading body AFTER sending response start."""
         with ChaosTestProject("bd-late-read") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", """
+            p.set_app(
+                "main.py",
+                """
 async def app(scope, receive, send):
     await send({'type': 'http.response.start', 'status': 200, 'headers': []})
     msg = await receive()
     body = msg.get('body', b'none')
     await send({'type': 'http.response.body', 'body': body})
-""")
+""",
+            )
             p.install_deps().start_server("main:app")
             r = requests.post(f"http://127.0.0.1:{p.port}/", data="late-data")
             assert r.text == "late-data"
@@ -361,7 +411,9 @@ async def app(scope, receive, send):
         """[CHAOS-BODY-08] asyncio.gather reading body and sending response."""
         with ChaosTestProject("bd-concurrent") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", """
+            p.set_app(
+                "main.py",
+                """
 import asyncio
 async def app(scope, receive, send):
     async def reader():
@@ -372,7 +424,8 @@ async def app(scope, receive, send):
         await send({'type': 'http.response.start', 'status': 200, 'headers': []})
         await send({'type': 'http.response.body', 'body': b'done'})
     await asyncio.gather(reader(), writer())
-""")
+""",
+            )
             p.install_deps().start_server("main:app")
             r = requests.post(f"http://127.0.0.1:{p.port}/", data="X" * 1000)
             assert r.status_code == 200
@@ -381,6 +434,7 @@ async def app(scope, receive, send):
 # =============================================================================
 # CATEGORY 3: Concurrency Storm & Mutation (7)
 # =============================================================================
+
 
 class TestConcurrencyChaos:
     """Insane Tests for concurrency."""
@@ -391,17 +445,24 @@ class TestConcurrencyChaos:
         """[CHAOS-CONC-01] 100 concurrent requests with 64KB payloads."""
         with ChaosTestProject("conc-storm") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): \n while True: \n  m = await receive() \n  if not m.get('more_body'): break \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): \n while True: \n  m = await receive() \n  if not m.get('more_body'): break \n await send({'type': 'http.response.start', 'status': 200, 'headers': []}) \n await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app", workers=4)
-            
+
             payload = "A" * 65536
+
             def make_req():
-                try: r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10); return r.status_code
-                except: return 0
-            
+                try:
+                    r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10)
+                    return r.status_code
+                except:
+                    return 0
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
                 results = list(executor.map(lambda _: make_req(), range(200)))
-            
+
             assert results.count(200) >= 150
 
     @pytest.mark.tier5
@@ -409,7 +470,9 @@ class TestConcurrencyChaos:
         """[CHAOS-CONC-02] Mixing WS handshakes and HTTP requests simultaneously."""
         with ChaosTestProject("conc-mixed") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
-            p.set_app("main.py", """
+            p.set_app(
+                "main.py",
+                """
 from fastapi import FastAPI, WebSocket
 app = FastAPI()
 @app.get("/")
@@ -419,26 +482,31 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     await websocket.send_text("hello")
     await websocket.close()
-""")
+""",
+            )
             p.install_deps().start_server("main:app", workers=2)
-            
+
             def do_http():
-                try: return requests.get(f"http://127.0.0.1:{p.port}/", timeout=2).status_code
-                except: return 0
-                
+                try:
+                    return requests.get(f"http://127.0.0.1:{p.port}/", timeout=2).status_code
+                except:
+                    return 0
+
             def do_ws():
                 try:
                     import websocket
+
                     ws = websocket.create_connection(f"ws://127.0.0.1:{p.port}/ws")
                     msg = ws.recv()
                     ws.close()
                     return 1 if msg == "hello" else 0
-                except: return 0
+                except:
+                    return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 f_http = [executor.submit(do_http) for _ in range(50)]
                 f_ws = [executor.submit(do_ws) for _ in range(50)]
-                
+
             assert [f.result() for f in f_http].count(200) >= 40
 
     @pytest.mark.tier5
@@ -446,26 +514,32 @@ async def websocket_endpoint(websocket: WebSocket):
         """[CHAOS-CONC-03] Rapidly opening and closing 500 connections."""
         with ChaosTestProject("conc-churn") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            
+
             def churn():
                 import socket
+
                 try:
                     s = socket.create_connection(("127.0.0.1", p.port), timeout=1)
                     s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                     s.close()
-                except: pass
+                except:
+                    pass
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
-                for _ in range(500): executor.submit(churn)
+                for _ in range(500):
+                    executor.submit(churn)
             time.sleep(2)
 
     @pytest.mark.tier5
     def test_post_body_mutation_during_read(self):
         """[CHAOS-CONC-04] Reading body segments while another request starts."""
         # This is naturally handled by asyncio isolation but we test for bridge race conditions.
-        pass # Covered by storm tests
+        pass  # Covered by storm tests
 
     @pytest.mark.tier5
     def test_extremely_large_multipart_boundary(self):
@@ -477,9 +551,13 @@ async def websocket_endpoint(websocket: WebSocket):
         """[CHAOS-CONC-06] Sending two requests in one TCP packet."""
         with ChaosTestProject("conc-pipe") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                 # Velo/Hyper might handle this or close. NO CRASH is the goal.
@@ -489,12 +567,17 @@ async def websocket_endpoint(websocket: WebSocket):
         """[CHAOS-CONC-07] Saturating 32 workers with 320 requests."""
         with ChaosTestProject("conc-sat") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): import asyncio; await asyncio.sleep(0.1); await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): import asyncio; await asyncio.sleep(0.1); await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app", workers=32)
-            
+
             def req():
-                try: return requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code
-                except: return 0
+                try:
+                    return requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code
+                except:
+                    return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
                 results = list(executor.map(lambda _: req(), range(100)))
@@ -505,6 +588,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # CATEGORY 4: Runtime Signal Interference (7)
 # =============================================================================
 
+
 class TestSignalChaos:
     """Insane Tests for signals and process reliability."""
 
@@ -514,14 +598,17 @@ class TestSignalChaos:
         """[CHAOS-SIG-01] Spamming SIGUSR1 while processing requests."""
         with ChaosTestProject("sig-usr1") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            
+
             def signaller():
                 for _ in range(50):
                     os.kill(p.pid, signal.SIGUSR1)
                     time.sleep(0.05)
-            
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 executor.submit(signaller)
                 for _ in range(20):
@@ -539,9 +626,13 @@ class TestSignalChaos:
         """[CHAOS-SIG-03] Rapid SIGWINCH signals (typical in interactive ttys)."""
         with ChaosTestProject("sig-winch") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
-            for _ in range(20): os.kill(p.pid, signal.SIGWINCH)
+            for _ in range(20):
+                os.kill(p.pid, signal.SIGWINCH)
             r = requests.get(f"http://127.0.0.1:{p.port}/")
             assert r.status_code == 200
 
@@ -550,7 +641,10 @@ class TestSignalChaos:
         """[CHAOS-SIG-04] SIGHUP signal handling."""
         with ChaosTestProject("sig-hup") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'ok'})",
+            )
             p.install_deps().start_server("main:app")
             os.kill(p.pid, signal.SIGHUP)
             time.sleep(1)
@@ -560,20 +654,24 @@ class TestSignalChaos:
     @pytest.mark.tier5
     def test_zombie_reaping_during_storm(self):
         """[CHAOS-SIG-05] Process tree remains clean during concurrent request storm."""
-        pass # Monitored via system tools if needed
+        pass  # Monitored via system tools if needed
 
     @pytest.mark.tier5
     def test_sigpipe_on_response_send(self):
         """[CHAOS-SIG-06] Client disconnects before app finishes sending large body."""
         with ChaosTestProject("sig-pipe") as p:
             p.set_pyproject(deps=[])
-            p.set_app("main.py", "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'X'*1000000})")
+            p.set_app(
+                "main.py",
+                "async def app(scope, receive, send): await send({'type': 'http.response.start', 'status': 200, 'headers': []}); await send({'type': 'http.response.body', 'body': b'X'*1000000})",
+            )
             p.install_deps().start_server("main:app")
             import socket
+
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                 sock.recv(100)
-                sock.close() # SIGPIPE trigger
+                sock.close()  # SIGPIPE trigger
 
     @pytest.mark.tier5
     def test_runtime_panic_resilience(self):

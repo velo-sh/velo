@@ -11,10 +11,11 @@ Root Causes Captured:
 """
 
 import os
-import sys
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
 import pytest
 
 
@@ -78,9 +79,7 @@ class TestEnvironmentPollutionRegression:
 
             # Create a minimal project with its own .venv
             (project_dir / "main.py").write_text("print('hello')")
-            (project_dir / "pyproject.toml").write_text(
-                '[project]\nname = "test"\nversion = "0.1.0"'
-            )
+            (project_dir / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "0.1.0"')
 
             # Create a fake .venv that we can detect
             venv_bin = project_dir / ".venv" / "bin"
@@ -126,15 +125,11 @@ class TestEnvironmentPollutionRegression:
         expected_zygote = velo_path.parent.parent.parent / "velo_zygote" / "main.py"
 
         # This is a sanity check that our path sensing would find the right module
-        assert (
-            expected_zygote.exists()
-        ), f"velo_zygote/main.py not found at {expected_zygote}"
+        assert expected_zygote.exists(), f"velo_zygote/main.py not found at {expected_zygote}"
 
         # Read a few lines to verify it's the right file
         content = expected_zygote.read_text()
-        assert (
-            "ZygoteServer" in content
-        ), "velo_zygote/main.py doesn't contain ZygoteServer"
+        assert "ZygoteServer" in content, "velo_zygote/main.py doesn't contain ZygoteServer"
 
     def test_reg_62_013_python_architecture_consistency(self):
         """
@@ -166,9 +161,9 @@ class TestEnvironmentPollutionRegression:
         current_arch = platform.machine()
 
         # They should match
-        assert (
-            python_arch == current_arch
-        ), f"Python architecture mismatch: Python is {python_arch}, process is {current_arch}"
+        assert python_arch == current_arch, (
+            f"Python architecture mismatch: Python is {python_arch}, process is {current_arch}"
+        )
 
     def test_reg_62_014_no_system_python_fallback_with_venv(self):
         """
@@ -212,10 +207,7 @@ class TestEnvironmentPollutionRegression:
         for indicator in system_python_indicators:
             if indicator in result.stderr:
                 # Check if it's just a warning about PATH scrubbing, not actual usage
-                if (
-                    "Scrubbing untrusted path" in result.stderr
-                    or "Skipping invalid path" in result.stderr
-                ):
+                if "Scrubbing untrusted path" in result.stderr or "Skipping invalid path" in result.stderr:
                     continue  # This is fine - it's warning, not using
                 # Otherwise this might indicate system Python usage
                 # (This is a soft check - detailed Python path reporting would need VELO_DEBUG)
@@ -372,9 +364,7 @@ class TestUvEnvironmentEnforcement:
             pytest.skip("No .venv in project root")
 
         # Get which python is first in PATH
-        result = subprocess.run(
-            ["which", "python3"], capture_output=True, text=True, env=os.environ
-        )
+        result = subprocess.run(["which", "python3"], capture_output=True, text=True, env=os.environ)
 
         which_python = result.stdout.strip()
 

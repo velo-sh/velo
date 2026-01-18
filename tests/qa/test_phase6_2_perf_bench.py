@@ -1,21 +1,17 @@
 import os
-import time
-import pytest
-import subprocess
-from pathlib import Path
 import random
 
 # TITANIUM Grade: L5 Performance Benchmarks
 # Based on QA-SOP §14 (Performance & Benchmark Standards)
-
 import signal
+import subprocess
+import time
+from pathlib import Path
 
-from typing import Tuple
+import pytest
 
 
-def measure_startup_phases(
-    velo_cmd: list, env_vars: dict, cwd: str = None
-) -> Tuple[float, float]:
+def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> tuple[float, float]:
     start = time.perf_counter()
     proc = subprocess.Popen(
         velo_cmd,
@@ -65,9 +61,7 @@ def test_PERF_621_kinetic_speedup(isolated_env):
     app_dir = env.path / "app"
     app_dir.mkdir()
     # Use only fastapi (installed dep) and json (stdlib) - pandas may not be available
-    (app_dir / "main.py").write_text(
-        "import fastapi; import json; import hashlib; app = fastapi.FastAPI()"
-    )
+    (app_dir / "main.py").write_text("import fastapi; import json; import hashlib; app = fastapi.FastAPI()")
     (app_dir / "pyproject.toml").write_text(
         '[project]\nname = "perf-app"\nversion = "0.1.0"\ndependencies = ["fastapi"]'
     )
@@ -113,7 +107,7 @@ def test_PERF_621_kinetic_speedup(isolated_env):
             zygote_ready = True
             time.sleep(2.0)  # Wait for Zygote to finish initialization
             break
-        except (sock_module.error, OSError):
+        except OSError:
             pass
         time.sleep(0.5)
 
@@ -135,9 +129,7 @@ def test_PERF_621_kinetic_speedup(isolated_env):
         # RFC-0013 Standard: Phase-Separated Asserts
         # 1. Architecture Latency (Rust -> Zygote Fork): STRICT < 50ms
         if arch_latency is not None:
-            assert (
-                arch_latency < 50
-            ), f"Architecture latency too high: {arch_latency:.2f}ms"
+            assert arch_latency < 50, f"Architecture latency too high: {arch_latency:.2f}ms"
 
         # 2. Total Latency (E2E): User Experience < 300ms (Loose due to Python overhead)
         assert kinetic_latency < 300, f"Total startup too slow: {kinetic_latency:.2f}ms"
@@ -175,9 +167,7 @@ def test_PERF_622_spawn_scalability(isolated_env):
 
     try:
         for _ in range(20):
-            _, lat = measure_startup_phases(
-                [env.velo, "serve", "main:app"], cmd_env, cwd=str(app_dir)
-            )
+            _, lat = measure_startup_phases([env.velo, "serve", "main:app"], cmd_env, cwd=str(app_dir))
             latencies.append(lat)
 
         avg_lat = sum(latencies) / len(latencies)
@@ -185,9 +175,7 @@ def test_PERF_622_spawn_scalability(isolated_env):
         print(f"Avg: {avg_lat:.2f}ms | Max: {max_lat:.2f}ms")
 
         # Verify stability
-        assert (
-            max_lat < avg_lat * 2
-        ), "Spawning latency exhibits significant jitter/degradation"
+        assert max_lat < avg_lat * 2, "Spawning latency exhibits significant jitter/degradation"
 
     finally:
         proc.terminate()

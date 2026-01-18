@@ -10,40 +10,40 @@ Usage:
 """
 
 import os
-import shutil
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 # Test configuration
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 
 def get_velo_binary_path() -> Path:
     """Find the velo binary in various possible locations."""
     # 1. Environment variable
     if "VELO_BINARY" in os.environ:
         return Path(os.environ["VELO_BINARY"])
-    
+
     # 2. Relative to PROJECT_ROOT (target/release)
     native_release = PROJECT_ROOT / "target" / "release" / "velo"
     if native_release.exists():
         return native_release
-        
+
     # 3. Docker build cache location
     docker_cache = Path("/build_cache/target/release/velo")
     if docker_cache.exists():
         return docker_cache
-        
+
     # 4. Standard dev locations
     for p in ["target/debug/velo", "test_deploy_tmp/bin/velo"]:
         path = PROJECT_ROOT / p
         if path.exists():
             return path
-            
-    return native_release # Fallback to default
+
+    return native_release  # Fallback to default
+
 
 VELO_BINARY = get_velo_binary_path()
 
@@ -64,18 +64,14 @@ class VeloTestResult:
 
     def __repr__(self) -> str:
         status = "✅" if self.success else "❌"
-        return (
-            f"{status} VeloTestResult(rc={self.returncode}, {self.duration_ms:.1f}ms)"
-        )
+        return f"{status} VeloTestResult(rc={self.returncode}, {self.duration_ms:.1f}ms)"
 
 
 @dataclass
 class VeloTestEnv:
     """Isolated test environment with project structure."""
 
-    temp_dir: tempfile.TemporaryDirectory = field(
-        default_factory=lambda: tempfile.TemporaryDirectory()
-    )
+    temp_dir: tempfile.TemporaryDirectory = field(default_factory=lambda: tempfile.TemporaryDirectory())
 
     @property
     def path(self) -> Path:
@@ -95,17 +91,13 @@ class VeloTestEnv:
 
     def create_venv(self, python: str = "python3") -> None:
         """Create a minimal virtual environment."""
-        subprocess.run(
-            [python, "-m", "venv", str(self.venv_path)], check=True, capture_output=True
-        )
+        subprocess.run([python, "-m", "venv", str(self.venv_path)], check=True, capture_output=True)
 
     def create_uv_lock(self, content: str = "# test uv.lock\nversion = 1\n") -> None:
         """Create a uv.lock file for fingerprinting."""
         (self.path / "uv.lock").write_text(content)
 
-    def create_script(
-        self, name: str = "test.py", content: str = "print('OK')"
-    ) -> Path:
+    def create_script(self, name: str = "test.py", content: str = "print('OK')") -> Path:
         """Create a Python test script."""
         script_path = self.path / name
         script_path.write_text(content)
@@ -145,8 +137,8 @@ class VeloTestEnv:
 
 def run_velo(
     args: list[str],
-    cwd: Optional[Path] = None,
-    env: Optional[dict] = None,
+    cwd: Path | None = None,
+    env: dict | None = None,
     timeout: float = 30.0,
 ) -> VeloTestResult:
     """
@@ -166,10 +158,7 @@ def run_velo(
         Default multiplier is 1.0 (local) or 3.0 (CI/GitHub Actions).
     """
     if not VELO_BINARY.exists():
-        raise FileNotFoundError(
-            f"Velo binary not found at {VELO_BINARY}. "
-            f"Run 'cargo build --release' first."
-        )
+        raise FileNotFoundError(f"Velo binary not found at {VELO_BINARY}. Run 'cargo build --release' first.")
 
     # Apply CI timeout multiplier
     multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
@@ -182,9 +171,7 @@ def run_velo(
 
     start = time.perf_counter()
     try:
-        result = subprocess.run(
-            cmd, cwd=cwd, env=full_env, capture_output=True, timeout=scaled_timeout
-        )
+        result = subprocess.run(cmd, cwd=cwd, env=full_env, capture_output=True, timeout=scaled_timeout)
         duration_ms = (time.perf_counter() - start) * 1000
 
         # Handle potential binary output with errors='replace'
@@ -192,12 +179,8 @@ def run_velo(
             stdout = result.stdout.decode("utf-8", errors="replace")
             stderr = result.stderr.decode("utf-8", errors="replace")
         except AttributeError:
-            stdout = (
-                result.stdout if isinstance(result.stdout, str) else str(result.stdout)
-            )
-            stderr = (
-                result.stderr if isinstance(result.stderr, str) else str(result.stderr)
-            )
+            stdout = result.stdout if isinstance(result.stdout, str) else str(result.stdout)
+            stderr = result.stderr if isinstance(result.stderr, str) else str(result.stderr)
 
         return VeloTestResult(
             returncode=result.returncode,
@@ -217,9 +200,7 @@ def run_velo(
         )
 
 
-def assert_velo_fails_gracefully(
-    result: VeloTestResult, expected_in_stderr: str = ""
-) -> None:
+def assert_velo_fails_gracefully(result: VeloTestResult, expected_in_stderr: str = "") -> None:
     """Assert that velo failed but without crashing (panic)."""
     # Check for Rust panic indicators
     panic_indicators = [
@@ -230,14 +211,14 @@ def assert_velo_fails_gracefully(
     ]
 
     for indicator in panic_indicators:
-        assert (
-            indicator.lower() not in result.stderr.lower()
-        ), f"Velo panicked! Found '{indicator}' in stderr:\n{result.stderr}"
+        assert indicator.lower() not in result.stderr.lower(), (
+            f"Velo panicked! Found '{indicator}' in stderr:\n{result.stderr}"
+        )
 
     if expected_in_stderr:
-        assert (
-            expected_in_stderr.lower() in result.stderr.lower()
-        ), f"Expected '{expected_in_stderr}' in stderr, got:\n{result.stderr}"
+        assert expected_in_stderr.lower() in result.stderr.lower(), (
+            f"Expected '{expected_in_stderr}' in stderr, got:\n{result.stderr}"
+        )
 
 
 def assert_no_crash(result: VeloTestResult) -> None:
@@ -252,6 +233,6 @@ def assert_no_crash(result: VeloTestResult) -> None:
 
     combined_output = result.stdout + result.stderr
     for indicator in crash_indicators:
-        assert (
-            indicator.lower() not in combined_output.lower()
-        ), f"Velo crashed! Found '{indicator}' in output:\n{combined_output}"
+        assert indicator.lower() not in combined_output.lower(), (
+            f"Velo crashed! Found '{indicator}' in output:\n{combined_output}"
+        )

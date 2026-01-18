@@ -3,21 +3,20 @@ Phase 5.1 QA: Advanced Zygote Async Mode Tests
 Focus: Stability (L5), Security (L4), and Edge Cases (L2).
 """
 
+import os
+import re
+import signal
 import subprocess
 import time
-import os
-import signal
-import re
 from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
     return "velo"
@@ -65,9 +64,7 @@ class TestZygoteAsyncAdvanced:
 
         # Find the worker PID
         # We need a way to get the PID. The CLI prints it to stderr.
-        result = run_velo(
-            ["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary
-        )
+        result = run_velo(["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary)
         import re
 
         match = re.search(r"PID: (\d+)", result.stderr)
@@ -108,9 +105,7 @@ class TestZygoteAsyncAdvanced:
         pids = []
         start = time.perf_counter()
         for _ in range(20):
-            result = run_velo(
-                ["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary
-            )
+            result = run_velo(["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary)
             assert result.returncode == 0
             match = re.search(r"PID: (\d+)", result.stderr)
             if match:

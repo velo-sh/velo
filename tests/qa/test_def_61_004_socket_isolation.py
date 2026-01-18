@@ -16,26 +16,22 @@ Reference: docs/qa/DEFECTS/DEF-61-004-qa-review.md
 """
 
 import os
-import stat
 import socket
 import sys
-import tempfile
 import threading
-import subprocess
-import pytest
 from pathlib import Path
-from typing import Tuple
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
 
 # Import the actual implementation from velo_zygote
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "velo_zygote"))
+from constants import PROTOCOL_VERSION
 from paths import (
+    ensure_socket_dir,
     get_socket_dir,
     get_versioned_socket_path,
-    ensure_socket_dir,
 )
-from constants import PROTOCOL_VERSION
-
 
 # ============================================================================
 # Test Configuration
@@ -88,7 +84,7 @@ def create_active_socket():
 
     created_sockets = []
 
-    def _create(version: int = PROTOCOL_VERSION) -> Tuple[Path, socket.socket]:
+    def _create(version: int = PROTOCOL_VERSION) -> tuple[Path, socket.socket]:
         socket_path = Path(f"/tmp/velo-test-{uuid.uuid4().hex[:8]}-v{version:02x}.sock")
         if socket_path.exists():
             socket_path.unlink()
@@ -115,9 +111,7 @@ def create_active_socket():
 class TestSocketPathFormat:
     """AC-1, AC-2: Socket path format verification."""
 
-    def test_t1_version_upgrade_cleans_old_socket(
-        self, mock_tmpdir, temp_socket_dir, create_stale_socket
-    ):
+    def test_t1_version_upgrade_cleans_old_socket(self, mock_tmpdir, temp_socket_dir, create_stale_socket):
         """T1: Version upgrade detects and cleans stale sockets.
 
         When upgrading from v0.6.1 (JSON) to v0.6.2 (MessagePack),
@@ -133,7 +127,7 @@ class TestSocketPathFormat:
         try:
             sock.connect(str(old_socket))
             alive = True
-        except (socket.error, OSError):
+        except OSError:
             alive = False
         finally:
             sock.close()
@@ -149,12 +143,12 @@ class TestSocketPathFormat:
         path_str = str(path)
 
         # Verify format
-        assert (
-            f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock" in path_str
-        ), f"Socket path should contain versioned socket name, got: {path_str}"
-        assert (
-            f"velo-{os.getuid()}" in path_str or "velo" in path_str
-        ), f"Socket path should contain user directory, got: {path_str}"
+        assert f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock" in path_str, (
+            f"Socket path should contain versioned socket name, got: {path_str}"
+        )
+        assert f"velo-{os.getuid()}" in path_str or "velo" in path_str, (
+            f"Socket path should contain user directory, got: {path_str}"
+        )
 
     def test_t3_active_socket_not_deleted(self, create_active_socket):
         """T3: Active sockets are NOT deleted during cleanup.
@@ -173,7 +167,7 @@ class TestSocketPathFormat:
                 test_sock.connect(str(socket_path))
                 alive = True
                 test_sock.close()
-            except (socket.error, OSError):
+            except OSError:
                 alive = False
 
             assert alive, "Active socket should respond to connection test"
@@ -199,9 +193,9 @@ class TestSocketPathFormat:
         socket_dir = get_socket_dir()
 
         # Path should contain user-specific directory
-        assert f"velo-{uid}" in str(socket_dir) or "velo" in str(
-            socket_dir
-        ), f"Socket dir should be user-isolated: {socket_dir}"
+        assert f"velo-{uid}" in str(socket_dir) or "velo" in str(socket_dir), (
+            f"Socket dir should be user-isolated: {socket_dir}"
+        )
 
 
 # ============================================================================
@@ -227,9 +221,9 @@ class TestEdgeCases:
         # Should fall back to /tmp/velo-{UID}/ due to path length
         # The actual result path should be less than 108 chars when combined with socket name
         test_socket_path = result / EXPECTED_SOCKET_NAME
-        assert (
-            len(str(test_socket_path)) < 108
-        ), f"Socket path should be under 108 chars, got: {len(str(test_socket_path))}"
+        assert len(str(test_socket_path)) < 108, (
+            f"Socket path should be under 108 chars, got: {len(str(test_socket_path))}"
+        )
 
     def test_t7_permission_error_graceful_handling(self, tmp_path):
         """T7: Cleanup handles permission errors gracefully (no panic).
@@ -283,11 +277,9 @@ class TestEdgeCases:
 
         # All should succeed without errors
         assert len(errors) == 0, f"Race condition errors: {errors}"
-        assert len(results) == 5, f"All threads should return a path"
+        assert len(results) == 5, "All threads should return a path"
         # All threads should return the same path
-        assert (
-            len(set(str(p) for p in results)) == 1
-        ), "All threads should get same path"
+        assert len(set(str(p) for p in results)) == 1, "All threads should get same path"
 
     def test_t9_symlink_attack_protection(self, tmp_path, monkeypatch):
         """T9: Symlink attack protection.
@@ -351,9 +343,7 @@ class TestVersionRegression:
         path = get_versioned_socket_path()
 
         # Should have versioned path
-        assert f"v{PROTOCOL_VERSION:02x}" in str(
-            path
-        ), f"Fresh install path should include version: {path}"
+        assert f"v{PROTOCOL_VERSION:02x}" in str(path), f"Fresh install path should include version: {path}"
 
     def test_reg002_upgrade_v061_to_v062(self, temp_socket_dir, create_stale_socket):
         """REG-002: Upgrade v0.6.1 -> v0.6.2 cleans old JSON socket.
@@ -369,9 +359,7 @@ class TestVersionRegression:
 
         # New version socket has different name
         new_socket_name = f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
-        assert (
-            old_socket.name != new_socket_name
-        ), "Old and new socket names should differ"
+        assert old_socket.name != new_socket_name, "Old and new socket names should differ"
 
     def test_reg003_downgrade_v062_to_v061(self, temp_socket_dir):
         """REG-003: Downgrade v0.6.2 -> v0.6.1 still works.
@@ -400,9 +388,9 @@ class TestVersionRegression:
         socket_dir = get_socket_dir()
         socket_path = get_versioned_socket_path()
 
-        assert f"velo-{uid}" in str(socket_dir) or "velo" in str(
-            socket_dir
-        ), f"Socket dir should be user-isolated: {socket_dir}"
+        assert f"velo-{uid}" in str(socket_dir) or "velo" in str(socket_dir), (
+            f"Socket dir should be user-isolated: {socket_dir}"
+        )
 
 
 # ============================================================================
@@ -418,7 +406,7 @@ def is_socket_listening(path: Path) -> bool:
         sock.connect(str(path))
         sock.close()
         return True
-    except (socket.error, OSError):
+    except OSError:
         return False
 
 

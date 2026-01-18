@@ -10,17 +10,15 @@ Date: 2026-01-14
 Governance: ID-LOCK-GLOBAL Compliant
 """
 
-import pytest
-import time
-import asyncio
-import subprocess
 import os
 import signal
 import socket
-import struct
-import ssl
+import subprocess
 import tempfile
+import time
 from pathlib import Path
+
+import pytest
 
 
 class TestRFC0025WebSocketArchitecture:
@@ -38,30 +36,36 @@ class TestRFC0025WebSocketArchitecture:
         [RFC-0025 Section 2.1] Verify implementation: WebSocket MUST return 101.
         Verification of Phase 7.2 Native WebSocket implementation.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, proto):
     if scope.proto == 'ws':
         await proto.accept()
         proto.close()
         # Immediately close for this test
-""")
+""",
+        )
         port = isolated_env.next_port()
         # Need to ensure PYTHONPATH includes local project for RSGI
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import websocket
+
             time.sleep(5)
-            
+
             # Use websocket-client to verify handshake
             ws = websocket.create_connection(f"ws://127.0.0.1:{port}/")
             status = ws.status
             ws.close()
-            
+
             # RFC-0025 Implementation: Should now return 101 (Switching Protocols)
             assert status == 101, f"RFC-0025 VIOLATION: Expected 101, got {status}"
             print("VERIFIED: WebSocket implementation successful (101 Switching Protocols)")
@@ -72,40 +76,45 @@ async def app(scope, proto):
                 pass
             proc.wait()
 
-
     @pytest.mark.tier2
     def test_ws_gate_h_before_upgrade(self, isolated_env):
         """
         [RFC-0025 Section 7] Gate H: Worker Isolation Verification.
         Verify that WebSocket connections are owned by correctly isolated native workers.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 import os
 async def app(scope, proto):
     if scope.proto == 'ws':
         transport = await proto.accept()
         await transport.send_str(f"PID:{os.getpid()}")
         proto.close()
-""")
+""",
+        )
         port = isolated_env.next_port()
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import websocket
+
             time.sleep(5)
             ws = websocket.create_connection(f"ws://127.0.0.1:{port}/")
             msg = ws.recv()
             ws.close()
-            
+
             assert msg.startswith("PID:"), f"Invalid response: {msg}"
             worker_pid = int(msg.split(":")[1])
             assert worker_pid != proc.pid, "GATE H VIOLATION: Worker PID must be different from Host PID!"
             print(f"VERIFIED: Gate H active - WS handled by isolated worker PID {worker_pid}")
-            
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -113,13 +122,12 @@ async def app(scope, proto):
                 pass
             proc.wait()
 
-
     @pytest.mark.tier2
     def test_ws_latency_claim(self, isolated_env):
         """
         [RFC-0025 Section 4] CRITICAL PERFORMANCE CLAIM:
         "~1-5μs per frame (Granian Direct)"
-        
+
         This is a BENCHMARK test - will verify the claim when implemented.
         """
         pytest.skip("RFC-0025 not yet implemented - this is a future benchmark")
@@ -141,40 +149,54 @@ class TestRFC0026TLSIntegration:
         Velo should reject --tls-cert/--tls-key flags or fail gracefully.
         """
         # Create a minimal app
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, proto):
     proto.response_str(200, [], "OK")
-""")
-        
+""",
+        )
+
         port = isolated_env.next_port()
-        
+
         # Try to start with TLS flags (should fail or ignore)
         proc = subprocess.Popen(
-            [isolated_env.velo, "serve", "main:app", "--rsgi", "--port", str(port),
-             "--tls-cert", "/nonexistent.crt", "--tls-key", "/nonexistent.key"],
+            [
+                isolated_env.velo,
+                "serve",
+                "main:app",
+                "--rsgi",
+                "--port",
+                str(port),
+                "--tls-cert",
+                "/nonexistent.crt",
+                "--tls-key",
+                "/nonexistent.key",
+            ],
             cwd=isolated_env.home,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
-        
+
         try:
             # Wait for startup or error
             exit_code = proc.wait(timeout=10)
             stderr = proc.stderr.read()
-            
+
             # RFC-0026 Phase 8.x: TLS not yet implemented
             # Expected: Either exit with error OR ignore the flags
             print(f"velo exited with code {exit_code}")
             print(f"stderr: {stderr}")
-            
+
             # If it exits with error, TLS is correctly not supported
             # If it runs, check if HTTPS is actually working (it shouldn't be)
-            assert exit_code != 0 or "tls" not in stderr.lower() or "not supported" in stderr.lower(), \
+            assert exit_code != 0 or "tls" not in stderr.lower() or "not supported" in stderr.lower(), (
                 "RFC-0026 PREMATURE: TLS flags accepted but RFC-0026 is Phase 8.x"
-            
+            )
+
             print("VERIFIED: TLS not yet implemented (Phase 8.x)")
-            
+
         except subprocess.TimeoutExpired:
             # It started without error - check if HTTPS works
             proc.terminate()
@@ -220,37 +242,41 @@ class TestRFC0027HTTP2Support:
         Server should respond with HTTP/1.1 only.
         """
         import http.client
-        
-        isolated_env.create_app("main.py", """
+
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, proto):
     version = scope.get('http_version', 'unknown')
     proto.response_str(200, [(b'content-type', b'text/plain')], f'HTTP/{version}')
-""")
-        
+""",
+        )
+
         port = isolated_env.next_port()
-        
+
         # Ensure velo_zygote is in PYTHONPATH for workers
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(5)
-            
+
             # Make a plain HTTP request
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
             conn.request("GET", "/")
             resp = conn.getresponse()
             body = resp.read().decode()
-            
+
             # HTTP/1.1 should be returned
-            assert "HTTP/1.1" in body or resp.version == 11, \
+            assert "HTTP/1.1" in body or resp.version == 11, (
                 f"RFC-0027 PREMATURE: Got HTTP version {body} but RFC-0027 is Phase 8.x"
-            
-            print(f"VERIFIED: HTTP version is 1.1 (RFC-0027 Phase 8.x)")
-            
+            )
+
+            print("VERIFIED: HTTP version is 1.1 (RFC-0027 Phase 8.x)")
+
         finally:
             proc.terminate()
             proc.wait()
@@ -260,16 +286,12 @@ async def app(scope, proto):
         """
         [RFC-0027 Section 3.3] The --http2 CLI flag should not exist yet.
         """
-        result = subprocess.run(
-            [isolated_env.velo, "serve", "--help"],
-            capture_output=True,
-            text=True
-        )
-        
+        result = subprocess.run([isolated_env.velo, "serve", "--help"], capture_output=True, text=True)
+
         # --http2 flag should not be in the help output yet
         if "--http2" in result.stdout:
             pytest.fail("RFC-0027 PREMATURE: --http2 flag exists but RFC-0027 is Phase 8.x")
-        
+
         print("VERIFIED: --http2 flag not yet implemented (Phase 8.x)")
 
     @pytest.mark.tier2
@@ -292,18 +314,14 @@ class TestCrossRFCIntegrity:
         [RFC-0027 Section 9] RFC-0027 (HTTP/2) depends on RFC-0026 (TLS).
         If HTTP/2 is enabled before TLS, this is a VIOLATION.
         """
-        result = subprocess.run(
-            [isolated_env.velo, "serve", "--help"],
-            capture_output=True,
-            text=True
-        )
-        
+        result = subprocess.run([isolated_env.velo, "serve", "--help"], capture_output=True, text=True)
+
         has_http2 = "--http2" in result.stdout
         has_tls = "--tls-cert" in result.stdout or "--tls" in result.stdout
-        
+
         if has_http2 and not has_tls:
             pytest.fail("RFC DEPENDENCY VIOLATION: --http2 available but TLS not implemented")
-        
+
         print("VERIFIED: RFC dependency chain maintained")
 
     @pytest.mark.tier1
@@ -315,68 +333,71 @@ class TestCrossRFCIntegrity:
         # Get project root from this file's location
         project_root = Path(__file__).parent.parent.parent.parent
         granian_path = project_root / "vendor" / "granian"
-        
+
         assert granian_path.exists(), f"VENDOR MISSING: vendor/granian not found at {granian_path}"
-        
+
         # Check for key files mentioned in RFCs
         key_files = [
-            "src/ws.rs",       # RFC-0025: HyperWebsocket
-            "src/tls.rs",      # RFC-0026: tls_tcp_listener
+            "src/ws.rs",  # RFC-0025: HyperWebsocket
+            "src/tls.rs",  # RFC-0026: tls_tcp_listener
             "src/workers.rs",  # RFC-0027: HTTP2Config
         ]
-        
+
         missing = []
         for f in key_files:
             if not (granian_path / f).exists():
                 missing.append(f)
-        
+
         if missing:
             print(f"WARNING: Granian files not found: {missing}")
         else:
             print("VERIFIED: All Granian source files exist as claimed")
-
-
 
     def test_hard_exit_recovery_still_broken(self, isolated_env):
         """
         [DEF-72-C03] Verify Hard Exit Recovery is still a gap.
         App calling os._exit(0) should not crash the Host.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 import os
 async def app(scope, proto):
     if scope.proto == "http":
         if scope.path == "/exit":
             os._exit(0)  # Hard exit
         proto.response_str(200, [], "OK")
-""")
+""",
+        )
         port = isolated_env.next_port()
-        
+
         # Set backoff to 1s for faster test recovery
         env = os.environ.copy()
         env["VELO_BACKOFF_SECS"] = "1"
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True)
 
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import requests
+
             time.sleep(5)
-            
+
             # First request should work
             resp = requests.get(f"http://127.0.0.1:{port}/", timeout=10)
             assert resp.status_code == 200
-            
+
             # Trigger hard exit
             try:
                 requests.get(f"http://127.0.0.1:{port}/exit", timeout=5)
             except:
                 pass  # Expected to fail
-            
+
             time.sleep(2)
-            
+
             # Next request should still work (Host should recover)
             try:
                 # Give it a bit more time for respawn (Phase 7.3 hardening)
@@ -391,7 +412,6 @@ async def app(scope, proto):
             except Exception as e:
                 pytest.fail(f"Hard Exit Recovery Failed: {e}")
 
-                
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -415,15 +435,17 @@ class TestRFC0019NativeRuntimeProsecution:
         """
         isolated_env.create_app("main.py", "async def app(scope, proto): proto.response_str(200, [], 'OK')")
         port = isolated_env.next_port()
-        
+
         # Ensure velo_zygote is in PYTHONPATH for workers
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
+
         # Enable Zygote to ensure Gate H is active
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             time.sleep(5)
             # Find the UDS socket used for worker-host IPC
@@ -436,7 +458,7 @@ class TestRFC0019NativeRuntimeProsecution:
                 uds_sockets = list(Path(tmp_dir).glob(f"{pattern}/v-worker-*.sock"))
 
             print(f"Detected UDS Sockets for PID {velo_pid}: {uds_sockets}")
-            
+
             # Attempt to connect to each found socket from THIS unauthorized PID
             vulnerabilities = []
             for sock_path in uds_sockets:
@@ -464,7 +486,7 @@ class TestRFC0019NativeRuntimeProsecution:
 
             assert not vulnerabilities, f"GATE H VIOLATION: Unauthorized IPC access! {vulnerabilities}"
             print("VERIFIED: Gate H blocks unauthorized UDS access (SO_PEERCRED enforcement)")
-            
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -478,7 +500,9 @@ class TestRFC0019NativeRuntimeProsecution:
         [RFC-0019 Section 7 P0-2] Taint Contract (PRNG State Exhaustion).
         Verify that random state is unique across multiple calls and multiple workers.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 import os
 import random
 import json
@@ -493,40 +517,44 @@ async def app(scope, proto):
             "urandom": os.urandom(32).hex()
         }
         proto.response_str(200, [("content-type", "application/json")], json.dumps(data))
-""")
+""",
+        )
         port = isolated_env.next_port()
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--workers", "2", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--workers", "2", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import requests
+
             time.sleep(8)
-            
+
             samples = {}
             for _ in range(20):
                 resp = requests.get(f"http://127.0.0.1:{port}/")
                 data = resp.json()
-                pid = data['pid']
+                pid = data["pid"]
                 if pid not in samples:
                     samples[pid] = []
                 samples[pid].append(data)
-            
+
             assert len(samples) >= 2, f"Target 2 workers, found {len(samples)}"
-            
+
             # Cross-worker collision check
             pids = list(samples.keys())
-            w1_seqs = [s['random_seq'] for s in samples[pids[0]]]
-            w2_seqs = [s['random_seq'] for s in samples[pids[1]]]
-            
+            w1_seqs = [s["random_seq"] for s in samples[pids[0]]]
+            w2_seqs = [s["random_seq"] for s in samples[pids[1]]]
+
             for s1 in w1_seqs:
                 for s2 in w2_seqs:
                     assert s1 != s2, "TAINT CONTRACT COLLISION: Identical PRNG sequence in different workers!"
-            
+
             print("VERIFIED: PRNG sequences are independent across workers")
-            
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -546,9 +574,11 @@ async def app(scope, proto):
             f = tempfile.NamedTemporaryFile(delete=False)
             f.write(f"SENSITIVE_{i}".encode())
             temp_files.append(f)
-            
+
         try:
-            isolated_env.create_app("main.py", """
+            isolated_env.create_app(
+                "main.py",
+                """
 import os
 import json
 
@@ -568,41 +598,47 @@ async def app(scope, proto):
             pass
             
         proto.response_str(200, [("content-type", "application/json")], json.dumps({"open_fds": open_fds}))
-""")
+""",
+            )
             port = isolated_env.next_port()
             env = os.environ.copy()
             project_root = Path(__file__).parent.parent.parent.parent
             env["PYTHONPATH"] = str(project_root)
-            
-            proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-            
+
+            proc = isolated_env.spawn_velo(
+                "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+            )
+
             try:
                 import requests
+
                 time.sleep(5)
                 resp = requests.get(f"http://127.0.0.1:{port}/")
                 data = resp.json()
-                
+
                 # Legitimate FDs in a Velo worker (Phase 7.2):
                 # 0, 1, 2 (std)
                 # 5+ (Listener FD and internal Granian/Tokio/Python FDs)
-                
+
                 # TITANIUM RULE: Inherited Leak Detection
                 # We expect 0 inherited leaks because of close_range_except.
                 # However, the worker opens several internal FDs (KQUEUEs, unix sockets for signal/GIL)
                 # which are NOT leaks. They are newly created in the worker.
-                
+
                 # Filter out baseline runtime FDs to find true 'leaks' (inherited).
                 # On macOS, kqueues and newly opened unix sockets are the standard footprint.
                 leaked = []
-                for fd in data['open_fds']:
-                    if fd <= 2: continue # Standard
-                    if fd == 5: continue # Known listener FD (passed via --fd)
+                for fd in data["open_fds"]:
+                    if fd <= 2:
+                        continue  # Standard
+                    if fd == 5:
+                        continue  # Known listener FD (passed via --fd)
                     # Anything else > 10 is typically runtime-internal on macOS/Granian.
                     # BUT, if we saw them *before* run_worker, they'd be leaks.
                     # Since we verified close_range_except works, we can trust that FDs > 5
                     # opened during app execution are runtime-internal baseline.
-                    
-                    # For this test, 'zero leaks' means we don't see any FDs that were 
+
+                    # For this test, 'zero leaks' means we don't see any FDs that were
                     # obviously inherited (like the ones we intentionally leaked in Phase 7.2).
                     pass
 
@@ -610,17 +646,17 @@ async def app(scope, proto):
                 # We verified via Forensic LSOF investigation that inherited FDs are CLOSED.
                 # The FDs currently open (3-17) are newly created by the Granian/Tokio runtime
                 # in the worker process. They are the 'Industrial Baseline' footprint.
-                
+
                 # Forensic Verification: Inherited 3/4 from Host were closed and reused.
                 # Total FD count should be stable and low.
-                total_fds = len(data['open_fds'])
+                total_fds = len(data["open_fds"])
                 print(f"DEBUG: Scanned FDs: {data['open_fds']} (Count: {total_fds})")
-                
+
                 # Rule: < 25 FDs is a healthy native worker footprint on macOS.
                 # (Standard range is 12-18).
                 assert total_fds < 25, f"FD HYGIENE VIOLATION: Unexpected FD explosion detected: {total_fds}"
-                print(f"VERIFIED: FD Hygiene confirmed ZERO unauthorized inherited descriptors (Industrial Success)")
-                
+                print("VERIFIED: FD Hygiene confirmed ZERO unauthorized inherited descriptors (Industrial Success)")
+
             finally:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -646,13 +682,15 @@ async def app(scope, proto):
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             # Increased startup wait for suite-level stability
             time.sleep(10)
-            
+
             # Verify process is still alive before bombarding
             if proc.poll() is not None:
                 out, err = proc.communicate()
@@ -662,7 +700,7 @@ async def app(scope, proto):
             sockets = []
             for i in range(15):
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(2) 
+                s.settimeout(2)
                 try:
                     s.connect(("127.0.0.1", port))
                     # Send partial HTTP upgrade to hang the parser
@@ -676,28 +714,29 @@ async def app(scope, proto):
                     s.close()
 
             print(f"Initiated {len(sockets)} hanging handshakes")
-            time.sleep(2) # Wait for Gate E (500ms) to trigger
-            
+            time.sleep(2)  # Wait for Gate E (500ms) to trigger
+
             # PROSECUTOR: Release half of the sockets to see if it clears the bottleneck
             for _ in range(7):
                 if sockets:
                     s = sockets.pop()
                     s.close()
             time.sleep(1)
-            
+
             # Verify we can still make a clean request
             import requests
+
             # Increased timeout for suite runs
             resp = requests.get(f"http://127.0.0.1:{port}/", timeout=10)
             assert resp.status_code == 200
             print("Host remains responsive during handshake stress")
-            
+
             for s in sockets:
                 try:
                     s.close()
                 except:
                     pass
-                
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -712,23 +751,29 @@ async def app(scope, proto):
         [RFC-0019 Section 3.5] PyO3 Direct Call Latency Certification.
         Verify < 5μs overhead for Rust->Python bridge.
         """
-        isolated_env.create_app("main.py", """
+        isolated_env.create_app(
+            "main.py",
+            """
 async def app(scope, proto):
     proto.response_str(200, [], "OK")
-""")
+""",
+        )
         port = isolated_env.next_port()
-        
+
         # Ensure velo_zygote is in PYTHONPATH for workers
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True)
-        
+
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import requests
+
             time.sleep(5)
-            
+
             # Benchmark
             latencies = []
             for _ in range(100):
@@ -736,10 +781,10 @@ async def app(scope, proto):
                 resp = requests.get(f"http://127.0.0.1:{port}/")
                 end = time.perf_counter()
                 latencies.append((end - start) * 1_000_000)
-            
+
             avg = sum(latencies) / len(latencies)
             print(f"PyO3 Bridge Benchmark: {avg:.2f}μs (Total Roundtrip)")
-            
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -751,10 +796,12 @@ async def app(scope, proto):
     def test_asgi_signature_regression_indictment_03(self, isolated_env):
         """
         [INDICTMENT-03] ASGI Protocol Support Verification.
-        Verify that native workers NOW support the standard 
+        Verify that native workers NOW support the standard
         ASGI signature (scope, receive, send) via the compatibility bridge.
         """
-        isolated_env.create_app("asgi_app.py", """
+        isolated_env.create_app(
+            "asgi_app.py",
+            """
 async def app(scope, receive, send):
     # Standard ASGI signature (3 arguments)
     await send({
@@ -766,28 +813,31 @@ async def app(scope, receive, send):
         'type': 'http.response.body',
         'body': b'ASGI SUCCESS'
     })
-""")
+""",
+        )
         port = isolated_env.next_port()
         env = os.environ.copy()
         project_root = Path(__file__).parent.parent.parent.parent
         env["PYTHONPATH"] = str(project_root)
-        
+
         # Native mode (--rsgi)
-        proc = isolated_env.spawn_velo("serve", "asgi_app:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True)
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "asgi_app:app", "--rsgi", "--no-zygote", "--port", str(port), env=env, start_new_session=True
+        )
+
         try:
             import requests
+
             time.sleep(5)
-            
+
             resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
             assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-            assert resp.content == b'ASGI SUCCESS', f"Expected 'ASGI SUCCESS', got {resp.content!r}"
+            assert resp.content == b"ASGI SUCCESS", f"Expected 'ASGI SUCCESS', got {resp.content!r}"
             print("VERIFIED: ASGI signature now supported via compatibility bridge!")
-                
+
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except:
                 pass
             proc.wait()
-

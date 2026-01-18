@@ -14,14 +14,11 @@ These tests attempt to BREAK velo by:
 Goal: Velo should handle polluted environments gracefully.
 """
 
-import os
-import pytest
-from pathlib import Path
 
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
+    run_velo,
 )
 
 
@@ -39,9 +36,7 @@ class VeloTestEnvPOLLUTION:
             # Create 1MB PYTHONPATH
             giant_path = ":".join(["/fake/path"] * 50000)  # ~600KB
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": giant_path}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"PYTHONPATH": giant_path})
             assert_no_crash(result)
             # Should work despite huge PYTHONPATH
         finally:
@@ -58,9 +53,7 @@ class VeloTestEnvPOLLUTION:
             # PYTHONPATH with various special chars
             special_path = "/path/with spaces:/path/with:colons:/unicode/路径"
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": special_path}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"PYTHONPATH": special_path})
             assert_no_crash(result)
         finally:
             env.cleanup()
@@ -104,9 +97,7 @@ class VeloTestEnvUNICODE:
             env.create_uv_lock()
             env.create_script()
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"PYTHONPATH": "/路径/测试:/경로/테스트"}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"PYTHONPATH": "/路径/测试:/경로/테스트"})
             assert_no_crash(result)
             assert result.success
         finally:
@@ -124,9 +115,7 @@ class VeloTestEnvMISSING:
             env.create_uv_lock()
             env.create_script()
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"HOME": "/nonexistent/home"}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"HOME": "/nonexistent/home"})
             assert_no_crash(result)
             # Should still work - Velo doesn't require HOME
         finally:
@@ -140,9 +129,7 @@ class VeloTestEnvMISSING:
             env.create_uv_lock()
             env.create_script()
 
-            result = run_velo(
-                ["run", "test.py"], cwd=env.path, env={"TMPDIR": "/nonexistent/tmp"}
-            )
+            result = run_velo(["run", "test.py"], cwd=env.path, env={"TMPDIR": "/nonexistent/tmp"})
             assert_no_crash(result)
         finally:
             env.cleanup()

@@ -14,14 +14,8 @@ Gates:
 
 import os
 import subprocess
-import sys
 import tempfile
-import threading
-import time
 from pathlib import Path
-
-import pytest
-
 
 # ============================================================================
 # Gate A: Basic Functionality
@@ -79,7 +73,7 @@ class TestGateB_ForkSafety:
     def test_b1_threading_no_deadlock(self):
         """B.1 (P0-2): Threading test completes without GIL deadlock"""
         # Create a test with threading
-        test_code = '''
+        test_code = """
 import threading
 import time
 
@@ -93,10 +87,8 @@ def test_with_threads():
     for t in threads: t.start()
     for t in threads: t.join()
     assert len(results) == 3
-'''
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             temp_path = f.name
 
@@ -134,7 +126,7 @@ def test_with_threads():
         from pytest_velo.plugin import run_in_zygote_fork
 
         source = inspect.getsource(run_in_zygote_fork)
-        
+
         # Parse AST to check for actual sys.exit() calls (not docstring mentions)
         try:
             tree = ast.parse(source)
@@ -142,7 +134,7 @@ def test_with_threads():
             # If parsing fails, fall back to simpler check
             assert "os._exit(" in source, "Must use os._exit for P0-3 compliance"
             return
-        
+
         # Look for Call nodes to sys.exit
         sys_exit_calls = []
         os_exit_calls = []
@@ -156,7 +148,7 @@ def test_with_threads():
                     elif node.func.attr == "_exit":
                         if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
                             os_exit_calls.append(node)
-        
+
         assert len(os_exit_calls) > 0, "Must use os._exit for P0-3 compliance"
         assert len(sys_exit_calls) == 0, "Must NOT use sys.exit (would run atexit handlers)"
 
@@ -223,12 +215,12 @@ class TestGateD_Compatibility:
 
     def test_d2_xdist_no_error_when_no_conflict(self):
         """D.2: xdist detection functions work correctly"""
-        from pytest_velo.plugin import is_xdist_worker, is_xdist_controller
+        from pytest_velo.plugin import is_xdist_controller, is_xdist_worker
 
         # Both functions should be callable
         assert callable(is_xdist_worker)
         assert callable(is_xdist_controller)
-        
+
         # When not running under xdist, should be controller
         assert is_xdist_controller() is True
 
@@ -243,13 +235,11 @@ class TestGateE_ErrorHandling:
 
     def test_e1_test_failure_exit_code(self):
         """E.1: Failed test returns exit code 1"""
-        test_code = '''
+        test_code = """
 def test_intentional_fail():
     assert 1 == 2, "This should fail"
-'''
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             temp_path = f.name
 
@@ -267,14 +257,12 @@ def test_intentional_fail():
 
     def test_e1_test_failure_shows_assertion(self):
         """E.1: Failed test shows assertion message"""
-        test_code = '''
+        test_code = """
 def test_with_message():
     x = 42
     assert x == 0, f"Expected 0 but got {x}"
-'''
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             temp_path = f.name
 
@@ -291,13 +279,11 @@ def test_with_message():
 
     def test_e1_passing_test_exit_code_zero(self):
         """E.1: Passing test returns exit code 0"""
-        test_code = '''
+        test_code = """
 def test_always_pass():
     assert True
-'''
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(test_code)
             temp_path = f.name
 

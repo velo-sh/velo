@@ -4,19 +4,19 @@
 """
 Agent D (Destroyer): Lifecycle Desynchronization Tests
 
-These tests actively corrupt the system state or perform operations out-of-order 
+These tests actively corrupt the system state or perform operations out-of-order
 to verify structural integrity.
 
 Priority: P3 (Red Team Initiative)
 """
 
 import os
-import signal
 import socket
 import struct
-import time
 import sys
+import time
 from pathlib import Path
+
 import pytest
 import requests
 
@@ -111,11 +111,9 @@ class TestAgentDDesync:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(socket_path)
                 recv_msg(s)  # Ready
-                auth_zygote(s, proc.forensic_secret) # SEC-005 Auth
+                auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
 
-                send_msg(
-                    s, {"type": "Fork", "script_path": str(script), "async_mode": True}
-                )
+                send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
                 resp = recv_msg(s)
                 if resp and resp.get("type") == "Forked":
                     pids.append(resp["worker_pid"])
@@ -165,12 +163,10 @@ class TestAgentDDesync:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
             recv_msg(s)  # Ready
-            auth_zygote(s, proc.forensic_secret) # SEC-005 Auth
+            auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
 
             # 1. Fork
-            send_msg(
-                s, {"type": "Fork", "script_path": str(script), "async_mode": True}
-            )
+            send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
             resp = recv_msg(s)
             pid = resp["worker_pid"]
 
@@ -212,13 +208,13 @@ class TestAgentDDesync:
 
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.connect(socket_path)
-            
+
             # Fix for DESYNC-007 Flakiness:
             # Must strictly read "Ready" before sending any commands.
             # The previous "send then read" approach relied on kernel buffering which raced.
             ready = recv_msg(s)
             assert ready["type"] == "Ready"
-            
+
             # SEC-005: Forensic Agent must Auth
             auth_zygote(s, proc.forensic_secret)
 

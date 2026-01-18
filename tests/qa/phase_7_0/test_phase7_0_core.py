@@ -9,20 +9,9 @@ Test Coverage:
 - L1-SHM-02: Cold-start benchmark (Time to Token)
 """
 
-import os
-import sys
-import time
 import pytest
-import subprocess
-import multiprocessing
-from pathlib import Path
-
 from conftest import (
     VeloTestEnv,
-    IS_LINUX,
-    IS_MACOS,
-    get_process_rss_kb,
-    skip_unless_linux,
 )
 
 
@@ -224,9 +213,7 @@ if __name__ == "__main__":
 
         # Assertions
         assert result.returncode == 0, f"Cold-start benchmark failed: {result.stderr}"
-        assert (
-            "PASS" in result.stdout
-        ), f"Attachment time exceeded target: {result.stdout}"
+        assert "PASS" in result.stdout, f"Attachment time exceeded target: {result.stdout}"
 
 
 class TestCoreValidation:

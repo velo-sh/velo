@@ -14,9 +14,9 @@ Following QA SOP v2.2.
 import os
 import signal
 import subprocess
+import sys
 import time
 
-import sys
 import pytest
 
 # Mark all tests in this module as performance tests
@@ -25,8 +25,8 @@ pytestmark = [
     pytest.mark.performance,
     pytest.mark.xfail(
         os.environ.get("GITHUB_ACTIONS") == "true",
-        reason="Performance tests are unreliable in CI resource-constrained environments"
-    )
+        reason="Performance tests are unreliable in CI resource-constrained environments",
+    ),
 ]
 
 
@@ -44,7 +44,6 @@ class TestL5Performance:
         1. Measure time from fork command to ready
         2. Verify < 20ms
         """
-        import requests
 
         # Measure startup time
         start = time.perf_counter()
@@ -69,9 +68,7 @@ class TestL5Performance:
 
             print(f"Worker respawn: {respawn_time * 1000:.1f}ms")
             # This should be < 20ms
-            assert (
-                respawn_time < 0.020
-            ), f"Cold start {respawn_time * 1000:.1f}ms > 20ms"
+            assert respawn_time < 0.020, f"Cold start {respawn_time * 1000:.1f}ms > 20ms"
 
     def test_PERF_602_proxy_latency_overhead(self, velo_serve_fixture):
         """PERF-602: L7 Proxy latency overhead < 1ms.
@@ -136,7 +133,7 @@ class TestL5Performance:
 
         # Collect COW stats for all workers
         stats = [get_cow_stats(pid) for pid in workers]
-        
+
         # Check if we got valid data
         valid_stats = [s for s in stats if s["resident_kb"] > 0]
         if not valid_stats:
@@ -152,8 +149,7 @@ class TestL5Performance:
 
         # With Zygote fork, we expect at least 20% memory sharing
         # (shared libraries, Python runtime, preloaded modules)
-        assert avg_efficiency > 20.0, \
-            f"COW efficiency {avg_efficiency:.1f}% too low (expected > 20%)"
+        assert avg_efficiency > 20.0, f"COW efficiency {avg_efficiency:.1f}% too low (expected > 20%)"
 
     def test_PERF_604_zygote_speedup(self, velo_serve_fixture):
         """PERF-604: Zygote speedup vs CPython > 10x.
@@ -195,15 +191,15 @@ class TestL5Performance:
             if workers_before:
                 old_pid = workers_before[0]
                 os.kill(old_pid, signal.SIGTERM)
-                
+
                 start = time.perf_counter()
                 # Wait for PID to change to ensure we measure the NEW worker
                 for _ in range(100):
-                    time.sleep(0.005) # 5ms
+                    time.sleep(0.005)  # 5ms
                     workers_after = proc.get_worker_pids()
                     if workers_after and workers_after[0] != old_pid:
                         break
-                
+
                 proc.wait_worker_ready()
                 elapsed = time.perf_counter() - start
                 zygote_times.append(elapsed)
@@ -224,7 +220,7 @@ class TestL5Performance:
 
     def test_PERF_605_rsgi_speedup(self, velo_serve_fixture):
         """PERF-605: RSGI Zygote speedup vs CPython > 10x.
-        
+
         This tests the native RSGI bridge which bypasses uvicorn overhead.
         """
         # CPython cold start baseline
@@ -253,7 +249,7 @@ class TestL5Performance:
             if workers_before:
                 old_pid = workers_before[0]
                 os.kill(old_pid, signal.SIGTERM)
-                
+
                 start = time.perf_counter()
                 # Wait for PID to change
                 for _ in range(100):
@@ -261,7 +257,7 @@ class TestL5Performance:
                     workers_after = proc.get_worker_pids()
                     if workers_after and workers_after[0] != old_pid:
                         break
-                
+
                 proc.wait_worker_ready()
                 elapsed = time.perf_counter() - start
                 zygote_times.append(elapsed)

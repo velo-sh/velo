@@ -6,17 +6,15 @@ Verifies the 15ms startup target and orphan management (RFC-0008).
 
 import subprocess
 import time
-import os
 from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
     return "velo"
@@ -60,9 +58,7 @@ class TestZygoteAsyncMode:
 
         # Measure async duration
         start = time.perf_counter()
-        result = run_velo(
-            ["run", "--zygote", "--async", "slow.py"], tmp_path, velo_binary
-        )
+        result = run_velo(["run", "--zygote", "--async", "slow.py"], tmp_path, velo_binary)
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         print(f"Async return time: {elapsed_ms:.2f}ms")
@@ -92,9 +88,7 @@ with open("{marker_file}", "w") as f:
         stop_zygote(velo_binary, tmp_path)
 
         # Run async
-        result = run_velo(
-            ["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary
-        )
+        result = run_velo(["run", "--zygote", "--async", str(test_py)], tmp_path, velo_binary)
         assert result.returncode == 0
 
         # Wait for worker (max 2s)

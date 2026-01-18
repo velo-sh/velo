@@ -12,23 +12,14 @@ Test Coverage:
 WARNING: These tests are Linux-only. macOS has no kernel-level sealing.
 """
 
-import os
-import sys
 import ctypes
-import mmap
-import pytest
-import subprocess
-import multiprocessing
-from pathlib import Path
 
+import pytest
 from conftest import (
-    VeloTestEnv,
     IS_LINUX,
-    IS_MACOS,
-    skip_unless_linux,
+    VeloTestEnv,
     skip_on_macos_security,
 )
-
 
 # Linux-specific constants for memfd and sealing
 if IS_LINUX:

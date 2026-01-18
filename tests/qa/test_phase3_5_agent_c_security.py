@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
+from conftest_utils import T_MEDIUM, T_SHORT
 
 
 def get_velo_binary():
@@ -41,9 +41,7 @@ class SecurityTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -91,17 +89,13 @@ class TestNetworkSecurity:
         # Should not silently succeed without root
         if os.getuid() != 0:
             assert (
-                result.returncode != 0
-                or "permission" in result.stderr.lower()
-                or "privilege" in result.stderr.lower()
+                result.returncode != 0 or "permission" in result.stderr.lower() or "privilege" in result.stderr.lower()
             )
 
     def test_sec_net_002_localhost_default(self):
         """SEC-NET-002: Default host should be localhost, not 0.0.0.0."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "--help"], capture_output=True, text=True, timeout=T_SHORT
-        )
+        result = subprocess.run([velo, "serve", "--help"], capture_output=True, text=True, timeout=T_SHORT)
         # Check help text for default host
         # Should default to 127.0.0.1 or localhost
         help_text = result.stdout + result.stderr
@@ -206,9 +200,7 @@ class TestInputValidation:
     def test_sec_inp_004_command_injection_in_module(self):
         """SEC-INP-004: Command injection in module name should be safe."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "`id`:app"], capture_output=True, text=True, timeout=T_SHORT
-        )
+        result = subprocess.run([velo, "serve", "`id`:app"], capture_output=True, text=True, timeout=T_SHORT)
         # Should not execute shell command
         assert "uid=" not in result.stdout
         assert result.returncode != 0
@@ -391,13 +383,9 @@ class TestSecurityEdgeCases:
             saved_env = os.environ.copy()
             os.environ["MASSIVE_VAR"] = "x" * 100000
             try:
-                code, stdout, stderr = env.run_velo(
-                    ["run", "env_size.py"], timeout=T_MEDIUM
-                )
+                code, stdout, stderr = env.run_velo(["run", "env_size.py"], timeout=T_MEDIUM)
                 # Should handle gracefully
-                assert (
-                    code == 0 or "memory" in stderr.lower() or "Falling back" in stderr
-                )
+                assert code == 0 or "memory" in stderr.lower() or "Falling back" in stderr
             finally:
                 os.environ.clear()
                 os.environ.update(saved_env)

@@ -4,7 +4,6 @@ Velo QA: Phase 3.5 Serve Command Tests
 Tests for `velo serve` command with uvicorn integration.
 """
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -34,9 +33,7 @@ class TestServeHelpAndValidation:
     def test_serve_in_help_output(self):
         """Verify serve command appears in help."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=30
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=30)
         assert result.returncode == 0
         assert "serve" in result.stdout
         assert "ASGI/WSGI" in result.stdout
@@ -44,17 +41,11 @@ class TestServeHelpAndValidation:
     def test_serve_missing_app_error(self):
         """Verify error when app argument is missing."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve"], capture_output=True, text=True, timeout=30
-        )
+        result = subprocess.run([velo, "serve"], capture_output=True, text=True, timeout=30)
         assert result.returncode != 0
         # clap uses "required arguments were not provided"
         stderr_lower = result.stderr.lower()
-        assert (
-            "required" in stderr_lower
-            or "missing" in stderr_lower
-            or "app" in stderr_lower
-        )
+        assert "required" in stderr_lower or "missing" in stderr_lower or "app" in stderr_lower
 
     def test_serve_invalid_app_format(self):
         """Verify error for invalid app format (no colon)."""
@@ -68,9 +59,7 @@ class TestServeHelpAndValidation:
         assert result.returncode != 0
         # clap uses "Invalid app format" (case varies)
         stderr_lower = result.stderr.lower()
-        assert "invalid" in stderr_lower and (
-            "app" in stderr_lower or "format" in stderr_lower
-        )
+        assert "invalid" in stderr_lower and ("app" in stderr_lower or "format" in stderr_lower)
 
     def test_serve_unknown_option_error(self):
         """Verify error for unknown options."""
@@ -84,11 +73,7 @@ class TestServeHelpAndValidation:
         assert result.returncode != 0
         # clap uses "unexpected argument"
         stderr_lower = result.stderr.lower()
-        assert (
-            "unexpected" in stderr_lower
-            or "unknown" in stderr_lower
-            or "unrecognized" in stderr_lower
-        )
+        assert "unexpected" in stderr_lower or "unknown" in stderr_lower or "unrecognized" in stderr_lower
 
 
 class FastAPITestEnv:
@@ -178,9 +163,7 @@ class TestServeStartup:
                 import urllib.request
 
                 try:
-                    resp = urllib.request.urlopen(
-                        "http://127.0.0.1:19876/health", timeout=5
-                    )
+                    resp = urllib.request.urlopen("http://127.0.0.1:19876/health", timeout=5)
                     data = resp.read().decode()
                     assert "ok" in data
                 except Exception as e:
@@ -199,11 +182,7 @@ class TestServeStartup:
                 _, stderr = proc.communicate(timeout=15)
 
                 # Should show startup info
-                assert (
-                    "Starting server" in stderr
-                    or "FastAPI" in stderr
-                    or "uvicorn" in stderr.lower()
-                )
+                assert "Starting server" in stderr or "FastAPI" in stderr or "uvicorn" in stderr.lower()
             except Exception:
                 proc.kill()
                 raise
@@ -258,17 +237,13 @@ class TestZygoteIntegration:
                 _, stderr = proc.communicate(timeout=15)
 
                 # Should show Zygote pre-warming or using existing Zygote
-                zygote_mentioned = (
-                    "Zygote" in stderr or "Pre-warming" in stderr or "FastAPI" in stderr
-                )
+                zygote_mentioned = "Zygote" in stderr or "Pre-warming" in stderr or "FastAPI" in stderr
                 assert zygote_mentioned or "uvicorn" in stderr.lower()
             except Exception:
                 proc.kill()
                 raise
             finally:
-                subprocess.run(
-                    ["pkill", "-9", "-f", "velo_zygote"], capture_output=True
-                )
+                subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
 
     def test_no_zygote_flag(self):
         """Verify --no-zygote flag disables Zygote."""
@@ -317,11 +292,7 @@ class TestFrameworkDetection:
         )
         # May mention Django or fail finding Django
         # Just verify command was processed
-        assert (
-            result.returncode != 0
-            or "Django" in result.stderr
-            or "Error" in result.stderr
-        )
+        assert result.returncode != 0 or "Django" in result.stderr or "Error" in result.stderr
 
 
 class TestServePerformance:
@@ -341,9 +312,7 @@ class TestServePerformance:
                 # Should start reasonably fast (< 5 seconds)
                 if proc.poll() is None:
                     # Still running - good
-                    assert (
-                        elapsed < 5.0
-                    ), f"Server took too long to start: {elapsed:.2f}s"
+                    assert elapsed < 5.0, f"Server took too long to start: {elapsed:.2f}s"
                 else:
                     # Exited - check why
                     _, stderr = proc.communicate()

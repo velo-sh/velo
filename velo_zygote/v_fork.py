@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional
 
 try:
     from .lifecycle import WorkerRegistry, post_fork_reinit
@@ -77,7 +77,7 @@ class ForkHandler:
                 sock_fd = sock.fileno()
                 # Ensure the socket is in blocking mode for execnet
                 sock.setblocking(True)
-                
+
                 post_fork_reinit(keep_fds={0, 1, 2, sock_fd})
 
                 # RFC-0029: Mark this as a miracle worker to bypass redundant forks
@@ -100,13 +100,13 @@ class ForkHandler:
             return pid
 
     @staticmethod
-    def _run_execnet_gateway(sock: Any, nodeid: str = "worker"):
+    def _run_execnet_gateway(sock: Any, nodeid: str = "worker") -> None:
         """
         Bootstraps the execnet worker logic on the provided socket.
         """
         import execnet.gateway_base
         from execnet.gateway_socket import SocketIO
-        
+
         # RFC-0029: The Zygote worker becomes the execnet gateway directly.
         # This eliminates the need for an intermediate 'python' process.
         io = SocketIO(sock, execmodel=execnet.gateway_base.get_execmodel("thread"))
@@ -118,7 +118,7 @@ class ForkHandler:
         preloaded_modules: list[str],
         warmed_server: Any = None,
         warmed_config: Any = None,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         P0: Pre-fork an idle worker.
         Returns (pid, control_pipe_write_fd).
@@ -171,7 +171,6 @@ class ForkHandler:
             os.close(r)
             worker_registry.add(pid, metadata={"type": "idle"})
             return pid, w
-
 
     @staticmethod
     def handle_fork(

@@ -8,24 +8,20 @@ RFC-0007 Acceptance Criteria:
 - LOCAL-004: Same machine < 5% variance
 """
 
-import subprocess
 import json
-import os
+import subprocess
 from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -93,14 +89,10 @@ class TestBenchCommand:
             cwd=tmp_path,
             capture_output=True,
         )
-        subprocess.run(
-            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
         (tmp_path / "test.txt").write_text("test")
         subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True)
 
         result = run_velo(["bench", "--save"], tmp_path, velo_binary)
 
@@ -135,14 +127,10 @@ class TestBenchCommand:
             cwd=tmp_path,
             capture_output=True,
         )
-        subprocess.run(
-            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
         (tmp_path / "v1.txt").write_text("v1")
         subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True)
 
         # Get baseline commit
         baseline = subprocess.run(
@@ -179,14 +167,10 @@ class TestBenchCommand:
             cwd=tmp_path,
             capture_output=True,
         )
-        subprocess.run(
-            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
         (tmp_path / "v1.txt").write_text("v1")
         subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True
-        )
+        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True)
 
         # Save some data
         run_velo(["bench", "--save"], tmp_path, velo_binary)

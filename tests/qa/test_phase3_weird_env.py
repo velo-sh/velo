@@ -203,9 +203,7 @@ class TestWeirdPermissions:
                 code, stdout, stderr = env.run_velo(["run", "test.py"])
 
                 # Should handle gracefully
-                assert (
-                    code == 0 or "permission" in stderr.lower() or "readonly" in stdout
-                )
+                assert code == 0 or "permission" in stderr.lower() or "readonly" in stdout
             finally:
                 # Restore permissions for cleanup
                 os.chmod(str(env.path), 0o755)
@@ -224,11 +222,7 @@ class TestWeirdPermissions:
 
                 # Should fail with clear error
                 assert code != 0, "Should fail on unreadable script"
-                assert (
-                    "permission" in stderr.lower()
-                    or "denied" in stderr.lower()
-                    or "error" in stderr.lower()
-                )
+                assert "permission" in stderr.lower() or "denied" in stderr.lower() or "error" in stderr.lower()
             finally:
                 os.chmod(str(env.path / "secret.py"), 0o644)
 
@@ -301,13 +295,9 @@ class TestWeirdEnvVars:
         """TMPDIR points to non-writable location."""
         with WeirdEnv() as env:
             env.setup_basic()
-            env.create_script(
-                "test.py", "import tempfile; print(tempfile.gettempdir())"
-            )
+            env.create_script("test.py", "import tempfile; print(tempfile.gettempdir())")
 
-            code, stdout, stderr = env.run_velo(
-                ["run", "test.py"], env={"TMPDIR": "/nonexistent"}
-            )
+            code, stdout, stderr = env.run_velo(["run", "test.py"], env={"TMPDIR": "/nonexistent"})
 
             print(f"  Bad TMPDIR: code={code}")
 
@@ -399,9 +389,7 @@ class TestWeirdPython:
             code, stdout, stderr = env.run_velo(["run", "test.py"])
 
             # Should work with system Python or fail gracefully
-            assert (
-                code == 0 or "venv" in stderr.lower() or "environment" in stderr.lower()
-            )
+            assert code == 0 or "venv" in stderr.lower() or "environment" in stderr.lower()
         finally:
             shutil.rmtree(base)
 
@@ -421,9 +409,7 @@ class TestWeirdPython:
 
             # Velo should handle gracefully (may succeed with fallback or fail with error)
             # Code 0 with fallback is acceptable
-            print(
-                f"  Corrupt venv: code={code}, stderr={stderr[:100] if stderr else 'none'}"
-            )
+            print(f"  Corrupt venv: code={code}, stderr={stderr[:100] if stderr else 'none'}")
 
     def test_multiple_venvs(self):
         """Multiple .venv directories (nested project)."""
@@ -459,9 +445,7 @@ class TestConcurrentWeirdness:
 
         with WeirdEnv() as env:
             env.setup_basic()
-            env.create_script(
-                "test.py", 'import time; time.sleep(0.1); print("concurrent")'
-            )
+            env.create_script("test.py", 'import time; time.sleep(0.1); print("concurrent")')
 
             results = []
 
@@ -475,9 +459,7 @@ class TestConcurrentWeirdness:
             for t in threads:
                 t.join(timeout=30)
 
-            successes = sum(
-                1 for code, has_output in results if code == 0 or has_output
-            )
+            successes = sum(1 for code, has_output in results if code == 0 or has_output)
             print(f"  Concurrent: {successes}/5 succeeded")
 
     def test_file_changes_during_run(self):
@@ -519,7 +501,6 @@ class TestSignalWeirdness:
 
     def test_sigterm_during_startup(self):
         """SIGTERM sent during startup."""
-        import signal
 
         with WeirdEnv() as env:
             env.setup_basic()
@@ -560,9 +541,7 @@ time.sleep(10)
 """,
             )
 
-            proc = subprocess.Popen(
-                [env.velo, "run", "spawn.py"], cwd=env.path, start_new_session=True
-            )
+            proc = subprocess.Popen([env.velo, "run", "spawn.py"], cwd=env.path, start_new_session=True)
 
             time.sleep(0.3)
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -570,9 +549,7 @@ time.sleep(10)
             time.sleep(0.5)
 
             # Check for orphan sleep processes
-            ps_result = subprocess.run(
-                ["pgrep", "-f", "sleep 100"], capture_output=True
-            )
+            ps_result = subprocess.run(["pgrep", "-f", "sleep 100"], capture_output=True)
             orphans = ps_result.stdout.decode().strip().split("\n")
             orphans = [o for o in orphans if o]
 

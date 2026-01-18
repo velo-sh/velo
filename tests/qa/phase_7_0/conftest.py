@@ -9,26 +9,21 @@ Follows main branch patterns for CI-aware timeout scaling.
 """
 
 import os
-import sys
-import pytest
 import platform
 import subprocess
-import tempfile
-import shutil
-from pathlib import Path
-from typing import Optional, Generator
+import sys
+from collections.abc import Generator
 from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
 
 # Import CI-aware timeout constants from centralized utils
 sys.path.append(str(Path(__file__).parent.parent))
 from conftest_utils import (
-    T_SHORT,
     T_MEDIUM,
-    T_LONG,
-    ci_timeout,
-    TIMEOUT_MULTIPLIER,
+    T_SHORT,
 )
-
 
 # =============================================================================
 # Platform Detection
@@ -38,25 +33,17 @@ IS_LINUX = platform.system() == "Linux"
 IS_MACOS = platform.system() == "Darwin"
 
 # Skip decorators for platform-specific tests
-skip_unless_linux = pytest.mark.skipif(
-    not IS_LINUX, reason="Test requires Linux (memfd_create, F_SEAL support)"
-)
+skip_unless_linux = pytest.mark.skipif(not IS_LINUX, reason="Test requires Linux (memfd_create, F_SEAL support)")
 
 skip_on_macos_security = pytest.mark.skipif(
     IS_MACOS, reason="macOS has no kernel-level sealing protection (RFC-0015 §3.4)"
 )
 
-skip_on_macos_numa = pytest.mark.skipif(
-    IS_MACOS, reason="macOS is single-NUMA-node (RFC-0015 §4.7)"
-)
+skip_on_macos_numa = pytest.mark.skipif(IS_MACOS, reason="macOS is single-NUMA-node (RFC-0015 §4.7)")
 
-skip_on_macos_hugepages = pytest.mark.skipif(
-    IS_MACOS, reason="macOS has no HugePages support (RFC-0015 §3.4)"
-)
+skip_on_macos_hugepages = pytest.mark.skipif(IS_MACOS, reason="macOS has no HugePages support (RFC-0015 §3.4)")
 
-skip_on_macos_pid_namespace = pytest.mark.skipif(
-    IS_MACOS, reason="macOS has no PID namespace support (RFC-0015 §4.4)"
-)
+skip_on_macos_pid_namespace = pytest.mark.skipif(IS_MACOS, reason="macOS has no PID namespace support (RFC-0015 §4.4)")
 
 
 # =============================================================================
@@ -69,20 +56,20 @@ class VeloTestEnv:
     """Test environment for Memory Gravity tests."""
 
     path: Path
-    velo_binary: Optional[Path]
+    velo_binary: Path | None
     python_path: Path
     env: dict = None
 
     def __post_init__(self):
         if self.env is None:
             self.env = os.environ.copy()
-        
+
         # SEC-H17: Forensic Isolation Layer
         # Ensure each test has its own Zygote socket and auth file to prevent collisions.
         socket_dir = self.path.resolve() / "sockets"
         socket_dir.mkdir(parents=True, exist_ok=True)
         self.env["VELO_SOCKET_DIR"] = str(socket_dir)
-        
+
         # Direct Zygote logs to the test path for forensic observability
         log_dir = self.path.resolve() / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -94,9 +81,7 @@ class VeloTestEnv:
         self.env["VELO_STRICT_OPTIMIZATIONS"] = "false"
         self.env["VELO_TEST_MODE"] = "1"
 
-    def run_velo(
-        self, *args, timeout: float = None, **kwargs
-    ) -> subprocess.CompletedProcess:
+    def run_velo(self, *args, timeout: float = None, **kwargs) -> subprocess.CompletedProcess:
         """Run velo command in the test environment.
 
         Uses T_MEDIUM (15s local, 45s CI) as default timeout.
@@ -118,9 +103,7 @@ class VeloTestEnv:
             **kwargs,
         )
 
-    def run_python(
-        self, script: str, timeout: float = None
-    ) -> subprocess.CompletedProcess:
+    def run_python(self, script: str, timeout: float = None) -> subprocess.CompletedProcess:
         """Run a Python script in the test environment.
 
         Uses T_MEDIUM (15s local, 45s CI) as default timeout.
@@ -182,7 +165,7 @@ class VeloTestEnv:
         return resource.getpagesize()
 
 
-def find_velo_binary() -> Optional[Path]:
+def find_velo_binary() -> Path | None:
     """Find the velo binary in standard locations."""
     # Priority 0: Explicit environment variable
     env_bin = os.environ.get("VELO_BINARY")
@@ -249,18 +232,14 @@ def shm_test_env(isolated_env: VeloTestEnv) -> Generator[VeloTestEnv, None, None
 def pytest_configure(config):
     """Register custom markers for Memory Gravity tests."""
     config.addinivalue_line("markers", "tier0: Tier 0 - Core Functionality (MUST PASS)")
-    config.addinivalue_line(
-        "markers", "tier1: Tier 1 - Core Benchmarks (Cold Start, Time to Token)"
-    )
+    config.addinivalue_line("markers", "tier1: Tier 1 - Core Benchmarks (Cold Start, Time to Token)")
     config.addinivalue_line("markers", "tier2: Tier 2 - Scalability & Stability")
     config.addinivalue_line("markers", "tier3: Tier 3 - Security (MUST PASS)")
     config.addinivalue_line("markers", "tier4: Tier 4 - HFT Performance")
     config.addinivalue_line("markers", "shm: Memory Gravity SHM tests")
     config.addinivalue_line("markers", "security: Security invariant tests")
     config.addinivalue_line("markers", "linux_only: Tests that require Linux")
-    config.addinivalue_line(
-        "markers", "integration: Integration tests with velo binary"
-    )
+    config.addinivalue_line("markers", "integration: Integration tests with velo binary")
 
 
 # =============================================================================
@@ -272,37 +251,33 @@ def get_process_rss_kb(pid: int) -> int:
     """Get Resident Set Size of a process in KB."""
     if IS_LINUX:
         try:
-            with open(f"/proc/{pid}/status", "r") as f:
+            with open(f"/proc/{pid}/status") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         return int(line.split()[1])
         except (FileNotFoundError, PermissionError):
             pass
     elif IS_MACOS:
-        result = subprocess.run(
-            ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True
-        )
+        result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
         if result.returncode == 0:
             return int(result.stdout.strip())
     return 0
 
 
-def get_process_numa_node(pid: int) -> Optional[int]:
+def get_process_numa_node(pid: int) -> int | None:
     """Get the NUMA node of a process (Linux only)."""
     if not IS_LINUX:
         return None
 
     try:
-        result = subprocess.run(
-            ["numactl", "--hardware"], capture_output=True, text=True
-        )
+        result = subprocess.run(["numactl", "--hardware"], capture_output=True, text=True)
         if result.returncode != 0:
             return None
 
         # Parse numa_maps for the process
         numa_maps_path = f"/proc/{pid}/numa_maps"
         if os.path.exists(numa_maps_path):
-            with open(numa_maps_path, "r") as f:
+            with open(numa_maps_path) as f:
                 content = f.read()
                 # Simple heuristic: find most common node
                 if "N0=" in content:
@@ -315,9 +290,7 @@ def get_process_numa_node(pid: int) -> Optional[int]:
     return None
 
 
-def create_synthetic_safetensors(
-    path: Path, header_length: int, tensor_size: int = 1024
-) -> None:
+def create_synthetic_safetensors(path: Path, header_length: int, tensor_size: int = 1024) -> None:
     """
     Create a synthetic safetensors file with specified header length.
 

@@ -1,10 +1,10 @@
 import os
+import shutil
 import subprocess
-import json
-import pytest
 import sys
 from pathlib import Path
-import shutil
+
+import pytest
 
 
 def get_velo_binary():

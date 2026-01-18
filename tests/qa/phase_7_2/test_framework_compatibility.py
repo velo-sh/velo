@@ -1,15 +1,16 @@
-import pytest
 import os
 import time
-import requests
-import json
-import psutil
 from pathlib import Path
+
+import psutil
+import pytest
+import requests
+
 
 class TestFrameworkSovereigntyE2E:
     """
     End-to-End Matrix Prosecution for Web Frameworks.
-    Verifies that the Rust-native Host + Granian Bridge correctly serves 
+    Verifies that the Rust-native Host + Granian Bridge correctly serves
     major frameworks without Uvicorn.
     """
 
@@ -46,23 +47,23 @@ async def check_sovereignty(request: Request):
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         # Include system site-packages for framework imports (FastAPI, Starlette, etc.)
         import site
+
         site_packages = site.getsitepackages()
         site_paths = ":".join(site_packages)
         env = {"PYTHONPATH": f"{root_dir}:{site_paths}:{os.environ.get('PYTHONPATH', '')}"}
 
-        
         # Start Velo in RSGI mode
         # Observation Point: We expect ZERO 'uvicorn' imports during the entire lifecycle.
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             # wait for startup
             time.sleep(3)
-            
+
             # Step 2: Observation - Process Tree Purity
             parent = psutil.Process(proc.pid)
             for child in parent.children(recursive=True):
@@ -73,13 +74,13 @@ async def check_sovereignty(request: Request):
             resp = requests.get(f"http://127.0.0.1:{port}/sovereignty", timeout=5)
             assert resp.status_code == 200
             data = resp.json()
-            
+
             # THE SMOKING GUN: Confirm FastAPI thinks it's running via ASGI/RSGI
             assert data["framework"] == "FastAPI"
             assert data["uvicorn_shadow"] is False, "ARCHITECTURAL FAILURE: Uvicorn was imported by the worker!"
             assert data["asgi_scope_type"] == "http"
             assert data["rsgi_id"] is not None, "PROTOCOL FAILURE: RSGI ID not found in ASGI scope"
-            
+
             print(f"\n[STEP-BY-STEP CONFIRMED]: FastAPI dispatched via RSGI -> ASGI Bridge. RSGI_ID={data['rsgi_id']}")
 
         finally:
@@ -102,13 +103,13 @@ def app(environ, start_response):
 """
         isolated_env.create_app("wsgi_app.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         # Attempt to run WSGI app via RSGI bridge
         proc = isolated_env.spawn_velo("serve", "wsgi_app:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # This is expected to FAIL or crash if the bridge doesn't support WSGI
@@ -122,7 +123,7 @@ def app(environ, start_response):
             except Exception as e:
                 # Expected failure for pure RSGI -> ASGI bridge trying to call WSGI
                 print(f"\n[GAP DETECTED]: WSGI App failed as expected. Bridge is ASGI-only. Error: {e}")
-        
+
         finally:
             proc.terminate()
             proc.wait()
@@ -146,22 +147,22 @@ async def stream_handler(request: Request):
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # Send 1MB of data
             large_data = b"V" * (1024 * 1024)
             resp = requests.post(f"http://127.0.0.1:{port}/stream", data=large_data, timeout=10)
-            
+
             assert resp.status_code == 200
             data = resp.json()
             assert data["received_size"] == 1024 * 1024, f"TRUNCATION: Expected 1MB, got {data['received_size']}"
-            print(f"\n[STREAMING CONFIRMED]: 1MB payload successfully transited the RSGI -> ASGI bridge.")
+            print("\n[STREAMING CONFIRMED]: 1MB payload successfully transited the RSGI -> ASGI bridge.")
 
         finally:
             proc.terminate()
@@ -171,7 +172,7 @@ async def stream_handler(request: Request):
     def test_user_code_with_explicit_uvicorn_import(self, isolated_env):
         """
         [E2E-FW-04] User Logic with Explicit Uvicorn Import.
-        Verifies that even if user code imports uvicorn (e.g. for constants or manual runs), 
+        Verifies that even if user code imports uvicorn (e.g. for constants or manual runs),
         it doesn't break the RSGI bridge or re-import it as the server.
         """
         app_code = """
@@ -189,21 +190,23 @@ async def check_deps():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             resp = requests.get(f"http://127.0.0.1:{port}/dependency-check", timeout=5)
             assert resp.status_code == 200
             data = resp.json()
-            
+
             # The library is LOADED (user requested it)
             assert "uvicorn_version" in data
-            print(f"\n[USER-DEP CONFIRMED]: User code successfully imported uvicorn {data['uvicorn_version']} as a library.")
+            print(
+                f"\n[USER-DEP CONFIRMED]: User code successfully imported uvicorn {data['uvicorn_version']} as a library."
+            )
             print("[ARCHITECTURE CHECK]: Velo RSGI Host remains sovereign. Uvicorn is dead weight.")
 
         finally:
@@ -241,16 +244,13 @@ async def root():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
-        env = {
-            "PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}",
-            "VELO_IS_WORKER": "1"
-        }
-        
+        env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}", "VELO_IS_WORKER": "1"}
+
         # We expect a 503/504 because the worker is stuck in Sleep for 10s
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             # 1. Wait a bit, but not enough for the 10s sleep to finish
             time.sleep(3)
@@ -260,14 +260,14 @@ async def root():
             # If we get here, it means the Host dispatched to a worker it THINKS is healthy.
             # But the worker hasn't even finished importing!
             if resp.status_code == 200:
-                 print(f"DEBUG: Unexpected 200 OK from: {resp.json()}")
+                print(f"DEBUG: Unexpected 200 OK from: {resp.json()}")
             assert resp.status_code in (502, 503, 504), f"Expected Gateway Error, got {resp.status_code}"
             print("\n[ROBUSTNESS CONFIRMED]: Blocking import successfully neutralized by Handshake Timeout.")
 
         except requests.exceptions.RequestException as e:
             print(f"\n[ROBUSTNESS CONFIRMED]: Connection failed or timed out: {e}")
             # This is also acceptable if the Host closes connection on failure
-            
+
         finally:
             proc.terminate()
             proc.wait()
@@ -300,25 +300,25 @@ app = Starlette(routes=[
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             resp = requests.get(f"http://127.0.0.1:{port}/check?foo=bar", headers={"X-Test": "Velo"}, timeout=5)
             assert resp.status_code == 200
             data = resp.json()
-            
+
             assert data["type"] == "http"
             assert data["method"] == "GET"
             assert data["path"] == "/check"
             assert data["query_string"] == "foo=bar"
             assert data["headers"].get("x-test") == "Velo"
             assert data["rsgi_id"] is not None
-            
+
             print(f"\n[SCOPE INTEGRITY CONFIRMED]: Starlette scope is 100% compliant. RSGI_ID={data['rsgi_id']}")
 
         finally:
@@ -326,7 +326,9 @@ app = Starlette(routes=[
             proc.wait()
 
     @pytest.mark.tier3
-    @pytest.mark.xfail(reason="DEF-72-C03: P2 - LoadBalancer convergence during respawn backoff needs architectural fix")
+    @pytest.mark.xfail(
+        reason="DEF-72-C03: P2 - LoadBalancer convergence during respawn backoff needs architectural fix"
+    )
     def test_hard_exit_recovery(self, isolated_env):
         """
         [E2E-FW-07] Hard Exit Containment.
@@ -349,15 +351,17 @@ async def health():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         # Run with multiple workers or just check if it can recover
         # Set VELO_BACKOFF_SECS=2 to speed up respawn for testing (default is 10s)
         env["VELO_BACKOFF_SECS"] = "2"
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "1", env=env)
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "1", env=env
+        )
+
         try:
             time.sleep(3)
             # 1. Trigger Suicide
@@ -367,7 +371,7 @@ async def health():
             except requests.exceptions.RequestException:
                 # Connection might be dropped on hard exit, which is fine
                 pass
-            
+
             # 2. Verify Recovery (Host should restart/select new worker)
             # With VELO_BACKOFF_SECS=2, the respawn happens quickly
             # Retry loop to account for LoadBalancer convergence
@@ -382,11 +386,13 @@ async def health():
                         break
                 except requests.exceptions.RequestException:
                     pass
-            
+
             assert recovered, "Worker failed to recover after hard exit"
             assert resp.json() == {"status": "alive"}
-            
-            print("\n[HARD EXIT RECOVERY CONFIRMED]: Velo Host successfully contained a worker hard-exit and recovered.")
+
+            print(
+                "\n[HARD EXIT RECOVERY CONFIRMED]: Velo Host successfully contained a worker hard-exit and recovered."
+            )
 
         finally:
             proc.terminate()
@@ -396,7 +402,7 @@ async def health():
     def test_dependency_shadowing_protection(self, isolated_env):
         """
         [E2E-FW-08] Dependency Shadowing Protection.
-        Verify that if a user app directory contains a file named 'msgpack.py', 
+        Verify that if a user app directory contains a file named 'msgpack.py',
         Velo's internal RSGI bridge (which uses msgpack) remains sovereign and doesn't crash.
         """
         # 1. Create a "hostile" msgpack.py that crashes on import or usage
@@ -404,7 +410,7 @@ async def health():
 raise ImportError("SHADOW_ATTACK: Velo's internal logic hijacked by user-space dependency!")
 """
         isolated_env.create_app("msgpack.py", shadow_msgpack)
-        
+
         # 2. Create the real app
         app_code = """
 from fastapi import FastAPI
@@ -415,21 +421,23 @@ async def root():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         # We put the app dir in PYTHONPATH
         env = {"PYTHONPATH": f".:{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # If Velo's rsgi.py did 'import msgpack' and got the hostile one, it would crash
             resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
             assert resp.status_code == 200
             assert resp.json()["status"] == "sovereign"
-            
-            print("\n[DEPENDENCY SOVEREIGNTY CONFIRMED]: Velo's internal RSGI bridge is immune to user-space shadowing.")
+
+            print(
+                "\n[DEPENDENCY SOVEREIGNTY CONFIRMED]: Velo's internal RSGI bridge is immune to user-space shadowing."
+            )
 
         finally:
             proc.terminate()
@@ -458,36 +466,39 @@ async def ping():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         # Start with 2 workers so we can still talk to the healthy one
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "2", env=env)
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "2", env=env
+        )
+
         try:
             time.sleep(3)
-            
+
             # 1. Dispatch Hang (Async request)
             print("\nDEBUG: Dispatching infinite hang...")
             # We don't want to block the test thread
             import threading
+
             def trigger_hang():
                 try:
                     requests.get(f"http://127.0.0.1:{port}/hang", timeout=2)
                 except:
                     pass
-            
+
             t = threading.Thread(target=trigger_hang)
             t.start()
             time.sleep(1)
-            
+
             # 2. Verify we can still reach the other worker
             print("DEBUG: Verifying host remains responsive via other worker...")
             resp = requests.get(f"http://127.0.0.1:{port}/ping", timeout=5)
             assert resp.status_code == 200
             assert resp.json()["status"] == "pong"
-            
+
             print("\n[HANG ISOLATION CONFIRMED]: Velo Host remains sovereign while one worker is CPU-bound.")
 
         finally:
@@ -498,7 +509,7 @@ async def ping():
     def test_websocket_echo_sovereignty(self, isolated_env):
         """
         [E2E-FW-10] WebSocket in RSGI Mode - 501 Not Implemented.
-        
+
         Phase 7.2 Design Decision: RSGI does not support WebSocket.
         This test verifies that WebSocket handshakes correctly return 501.
         Full WebSocket support is tracked for Phase 8.x.
@@ -516,16 +527,17 @@ async def websocket_endpoint(websocket: WebSocket):
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # WebSocket connections should be rejected with 501 in RSGI mode
             import websocket
+
             try:
                 ws = websocket.create_connection(f"ws://127.0.0.1:{port}/ws")
                 ws.close()
@@ -533,7 +545,7 @@ async def websocket_endpoint(websocket: WebSocket):
             except websocket.WebSocketBadStatusException as e:
                 # Expected: 501 Not Implemented
                 assert e.status_code == 501, f"Expected 501, got {e.status_code}"
-                print(f"\n[WEBSOCKET 501 CONFIRMED]: RSGI correctly rejected WebSocket with 501 Not Implemented.")
+                print("\n[WEBSOCKET 501 CONFIRMED]: RSGI correctly rejected WebSocket with 501 Not Implemented.")
         except ImportError:
             pytest.skip("websocket-client not installed")
         finally:
@@ -565,20 +577,20 @@ async def events():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # Use a longer timeout and explicit read timeout for streaming
             # (connect_timeout, read_timeout) - read_timeout must be longer than total stream time
             resp = requests.get(
-                f"http://127.0.0.1:{port}/events", 
-                stream=True, 
-                timeout=(5, 15)  # 5s connect, 15s read (3 events * 0.5s delay + buffer)
+                f"http://127.0.0.1:{port}/events",
+                stream=True,
+                timeout=(5, 15),  # 5s connect, 15s read (3 events * 0.5s delay + buffer)
             )
             assert resp.status_code == 200
             events = []
@@ -586,7 +598,7 @@ async def events():
             for line in resp.iter_lines(decode_unicode=False):
                 if line:
                     events.append(line.decode())
-            
+
             assert len(events) == 3, f"Expected 3 events, got {len(events)}: {events}"
             assert events[0] == "data: event 0"
             print("\n[SSE CONFIRMED]: Velo successfully delivered unbuffered Server-Sent Events.")
@@ -621,32 +633,34 @@ async def root():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             # 1. Verify app works
             resp = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
             assert resp.status_code == 200
-            
+
             # 2. Shutdown Host
             # Host should use SIGKILL if workers don't respond to SIGINT/SIGTERM
             # or it should at least not hang itself.
             print("\nDEBUG: Shutting down Host...")
-            proc.terminate() # Sends SIGTERM to Host
-            
+            proc.terminate()  # Sends SIGTERM to Host
+
             # Host needs to handle worker cleanup
             # Increased timeout to 30s to allow for SIGKILL escalation (DEF-72-C06)
             exit_code = proc.wait(timeout=30)
             print(f"DEBUG: Host exited with {exit_code}")
-            
+
             # 3. Verify no stray workers
             # (Note: In a real test we'd check for child pids)
-            print("\n[SIGNAL RESILIENCE CONFIRMED]: Host successfully terminated even with hostile application signal handlers.")
+            print(
+                "\n[SIGNAL RESILIENCE CONFIRMED]: Host successfully terminated even with hostile application signal handlers."
+            )
 
         finally:
             if proc.poll() is None:
@@ -674,30 +688,34 @@ async def inc():
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         # Run with 1 worker to see if state persists across requests to the SAME worker
         # This is EXPECTED behavior in Python servers (Uvicorn does this too).
         # But we want to ensure Velo's bridge doesn't introduce unexpected resets or leaks.
-        proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "1", env=env)
-        
+        proc = isolated_env.spawn_velo(
+            "serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), "--workers", "1", env=env
+        )
+
         try:
             time.sleep(3)
             # Request 1
             resp1 = requests.get(f"http://127.0.0.1:{port}/inc")
             c1 = resp1.json()["count"]
             pid1 = resp1.json()["pid"]
-            
+
             # Request 2
             resp2 = requests.get(f"http://127.0.0.1:{port}/inc")
             c2 = resp2.json()["count"]
             pid2 = resp2.json()["pid"]
-            
+
             assert pid1 == pid2
             assert c2 == c1 + 1
-            print(f"\n[STATE PERSISTENCE CONFIRMED]: Global state correctly maintained within the same worker. Count={c2}")
+            print(
+                f"\n[STATE PERSISTENCE CONFIRMED]: Global state correctly maintained within the same worker. Count={c2}"
+            )
 
         finally:
             proc.terminate()
@@ -731,20 +749,22 @@ async def secret(request: Request):
 """
         isolated_env.create_app("main.py", app_code)
         port = isolated_env.next_port()
-        
+
         root_dir = str(Path(__file__).parents[3])
         env = {"PYTHONPATH": f"{root_dir}:{os.environ.get('PYTHONPATH', '')}"}
-        
+
         proc = isolated_env.spawn_velo("serve", "main:app", "--rsgi", "--no-zygote", "--port", str(port), env=env)
-        
+
         try:
             time.sleep(3)
             resp = requests.get(f"http://127.0.0.1:{port}/secret", headers={"X-Velo-Gate": "secret"}, timeout=5)
             assert resp.status_code == 200
             assert resp.headers.get("X-Sovereignty") == "Velo"
             assert resp.json()["authorized"] is True
-            
-            print("\n[MIDDLEWARE CONFIRMED]: Custom ASGI middleware successfully intercepted and modified the RSGI -> ASGI flow.")
+
+            print(
+                "\n[MIDDLEWARE CONFIRMED]: Custom ASGI middleware successfully intercepted and modified the RSGI -> ASGI flow."
+            )
 
         finally:
             proc.terminate()

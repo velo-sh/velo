@@ -1,13 +1,11 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
-
-import sys
-import subprocess
 
 # QA: This test validates the interface defined in RFC-0010 §5.2.2
 # It acts as a Compliance Suite. If the Dev hasn't implemented it, it fails/skips.

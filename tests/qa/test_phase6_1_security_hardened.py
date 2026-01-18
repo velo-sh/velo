@@ -1,11 +1,10 @@
 import os
-import pytest
+import socket
 import subprocess
-import signal
 import sys
 import time
-import socket
-from pathlib import Path
+
+import pytest
 
 # QA Agent C: Hardened Security Invariants
 # Requirements: RFC-0010 §4.10 (SEC-P0-001 to SEC-P0-006)
@@ -30,9 +29,7 @@ class TestPhase61SecurityHardened:
         for target in malicious_targets:
             result = env.run_velo("serve", target, timeout=5)
             assert result.returncode != 0
-            assert (
-                "error" in result.stderr.lower() or "invalid" in result.stderr.lower()
-            )
+            assert "error" in result.stderr.lower() or "invalid" in result.stderr.lower()
 
     def test_sec_p0_002_path_traversal(self, isolated_env):
         """
@@ -46,10 +43,7 @@ class TestPhase61SecurityHardened:
 
         result = env.run_velo("analyze", "--graph", outside_path, timeout=5)
         assert result.returncode != 0
-        assert (
-            "access denied" in result.stderr.lower()
-            or "outside" in result.stderr.lower()
-        )
+        assert "access denied" in result.stderr.lower() or "outside" in result.stderr.lower()
 
     def test_sec_p0_003_pid_file_safety(self, isolated_env):
         """
@@ -66,9 +60,7 @@ class TestPhase61SecurityHardened:
         os.symlink(target_file, pid_file)
 
         # Start velo serve --pid-file
-        result = env.run_velo(
-            "serve", "main:app", "--pid-file", str(pid_file), timeout=5
-        )
+        result = env.run_velo("serve", "main:app", "--pid-file", str(pid_file), timeout=5)
         assert result.returncode != 0
         assert target_file.read_text() == "don't touch"
 
@@ -82,9 +74,7 @@ class TestPhase61SecurityHardened:
         pid_file = env.path / "velo.pid"
         pid_file.write_text("99999")  # Hijack
 
-        result = env.run_velo(
-            "serve", "main:app", "--pid-file", str(pid_file), timeout=5
-        )
+        result = env.run_velo("serve", "main:app", "--pid-file", str(pid_file), timeout=5)
         assert result.returncode != 0
         assert "exists" in result.stderr.lower() or "denied" in result.stderr.lower()
 
@@ -123,17 +113,11 @@ class TestPhase61SecurityHardened:
             # C-SEC-6.1-001: Reconnaissance Prevention
             # Verify no disclosure in headers
             server_header = resp.headers.get("Server", "").lower()
-            assert (
-                "velo" not in server_header
-            ), "Security Leak: Server identity disclosed in headers"
-            assert (
-                "version" not in resp.text.lower()
-            ), "Security Leak: Metadata disclosed in body"
+            assert "velo" not in server_header, "Security Leak: Server identity disclosed in headers"
+            assert "version" not in resp.text.lower(), "Security Leak: Metadata disclosed in body"
 
             # Verify no X-Powered-By or other fingerprint headers
-            assert (
-                "x-powered-by" not in resp.headers
-            ), "Security Leak: Fingerprint header found"
+            assert "x-powered-by" not in resp.headers, "Security Leak: Fingerprint header found"
         except ImportError:
             pass  # Skip if requests not in test env
         finally:
@@ -145,9 +129,7 @@ class TestPhase61SecurityHardened:
         Requirement: Mandatory removal of PYTHONPATH, LD_PRELOAD, etc.
         """
         env = isolated_env
-        env.create_app(
-            "check_env.py", "import os; print(os.environ.get('PYTHONPATH', 'NONE'))"
-        )
+        env.create_app("check_env.py", "import os; print(os.environ.get('PYTHONPATH', 'NONE'))")
 
         my_env = os.environ.copy()
         my_env["PYTHONPATH"] = "/malicious/path"
@@ -161,9 +143,7 @@ class TestPhase61SecurityHardened:
         Requirement: Throttle if > 100 events/sec.
         """
         env = isolated_env
-        env.create_app(
-            "main.py", "app = lambda scope, receive, send: None\nprint('START')"
-        )
+        env.create_app("main.py", "app = lambda scope, receive, send: None\nprint('START')")
 
         # Create 200 files rapidly
         for i in range(200):
@@ -174,9 +154,7 @@ class TestPhase61SecurityHardened:
 
         # Implementation check: Velo should log a warning or throttle
         # We'll check if the watcher is still alive and didn't crash
-        proc = subprocess.Popen(
-            [env.velo, "serve", "main:app", "--port", str(port)], cwd=env.path
-        )
+        proc = subprocess.Popen([env.velo, "serve", "main:app", "--port", str(port)], cwd=env.path)
         time.sleep(1)
         assert proc.poll() is None
         proc.kill()
@@ -210,7 +188,6 @@ class TestPhase61SecurityHardened:
         SEC-P0-004: Health Recon (Zero Wiring Proof).
         Proves: Even when --health-bind is passed, NO SOCKET is opened.
         """
-        import socket
 
         env = isolated_env
         health_port = 8082
@@ -243,9 +220,9 @@ class TestPhase61SecurityHardened:
             # We want this test to FAIL if the port is CLOSED (as proof of deficiency)
             # wait, normally tests assert what SHOULD happen.
             # Here we want to CODIFY the failure.
-            assert (
-                conn_result == 0
-            ), f"Deficiency Verified: Health Port {health_port} is NOT open despite --health-bind."
+            assert conn_result == 0, (
+                f"Deficiency Verified: Health Port {health_port} is NOT open despite --health-bind."
+            )
         finally:
             proc.kill()
 

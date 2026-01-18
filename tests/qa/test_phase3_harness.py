@@ -10,19 +10,17 @@ import os
 import signal
 import socket
 import subprocess
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from test_harness import VeloTestEnv, run_velo, VELO_BINARY
+from test_harness import VeloTestEnv, run_velo
 
 
 @dataclass
 class ZygoteTestEnv(VeloTestEnv):
     """Extended environment for Zygote testing with daemon control."""
 
-    zygote_pid: Optional[int] = None
+    zygote_pid: int | None = None
     socket_name: str = "velo-zygote.sock"
 
     @property
@@ -30,7 +28,7 @@ class ZygoteTestEnv(VeloTestEnv):
         """Return the Zygote socket path."""
         return self.path / ".velo_cache" / self.socket_name
 
-    def start_zygote(self, timeout: float = 5.0) -> Optional[int]:
+    def start_zygote(self, timeout: float = 5.0) -> int | None:
         """
         Start Zygote daemon and return PID.
 
@@ -90,7 +88,7 @@ class ZygoteTestEnv(VeloTestEnv):
         result = run_velo(["zygote", "status"], cwd=self.path, timeout=2)
         return result.success and "running" in result.stdout.lower()
 
-    def send_raw_ipc(self, data: bytes, timeout: float = 2.0) -> Optional[bytes]:
+    def send_raw_ipc(self, data: bytes, timeout: float = 2.0) -> bytes | None:
         """
         Send raw data to Zygote socket for fuzzing.
 
@@ -152,9 +150,7 @@ class ZygoteTestEnv(VeloTestEnv):
 def count_zombie_processes() -> int:
     """Count zombie processes owned by current user."""
     try:
-        result = subprocess.run(
-            ["ps", "aux"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
         return sum(1 for line in result.stdout.split("\n") if " Z " in line)
     except Exception:
         return 0
@@ -163,9 +159,7 @@ def count_zombie_processes() -> int:
 def count_child_processes(parent_pid: int) -> int:
     """Count child processes of a given PID."""
     try:
-        result = subprocess.run(
-            ["pgrep", "-P", str(parent_pid)], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["pgrep", "-P", str(parent_pid)], capture_output=True, text=True, timeout=5)
         return len(result.stdout.strip().split("\n")) if result.stdout.strip() else 0
     except Exception:
         return 0
@@ -174,9 +168,7 @@ def count_child_processes(parent_pid: int) -> int:
 def get_socket_connections(socket_path: Path) -> int:
     """Count connections to a Unix socket (approximate via lsof)."""
     try:
-        result = subprocess.run(
-            ["lsof", str(socket_path)], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["lsof", str(socket_path)], capture_output=True, text=True, timeout=5)
         # Count lines minus header
         lines = result.stdout.strip().split("\n")
         return max(0, len(lines) - 1)

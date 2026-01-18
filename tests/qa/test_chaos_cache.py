@@ -13,17 +13,13 @@ These tests attempt to BREAK the cache handling by:
 Goal: Velo should NEVER panic, always recover gracefully.
 """
 
-import os
-import pytest
 import threading
-import time
-from pathlib import Path
 
+import pytest
 from test_harness import (
     VeloTestEnv,
-    run_velo,
     assert_no_crash,
-    assert_velo_fails_gracefully,
+    run_velo,
 )
 
 
@@ -198,4 +194,4 @@ def check_velo_binary():
     from test_harness import VELO_BINARY
 
     if not VELO_BINARY.exists():
-        pytest.skip(f"Velo binary not found. Run 'cargo build --release' first.")
+        pytest.skip("Velo binary not found. Run 'cargo build --release' first.")

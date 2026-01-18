@@ -1,18 +1,20 @@
 import os
-import pytest
-import subprocess
 import signal
+import subprocess
 import time
-import psutil
-import socket
 from pathlib import Path
+
+import psutil
+import pytest
 
 # CI Timeout Multiplier (RFC-0012)
 TIMEOUT_MULTIPLIER = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
 
+
 def scaled_timeout(base: float) -> float:
     """Apply CI timeout multiplier to base timeout."""
     return base * TIMEOUT_MULTIPLIER
+
 
 # QA Agent B: Hardened Stability & Platform Parity
 # Requirements: RFC-0010 §4.1, §4.4, §4.6, §4.9
@@ -57,13 +59,11 @@ class TestPhase61StabilityHardened:
                 children = p.children(recursive=True)
         except psutil.NoSuchProcess as err:
             stdout, stderr = proc.communicate()
-            raise RuntimeError(
-                f"Velo exited prematurely.\nSTDOUT: {stdout}\nSTDERR: {stderr}"
-            ) from err
+            raise RuntimeError(f"Velo exited prematurely.\nSTDOUT: {stdout}\nSTDERR: {stderr}") from err
 
-        assert (
-            len(children) >= 1
-        ), f"No child processes detected after 15s.\nSTDOUT: {proc.stdout.read() if proc.stdout else ''}"
+        assert len(children) >= 1, (
+            f"No child processes detected after 15s.\nSTDOUT: {proc.stdout.read() if proc.stdout else ''}"
+        )
         child_pid = children[0].pid
 
         # Terminate parent (causes graceful exit where Drop can run)
@@ -187,9 +187,7 @@ class TestPhase61StabilityHardened:
 
         # Wait for first start (drain everything until first START_)
         prefix = self._read_until(proc.stdout, "START_", timeout=20)
-        assert (
-            "START_" in prefix
-        ), f"Server failed to start the first time.\nLOGS: {prefix}"
+        assert "START_" in prefix, f"Server failed to start the first time.\nLOGS: {prefix}"
 
         # DRAIN any remaining startup logs to avoid false positives in second phase
         time.sleep(2)
@@ -214,9 +212,9 @@ class TestPhase61StabilityHardened:
         # Kill immediately to release port
         proc.kill()
 
-        assert (
-            "START_" in output
-        ), f"Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events).\nFull Trace: {prefix}\nNew Logs: {output}"
+        assert "START_" in output, (
+            f"Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events).\nFull Trace: {prefix}\nNew Logs: {output}"
+        )
 
     def test_stab_deadlock_pipe_saturation(self, isolated_env):
         """
@@ -234,20 +232,14 @@ class TestPhase61StabilityHardened:
         result = env.run_velo("run", "main.py", timeout=10)
         assert result.returncode == 0
 
-    @pytest.mark.skipif(
-        os.name != "posix", reason="SIGTERM forwarding is Unix-specific"
-    )
+    @pytest.mark.skipif(os.name != "posix", reason="SIGTERM forwarding is Unix-specific")
     @pytest.mark.xfail(
         os.environ.get("GITHUB_ACTIONS") == "true"
         or os.path.exists("/.dockerenv")
-        or (
-            Path("/proc/1/cgroup").exists()
-            and "docker" in Path("/proc/1/cgroup").read_text()
-        ),
+        or (Path("/proc/1/cgroup").exists() and "docker" in Path("/proc/1/cgroup").read_text()),
         reason="Signal forwarding timing is unreliable in containerized environments",
     )
     def test_stab_cn_002_sigterm_forwarding(self, isolated_env):
-
         """
         CN-P0-002: SIGTERM Forwarding
         Goal: Velo forwards SIGTERM to child and waits for graceful exit.
@@ -353,17 +345,14 @@ time.sleep(60)
         time.sleep(2)
         # Requirement: All child processes MUST be cleaned up
         for child_pid in child_pids:
-            assert not psutil.pid_exists(
-                child_pid
-            ), f"Leak Detected: Child process {child_pid} survived graceful shutdown"
+            assert not psutil.pid_exists(child_pid), (
+                f"Leak Detected: Child process {child_pid} survived graceful shutdown"
+            )
 
     @pytest.mark.xfail(
         os.environ.get("GITHUB_ACTIONS") == "true"
         or os.path.exists("/.dockerenv")
-        or (
-            Path("/proc/1/cgroup").exists()
-            and "docker" in Path("/proc/1/cgroup").read_text()
-        ),
+        or (Path("/proc/1/cgroup").exists() and "docker" in Path("/proc/1/cgroup").read_text()),
         reason="File watcher race test is environment-sensitive (poll mode in containers, timing variance in CI)",
     )
     def test_stab_large_file_write_race(self, isolated_env):
@@ -421,17 +410,13 @@ time.sleep(60)
 
         assert "FINAL_READY" in output
         # If it triggers too early, it might fail to import or show partial code errors
-        assert (
-            "SyntaxError" not in output
-        ), "Race Detected: Watcher triggered on partially written file"
-
+        assert "SyntaxError" not in output, "Race Detected: Watcher triggered on partially written file"
 
     @pytest.mark.xfail(
         os.environ.get("GITHUB_ACTIONS") == "true",
         reason="File watcher on CI uses poll mode without inotify support; starvation behavior differs",
     )
     def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
-
         """
         STB-RS-002 (Hard-Cap): Continuous events MUST trigger a restart after hard-cap (max 5s).
         Proves: Watcher does not reset debouncer indefinitely (Starvation).
@@ -481,9 +466,9 @@ app = lambda s, r, se: None
                 print(f"DEBUG: Captured Output (stderr merged):\n{out}")
             # If starvation exists, starts will be 1 (the initial one).
             # If hard-cap exists, starts will be >= 2.
-            assert (
-                starts >= 2
-            ), f"Starvation Detected: Only {starts} starts found after 4s of continuous events. Hard-cap missing in watcher.rs."
+            assert starts >= 2, (
+                f"Starvation Detected: Only {starts} starts found after 4s of continuous events. Hard-cap missing in watcher.rs."
+            )
         except Exception:
             proc.kill()
             raise
@@ -599,9 +584,9 @@ class TestRegressionBugFixes:
 
         # ALL children must be cleaned up (not just direct child)
         for child_pid in child_pids:
-            assert not psutil.pid_exists(
-                child_pid
-            ), f"Leak Detected: Child {child_pid} survived graceful shutdown (process group not killed)"
+            assert not psutil.pid_exists(child_pid), (
+                f"Leak Detected: Child {child_pid} survived graceful shutdown (process group not killed)"
+            )
 
     def test_reg_003_partial_import_capture_on_crash(self, isolated_env):
         """
@@ -642,9 +627,7 @@ print("OK")
         has_timing = "ms" in output
         has_import = "json" in output
 
-        assert (
-            has_timing or has_import
-        ), f"Partial imports not captured on crash. Output:\n{result.stdout[:500]}"
+        assert has_timing or has_import, f"Partial imports not captured on crash. Output:\n{result.stdout[:500]}"
 
 
 if __name__ == "__main__":

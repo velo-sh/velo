@@ -1,12 +1,12 @@
 import os
-import signal
 import socket
-import time
-import pytest
 import subprocess
-import psutil
+import time
 import uuid
 from pathlib import Path
+
+import psutil
+import pytest
 
 # TITANIUM Grade: Kinetic Phase 6.2 Regression Suite
 # Documents and solidifies fixes for regressions found during optimization.
@@ -47,9 +47,7 @@ def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
     elapsed = time.time() - start_time
 
     assert result.returncode == 0
-    assert (
-        elapsed < 3
-    ), f"Regression: velo serve --dry-run hung for {elapsed:.2f}s (deadlock trap)"
+    assert elapsed < 3, f"Regression: velo serve --dry-run hung for {elapsed:.2f}s (deadlock trap)"
     # Log output goes to stderr in Velo
     assert "Dry run" in result.stderr
 
@@ -94,9 +92,7 @@ def test_reg_62_002_zygote_guardian_daemon(isolated_env, short_socket):
     time.sleep(2)
     try:
         proc = psutil.Process(zygote_pid)
-        assert (
-            proc.is_running()
-        ), "Regression: Zygote (daemon) killed itself after parent exited"
+        assert proc.is_running(), "Regression: Zygote (daemon) killed itself after parent exited"
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         pytest.fail("Regression: Zygote (daemon) exited/crashed after parent exited")
 
@@ -131,9 +127,7 @@ def test_reg_62_003_ci_home_allowance(isolated_env, short_socket):
         time.sleep(0.1)
 
     try:
-        assert (
-            success
-        ), "Zygote failed to start in simulated CI (/home blocking regression?)"
+        assert success, "Zygote failed to start in simulated CI (/home blocking regression?)"
     finally:
         subprocess.run([env.velo, "zygote", "stop"], env=cmd_env)
 
@@ -178,13 +172,13 @@ def test_reg_62_004_socket_backlog_resilience(isolated_env, short_socket):
                 s.connect(str(socket_path))
                 conns.append(s)
                 success_count += 1
-            except (ConnectionRefusedError, socket.timeout, OSError):
+            except (TimeoutError, ConnectionRefusedError, OSError):
                 break
 
         # We expect to reach at least 128 if backlog is 512 and system caps at 128
-        assert (
-            success_count >= 120
-        ), f"Backlog failure: only accepted {success_count} concurrent connections (somaxconn 128)"
+        assert success_count >= 120, (
+            f"Backlog failure: only accepted {success_count} concurrent connections (somaxconn 128)"
+        )
     finally:
         for s in conns:
             s.close()

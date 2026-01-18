@@ -9,12 +9,10 @@ Agent C's mission: Trust nothing, verify everything.
 """
 
 import os
-import stat
 import time
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+import pytest
+from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import ZygoteTestEnv
 
 
@@ -159,9 +157,7 @@ print(f"EGID: {os.getegid()}")
 """,
             )
 
-            result = run_velo(
-                ["run", "--zygote", "check_uid.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "check_uid.py"], cwd=env.path, timeout=30)
 
             if result.success:
                 # UID and EUID should be same (no SUID)
@@ -209,9 +205,7 @@ if unexpected:
 """,
             )
 
-            result = run_velo(
-                ["run", "--zygote", "check_fds.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "check_fds.py"], cwd=env.path, timeout=30)
 
             if result.success:
                 print(f"\n  FD info: {result.stdout}")
@@ -258,9 +252,7 @@ print(f'WORKER_SECRET={val}')
             run_velo(["run", "--zygote", "set_env.py"], cwd=env.path, timeout=10)
 
             # Run script that reads env
-            result = run_velo(
-                ["run", "--zygote", "get_env.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "get_env.py"], cwd=env.path, timeout=10)
 
             if result.success:
                 # Should NOT find the env var set by previous worker
@@ -285,9 +277,7 @@ class TestInputValidation:
             env.create_uv_lock()
 
             # Try path traversal in script path
-            result = run_velo(
-                ["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=10)
 
             assert_no_crash(result)
             # Should not succeed in reading /etc/passwd
@@ -516,15 +506,11 @@ class TestSecurityStability:
             run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
             # Trigger security check (path traversal)
-            run_velo(
-                ["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5
-            )
+            run_velo(["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5)
 
             # Normal operation should still work
             env.create_script("normal.py", "print('recovered')")
-            result = run_velo(
-                ["run", "--zygote", "normal.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "normal.py"], cwd=env.path, timeout=10)
 
             assert_no_crash(result)
             if result.success:

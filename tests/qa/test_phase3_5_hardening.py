@@ -4,11 +4,9 @@ Velo QA: Phase 3.5 Exit Code and Security Tests
 Tests for Phase 3.5 hardening features.
 """
 
-import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -121,9 +119,7 @@ class TestSecurityPathValidation:
         with RealUserEnv() as env:
             code, _, stderr = env.run_velo(["run", "--zygote", "nonexistent.py"])
             # Should fail but not crash
-            assert (
-                code != 0 or "not found" in stderr.lower() or "Falling back" in stderr
-            )
+            assert code != 0 or "not found" in stderr.lower() or "Falling back" in stderr
 
 
 class TestStderrCapture:

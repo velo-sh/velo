@@ -9,20 +9,16 @@ Run: pytest tests/qa/test_phase5_loader.py -v
 """
 
 import marshal
-import struct
 import sys
-import tempfile
 from pathlib import Path
-from typing import Optional
 
 import pytest
-
 
 # Add python/ to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
 
-from velo_loader import VeloBundle, VeloFinder, VeloLoader, install_hook, uninstall_hook
 from bundle_builder import VeloBundleBuilder, build_from_project
+from velo_loader import VeloBundle, install_hook, uninstall_hook
 
 
 class TestVeloBundleBuilder:
@@ -214,9 +210,7 @@ class TestVeloLoader:
         last_byte = code_data[-1]
         modified_byte = bytes([last_byte ^ 0xFF])  # Flip all bits
         modified_data = code_data[:-1] + modified_byte
-        assert not bundle.verify_module(
-            "hash_test", modified_data
-        ), "Modified data should fail hash verification"
+        assert not bundle.verify_module("hash_test", modified_data), "Modified data should fail hash verification"
 
         bundle.close()
 

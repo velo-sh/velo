@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Add python/ to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 
@@ -36,8 +35,9 @@ def velo_binary():
 @pytest.fixture
 def test_bundle(tmp_path):
     """Create a test bundle using bundle_builder."""
-    from bundle_builder import VeloBundleBuilder
     import marshal
+
+    from bundle_builder import VeloBundleBuilder
 
     builder = VeloBundleBuilder()
 
@@ -60,9 +60,7 @@ def test_project(tmp_path):
     # Create project structure
     (tmp_path / "main.py").write_text('print("Hello from bundle!")')
     (tmp_path / "mymodule.py").write_text("VALUE = 42")
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "test"\nversion = "0.1.0"'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "0.1.0"')
 
     # Create cache directory
     cache_dir = tmp_path / ".velo" / "cache"
@@ -207,9 +205,7 @@ class TestRunFast:
         """
         # Create project without bundle
         (tmp_path / "main.py").write_text('print("Fallback works!")')
-        (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "test"\nversion = "0.1.0"'
-        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "0.1.0"')
 
         result = subprocess.run(
             [velo_binary, "run", "--fast", "main.py"],

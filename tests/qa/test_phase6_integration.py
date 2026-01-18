@@ -1,10 +1,10 @@
 # Phase 6 Integration & Performance: RFC-0009 Static Graph
 
-import pytest
-import os
 import json
+import os
 import subprocess
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier2
@@ -70,15 +70,11 @@ class TestPhase6Integration:
             # Filter stat calls related to 'mod.py'
             stat_calls = [l for l in result.stderr.splitlines() if "mod.py" in l]
             # There should be 0 stat calls for the .py file during import resolution
-            assert (
-                len(stat_calls) == 0
-            ), f"Found stat() calls for bundled module: {stat_calls}"
+            assert len(stat_calls) == 0, f"Found stat() calls for bundled module: {stat_calls}"
         except FileNotFoundError:
             pytest.skip("strace not found; skipping syscall audit")
 
-    @pytest.mark.xfail(
-        reason="P3: fallback_reasons field not yet implemented in metrics output"
-    )
+    @pytest.mark.xfail(reason="P3: fallback_reasons field not yet implemented in metrics output")
     def test_L5_metrics_json_exhaustive(self, isolated_env):
         """L5: Verify VELO_REPORT_METRICS=1 outputs valid JSON with all RFC-0009 fields."""
         env = isolated_env

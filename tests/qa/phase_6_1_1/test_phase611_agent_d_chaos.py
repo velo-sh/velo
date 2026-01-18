@@ -16,9 +16,10 @@ import os
 import signal
 import socket
 import struct
-import time
 import sys
+import time
 from pathlib import Path
+
 import pytest
 import requests
 
@@ -89,9 +90,7 @@ class TestAgentDChaos:
 
         # Verify workers are restored (allow partial recovery in CI)
         new_workers = proc.get_worker_pids()
-        assert (
-            len(new_workers) >= 1
-        ), f"Zygote failed to recover any workers after storm, found {len(new_workers)}"
+        assert len(new_workers) >= 1, f"Zygote failed to recover any workers after storm, found {len(new_workers)}"
 
     def test_CHAOS_002_pipe_corruption(self, velo_serve_fixture):
         """CHAOS-002: Pipe Corruption (Malformed MessagePack).
@@ -135,9 +134,7 @@ class TestAgentDChaos:
             except Exception:
                 pass
             # If s.recv returns empty b"", it means closed
-            assert (
-                data == b""
-            ), "Zygote failed to close connection on huge length prefix"
+            assert data == b"", "Zygote failed to close connection on huge length prefix"
 
         # --- Attack 2: Wrong protocol version ---
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:

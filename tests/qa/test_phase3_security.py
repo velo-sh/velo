@@ -11,10 +11,8 @@ Attack vectors:
 - Information disclosure (error messages)
 """
 
-import grp
 import json
 import os
-import pwd
 import shutil
 import socket
 import stat
@@ -27,7 +25,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM
+from conftest_utils import T_MEDIUM, T_SHORT
 
 
 def get_velo_binary():
@@ -181,9 +179,7 @@ class TestSocketPermissions:
                 owner_uid = sock_stat.st_uid
                 current_uid = os.getuid()
 
-                assert (
-                    owner_uid == current_uid
-                ), f"Socket owned by UID {owner_uid}, not current user {current_uid}"
+                assert owner_uid == current_uid, f"Socket owned by UID {owner_uid}, not current user {current_uid}"
 
 
 # =============================================================================
@@ -212,11 +208,9 @@ class TestPathTraversal:
             )
 
             # Should fail with security error
-            assert (
-                result.returncode != 0
-                or "Access denied" in result.stderr
-                or "protected" in result.stderr.lower()
-            ), f"Path traversal not blocked! code={result.returncode}, stderr={result.stderr}"
+            assert result.returncode != 0 or "Access denied" in result.stderr or "protected" in result.stderr.lower(), (
+                f"Path traversal not blocked! code={result.returncode}, stderr={result.stderr}"
+            )
 
     def test_sec_004_absolute_path_outside_project(self):
         """
@@ -226,9 +220,7 @@ class TestPathTraversal:
             env.start_zygote()
 
             # Try absolute path
-            response = env.send_command(
-                {"type": "Fork", "script_path": "/etc/passwd", "args": []}
-            )
+            response = env.send_command({"type": "Fork", "script_path": "/etc/passwd", "args": []})
 
             # This might succeed if no path validation!
             if response.get("type") == "Forked":
@@ -272,9 +264,7 @@ class TestPathTraversal:
             ]
 
             for evil_path in paths:
-                response = env.send_command(
-                    {"type": "Fork", "script_path": evil_path, "args": []}
-                )
+                response = env.send_command({"type": "Fork", "script_path": evil_path, "args": []})
                 print(f"  {repr(evil_path)}: {response.get('type')}")
 
 
@@ -297,9 +287,7 @@ class TestSymlinkAttacks:
             evil_link = env.path / "evil.py"
             evil_link.symlink_to("/etc/passwd")
 
-            response = env.send_command(
-                {"type": "Fork", "script_path": str(evil_link), "args": []}
-            )
+            response = env.send_command({"type": "Fork", "script_path": str(evil_link), "args": []})
 
             # Should this be allowed?
             print(f"  Symlink to /etc/passwd: {response}")
@@ -337,9 +325,7 @@ class TestSymlinkAttacks:
             t.start()
 
             # Try to execute
-            response = env.send_command(
-                {"type": "Fork", "script_path": str(legit_script), "args": []}
-            )
+            response = env.send_command({"type": "Fork", "script_path": str(legit_script), "args": []})
 
             t.join(timeout=1)
 
@@ -461,9 +447,7 @@ class TestInfoDisclosure:
             env.start_zygote()
 
             # Request nonexistent file with sensitive-looking path
-            response = env.send_command(
-                {"type": "Fork", "script_path": "/home/user/.ssh/id_rsa", "args": []}
-            )
+            response = env.send_command({"type": "Fork", "script_path": "/home/user/.ssh/id_rsa", "args": []})
 
             error_msg = response.get("message", "")
 
@@ -486,7 +470,7 @@ class TestInfoDisclosure:
             # Check for stack trace indicators
             response_str = response.decode(errors="ignore")
             if "Traceback" in response_str or 'File "' in response_str:
-                print(f"  ⚠️ Stack trace in response!")
+                print("  ⚠️ Stack trace in response!")
                 print(f"  {response_str[:200]}")
 
 
@@ -602,7 +586,7 @@ class TestDoS:
                 response = s.recv(1024)
                 print(f"  Slowloris response: {response[:50]}")
                 s.close()
-            except socket.timeout:
+            except TimeoutError:
                 print("  Server timed out slow connection (good!)")
             except Exception as e:
                 print(f"  Slowloris error: {e}")

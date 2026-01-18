@@ -14,24 +14,20 @@ Test Levels:
 RULE: Higher levels are BLOCKED if lower levels fail.
 """
 
-import gc
 import os
-import psutil
-import socket
 import shutil
 import signal
+import socket
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
-from typing import Optional
 
+import psutil
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG
-
+from conftest_utils import T_MEDIUM, T_SHORT
 
 try:
     import requests
@@ -102,9 +98,7 @@ class ComprehensiveTestEnv:
         return self._port_counter
 
     def setup(self, with_project=True):
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         if with_project:
             (self.path / "pyproject.toml").write_text(
                 """[project]
@@ -203,9 +197,7 @@ class TestL0Smoke:
     def test_l0_002_serve_in_help(self):
         """'serve' appears in --help."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert "serve" in result.stdout.lower()
 
     def test_l0_003_uvicorn_dependency_message(self):
@@ -252,12 +244,8 @@ def root():
                 stderr = proc.stderr.read() if proc.stderr else ""
                 # If velo reports uvicorn missing, this is expected behavior
                 # velo checks the project's venv, not our test's installed packages
-                if "uvicorn" in stderr.lower() and (
-                    "missing" in stderr.lower() or "dependency" in stderr.lower()
-                ):
-                    pytest.skip(
-                        "velo serve checks project venv for uvicorn - test env issue"
-                    )
+                if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
+                    pytest.skip("velo serve checks project venv for uvicorn - test env issue")
                 pytest.fail(f"CRITICAL: Server did not bind to port!\n{stderr}")
 
 
@@ -325,9 +313,7 @@ def echo(data: dict):
 
             time.sleep(1)
 
-            response = requests.post(
-                f"http://127.0.0.1:{port}/echo", json={"test": "value"}, timeout=T_SHORT
-            )
+            response = requests.post(f"http://127.0.0.1:{port}/echo", json={"test": "value"}, timeout=T_SHORT)
             assert response.status_code == 200
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
@@ -359,9 +345,7 @@ def count():
             time.sleep(1)
 
             for i in range(100):
-                response = requests.get(
-                    f"http://127.0.0.1:{port}/count", timeout=T_SHORT
-                )
+                response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
                 assert response.status_code == 200
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
@@ -428,9 +412,7 @@ class TestL2SadPath:
         assert result.returncode != 0
         # Accept various error indicators (may be uvicorn missing or module not found)
         stderr_lower = result.stderr.lower()
-        assert any(
-            x in stderr_lower for x in ["error", "not found", "missing", "dependency"]
-        )
+        assert any(x in stderr_lower for x in ["error", "not found", "missing", "dependency"])
 
     def test_l2_002_app_not_found(self):
         """Clear error when app attribute doesn't exist."""
@@ -501,9 +483,7 @@ class TestL2SadPath:
         ]
 
         for fmt in invalid_formats:
-            result = subprocess.run(
-                [velo, "serve", fmt], capture_output=True, text=True, timeout=T_SHORT
-            )
+            result = subprocess.run([velo, "serve", fmt], capture_output=True, text=True, timeout=T_SHORT)
             assert result.returncode != 0, f"{fmt} should fail"
 
 
@@ -576,9 +556,7 @@ def get_pid():
             pids = set()
             for _ in range(50):
                 try:
-                    response = requests.get(
-                        f"http://127.0.0.1:{port}/pid", timeout=T_SHORT
-                    )
+                    response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json()["pid"])
                 except:
@@ -586,7 +564,7 @@ def get_pid():
 
             # With 4 workers, should see multiple PIDs
             if len(pids) == 1:
-                print(f"Warning: Only 1 PID seen - load balancing may not work")
+                print("Warning: Only 1 PID seen - load balancing may not work")
 
 
 # =============================================================================

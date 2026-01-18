@@ -17,15 +17,11 @@ import os
 import signal
 import socket
 import struct
-import sys
-import time
 import threading
-import concurrent.futures
-from pathlib import Path
-from typing import Optional, List
+import time
 
-import pytest
 import psutil
+import pytest
 
 # ============================================================================
 # Stress Test Configuration
@@ -78,9 +74,9 @@ class TestWhiteBoxPythonStress:
             time.sleep(0.1)
 
         # Allow some zombie sightings due to timing, but flag if excessive
-        assert (
-            zombies_detected < 5
-        ), f"WB-002 STRESS: Zombie accumulation detected {zombies_detected} times in {STRESS_ITERATIONS} iterations"
+        assert zombies_detected < 5, (
+            f"WB-002 STRESS: Zombie accumulation detected {zombies_detected} times in {STRESS_ITERATIONS} iterations"
+        )
 
     def test_WB_003_STRESS_eintr_signal_storm(self, velo_serve_fixture):
         """WB-003 STRESS: Signal storm during waitpid to trigger EINTR handling.
@@ -134,9 +130,7 @@ class TestWhiteBoxPythonStress:
             except psutil.NoSuchProcess:
                 pass
 
-        assert (
-            len(zombies) == 0
-        ), f"WB-003 STRESS: {len(zombies)} zombies survived signal storm: {zombies}"
+        assert len(zombies) == 0, f"WB-003 STRESS: {len(zombies)} zombies survived signal storm: {zombies}"
 
     def test_WB_004_cross_app_affinity(self, velo_serve_fixture):
         """WB-004: Handshake should verify app affinity to prevent cross-talk.
@@ -167,7 +161,7 @@ class TestWhiteBoxPythonStress:
             # SEC-005: Forensic Auth
             if hasattr(proc, "forensic_secret") and proc.forensic_secret:
                 send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
-                _ = recv_msg(s) # Ack
+                _ = recv_msg(s)  # Ack
 
             # Send Handshake with empty capabilities (no app name)
             handshake = {"type": "Handshake", "version": 0x01, "capabilities": []}
@@ -183,9 +177,7 @@ class TestWhiteBoxPythonStress:
             has_affinity = any("app:" in c for c in caps)
 
             if not has_affinity:
-                pytest.fail(
-                    "WB-004: Handshake lacks app affinity - cross-app vulnerability exists"
-                )
+                pytest.fail("WB-004: Handshake lacks app affinity - cross-app vulnerability exists")
 
     def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture):
         """WB-005 STRESS (NEW): Rapid Fork requests to test throttling.
@@ -223,12 +215,10 @@ class TestWhiteBoxPythonStress:
                 # SEC-005: Forensic Auth
                 if hasattr(proc, "forensic_secret") and proc.forensic_secret:
                     send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
-                    recv_msg(s) # Ack
+                    recv_msg(s)  # Ack
 
                 script_path = (
-                    str(proc.script_path)
-                    if hasattr(proc, "script_path")
-                    else str(proc.project_dir / "main.py")
+                    str(proc.script_path) if hasattr(proc, "script_path") else str(proc.project_dir / "main.py")
                 )
 
                 for i in range(FORK_BOMB_COUNT):
@@ -272,9 +262,7 @@ class TestWhiteBoxPythonStress:
         # Success criteria: rate limiting should kick in (some rate limit rejections)
         # OR if errors occurred, at least some should be rate limit errors
         if len(errors) > FORK_BOMB_COUNT // 2 and rate_limit_errors == 0:
-            pytest.fail(
-                f"WB-005 STRESS: Fork bomb caused {len(errors)} errors without rate limiting"
-            )
+            pytest.fail(f"WB-005 STRESS: Fork bomb caused {len(errors)} errors without rate limiting")
 
 
 class TestWhiteBoxRustStress:
@@ -309,9 +297,9 @@ class TestWhiteBoxRustStress:
         new_workers = proc.get_worker_pids()
 
         # This SHOULD fail because there's no respawn logic
-        assert (
-            len(new_workers) >= 4
-        ), f"WB-006 STRESS: Workers not respawned after kill. Had {len(initial_workers)}, now have {len(new_workers)}"
+        assert len(new_workers) >= 4, (
+            f"WB-006 STRESS: Workers not respawned after kill. Had {len(initial_workers)}, now have {len(new_workers)}"
+        )
 
     def test_WB_007_orphaned_existing_zygote(self, velo_serve_fixture):
         """WB-007: Existing Zygote should be shut down when velo serve exits.
@@ -352,9 +340,7 @@ class TestWhiteBoxRustStress:
                 except psutil.NoSuchProcess:
                     pass
 
-        assert (
-            not still_alive
-        ), f"WB-007: Orphaned Zygote detected (PIDs: {zygote1_pid}, {zygote2_pid})"
+        assert not still_alive, f"WB-007: Orphaned Zygote detected (PIDs: {zygote1_pid}, {zygote2_pid})"
 
     def test_WB_008_STRESS_connection_flood(self, velo_serve_fixture):
         """WB-008 STRESS: Flood connections to stress accept loop.
@@ -376,7 +362,7 @@ class TestWhiteBoxRustStress:
                 s.settimeout(0.5)
                 s.connect(("127.0.0.1", proc.port))
                 connections.append(s)
-            except (OSError, socket.timeout):
+            except (TimeoutError, OSError):
                 errors += 1
 
         # Cleanup
@@ -446,37 +432,31 @@ class TestWhiteBoxProtocolCompliance:
                 total_len_be = struct.unpack(">I", header)[0]
 
                 # Verify little-endian gives reasonable value
-                assert (
-                    1 <= total_len_le <= 1024
-                ), f"WB-009: Little-endian length {total_len_le} out of range"
+                assert 1 <= total_len_le <= 1024, f"WB-009: Little-endian length {total_len_le} out of range"
 
                 # Verify big-endian gives DIFFERENT (wrong) value
                 # This proves the protocol is endian-sensitive
                 if total_len_le <= 255:
                     # For small values, big-endian vs little-endian matters
                     # e.g., 0x12 as LE = 0x12, as BE = 0x12000000
-                    assert (
-                        total_len_be != total_len_le or total_len_le < 256
-                    ), "WB-009: Endianness test inconclusive for single-byte length"
+                    assert total_len_be != total_len_le or total_len_le < 256, (
+                        "WB-009: Endianness test inconclusive for single-byte length"
+                    )
 
                 # Read rest of message using correct little-endian length
                 version = s.recv(1)
-                assert (
-                    version and version[0] == 0x01
-                ), f"WB-009: Wrong protocol version {version}"
+                assert version and version[0] == 0x01, f"WB-009: Wrong protocol version {version}"
 
                 payload = s.recv(total_len_le - 1)
                 msg = unpacker(payload)
 
-                assert (
-                    msg.get("type") == "Ready"
-                ), f"WB-009: Expected Ready, got {msg.get('type')}"
+                assert msg.get("type") == "Ready", f"WB-009: Expected Ready, got {msg.get('type')}"
 
                 # SEC-005: Forensic Auth (Required before we can send Status in next test part)
                 if hasattr(proc, "forensic_secret") and proc.forensic_secret:
                     send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
-                    _ = recv_msg(s) # Ack
-        except socket.error as e:
+                    _ = recv_msg(s)  # Ack
+        except OSError as e:
             pytest.fail(f"WB-009: Socket error with little-endian: {e}")
 
         # Test 2: Send command with little-endian (should work)
@@ -487,11 +467,11 @@ class TestWhiteBoxProtocolCompliance:
 
                 # Read Ready
                 recv_msg(s)
-                
+
                 # SEC-005: Forensic Auth
                 if hasattr(proc, "forensic_secret") and proc.forensic_secret:
                     send_msg(s, {"type": "Auth", "secret": proc.forensic_secret})
-                    recv_msg(s) # Ack
+                    recv_msg(s)  # Ack
 
                 # Send Status command with LITTLE-endian (correct)
                 send_msg(s, {"type": "Status"})
@@ -503,7 +483,7 @@ class TestWhiteBoxProtocolCompliance:
                     "Status",
                     "Error",
                 ], f"WB-009: Invalid response to Status: {response}"
-        except socket.error as e:
+        except OSError as e:
             pytest.fail(f"WB-009: Status command failed: {e}")
 
         # Test 3: Document that big-endian would fail
@@ -517,9 +497,7 @@ class TestWhiteBoxProtocolCompliance:
         # First byte should be length (small for test payloads)
         # In little-endian, small values have the value in first byte
         # In big-endian, small values would have 0x00 in first byte
-        assert (
-            test_header[0] != 0 or len(test_payload) >= 256
-        ), "WB-009: Header encoding verification failed"
+        assert test_header[0] != 0 or len(test_payload) >= 256, "WB-009: Header encoding verification failed"
 
 
 # ============================================================================

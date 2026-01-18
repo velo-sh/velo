@@ -23,7 +23,6 @@ Test IDs:
 - REBUILD-001: Source changed triggers auto-rebuild
 """
 
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -58,14 +57,10 @@ version = "0.1.0"
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -109,20 +104,14 @@ class TestL2SadPath:
         if bundle_path.exists():
             original_data = bundle_path.read_bytes()
             # Corrupt middle section
-            corrupted = (
-                original_data[:100]
-                + b"\x00\xFF\xDE\xAD\xBE\xEF" * 50
-                + original_data[400:]
-            )
+            corrupted = original_data[:100] + b"\x00\xff\xde\xad\xbe\xef" * 50 + original_data[400:]
             bundle_path.write_bytes(corrupted)
 
         # Run with --fast should still work (via fallback)
         result = run_velo(["run", "--fast", "main.py"], simple_project, velo_binary)
 
         # Should succeed via fallback
-        assert (
-            result.returncode == 0 or "fallback" in result.stderr.lower()
-        ), f"Expected fallback, got: {result.stderr}"
+        assert result.returncode == 0 or "fallback" in result.stderr.lower(), f"Expected fallback, got: {result.stderr}"
 
         # If it succeeded, output should be correct
         if result.returncode == 0:
@@ -248,10 +237,7 @@ class TestL2ErrorHandling:
         result = run_velo(["run", "--fast", "nonexistent.py"], tmp_path, velo_binary)
 
         assert result.returncode != 0
-        assert (
-            "not found" in result.stderr.lower()
-            or "no such file" in result.stderr.lower()
-        )
+        assert "not found" in result.stderr.lower() or "no such file" in result.stderr.lower()
 
     @pytest.mark.sad_path
     def test_syntax_error_reported(self, tmp_path, velo_binary):

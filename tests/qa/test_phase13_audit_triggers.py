@@ -10,35 +10,35 @@ import subprocess
 import time
 from pathlib import Path
 
-import pytest
-
 
 class TestAuditTrigger_P0Security:
     """
     Audit Trigger 1: P0 security vulnerability discovered
-    
+
     Verify: All P0 security requirements from RFC-0028 are implemented.
     """
 
     def test_p0_1_fixture_scope_leakage_protected(self):
         """P0-1: Fixture scope leakage protected via velo_fork_reinit hook"""
-        from pytest_velo.plugin import velo_fork_reinit, register_fork_reinit
+        from pytest_velo.plugin import register_fork_reinit, velo_fork_reinit
 
         # Hook exists and is callable
         assert callable(velo_fork_reinit)
         assert callable(register_fork_reinit)
-        
+
         # Can register callbacks
         callbacks = []
         register_fork_reinit(lambda: callbacks.append(1))
-        
+
         from pytest_velo.plugin import _fork_reinit_callbacks
+
         assert len(_fork_reinit_callbacks) > 0
 
     def test_p0_2_gil_deadlock_prevented(self):
         """P0-2: GIL deadlock prevented via single-threaded fork assertion"""
-        from pytest_velo.plugin import assert_single_threaded
         import threading
+
+        from pytest_velo.plugin import assert_single_threaded
 
         # When single-threaded, should not raise
         assert_single_threaded()
@@ -68,8 +68,9 @@ class TestAuditTrigger_P0Security:
 
     def test_p0_3_fd_corruption_prevented(self):
         """P0-3: FD corruption prevented via atexit._clear() and os._exit()"""
-        from pytest_velo.plugin import child_process_hygiene, run_in_zygote_fork
         import inspect
+
+        from pytest_velo.plugin import child_process_hygiene, run_in_zygote_fork
 
         # child_process_hygiene exists
         assert callable(child_process_hygiene)
@@ -80,16 +81,17 @@ class TestAuditTrigger_P0Security:
 
         # Verify atexit._clear is called (via AST to avoid false positives)
         import ast
+
         tree = ast.parse(source)
-        
+
         atexit_clear_found = False
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                if hasattr(node.func, 'attr') and node.func.attr == '_clear':
-                    if hasattr(node.func, 'value'):
-                        if hasattr(node.func.value, 'id') and node.func.value.id == 'atexit':
+                if hasattr(node.func, "attr") and node.func.attr == "_clear":
+                    if hasattr(node.func, "value"):
+                        if hasattr(node.func.value, "id") and node.func.value.id == "atexit":
                             atexit_clear_found = True
-        
+
         # atexit._clear is in child_process_hygiene, which is called from run_in_zygote_fork
         hygiene_source = inspect.getsource(child_process_hygiene)
         assert "atexit._clear()" in hygiene_source
@@ -98,7 +100,7 @@ class TestAuditTrigger_P0Security:
 class TestAuditTrigger_ArchitectureClarity:
     """
     Audit Trigger 2: Architecture design unclear/ambiguous
-    
+
     Verify: All components have clear interfaces and responsibilities.
     """
 
@@ -107,16 +109,16 @@ class TestAuditTrigger_ArchitectureClarity:
         from pytest_velo import plugin
 
         # Core functions exist with docstrings
-        assert hasattr(plugin, 'velo_fork_reinit')
+        assert hasattr(plugin, "velo_fork_reinit")
         assert plugin.velo_fork_reinit.__doc__ is not None
-        
-        assert hasattr(plugin, 'register_fork_reinit')
+
+        assert hasattr(plugin, "register_fork_reinit")
         assert plugin.register_fork_reinit.__doc__ is not None
-        
-        assert hasattr(plugin, 'assert_single_threaded')
+
+        assert hasattr(plugin, "assert_single_threaded")
         assert plugin.assert_single_threaded.__doc__ is not None
-        
-        assert hasattr(plugin, 'child_process_hygiene')
+
+        assert hasattr(plugin, "child_process_hygiene")
         assert plugin.child_process_hygiene.__doc__ is not None
 
     def test_hook_responsibilities_are_clear(self):
@@ -124,8 +126,8 @@ class TestAuditTrigger_ArchitectureClarity:
         from pytest_velo.plugin import (
             pytest_addoption,
             pytest_configure,
-            pytest_unconfigure,
             pytest_runtest_protocol,
+            pytest_unconfigure,
         )
 
         # All hooks have docstrings explaining their purpose
@@ -136,8 +138,9 @@ class TestAuditTrigger_ArchitectureClarity:
 
     def test_isolation_layers_documented(self):
         """Worker isolation has clear P0/P1/P2 layers"""
-        from pytest_velo.plugin import worker_environment_isolation
         import inspect
+
+        from pytest_velo.plugin import worker_environment_isolation
 
         doc = inspect.getdoc(worker_environment_isolation)
         assert "P0" in doc, "P0 layer must be documented"
@@ -148,7 +151,7 @@ class TestAuditTrigger_ArchitectureClarity:
 class TestAuditTrigger_PerformanceRegression:
     """
     Audit Trigger 3: Performance regression > 2x baseline
-    
+
     Verify: Fork latency is within acceptable bounds.
     """
 
@@ -176,15 +179,13 @@ class TestAuditTrigger_PerformanceRegression:
         second_avg = sum(second_batch) / len(second_batch)
 
         # Second batch should not be > 2x first batch
-        assert second_avg < first_avg * 2, (
-            f"Regression detected: {first_avg:.2f}ms -> {second_avg:.2f}ms"
-        )
+        assert second_avg < first_avg * 2, f"Regression detected: {first_avg:.2f}ms -> {second_avg:.2f}ms"
 
 
 class TestAuditTrigger_CrossCuttingConcerns:
     """
     Audit Trigger 4: Cross-cutting concern affects multiple components
-    
+
     Verify: Changes are localized, not affecting other components.
     """
 
@@ -195,30 +196,30 @@ class TestAuditTrigger_CrossCuttingConcerns:
         # - docs/qa (documentation)
         # - pytest_velo/ (plugin code)
         # - src/cmd/vtest.rs (velo test command)
-        
+
         result = subprocess.run(
             ["git", "diff", "--name-only", "origin/main", "HEAD"],
             capture_output=True,
             text=True,
             cwd=Path(__file__).parents[2],
         )
-        
-        changed_files = result.stdout.strip().split('\n')
-        
+
+        changed_files = result.stdout.strip().split("\n")
+
         # Allowed production code locations
-        allowed_prod = ('pytest_velo/', 'src/cmd/vtest', 'src/lib.rs', 'Dockerfile')
+        allowed_prod = ("pytest_velo/", "src/cmd/vtest", "src/lib.rs", "Dockerfile")
         # Ignored auto-generated files
-        ignored_patterns = ('.egg-info', '__pycache__', 'pyproject.toml')
-        
+        ignored_patterns = (".egg-info", "__pycache__", "pyproject.toml")
+
         # Filter to find unexpected changes
         unexpected = []
         for f in changed_files:
             if not f:
                 continue
             # Skip docs/tests/config
-            if f.startswith(('tests/', 'docs/', '.')):
+            if f.startswith(("tests/", "docs/", ".")):
                 continue
-            if f.endswith('.md'):
+            if f.endswith(".md"):
                 continue
             # Skip auto-generated files
             if any(pat in f for pat in ignored_patterns):
@@ -226,16 +227,17 @@ class TestAuditTrigger_CrossCuttingConcerns:
             # Check if in allowed production paths
             if not any(f.startswith(a) for a in allowed_prod):
                 unexpected.append(f)
-        
+
         assert len(unexpected) == 0, f"Unexpected changes: {unexpected}"
 
     def test_pytest_velo_is_self_contained(self):
         """pytest_velo plugin doesn't depend on velo internals"""
-        from pytest_velo import plugin
         import inspect
 
+        from pytest_velo import plugin
+
         source = inspect.getsource(plugin)
-        
+
         # Should not import from velo.* or src.*
         assert "from velo" not in source.lower()
         assert "from src" not in source.lower()
@@ -245,7 +247,7 @@ class TestAuditTrigger_CrossCuttingConcerns:
 class TestAuditTrigger_PythonInternals:
     """
     Audit Trigger 5: Python internals behavior unclear
-    
+
     Verify: Python fork/threading behavior is well understood.
     """
 
@@ -267,24 +269,24 @@ class TestAuditTrigger_PythonInternals:
         """atexit._clear() behavior matches expectations"""
         import atexit
 
-        callbacks_before = len(atexit._exithandlers) if hasattr(atexit, '_exithandlers') else 0
-        
+        callbacks_before = len(atexit._exithandlers) if hasattr(atexit, "_exithandlers") else 0
+
         # After _clear, no handlers should remain
         # (We can't actually call _clear in parent as it would break tests)
         # So we verify it exists and is callable
-        assert hasattr(atexit, '_clear')
+        assert hasattr(atexit, "_clear")
         assert callable(atexit._clear)
 
     def test_os_exit_vs_sys_exit_understood(self):
         """os._exit() vs sys.exit() difference is handled correctly"""
         import sys
-        
+
         # sys.exit raises SystemExit, can be caught
         try:
             sys.exit(1)
         except SystemExit:
             pass  # Expected
-        
+
         # os._exit terminates immediately - can only test in fork
         pid = os.fork()
         if pid == 0:

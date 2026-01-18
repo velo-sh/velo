@@ -8,15 +8,11 @@ Aggressive QA: Find every corner case that breaks the system!
 Agent A's mission: If it can break, I will break it.
 """
 
-import os
-import signal
-import time
 import threading
-import pytest
-from pathlib import Path
+import time
 
-from test_harness import run_velo, assert_no_crash
-from test_phase3_harness import ZygoteTestEnv, count_zombie_processes
+from test_harness import assert_no_crash, run_velo
+from test_phase3_harness import ZygoteTestEnv
 
 
 class TestEdgeCasesLifecycle:
@@ -130,9 +126,7 @@ print("done")
 """,
             )
 
-            result = run_velo(
-                ["run", "--zygote", "thread_fork.py"], cwd=env.path, timeout=30
-            )
+            result = run_velo(["run", "--zygote", "thread_fork.py"], cwd=env.path, timeout=30)
             assert_no_crash(result)
         finally:
             env.cleanup()
@@ -314,9 +308,7 @@ class TestEdgeCaseStability:
 
             # Normal operation should still work
             env.create_script("normal.py", "print('ok')")
-            result = run_velo(
-                ["run", "--zygote", "normal.py"], cwd=env.path, timeout=10
-            )
+            result = run_velo(["run", "--zygote", "normal.py"], cwd=env.path, timeout=10)
 
             assert_no_crash(result)
             if result.success:
@@ -346,9 +338,7 @@ class TestEdgeCaseStability:
             env.create_script("check.py", "print('state_ok')")
 
             for _ in range(10):
-                result = run_velo(
-                    ["run", "--zygote", "check.py"], cwd=env.path, timeout=10
-                )
+                result = run_velo(["run", "--zygote", "check.py"], cwd=env.path, timeout=10)
                 assert_no_crash(result)
                 if result.success:
                     assert "state_ok" in result.stdout
@@ -383,18 +373,14 @@ class TestEdgeCaseSecurity:
 
             # Hit edge cases
             run_velo(["run", "--zygote", ""], cwd=env.path, timeout=5)
-            run_velo(
-                ["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5
-            )
+            run_velo(["run", "--zygote", "../../../etc/passwd"], cwd=env.path, timeout=5)
 
             # Check UID unchanged
             env.create_script("uid2.py", "import os; print(f'UID:{os.getuid()}')")
             result2 = run_velo(["run", "--zygote", "uid2.py"], cwd=env.path, timeout=10)
 
             if result1.success and result2.success:
-                assert (
-                    result1.stdout.strip() == result2.stdout.strip()
-                ), "UID changed after edge case!"
+                assert result1.stdout.strip() == result2.stdout.strip(), "UID changed after edge case!"
         finally:
             env.cleanup()
 

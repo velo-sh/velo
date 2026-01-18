@@ -1,13 +1,7 @@
 import os
-import signal
-import time
-import pytest
-import json
-import socket
-import struct
-import msgpack
-from pathlib import Path
 import sys
+import time
+from pathlib import Path
 
 
 def test_H12_signal_hygiene_direct_fork(velo_serve_fixture):
@@ -64,17 +58,16 @@ def check():
 
 if __name__ == \"__main__\":
     check()
-""".replace(
-        "REPLACE_RESULTS_PATH", str(results_file)
-    )
+""".replace("REPLACE_RESULTS_PATH", str(results_file))
 
     probe_path.write_text(probe_script)
 
     import asyncio
+
     _repo_root = os.path.abspath(str(Path(__file__).parents[3]))
     if _repo_root not in sys.path:
         sys.path.insert(0, _repo_root)
-    
+
     print(f"DEBUG: sys.path at import time: {sys.path}")
     print(f"DEBUG: CWD: {os.getcwd()}")
     try:
@@ -95,13 +88,13 @@ if __name__ == \"__main__\":
                 "version": PROTOCOL_VERSION,
                 "capabilities": [],
             }
-            
+
             # SEC-005: Forensic Auth
             if proc.forensic_secret:
                 await client.send({"type": "Auth", "secret": proc.forensic_secret})
                 auth_resp = await client.recv()
                 print(f"DEBUG: Auth Response: {auth_resp}")
-            
+
             await client.send(handshake)
             await client.recv()
 
@@ -132,9 +125,9 @@ if __name__ == \"__main__\":
         if stderr_log.exists() and stderr_log.stat().st_size > 0:
             print(f"DEBUG: Probe STDERR: {stderr_log.read_text()}")
 
-        assert (
-            results_file.exists()
-        ), f"Results file missing. Exit code: {resp.get('exit_code')}. Stderr: {stderr_log.read_text() if stderr_log.exists() else 'N/A'}"
+        assert results_file.exists(), (
+            f"Results file missing. Exit code: {resp.get('exit_code')}. Stderr: {stderr_log.read_text() if stderr_log.exists() else 'N/A'}"
+        )
         content = results_file.read_text()
         print(f"DEBUG: Results: {content}")
 

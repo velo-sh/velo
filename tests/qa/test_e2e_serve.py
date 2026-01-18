@@ -11,14 +11,12 @@ Requirements Verified:
 - CN-P0-001: Health Check Endpoint
 """
 
-import unittest
-import subprocess
-import signal
-import time
-import os
 import shutil
-import tempfile
 import socket
+import subprocess
+import tempfile
+import time
+import unittest
 from pathlib import Path
 
 

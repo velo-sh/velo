@@ -1,10 +1,11 @@
-import os
-import subprocess
-import pytest
-import time
 import json
+import os
 import signal
+import subprocess
+import time
 from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier1
@@ -92,20 +93,14 @@ def get_random():
             time.sleep(0.1)
 
         # 1. Verify we hit multiple workers
-        assert (
-            len(samples) >= 2
-        ), f"Only hit {len(samples)} workers, need at least 2 for comparison"
+        assert len(samples) >= 2, f"Only hit {len(samples)} workers, need at least 2 for comparison"
 
         # 2. Verify uniqueness across workers
         all_randoms = [s["random"] for p in samples for s in samples[p]]
-        assert len(set(all_randoms)) == len(
-            all_randoms
-        ), "Detected duplicate random values across workers!"
+        assert len(set(all_randoms)) == len(all_randoms), "Detected duplicate random values across workers!"
 
         all_secrets = [s["secrets"] for p in samples for s in samples[p]]
-        assert len(set(all_secrets)) == len(
-            all_secrets
-        ), "Detected duplicate secrets across workers!"
+        assert len(set(all_secrets)) == len(all_secrets), "Detected duplicate secrets across workers!"
 
     finally:
         # Cleanup

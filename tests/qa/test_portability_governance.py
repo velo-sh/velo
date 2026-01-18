@@ -41,14 +41,12 @@ def test_no_hardcoded_absolute_paths():
 
             if file_path.suffix in check_extensions:
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(file_path, encoding="utf-8", errors="ignore") as f:
                         for line_no, line in enumerate(f, 1):
                             if repo_root_str in line:
                                 # Special case: allow if it's a comment explaining this rule or a relative link with file://./
                                 # But actually repo_root_str is /Users/... so it shouldn't be in file://./ anyway
-                                failures.append(
-                                    f"{file_path}:{line_no}: {line.strip()}"
-                                )
+                                failures.append(f"{file_path}:{line_no}: {line.strip()}")
                 except Exception as e:
                     print(f"Warning: Could not read {file_path}: {e}")
 

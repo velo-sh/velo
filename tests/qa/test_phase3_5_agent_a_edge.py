@@ -11,14 +11,13 @@ import shutil
 import signal
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM
+from conftest_utils import T_MEDIUM, T_SHORT
 
 
 def get_velo_binary():
@@ -56,9 +55,7 @@ class TestServeCliEdgeCases:
     def test_edge_serve_002_unicode_in_app_name(self):
         """EDGE-SERVE-002: Unicode in app name should be handled."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "中文模块:应用"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "serve", "中文模块:应用"], capture_output=True, text=True, timeout=T_MEDIUM)
         # Should handle gracefully (error is OK, crash is not)
         assert result.returncode != 0 or "error" in result.stderr.lower()
 
@@ -77,17 +74,13 @@ class TestServeCliEdgeCases:
     def test_edge_serve_004_empty_module(self):
         """EDGE-SERVE-004: Empty module part."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", ":app"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "serve", ":app"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode != 0
 
     def test_edge_serve_005_empty_app(self):
         """EDGE-SERVE-005: Empty app part."""
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "main:"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "serve", "main:"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode != 0
 
     def test_edge_serve_006_shell_injection_attempt(self):
@@ -119,9 +112,7 @@ class TestWorkerPoolEdgeCases:
         assert result.returncode != 0
         # Accept both: old validation msg or clap's argument parsing error
         stderr_lower = result.stderr.lower()
-        assert any(
-            x in stderr_lower for x in ["invalid", "worker", "unexpected argument"]
-        )
+        assert any(x in stderr_lower for x in ["invalid", "worker", "unexpected argument"])
 
     def test_edge_pool_002_zero_workers(self):
         """EDGE-POOL-002: Zero workers should error or default to 1."""
@@ -147,11 +138,7 @@ class TestWorkerPoolEdgeCases:
             )
             # Should either error or cap
             # Not crash with OOM
-            assert (
-                result.returncode != 0
-                or "limit" in result.stderr.lower()
-                or "max" in result.stderr.lower()
-            )
+            assert result.returncode != 0 or "limit" in result.stderr.lower() or "max" in result.stderr.lower()
         except subprocess.TimeoutExpired:
             # Timeout is acceptable for huge worker spawn - system resources limit
             pass
@@ -226,9 +213,7 @@ class TestPortEdgeCases:
         )
         # Either auto-assign, port error, or uvicorn missing (CI env may not have uvicorn)
         stderr_lower = result.stderr.lower()
-        assert result.returncode == 0 or any(
-            x in stderr_lower for x in ["port", "missing", "dependency"]
-        )
+        assert result.returncode == 0 or any(x in stderr_lower for x in ["port", "missing", "dependency"])
 
     def test_edge_port_002_port_max(self):
         """EDGE-PORT-002: Max port 65535."""
@@ -280,9 +265,7 @@ class EdgeTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(
-            ["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True
-        )
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -331,9 +314,7 @@ class TestEdgeCaseStability:
         )
 
         # Then: normal operation should work
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode == 0
 
     def test_xr_edge_stab_002_recovery_after_unicode(self):
@@ -344,9 +325,7 @@ class TestEdgeCaseStability:
         subprocess.run([velo, "serve", "中文:应用"], capture_output=True, timeout=T_MEDIUM)
 
         # Recovery
-        result = subprocess.run(
-            [velo, "--version"], capture_output=True, text=True, timeout=T_MEDIUM
-        )
+        result = subprocess.run([velo, "--version"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode == 0
 
     def test_xr_edge_stab_003_consistent_edge_behavior(self):
@@ -355,9 +334,7 @@ class TestEdgeCaseStability:
 
         errors = []
         for _ in range(5):
-            result = subprocess.run(
-                [velo, "serve", ":app"], capture_output=True, text=True, timeout=T_SHORT
-            )
+            result = subprocess.run([velo, "serve", ":app"], capture_output=True, text=True, timeout=T_SHORT)
             errors.append(result.returncode)
 
         # All should fail the same way
@@ -396,9 +373,7 @@ class TestEdgeCaseSecurity:
 
         for s in dangerous_strings:
             try:
-                result = subprocess.run(
-                    [velo, "serve", s], capture_output=True, text=True, timeout=T_SHORT
-                )
+                result = subprocess.run([velo, "serve", s], capture_output=True, text=True, timeout=T_SHORT)
                 # Should fail safely
                 assert result.returncode != 0
             except ValueError:

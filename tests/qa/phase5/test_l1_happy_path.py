@@ -30,16 +30,17 @@ def build_bundle(project_dir: Path, velo_binary: str = "velo") -> Path:
     """Build bundle using Python builder."""
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # RFC-0018: Propagate velo binary path for graph generation
     import os
+
     env = os.environ.copy()
     env["VELO_BIN"] = velo_binary
-    
+
     # Note: build_from_project doesn't take env, but bundle_builder.py uses os.environ.get("VELO_BIN")
     # So we just set it in the process environment before calling
     os.environ["VELO_BIN"] = velo_binary
-    
+
     return build_from_project(project_dir, cache_dir / "bundle.veloc")
 
 
@@ -75,9 +76,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-""".replace(
-            "module_{i}", "module_0"
-        ).replace(
+""".replace("module_{i}", "module_0").replace(
             "for i in range(100)",
             "for m in [" + ",".join([f"module_{i}" for i in range(100)]) + "]",
         )
@@ -144,14 +143,10 @@ dependencies = ["fastapi", "uvicorn"]
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -211,18 +206,14 @@ class TestL1HappyPath:
         build_bundle(large_project, velo_binary)
 
         # Measure velo --fast cold start
-        time_fast = measure_cold_start(
-            [velo_binary, "run", "--fast", "main.py"], large_project, runs=3
-        )
+        time_fast = measure_cold_start([velo_binary, "run", "--fast", "main.py"], large_project, runs=3)
 
         # Measure CPython cold start
         time_cpython = measure_cold_start(["python", "main.py"], large_project, runs=3)
 
         speedup = time_cpython / time_fast if time_fast > 0 else 0
 
-        print(
-            f"CPython: {time_cpython:.3f}s, Velo --fast: {time_fast:.3f}s, Speedup: {speedup:.1f}x"
-        )
+        print(f"CPython: {time_cpython:.3f}s, Velo --fast: {time_fast:.3f}s, Speedup: {speedup:.1f}x")
 
         # Relaxed target: 3x (RFC targets 5x but we allow margin)
         assert speedup >= 2.0, f"Speedup only {speedup:.1f}x, expected >= 2x"
@@ -246,16 +237,19 @@ class TestL1HappyPath:
         time_warm = time.perf_counter() - start
 
         print(f"Cold: {time_cold:.3f}s, Warm: {time_warm:.3f}s")
-        
+
         # Determine threshold based on system-wide multiplier (RFC-0012)
         import os
+
         multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
         # Base threshold 1.1x, scaled by 10% of the timeout multiplier for CI stability
         threshold = 1.1 + (multiplier - 1.0) * 0.1
-        
+
         # Warm should be at least as fast as cold
         # Scaling threshold ensures stability on noisy CI neighbors while remaining strict locally
-        assert time_warm <= time_cold * threshold, f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s (env threshold: {threshold:.2f}x)"
+        assert time_warm <= time_cold * threshold, (
+            f"Warm start {time_warm:.3f}s slower than cold {time_cold:.3f}s (env threshold: {threshold:.2f}x)"
+        )
 
     @pytest.mark.happy_path
     def test_100_module_project(self, large_project, velo_binary):
@@ -280,7 +274,6 @@ class TestL1HappyPath:
         RFC-0006 Section 5: Server starts successfully
         """
         import socket
-        import threading
 
         # Build bundle using Python builder
         build_bundle(fastapi_project, velo_binary)

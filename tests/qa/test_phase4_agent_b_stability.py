@@ -33,9 +33,7 @@ def velo_analyze_available() -> bool:
     """Check if velo analyze is implemented."""
     try:
         velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "--help"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
     except:
         return False
@@ -288,14 +286,10 @@ class TestCLIParameters:
     def test_b3_6_help_shows_usage(self):
         """B3-6: --help shows usage."""
         with StableProject() as p:
-            result = subprocess.run(
-                [p.velo, "analyze", "--help"], capture_output=True, text=True
-            )
+            result = subprocess.run([p.velo, "analyze", "--help"], capture_output=True, text=True)
 
             assert result.returncode == 0
-            assert (
-                "usage" in result.stdout.lower() or "options" in result.stdout.lower()
-            )
+            assert "usage" in result.stdout.lower() or "options" in result.stdout.lower()
 
 
 # =============================================================================
@@ -322,9 +316,7 @@ class TestRegression:
     def test_b4_2_existing_velo_config_preserved(self):
         """B4-2: Existing [tool.velo] preserved by --fix."""
         with StableProject() as p:
-            p.set_pyproject(
-                deps=["requests"], velo_config={"custom_setting": "keep_me"}
-            )
+            p.set_pyproject(deps=["requests"], velo_config={"custom_setting": "keep_me"})
             p.set_file("main.py", "import requests")
             p.sync()
 
@@ -384,9 +376,7 @@ class TestRegression:
                 assert result.returncode == 0, f"Failed: {result.stderr}"
                 output_lower = result.stdout.lower()
                 # requests should appear in import analysis
-                assert (
-                    "requests" in output_lower
-                ), f"Expected 'requests' in output, got: {result.stdout}"
+                assert "requests" in output_lower, f"Expected 'requests' in output, got: {result.stdout}"
             finally:
                 shutil.rmtree(fake_runner_venv, ignore_errors=True)
 

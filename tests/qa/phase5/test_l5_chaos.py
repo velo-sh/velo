@@ -27,7 +27,6 @@ Test IDs:
 import os
 import subprocess
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -36,14 +35,10 @@ import pytest
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -111,9 +106,7 @@ print(f"mod_500 value: {{mod_500.VALUE_500}}")
         assert bundle_path.exists(), f"Build failed: {result.stderr}"
 
         # Run
-        result = run_velo(
-            ["run", "--fast", "main.py"], tmp_path, velo_binary, timeout=120
-        )
+        result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary, timeout=120)
         assert result.returncode == 0 or "ok" in result.stdout
         assert "mod_500 value: 500" in result.stdout
 

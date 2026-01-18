@@ -7,9 +7,8 @@ Tests security of MessagePack IPC protocol:
 - SEC-OPT-003: Length-prefix security limit
 """
 
-import unittest
-import struct
 import sys
+import unittest
 from pathlib import Path
 
 # Add vendor path
@@ -71,9 +70,7 @@ class TestMsgpackSecurity(unittest.TestCase):
             source = f.read()
 
         # PROTOCOL_VERSION must be defined
-        self.assertIn(
-            "PROTOCOL_VERSION = 0x01", source, "PROTOCOL_VERSION must be 0x01"
-        )
+        self.assertIn("PROTOCOL_VERSION = 0x01", source, "PROTOCOL_VERSION must be 0x01")
 
         # Version check logic must exist
         self.assertIn(
@@ -83,9 +80,7 @@ class TestMsgpackSecurity(unittest.TestCase):
         )
 
         # Clear error message on mismatch
-        self.assertIn(
-            "Protocol version mismatch", source, "Clear error on version mismatch"
-        )
+        self.assertIn("Protocol version mismatch", source, "Clear error on version mismatch")
 
     def test_sec_opt_003_length_prefix_dos(self):
         """
@@ -103,9 +98,7 @@ class TestMsgpackSecurity(unittest.TestCase):
             source = f.read()
 
         # MAX_MESSAGE_SIZE must be 1MB
-        self.assertIn(
-            "MAX_MESSAGE_SIZE = 1024 * 1024", source, "MAX_MESSAGE_SIZE must be 1MB"
-        )
+        self.assertIn("MAX_MESSAGE_SIZE = 1024 * 1024", source, "MAX_MESSAGE_SIZE must be 1MB")
 
         # Length check before reading
         self.assertIn(
@@ -115,9 +108,7 @@ class TestMsgpackSecurity(unittest.TestCase):
         )
 
         # Message too large handling
-        self.assertIn(
-            "Message too large", source, "Clear error message for oversized messages"
-        )
+        self.assertIn("Message too large", source, "Clear error message for oversized messages")
 
         # Return None on size violation (graceful rejection)
         self.assertIn("return None", source, "Must return None on security violation")

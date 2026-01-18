@@ -9,7 +9,6 @@ Why rigorous testing:
 - Must warm up before measuring
 """
 
-import os
 import shutil
 import statistics
 import subprocess
@@ -130,9 +129,7 @@ class TestRigorousPerformance:
 
             print_stats(times, "Warm Start")
 
-            assert (
-                len(times) >= 40
-            ), f"Too many failures: only {len(times)}/50 succeeded"
+            assert len(times) >= 40, f"Too many failures: only {len(times)}/50 succeeded"
 
             p95 = percentile(times, 95)
             assert p95 < 20, f"P95 warm start too slow: {p95:.1f}ms > 20ms"
@@ -159,9 +156,7 @@ class TestRigorousPerformance:
 
             print_stats(times, "Fork Latency")
 
-            assert (
-                len(times) >= 80
-            ), f"Too many failures: only {len(times)}/100 succeeded"
+            assert len(times) >= 80, f"Too many failures: only {len(times)}/100 succeeded"
 
             p99 = percentile(times, 99)
             assert p99 < 15, f"P99 fork latency too slow: {p99:.1f}ms > 15ms"
@@ -192,9 +187,7 @@ class TestRigorousPerformance:
 
                 print(f"    Max/P50 ratio: {ratio:.1f}x")
 
-                assert (
-                    ratio < 3
-                ), f"Too many outliers: Max ({max_time:.1f}ms) is {ratio:.1f}x of P50 ({p50:.1f}ms)"
+                assert ratio < 3, f"Too many outliers: Max ({max_time:.1f}ms) is {ratio:.1f}x of P50 ({p50:.1f}ms)"
 
     def test_perf_104_consistent_under_load(self):
         """
@@ -213,9 +206,7 @@ class TestRigorousPerformance:
 
             def run_one():
                 try:
-                    code, duration, stderr = env.run_timed(
-                        ["run", "--zygote", "quick.py"], timeout=10
-                    )
+                    code, duration, stderr = env.run_timed(["run", "--zygote", "quick.py"], timeout=10)
                     with lock:
                         if code == 0:
                             times.append(duration)
@@ -235,12 +226,8 @@ class TestRigorousPerformance:
             print_stats(times, "Concurrent (10)")
             print(f"    Errors: {len(errors)}")
 
-            assert (
-                len(times) >= 7
-            ), f"Too many concurrent failures: only {len(times)}/10 succeeded"
-            assert (
-                max(times) < 100
-            ), f"Concurrent max too slow: {max(times):.1f}ms > 100ms"
+            assert len(times) >= 7, f"Too many concurrent failures: only {len(times)}/10 succeeded"
+            assert max(times) < 100, f"Concurrent max too slow: {max(times):.1f}ms > 100ms"
 
     def test_perf_105_zygote_vs_normal_speedup(self):
         """
@@ -272,7 +259,7 @@ class TestRigorousPerformance:
                 zygote_avg = statistics.mean(zygote_times)
                 speedup = normal_avg / zygote_avg
 
-                print(f"\n  Zygote vs Normal Speedup:")
+                print("\n  Zygote vs Normal Speedup:")
                 print(f"    Normal avg: {normal_avg:.1f}ms")
                 print(f"    Zygote avg: {zygote_avg:.1f}ms")
                 print(f"    Speedup: {speedup:.1f}x")

@@ -10,8 +10,6 @@ Run after L0 passes.
 Following QA SOP v2.2.
 """
 
-import pytest
-
 
 class TestL1Features:
     """L1: Feature tests for Zygote Worker Integration."""
@@ -66,9 +64,9 @@ class TestL1Features:
         # Should see multiple workers responding
         # print(f"DEBUG: PIDs seen: {pids_seen}")
         # print(f"DEBUG: First 10 responses: {responses_seen[:10]}")
-        assert (
-            len(pids_seen) >= 2
-        ), f"Only {len(pids_seen)} worker(s) seen ({pids_seen}), expected distribution. Sequential trace: {responses_seen[:10]}..."
+        assert len(pids_seen) >= 2, (
+            f"Only {len(pids_seen)} worker(s) seen ({pids_seen}), expected distribution. Sequential trace: {responses_seen[:10]}..."
+        )
 
     def test_L1_3_uds_socket_created(self, velo_serve_fixture):
         """L1-3: UDS socket created and accessible.
@@ -154,10 +152,7 @@ class TestL1Features:
 
         data = response.json()
         # Either client_host or x_forwarded_for should be populated
-        has_client_info = (
-            data.get("client_host") is not None
-            or data.get("x_forwarded_for") is not None
-        )
+        has_client_info = data.get("client_host") is not None or data.get("x_forwarded_for") is not None
         assert has_client_info, f"Client info not populated: {data}"
 
     def test_L1_6_single_worker_xff(self, velo_serve_fixture):
@@ -183,7 +178,5 @@ class TestL1Features:
 
         # Headers are returned as a dict, keys might be case-sensitive depending on app
         xff = next((v for k, v in data.items() if k.lower() == "x-forwarded-for"), None)
-        assert (
-            xff is not None
-        ), f"X-Forwarded-For missing in workers=1 mode. Headers: {data}"
+        assert xff is not None, f"X-Forwarded-For missing in workers=1 mode. Headers: {data}"
         assert xff == "127.0.0.1"

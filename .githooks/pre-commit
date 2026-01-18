@@ -35,8 +35,16 @@ cargo build --quiet || {
     exit 1
 }
 
-echo "🐍 Running Python-side checks (Pre-Commit Framework)..."
-# Use the official pre-commit framework for Python-side SSOT
+echo "🐍 Auto-fixing Python (Ruff)..."
+# Safe auto-fixes only (no semantic changes)
+uv run ruff check --fix velo_zygote/ pytest_velo/ tests/ 2>/dev/null || true
+uv run ruff format velo_zygote/ pytest_velo/ tests/ 2>/dev/null || true
+
+echo "📝 Re-staging Python auto-fixed files..."
+git add -u
+
+echo "🔍 Running Python-side checks (Pre-Commit Framework)..."
+# Final validation: sync-constants, mypy, remaining lint errors
 uv run pre-commit run --all-files || {
     echo "❌ Python-side checks failed (lint/format/sync). Fix the issues above."
     exit 1

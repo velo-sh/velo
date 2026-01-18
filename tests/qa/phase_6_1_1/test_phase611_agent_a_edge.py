@@ -47,9 +47,7 @@ class TestL2EdgeCases:
 
         # Verify worker count restored (allow 1-2 during recovery)
         new_workers = proc.get_worker_pids()
-        assert (
-            len(new_workers) >= 1
-        ), f"Expected at least 1 worker after restart, got {len(new_workers)}"
+        assert len(new_workers) >= 1, f"Expected at least 1 worker after restart, got {len(new_workers)}"
 
         # Verify server still responds
         import requests
@@ -110,9 +108,7 @@ class TestL2EdgeCases:
 
         # Look for abstract sockets (start with @) or named sockets
         has_velo_socket = (
-            "@velo-worker" in unix_sockets
-            or "velo-worker" in unix_sockets
-            or f"velo-{os.getuid()}" in unix_sockets
+            "@velo-worker" in unix_sockets or "velo-worker" in unix_sockets or f"velo-{os.getuid()}" in unix_sockets
         )
         assert has_velo_socket, "No velo-worker sockets found in /proc/net/unix"
 

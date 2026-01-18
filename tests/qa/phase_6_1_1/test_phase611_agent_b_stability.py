@@ -9,17 +9,16 @@ Agent B (Stability) + Agent D (Destroyer) - Stress and chaos tests.
 Following QA SOP v2.2.
 """
 
-import pytest
-import sys
+import socket
 import sys
 import time
-import socket
 from pathlib import Path
+
+import pytest
 
 # Import CI-aware timeout constants from parent conftest
 sys.path.append(str(Path(__file__).parent.parent))
-from conftest_utils import T_SHORT, T_MEDIUM, T_LONG, get_timeout_multiplier, get_rss
-
+from conftest_utils import T_MEDIUM, T_SHORT, get_rss
 
 # Mark all tests in this module as stress tests
 pytestmark = pytest.mark.stress
@@ -41,6 +40,7 @@ class TestL3Stress:
         3. Verify >= 99% success rate
         """
         import concurrent.futures
+
         import requests
 
         proc = velo_serve_fixture.start("main:app", workers=4)
@@ -48,9 +48,7 @@ class TestL3Stress:
 
         def make_request():
             try:
-                r = requests.get(
-                    f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM
-                )
+                r = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_MEDIUM)
                 return r.status_code
             except Exception as e:
                 return str(e)
@@ -140,9 +138,7 @@ class TestL3Stress:
 
         # Verify server still responds to valid requests
         try:
-            response = requests.get(
-                f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT
-            )
+            response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
             assert response.status_code == 200, "Server blocked by slowloris"
         finally:
             # Cleanup slow connections

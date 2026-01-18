@@ -9,11 +9,8 @@ Critical: Performance is Velo's core value proposition.
 """
 
 import statistics
-import time
-import pytest
-from pathlib import Path
 
-from test_harness import run_velo, assert_no_crash
+from test_harness import run_velo
 from test_phase3_harness import ZygoteTestEnv
 
 
@@ -44,9 +41,7 @@ class TestZygotePerformance:
                 # Measure multiple runs
                 times = []
                 for _ in range(5):
-                    result = run_velo(
-                        ["run", "--zygote", "instant.py"], cwd=env.path, timeout=10
-                    )
+                    result = run_velo(["run", "--zygote", "instant.py"], cwd=env.path, timeout=10)
                     if result.success:
                         times.append(result.duration_ms)
 
@@ -141,9 +136,7 @@ print('done')
             # Measure Zygote runs
             zygote_times = []
             for _ in range(3):
-                result = run_velo(
-                    ["run", "--zygote", "with_imports.py"], cwd=env.path, timeout=10
-                )
+                result = run_velo(["run", "--zygote", "with_imports.py"], cwd=env.path, timeout=10)
                 if result.success:
                     zygote_times.append(result.duration_ms)
 

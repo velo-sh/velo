@@ -1,10 +1,10 @@
 # Agent C (Security Specialist) - Phase 6.1 Serve & Analyze
 # 安全专家 QA: "Trust nothing. Verify everything."
 
-import pytest
 import os
-import subprocess
 from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier1
@@ -38,14 +38,9 @@ class TestAgentCSecurity:
     @pytest.mark.skip(reason="Awaiting D1: Path validation implementation")
     def test_SEC_61_PATH_001_parent_directory(self, isolated_env):
         """SEC-P0-002: Parent directory traversal rejected."""
-        result = isolated_env.run_velo(
-            "serve", "--detect-in", "../../../etc", timeout=2
-        )
+        result = isolated_env.run_velo("serve", "--detect-in", "../../../etc", timeout=2)
         assert result.returncode != 0
-        assert (
-            "within project" in result.stderr.lower()
-            or "traversal" in result.stderr.lower()
-        )
+        assert "within project" in result.stderr.lower() or "traversal" in result.stderr.lower()
 
     @pytest.mark.skip(reason="Awaiting D1: Symlink validation implementation")
     def test_SEC_61_PATH_002_symlink_escape(self, isolated_env):
@@ -62,17 +57,13 @@ class TestAgentCSecurity:
     @pytest.mark.skip(reason="Awaiting D1: URL-encoded path validation")
     def test_SEC_61_PATH_003_url_encoded_traversal(self, isolated_env):
         """SEC-P0-002: URL-encoded traversal rejected."""
-        result = isolated_env.run_velo(
-            "serve", "--detect-in", "%2e%2e%2fetc", timeout=2
-        )
+        result = isolated_env.run_velo("serve", "--detect-in", "%2e%2e%2fetc", timeout=2)
         assert result.returncode != 0
 
     @pytest.mark.skip(reason="Awaiting D1: Null byte path validation")
     def test_SEC_61_PATH_004_null_byte_truncation(self, isolated_env):
         """SEC-P0-002: Null byte in path rejected."""
-        result = isolated_env.run_velo(
-            "serve", "--detect-in", "path\x00../etc", timeout=2
-        )
+        result = isolated_env.run_velo("serve", "--detect-in", "path\x00../etc", timeout=2)
         assert result.returncode != 0
 
     # ===== SEC-61-PID: PID File Security Tests =====

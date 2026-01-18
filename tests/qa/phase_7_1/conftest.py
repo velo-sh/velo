@@ -16,12 +16,8 @@ import pytest
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "tier2: RFC-0017 Tier 2 E2E tests (>100ms, <10s)"
-    )
-    config.addinivalue_line(
-        "markers", "requires_velo: Test requires velo binary execution"
-    )
+    config.addinivalue_line("markers", "tier2: RFC-0017 Tier 2 E2E tests (>100ms, <10s)")
+    config.addinivalue_line("markers", "requires_velo: Test requires velo binary execution")
 
 
 def _get_binary_arch(binary_path: str) -> str:
@@ -35,7 +31,7 @@ def _get_binary_arch(binary_path: str) -> str:
             timeout=5,
         )
         output = result.stdout.lower()
-        
+
         if "arm64" in output or "aarch64" in output:
             return "arm64"
         elif "x86_64" in output or "x86-64" in output:
@@ -49,7 +45,7 @@ def _get_binary_arch(binary_path: str) -> str:
 def _get_system_arch() -> str:
     """Get the current system architecture, handling Rosetta 2."""
     machine = platform.machine().lower()
-    
+
     # On macOS, if we're running under Rosetta, machine will be x86_64
     # but the system might actually support arm64.
     if sys.platform == "darwin" and machine == "x86_64":
@@ -71,7 +67,6 @@ def _get_system_arch() -> str:
     elif machine in ("x86_64", "amd64"):
         return "x86_64"
     return machine
-
 
 
 @pytest.fixture(scope="session")
@@ -107,8 +102,6 @@ def velo_binary(workspace_root):
     return binary_path
 
 
-
-
 @pytest.fixture(autouse=True)
 def cleanup_stale_zygote():
     """Clean up any stale Zygote sockets before each test."""
@@ -133,9 +126,9 @@ def cleanup_stale_zygote():
                 shutil.rmtree(parent, ignore_errors=True)
             except OSError:
                 pass
-    
+
     yield  # Run test
-    
+
     # Cleanup after test too
     for sock in socket_paths:
         if sock.exists():

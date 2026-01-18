@@ -1,9 +1,8 @@
 # Agent C (Security) Test Suite: RFC-0009 Static Graph
 
-import pytest
 import os
-import subprocess
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.tier1
@@ -33,13 +32,11 @@ class TestAgentCSecurity:
 
         # RFC-0009 allows fallback. Verify detection occurred.
         is_aborted = result.returncode != 0
-        is_fallback = (
-            "Falling back to normal imports" in result.stderr and result.returncode == 0
-        )
+        is_fallback = "Falling back to normal imports" in result.stderr and result.returncode == 0
 
-        assert (
-            is_aborted or is_fallback
-        ), f"Integrity check failed to trigger abort or fallback. Stderr: {result.stderr}"
+        assert is_aborted or is_fallback, (
+            f"Integrity check failed to trigger abort or fallback. Stderr: {result.stderr}"
+        )
         assert "Bundle corrupted" in result.stderr or "SecurityError" in result.stderr
 
     def test_SEC_602_path_traversal_via_search_locations(self, isolated_env):
@@ -65,12 +62,8 @@ class TestAgentCSecurity:
             # If sandboxing works, it should detect the out-of-bundle escape
             # If sandboxing works, it should detect the out-of-bundle escape OR hash mismatch
             is_aborted = result.returncode != 0
-            is_fallback = (
-                "hash mismatch" in result.stderr and "Falling back" in result.stderr
-            )
-            assert (
-                is_aborted or is_fallback
-            ), f"Security check failed. Stderr: {result.stderr}"
+            is_fallback = "hash mismatch" in result.stderr and "Falling back" in result.stderr
+            assert is_aborted or is_fallback, f"Security check failed. Stderr: {result.stderr}"
 
     def test_NEG_601_cyclic_graph_hang_protection(self, isolated_env):
         """P0-008: Verify protection against hang/recursion on maliciously cyclic graphs."""
@@ -121,7 +114,7 @@ class TestAgentCSecurity:
         # In RFC-0009, target_arch_id is at a specific offset in ImportGraph too.
         with open(bundle_path, "rb+") as f:
             f.seek(16)  # Assume header arch_id offset
-            f.write(b"\xFF")  # Invalid/Different Arch ID
+            f.write(b"\xff")  # Invalid/Different Arch ID
 
         # 3. Run - Expected: LoaderError::ArchMismatch
         # 3. Run - Expected: LoaderError::ArchMismatch OR Fallback

@@ -8,10 +8,10 @@ Verifies compliance with ADR-0010-001 mandates:
 """
 
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
+
 import pytest
 
 
@@ -31,9 +31,7 @@ def get_velo_binary():
 @pytest.fixture
 def test_env(tmp_path):
     # Setup minimal project
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname="test"\ndependencies=["fastapi", "uvicorn"]'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname="test"\ndependencies=["fastapi", "uvicorn"]')
     (tmp_path / "uv.lock").write_text("{}")
     (tmp_path / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()")
     return tmp_path
@@ -69,9 +67,7 @@ def test_json_logging_format(test_env):
 def test_rich_error_shell_injection(test_env):
     """SEC-P0-001: Verify rich error display for shell injection."""
     velo = get_velo_binary()
-    result = subprocess.run(
-        [velo, "serve", "main:app; ls"], cwd=test_env, capture_output=True, text=True
-    )
+    result = subprocess.run([velo, "serve", "main:app; ls"], cwd=test_env, capture_output=True, text=True)
 
     assert result.returncode != 0
     # Must contain rust-style error markers
@@ -130,9 +126,7 @@ def test_json_logging_contains_framework_detection(test_env):
 def test_zero_config_discovery(test_env):
     """DX-P0-002: Verify zero-config auto-discovery."""
     velo = get_velo_binary()
-    result = subprocess.run(
-        [velo, "serve", "--dry-run"], cwd=test_env, capture_output=True, text=True
-    )
+    result = subprocess.run([velo, "serve", "--dry-run"], cwd=test_env, capture_output=True, text=True)
 
     print(result.stderr)
     assert result.returncode == 0

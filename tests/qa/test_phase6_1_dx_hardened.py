@@ -1,13 +1,11 @@
-import os
-import pytest
-import subprocess
 import json
+import subprocess
 import time
-from pathlib import Path
+
+import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_SHORT, T_MEDIUM
-
+from conftest_utils import T_SHORT
 
 # QA Agent A: DX/UX & Error Fidelity
 # Requirements: RFC-0010 §3.3, §4.7.3, §4.12 (DX-01 to DX-02, CN-P0-003)
@@ -22,9 +20,7 @@ class TestPhase61DXHardened:
         """
         env = isolated_env
         # Create a file with a syntax error or a missing app detection case
-        env.create_app(
-            "main.py", "from fastapi import FastAPI\n# app = FastAPI() (Commented out)"
-        )
+        env.create_app("main.py", "from fastapi import FastAPI\n# app = FastAPI() (Commented out)")
 
         result = env.run_velo("serve", "main", timeout=T_SHORT)
 

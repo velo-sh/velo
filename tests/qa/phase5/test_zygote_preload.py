@@ -12,22 +12,18 @@ Tests:
 
 import subprocess
 import time
-import os
 from pathlib import Path
+
 import pytest
 
 
 @pytest.fixture
 def velo_binary():
     """Get path to velo binary."""
-    cargo_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
-    )
+    cargo_path = Path(__file__).parent.parent.parent.parent / "target" / "release" / "velo"
     if cargo_path.exists():
         return str(cargo_path)
-    debug_path = (
-        Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
-    )
+    debug_path = Path(__file__).parent.parent.parent.parent / "target" / "debug" / "velo"
     if debug_path.exists():
         return str(debug_path)
     return "velo"
@@ -51,9 +47,7 @@ def stop_zygote(velo_binary: str, cwd: Path):
     time.sleep(0.5)
 
 
-def measure_zygote_startup(
-    velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3
-):
+def measure_zygote_startup(velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3):
     """Measure Zygote startup time (best of N runs)."""
     times = []
     for _ in range(runs):
@@ -127,9 +121,7 @@ print(f"Import time: {elapsed*1000:.1f}ms")
             if startup_ms:
                 print(f"Zygote with preload: {startup_ms:.1f}ms")
                 # Relaxed threshold for CI (target is 300ms, allow margin)
-                assert (
-                    startup_ms < 500
-                ), f"Too slow: {startup_ms:.1f}ms, expected < 500ms"
+                assert startup_ms < 500, f"Too slow: {startup_ms:.1f}ms, expected < 500ms"
         finally:
             stop_zygote(velo_binary, tmp_path)
 
@@ -182,9 +174,7 @@ preload = ["fastapi", "pydantic", "uvicorn", "starlette"]
             if startup_ms:
                 print(f"Zygote with pyproject.toml preload: {startup_ms:.1f}ms")
                 # This will FAIL until DEV-FIX-001 is implemented
-                assert (
-                    startup_ms < 350
-                ), f"Too slow: {startup_ms:.1f}ms - DEV-FIX-001 needed!"
+                assert startup_ms < 350, f"Too slow: {startup_ms:.1f}ms - DEV-FIX-001 needed!"
         finally:
             stop_zygote(velo_binary, tmp_path)
 
