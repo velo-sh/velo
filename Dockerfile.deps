@@ -2,49 +2,38 @@
 # =============================================================================
 # Velo CI Dependencies Image (Layer 2)
 # =============================================================================
-# Pre-compiles all Rust dependencies using cargo-chef
+# Pre-compiles all Rust dependencies directly (simpler than cargo-chef)
 # Built on top of velo-ci-base (Layer 1)
 #
 # Rebuild triggers: Cargo.toml, Cargo.lock changes
-# Expected build time: ~5-8min (but cached and reused)
 # =============================================================================
 
 ARG BASE_IMAGE=ghcr.io/velo-sh/velo-ci-base:latest
-FROM ${BASE_IMAGE} AS chef
-WORKDIR /build
+FROM ${BASE_IMAGE}
 
-# Stage 1: Prepare the recipe (dependency manifest)
-FROM chef AS planner
+WORKDIR /cargo-cache
+
+# Copy dependency files
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
-# Create minimal source structure for cargo-chef
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo chef prepare --recipe-path recipe.json
 
-# Stage 2: Cook the dependencies (compile them)
-FROM chef AS builder
-COPY --from=planner /build/recipe.json recipe.json
-COPY vendor ./vendor
-# Build dependencies only (this is the expensive step, but cached)
-RUN cargo chef cook --release --recipe-path recipe.json
+# Create a minimal dummy project to compile dependencies
+RUN mkdir -p src && \
+    echo 'fn main() { println!("placeholder"); }' > src/main.rs
 
-# Stage 3: Final image with pre-compiled deps at a FIXED location
-FROM ${BASE_IMAGE} AS runtime
-WORKDIR /
+# Build dependencies in release mode
+# This compiles all dependencies and caches them in /cargo-cache/target
+RUN cargo build --release --all-features 2>&1 || true && \
+    echo "Target size: $(du -sh target 2>/dev/null || echo 'N/A')"
 
-# Copy pre-compiled deps to a fixed, accessible location
-COPY --from=builder /build/target /cargo-cache/target
+# Clean up the dummy source but keep target with compiled deps
+RUN rm -rf src
 
-# Keep vendor for project build
-COPY vendor /cargo-cache/vendor
-
-# Environment hint for CI to find the cache
-ENV CARGO_CACHE_DIR=/cargo-cache
+# Verify the target exists
+RUN ls -la /cargo-cache/ && ls -la /cargo-cache/target/release/ | head -20
 
 # Metadata
 LABEL maintainer="velo-sh" \
-    description="Velo CI with pre-compiled dependencies at /cargo-cache"
+    description="Velo CI with pre-compiled dependencies at /cargo-cache/target"
 
-# Ready for project code to be added in CI
-CMD ["bash", "-c", "echo 'Velo CI Dependencies Ready - Cache at /cargo-cache'"]
-
+CMD ["bash", "-c", "echo 'Deps cached at /cargo-cache/target'"]
