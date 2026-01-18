@@ -221,6 +221,13 @@ def pytest_runtest_makereport(item, call):
         if "ImportError" in str(report.longrepr) or "ModuleNotFoundError" in str(report.longrepr):
             return
 
+        # Skip bundling if env var is set (avoids 26GB state dir hang)
+        if os.environ.get("VELO_SKIP_FAILURE_BUNDLE") == "1":
+            sys.stderr.write(
+                f"\n[Artifacts] Skipping bundle for {item.name} (VELO_SKIP_FAILURE_BUNDLE=1)\n"
+            )
+            return
+
         sys.stderr.write(
             f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n"
         )

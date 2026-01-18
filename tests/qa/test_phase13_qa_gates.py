@@ -128,16 +128,37 @@ def test_with_threads():
 
     def test_b3_p0_3_os_exit_in_run_in_zygote_fork(self):
         """B.3 (P0-3): run_in_zygote_fork uses os._exit, not sys.exit"""
+        import ast
         import inspect
 
         from pytest_velo.plugin import run_in_zygote_fork
 
         source = inspect.getsource(run_in_zygote_fork)
-        assert "os._exit" in source, "Must use os._exit for P0-3 compliance"
-        # Ensure sys.exit is NOT used in the child path
-        assert (
-            "sys.exit" not in source
-        ), "Must NOT use sys.exit (would run atexit handlers)"
+        
+        # Parse AST to check for actual sys.exit() calls (not docstring mentions)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            # If parsing fails, fall back to simpler check
+            assert "os._exit(" in source, "Must use os._exit for P0-3 compliance"
+            return
+        
+        # Look for Call nodes to sys.exit
+        sys_exit_calls = []
+        os_exit_calls = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                # Check for sys.exit() call
+                if isinstance(node.func, ast.Attribute):
+                    if node.func.attr == "exit":
+                        if isinstance(node.func.value, ast.Name) and node.func.value.id == "sys":
+                            sys_exit_calls.append(node)
+                    elif node.func.attr == "_exit":
+                        if isinstance(node.func.value, ast.Name) and node.func.value.id == "os":
+                            os_exit_calls.append(node)
+        
+        assert len(os_exit_calls) > 0, "Must use os._exit for P0-3 compliance"
+        assert len(sys_exit_calls) == 0, "Must NOT use sys.exit (would run atexit handlers)"
 
 
 # ============================================================================
@@ -183,8 +204,8 @@ class TestGateC_Performance:
 class TestGateD_Compatibility:
     """Gate D: pytest features and xdist compatibility"""
 
-    def test_d2_xdist_compatibility_no_error(self):
-        """D.2 (P1-1): validate_xdist_compatibility logs info (no longer blocks)"""
+    def test_d2_xdist_mutual_exclusivity_validation(self):
+        """D.2 (P1-1): validate_xdist_compatibility allows velo + xdist combo"""
         from pytest_velo.plugin import validate_xdist_compatibility
 
         class MockConfig:
@@ -195,13 +216,13 @@ class TestGateD_Compatibility:
 
         config = MockConfig()
         config.option.velo = True
-        config.option.numprocesses = 4
+        config.option.numprocesses = 4  # Simulate xdist with -n flag
 
-        # Should NOT raise - xdist + velo now supported (Phase 14)
+        # Phase 14: Should NOT raise - xdist + velo now supported
         validate_xdist_compatibility(config)  # Should pass without error
 
-    def test_d2_xdist_worker_detection(self):
-        """D.2: is_xdist_worker detection function exists"""
+    def test_d2_xdist_no_error_when_no_conflict(self):
+        """D.2: xdist detection functions work correctly"""
         from pytest_velo.plugin import is_xdist_worker, is_xdist_controller
 
         # Both functions should be callable
