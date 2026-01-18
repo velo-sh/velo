@@ -141,8 +141,8 @@ run_local_ci() {
     export PYO3_PYTHON=$(uv python find 3.11)
     log_success "Toolchain aligned: PYO3_PYTHON=$PYO3_PYTHON"
     
-    # Run full CI pipeline with SSOT test paths
-    run_full_ci ".venv" "tests/qa"
+    # Run full CI pipeline with SSOT test paths from test-suites.conf
+    run_full_ci ".venv" "$TEST_PATHS_DOCKER"
 }
 
 run_quick_check() {
