@@ -154,6 +154,81 @@ impl TestReport {
     }
 }
 
+// =============================================================================
+// Helper Functions for Test Runner
+// =============================================================================
+
+/// Find the pytest_velo/runner.py script
+///
+/// Search order:
+/// 1. VELO_TEST_RUNNER environment variable (explicit override)
+/// 2. pytest_velo/runner.py relative to current directory
+/// 3. pytest_velo/runner.py relative to CARGO_MANIFEST_DIR (dev builds)
+fn find_test_runner() -> Result<PathBuf> {
+    // 1. Explicit override
+    if let Ok(path) = std::env::var("VELO_TEST_RUNNER") {
+        let p = PathBuf::from(&path);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+
+    // 2. Relative to current directory
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let runner_in_cwd = cwd.join("pytest_velo").join("runner.py");
+    if runner_in_cwd.exists() {
+        return Ok(runner_in_cwd);
+    }
+
+    // 3. Relative to cargo manifest (dev builds)
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let runner_in_manifest = PathBuf::from(manifest_dir)
+            .join("pytest_velo")
+            .join("runner.py");
+        if runner_in_manifest.exists() {
+            return Ok(runner_in_manifest);
+        }
+    }
+
+    anyhow::bail!(
+        "pytest_velo/runner.py not found. Set VELO_TEST_RUNNER env var or run from project root."
+    )
+}
+
+/// Parse JSON result from test runner stdout
+fn parse_runner_result(
+    stdout_path: &PathBuf,
+    test_id: &str,
+    elapsed: Duration,
+) -> Result<TestResult> {
+    let content = std::fs::read_to_string(stdout_path).context("Failed to read runner stdout")?;
+
+    // Find JSON in output (may have other output before/after)
+    let json_start = content.find('{');
+    let json_end = content.rfind('}');
+
+    if let (Some(start), Some(end)) = (json_start, json_end) {
+        let json_str = &content[start..=end];
+        let parsed: serde_json::Value =
+            serde_json::from_str(json_str).context("Failed to parse runner JSON")?;
+
+        return Ok(TestResult {
+            test_id: parsed["test_id"].as_str().unwrap_or(test_id).to_string(),
+            passed: parsed["passed"].as_bool().unwrap_or(false),
+            exit_code: parsed["exit_code"].as_i64().unwrap_or(1) as i32,
+            duration_ms: parsed["duration_ms"]
+                .as_f64()
+                .map(|d| d as u64)
+                .unwrap_or(elapsed.as_millis() as u64),
+            stdout: parsed["stdout"].as_str().map(String::from),
+            stderr: parsed["stderr"].as_str().map(String::from),
+        });
+    }
+
+    // No JSON found, return fallback
+    anyhow::bail!("No JSON found in runner output: {}", content)
+}
+
 /// TestCoordinator - Manages Zygote-accelerated test execution
 ///
 /// # P0 Safety Requirements (RFC-0028 §12)
@@ -220,37 +295,74 @@ impl TestCoordinator {
 
     /// Dispatch a single test to a Zygote worker
     ///
-    /// This is a placeholder - full implementation requires IPC protocol
-    /// extension to support test dispatch commands.
+    /// Uses real Zygote IPC via spawn_worker() to execute the test
+    /// through pytest_velo/runner.py.
     pub fn dispatch(&mut self, test_id: &str) -> Result<()> {
-        let start = Instant::now();
-
-        // TODO: Implement actual Zygote fork dispatch
-        // For now, this is a stub that simulates dispatch
-        //
-        // Full implementation would:
-        // 1. Send a FORK command with test_id to Zygote
-        // 2. Zygote forks a worker running the specific test
-        // 3. Worker reports result back via IPC
-        // 4. Result is sent through results_tx channel
-
-        log::debug!("Dispatching test: {}", test_id);
-
-        // Simulate result for now
-        let result = TestResult {
-            test_id: test_id.to_string(),
-            passed: true,
-            exit_code: 0,
-            duration_ms: start.elapsed().as_millis() as u64,
-            stdout: None,
-            stderr: None,
-        };
+        let result = self.dispatch_via_zygote(test_id)?;
 
         self.results_tx
             .send(result)
             .context("Failed to send test result")?;
 
         Ok(())
+    }
+
+    /// Internal: dispatch test via real Zygote fork
+    fn dispatch_via_zygote(&mut self, test_id: &str) -> Result<TestResult> {
+        let start = Instant::now();
+
+        // P1-3: Acquire worker permit for concurrency control
+        let _permit = self.pool.acquire();
+
+        log::debug!("Dispatching test via Zygote: {}", test_id);
+
+        // Find the test runner script
+        let runner_script = find_test_runner().context("Failed to find pytest_velo/runner.py")?;
+
+        // Spawn worker via Zygote
+        let handle = self
+            .zygote
+            .spawn_worker(
+                &runner_script,
+                &[test_id],
+                false, // sync mode - wait for completion
+                false, // no fast mode
+                None,  // no bundle
+                None,  // no project root override
+                None,  // no bundle size limit
+                None,  // no shm
+                &self.config,
+            )
+            .context("Failed to spawn test worker")?;
+
+        // Wait for worker (wait() already flushes stdout/stderr internally)
+        let exit_code = handle.wait().unwrap_or(1);
+
+        // Parse result from worker stdout (JSON format)
+        let result = if let Some(stdout_path) = handle.stdout_path() {
+            parse_runner_result(stdout_path, test_id, start.elapsed()).unwrap_or_else(|e| {
+                log::warn!("Failed to parse runner output: {}", e);
+                TestResult {
+                    test_id: test_id.to_string(),
+                    passed: exit_code == 0,
+                    exit_code,
+                    duration_ms: start.elapsed().as_millis() as u64,
+                    stdout: None,
+                    stderr: None,
+                }
+            })
+        } else {
+            TestResult {
+                test_id: test_id.to_string(),
+                passed: exit_code == 0,
+                exit_code,
+                duration_ms: start.elapsed().as_millis() as u64,
+                stdout: None,
+                stderr: None,
+            }
+        };
+
+        Ok(result)
     }
 
     /// Run all pending tests and collect results
