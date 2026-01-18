@@ -54,6 +54,7 @@ WORKDIR /workspace
 # Pre-fetch common Rust dependencies (speeds up first build)
 # These are the most commonly used crates in the project
 COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
 RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
     cargo fetch && \
     rm -rf src
