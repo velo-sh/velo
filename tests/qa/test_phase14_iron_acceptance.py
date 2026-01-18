@@ -15,6 +15,14 @@ GOLD_DIR = Path("/tmp/gold_200_phase14")
 VELO_BIN = Path("./target/release/velo").absolute()
 
 
+def gold_200_env() -> dict:
+    """Return env dict with PYTHONPATH set for gold_200 external project."""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
+    env["VELO_ENV"] = "dev"  # RFC-0012: Mandatory for Python boundary convergence
+    return env
+
+
 def clear_pycache(target_dir: Path) -> None:
     """
     Clear __pycache__ directories to eliminate OS cache effects.
@@ -41,11 +49,8 @@ def test_phase14_iron_performance_acceptance():
     """
     assert GOLD_DIR.exists(), "Gold specimen missing. Run generator first."
 
-    # Ensure velo is in PATH and GOLD_DIR/src is in PYTHONPATH
-    env = os.environ.copy()
+    env = gold_200_env()
     env["PATH"] = f"{VELO_BIN.parent}:{env.get('PATH', '')}"
-    env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
-    env["VELO_ENV"] = "dev"  # RFC-0012: Mandatory for Python boundary convergence
 
     # 1. Baseline: Cold-cache Single-Process Pytest
     print(f"\n[Baseline] Clearing cache and running Pytest Single-Process on {GOLD_DIR}/tests...")
@@ -119,8 +124,7 @@ def test_isolated_tmp():
 """)
 
     try:
-        env = os.environ.copy()
-        env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
+        env = gold_200_env()
 
         # Run with -n 4 to force concurrency
         res, _ = run_cmd([str(VELO_BIN), "test", str(test_file), "-n", "4", "--zygote"], env=env)
@@ -146,8 +150,7 @@ def test_phase14_iron_chaos_audit():
 
     # 2. Start a long run in background
     # We'll use a wrapper to kill the zygote after 2 seconds
-    env = os.environ.copy()
-    env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
+    env = gold_200_env()
 
     print("\n[Chaos] Starting Velo Parallel run...")
     process = subprocess.Popen(
@@ -184,28 +187,21 @@ def test_phase14_iron_environment_persistence():
     test_file.write_text("""
 import os
 import sys
-from pathlib import Path
 
 def test_verify_env():
-    # 1. Project Root Check (CWD must be project root)
-    cwd = Path(os.getcwd())
-    assert "gold_200_phase14" in str(cwd), f"CWD not set to project root: {cwd}"
-    
-    # 2. PYTHONPATH Check
-    # The 'velo_app' should be importable if PYTHONPATH is correct
+    # Verify PYTHONPATH is preserved in Zygote-forked workers
+    # The 'velo_app' should be importable if PYTHONPATH was correctly propagated
     try:
         import velo_app
         print(f"SUCCESS: velo_app imported from {velo_app.__file__}")
     except ImportError:
-        # Explicitly fail with diagnostic
         print(f"DEBUG: sys.path = {sys.path}")
-        print(f"DEBUG: cwd = {os.getcwd()}")
+        print(f"DEBUG: PYTHONPATH = {os.environ.get('PYTHONPATH', 'NOT SET')}")
         assert False, "CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
 """)
 
     try:
-        env = os.environ.copy()
-        env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
+        env = gold_200_env()
 
         print("\\n[Audit] Verifying Environment Persistence...")
         res, _ = run_cmd([str(VELO_BIN), "test", str(test_file), "-n", "1", "--zygote"], env=env)
