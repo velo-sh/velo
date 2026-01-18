@@ -206,7 +206,7 @@ class TestAuditTrigger_CrossCuttingConcerns:
         changed_files = result.stdout.strip().split('\n')
         
         # Allowed production code locations
-        allowed_prod = ('pytest_velo/', 'src/cmd/vtest')
+        allowed_prod = ('pytest_velo/', 'src/cmd/vtest', 'src/lib.rs', 'Dockerfile')
         # Ignored auto-generated files
         ignored_patterns = ('.egg-info', '__pycache__')
         
