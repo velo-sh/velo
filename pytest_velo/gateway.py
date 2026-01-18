@@ -1,3 +1,4 @@
+import os
 import socket
 from typing import Any
 
@@ -32,7 +33,6 @@ class ZygoteGateway(execnet.gateway.Gateway):
 
             if not socket_path:
                 # Ultimate fallback: standard temp location
-                import os
                 import tempfile
 
                 uid = os.getuid() if hasattr(os, "getuid") else 0
@@ -72,8 +72,9 @@ class ZygoteGateway(execnet.gateway.Gateway):
                 sock.close()
                 raise RuntimeError(f"Velo Gateway Auth failed: {auth_resp}")
 
-        # C. Request Gateway Hijack
-        transport.send({"type": "GatewayFork", "nodeid": spec.id})
+        # C. Request Gateway Hijack (pass critical env vars for worker)
+        fork_env = {"PYTHONPATH": os.environ.get("PYTHONPATH", "")}
+        transport.send({"type": "GatewayFork", "nodeid": spec.id, "env": fork_env})
         fork_resp = transport.recv()
         if not fork_resp or fork_resp.get("type") != "Ack":
             sock.close()
