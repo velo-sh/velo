@@ -23,12 +23,14 @@ import signal  # noqa: E402
 import socket  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
+import json  # noqa: E402
+import multiprocessing  # noqa: E402
 from pathlib import Path
 from typing import Any
 
 try:
     from velo_zygote.constants import PROTOCOL_VERSION
-    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState
+    from velo_zygote.lifecycle import WorkerRegistry, ZygoteState, IdlePool
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
@@ -39,7 +41,7 @@ try:
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION
-        from .lifecycle import WorkerRegistry, ZygoteState
+        from .lifecycle import WorkerRegistry, ZygoteState, IdlePool
         from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
@@ -56,7 +58,7 @@ except (ImportError, ValueError):
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
 
-        from lifecycle import WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
+        from lifecycle import WorkerRegistry, ZygoteState, IdlePool  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -192,6 +194,19 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
         except Exception as e:
             server.pending_forks.pop(worker_pid, None)
             return {"type": "Error", "message": f"Fork wait failure: {e}"}
+
+
+@router.handler("GatewayFork")
+async def handle_gateway_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
+    """
+    Phase 14 P1: Request a socket handover for an interactive execnet gateway.
+    """
+    # Validation (nodeid is useful for logging but not strictly required for the fork)
+    nodeid = cmd.get("nodeid", "default")
+    LogUtils.log(f"Zygote Gateway: Handover requested for node '{nodeid}'")
+
+    # We return a special type to trigger the handover in _handle_client_socket
+    return {"type": "GatewayAccepted"}
 
 
 @router.handler("WaitWorker")
@@ -331,6 +346,7 @@ class ZygoteServer:
         self.fork_rate_limiter = ForkRateLimiter(60, 1)  # 1 fork per sec avg, burst 60
         self.preload_complete = asyncio.Event()
         self.fork_queue: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[Any]]] = asyncio.Queue()
+        self.idle_pool = IdlePool(size=min(multiprocessing.cpu_count(), 10))
 
         self.pending_forks: dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
@@ -399,6 +415,9 @@ class ZygoteServer:
 
         # 5. Resource Monitoring
         asyncio.create_task(self._resource_guard())
+
+        # 6. Idle Pool Maintenance (P0 Optimization)
+        asyncio.create_task(self._maintain_idle_pool())
 
         self._set_state(ZygoteState.IDLE)
         LogUtils.log(f"Listening on {self.socket_path}")
@@ -551,6 +570,20 @@ class ZygoteServer:
                 token = request_context.set(req_id)
                 try:
                     response = await router.dispatch(self, msg)
+                    
+                    # Phase 14 P1 Miracle: Socket Handover
+                    if response.get("type") == "GatewayAccepted":
+                        # 1. Ack the request so the Master knows we are handing over
+                        await loop.run_in_executor(None, transport.send, {"type": "Ack", "message": "Handover sequence initiated"})
+                        
+                        # 2. Perform the fork (child takes over the socket)
+                        nodeid = msg.get("nodeid", "worker")
+                        pid = ForkHandler.handle_gateway_fork(sock, self.worker_registry, nodeid=nodeid)
+                        
+                        LogUtils.log(f"Zygote Gateway: Socket handed over to worker PID {pid} (node: {nodeid}).")
+                        # 3. Parent: Exit handling and close local side (Child already has its copy)
+                        return 
+                        
                     await loop.run_in_executor(None, transport.send, response)
                 finally:
                     request_context.reset(token)
@@ -649,11 +682,27 @@ class ZygoteServer:
                 LogUtils.log(f"Deep Warming Initialization Failed (Non-Fatal): {e}")
 
     async def _process_fork_queue(self) -> None:
+        loop = asyncio.get_event_loop()
         while True:
             cmd, future = await self.fork_queue.get()
             try:
-                # Forking is blocking, run in executor (Trap 178.11)
-                result = await asyncio.get_event_loop().run_in_executor(
+                # P0: Try using Pre-forked Idle Pool first
+                idle_worker = self.idle_pool.pop()
+                if idle_worker:
+                    pid, w_pipe = idle_worker
+                    LogUtils.debug_log(f"Activating Idle Worker {pid}")
+                    try:
+                        # Writing to pipe is fast but technically blocking
+                        await loop.run_in_executor(None, lambda: os.write(w_pipe, json.dumps(cmd).encode()))
+                        await loop.run_in_executor(None, os.close, w_pipe)
+                        future.set_result(pid)
+                        continue
+                    except Exception as e:
+                        LogUtils.log(f"Failed to activate Idle Worker {pid}: {e}")
+                        # Fallback to standard fork
+
+                # Fallback: Standard fork (blocking, run in executor)
+                result = await loop.run_in_executor(
                     None,
                     ForkHandler.handle_fork,
                     cmd,
@@ -667,6 +716,28 @@ class ZygoteServer:
                 future.set_exception(e)
             finally:
                 self.fork_queue.task_done()
+
+    async def _maintain_idle_pool(self) -> None:
+        """Background task to replenish the Pre-forked Idle Pool."""
+        loop = asyncio.get_event_loop()
+        while True:
+            if self.state == ZygoteState.READY and self.idle_pool.get_count() < self.idle_pool._target_size:
+                try:
+                    # Forking is blocking, run in executor
+                    pid, w_pipe = await loop.run_in_executor(
+                        None,
+                        ForkHandler.handle_idle_fork,
+                        self.worker_registry,
+                        self._preloaded_modules,
+                        self._warmed_server,
+                        self._warmed_config,
+                    )
+                    self.idle_pool.add(pid, w_pipe)
+                    LogUtils.debug_log(f"Replenished Idle Pool: {pid} (count: {self.idle_pool.get_count()})")
+                except Exception as e:
+                    LogUtils.log(f"Failed to replenish Idle Pool: {e}")
+            
+            await asyncio.sleep(0.5)  # Fast replenishment for xdist bursts
 
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:

@@ -9,7 +9,34 @@ import sys
 import threading
 import time
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Optional, Dict, Tuple
+from collections import deque
+import json
+
+
+class IdlePool:
+    """
+    P0: Pre-forked Idle Pool (RFC-0028 Phase 14).
+    Maintains a pool of pre-forked processes to reduce on-path latency.
+    """
+
+    def __init__(self, size: int = 10):
+        self._target_size = size
+        self.pool: deque[Tuple[int, int]] = deque()  # (pid, control_pipe_fd)
+        self.lock = threading.Lock()
+
+    def add(self, pid: int, pipe_fd: int) -> None:
+        with self.lock:
+            self.pool.append((pid, pipe_fd))
+
+    def pop(self) -> Optional[Tuple[int, int]]:
+        with self.lock:
+            if self.pool:
+                return self.pool.popleft()
+        return None
+
+    def get_count(self) -> int:
+        return len(self.pool)
 
 
 class ZygoteState(Enum):
