@@ -51,5 +51,12 @@ ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-x86_64-g
 
 WORKDIR /workspace
 
+# Pre-fetch common Rust dependencies (speeds up first build)
+# These are the most commonly used crates in the project
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
+    cargo fetch && \
+    rm -rf src
+
 # Default command: show usage
 CMD ["bash", "-c", "echo 'Velo CI Environment Ready' && echo 'Python:' && python --version && echo 'Rust:' && rustc --version && echo '' && echo 'Run CI with: cargo build --release && pytest tests/'"]

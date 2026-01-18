@@ -146,7 +146,7 @@ jobs:
               - 'run_tests.py'
 
   build:
-    name: Build (Ubuntu / 3.11)
+    name: Build (Container)
     needs: changes
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -158,31 +158,24 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/velo-sh/velo-ci-base:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify Rust Toolchain
-        run: rustup show
+      - name: Verify Environment
+        run: |
+          echo "Rust:" && rustc --version
+          echo "Python:" && python --version
+          echo "uv:" && uv --version
 
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          # Shared key enables cache sharing across jobs and branches
-          shared-key: "velo-rust-${{ runner.os }}"
-          # Cache even on failed builds to speed up fix iterations
-          cache-on-failure: true
-          # Cache both release and debug profiles
-          workspaces: |
-            . -> target
+      - name: Sync Python deps
+        run: uv sync
 
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ needs.changes.outputs.python_version }}
-          uv-version: ${{ env.UV_VERSION }}
-
-      # NOTE: cargo run --release compiles AND runs, so no separate cargo build needed
-      - name: Build + Pre-Flight Diagnostic
+      - name: Build Release
         run: cargo build --release --all-features
 
       - name: "RFC-0020: Pre-Flight Check"
@@ -211,17 +204,13 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/velo-sh/velo-ci-base:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          shared-key: "velo-rust-${{ runner.os }}"
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ needs.changes.outputs.python_version }}
-          uv-version: ${{ env.UV_VERSION }}
       - name: Run Rust tests
         run: cargo test
 
@@ -233,46 +222,32 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/velo-sh/velo-ci-base:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Rust Toolchain
-        run: rustup show
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          shared-key: "velo-rust-${{ runner.os }}"
-          cache-on-failure: true
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ needs.changes.outputs.python_version }}
-          uv-version: ${{ env.UV_VERSION }}
-      - name: Pre-Flight Diagnostic
-        run: cargo run --all-features -- debug pre-flight
-      - name: Run Clippy via Pre-Commit (SSOT)
-        run: uv run pre-commit run cargo-clippy --all-files
+      - name: Sync Python deps
+        run: uv sync
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/velo-sh/velo-ci-base:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Rust Toolchain
-        run: rustup show
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          shared-key: "velo-rust-${{ runner.os }}"
-          cache-on-failure: true
-      - name: Setup Velo
-        uses: ./.github/actions/setup-velo
-        with:
-          python-version: ${{ needs.changes.outputs.python_version }}
-          uv-version: ${{ env.UV_VERSION }}
-      - name: Run Fmt via Pre-Commit (SSOT)
-        run: uv run pre-commit run cargo-fmt --all-files
+      - name: Check Format
+        run: cargo fmt --check
 
   mypy:
     name: Mypy (Python Type Check)
