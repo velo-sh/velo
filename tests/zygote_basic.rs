@@ -149,6 +149,7 @@ mod spawn_tests {
                 None,
                 None,
                 None,
+                None, // env_overrides
                 &velo::config::VeloConfig::default(),
             )
             .unwrap();

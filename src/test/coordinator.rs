@@ -331,6 +331,7 @@ impl TestCoordinator {
                 None,  // no project root override
                 None,  // no bundle size limit
                 None,  // no shm
+                None,  // no env overrides
                 &self.config,
             )
             .context("Failed to spawn test worker")?;
