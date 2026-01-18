@@ -933,6 +933,7 @@ impl ZygoteLauncher {
         project_root: Option<PathBuf>,
         max_bundle_size: Option<u64>,
         shm_file: Option<&std::fs::File>,
+        env_overrides: Option<std::collections::HashMap<String, String>>,
         config: &VeloConfig,
     ) -> Result<WorkerHandle> {
         if !self.is_running() {
@@ -984,7 +985,16 @@ impl ZygoteLauncher {
                 bundle_path,
                 project_root,
                 max_bundle_size,
-                env: Box::new(crate::lifecycle::EnvironmentShield::new(config).compile_env()),
+                env: {
+                    let mut base_env =
+                        crate::lifecycle::EnvironmentShield::new(config).compile_env();
+                    if let Some(overrides) = env_overrides {
+                        for (k, v) in overrides {
+                            base_env.insert(k, v);
+                        }
+                    }
+                    Box::new(base_env)
+                },
                 shm_size,
                 request_id: Some(uuid::Uuid::now_v7().to_string()),
             },
@@ -1025,6 +1035,13 @@ impl ZygoteLauncher {
         _script: &Path,
         _args: &[&str],
         _async_mode: bool,
+        _fast_mode: bool,
+        _bundle_path: Option<PathBuf>,
+        _project_root: Option<PathBuf>,
+        _max_bundle_size: Option<u64>,
+        _shm_file: Option<&std::fs::File>,
+        _env_overrides: Option<std::collections::HashMap<String, String>>,
+        _config: &VeloConfig,
     ) -> Result<WorkerHandle> {
         Err(ZygoteError::NotSupported)
     }

@@ -348,6 +348,7 @@ fn try_zygote_run(
             Some(project_dir.to_path_buf()),
             max_size,
             shm_file,
+            None, // env_overrides
             config,
         ) {
             Ok(worker) => {
@@ -412,6 +413,7 @@ fn try_zygote_run(
                             Some(project_dir.to_path_buf()),
                             max_size,
                             shm_file,
+                            None, // env_overrides
                             config,
                         ) {
                             if async_enabled {

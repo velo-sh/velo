@@ -11,9 +11,15 @@ P0 Safety Requirements:
 """
 
 import atexit
+import importlib.util
+import json
 import os
+import shutil
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
@@ -184,10 +190,6 @@ def pytest_configure(config: Any) -> None:
         # P1-2: Prevent COW thrashing from .pyc writes
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # DEF-13-005 FIX: Start real Zygote via Rust CLI
-        import subprocess
-        import shutil
-        
         velo_bin = shutil.which("velo")
         
         # Get preload modules and validate they exist
@@ -196,7 +198,6 @@ def pytest_configure(config: Any) -> None:
         
         if preload:
             # Validate each preload module exists
-            import importlib.util
             for module_name in preload.split(","):
                 module_name = module_name.strip()
                 if not module_name:
@@ -210,24 +211,29 @@ def pytest_configure(config: Any) -> None:
             preload_args = ["--preload", preload]
         
         if velo_bin:
-            try:
-                # Start Zygote in daemon mode
-                result = subprocess.run(
-                    [velo_bin, "zygote", "start", "--daemon"] + preload_args,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode == 0:
-                    _zygote = {"started_by_pytest": True, "velo_bin": velo_bin}
-                else:
+            # Phase 14: Only the controller (or standalone) starts/stops the Zygote
+            if is_xdist_controller():
+                try:
+                    # Start Zygote in daemon mode
+                    result = subprocess.run(
+                        [velo_bin, "zygote", "start", "--daemon"] + preload_args,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    if result.returncode == 0:
+                        _zygote = {"started_by_pytest": True, "velo_bin": velo_bin}
+                    else:
+                        import warnings
+                        warnings.warn(f"Failed to start Zygote: {result.stderr}", RuntimeWarning)
+                        _zygote = True  # Fallback to direct fork mode
+                except Exception as e:
                     import warnings
-                    warnings.warn(f"Failed to start Zygote: {result.stderr}", RuntimeWarning)
-                    _zygote = True  # Fallback to direct fork mode
-            except Exception as e:
-                import warnings
-                warnings.warn(f"Zygote startup error: {e}", RuntimeWarning)
-                _zygote = True  # Fallback
+                    warnings.warn(f"Zygote startup error: {e}", RuntimeWarning)
+                    _zygote = True  # Fallback
+            else:
+                # xdist worker: Hot connect to shared Zygote
+                _zygote = {"started_by_pytest": False, "velo_bin": velo_bin}
         else:
             # No velo binary, use direct fork mode
             _zygote = True
@@ -318,6 +324,66 @@ def run_in_zygote_fork(item: Any) -> bool:
     # P0-2: Verify single-threaded before fork
     assert_single_threaded()
 
+    # Phase 14: Use real Zygote if available (shared among xdist workers)
+    # We use this when we are an xdist worker (started_by_pytest=False)
+    if isinstance(_zygote, dict) and "velo_bin" in _zygote:
+        velo_bin = _zygote["velo_bin"]
+        runner_script = str(Path(__file__).parent / "runner.py")
+        
+        try:
+            # Pass worker ID if present (common in xdist)
+            cmd = [velo_bin, "zygote", "fork", "--script", runner_script, "--arg", item.nodeid]
+            worker_id = os.environ.get("PYTEST_XDIST_WorkerId") or os.environ.get("VELO_WORKER_ID")
+            if worker_id:
+                cmd.extend(["--env", f"VELO_WORKER_ID={worker_id}"])
+                
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+            )
+            # RFC-0028 Phase 14: Parse JSON result from runner.py
+            try:
+                # result.stdout may contain noise, but the last line should be our JSON
+                lines = [line for line in result.stdout.strip().split("\n") if line.strip()]
+                if not lines:
+                    return False
+                    
+                # Try to find the JSON line (usually the last one)
+                test_result = None
+                for line in reversed(lines):
+                    try:
+                        test_result = json.loads(line)
+                        if isinstance(test_result, dict) and ("passed" in test_result or "error" in test_result):
+                            break
+                    except json.JSONDecodeError:
+                        continue
+                
+                if test_result:
+                    print(f"DEBUG: Found test result for {item.nodeid}, passed={test_result.get('passed')}")
+                    # Re-emit captured test output
+                    if test_result.get("stdout"):
+                        sys.stdout.write(test_result["stdout"])
+                    if test_result.get("stderr"):
+                        sys.stderr.write(test_result["stderr"])
+                    if test_result.get("error"):
+                        sys.stderr.write(f"\nZYGOTE WORKER ERROR: {test_result['error']}\n")
+                    
+                    return test_result.get("passed", False)
+                else:
+                    sys.stderr.write(f"\nZYGOTE FORK RAW STDOUT: {result.stdout}\n")
+                    sys.stderr.write(f"ZYGOTE FORK RAW STDERR: {result.stderr}\n")
+                
+            except Exception as e:
+                sys.stderr.write(f"\nFailed to parse Zygote result: {e}\n")
+                sys.stderr.write(f"RAW STDOUT: {result.stdout}\n")
+                
+            return result.returncode == 0
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Failed to execute test via Zygote: {e}. Falling back to direct fork.", RuntimeWarning)
+
+    # Fallback/Phase 1 Legacy: Direct Fork Mode
     pid = os.fork()
 
     if pid == 0:
@@ -333,8 +399,6 @@ def run_in_zygote_fork(item: Any) -> bool:
 
         try:
             # P1-3: Proper pytest integration
-            # We need to run setup, call, and teardown in the child phase
-            # For real pytest items, use ihook; for mocks, use runtest() directly.
             if hasattr(item, "ihook"):
                 ihook = item.ihook
                 ihook.pytest_runtest_setup(item=item)

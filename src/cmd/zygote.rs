@@ -25,6 +25,9 @@ pub enum ZygoteSubcommand {
         /// Comma-separated list of modules to preload
         #[arg(long)]
         preload: Option<String>,
+        /// Start as a background daemon
+        #[arg(long, default_value_t = false)]
+        daemon: bool,
     },
     /// Stop Zygote daemon
     Stop,
@@ -32,6 +35,21 @@ pub enum ZygoteSubcommand {
     Status,
     /// Generate preload config from profile data
     AutoConfig,
+    /// Fork a new worker from Zygote
+    Fork {
+        /// Script path to execute
+        #[arg(long)]
+        script: String,
+        /// Arguments to pass to the script
+        #[arg(long)]
+        arg: Vec<String>,
+        /// Whether to return immediately
+        #[arg(long, default_value_t = false)]
+        async_mode: bool,
+        /// Environment variables to set (NAME=VALUE)
+        #[arg(long)]
+        env: Vec<String>,
+    },
 }
 
 /// Handle 'velo zygote' command (entry point from cli.rs)
@@ -42,7 +60,9 @@ pub fn cmd_zygote(args: &[String]) -> Result<()> {
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
     match cmd.command {
-        ZygoteSubcommand::Start { preload } => cmd_zygote_start(&project_dir, preload),
+        ZygoteSubcommand::Start { preload, daemon } => {
+            cmd_zygote_start(&project_dir, preload, daemon)
+        }
         ZygoteSubcommand::Stop => {
             cmd_zygote_stop();
             Ok(())
@@ -52,11 +72,86 @@ pub fn cmd_zygote(args: &[String]) -> Result<()> {
             Ok(())
         }
         ZygoteSubcommand::AutoConfig => cmd_zygote_auto_config(),
+        ZygoteSubcommand::Fork {
+            script,
+            arg,
+            async_mode,
+            env,
+        } => cmd_zygote_fork(&project_dir, &script, &arg, &env, async_mode),
     }
 }
 
+fn cmd_zygote_fork(
+    project_dir: &Path,
+    script: &str,
+    args: &[String],
+    env_vars: &[String],
+    async_mode: bool,
+) -> Result<()> {
+    let socket_path = zygote::core_ipc::default_socket_path();
+    if !socket_path.exists() {
+        bail!("Zygote is not running. Start it with 'velo zygote start'");
+    }
+
+    let config = crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
+    let mut launcher = ZygoteLauncher::new(socket_path);
+
+    let script_path = Path::new(script);
+    let args_slice: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    let mut env_overrides = std::collections::HashMap::new();
+    for e in env_vars {
+        if let Some((k, v)) = e.split_once('=') {
+            env_overrides.insert(k.to_string(), v.to_string());
+        }
+    }
+
+    let handle = launcher.spawn_worker(
+        script_path,
+        &args_slice,
+        async_mode,
+        false, // fast_mode
+        None,  // bundle_path
+        Some(project_dir.to_path_buf()),
+        None, // max_bundle_size
+        None, // shm_file
+        Some(env_overrides),
+        &config,
+    )?;
+
+    if async_mode {
+        println!("🚀 Forked worker PID: {}", handle.pid());
+    } else {
+        match handle.wait() {
+            Ok(code) => {
+                // Read and re-emit worker output
+                if let Some(stdout_path) = handle.stdout_path()
+                    && let Ok(content) = std::fs::read_to_string(stdout_path)
+                {
+                    print!("{}", content);
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                }
+                if let Some(stderr_path) = handle.stderr_path()
+                    && let Ok(content) = std::fs::read_to_string(stderr_path)
+                {
+                    eprint!("{}", content);
+                    let _ = std::io::Write::flush(&mut std::io::stderr());
+                }
+
+                // P0-3: Correctly propagate exit code
+                std::process::exit(code);
+            }
+            Err(e) => {
+                bail!("Worker failed: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(unix)]
-fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<()> {
+fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: bool) -> Result<()> {
     let python_path = python::detect_python(project_dir)?;
     let socket_path = zygote::core_ipc::default_socket_path();
 
@@ -76,7 +171,7 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>) -> Result<(
             crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
 
         println!("🚀 Starting Zygote daemon...");
-        match launcher.start(&preload, None, true, &config) {
+        match launcher.start(&preload, None, daemon, &config) {
             Ok(()) => {
                 log::info!(
                     "[ZYGOTE] status=started socket={} preload={:?}",
@@ -226,7 +321,7 @@ mod tests {
     fn test_parse_start_subcommand() {
         let cmd = ZygoteCmd::try_parse_from(["zygote", "start"]).unwrap();
         match cmd.command {
-            ZygoteSubcommand::Start { preload } => {
+            ZygoteSubcommand::Start { preload, .. } => {
                 assert!(preload.is_none());
             }
             _ => panic!("Expected Start subcommand"),
@@ -238,7 +333,7 @@ mod tests {
         let cmd =
             ZygoteCmd::try_parse_from(["zygote", "start", "--preload", "fastapi,uvicorn"]).unwrap();
         match cmd.command {
-            ZygoteSubcommand::Start { preload } => {
+            ZygoteSubcommand::Start { preload, .. } => {
                 assert_eq!(preload.unwrap(), "fastapi,uvicorn");
             }
             _ => panic!("Expected Start subcommand"),

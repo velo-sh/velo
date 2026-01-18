@@ -69,6 +69,7 @@ with open('{}', 'w') as f:
                 None,
                 None,
                 None,
+                None, // env_overrides
                 &VeloConfig::default(),
             )
             .unwrap();
@@ -206,6 +207,7 @@ with open('{}', 'w') as f:
                 None,
                 None,
                 None,
+                None, // env_overrides
                 &VeloConfig::default(),
             )
             .unwrap();

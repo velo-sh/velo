@@ -169,13 +169,11 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
         server.app_name = Path(script_path).name
 
     try:
-        worker_pid = ForkHandler.handle_fork(
-            cmd,
-            server.worker_registry,
-            server._preloaded_modules,
-            server._warmed_server,
-            server._warmed_config,
-        )
+        # RFC-0028 Phase 14: Use Fork Queue (Connection Pooling)
+        # This prevents concurrent fork races and avoids blocking the event loop.
+        worker_pid_future: asyncio.Future[int] = asyncio.Future()
+        await server.fork_queue.put((cmd, worker_pid_future))
+        worker_pid = await worker_pid_future
     except Exception as e:
         return {"type": "Error", "message": f"Fork Execution Failed: {e}"}
 
