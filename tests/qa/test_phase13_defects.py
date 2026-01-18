@@ -6,8 +6,10 @@ They are marked with @pytest.mark.xfail to track known issues.
 """
 
 import os
+import subprocess
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -23,9 +25,8 @@ class TestDefect_SilentReinitFailure:
     This is a P1 bug that can cause silent data corruption.
     """
 
-    @pytest.mark.xfail(reason="P1 BUG: Reinit failures are silently swallowed")
     def test_reinit_failure_should_raise_or_log(self):
-        """Reinit failure should either raise or at minimum log a warning"""
+        """Reinit failure should emit a RuntimeWarning (FIXED by dev)"""
         from pytest_velo.plugin import (
             register_fork_reinit,
             velo_fork_reinit,
@@ -41,9 +42,8 @@ class TestDefect_SilentReinitFailure:
         register_fork_reinit(failing_callback)
 
         try:
-            # BUG: This should raise or log, but it silently swallows the error
-            # Expected: RuntimeError or at minimum a warning in stderr
-            with pytest.raises(RuntimeError):
+            # FIXED: Dev now emits RuntimeWarning instead of silently swallowing
+            with pytest.warns(RuntimeWarning, match="callback failed"):
                 velo_fork_reinit(None)
         finally:
             _fork_reinit_callbacks.clear()
@@ -92,9 +92,8 @@ class TestDefect_NoErrorOnModulePreloadFailure:
     is either swallowed or causes cryptic failures later.
     """
 
-    @pytest.mark.xfail(reason="P2 BUG: Preload failure handling not implemented")
     def test_preload_nonexistent_module_should_fail_fast(self):
-        """Preloading a nonexistent module should fail immediately with clear error"""
+        """Preloading a nonexistent module should fail immediately (FIXED)"""
         import subprocess
 
         result = subprocess.run(
