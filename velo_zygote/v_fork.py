@@ -6,7 +6,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple, Dict
 
 try:
     from .lifecycle import WorkerRegistry, post_fork_reinit
@@ -59,6 +59,119 @@ class InboundSharedMemory:
 
 class ForkHandler:
     """Handles the forking logic and child process environment setup."""
+
+    @staticmethod
+    def handle_gateway_fork(
+        sock: Any,
+        worker_registry: WorkerRegistry,
+        nodeid: str = "worker",
+    ) -> int:
+        """
+        Phase 14 P1: Fork a gateway worker that takes over the socket.
+        """
+        pid = os.fork()
+        if pid == 0:
+            # CHILD: Take over socket
+            try:
+                # 1. Cord-Cutting
+                sock_fd = sock.fileno()
+                # Ensure the socket is in blocking mode for execnet
+                sock.setblocking(True)
+                
+                post_fork_reinit(keep_fds={0, 1, 2, sock_fd})
+
+                # RFC-0029: Mark this as a miracle worker to bypass redundant forks
+                os.environ["VELO_MIRACLE_WORKER"] = "1"
+                os.environ["VELO_IS_ZYGOTE"] = "1"
+
+                # 2. Run execnet bootstrap
+                ForkHandler._run_execnet_gateway(sock, nodeid=nodeid)
+                os._exit(0)
+            except Exception as e:
+                try:
+                    LogUtils.log(f"Gateway Worker Error: {e}")
+                    traceback.print_exc()
+                except Exception:
+                    pass
+                os._exit(1)
+        else:
+            # PARENT: Register worker
+            worker_registry.add(pid)
+            return pid
+
+    @staticmethod
+    def _run_execnet_gateway(sock: Any, nodeid: str = "worker"):
+        """
+        Bootstraps the execnet worker logic on the provided socket.
+        """
+        import execnet.gateway_base
+        from execnet.gateway_socket import SocketIO
+        
+        # RFC-0029: The Zygote worker becomes the execnet gateway directly.
+        # This eliminates the need for an intermediate 'python' process.
+        io = SocketIO(sock, execmodel=execnet.gateway_base.get_execmodel("thread"))
+        execnet.gateway_base.serve(io, nodeid)
+
+    @staticmethod
+    def handle_idle_fork(
+        worker_registry: WorkerRegistry,
+        preloaded_modules: list[str],
+        warmed_server: Any = None,
+        warmed_config: Any = None,
+    ) -> Tuple[int, int]:
+        """
+        P0: Pre-fork an idle worker.
+        Returns (pid, control_pipe_write_fd).
+        """
+        import json
+
+        # 0. Setup Control Pipe
+        r, w = os.pipe()
+
+        pid = os.fork()
+        if pid == 0:  # Child (Idle Worker)
+            os.close(w)
+            try:
+                # 1. Cord-Cutting
+                post_fork_reinit(keep_fds={0, 1, 2, r})
+
+                # 2. Block until task arrives
+                LogUtils.log(f"Idle Worker {os.getpid()} waiting for task...")
+                task_data = os.read(r, 65536)
+                if not task_data:
+                    os._exit(0)
+
+                cmd = json.loads(task_data.decode())
+                os.close(r)
+
+                # 3. Standard Child Execution
+                exit_code = ForkHandler._child_process(
+                    script_path=cmd.get("script_path", ""),
+                    args=cmd.get("args", []),
+                    env=cmd.get("env", {}),
+                    stdout_path=cmd.get("stdout_path"),
+                    stderr_path=cmd.get("stderr_path"),
+                    exit_code_path=cmd.get("exit_code_path"),
+                    fast_mode=cmd.get("fast_mode", False),
+                    bundle_path=cmd.get("bundle_path"),
+                    project_root=cmd.get("project_root"),
+                    max_bundle_size=cmd.get("max_bundle_size"),
+                    worker_ttl=cmd.get("worker_ttl", 3600),
+                    shm_fd=cmd.get("shm_fd"),
+                    shm_size=cmd.get("shm_size"),
+                    warmed_server=warmed_server,
+                    warmed_config=warmed_config,
+                )
+                os._exit(exit_code)
+            except Exception as e:
+                LogUtils.log(f"Idle Worker Error: {e}")
+                os._exit(1)
+
+        else:  # Parent (Zygote)
+            os.close(r)
+            worker_registry.add(pid, metadata={"type": "idle"})
+            return pid, w
+
 
     @staticmethod
     def handle_fork(

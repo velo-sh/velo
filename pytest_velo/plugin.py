@@ -25,6 +25,14 @@ from typing import Any
 
 import pytest
 
+# Phase 14 P1 Miracle Imports
+try:
+    from velo_zygote.transport_sync import ZygoteTransport
+    from .gateway import ZygoteGateway
+except ImportError:
+    ZygoteTransport = None  # type: ignore
+    ZygoteGateway = None  # type: ignore
+
 # =============================================================================
 # Global State
 # =============================================================================
@@ -179,6 +187,56 @@ def pytest_addoption(parser: Any) -> None:
     )
 
 
+
+def hijack_execnet() -> None:
+    """
+    Phase 14 P1: Hijack execnet node creation to use Zygote Gateway.
+    This eliminates 'double bootstrap' by forking xdist workers directly from Zygote.
+    """
+    try:
+        import execnet.multi
+        from .gateway import ZygoteGateway
+        
+        # Prevent double hijacking
+        if getattr(execnet.multi.Group, "_velo_hijacked", False):
+            return
+
+        original_makegateway = execnet.multi.Group.makegateway
+
+        def velo_makegateway(self: Any, spec: Any = None) -> Any:
+            if not spec:
+                spec = self.defaultspec
+            if not isinstance(spec, execnet.XSpec):
+                spec = execnet.XSpec(spec)
+                
+            # MIRACLE: Hijack local popen nodes to use Zygote
+            if spec.popen:
+                # We use the ZygoteGateway which handles the handover
+                # It will automatically find the socket and secret via SSOT
+                self.allocate_id(spec)
+                try:
+                    # Capture secret from env (SSOT: VELO_ZYGOTE_AUTH)
+                    secret = os.environ.get("VELO_ZYGOTE_AUTH")
+                    gw = ZygoteGateway(spec, secret=secret)
+                    self._register(gw)
+                    return gw
+                except Exception as e:
+                    import warnings
+                    warnings.warn(f"Zygote Gateway failed: {e}. Falling back to standard popen.", RuntimeWarning)
+            
+            return original_makegateway(self, spec)
+
+        execnet.multi.Group.makegateway = velo_makegateway
+        execnet.multi.Group._velo_hijacked = True # type: ignore
+        
+        # Also patch the global makegateway for any direct calls
+        import execnet
+        execnet.makegateway = velo_makegateway
+        
+    except ImportError:
+        pass  # xdist/execnet not installed
+
+
 def pytest_configure(config: Any) -> None:
     """Start Zygote server if --velo is enabled."""
     global _zygote
@@ -213,6 +271,14 @@ def pytest_configure(config: Any) -> None:
         if velo_bin:
             # Phase 14: Only the controller (or standalone) starts/stops the Zygote
             if is_xdist_controller():
+                # SEC-005: Generate forensic secret for this session if not provided
+                if not os.environ.get("VELO_ZYGOTE_AUTH"):
+                    import uuid
+                    os.environ["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
+                
+                # P1 Miracle: Hijack execnet node creation
+                hijack_execnet()
+                
                 try:
                     # Start Zygote in daemon mode
                     result = subprocess.run(
@@ -439,6 +505,10 @@ def pytest_runtest_protocol(item: Any, nextitem: Any) -> bool | None:
     """
     if not getattr(item.config.option, "velo", False) or not _zygote:
         return None  # Fallback to default pytest behavior
+
+    # Phase 14 P1 Miracle Skip: If we are already in a miracle fork, just run locally.
+    if os.environ.get("VELO_MIRACLE_WORKER") == "1":
+        return None
 
     from _pytest.runner import CallInfo, pytest_runtest_makereport
     from _pytest import timing
