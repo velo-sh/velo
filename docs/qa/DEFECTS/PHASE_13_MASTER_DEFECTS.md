@@ -1,14 +1,14 @@
 # Phase 13 Master Defect Report
 
 **QA Verdict:** CONDITIONALLY APPROVED (P0 bugs require resolution)
-**Build Hash:** 89b8338
+**Build Hash:** 5193370
 **Date:** 2026-01-18
 
 ## Summary
 
 | Priority | Open | Fixed | Verified | Won't Fix |
 |:---:|:---:|:---:|:---:|:---:|
-| P0 | **2** | 0 | 0 | 0 |
+| P0 | **3** | 0 | 0 | 0 |
 | P1 | **1** | 2 | 2 | 0 |
 | P2 | 0 | 1 | 1 | 0 |
 
@@ -18,6 +18,7 @@
 |:---|:---|:---|
 | [DEF-13-004](DEF-13-004-Test-Result-Not-Communicated.md) | Test result not communicated to pytest | **OPEN** |
 | [DEF-13-005](DEF-13-005-ZygoteServer-Placeholder.md) | ZygoteServer not implemented (placeholder) | **OPEN** |
+| [DEF-13-006](DEF-13-006-Velo-Flag-Not-Registered.md) | --velo flag not registered as pytest plugin | **OPEN** |
 
 ## P1 Issues
 
