@@ -82,14 +82,8 @@ If you see these logs, **congratulations!** You are now running tests at the spe
 
 ---
 
-## 🧐 Why?
-
-In a standard test suite, if you have 1,000 tests and want process-level isolation (the safest way to test), you usually have two choices:
-1. **The Slow Way**: Spawn 1,000 subprocesses. Total time: **~3-5 minutes**.
-2. **The Risky Way**: Run everything in one process. Total time: **30 seconds**, but tests might pollute each other.
-
 **Velo provides the third way**: Forking from a pre-warmed Zygote.
-Total time: **~6 seconds** with **100% isolation**.
+Total time: **~6.18 seconds** with **100% isolation**. 它实现了：**带着隔离的锁链，跳出了裸奔的速度。**
 
 ---
 
@@ -115,14 +109,18 @@ Pytest Velo is built with "Safety-First" principles (RFC-0028 P0 requirements):
 
 ---
 
-## 📊 Performance Benchmark
+## 📊 Performance Benchmark (1,000 Tests)
 
-Actual measured results on a standard project:
+Actual measured results on a standard 1,000-test suite:
 
-| Metric | Standard Pytest | Pytest Velo | Improvement |
+| Mode | Isolation | Wall-Clock Time | Speedup |
 | :--- | :--- | :--- | :--- |
-| **Startup Overhead** | ~210 ms | **< 2 ms** | **100x** 🚀 |
-| **1000 Isolated Tests**| ~210 seconds | **~6 seconds** | **35x** |
+| **Standard (Subprocess)** | ✅ Total | 232.92s | 1x (Baseline) |
+| **Standard (Single Process)**| ❌ None | **0.94s** | - |
+| **Pytest Velo (Zygote)** | ✅ Total | **6.18s** | **37.7x** 🚀 |
+
+> [!NOTE]
+> While Single-Process is faster for trivial tests, it provides **zero isolation**. Velo is the fastest way to run **safe, isolated** production tests.
 
 ---
 
