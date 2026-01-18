@@ -71,11 +71,13 @@ def test_guardian_basic_health_check():
     """
     # Prefer release build for faster startup, fallback to debug
     velo_bin = "./target/release/velo" if Path("./target/release/velo").exists() else "./target/debug/velo"
-    
+
     # Start Zygote and wait for it to be ready
     result = subprocess.run(
         [velo_bin, "zygote", "start", "--daemon"],
-        capture_output=True, text=True, timeout=30  # Increased timeout for debug build
+        capture_output=True,
+        text=True,
+        timeout=30,  # Increased timeout for debug build
     )
     if result.returncode != 0:
         print(f"Zygote start failed: {result.stderr}")
@@ -86,4 +88,3 @@ def test_guardian_basic_health_check():
 
     pid = get_zygote_pid()
     assert pid is not None, "Should be able to extract PID from status"
-

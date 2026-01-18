@@ -10,8 +10,9 @@ from execnet.gateway_socket import SocketIO
 try:
     from velo_zygote.paths import VeloPaths
     from velo_zygote.transport_sync import ZygoteTransport
-except (ImportError, ValueError):
+except (ImportError, ValueError) as e:
     # Fallback/Diagnostic
+    print(f"!!! [Velo] Gateway Import Error: {e}")
     ZygoteTransport = None  # type: ignore
     VeloPaths = None  # type: ignore
 
@@ -59,21 +60,31 @@ class ZygoteGateway(execnet.gateway.Gateway):
             # Try to read secret from .auth file (SEC-005 parity with Rust)
             try:
                 from pathlib import Path
+
                 auth_path = Path(socket_path).with_suffix(".auth")
                 if auth_path.exists():
                     secret = auth_path.read_text().strip()
             except Exception:
                 pass  # No auth file or unreadable - proceed without auth
 
-        if secret:
-            transport.send({"type": "Auth", "secret": secret})
-            auth_resp = transport.recv()
-            if not auth_resp or auth_resp.get("type") != "Ack":
-                sock.close()
-                raise RuntimeError(f"Velo Gateway Auth failed: {auth_resp}")
+        transport.send({"type": "Auth", "secret": secret})
+        auth_resp = transport.recv()
+        if not auth_resp or auth_resp.get("type") != "Ack":
+            sock.close()
+            raise RuntimeError(f"Velo Gateway Auth failed: {auth_resp}")
 
         # C. Request Gateway Hijack (pass critical env vars for worker)
-        fork_env = {"PYTHONPATH": os.environ.get("PYTHONPATH", "")}
+        # RFC-0028: Propagate project root and PYTHONPATH to miracle workers
+        fork_env = {
+            "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
+            "VELO_ZYGOTE_SOCKET": os.environ.get("VELO_ZYGOTE_SOCKET", ""),
+            "VELO_ZYGOTE_AUTH": os.environ.get("VELO_ZYGOTE_AUTH", ""),
+            "VELO_MIRACLE_WORKER": "1",
+            "VELO_ENV": os.environ.get("VELO_ENV", "dev"),
+            # RFC-0029: Propagate xdist worker ID to prevent recursive fork bomb
+            "PYTEST_XDIST_WORKER": os.environ.get("PYTEST_XDIST_WORKER", ""),
+            "PYTEST_XDIST_WORKER_ID": os.environ.get("PYTEST_XDIST_WORKER_ID", ""),
+        }
         transport.send({"type": "GatewayFork", "nodeid": spec.id, "env": fork_env})
         fork_resp = transport.recv()
         if not fork_resp or fork_resp.get("type") != "Ack":

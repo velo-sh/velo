@@ -277,9 +277,28 @@ def hook_telemetry(**kwargs: Any) -> None:
     pass
 
 
+def hook_isolation(**kwargs: Any) -> None:
+    """P0: Isolated TMPDIR per worker."""
+    worker_pid = os.getpid()
+    worker_base = f"/tmp/velo-worker-{worker_pid}"
+
+    # P0: Isolated TMPDIR - prevents temp file collisions
+    worker_tmp = f"{worker_base}/tmp"
+    os.makedirs(worker_tmp, exist_ok=True)
+    os.environ["TMPDIR"] = worker_tmp
+    os.environ["TMP"] = worker_tmp
+    os.environ["TEMP"] = worker_tmp
+
+    # P1: Socket namespace isolation
+    os.environ["VELO_WORKER_ID"] = str(worker_pid)
+    os.environ["VELO_WORKER_SOCKET_DIR"] = f"{worker_base}/sockets"
+    os.makedirs(f"{worker_base}/sockets", exist_ok=True)
+
+
 reinit_hooks.register(hook_security)
 reinit_hooks.register(hook_computing)
 reinit_hooks.register(hook_telemetry)
+reinit_hooks.register(hook_isolation)
 
 
 def post_fork_reinit(keep_fds: set[int] | None = None) -> None:

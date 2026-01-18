@@ -95,11 +95,9 @@ def test_verify_zygote_presence():
     assert True, "Test executed in Zygote-forked worker successfully"
 """)
 
-
         # Use velo test binary directly instead of --velo flag
         result = subprocess.run(
-            ["./target/release/velo", "test", test_file, "-n", "2", "--zygote", "-v"],
-            capture_output=True, text=True
+            ["./target/release/velo", "test", test_file, "-n", "2", "--zygote", "-v"], capture_output=True, text=True
         )
         if result.returncode != 0:
             print(result.stdout)
@@ -111,4 +109,3 @@ def test_verify_zygote_presence():
     finally:
         os.unlink(test_file)
         subprocess.run(["./target/release/velo", "zygote", "stop"], capture_output=True)
-

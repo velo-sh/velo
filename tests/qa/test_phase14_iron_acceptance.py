@@ -20,6 +20,9 @@ def gold_200_env() -> dict:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
     env["VELO_ENV"] = "dev"  # RFC-0012: Mandatory for Python boundary convergence
+    # Remove inherited Zygote session vars so inner velo test can start its own Zygote
+    env.pop("VELO_ZYGOTE_SOCKET", None)
+    env.pop("VELO_ZYGOTE_AUTH", None)
     return env
 
 
@@ -46,7 +49,7 @@ def run_cmd(cmd, env=None):
 def test_phase14_iron_performance_acceptance():
     """
     P0 Performance Acceptance: Velo Miracle MUST beat xdist-only (fair parallel comparison).
-    
+
     Note: Single-process pytest is faster for trivial tests because xdist has inherent overhead.
     The real value of Velo Miracle is being faster than standard xdist.
     """
@@ -58,17 +61,46 @@ def test_phase14_iron_performance_acceptance():
     # 0. Pre-start Zygote (don't count startup in performance)
     # Use explicit socket path to bypass pytest-velo session isolation
     import tempfile
-    uid = os.getuid() if hasattr(os, 'getuid') else 0
-    socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote-v01.sock"
-    
+
+    from velo_zygote.paths import VeloPaths
+
+    try:
+        vp_socket = str(VeloPaths.zygote_socket())
+        print(f"[Debug] VeloPaths.zygote_socket() = {vp_socket}")
+    except Exception as e:
+        print(f"[Debug] VeloPaths failed: {e}")
+        vp_socket = None
+
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    socket_path = vp_socket or f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote-v01.sock"
+
     print("\n[Setup] Pre-starting Zygote for warm performance test...")
-    subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
-    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True)
-    time.sleep(1.0)  # Allow Zygote to fully initialize
-    
-    # Pass socket path to all velo test commands (bypass session isolation)
+    # RFC-0012: Explicitly set socket path for pre-started Zygote
     env["VELO_ZYGOTE_SOCKET"] = socket_path
+
+    subprocess.run([str(VELO_BIN), "zygote", "stop"], env=env, capture_output=True)
+    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], env=env, capture_output=True)
+    time.sleep(1.0)  # Allow Zygote to fully initialize
+
+    # Capture the secret from the newly started Zygote
+    auth_path = Path(socket_path).with_suffix(".auth")
+    if auth_path.exists():
+        env["VELO_ZYGOTE_AUTH"] = auth_path.read_text().strip()
+    else:
+        # Fallback to .auth in standard location if explicit didn't work
+        try:
+            from velo_zygote.paths import VeloPaths
+
+            auth_path = Path(VeloPaths.zygote_socket()).with_suffix(".auth")
+            if auth_path.exists():
+                env["VELO_ZYGOTE_SOCKET"] = str(auth_path.with_suffix(".sock"))
+                env["VELO_ZYGOTE_AUTH"] = auth_path.read_text().strip()
+        except:
+            pass
+
     print(f"[Debug] VELO_ZYGOTE_SOCKET={socket_path}")
+    print(f"[Debug] VELO_ZYGOTE_AUTH={'***' if env.get('VELO_ZYGOTE_AUTH') else 'None'}")
+    print(f"[Debug] VELO_ZYGOTE_AUTH_VAL={env.get('VELO_ZYGOTE_AUTH')}")
 
     # 1. Warmup run (stabilize caches and JIT)
     print("[Warmup] Running warmup iteration...")
@@ -83,6 +115,8 @@ def test_phase14_iron_performance_acceptance():
         print(f"STDOUT: {res_target.stdout}")
         print(f"STDERR: {res_target.stderr}")
     assert res_target.returncode == 0
+    print(f"STDOUT: {res_target.stdout}")
+    print(f"STDERR: {res_target.stderr}")
     print(f"🚀 Velo Miracle: {dur_target:.3f}s")
 
     # 3. BASELINE: xdist-only (cold workers, -n 4)
@@ -140,6 +174,7 @@ def test_isolated_tmp():
 
     try:
         env = gold_200_env()
+        env["PATH"] = f"{VELO_BIN.parent}:{env.get('PATH', '')}"
 
         # Run with -n 4 to force concurrency
         res, _ = run_cmd([str(VELO_BIN), "test", str(test_file), "-n", "4", "--zygote"], env=env)
@@ -156,7 +191,7 @@ def test_isolated_tmp():
 def test_phase14_iron_chaos_audit():
     """
     Sad Path Resilience: Killing Zygote mid-run MUST NOT hang the suite.
-    
+
     Phase 15 Guardian: If Guardian auto-restarts Zygote in time, suite may complete successfully.
     The key invariant is that the suite NEVER hangs indefinitely.
     """
@@ -167,6 +202,7 @@ def test_phase14_iron_chaos_audit():
 
     # 2. Start a long run in background
     env = gold_200_env()
+    env["PATH"] = f"{VELO_BIN.parent}:{env.get('PATH', '')}"
 
     print("\n[Chaos] Starting Velo Parallel run...")
     process = subprocess.Popen(
@@ -226,6 +262,7 @@ def test_verify_env():
 
     try:
         env = gold_200_env()
+        env["PATH"] = f"{VELO_BIN.parent}:{env.get('PATH', '')}"
 
         print("\n[Audit] Verifying Environment Persistence...")
         res, _ = run_cmd([str(VELO_BIN), "test", str(test_file), "-n", "1", "--zygote"], env=env)

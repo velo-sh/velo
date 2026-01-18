@@ -598,9 +598,7 @@ class ZygoteServer:
                         # 2. Perform the fork (child takes over the socket)
                         nodeid = msg.get("nodeid", "worker")
                         fork_env = msg.get("env", {})  # Env vars from pytest master
-                        pid = ForkHandler.handle_gateway_fork(
-                            sock, self.worker_registry, nodeid=nodeid, env=fork_env
-                        )
+                        pid = ForkHandler.handle_gateway_fork(sock, self.worker_registry, nodeid=nodeid, env=fork_env)
 
                         LogUtils.log(f"Zygote Gateway: Socket handed over to worker PID {pid} (node: {nodeid}).")
                         # 3. Parent: Exit handling and close local side (Child already has its copy)
