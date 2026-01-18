@@ -65,6 +65,7 @@ class ForkHandler:
         sock: Any,
         worker_registry: WorkerRegistry,
         nodeid: str = "worker",
+        env: dict[str, str] | None = None,
     ) -> int:
         """
         Phase 14 P1: Fork a gateway worker that takes over the socket.
@@ -83,6 +84,12 @@ class ForkHandler:
                 # RFC-0029: Mark this as a miracle worker to bypass redundant forks
                 os.environ["VELO_MIRACLE_WORKER"] = "1"
                 os.environ["VELO_IS_ZYGOTE"] = "1"
+
+                # Apply env from pytest master (PYTHONPATH propagation)
+                if env:
+                    for key, value in env.items():
+                        if value:  # Only set non-empty values
+                            os.environ[key] = value
 
                 # 2. Run execnet bootstrap
                 ForkHandler._run_execnet_gateway(sock, nodeid=nodeid)

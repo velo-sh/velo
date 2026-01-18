@@ -234,6 +234,7 @@ def hijack_execnet() -> None:
         original_makegateway = execnet.multi.Group.makegateway
 
         def velo_makegateway(self: Any, spec: Any = None) -> Any:
+            import os as _os  # Explicit import to avoid closure scoping issues
             if not spec:
                 spec = self.defaultspec
             if not isinstance(spec, execnet.XSpec):
@@ -246,7 +247,7 @@ def hijack_execnet() -> None:
                 self.allocate_id(spec)
                 try:
                     # Capture secret from env (SSOT: VELO_ZYGOTE_AUTH)
-                    secret = os.environ.get("VELO_ZYGOTE_AUTH")
+                    secret = _os.environ.get("VELO_ZYGOTE_AUTH")
                     gw = ZygoteGateway(spec, secret=secret)
                     self._register(gw)
                     return gw
