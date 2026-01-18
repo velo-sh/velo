@@ -41,11 +41,17 @@ def velo_fork_reinit(item: Any) -> None:
     
     Note: Renamed from pytest_velo_fork_reinit to avoid pytest hook validation.
     """
+    import warnings
     for callback in _fork_reinit_callbacks:
         try:
             callback()
-        except Exception:
-            pass  # Best-effort reinit
+        except Exception as e:
+            # DEF-13-003 FIX: Log warning instead of silent pass
+            warnings.warn(
+                f"velo_fork_reinit callback failed: {e}",
+                RuntimeWarning,
+                stacklevel=2
+            )
 
 
 def register_fork_reinit(callback: Callable[[], None]) -> None:
@@ -178,9 +184,37 @@ def pytest_configure(config: Any) -> None:
         # P1-2: Prevent COW thrashing from .pyc writes
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        # TODO: Start ZygoteServer here
-        # For now, just mark as enabled
-        _zygote = True  # Placeholder
+        # DEF-13-005 FIX: Start real Zygote via Rust CLI
+        import subprocess
+        import shutil
+        
+        velo_bin = shutil.which("velo")
+        if velo_bin:
+            # Get preload modules
+            preload = getattr(config.option, "velo_preload", "")
+            preload_args = ["--preload", preload] if preload else []
+            
+            try:
+                # Start Zygote in daemon mode
+                result = subprocess.run(
+                    [velo_bin, "zygote", "start", "--daemon"] + preload_args,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    _zygote = {"started_by_pytest": True, "velo_bin": velo_bin}
+                else:
+                    import warnings
+                    warnings.warn(f"Failed to start Zygote: {result.stderr}", RuntimeWarning)
+                    _zygote = True  # Fallback to direct fork mode
+            except Exception as e:
+                import warnings
+                warnings.warn(f"Zygote startup error: {e}", RuntimeWarning)
+                _zygote = True  # Fallback
+        else:
+            # No velo binary, use direct fork mode
+            _zygote = True
 
 
 def pytest_unconfigure(config: Any) -> None:
@@ -188,7 +222,19 @@ def pytest_unconfigure(config: Any) -> None:
     global _zygote
 
     if _zygote:
-        # TODO: Shutdown ZygoteServer
+        # DEF-13-005 FIX: Stop Zygote if we started it
+        if isinstance(_zygote, dict) and _zygote.get("started_by_pytest"):
+            import subprocess
+            velo_bin = _zygote.get("velo_bin")
+            if velo_bin:
+                try:
+                    subprocess.run(
+                        [velo_bin, "zygote", "stop"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception:
+                    pass  # Best effort cleanup
         _zygote = None
 
 
@@ -300,14 +346,58 @@ def pytest_runtest_protocol(item: Any, nextitem: Any) -> bool | None:
 
     Returns True if handled, None to fallback to default.
     Works for both standalone mode and as xdist worker.
+    
+    DEF-13-004 FIX: Properly reports test outcomes to pytest.
     """
     if not getattr(item.config.option, "velo", False) or not _zygote:
         return None  # Fallback to default pytest behavior
 
-    # Execute in forked child with full P0 compliance
-    success = run_in_zygote_fork(item)
+    from _pytest.runner import CallInfo, pytest_runtest_makereport
+    from _pytest import timing
     
-    # Return True to indicate we handled the test
-    # pytest will use our result instead of running the test again
-    return True
+    # Report "setup" phase
+    ihook = item.ihook
+    ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
+    
+    # Execute in forked child with full P0 compliance
+    start = timing.time()
+    success = run_in_zygote_fork(item)
+    stop = timing.time()
+    
+    # DEF-13-004 FIX: Create proper CallInfo to report outcome
+    if success:
+        # Test passed - create successful CallInfo
+        call = CallInfo.from_call(
+            lambda: None,  # No-op since already ran
+            when="call",
+            reraise=None,
+        )
+    else:
+        # Test failed - create failed CallInfo with exception
+        def raise_failure() -> None:
+            raise AssertionError("Test failed in Zygote fork (exit code != 0)")
+        
+        call = CallInfo.from_call(
+            raise_failure,
+            when="call", 
+            reraise=None,
+        )
+    
+    # Override timing from actual fork execution
+    call.start = start
+    call.stop = stop
+    call.duration = stop - start
+    
+    # Generate and log the report
+    report = ihook.pytest_runtest_makereport(item=item, call=call)
+    ihook.pytest_runtest_logreport(report=report)
+    
+    # Report teardown (minimal)
+    teardown_call = CallInfo.from_call(lambda: None, when="teardown", reraise=None)
+    teardown_report = ihook.pytest_runtest_makereport(item=item, call=teardown_call)
+    ihook.pytest_runtest_logreport(report=teardown_report)
+    
+    ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
+    
+    return True  # We fully handled this test
 
