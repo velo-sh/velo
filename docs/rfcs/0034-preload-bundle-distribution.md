@@ -81,6 +81,89 @@ app.vpkg.zst ──decompress once──▶ app.vpkg ──▶ velo run app.vpkg
 | **Distribution** | `.vpkg.zst` | Compressed for transfer (optional) |
 | **Runtime** | `.vpkg` | Uncompressed, mmap-friendly, directly runnable |
 
+#### 3.2.1.1 Compressed Format Handling
+
+> **Behavior**: Velo auto-detects `.vpkg.zst` and extracts to cache before running.
+
+| Input | Behavior |
+|:---|:---|
+| `velo run app.vpkg` | Direct mmap, no extraction |
+| `velo run app.vpkg.zst` | Auto-extract to cache → run |
+| `velo bundle extract app.vpkg.zst` | Explicit extract to user-specified path |
+
+**Auto-Extraction Cache**:
+```
+~/.velo/bundles/{content-hash}/app.vpkg
+```
+
+**CLI Examples**:
+```bash
+# Compressed: auto-extract to cache
+velo run app.vpkg.zst
+# → Extracts to ~/.velo/bundles/abc123/app.vpkg
+# → Subsequent runs use cached extraction
+
+# Flat: direct run
+velo run app.vpkg
+
+# Explicit extract (user control)
+velo bundle extract app.vpkg.zst -o ./app.vpkg
+
+# Remote download (auto-cache)
+velo run https://registry.example.com/app.vpkg.zst
+# → Downloads + extracts to ~/.velo/bundles/{hash}/
+```
+
+**Cache Behavior**:
+| Scenario | Action |
+|:---|:---|
+| First run | Extract → cache → run |
+| Subsequent run | Use cached extraction |
+| Bundle updated (new hash) | Extract new version |
+| `velo cache clean` | Remove all cached extractions |
+
+#### 3.2.1.2 Compression Design Decision
+
+> **Council Decision (2026-01-19)**: Whole-file compression over internal file compression.
+
+| Approach | Description | Chosen |
+|:---|:---|:---|
+| **Whole-file** | `vpkg (flat) → zstd → .vpkg.zst` | ✅ Yes |
+| **Internal** | `[file1.zst, file2.zst, ...] → tar` | ❌ No |
+
+**Rationale**:
+| Factor | Whole-file | Internal |
+|:---|:---|:---|
+| Compression ratio | ✅ ~70% (cross-file dedup) | ~68% |
+| Decompression speed | ✅ ~0.8s (stream) | ~1.2s (multi) |
+| Standard tools | ✅ `zstd -d`, `tar` | ❌ Custom only |
+| Implementation | ✅ ~50 lines | ~200 lines |
+| Audit-friendly | ✅ Transparent | ❌ Opaque |
+| Build disk space | ⚠️ 2x (flat + compressed) | ✅ 1x (stream) |
+
+> **Trade-off**: Build requires ~2x disk space temporarily (flat vpkg + compressed vpkg.zst).
+> For large bundles (>10GB), use streaming build: `velo bundle build --stream`
+
+**Streaming Build (Future Optimization)**:
+
+```
+Standard (2-pass):
+  files → tar → app.vpkg (disk) → zstd → app.vpkg.zst (disk)
+  Disk: 2x bundle size
+
+Streaming (1-pass):
+  files → tar → zstd (pipe) → app.vpkg.zst (disk only)
+  Disk: 1x bundle size
+```
+
+| Mode | CLI | Output | Disk Space |
+|:---|:---|:---|:---|
+| Standard | `velo bundle build` | .vpkg | 1x |
+| Compressed | `velo bundle build --compress` | .vpkg + .vpkg.zst | 2x |
+| Stream | `velo bundle build --stream` | .vpkg.zst only | 1x |
+
+> **Note**: Streaming mode only outputs `.vpkg.zst`. Flat `.vpkg` is generated on target via extraction.
+
 #### 3.2.2 vpkg Internal Structure
 
 ```
