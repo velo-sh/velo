@@ -4,23 +4,33 @@
 **Author**: Velo Architect
 **Date**: 2026-01-19
 **Phase**: Phase 15 (Future)
-**Scope**: Deployment, Distribution, Serverless
+**Scope**: Packaging, Distribution, Deployment
 
-> **Note**: This RFC focuses on **packaging and distribution**. For native library pre-loading optimization, see RFC-0035.
+> **Note**: This RFC focuses on **source/software distribution** (static packaging).
+> For runtime optimization (native library pre-loading), see RFC-0035.
 
 ---
 
 ## 1. Executive Summary
 
-This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file. Combined with Velo's runtime Zygote pre-warming, this eliminates cold-start latency in production deployments.
+This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file (`.vbundle`). This is a **source distribution format**, not a runtime image.
 
-| Metric | Standard Deployment | Velo Bundle |
-|:---|:---|:---|
-| Cold Start | 5-10s (pip install + import) | **< 100ms** (deps pre-packaged, Zygote pre-warms at runtime) |
-| Image Size | N/A (deps at runtime) | ~Dependencies + Assets |
-| Distribution | pip + Docker layers | Single `.vbundle` file |
+| Aspect | Description |
+|:---|:---|
+| **Scope** | Source code + dependencies + assets |
+| **Format** | Single `.vbundle` archive (tar.zst) |
+| **Runtime** | Zygote pre-warming happens at deployment, not in bundle |
+| **Target** | Clean machines with Velo installed |
 
 ---
+
+## 2. Core Invariants
+
+> [!IMPORTANT]
+> **INV-BUNDLE-001**: Bundle contains only static assets (source, deps, configs).
+> **INV-BUNDLE-002**: Runtime optimization (preload.lock, Zygote) is NOT part of bundle.
+> **INV-BUNDLE-003**: Bundle MAY be signed; verification is opt-in (v1.0), mandatory in enterprise mode (future).
+> **INV-BUNDLE-004**: Bundle is platform-tagged but runtime verification is deployment-time concern.
 
 ## 2. Motivation
 
@@ -37,53 +47,72 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 
 ## 3. Architecture
 
-### 3.1 Bundle Format (`.vbundle`)
-
-> **Key Insight**: Zygote is a **runtime construct**, not a packaged artifact. The bundle contains static assets; Zygote pre-warming happens at deployment time.
+### 3.1 Scope Separation
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Velo Bundle (.vbundle)                    │
-├─────────────────────────────────────────────────────────────┤
-│  Header (JSON)                                               │
-│  ├── version: "1.0"                                         │
-│  ├── python_version: "3.11.6"                               │
-│  ├── platform: "linux-x86_64"                               │
-│  ├── preload_modules: ["torch", "transformers", ...]        │
-│  └── entrypoint: "app:main"                                 │
-├─────────────────────────────────────────────────────────────┤
-│  Dependencies (Static)                                       │
-│  ├── site-packages/ (pre-installed wheels)                  │
-│  ├── .venv/ (frozen virtualenv)                             │
-│  └── requirements.lock                                      │
-├─────────────────────────────────────────────────────────────┤
-│  Application Code                                            │
-│  ├── src/                                                   │
-│  └── pyproject.toml                                         │
-├─────────────────────────────────────────────────────────────┤
-│  Assets (Optional)                                           │
-│  ├── model.safetensors (Memory Gravity ready)               │
-│  └── config.json                                            │
-└─────────────────────────────────────────────────────────────┘
+│              RFC-0034 (This RFC)    │    RFC-0035           │
+│              STATIC / BUILD-TIME    │    RUNTIME            │
+├─────────────────────────────────────┼───────────────────────┤
+│  .vbundle file                      │   preload.lock        │
+│  ├── source code                    │   native lib dlopen   │
+│  ├── site-packages/                 │   Zygote pre-warming  │
+│  ├── assets (.safetensors)          │   fingerprint verify  │
+│  └── manifest.json                  │   runtime checks      │
+└─────────────────────────────────────┴───────────────────────┘
 ```
 
-### 3.2 Runtime Lifecycle
+### 3.2 Bundle Format (`.vbundle`)
+
+**File Format**: tar.zst (tar archive with Zstandard compression)
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ velo bundle │────▶│  .vbundle   │────▶│ velo deploy │────▶│   Zygote    │
-│   (build)   │     │   (ship)    │     │  (unpack)   │     │ (pre-warm)  │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-      │                                        │                    │
-      ▼                                        ▼                    ▼
-  Package deps                         Extract to disk        Import preload
-  Include assets                       Setup venv             Ready to fork()
+app.vbundle (tar.zst)
+├── manifest.json           # Metadata + signature
+├── src/                    # Application source code
+├── site-packages/          # Pre-installed dependencies (wheels)
+├── assets/                 # Static assets (models, configs)
+│   ├── model.safetensors
+│   └── config.json
+└── pyproject.toml          # Project definition
 ```
 
-**Zygote Pre-warming is a RUNTIME operation**:
-1. `velo deploy` unpacks the bundle
-2. Velo starts Zygote and imports `preload_modules`
-3. Subsequent requests fork from the warmed Zygote
+### 3.3 Manifest Format
+
+```json
+{
+  "bundle_version": "1.0",
+  "name": "my-app",
+  "version": "0.1.0",
+  "build_platform": {
+    "os": "linux",
+    "arch": "x86_64",
+    "python_version": "3.11.6"
+  },
+  "entrypoint": "app:main",
+  "preload_hint": ["torch", "transformers"],
+  "files": {
+    "src/main.py": "sha256:abc123...",
+    "site-packages/torch/...": "sha256:def456..."
+  },
+  "signature": "ed25519:..."
+}
+```
+
+> **Note**: `preload_hint` is advisory only. Actual preload.lock is generated at deployment time (RFC-0035).
+
+### 3.4 Deployment Lifecycle
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────────┐
+│ velo bundle │────▶│  .vbundle   │────▶│ velo deploy (or velo run)       │
+│   build     │     │   (ship)    │     │                                 │
+└─────────────┘     └─────────────┘     │  1. Verify signature            │
+      │                                 │  2. Extract to isolated dir     │
+      ▼                                 │  3. Generate preload.lock (0035)│
+  Static packaging                      │  4. Start Zygote + pre-warm     │
+  (no runtime state)                    └─────────────────────────────────┘
+```
 
 ---
 
@@ -105,19 +134,61 @@ velo bundle deploy app.vbundle --target aws-lambda
 
 ---
 
-## 5. Technical Challenges
+## 5. Security Model
 
-### 5.1 Platform Specificity
-- **Problem**: Python bytecode and native extensions are platform-specific
-- **Solution**: Bundle is tagged with `platform` (e.g., `linux-x86_64`). Cross-platform bundles require multi-arch build.
+### 5.1 Tiered Signing Strategy
 
-### 5.2 Dependency Isolation
-- **Problem**: Bundled site-packages may conflict with system packages
-- **Solution**: Bundle extracts to isolated directory; Velo sets `PYTHONPATH` exclusively to bundle paths.
+> **Industry Context**: Most package ecosystems (npm, PyPI) don't enforce signing. Sigstore is the emerging standard for keyless signing.
 
-### 5.3 Security
-- **Problem**: Bundled code could be tampered
-- **Solution**: Signed bundles with SHA256 manifest
+| Phase | Strategy | Mechanism |
+|:---|:---|:---|
+| **v1.0** | Trust source | No signing; trust local build or known registry |
+| **v1.x** | Optional signing | Ed25519, manual key management, `--sign` flag |
+| **Future** | Sigstore integration | OIDC keyless signing, Rekor transparency log |
+
+### 5.2 v1.0 Behavior (No Mandatory Signing)
+
+```bash
+# Build (no signing by default)
+velo bundle build --output app.vbundle
+
+# Run (no verification by default)
+velo bundle run app.vbundle
+
+# Optional: Build with signing
+velo bundle build --sign --key ~/.velo/signing.key --output app.vbundle
+
+# Optional: Verify before run
+velo bundle run --verify --trust ~/.velo/trusted-keys/ app.vbundle
+```
+
+### 5.3 Future: Sigstore Integration
+
+```bash
+# Keyless signing via GitHub OIDC
+velo bundle build --sign-sigstore --output app.vbundle
+
+# Verify with transparency log
+velo bundle verify app.vbundle --sigstore
+# Checks: signature + Rekor log entry + certificate identity
+```
+
+### 5.4 Extraction Safety
+
+```rust
+// Extract to isolated, user-owned directory
+fn extract_bundle(bundle: &Path) -> Result<PathBuf> {
+    let extract_dir = dirs::data_local_dir()
+        .join("velo")
+        .join("bundles")
+        .join(bundle_hash);
+    
+    // Never extract to /tmp or world-writable locations
+    ensure!(!extract_dir.starts_with("/tmp"));
+    
+    Ok(extract_dir)
+}
+```
 
 ---
 
@@ -178,5 +249,29 @@ velo bundle deploy app.vbundle --target aws-lambda
 
 ---
 
+## 11. Grand Council Review (2026-01-19)
+
+**Verdict**: 🟢 **APPROVED**
+
+### Addressed Issues
+
+| Issue | Resolution |
+|:---|:---|
+| Scope separation | ✅ INV-BUNDLE-001/002: Static only, runtime in RFC-0035 |
+| Signing strategy | ✅ Tiered: v1.0 opt-in → Future Sigstore |
+| Extraction safety | ✅ Isolated user directory, no /tmp |
+| Platform tagging | ✅ manifest.build_platform |
+
+### P2 Future Considerations
+
+| Item | Description |
+|:---|:---|
+| Lock file | Include uv.lock for audit purposes |
+| XDG support | Honor XDG_DATA_HOME on Linux |
+| Large bundle | Consider streaming/incremental extract for >2GB bundles |
+
+---
+
 **Custodian**: Velo Architect
 **Last Updated**: 2026-01-19
+
