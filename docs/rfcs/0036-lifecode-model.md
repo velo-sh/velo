@@ -324,7 +324,81 @@ echo "$RELEASE_HASH" | velo deploy --stdin --to production
 
 ---
 
-## 6. CLI Interface (Draft)
+## 6. GenePool™ Distribution
+
+> *"The universal gene pool"*
+>
+> GenePool™ is the distributed registry for LifeCode™ organisms - where all genes are stored, shared, and replicated.
+
+### 6.1 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      GenePool™ Registry                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │   Genes     │  │   Genes     │  │   Genes     │         │
+│  │  (blobs)    │  │  (trees)    │  │ (manifests) │         │
+│  │             │  │             │  │             │         │
+│  │ abc123...   │  │ def456...   │  │ ghi789...   │         │
+│  │ jkl012...   │  │ mno345...   │  │ pqr678...   │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+│                                                             │
+│                   Content-Addressable Storage               │
+└─────────────────────────────────────────────────────────────┘
+          │                    │                    │
+          ▼                    ▼                    ▼
+    ┌──────────┐        ┌──────────┐        ┌──────────┐
+    │ Dev      │        │ Server   │        │ Edge     │
+    │ Machine  │        │ Cluster  │        │ Device   │
+    └──────────┘        └──────────┘        └──────────┘
+```
+
+### 6.2 CLI Commands
+
+```bash
+# Login to GenePool™
+velo genepool login
+
+# Push organism to GenePool™
+velo genepool push sha256:abc123
+
+# Pull organism from GenePool™
+velo genepool pull sha256:abc123
+
+# Search for organisms
+velo genepool search "torch"
+
+# List published organisms
+velo genepool list --mine
+```
+
+### 6.3 Federation
+
+> Multiple GenePool™ instances can federate, sharing genes across organizations.
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Company A  │◄───►│   Public    │◄───►│  Company B  │
+│  GenePool™  │     │  GenePool™  │     │  GenePool™  │
+└─────────────┘     └─────────────┘     └─────────────┘
+       │                   │                   │
+       │     Federated Gene Sharing            │
+       └───────────────────┴───────────────────┘
+```
+
+### 6.4 Replication Strategy
+
+| Mode | Description | Use Case |
+|:---|:---|:---|
+| **Pull-through** | Fetch on demand, cache locally | Edge deployment |
+| **Mirror** | Full replication | Air-gapped environments |
+| **Selective** | Replicate specific organisms | Regional deployment |
+
+---
+
+## 17. CLI Interface (Draft)
 
 ```bash
 # Pull by root hash
@@ -354,7 +428,7 @@ velo gc --keep-days 30
 
 ---
 
-## 7. Migration Path
+## 17. Migration Path
 
 | Version | Format | Compatibility |
 |:---|:---|:---|
@@ -376,7 +450,7 @@ velo run sha256:abc123      # v2.0
 
 ---
 
-## 8. Security Model & Threat Analysis
+## 17. Security Model & Threat Analysis
 
 ### 8.1 Threat Model
 
@@ -432,7 +506,7 @@ Sigstore/Rekor Integration:
 
 ---
 
-## 9. Core Abstractions
+## 17. Core Abstractions
 
 ### 9.1 Rust Traits
 
@@ -511,7 +585,7 @@ with ObjectStore() as store:
 
 ---
 
-## 10. Chunking Strategy
+## 17. Chunking Strategy
 
 ### 10.1 Large File Handling
 
@@ -557,7 +631,7 @@ With chunking:
 
 ---
 
-## 11. Filesystem Integration
+## 17. Filesystem Integration
 
 ### 11.1 Materialization Modes
 
@@ -597,7 +671,7 @@ fn materialize_atomic(hash: &Hash, target: &Path) -> Result<()> {
 
 ---
 
-## 12. Cloud Distribution
+## 17. Cloud Distribution
 
 ### 12.1 Registry Protocol
 
@@ -635,7 +709,7 @@ spec:
 
 ---
 
-## 13. Performance Targets
+## 17. Performance Targets
 
 | Scenario | Target | Measurement |
 |:---|:---|:---|
@@ -648,7 +722,7 @@ spec:
 
 ---
 
-## 14. Open Questions
+## 17. Open Questions
 
 | # | Question | Options | Recommendation |
 |:---|:---|:---|:---|
@@ -660,7 +734,7 @@ spec:
 
 ---
 
-## 15. References
+## 17. References
 
 - [Git Internals](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
 - [IPFS Content Addressing](https://docs.ipfs.tech/concepts/content-addressing/)
@@ -672,7 +746,7 @@ spec:
 
 ---
 
-## 16. Appendix
+## 17. Appendix
 
 ### A. Glossary
 
