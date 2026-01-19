@@ -40,6 +40,9 @@ def run_single_test(nodeid: str, cov_path: str | None = None) -> dict[str, Any]:
         sys.stdout = stdout_capture
         sys.stderr = stderr_capture
 
+        # BUG-002 FIX: Save CWD before test execution
+        original_cwd = os.getcwd()
+
         # Build pytest args
         pytest_args = [
             nodeid,
@@ -54,7 +57,14 @@ def run_single_test(nodeid: str, cov_path: str | None = None) -> dict[str, Any]:
             pytest_args.extend(["--cov", cov_path, "--cov-append"])
 
         # Run the single test with minimal output
-        exit_code = pytest.main(pytest_args)
+        try:
+            exit_code = pytest.main(pytest_args)
+        finally:
+            # BUG-002 FIX: Restore CWD after test execution
+            try:
+                os.chdir(original_cwd)
+            except OSError:
+                pass  # Directory may have been deleted by test
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr

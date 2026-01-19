@@ -647,16 +647,26 @@ def run_in_zygote_fork(item: Any, strict_compat: bool = False) -> bool:
         velo_fork_reinit(item)
 
         try:
-            # P1-3: Proper pytest integration
-            if hasattr(item, "ihook"):
-                ihook = item.ihook
-                ihook.pytest_runtest_setup(item=item)
-                ihook.pytest_runtest_call(item=item)
-                ihook.pytest_runtest_teardown(item=item, nextitem=None)
-            else:
-                # Diagnostic/Mock items in QA tests
-                item.runtest()
-            exit_code = 0
+            # BUG-002 FIX: Save CWD before test execution
+            # Tests that call os.chdir() would otherwise pollute subsequent tests
+            original_cwd = os.getcwd()
+            try:
+                # P1-3: Proper pytest integration
+                if hasattr(item, "ihook"):
+                    ihook = item.ihook
+                    ihook.pytest_runtest_setup(item=item)
+                    ihook.pytest_runtest_call(item=item)
+                    ihook.pytest_runtest_teardown(item=item, nextitem=None)
+                else:
+                    # Diagnostic/Mock items in QA tests
+                    item.runtest()
+                exit_code = 0
+            finally:
+                # BUG-002 FIX: Restore CWD after test execution
+                try:
+                    os.chdir(original_cwd)
+                except OSError:
+                    pass  # Directory may have been deleted by test
         except Exception:
             exit_code = 1
 
