@@ -8,12 +8,28 @@
 
 ## Brand Family
 
+### Runtime Lifecycle (Deployment)
+
+| Brand | Type | Tagline |
+|:---|:---|:---|
+| **Gene Spark™** | Ignition Event | *"One spark ignites the organism"* |
+| **Instant Genesis™** | Bootstrap Process | *"Let there be app"* |
+| **Gene as Deploy™ (GaD)** | Deployment Model | *"Drop a gene, deploy an app"* |
+
+### Build Lifecycle (Creation)
+
+| Brand | Type | Tagline |
+|:---|:---|:---|
+| **Gene Synthesis™** | File → Hash | *"From code to DNA"* |
+| **Organ Assembly™** | Hash → Tree | *"Genes form organs"* |
+| **Organism Birth™** | Tree → Root | *"The organism is born"* |
+| **Gene Propagation™** | Root → GenePool™ | *"Spread the DNA"* |
+
+### Infrastructure
+
 | Brand | Type | Tagline |
 |:---|:---|:---|
 | **LifeCode™** | Core Model | *"Software That Lives"* |
-| **Gene Spark™** | Ignition Event | *"One spark ignites the organism"* |
-| **Instant Genesis™** | Bootstrap Process | *"Let there be app"* / *"From hash to running in milliseconds"* |
-| **Gene as Deploy™ (GaD)** | Deployment Model | *"Drop a gene, deploy an app"* |
 | **GenePool™** | Distribution Registry | *"The universal gene pool"* |
 | **.lcpkg** | File Format | LifeCode Package |
 
@@ -153,10 +169,19 @@ Developer  ──── sha256:abc123 ────►  Server
 
 All brand names marked with ™ are trademarks of the LifeCode™ project:
 
-- LifeCode™
+**Runtime Lifecycle**:
 - Gene Spark™
 - Instant Genesis™
 - Gene as Deploy™
+
+**Build Lifecycle**:
+- Gene Synthesis™
+- Organ Assembly™
+- Organism Birth™
+- Gene Propagation™
+
+**Infrastructure**:
+- LifeCode™
 - GenePool™
 
 ---

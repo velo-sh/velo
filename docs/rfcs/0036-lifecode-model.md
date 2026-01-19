@@ -199,7 +199,153 @@ Composition Pipeline:
 
 ---
 
-## 5. Key Features
+## 5. Build Lifecycle (Creation)
+
+> The process of assembling a living organism from source code.
+
+### 5.1 Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Build Lifecycle                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌───────────────────┐                                      │
+│  │  Source Files     │                                      │
+│  │  main.py, deps/   │                                      │
+│  └─────────┬─────────┘                                      │
+│            │                                                │
+│            ▼                                                │
+│  ┌───────────────────┐                                      │
+│  │ Gene Synthesis™   │  Files → Genes (hash each file)     │
+│  └─────────┬─────────┘                                      │
+│            │                                                │
+│            ▼                                                │
+│  ┌───────────────────┐                                      │
+│  │ Organ Assembly™   │  Genes → Trees (directory structure) │
+│  └─────────┬─────────┘                                      │
+│            │                                                │
+│            ▼                                                │
+│  ┌───────────────────┐                                      │
+│  │ Organism Birth™   │  Trees → Root Hash (manifest)       │
+│  └─────────┬─────────┘                                      │
+│            │                                                │
+│            ▼                                                │
+│  ┌───────────────────┐                                      │
+│  │ Gene Propagation™ │  Upload to GenePool™ (deduplicated) │
+│  └─────────┬─────────┘                                      │
+│            │                                                │
+│            ▼                                                │
+│       sha256:abc123  ─────────────────────►  GaD Deploy     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Gene Synthesis™
+
+> *"From code to DNA"*
+
+Transform source files into content-addressable genes.
+
+```bash
+# Input: Source files
+main.py (1.2KB)
+utils.py (0.8KB)
+config.json (0.3KB)
+
+# Process: Hash each file
+blake3(main.py)   → abc123...
+blake3(utils.py)  → def456...
+blake3(config.json) → ghi789...
+
+# Output: Genes (blobs)
+~/.velo/objects/ab/c123...
+~/.velo/objects/de/f456...
+~/.velo/objects/gh/i789...
+```
+
+### 5.3 Organ Assembly™
+
+> *"Genes form organs"*
+
+Organize genes into tree structures (directories).
+
+```bash
+# Input: Genes + directory structure
+app/
+├── main.py (abc123)
+└── utils.py (def456)
+config.json (ghi789)
+
+# Process: Create tree objects
+tree(app/) = {
+  entries: [
+    { name: "main.py", hash: "abc123", type: "blob" },
+    { name: "utils.py", hash: "def456", type: "blob" }
+  ]
+} → tree hash: jkl012...
+
+# Output: Tree genes
+~/.velo/objects/jk/l012...
+```
+
+### 5.4 Organism Birth™
+
+> *"The organism is born"*
+
+Generate the root manifest and final identity.
+
+```bash
+# Input: All trees + metadata
+app/ (jkl012)
+deps/ (mno345)
+assets/ (pqr678)
+
+# Process: Create manifest
+manifest = {
+  name: "my-app",
+  version: "1.0.0",
+  entrypoint: "app:main",
+  organs: [
+    { name: "app", hash: "jkl012" },
+    { name: "deps", hash: "mno345" },
+    { name: "assets", hash: "pqr678" }
+  ]
+}
+
+# Output: Root Hash (organism identity)
+blake3(manifest) → sha256:ROOT_HASH
+```
+
+### 5.5 Gene Propagation™
+
+> *"Spread the DNA"*
+
+Upload all genes to GenePool™, with global deduplication.
+
+```bash
+# Process: Upload to GenePool™
+velo genepool push sha256:ROOT_HASH
+
+# Deduplication check:
+# ✓ abc123 - new, uploading
+# ✓ def456 - new, uploading
+# ⊘ mno345 - exists, skipping (torch already in pool)
+# ✓ ROOT_HASH - new, uploading
+
+# Result:
+# Uploaded: 3 genes (2.1MB)
+# Skipped: 1 gene (500MB) - deduplicated!
+# Total time: 1.2s
+```
+
+---
+
+## 6. Runtime Lifecycle (Deployment)
+
+### 6.1 Key Features
+
+#### 6.1.1 Incremental Updates
 
 ### 5.1 Incremental Updates
 
