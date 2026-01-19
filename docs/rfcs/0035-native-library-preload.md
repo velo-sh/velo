@@ -4,194 +4,318 @@
 **Author**: Velo Architect
 **Date**: 2026-01-19
 **Phase**: Phase 15 (Future)
-**Scope**: Performance, Startup Optimization
+**Scope**: Performance, Startup Optimization, Security
 
 > **Note**: This RFC focuses on **native library pre-loading**. For application packaging, see RFC-0034.
+> **Prerequisite**: Extends existing `EnvironmentFingerprint` system from `src/custody/fingerprint.rs`.
 
 ---
 
 ## 1. Executive Summary
 
-This RFC proposes **Preload Optimization**, a mechanism to pre-load native shared libraries (`.so`/`.dylib`) before Python startup, reducing import latency for heavy native extensions.
+This RFC proposes **Native Library Preload**, extending Velo's existing fingerprint-verified preload system to include `.so`/`.dylib` files. Libraries are pre-loaded before Python startup, verified against stored fingerprints, and shared across workers via COW.
 
 | Metric | Standard Import | Preload Optimized |
 |:---|:---|:---|
 | PyTorch import | ~2-3s | **< 500ms** |
 | NumPy import | ~200ms | **< 50ms** |
-| Native extension load | dlopen on-demand | Pre-mapped in memory |
+| Native extension load | dlopen on-demand | Pre-mapped + fingerprint-verified |
 
 ---
 
-## 2. Motivation
+## 2. Core Invariants
 
-### 2.1 The Native Extension Bottleneck
-Heavy Python packages rely on native libraries:
-- **PyTorch**: `libtorch.so`, `libcudnn.so` (~500MB+)
-- **NumPy**: `libopenblas.so`, `libmkl.so`
-- **TensorFlow**: `libtensorflow.so`
-
-These libraries are loaded via `dlopen()` during Python import, causing:
-1. **Disk I/O**: Reading large binaries from storage
-2. **Symbol Resolution**: Dynamic linker overhead
-3. **Memory Mapping**: Page fault storms on first access
-
-### 2.2 The Velo Opportunity
-Velo can pre-load these libraries before Python starts, so imports find them already memory-resident.
+> [!IMPORTANT]
+> **INV-PRELOAD-001**: Native libraries MUST be fingerprint-verified before loading.
+> **INV-PRELOAD-002**: Only libraries in trusted paths (site-packages, explicit whitelist) may be preloaded.
+> **INV-PRELOAD-003**: Fingerprint mismatch MUST block preload and warn user.
+> **INV-PRELOAD-004**: preload.lock MUST include runtime fingerprint (os, arch, python_version).
+> **INV-PRELOAD-005**: Runtime mismatch MUST block preload with clear error.
 
 ---
 
 ## 3. Architecture
 
-### 3.1 Preload Strategy
+### 3.1 Fingerprint-First Design
+
+Native library preload extends the existing `EnvironmentFingerprint` system:
+
+```rust
+// src/custody/fingerprint.rs (EXTENSION)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeLibFingerprint {
+    /// Absolute path to the library (canonicalized)
+    pub path: PathBuf,
+    /// Parent package (e.g., "torch" for libtorch.so)
+    pub package: String,
+    /// ELF SONAME (e.g., "libtorch.so.2.1.0") - handles symlinks
+    pub soname: Option<String>,
+    /// Fast check: mtime of file
+    pub mtime: u64,
+    /// Authority: BLAKE3 hash of ELF/Mach-O header (first 4KB)
+    pub header_hash: String,
+    /// Platform metadata
+    pub platform: LibPlatform,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibPlatform {
+    pub os: String,        // "linux" | "darwin"
+    pub arch: String,      // "x86_64" | "aarch64"
+    pub libc_type: String, // "glibc" | "musl"
+    pub elf_osabi: Option<u8>,  // ELF OS/ABI byte
+}
+```
+
+### 3.2 Verification Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Velo Preload Flow                         │
+│                    Preload Verification Flow                 │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  1. Startup                                                  │
-│     └── Rust Host reads preload config                      │
+│  1. Load preload.lock                                        │
+│     └── Contains NativeLibFingerprint for each library      │
 │                                                              │
-│  2. Pre-map Phase (before Python)                            │
-│     ├── dlopen("libtorch.so", RTLD_NOW | RTLD_GLOBAL)       │
-│     ├── dlopen("libopenblas.so", ...)                       │
-│     └── Touch pages (prefault) to avoid later page faults   │
+│  2. Fast Path: mtime check                                   │
+│     ├── mtime unchanged → Trust cached fingerprint          │
+│     └── mtime changed → Recompute header_hash               │
 │                                                              │
-│  3. Python Import                                            │
-│     └── Libraries already in memory → near-instant import   │
+│  3. Runtime Check (INV-PRELOAD-004/005)                      │
+│     ├── Check os/arch match current environment             │
+│     └── Mismatch → BLOCK + ERROR (wrong platform)           │
+│                                                              │
+│  4. Library Verify                                           │
+│     ├── Hash match → Proceed to security check              │
+│     └── Hash mismatch → BLOCK + WARN (stale config)         │
+│                                                              │
+│  5. Security Check                                           │
+│     ├── Path in site-packages OR whitelist → OK             │
+│     └── Path in /tmp or untrusted → REJECT                  │
+│                                                              │
+│  6. Load                                                     │
+│     └── dlopen(path, RTLD_NOW | RTLD_LOCAL)                 │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Configuration
+### 3.3 Configuration
 
 ```toml
 # pyproject.toml
-[tool.velo.preload]
+[tool.velo.native_preload]
+# Package::library format (auto-resolves path from site-packages)
 libraries = [
-    "libtorch.so",
-    "libtorch_cpu.so",
-    "libopenblas.so",
+    "torch::libtorch.so",
+    "torch::libtorch_cpu.so",
+    "numpy.core::libopenblas.so",
 ]
+
 # Auto-detect from installed packages
 auto_detect = true
+
+# Verification strictness
+verify_mode = "mtime+hash"  # "mtime" (fast) | "hash" (strict) | "mtime+hash" (default)
+
+# Symbol visibility (P1 Council Fix)
+rtld_mode = "local"  # "local" (default, safe) | "global" (opt-in, risk)
 ```
 
-### 3.3 CLI Interface
+### 3.4 Lock File
+
+```json
+// .velo/preload.lock
+{
+  "version": 1,
+  "generated_at": 1705678900,
+  "runtime_fingerprint": {
+    "os": "linux",
+    "arch": "x86_64",
+    "libc_type": "glibc",
+    "libc_version": "2.31",
+    "python_version": "3.11.6",
+    "venv_path": "/path/to/venv"
+  },
+  "libraries": [
+    {
+      "path": "/path/to/venv/lib/python3.11/site-packages/torch/lib/libtorch.so",
+      "package": "torch",
+      "soname": "libtorch.so.2.1.0",
+      "mtime": 1705678800,
+      "header_hash": "abc123def456...",
+      "platform": { "os": "linux", "arch": "x86_64", "libc_type": "glibc", "elf_osabi": 0 }
+    }
+  ]
+}
+```
+
+---
+
+## 4. Security Model
+
+### 4.1 Venv-Bound Path Validation (P0)
+
+> **Design Principle**: preload.lock is **bound to the specific venv** that generated it. All library paths must be within that venv.
+
+```rust
+/// Security Model: Strict Venv-Bound Validation
+/// No "trusted prefixes" logic - just strict path containment
+
+const BLOCKED_PREFIXES: &[&str] = &[
+    "/tmp/",
+    "/var/tmp/",
+    "/dev/shm/",
+];
+
+fn validate_library_path(lib_path: &Path, venv_root: &Path) -> Result<()> {
+    // 1. Canonicalize both paths (resolve symlinks, normalize)
+    let lib_canonical = lib_path.canonicalize()
+        .map_err(|_| Error::PathNotFound(lib_path))?;
+    let venv_canonical = venv_root.canonicalize()
+        .map_err(|_| Error::VenvNotFound(venv_root))?;
+    
+    // 2. Block dangerous paths (defense in depth)
+    for blocked in BLOCKED_PREFIXES {
+        if lib_canonical.starts_with(blocked) {
+            return Err(Error::BlockedPath(lib_canonical));
+        }
+    }
+    
+    // 3. Strict containment: library must be within venv (bytes comparison)
+    if !lib_canonical.starts_with(&venv_canonical) {
+        return Err(Error::PathOutsideVenv {
+            lib: lib_canonical,
+            venv: venv_canonical,
+        });
+    }
+    
+    Ok(())
+}
+```
+
+**Why this is the best approach**:
+| Aspect | Benefit |
+|:---|:---|
+| **Security** | No "contains string" vulnerabilities |
+| **Simplicity** | Zero configuration, no trusted prefixes to maintain |
+| **Reproducibility** | Lock is bound to exact venv, regenerate if venv changes |
+
+### 4.2 Symbol Visibility (P1 Council Fix)
+
+| Mode | RTLD Flags | Use Case | Risk |
+|:---|:---|:---|:---|
+| `local` (default) | `RTLD_NOW \| RTLD_LOCAL` | Most libraries | Low - isolated symbols |
+| `global` (opt-in) | `RTLD_NOW \| RTLD_GLOBAL` | Interdependent libs (CUDA) | High - symbol pollution |
+
+---
+
+## 5. CLI Interface
 
 ```bash
-# Analyze and generate preload config
+# Analyze project and generate preload.lock
 velo preload analyze
 
-# Run with explicit preload
-velo run --preload "libtorch.so,libopenblas.so" main.py
+# Verify current preload.lock against installed libraries
+velo preload verify
+# Output: ✅ All 3 libraries verified
+# Output: ⚠️ libtorch.so hash mismatch (pip upgraded torch?)
 
-# Apply to serve
-velo serve --preload-auto main:app
+# Run with preload
+velo run main.py  # Uses preload.lock automatically
+
+# Explicit override
+velo run --preload "torch::libtorch.so" main.py
 ```
 
 ---
 
-## 4. Technical Implementation
-
-### 4.1 Rust Host Pre-loading
-
-```rust
-// src/preload/mod.rs
-use libloading::Library;
-
-pub fn preload_libraries(libs: &[String]) -> Result<Vec<Library>> {
-    libs.iter()
-        .map(|lib_path| {
-            // RTLD_NOW: Resolve all symbols immediately
-            // RTLD_GLOBAL: Make symbols available to subsequently loaded libs
-            unsafe { Library::new(lib_path) }
-        })
-        .collect()
-}
-```
-
-### 4.2 Page Prefaulting
-
-```rust
-// Touch all pages to avoid page faults during Python import
-fn prefault_library(lib: &Library) {
-    // madvise(MADV_WILLNEED) or manual read
-}
-```
-
-### 4.3 Auto-Detection
-
-```python
-# velo preload analyze
-# Scans site-packages for .so files and generates config
-```
-
----
-
-## 5. Integration with Existing Features
+## 6. Integration with Existing Features
 
 | Feature | Integration |
 |:---|:---|
+| **EnvironmentFingerprint** | NativeLibFingerprint stored alongside pyproject/lock hash |
 | **Zygote (RFC-0019)** | Preload happens before Zygote pre-warming |
 | **Memory Gravity (RFC-0015)** | Preloaded libs shared via COW across workers |
-| **Bundle (RFC-0034)** | Bundle can include preload config for deployment |
+| **Bundle (RFC-0034)** | Bundle includes preload.lock for reproducible deploys |
 
 ---
 
-## 6. Implementation Phases
+## 7. Platform Support
 
-### Phase 1: Manual Preload
-- [ ] Implement `--preload` CLI flag
-- [ ] Support explicit library list
-
-### Phase 2: Auto-Detection
-- [ ] Scan site-packages for native extensions
-- [ ] Generate recommended preload config
-
-### Phase 3: Integration
-- [ ] Integrate with Zygote pre-warming
-- [ ] Add preload config to Bundle format
+| Platform | Status | Notes |
+|:---|:---|:---|
+| **Linux x86_64** | ✅ Primary | Full support |
+| **Linux aarch64** | ✅ Supported | Full support |
+| **macOS** | ❌ v1.0 Out of Scope | dyld two-level namespace incompatible |
+| **Windows** | ❌ Future | LoadLibrary semantics differ |
 
 ---
 
-## 7. Quality Gates
+## 8. Implementation Phases
+
+### Phase 1: Fingerprint Infrastructure
+- [ ] Extend `NativeLibFingerprint` struct
+- [ ] Implement header-only BLAKE3 hashing
+- [ ] Generate `preload.lock` format
+
+### Phase 2: Verification & Loading
+- [ ] Implement mtime fast-path
+- [ ] Implement trusted path validation
+- [ ] Implement `dlopen` with RTLD_LOCAL default
+
+### Phase 3: CLI & Integration
+- [ ] `velo preload analyze` command
+- [ ] `velo preload verify` command
+- [ ] Automatic preload on `velo run/serve`
+
+---
+
+## 9. Quality Gates
 
 | Gate | Requirement |
 |:---|:---|
 | **Gate A** | PyTorch import < 500ms with preload |
-| **Gate B** | No symbol resolution errors (RTLD_GLOBAL correctness) |
-| **Gate C** | Memory overhead < 5% vs on-demand loading |
+| **Gate B** | Fingerprint mismatch blocks preload with clear error |
+| **Gate C** | Untrusted path (/tmp) is rejected |
+| **Gate D** | No symbol resolution errors with RTLD_LOCAL |
 
 ---
 
-## 8. Open Questions
+## 10. Grand Council Review (2026-01-19)
 
-1. **Symbol Conflicts**: How to handle libraries with conflicting symbols?
-2. **Version Mismatch**: Pre-loaded .so vs Python package version sync?
-3. **macOS/Windows**: dylib/dll handling differences?
+**Verdict**: 🟢 **APPROVED** (Linux-first, Second Round)
 
----
+### Addressed Issues
 
-## 9. Grand Council Review (2026-01-19)
-
-**Verdict**: 🔶 **CONDITIONAL APPROVAL** (Linux-first)
-
-### P0 Blocker (macOS)
-- **dyld semantic mismatch**: macOS uses two-level namespace; RTLD_GLOBAL behaves differently
-- **Resolution**: macOS support OUT OF SCOPE for v1.0; requires separate RFC
-
-### P1 Issues (Must Fix)
-| Issue | Recommendation |
+| Issue | Resolution |
 |:---|:---|
-| RTLD_GLOBAL symbol pollution | Default to RTLD_LOCAL; GLOBAL only via opt-in |
-| Version mismatch | Add `velo preload verify` command |
-| Extension module flag mismatch | Match flags that Python would use |
+| Fingerprint requirement | ✅ INV-PRELOAD-001: Mandatory verification |
+| RTLD_GLOBAL pollution | ✅ Default to RTLD_LOCAL |
+| Untrusted path attack | ✅ Trusted path validation |
+| Version mismatch | ✅ `velo preload verify` command |
+| macOS dyld | ✅ Out of scope for v1.0 |
+| Runtime fingerprint | ✅ INV-PRELOAD-004/005: os/arch/python/glibc check |
 
-### Approval Conditions
-1. Linux-first implementation
-2. Default to RTLD_LOCAL
-3. Ship `velo preload analyze` with version hash tracking
+### Version Comparison Policy (STRICT)
+
+| Field | Comparison | Rationale |
+|:---|:---|:---|
+| `os` | `==` | No cross-platform tolerance |
+| `arch` | `==` | x86_64 ≠ aarch64 |
+| `python_version` | `==` | ABI differences across versions |
+| `glibc_version` | `==` | Strict reproducibility over convenience |
+| `library.header_hash` | `==` | Any mismatch → regenerate lock |
+
+> **Design Decision**: We prefer `==` (strict equality) over `>=` (loose compatibility).
+> If mismatch occurs, user runs `velo preload analyze` to regenerate.
+> This ensures reproducibility and avoids subtle cross-version bugs.
+
+### Future Work (P2)
+
+| Item | Description |
+|:---|:---|
+| `user` field | Track generator UID for multi-user shared environments (e.g., warn if lock was generated by different user); note: not a defense against root compromise |
+| Parallel preload | Use `rayon` for concurrent dlopen of multiple libraries |
 
 ---
 
