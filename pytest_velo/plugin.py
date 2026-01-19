@@ -300,6 +300,11 @@ def pytest_configure(config: Any) -> None:
     """Start Zygote server if --velo is enabled."""
     global _zygote
 
+    # DEF-VTEST-GUARD: Skip Zygote initialization if we're already in a Zygote-spawned worker
+    # This prevents socket collision when runner.py calls pytest.main()
+    if os.environ.get("VELO_IS_ZYGOTE") == "1":
+        return
+
     if config.option.velo:
         # Check xdist compatibility (info log, no longer blocking)
         validate_xdist_compatibility(config)

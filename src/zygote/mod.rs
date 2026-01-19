@@ -438,9 +438,7 @@ impl ZygoteLauncher {
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
 
-        // =========================================================================
-        // Phase 7.3: Unified Python Environment Resolution (SSOT)
-        // =========================================================================
+        // Unified Python Environment Resolution (SSOT)
         // Defect Fix: Ensure Zygote environment is derived from the Python binary
         // (via PythonEnv::detect) rather than relying on unstable manual forwarding.
         // This handles PYTHONHOME/VIRTUAL_ENV reconstruction automatically.
@@ -802,19 +800,22 @@ impl ZygoteLauncher {
             log::info!("Zygote deep probe successful (PID: {}).", pid);
 
             // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
-            let params = guardian::ZygoteStartParams {
-                preload: preload.iter().map(|s| s.to_string()).collect(),
-                app_name: app_name.map(|s| s.to_string()),
-                python_path: python.clone(),
-                config: config.clone(),
-            };
+            // Skip Guardian for daemon mode (vtest use case) - the caller manages lifecycle
+            if !daemon {
+                let params = guardian::ZygoteStartParams {
+                    preload: preload.iter().map(|s| s.to_string()).collect(),
+                    app_name: app_name.map(|s| s.to_string()),
+                    python_path: python.clone(),
+                    config: config.clone(),
+                };
 
-            let guardian =
-                guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
-            if let Err(e) = guardian.start() {
-                log::warn!("[Guardian] Failed to start background supervisor: {}", e);
-            } else {
-                log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
+                let guardian =
+                    guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
+                if let Err(e) = guardian.start() {
+                    log::warn!("[Guardian] Failed to start background supervisor: {}", e);
+                } else {
+                    log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
+                }
             }
         } else {
             return Err(ZygoteError::StartFailed(
@@ -891,6 +892,10 @@ impl ZygoteLauncher {
         }
 
         // Cleanup socket file
+        log::debug!(
+            "[ZygoteLauncher::stop] Cleaning up socket: {:?}",
+            self.socket_path
+        );
         core_ipc::cleanup_socket(&self.socket_path);
         self.zygote_pid = None;
 
@@ -913,10 +918,8 @@ impl ZygoteLauncher {
             match child.try_wait() {
                 Ok(None) => {
                     // Process is still running according to the OS.
-                    // WB-002: Liveness Probe Handshake (Friendly)
-                    // We must verify the Zygote is actually responsive to IPC,
-                    // not just "running" in a deadlocked or stale state.
-                    core_ipc::is_socket_responsive(&self.socket_path)
+                    // Trust the OS handle - deep probes are expensive.
+                    true
                 }
                 _ => {
                     // Process died or error
@@ -955,10 +958,6 @@ impl ZygoteLauncher {
         env_overrides: Option<std::collections::HashMap<String, String>>,
         config: &VeloConfig,
     ) -> Result<WorkerHandle> {
-        if !self.is_running() {
-            return Err(ZygoteError::NotRunning);
-        }
-
         // Canonicalize script path - Zygote may have different CWD
         let script_path = if script.is_absolute() {
             script.to_path_buf()
@@ -991,6 +990,14 @@ impl ZygoteLauncher {
         };
 
         // Send FORK command over socket
+        log::debug!(
+            "[spawn_worker] Sending Fork command to socket: {:?}",
+            self.socket_path
+        );
+        log::debug!(
+            "[spawn_worker] Socket exists: {}",
+            self.socket_path.exists()
+        );
         let response = core_ipc::send_command(
             &self.socket_path,
             core_ipc::ZygoteCommand::Fork {

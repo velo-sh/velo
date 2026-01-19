@@ -386,7 +386,7 @@ In Phase 14, we successfully integrated with `pytest-xdist` by hijacking the `ex
 | pytest entry point | P1 | `--velo` flag via `uv pip install -e .` |
 | `--strict-compat` | P2 | Mimic vanilla pytest isolation |
 
-### 14.2 Mid-Term (Phase 15 Candidates)
+### 14.2 Mid-Term vtest Enhancements
 
 | Feature | Value | Complexity | Status |
 |:---|:---|:---|:---|

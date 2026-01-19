@@ -99,5 +99,12 @@ def main() -> int:
         return 1
 
 
+import atexit
+import os
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    # INV-002: Child processes must use atexit._clear() and os._exit()
+    # to prevent parent resource corruption from parent-registered handlers.
+    atexit._clear()
+    os._exit(code)

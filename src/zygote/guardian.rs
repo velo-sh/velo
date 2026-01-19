@@ -138,9 +138,10 @@ impl ZygoteGuardian {
             ));
         }
 
-        // 2. RSS Memory Monitoring (P1)
+        // Guardian Memory Monitoring (P1.5)
         if let Some(rss) = self.get_rss(pid) {
             let rss_mb = rss / 1024 / 1024;
+            log::debug!("📊 Zygote PID {} RSS: {} MB", pid, rss_mb);
             if rss_mb > 1024 {
                 // 1GB threshold for now
                 log::warn!(
@@ -203,10 +204,60 @@ impl ZygoteGuardian {
     fn get_rss(&self, _pid: u32) -> Option<u64> {
         #[cfg(target_os = "macos")]
         {
-            // Note: Modern libc crate might not expose proc_taskinfo easily.
-            // Using a simplified check or parsing 'ps' as fallback if needed.
-            // For now, return None to avoid compilation complexity in this pass,
-            // but the logic is stubbed for forensic refinement.
+            // Guardian: Native macOS RSS monitoring via libproc
+            // Ref: https://opensource.apple.com/source/Libproc/Libproc-32/libproc.h.auto.html
+            use libc::{c_int, c_void};
+
+            #[repr(C)]
+            struct proc_taskinfo {
+                pub pti_virtual_size: u64,
+                pub pti_resident_size: u64,
+                pub pti_total_user: u64,
+                pub pti_total_system: u64,
+                pub pti_threads_user: u64,
+                pub pti_threads_system: u64,
+                pub pti_policy: i32,
+                pub pti_faults: i32,
+                pub pti_pageins: i32,
+                pub pti_cow_faults: i32,
+                pub pti_messages_sent: i32,
+                pub pti_messages_received: i32,
+                pub pti_syscalls_mach: i32,
+                pub pti_syscalls_unix: i32,
+                pub pti_csw: i32,
+                pub pti_threadnum: i32,
+                pub pti_numrunning: i32,
+                pub pti_priority: i32,
+            }
+
+            const PROC_PIDTASKINFO: c_int = 4;
+
+            unsafe extern "C" {
+                fn proc_pidinfo(
+                    pid: c_int,
+                    flavor: c_int,
+                    arg: u64,
+                    buffer: *mut c_void,
+                    buffersize: c_int,
+                ) -> c_int;
+            }
+
+            let mut info = std::mem::MaybeUninit::<proc_taskinfo>::uninit();
+            let size = std::mem::size_of::<proc_taskinfo>() as c_int;
+
+            unsafe {
+                let res = proc_pidinfo(
+                    _pid as c_int,
+                    PROC_PIDTASKINFO,
+                    0,
+                    info.as_mut_ptr() as *mut c_void,
+                    size,
+                );
+
+                if res == size {
+                    return Some(info.assume_init().pti_resident_size);
+                }
+            }
             None
         }
         #[cfg(target_os = "linux")]

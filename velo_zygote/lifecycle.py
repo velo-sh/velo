@@ -228,8 +228,27 @@ def hook_security(keep_fds: set[int] | None = None) -> None:
         except Exception:
             pass
 
+    # 2.5 Asyncio Event Loop Cleanup (DEF-VTEST-ASYNCIO)
+    # Forked workers inherit the parent Zygote's asyncio event loop with scheduled tasks.
+    # We must cancel all tasks and reset the event loop to prevent socket interference.
+    try:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            # Cancel all tasks inherited from parent
+            for task in asyncio.all_tasks(loop):
+                task.cancel()
+        except RuntimeError:
+            pass  # No running loop
+        # Create a new event loop for this child process
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    except Exception:
+        pass
+
     # 3. Re-seed random number generators
     random.seed()
+
     if "numpy" in sys.modules:
         try:
             import numpy as np

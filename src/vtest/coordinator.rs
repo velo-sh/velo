@@ -1,4 +1,4 @@
-//! TestCoordinator - Orchestrates Zygote-accelerated test execution
+//! VtestCoordinator - Orchestrates Zygote-accelerated test execution
 //!
 //! RFC-0028: Phase 2 Implementation
 //!
@@ -18,6 +18,7 @@
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -110,7 +111,7 @@ impl Drop for WorkerPermit {
 
 /// Result of a single test execution
 #[derive(Debug, Clone)]
-pub struct TestResult {
+pub struct VtestResult {
     /// Test item ID (e.g., "tests/test_foo.py::test_bar")
     pub test_id: String,
     /// Whether the test passed
@@ -127,7 +128,7 @@ pub struct TestResult {
 
 /// Aggregated test report
 #[derive(Debug, Default)]
-pub struct TestReport {
+pub struct VtestReport {
     /// Total tests run
     pub total: usize,
     /// Passed tests
@@ -139,10 +140,10 @@ pub struct TestReport {
     /// Total execution time in milliseconds
     pub total_duration_ms: u64,
     /// Individual test results
-    pub results: Vec<TestResult>,
+    pub results: Vec<VtestResult>,
 }
 
-impl TestReport {
+impl VtestReport {
     /// Check if all tests passed
     pub fn all_passed(&self) -> bool {
         self.failed == 0
@@ -200,7 +201,7 @@ fn parse_runner_result(
     stdout_path: &PathBuf,
     test_id: &str,
     elapsed: Duration,
-) -> Result<TestResult> {
+) -> Result<VtestResult> {
     let content = std::fs::read_to_string(stdout_path).context("Failed to read runner stdout")?;
 
     // Find JSON in output (may have other output before/after)
@@ -212,7 +213,7 @@ fn parse_runner_result(
         let parsed: serde_json::Value =
             serde_json::from_str(json_str).context("Failed to parse runner JSON")?;
 
-        return Ok(TestResult {
+        return Ok(VtestResult {
             test_id: parsed["test_id"].as_str().unwrap_or(test_id).to_string(),
             passed: parsed["passed"].as_bool().unwrap_or(false),
             exit_code: parsed["exit_code"].as_i64().unwrap_or(1) as i32,
@@ -229,7 +230,7 @@ fn parse_runner_result(
     anyhow::bail!("No JSON found in runner output: {}", content)
 }
 
-/// TestCoordinator - Manages Zygote-accelerated test execution
+/// VtestCoordinator - Manages Zygote-accelerated test execution
 ///
 /// # P0 Safety Requirements (RFC-0028 §12)
 ///
@@ -238,7 +239,7 @@ fn parse_runner_result(
 /// - P0-3: FD corruption - workers use atexit._clear() + os._exit()
 /// - P1-3: Concurrent fork races - WorkerPool semaphore
 #[allow(dead_code)] // Fields used in future Phase 2 implementation
-pub struct TestCoordinator {
+pub struct VtestCoordinator {
     /// Zygote launcher for spawning workers
     zygote: ZygoteLauncher,
     /// Configuration
@@ -246,17 +247,17 @@ pub struct TestCoordinator {
     /// Socket path
     socket_path: PathBuf,
     /// Results receiver channel
-    results_rx: Receiver<TestResult>,
+    results_rx: Receiver<VtestResult>,
     /// Results sender (cloned to workers)
-    results_tx: Sender<TestResult>,
+    results_tx: Sender<VtestResult>,
     /// Pending test items
     pending: Vec<String>,
     /// P1-3: Worker pool for concurrency control
     pool: WorkerPool,
 }
 
-impl TestCoordinator {
-    /// Create a new TestCoordinator
+impl VtestCoordinator {
+    /// Create a new VtestCoordinator
     ///
     /// # Arguments
     /// * `config` - Velo configuration
@@ -282,13 +283,21 @@ impl TestCoordinator {
     /// # Arguments
     /// * `preload` - Modules to preload in Zygote
     pub fn ensure_zygote(&mut self, preload: &[&str]) -> Result<()> {
+        // Use daemon=true to disable the Python parent monitor.
+        // The Rust coordinator manages the Zygote lifecycle directly.
         self.zygote
-            .start(preload, None, false, &self.config)
+            .start(preload, None, true, &self.config)
             .context("Failed to start Zygote for test coordination")?;
         Ok(())
     }
 
-    /// Add test items to the pending queue
+    /// Add a single test item to the pending queue
+    pub fn add_test(&mut self, test_id: String) -> Result<()> {
+        self.pending.push(test_id);
+        Ok(())
+    }
+
+    /// Add multiple test items to the pending queue
     pub fn add_tests(&mut self, test_ids: Vec<String>) {
         self.pending.extend(test_ids);
     }
@@ -308,7 +317,7 @@ impl TestCoordinator {
     }
 
     /// Internal: dispatch test via real Zygote fork
-    fn dispatch_via_zygote(&mut self, test_id: &str) -> Result<TestResult> {
+    fn dispatch_via_zygote(&mut self, test_id: &str) -> Result<VtestResult> {
         let start = Instant::now();
 
         // P1-3: Acquire worker permit for concurrency control
@@ -343,7 +352,7 @@ impl TestCoordinator {
         let result = if let Some(stdout_path) = handle.stdout_path() {
             parse_runner_result(stdout_path, test_id, start.elapsed()).unwrap_or_else(|e| {
                 log::warn!("Failed to parse runner output: {}", e);
-                TestResult {
+                VtestResult {
                     test_id: test_id.to_string(),
                     passed: exit_code == 0,
                     exit_code,
@@ -353,7 +362,7 @@ impl TestCoordinator {
                 }
             })
         } else {
-            TestResult {
+            VtestResult {
                 test_id: test_id.to_string(),
                 passed: exit_code == 0,
                 exit_code,
@@ -367,21 +376,42 @@ impl TestCoordinator {
     }
 
     /// Run all pending tests and collect results
-    pub fn run_all(&mut self) -> Result<TestReport> {
-        let mut report = TestReport::default();
+    pub fn run_all(&mut self) -> Result<VtestReport> {
+        let mut report = VtestReport::default();
         let total_start = Instant::now();
 
         // Dispatch all pending tests
         let tests: Vec<_> = self.pending.drain(..).collect();
         report.total = tests.len();
 
+        // 3. Dispatch & Execution Loop (Phase 3)
+        let pb = ProgressBar::new(report.total as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+
         for test_id in tests {
+            pb.set_message(format!("Running {}", test_id));
             self.dispatch(&test_id)?;
+
+            // Collect result immediately if it's sequential
+            if let Ok(result) = self.results_rx.recv_timeout(Duration::from_millis(10)) {
+                if result.passed {
+                    report.passed += 1;
+                } else {
+                    report.failed += 1;
+                }
+                report.results.push(result);
+                pb.inc(1);
+            }
         }
 
-        // Collect all results
+        // Collect any remaining results (should be none if sequential)
         while report.results.len() < report.total {
-            match self.results_rx.recv_timeout(Duration::from_secs(30)) {
+            match self.results_rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(result) => {
                     if result.passed {
                         report.passed += 1;
@@ -389,9 +419,9 @@ impl TestCoordinator {
                         report.failed += 1;
                     }
                     report.results.push(result);
+                    pb.inc(1);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    log::warn!("Timeout waiting for test results");
                     break;
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -399,6 +429,8 @@ impl TestCoordinator {
                 }
             }
         }
+
+        pb.finish_with_message("Done");
 
         report.total_duration_ms = total_start.elapsed().as_millis() as u64;
         Ok(report)
@@ -418,13 +450,13 @@ mod tests {
     #[test]
     fn test_coordinator_creation() {
         let config = VeloConfig::from_env_only();
-        let coordinator = TestCoordinator::new(&config, 4);
+        let coordinator = VtestCoordinator::new(&config, 4);
         assert!(coordinator.is_ok());
     }
 
     #[test]
     fn test_report_defaults() {
-        let report = TestReport::default();
+        let report = VtestReport::default();
         assert_eq!(report.total, 0);
         assert!(report.all_passed());
         assert_eq!(report.exit_code(), 0);
@@ -432,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_report_with_failure() {
-        let report = TestReport {
+        let report = VtestReport {
             total: 2,
             passed: 1,
             failed: 1,
