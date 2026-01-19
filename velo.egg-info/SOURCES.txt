@@ -2,6 +2,7 @@ LICENSE
 README.md
 pyproject.toml
 pytest_velo/__init__.py
+pytest_velo/gateway.py
 pytest_velo/plugin.py
 pytest_velo/runner.py
 velo.egg-info/PKG-INFO
