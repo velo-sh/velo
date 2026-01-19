@@ -1,0 +1,20 @@
+[meta]
+package = "aiohttp"
+category = "web"
+tier = 3
+description = "Async http client/server framework."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/aio-libs/aiohttp.git"
+git_ref = "v3.11.11"
+test_path = "tests"
+test_dependencies = [
+    "freezegun", "pytest", "pytest-mock", "trustme", "pytest-asyncio", 
+    "re-assert", "multidict", "yarl", "frozenlist", "aiosignal", "attrs", 
+    "pytest-cov", "pytest-xdist", "gunicorn", "proxy.py"
+]
+pytest_args = ["-x", "--timeout=300", "-p", "no:pytest-codspeed"]
+timeout = 900
+known_failures = []

@@ -1,0 +1,16 @@
+[meta]
+package = "pyyaml"
+category = "library"
+tier = 3
+description = "YAML parser and emitter for Python."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/yaml/pyyaml.git"
+git_ref = "6.0.1"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x", "--timeout=60", "--ignore=tests/lib/test_yaml_ext.py"]
+timeout = 300
+known_failures = []

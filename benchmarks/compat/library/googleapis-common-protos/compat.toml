@@ -1,0 +1,17 @@
+[meta]
+package = "googleapis-common-protos"
+category = "library"
+tier = 3
+
+description = "googleapis-common-protos compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/googleapis/python-api-common-protos.git"
+git_ref = "v1.61.0"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

@@ -1,0 +1,17 @@
+[meta]
+package = "setuptools"
+category = "library"
+tier = 0
+
+description = "setuptools compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pypa/setuptools.git"
+git_ref = "v69.0.2"
+test_path = "setuptools/tests"
+test_dependencies = ["pytest", "jaraco.path", "jaraco.envs", "jaraco.text", "build", "ini2toml", "tomli", "tomli_w"]
+pytest_args = ["-p", "no:relaxed", "-p", "no:setuptools.tests.fixtures"]
+timeout = 600
+known_failures = []

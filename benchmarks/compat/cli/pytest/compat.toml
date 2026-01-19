@@ -1,0 +1,17 @@
+[meta]
+package = "pytest"
+category = "cli"
+tier = 3
+
+description = "pytest compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pytest-dev/pytest.git"
+git_ref = "7.4.3"
+test_path = "testing"
+test_dependencies = ["pytest", "xmlschema"]
+pytest_args = ["-x", "-p", "no:relaxed", "-p", "no:xdist"]
+timeout = 300
+known_failures = []

@@ -1,0 +1,16 @@
+[meta]
+package = "markupsafe"
+category = "library"
+tier = 3
+description = "Safely add untrusted strings to HTML/XML markup."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pallets/markupsafe.git"
+git_ref = "3.0.2"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 60
+known_failures = []

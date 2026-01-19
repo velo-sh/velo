@@ -1,0 +1,17 @@
+[meta]
+package = "websockets"
+category = "web"
+tier = 3
+
+description = "websockets compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/python-websockets/websockets.git"
+git_ref = "12.0"
+test_path = "tests/test_frames.py"
+test_dependencies = ["pytest"]
+pytest_args = ["-x", "-p", "no:relaxed"]
+timeout = 300
+known_failures = []
