@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import pytest
+import requests
 
 # =============================================================================
 # DEF-71-009: Primitive Static Analysis (SAT) fragility (P1)
@@ -178,9 +179,8 @@ class TestProxySmuggling:
         process = subprocess.Popen(
             [str(velo_binary), "serve", "main:app", "--port", str(port)],
             cwd=app_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -201,7 +201,13 @@ class TestProxySmuggling:
 
         finally:
             process.terminate()
-            process.wait(timeout=5)
+            # Increase timeout and account for CI slowness
+            wait_timeout = 15 * int(os.environ.get("VELO_TIMEOUT_MULTIPLIER", 1))
+            try:
+                process.wait(timeout=wait_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 # =============================================================================
@@ -238,12 +244,16 @@ class TestSocketHijack:
         with open(app_dir / "main.py", "w") as f:
             f.write("def app(scope, receive, send): pass")
 
+        env = os.environ.copy()
+        env["VELO_SOCKET_DIR"] = str(socket_dir)
+        env["VELO_TEST_MODE"] = "1"
+
         process = subprocess.Popen(
             [str(velo_binary), "serve", "main:app", "--port", "8894"],
             cwd=app_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         try:
@@ -254,4 +264,9 @@ class TestSocketHijack:
 
         finally:
             process.terminate()
-            process.wait(timeout=5)
+            wait_timeout = 15 * int(os.environ.get("VELO_TIMEOUT_MULTIPLIER", 1))
+            try:
+                process.wait(timeout=wait_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()

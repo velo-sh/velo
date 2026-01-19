@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import socket
 import subprocess
 import tempfile
@@ -103,6 +102,10 @@ class ClientProject:
         self.velo = get_velo_binary()
         self.procs = []
         self.port = self.next_port()  # Reserve port at init
+        self.stdout_log = self.path / "stdout.log"
+        self.stderr_log = self.path / "stderr.log"
+        self.stdout_f = None
+        self.stderr_f = None
 
     @classmethod
     def next_port(cls) -> int:
@@ -197,11 +200,30 @@ dependencies = [
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
 
+        # RFC-0012: Isolate Zygote sockets per project to prevent collisions (Trap 178.21)
+        import uuid
+
+        socket_dir = self.path / ".velo" / "sockets"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        socket_path = socket_dir / f"z-{uuid.uuid4().hex[:8]}.s"
+
+        env = os.environ.copy()
+        env["VELO_SOCKET_DIR"] = str(socket_dir)
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+
+        # SEC-005: Use explicit secret for auth
+        forensic_secret = str(uuid.uuid4())
+        env["VELO_ZYGOTE_AUTH"] = forensic_secret
+
+        self.stdout_f = open(self.stdout_log, "w")
+        self.stderr_f = open(self.stderr_log, "w")
+
         proc = subprocess.Popen(
             cmd,
             cwd=self.path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            env=env,
+            stdout=self.stdout_f,
+            stderr=self.stderr_f,
             text=True,
         )
         self.procs.append(proc)
@@ -233,10 +255,16 @@ dependencies = [
                     proc.kill()
                 except:
                     pass
-        try:
-            shutil.rmtree(self.path)
-        except:
-            pass
+
+        if self.stdout_f:
+            self.stdout_f.close()
+        if self.stderr_f:
+            self.stderr_f.close()
+
+        # try:
+        #     shutil.rmtree(self.path)
+        # except:
+        #     pass
 
     def __enter__(self):
         return self
@@ -272,7 +300,7 @@ class TestNoDependencies:
             # Check what happened
             if proc.poll() is not None:
                 # Process exited - should have shown hint
-                stderr = proc.stderr.read() if proc.stderr else ""
+                stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
                 assert "uvicorn" in stderr.lower() or "dependency" in stderr.lower()
             else:
                 # Process still running - velo handled it
@@ -285,8 +313,8 @@ class TestNoDependencies:
         With fastapi but no uvicorn explicitly - velo should handle it.
         """
         with ClientProject() as project:
-            project.set_pyproject(dependencies=["fastapi"])
-            project.set_uv_lock(packages={"fastapi": "0.115.0"})
+            project.set_pyproject(dependencies=["fastapi", "msgpack"])
+            project.set_uv_lock(packages={"fastapi": "0.115.0", "msgpack": "1.0.0"})
             project.set_app(
                 "main.py",
                 """
@@ -303,7 +331,7 @@ def root():
             proc, port = project.serve("main:app")
             time.sleep(3)
 
-            stderr = proc.stderr.read() if proc.stderr else ""
+            stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
 
             # Either it starts successfully or shows clear error
             if proc.poll() is None:
@@ -337,20 +365,13 @@ class TestDefectRegression:
 raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
 """,
             )
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             proc, port = project.serve("crash_app:app")
             time.sleep(3)
 
             # Read stderr
-            import fcntl
-            import os
-
-            fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
-            try:
-                stderr = proc.stderr.read() or ""
-            except:
-                stderr = ""
+            stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
 
             os.kill(proc.pid, 9)  # Clean up by PID
 
@@ -378,20 +399,13 @@ def root():
     return {"ok": True}
 """,
             )
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             proc, port = project.serve("main:app")
             time.sleep(2)
 
             # Read stderr
-            import fcntl
-            import os
-
-            fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
-            try:
-                stderr = proc.stderr.read() or ""
-            except:
-                stderr = ""
+            stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
 
             os.kill(proc.pid, 9)  # Clean up by PID
 
@@ -435,7 +449,7 @@ def health():
 """,
             )
             # Client adds dependencies and syncs (like real user)
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             # Velo starts server
             proc, port = project.serve("main:app")
@@ -443,15 +457,9 @@ def health():
             # Wait for server to be truly ready using HTTP requests
             ready, error = wait_for_server_ready(port, timeout=60, path="/")
             if not ready:
-                # Capture server stderr for debugging
-                import fcntl
-
-                try:
-                    fcntl.fcntl(proc.stderr.fileno(), fcntl.F_SETFL, os.O_NONBLOCK)
-                    stderr = proc.stderr.read() or ""
-                except:
-                    stderr = ""
-                pytest.fail(f"Server did not become ready. Error: {error}\nstderr: {stderr[:2000]}")
+                # Capture server logs from session log dir or our redirected stderr
+                stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
+                pytest.fail(f"Server did not become ready. Error: {error}\nLogs: {stderr[:2000]}")
 
             # Server is ready, now verify the response
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=5)
@@ -474,13 +482,13 @@ def health():
     return {"healthy": True}
 """,
             )
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             proc, port = project.serve("main:app")
 
             ready, error = wait_for_server_ready(port, timeout=60, path="/health")
             if not ready:
-                stderr = proc.stderr.read() if proc.stderr else ""
+                stderr = project.stderr_log.read_text() if project.stderr_log.exists() else ""
                 pytest.fail(f"Server did not start. Error: {error}, stderr: {stderr}")
 
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
@@ -506,7 +514,7 @@ def count():
     return {"count": counter}
 """,
             )
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             proc, port = project.serve("main:app")
 
@@ -545,7 +553,7 @@ def root():
     return {"ok": True}
 """,
             )
-            project.uv_add("fastapi", "uvicorn")
+            project.uv_add("fastapi", "uvicorn", "msgpack")
 
             proc, port = project.serve("main:app")
 

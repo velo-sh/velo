@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -444,21 +445,34 @@ class TestSEC07001IPCAtomicIsolation:
     def test_conflicting_directory_detection(self, velo_binary, tmp_path):
         """Pre-created conflicting directory must be detected and handled safely."""
         # Simulate attack: pre-create socket directory with insecure permissions
-        socket_dir = tmp_path / f"velo-{os.getuid()}"
-        socket_dir.mkdir(mode=0o777)
+        # Use a short path to avoid Velo falling back to /tmp due to length limits (SEC-004)
+        socket_dir = Path("/tmp") / f"velo-test-{os.getuid()}-{int(time.time())}"
+        try:
+            if socket_dir.exists():
+                import shutil
 
-        env = os.environ.copy()
-        env["VELO_TEST_MODE"] = "1"
-        env["VELO_SOCKET_DIR"] = str(socket_dir)
+                shutil.rmtree(socket_dir)
+            socket_dir.mkdir(mode=0o777)
 
-        # Velo should report a security warning or fix permissions
-        result = subprocess.run([velo_binary, "info"], env=env, capture_output=True, text=True, timeout=10)
+            env = os.environ.copy()
+            env["VELO_TEST_MODE"] = "1"
+            env["VELO_SOCKET_DIR"] = str(socket_dir)
 
-        # Check stderr for SECURITY warning (see src/common/paths.rs:218)
-        assert (
-            "SECURITY: Socket dir has insecure permissions" in result.stderr
-            or socket_dir.stat().st_mode & 0o777 == 0o700
-        )
+            # Velo should report a security warning or fix permissions
+            result = subprocess.run([velo_binary, "info"], env=env, capture_output=True, text=True, timeout=10)
+
+            # Check for security enforcement
+            # RFC-0012: Rust forces 0700 or panics with "FATAL SECURITY ERROR"
+            assert (
+                "FATAL SECURITY ERROR" in result.stderr
+                or "SECURITY FAILURE" in result.stderr
+                or socket_dir.stat().st_mode & 0o777 == 0o700
+            )
+        finally:
+            if socket_dir.exists():
+                import shutil
+
+                shutil.rmtree(socket_dir)
 
 
 # =============================================================================

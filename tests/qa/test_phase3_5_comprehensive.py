@@ -104,26 +104,89 @@ class ComprehensiveTestEnv:
                 """[project]
 name = "test-app"
 version = "0.1.0"
-dependencies = ["fastapi", "uvicorn"]"""
+dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             )
         return self
 
+    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+        # Create env with isolated sockets
+        env = os.environ.copy()
+        env["VIRTUAL_ENV"] = str(self.path / ".venv")
+
+        # RFC-0012: Isolate sockets.
+        # On macOS, the path limit is 104 characters. Using self.path (a long /tmp path)
+        # plus subdirectories often exceeds this. Fall back to a short unique /tmp path.
+        import tempfile
+        import uuid
+
+        uid = uuid.uuid4().hex[:8]
+        socket_dir = Path(tempfile.gettempdir()) / f"v-{uid}"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        socket_path = socket_dir / "z.s"
+
+        env["VELO_SOCKET_DIR"] = str(socket_dir)
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+        env["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
+
+        # SAD Path optimization: disable backoff for tests
+        env["VELO_BACKOFF_SECS"] = "0"
+
+        if "env" in kwargs:
+            env.update(kwargs.pop("env"))
+
+        try:
+            return subprocess.run(
+                [self.velo] + list(args),
+                env=env,
+                cwd=kwargs.pop("cwd", self.path),
+                capture_output=kwargs.pop("capture_output", True),
+                text=kwargs.pop("text", True),
+                timeout=kwargs.pop("timeout", T_SHORT),
+                **kwargs,
+            )
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            stderr = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or "")
+            print(f"TIMEOUT in run_velo. Args: {args}\nStdout: {stdout}\nStderr: {stderr}")
+            raise
+
     def install(self, *packages):
+        pkgs = list(packages)
+        if "msgpack" not in pkgs:
+            pkgs.append("msgpack")
+        env = os.environ.copy()
+        env["VIRTUAL_ENV"] = str(self.path / ".venv")
         subprocess.run(
-            ["uv", "pip", "install", "-q"] + list(packages),
+            ["uv", "pip", "install", "-q"] + pkgs,
             cwd=self.path,
             capture_output=True,
+            env=env,
         )
 
     def create_app(self, name: str, code: str):
         (self.path / name).write_text(code)
 
-    def serve(self, app: str, port: int, **opts) -> subprocess.Popen:
+    def serve(self, app: str, port: int, capture: bool = False, **opts) -> subprocess.Popen:
         # Use 'uv run' to ensure the local venv is used for dependencies
-        # Clear VIRTUAL_ENV to avoid uv discovery warnings in nested venvs
         env = os.environ.copy()
-        if "VIRTUAL_ENV" in env:
-            del env["VIRTUAL_ENV"]
+        env["VIRTUAL_ENV"] = str(self.path / ".venv")
+
+        # RFC-0012: Isolate Zygote sockets per project to prevent collisions
+        # On macOS, use short paths in /tmp
+        import tempfile
+        import uuid
+
+        uid = uuid.uuid4().hex[:8]
+        socket_dir = Path(tempfile.gettempdir()) / f"v-{uid}"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        socket_path = socket_dir / "z.s"
+
+        env["VELO_SOCKET_DIR"] = str(socket_dir)
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+        env["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
+
+        # SAD Path optimization
+        env["VELO_BACKOFF_SECS"] = "0"
 
         # FIX: Add --offline --no-sync to prevent CI hangs (uv 0.9+)
         cmd = [
@@ -140,11 +203,22 @@ dependencies = ["fastapi", "uvicorn"]"""
         for k, v in opts.items():
             cmd.extend([f"--{k.replace('_', '-')}", str(v)])
 
+        if capture:
+            self.stdout_log = self.path / "stdout.log"
+            self.stderr_log = self.path / "stderr.log"
+            self.stdout_f = open(self.stdout_log, "w")
+            self.stderr_f = open(self.stderr_log, "w")
+            stdout = self.stdout_f
+            stderr = self.stderr_f
+        else:
+            stdout = subprocess.DEVNULL
+            stderr = subprocess.DEVNULL
+
         proc = subprocess.Popen(
             cmd,
             cwd=self.path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout,
+            stderr=stderr,
             text=True,
             env=env,
         )
@@ -161,6 +235,12 @@ dependencies = ["fastapi", "uvicorn"]"""
                     proc.kill()
                 except:
                     pass
+
+        if hasattr(self, "stdout_f") and self.stdout_f:
+            self.stdout_f.close()
+        if hasattr(self, "stderr_f") and self.stderr_f:
+            self.stderr_f.close()
+
         try:
             shutil.rmtree(self.path)
         except:
@@ -207,11 +287,11 @@ class TestL0Smoke:
             env.setup(with_project=False)
             env.create_app("main.py", "app = None")
             # Do NOT install uvicorn - test the error message
-            proc = env.serve("main:app", env.next_port())
+            proc = env.serve("main:app", env.next_port(), capture=True)
             time.sleep(2)
             proc.terminate()
             proc.wait(timeout=T_SHORT)
-            stderr = proc.stderr.read()
+            stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
             # Dev added good error message
             assert "uvicorn" in stderr.lower() or "dependency" in stderr.lower()
 
@@ -235,13 +315,13 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if wait_for_port(port, timeout=T_MEDIUM):
                 L0_PASSED = True
                 assert True
             else:
-                stderr = proc.stderr.read() if proc.stderr else ""
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 # If velo reports uvicorn missing, this is expected behavior
                 # velo checks the project's venv, not our test's installed packages
                 if "uvicorn" in stderr.lower() and ("missing" in stderr.lower() or "dependency" in stderr.lower()):
@@ -276,9 +356,11 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
+                print(f"FAILED TO START. Logs:\n{stderr}")
                 pytest.skip("Server did not start (L0 issue)")
 
             # Settle time for workers to connect to proxy
@@ -306,7 +388,7 @@ def echo(data: dict):
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
@@ -337,7 +419,7 @@ def count():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
@@ -373,13 +455,18 @@ def on_exit():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
 
             # Make a request to ensure it's working
-            requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
+            try:
+                requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
+            except Exception as e:
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
+                print(f"FAILED initial request in graceful_shutdown. Error: {e}\nLogs:\n{stderr}")
+                raise
 
             # Send SIGTERM
             proc.terminate()
@@ -402,30 +489,18 @@ class TestL2SadPath:
 
     def test_l2_001_module_not_found(self):
         """Clear error when module doesn't exist."""
-        velo = get_velo_binary()
-        result = subprocess.run(
-            [velo, "serve", "nonexistent_xyz:app"],
-            capture_output=True,
-            text=True,
-            timeout=T_SHORT,
-        )
-        assert result.returncode != 0
-        # Accept various error indicators (may be uvicorn missing or module not found)
-        stderr_lower = result.stderr.lower()
-        assert any(x in stderr_lower for x in ["error", "not found", "missing", "dependency"])
+        with ComprehensiveTestEnv() as env:
+            result = env.run_velo("serve", "nonexistent_xyz:app")
+            assert result.returncode != 0
+            # Accept various error indicators (may be uvicorn missing or module not found)
+            stderr_lower = result.stderr.lower()
+            assert any(x in stderr_lower for x in ["error", "not found", "missing", "dependency"])
 
     def test_l2_002_app_not_found(self):
         """Clear error when app attribute doesn't exist."""
         with ComprehensiveTestEnv() as env:
             env.create_app("noapp.py", "x = 1")  # No 'app'
-
-            result = subprocess.run(
-                [env.velo, "serve", "noapp:app"],
-                cwd=env.path,
-                capture_output=True,
-                text=True,
-                timeout=T_SHORT,
-            )
+            result = env.run_velo("serve", "noapp:app")
             assert result.returncode != 0
 
     def test_l2_003_syntax_error(self):
@@ -434,13 +509,7 @@ class TestL2SadPath:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
             env.install("uvicorn")  # Install uvicorn so we test syntax check
 
-            result = subprocess.run(
-                [env.velo, "serve", "broken:app"],
-                cwd=env.path,
-                capture_output=True,
-                text=True,
-                timeout=T_SHORT,
-            )
+            result = env.run_velo("serve", "broken:app")
             assert result.returncode != 0
             # Should mention syntax, error, or uvicorn missing
             assert (
@@ -455,13 +524,7 @@ class TestL2SadPath:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
             env.install("uvicorn")  # Install uvicorn so we test crash handling
 
-            result = subprocess.run(
-                [env.velo, "serve", "crasher:app"],
-                cwd=env.path,
-                capture_output=True,
-                text=True,
-                timeout=T_SHORT,
-            )
+            result = env.run_velo("serve", "crasher:app")
             assert result.returncode != 0
             # Should show the actual error or dependency message
             assert (
@@ -473,18 +536,17 @@ class TestL2SadPath:
 
     def test_l2_005_invalid_app_format(self):
         """Clear error for invalid app format."""
-        velo = get_velo_binary()
+        with ComprehensiveTestEnv() as env:
+            invalid_formats = [
+                "nocolon",
+                ":app",
+                "main:",
+                "path:to:much:app",
+            ]
 
-        invalid_formats = [
-            "nocolon",
-            ":app",
-            "main:",
-            "path:to:much:app",
-        ]
-
-        for fmt in invalid_formats:
-            result = subprocess.run([velo, "serve", fmt], capture_output=True, text=True, timeout=T_SHORT)
-            assert result.returncode != 0, f"{fmt} should fail"
+            for fmt in invalid_formats:
+                result = env.run_velo("serve", fmt)
+                assert result.returncode != 0, f"{fmt} should fail"
 
 
 # =============================================================================
@@ -515,16 +577,22 @@ def root():
 
             # Use specific port
             port = 19500
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
+                print(f"FAILED TO START port_option_works. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
 
             # Verify it's on the right port
-            response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
-            assert response.status_code == 200
+            try:
+                response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
+                assert response.status_code == 200
+            except Exception as e:
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
+                print(f"FAILED request in port_option_works. Error: {e}\nLogs:\n{stderr}")
+                raise
 
-            # Verify it's NOT on default port
             # Verify it's NOT on some other port we don't expect
             assert not is_port_open(19501)
 
@@ -547,9 +615,11 @@ def get_pid():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, workers=4)
+            proc = env.serve("main:app", port, workers=4, capture=True)
 
             if not wait_for_port(port, timeout=30):
+                stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
+                print(f"FAILED TO START workers_spawn_multiple. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
 
             # Make requests and collect PIDs
@@ -676,13 +746,19 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port)
+            proc = env.serve("main:app", port, capture=True)
 
             time.sleep(3)
             # Terminate first to avoid blocking read()
             proc.terminate()
             proc.wait(timeout=T_SHORT)
-            stderr = proc.stderr.read() if proc.stderr else ""
+            stderr = (
+                env.stderr_log.read_text()
+                if hasattr(env, "stderr_log") and env.stderr_log.exists()
+                else ""
+                if proc.stderr
+                else ""
+            )
 
             # Banner should show framework
             # Currently shows "Unknown" - this is a bug

@@ -297,7 +297,17 @@ impl PythonEnv {
 
         // PYTHONPATH: Inject site-packages (SPEC-0005/06)
         if let Some(ref sp) = self.site_packages {
-            cmd.env("PYTHONPATH", sp);
+            let sp_str = sp.to_string_lossy();
+            let new_path = if let Ok(current) = std::env::var("PYTHONPATH") {
+                if current.is_empty() {
+                    sp_str.into_owned()
+                } else {
+                    format!("{}:{}", sp_str, current)
+                }
+            } else {
+                sp_str.into_owned()
+            };
+            cmd.env("PYTHONPATH", new_path);
             cmd.env("VELO_PYTHON_SITE_PACKAGES", sp);
         }
     }

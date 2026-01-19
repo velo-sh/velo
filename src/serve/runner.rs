@@ -848,7 +848,7 @@ pub fn run_server(
                     _zygote_guard = Some(ZygoteLauncher::new(socket_path));
                 }
                 Ok(resp) => {
-                    logger.warn(&format!("Existing Zygote invalid handshake: {:?}", resp));
+                    logger.warn(&format!("Existing Zygote invalid handshake response: {:?}. Expected Handshake variant with version {}.", resp, crate::zygote::core_ipc::PROTOCOL_VERSION));
                     let _ = std::fs::remove_file(&socket_path);
                 }
                 Err(e) => {

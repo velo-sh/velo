@@ -107,10 +107,9 @@ class TestL2EdgeCases:
             unix_sockets = f.read()
 
         # Look for abstract sockets (start with @) or named sockets
-        has_velo_socket = (
-            "@velo-worker" in unix_sockets or "velo-worker" in unix_sockets or f"velo-{os.getuid()}" in unix_sockets
-        )
-        assert has_velo_socket, "No velo-worker sockets found in /proc/net/unix"
+        # RFC-0013 Phase 6.1.1: Sockets are now named 'v-worker-' and often in a test-specific dir
+        has_velo_socket = "@velo" in unix_sockets or "v-worker" in unix_sockets or "velo-" in unix_sockets
+        assert has_velo_socket, f"No velo sockets found in /proc/net/unix. Content:\n{unix_sockets[:1000]}"
 
     @pytest.mark.skipif(sys.platform == "linux", reason="macOS fallback test")
     def test_EDGE_603_filesystem_socket_macos(self, velo_serve_fixture):
