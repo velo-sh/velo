@@ -308,24 +308,24 @@ velo_zygote/                    # ← Aligned with: src/zygote/
 | `pytest_velo/plugin.py` | pytest hooks | `src/vtest/mod.rs` |
 | `pytest_velo/gateway.py` | execnet hijack | `src/vtest/coordinator.rs` |
 | `pytest_velo/runner.py` | Worker pytest.main() | `src/vtest/runner.rs` |
-| `velo_zygote/main.py` | Zygote 主循环 | `src/zygote/mod.rs` |
-| `velo_zygote/v_fork.py` | Fork 生命周期 | `fork.rs` → **`v_fork.rs`** |
-| `velo_zygote/v_rsgi.py` | RSGI 协议 | `rsgi.rs` → **`v_rsgi.rs`** |
-| `velo_zygote/v_shield.py` | 安全屏障 | `shield.rs` → **`v_shield.rs`** |
+| `velo_zygote/main.py` | Zygote main loop | `src/zygote/mod.rs` |
+| `velo_zygote/v_fork.py` | Fork lifecycle | `fork.rs` → **`v_fork.rs`** |
+| `velo_zygote/v_rsgi.py` | RSGI protocol | `rsgi.rs` → **`v_rsgi.rs`** |
+| `velo_zygote/v_shield.py` | Security barrier | `shield.rs` → **`v_shield.rs`** |
 | `velo_zygote/lifecycle.py` | Security hooks | `src/zygote/guardian.rs` |
-| `velo_zygote/settings.py` | 配置 SSOT | `src/config.rs` |
-| `velo_zygote/paths.py` | 路径解析 | `src/zygote/path.rs` |
-| `velo_zygote/worker_launcher.py` | Worker 启动 | `src/serve/worker.rs` |
-| `velo_zygote/transport_sync.py` | 同步 IPC | `src/zygote/ipc.rs` |
+| `velo_zygote/settings.py` | Config SSOT | `src/config.rs` |
+| `velo_zygote/paths.py` | Path resolution | `src/zygote/path.rs` |
+| `velo_zygote/worker_launcher.py` | Worker spawn | `src/serve/worker.rs` |
+| `velo_zygote/transport_sync.py` | Sync IPC | `src/zygote/ipc.rs` |
 
 #### 10.3.4 Cross-Layer Invariants
 
 > [!IMPORTANT]
-> **INV-ARCH-001**: Python 模块必须与对应的 Rust 模块保持功能对齐。
-> **INV-ARCH-002**: 配置必须通过 Rust 注入 (`VELO_*` env vars)，Python 只读。
-> **INV-ARCH-003**: Python 不允许直接调用 libc；所有底层操作通过 Rust PyO3。
-> **INV-ARCH-004**: 每个 Python 模块必须有对应的 Rust 单元测试验证协议兼容性。
-> **INV-ARCH-005**: `v_*` 前缀是 Velo 核心组件标准命名，Python 和 Rust 必须统一。
+> **INV-ARCH-001**: Python modules MUST maintain functional alignment with corresponding Rust modules.
+> **INV-ARCH-002**: Config MUST be injected via Rust (`VELO_*` env vars); Python is read-only.
+> **INV-ARCH-003**: Python MUST NOT call libc directly; all low-level ops via Rust PyO3.
+> **INV-ARCH-004**: Each Python module MUST have corresponding Rust unit tests for protocol compatibility.
+> **INV-ARCH-005**: `v_*` prefix is the Velo core component naming standard; Python and Rust MUST unify.
 
 #### 10.3.5 Refactor Tracking
 

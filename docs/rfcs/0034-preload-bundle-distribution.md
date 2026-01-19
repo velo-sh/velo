@@ -13,12 +13,12 @@
 
 ## 1. Executive Summary
 
-This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file (`.vbundle`). This is a **source distribution format**, not a runtime image.
+This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file (`.vpkg`). This is a **source distribution format**, not a runtime image.
 
 | Aspect | Description |
 |:---|:---|
 | **Scope** | Source code + dependencies + assets |
-| **Format** | Single `.vbundle` archive (tar.zst) |
+| **Format** | Single `.vpkg` archive (tar.zst) |
 | **Runtime** | Zygote pre-warming happens at deployment, not in bundle |
 | **Target** | Clean machines with Velo installed |
 
@@ -54,7 +54,7 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 │              RFC-0034 (This RFC)    │    RFC-0035           │
 │              STATIC / BUILD-TIME    │    RUNTIME            │
 ├─────────────────────────────────────┼───────────────────────┤
-│  .vbundle file                      │   preload.lock        │
+│  .vpkg file                      │   preload.lock        │
 │  ├── source code                    │   native lib dlopen   │
 │  ├── site-packages/                 │   Zygote pre-warming  │
 │  ├── assets (.safetensors)          │   fingerprint verify  │
@@ -62,12 +62,12 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 └─────────────────────────────────────┴───────────────────────┘
 ```
 
-### 3.2 Bundle Format (`.vbundle`)
+### 3.2 Bundle Format (`.vpkg`)
 
 **File Format**: tar.zst (tar archive with Zstandard compression)
 
 ```
-app.vbundle (tar.zst)
+app.vpkg (tar.zst)
 ├── manifest.json           # Metadata + signature
 ├── src/                    # Application source code
 ├── site-packages/          # Pre-installed dependencies (wheels)
@@ -105,7 +105,7 @@ app.vbundle (tar.zst)
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────────┐
-│ velo bundle │────▶│  .vbundle   │────▶│ velo deploy (or velo run)       │
+│ velo bundle │────▶│  .vpkg   │────▶│ velo deploy (or velo run)       │
 │   build     │     │   (ship)    │     │                                 │
 └─────────────┘     └─────────────┘     │  1. Verify signature            │
       │                                 │  2. Extract to isolated dir     │
@@ -120,16 +120,16 @@ app.vbundle (tar.zst)
 
 ```bash
 # Build a bundle from pyproject.toml
-velo bundle build --preload "torch,transformers" --output app.vbundle
+velo bundle build --preload "torch,transformers" --output app.vpkg
 
 # Build with model assets (Memory Gravity)
-velo bundle build --include model.safetensors --output app.vbundle
+velo bundle build --include model.safetensors --output app.vpkg
 
 # Run from bundle
-velo bundle run app.vbundle
+velo bundle run app.vpkg
 
 # Deploy to serverless (future)
-velo bundle deploy app.vbundle --target aws-lambda
+velo bundle deploy app.vpkg --target aws-lambda
 ```
 
 ---
@@ -150,26 +150,26 @@ velo bundle deploy app.vbundle --target aws-lambda
 
 ```bash
 # Build (no signing by default)
-velo bundle build --output app.vbundle
+velo bundle build --output app.vpkg
 
 # Run (no verification by default)
-velo bundle run app.vbundle
+velo bundle run app.vpkg
 
 # Optional: Build with signing
-velo bundle build --sign --key ~/.velo/signing.key --output app.vbundle
+velo bundle build --sign --key ~/.velo/signing.key --output app.vpkg
 
 # Optional: Verify before run
-velo bundle run --verify --trust ~/.velo/trusted-keys/ app.vbundle
+velo bundle run --verify --trust ~/.velo/trusted-keys/ app.vpkg
 ```
 
 ### 5.3 Future: Sigstore Integration
 
 ```bash
 # Keyless signing via GitHub OIDC
-velo bundle build --sign-sigstore --output app.vbundle
+velo bundle build --sign-sigstore --output app.vpkg
 
 # Verify with transparency log
-velo bundle verify app.vbundle --sigstore
+velo bundle verify app.vpkg --sigstore
 # Checks: signature + Rekor log entry + certificate identity
 ```
 
@@ -209,20 +209,137 @@ fn extract_bundle(bundle: &Path) -> Result<PathBuf> {
 | **Docker** | ~2s (layer extract) | Container registry | No container runtime needed |
 | **Lambda Layers** | ~1s | AWS-specific | Platform agnostic |
 | **PyInstaller** | ~500ms | Single binary | + COW fork + SHM sharing |
-| **Velo Bundle** | **< 50ms** | `.vbundle` file | Full Zygote ecosystem |
+| **Velo Bundle** | **< 50ms** | `.vpkg` file | Full Zygote ecosystem |
 
 ---
 
-## 8. Implementation Phases
+## 8. Performance Optimizations
+
+### 8.1 Preload-Friendly File Layout (P1)
+
+> **Priority**: P1 (Council Approved 2026-01-19)
+> **Goal**: File physical order in bundle = import order → Maximize page cache hits
+
+#### 8.1.1 Performance Impact
+
+| Scenario | Random Layout | Preload Layout | Improvement |
+|:---|:---|:---|:---|
+| PyTorch bundle (500MB .so) | ~3.2s | ~1.8s | **45%** |
+| HDD sequential vs random | 5 MB/s | 150 MB/s | **30x** |
+| NVMe sequential vs random | 300 MB/s | 3500 MB/s | **12x** |
+
+> **Council Verdict**: Low cost (~1 day), high benefit (45% latency reduction)
+
+#### 8.1.2 Physical Layout
+
+```
+app.vpkg physical layout:
+├── [HOT ZONE] ────────────────────────
+│   ├── torch/lib/libtorch.so          # First import
+│   ├── torch/lib/libtorch_cpu.so      # Sequential read
+│   ├── torch/__init__.py
+│   ├── numpy/core/multiarray.so
+├── [WARM ZONE] ────────────────────────
+│   ├── app/main.py
+│   ├── app/config.json
+├── [COLD ZONE] ────────────────────────
+│   └── tests/, docs/, etc.
+```
+
+#### 8.1.3 Implementation
+
+```rust
+// Build-time: sort files by preload_hint
+let files = collect_files(project_dir);
+let sorted = sort_by_preload_order(files, preload_hint);
+create_tar_zst(sorted)?;
+
+// Runtime: mmap + sequential hint
+let mmap = unsafe { MmapOptions::new().map(&file)? };
+madvise(mmap.as_ptr(), mmap.len(), MADV_SEQUENTIAL);
+```
+
+#### 8.1.4 Manifest Field
+
+```json
+{
+  "layout": "preload_optimized",
+  "preload_order": ["torch", "numpy", "transformers", "app"]
+}
+```
+
+#### 8.1.5 Known Pitfalls (Council Review 2026-01-19)
+
+| # | Issue | Severity | Mitigation |
+|:---|:---|:---|:---|
+| 1 | tar is stream format, not random-access | Medium | Extract-first or consider squashfs |
+| 2 | zstd streaming prevents seeking | Medium | Accept sequential-only optimization |
+| 3 | User import order unpredictable | Low | Hot zone for top N packages |
+| 4 | Network FS breaks prefetch (NFS/EBS) | Low | Document as local-SSD optimized |
+| 5 | Docker overlay2 adds indirection | Low | Best-effort optimization |
+
+#### 8.1.6 Format Alternatives (Future Consideration)
+
+| Format | Random Access | Security | Cross-Platform |
+|:---|:---|:---|:---|
+| **tar.zst** (current) | ❌ Stream-only | ✅ Audited | ✅ Yes |
+| **squashfs** | ✅ Block-level | ✅ Kernel-audited | ❌ Linux-only |
+| **zip (stored)** | ✅ O(1) seek | ✅ Audited | ✅ Yes |
+
+> **Decision**: Keep tar.zst for v1.0. Layout optimization is best-effort for local storage. 
+> Re-evaluate squashfs for Linux-only deployments in future.
+
+### 8.2 Optional Native Library Bundling
+
+> **Goal**: Drop-in, one-click deployment for homogeneous environments
+
+| Mode | Description | Use Case |
+|:---|:---|:---|
+| **portable** (default) | Python only, .so installed on target | Cross-platform distribution |
+| **self-contained** | Python + .so bundled | Same-platform one-click deploy |
+
+**CLI Interface**:
+```bash
+# Default: portable (no native libs)
+velo bundle build --output app.vpkg
+
+# Self-contained: include native libraries
+velo bundle build --include-native --output app.vpkg
+
+# Cross-platform build (future)
+velo bundle build --include-native --platform linux-x86_64 --output app.vpkg
+```
+
+**Manifest Extension**:
+```json
+{
+  "native_mode": "self-contained",
+  "native_libs": [
+    {
+      "path": "lib/libtorch.so",
+      "platform": "linux-x86_64-glibc2.31",
+      "sha256": "abc123..."
+    }
+  ]
+}
+```
+
+> **Note**: Self-contained mode requires platform match at runtime (via RFC-0035 fingerprint check).
+
+---
+
+## 9. Implementation Phases
 
 ### Phase 1: Core Bundle Format
-- [ ] Define `.vbundle` file format specification
+- [ ] Define `.vpkg` file format specification
 - [ ] Implement `velo bundle build` command
 - [ ] Implement `velo bundle run` command
 
-### Phase 2: Asset Integration
+### Phase 2: Asset & Native Integration
 - [ ] Support `--include` for static assets
 - [ ] Memory Gravity asset embedding (`.safetensors`)
+- [ ] `--include-native` for self-contained mode
+- [ ] Preload-friendly file ordering
 
 ### Phase 3: Distribution
 - [ ] Bundle signing and verification
