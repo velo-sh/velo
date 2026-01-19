@@ -1,0 +1,17 @@
+[meta]
+package = "msgpack"
+category = "library"
+tier = 3
+
+description = "msgpack compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/msgpack/msgpack-python.git"
+git_ref = "v1.0.7"
+test_path = "test"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

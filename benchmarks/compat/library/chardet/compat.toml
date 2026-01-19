@@ -1,0 +1,16 @@
+[meta]
+package = "chardet"
+category = "library"
+tier = 3
+description = "Universal encoding detector for Python 3."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/chardet/chardet.git"
+git_ref = "5.2.0"
+test_path = "."
+test_dependencies = ["pytest", "hypothesis"]
+pytest_args = ["-x", "-o", "python_files=test.py"]
+timeout = 300
+known_failures = []

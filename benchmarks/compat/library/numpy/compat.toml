@@ -1,0 +1,18 @@
+[meta]
+package = "numpy"
+category = "library"
+tier = 2
+description = "Fundamental package for scientific computing with Python"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/numpy/numpy.git"
+git_ref = "v2.2.1"
+test_path = ""
+test_dependencies = ["pytest", "hypothesis", "typing_extensions", "pytz"]
+pytest_args = ["--pyargs", "numpy.core", "numpy.lib", "numpy.linalg", "numpy.fft", "numpy.random", "numpy.ma", "numpy.polynomial"]
+run_cwd_strategy = "parent"
+exclude_markers = []
+timeout = 600
+known_failures = []

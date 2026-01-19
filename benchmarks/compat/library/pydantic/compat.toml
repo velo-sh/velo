@@ -1,0 +1,17 @@
+[meta]
+package = "pydantic"
+category = "library"
+tier = 2
+description = "Data validation using Python type hints"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pydantic/pydantic.git"
+git_ref = "v2.10.4"
+test_path = "tests"
+test_dependencies = ["pytest", "pytest-benchmark", "dirty-equals>=0.5.0", "eval-type-backport", "coverage", "cloudpickle", "email-validator", "pytest-examples"]
+pytest_args = ["-m", "not benchmark"] 
+exclude_markers = []
+timeout = 300
+known_failures = []

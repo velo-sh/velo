@@ -1,0 +1,17 @@
+[meta]
+package = "uvicorn"
+category = "web"
+tier = 0
+
+description = "uvicorn compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/encode/uvicorn.git"
+git_ref = "0.24.0"
+test_path = "tests"
+test_dependencies = ["pytest", "pytest-asyncio", "httpx", "httptools", "wsproto", "watchfiles", "websockets", "asgiref", "a2wsgi"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

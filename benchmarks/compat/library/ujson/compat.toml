@@ -1,0 +1,17 @@
+[meta]
+package = "ujson"
+category = "library"
+tier = 3
+
+description = "ujson compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/ultrajson/ultrajson.git"
+git_ref = "5.9.0"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

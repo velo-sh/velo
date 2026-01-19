@@ -1,0 +1,16 @@
+[meta]
+package = "tqdm"
+category = "library"
+tier = 3
+description = "A Fast, Extensible Progress Bar for Python and CLI."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/tqdm/tqdm.git"
+git_ref = "v4.66.2"
+test_path = "tests"
+test_dependencies = ["pytest", "nose", "pytest-timeout", "pytest-asyncio", "numpy"]
+pytest_args = ["-x", "-m", "not slow"]
+timeout = 300
+known_failures = []

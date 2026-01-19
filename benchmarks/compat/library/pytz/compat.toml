@@ -1,0 +1,16 @@
+[meta]
+package = "pytz"
+category = "library"
+tier = 3
+description = "World timezone definitions, modern and historical."
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/stub42/pytz.git"
+git_ref = "release_2024.2"
+test_path = "src/pytz/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

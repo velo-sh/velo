@@ -1,0 +1,16 @@
+[meta]
+package = "pluggy"
+category = "library"
+tier = 3
+description = "A minimalist production-ready plugin system."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pytest-dev/pluggy.git"
+git_ref = "1.5.0"
+test_path = "testing"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 60
+known_failures = []

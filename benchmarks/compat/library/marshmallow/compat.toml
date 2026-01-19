@@ -1,0 +1,17 @@
+[meta]
+package = "marshmallow"
+category = "library"
+tier = 3
+
+description = "marshmallow compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/marshmallow-code/marshmallow.git"
+git_ref = "3.20.1"
+test_path = "tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x", "--ignore=tests/mypy_test_cases"]
+timeout = 300
+known_failures = []

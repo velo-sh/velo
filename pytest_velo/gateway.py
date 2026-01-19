@@ -59,6 +59,7 @@ class ZygoteGateway(execnet.gateway.Gateway):
             # Try to read secret from .auth file (SEC-005 parity with Rust)
             try:
                 from pathlib import Path
+
                 auth_path = Path(socket_path).with_suffix(".auth")
                 if auth_path.exists():
                     secret = auth_path.read_text().strip()

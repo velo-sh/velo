@@ -1,0 +1,17 @@
+[meta]
+package = "pylint"
+category = "cli"
+tier = 3
+
+description = "pylint compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pylint-dev/pylint.git"
+git_ref = "v3.0.2"
+test_path = "tests"
+test_dependencies = ["pytest", "GitPython"]
+pytest_args = ["-x", "-p", "no:relaxed"]
+timeout = 300
+known_failures = []

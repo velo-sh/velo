@@ -1,0 +1,17 @@
+[meta]
+package = "typing-extensions"
+category = "library"
+tier = 0
+
+description = "typing-extensions compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/python/typing_extensions.git"
+git_ref = "4.8.0"
+test_path = "src"
+test_dependencies = ["pytest"]
+pytest_args = ["-x", "-p", "no:relaxed"]
+timeout = 300
+known_failures = []
