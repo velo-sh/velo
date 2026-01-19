@@ -95,6 +95,12 @@ Who steers the organism? Currently, the human "gods". The final layer is **Auton
 *   **Self-Mutation**: The ability for an organism to propose its own genetic code changes (`Organism.mutate()`).
 *   **The Agent Loop**: Software that doesn't just run, but *strives*.
 
+### 6.4 Entropy: The Law of Death
+A living system without death is merely an infinite junkyard. We define death as a first-class citizen.
+*   **Mortality**: Resources are finite. Organisms must compete for survival (execution time, storage space).
+*   **Extinction**: When a species lineage is no longer referenced by any active environment or archive, it faces **Garbage Collection**. This is the return of ordered atoms to the void.
+*   **Fossilization**: The archival preservation of extinct species. History is written in the fossils of dead code.
+
 ## 7. Conclusion
 
 The container era solved "packaging". The LifeCode era solves "existence".
