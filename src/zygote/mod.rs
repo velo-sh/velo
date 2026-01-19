@@ -266,7 +266,34 @@ impl ZygoteLauncher {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         core_ipc::cleanup_stale_sockets();
 
+        // BUG-001 FIX: Acquire startup lock to prevent race condition
+        // Multiple concurrent `velo zygote start` would otherwise all pass is_running()
+        // and spawn 100+ instances before socket exists.
+        let lock_path = VeloPaths::socket_dir().join("zygote-startup.lock");
+        if let Some(parent) = lock_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| ZygoteError::IOError(format!("Failed to open startup lock: {}", e)))?;
+
+        #[cfg(unix)]
+        {
+            use fs2::FileExt;
+            lock_file.lock_exclusive().map_err(|e| {
+                ZygoteError::IOError(format!("Failed to acquire startup lock: {}", e))
+            })?;
+        }
+
+        // BUG-001 FIX: Re-check is_running AFTER acquiring lock
+        // Another process may have started Zygote while we were waiting for the lock
         if self.is_running() {
+            // Release lock (happens on drop) and return success
             return Ok(());
         }
 
