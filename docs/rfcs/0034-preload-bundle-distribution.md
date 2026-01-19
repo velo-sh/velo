@@ -175,6 +175,164 @@ dlopen:
 | `copy` | Copy file | Cross-filesystem |
 | `reflink` | CoW clone (btrfs/APFS) | Best performance |
 
+#### 3.2.7 .so Handling Matrix
+
+> **Problem**: .so compatibility depends on bundle inclusion and system availability.
+
+**Scenario Matrix**:
+
+| Bundle .so | System .so | Platform Match | Action |
+|:---|:---|:---|:---|
+| ❌ None | ✅ Exists | ✅ Match | Use system .so |
+| ❌ None | ✅ Exists | ❌ Mismatch | Error: version mismatch |
+| ❌ None | ❌ None | - | Error: missing dependency |
+| ✅ Included | ❌ None | ✅ Match | Use bundle .so |
+| ✅ Included | ❌ None | ❌ Mismatch | Error: platform incompatible |
+| ✅ Included | ✅ Exists | ✅ Match | Priority: bundle (default) or system |
+| ✅ Included | ✅ Exists | ❌ Mismatch | Fallback to system .so |
+
+**Resolution Flow**:
+
+```
+                    ┌─────────────────────┐
+                    │ Bundle includes .so? │
+                    └──────────┬──────────┘
+               yes ┌───────────┴───────────┐ no
+                   ▼                       ▼
+          ┌────────────────┐    ┌────────────────────┐
+          │ Platform match?│    │ System .so exists? │
+          └───────┬────────┘    └─────────┬──────────┘
+       yes ┌──────┴──────┐ no        yes  │  no
+           ▼             ▼                ▼    ▼
+    ┌─────────────┐  ┌──────────────┐  ┌──────┐ ┌───────┐
+    │ Use bundle  │  │ Fallback sys │  │ Use  │ │ Error │
+    └─────────────┘  └──────┬───────┘  │ sys  │ └───────┘
+                      exists│ none     └──────┘
+                           ▼    ▼
+                     ┌──────┐ ┌───────────────────┐
+                     │ Use  │ │ Error: incompatible│
+                     └──────┘ └───────────────────┘
+```
+
+**Configuration Options**:
+
+| Option | Default | Values | Description |
+|:---|:---|:---|:---|
+| `VELO_SO_PRIORITY` | `bundle` | bundle / system / skip-if-exists | Which .so to use when both exist |
+| `VELO_SO_FALLBACK` | **`false`** | true / false | Fallback to system on platform mismatch |
+| `VELO_SO_STRICT` | `false` | true / false | Fail if platform doesn't match exactly |
+
+> [!IMPORTANT]
+> **Council Decision (2026-01-19)**: `VELO_SO_FALLBACK` defaults to `false` for security.
+> - Fallback bypasses bundle signature verification
+> - When fallback is used, a **warning is logged**
+> - Use `--allow-fallback` CLI flag to explicitly enable
+
+**CLI Interface**:
+```bash
+# Default: bundle only, fail on platform mismatch
+velo run app.vpkg
+
+# Explicit fallback permission
+velo run --allow-fallback app.vpkg
+```
+
+**Priority Modes**:
+- `bundle`: Always use bundled .so (isolation, reproducibility) ✅ **Recommended**
+- `system`: Prefer system .so (smaller cache, faster startup)
+- `skip-if-exists`: Skip extraction if system has compatible version
+
+
+**Manifest Extension**:
+
+```json
+{
+  "native_search_paths": [
+    "$CONDA_PREFIX/lib",
+    "/opt/cuda/lib64",
+    "/usr/local/lib"
+  ],
+  "native_requirements": {
+    "libtorch.so": { "min_version": "2.0.0", "symbols": ["_ZN5torch..."] },
+    "libcudnn.so": { "optional": true, "min_version": "8.0.0" }
+  }
+}
+```
+
+**Version Detection**:
+```bash
+# Velo attempts to detect version via:
+1. SONAME: libtorch.so.2.1.0
+2. Symbol lookup: torch::version()
+3. Companion file: libtorch.version
+```
+
+**Search Diagnostic Output**:
+
+> For detailed output formats, see [Appendix: Search Diagnostics](./0034-appendix/search-diagnostics.md)
+
+| Mode | Output |
+|:---|:---|
+| Normal | `✓ libtorch.so → /opt/cuda/lib64/libtorch.so.2.1.0` |
+| Verbose (`-v`) | Full search process with all paths checked |
+| Failure | All searched locations + skip reasons + fix suggestions |
+
+#### 3.2.8 Startup Logging (Debug Support)
+
+> **Principle**: Log key information at startup to facilitate debugging.
+
+**Standard Output (always)**:
+```
+[velo] Loading app.vpkg (v0.1.0, linux-x86_64)
+[velo] .so cache: ~/.velo/so-cache/
+[velo] .so priority: bundle
+```
+
+**Verbose Mode (`VELO_DEBUG=1` or `-v`)**:
+```
+[velo] Manifest: 127 files, 3 native libs
+[velo] libtorch-a1b2c3d4.so: cached ✓
+[velo] libcudnn-e5f6g7h8.so: extracting...
+[velo] Platform: linux-x86_64-glibc2.31
+[velo] mmap vpkg: 2.1GB → 0.3ms
+[velo] Zygote pre-warm: torch, transformers
+```
+
+**Error Output (semantic, actionable)**:
+
+> **Principle**: Error messages tell user **what happened**, **why**, and **what to do next**.
+> For complete error catalog, see [Appendix: Error Messages](./0034-appendix/error-messages.md)
+
+| Category | Example Error |
+|:---|:---|
+| Platform | `❌ Cannot load libtorch.so` (glibc mismatch, missing deps) |
+| Cache | `❌ Cache write failed` (disk full, permission denied) |
+| Security | `❌ Bundle signature verification failed` |
+| Resource | `❌ Failed to mmap vpkg` (insufficient memory) |
+
+#### 3.2.9 Cache Management CLI
+
+> For complete CLI reference, see [Appendix: CLI Examples](./0034-appendix/cli-examples.md)
+
+| Command | Description |
+|:---|:---|
+| `velo cache info` | Show cache status |
+| `velo cache clean` | Clean all cache |
+| `velo cache prune --max-age 30d` | Remove old entries |
+| `velo bundle warm app.vpkg` | Pre-warm cache |
+
+#### 3.2.10 Concurrency Safety
+
+> When multiple processes extract the same .so simultaneously, use file locking.
+
+```rust
+let lock = FileLock::exclusive(&cache_path.with_extension("lock"))?;
+if !cache_path.exists() {
+    extract_so(vpkg, &cache_path)?;
+}
+drop(lock);
+```
+
 ### 3.3 Manifest Format
 
 ```json
@@ -219,19 +377,13 @@ dlopen:
 
 ## 4. CLI Interface
 
-```bash
-# Build a bundle from pyproject.toml
-velo bundle build --preload "torch,transformers" --output app.vpkg
+> For complete CLI reference, see [Appendix: CLI Examples](./0034-appendix/cli-examples.md)
 
-# Build with model assets (Memory Gravity)
-velo bundle build --include model.safetensors --output app.vpkg
-
-# Run from bundle
-velo bundle run app.vpkg
-
-# Deploy to serverless (future)
-velo bundle deploy app.vpkg --target aws-lambda
-```
+| Command | Description |
+|:---|:---|
+| `velo bundle build` | Build bundle from project |
+| `velo bundle run` | Run bundle directly |
+| `velo bundle deploy` | Deploy to serverless (future) |
 
 ---
 
