@@ -460,13 +460,20 @@ def on_exit():
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
 
-            # Make a request to ensure it's working
-            try:
-                requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
-            except Exception as e:
+            # Make a request to ensure it's working (with retries for slow worker start)
+            start_req = time.time()
+            for i in range(10):
+                try:
+                    response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
+                    if response.status_code == 200:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+            else:
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
-                print(f"FAILED initial request in graceful_shutdown. Error: {e}\nLogs:\n{stderr}")
-                raise
+                print(f"FAILED initial request in graceful_shutdown after 10s. Logs:\n{stderr}")
+                pytest.fail("Initial request failed")
 
             # Send SIGTERM
             proc.terminate()
@@ -584,14 +591,19 @@ def root():
                 print(f"FAILED TO START port_option_works. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
 
-            # Verify it's on the right port
-            try:
-                response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
-                assert response.status_code == 200
-            except Exception as e:
+            # Verify it's on the right port (with retries for slow worker start)
+            for i in range(10):
+                try:
+                    response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
+                    if response.status_code == 200:
+                        break
+                except Exception:
+                    pass
+                time.sleep(1)
+            else:
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
-                print(f"FAILED request in port_option_works. Error: {e}\nLogs:\n{stderr}")
-                raise
+                print(f"FAILED request in port_option_works after 10s. Logs:\n{stderr}")
+                pytest.fail("Port option request failed")
 
             # Verify it's NOT on some other port we don't expect
             assert not is_port_open(19501)
