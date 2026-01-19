@@ -1,0 +1,20 @@
+[meta]
+package = "httpcore"
+category = "web"
+tier = 0
+
+description = "httpcore compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/encode/httpcore.git"
+git_ref = "1.0.2"
+test_path = "tests"
+test_dependencies = [
+    "pytest", "anyio", "trio", "pytest-asyncio", "pytest-trio", 
+    "h2", "socksio", "pytest-httpbin"
+]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

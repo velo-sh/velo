@@ -1,0 +1,28 @@
+[meta]
+package = "psutil"
+category = "library"
+tier = 3
+description = "Cross-platform lib for process and system monitoring in Python."
+
+[compat]
+sys_path_strategy = "source"
+source = "pyargs"
+test_path = "psutil.tests.test_system"
+test_dependencies = ["pytest", "mock", "ipaddress"]
+pytest_args = ["--pyargs", "psutil.tests.test_system"]
+timeout = 300
+known_failures = [
+    "tests/test_aix.py::AIXSpecificTestCase::test_cpu_count_logical",
+    "tests/test_aix.py::AIXSpecificTestCase::test_cpu_stats",
+    "tests/test_aix.py::AIXSpecificTestCase::test_net_if_addrs_names",
+    "tests/test_aix.py::AIXSpecificTestCase::test_swap_memory",
+    "tests/test_aix.py::AIXSpecificTestCase::test_virtual_memory",
+    "tests/test_bsd.py::BSDTestCase::test_cpu_count_logical",
+    "tests/test_bsd.py::BSDTestCase::test_disks",
+    "tests/test_bsd.py::BSDTestCase::test_net_if_stats",
+    "tests/test_bsd.py::BSDTestCase::test_process_create_time",
+    "tests/test_bsd.py::BSDTestCase::test_virtual_memory_total",
+    "tests/test_bsd.py::FreeBSDPsutilTestCase::test_cmdline",
+    "tests/test_bsd.py::FreeBSDPsutilTestCase::test_cpu_times",
+    "tests/test_bsd.py::FreeBSDPsutilTestCase::test_ctx_switches"
+]

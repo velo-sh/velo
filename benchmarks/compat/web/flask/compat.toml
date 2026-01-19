@@ -1,0 +1,17 @@
+[meta]
+package = "flask"
+category = "web"
+tier = 2
+description = "A simple framework for building complex web applications."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pallets/flask.git"
+git_ref = "3.1.2"
+test_path = "tests"
+test_dependencies = ["pytest", "click", "blinker", "itsdangerous", "werkzeug", "asgiref"]
+pytest_args = []
+exclude_markers = []
+timeout = 300
+known_failures = []

@@ -1,0 +1,22 @@
+# Auto-downloaded repositories
+**/.test_repo/
+
+# Shared virtual environment
+.shared_venv/
+
+# Temporary directories
+.benchmarks/
+__pycache__/
+.pytest_cache/
+extracted_tests/
+
+# Report files (excluding the final report)
+compat_results_*.json
+COMPAT_REPORT_*.md
+!COMPAT_REPORT.md
+
+# Temporary logs and scripts
+*.log
+*.tmp
+.hypothesis/
+.report.json

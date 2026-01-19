@@ -1,0 +1,16 @@
+[meta]
+package = "anyio"
+category = "library"
+tier = 3
+description = "High level compatibility layer for multiple asynchronous event loop implementations."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/agronholm/anyio.git"
+git_ref = "4.3.0"
+test_path = "tests"
+test_dependencies = ["pytest", "trustme", "psutil", "typing-extensions", "uvloop", "exceptiongroup"]
+pytest_args = ["-x", "-k", "not test_debugging and not test_sockets and not test_subprocesses"]
+timeout = 300
+known_failures = []

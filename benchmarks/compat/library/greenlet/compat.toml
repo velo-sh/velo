@@ -1,0 +1,18 @@
+[meta]
+package = "greenlet"
+category = "library"
+tier = 3
+
+description = "greenlet compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/python-greenlet/greenlet.git"
+git_ref = "3.0.1"
+test_path = "src/greenlet/tests"
+test_dependencies = ["pytest"]
+run_cmd = ["/bin/sh", "-c", "python3 setup.py build_ext --inplace && pytest src/greenlet/tests"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

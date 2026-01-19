@@ -1,0 +1,18 @@
+[meta]
+package = "psycopg2-binary"
+category = "library"
+tier = 3
+
+description = "psycopg2-binary compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/psycopg/psycopg2.git"
+git_ref = "2.9.9"
+test_path = "tests"
+test_dependencies = ["pytest"]
+run_cmd = ["/bin/sh", "-c", "python3 setup.py build_ext --inplace && ln -s lib psycopg2 && pytest tests"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

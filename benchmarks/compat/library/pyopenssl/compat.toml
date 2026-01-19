@@ -1,0 +1,18 @@
+[meta]
+package = "pyopenssl"
+category = "library"
+tier = 3
+
+description = "pyopenssl compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/pyca/pyopenssl.git"
+git_ref = "23.3.0"
+test_path = "tests"
+test_dependencies = ["pytest", "cffi", "cryptography"]
+run_cmd = ["/bin/sh", "-c", "rm tests/memdbg.py && pytest tests"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

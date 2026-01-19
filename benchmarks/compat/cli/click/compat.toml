@@ -1,0 +1,16 @@
+[meta]
+package = "click"
+category = "cli"
+tier = 1
+description = "Composable command line interface toolkit"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/pallets/click.git"
+git_ref = "8.1.7"
+test_path = "tests"
+test_dependencies = ["pytest"]
+known_failures = ["tests/test_imports.py::test_light_imports"]
+exclude_markers = []
+timeout = 180

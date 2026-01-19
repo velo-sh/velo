@@ -1,0 +1,16 @@
+[meta]
+package = "beautifulsoup4"
+category = "library"
+tier = 3
+description = "Screen-scraping library."
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://git.launchpad.net/beautifulsoup"
+git_ref = "master"
+test_path = "bs4/tests"
+test_dependencies = ["pytest", "lxml", "html5lib", "soupsieve"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []
