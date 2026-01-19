@@ -473,7 +473,7 @@ In Phase 14, we successfully integrated with `pytest-xdist` by hijacking the `ex
 | Feature | Value | Complexity | Status |
 |:---|:---|:---|:---|
 | **TestCoordinator Full IPC** | True Zygote dispatch | High | Planned |
-| **Coverage Integration** | `velo test --cov` | Low | Planned |
+| **Coverage Integration** | `velo test --cov` | Low | ✅ **COMPLETE** |
 | **Rust Guardian Support** | Auto-restarting Zygote | Medium | **ACTIVE** |
 
 > [!NOTE]

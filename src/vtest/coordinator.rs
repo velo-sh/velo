@@ -254,6 +254,8 @@ pub struct VtestCoordinator {
     pending: Vec<String>,
     /// P1-3: Worker pool for concurrency control
     pool: WorkerPool,
+    /// RFC-0028: Coverage path (if --cov was specified)
+    cov_path: Option<String>,
 }
 
 impl VtestCoordinator {
@@ -262,7 +264,8 @@ impl VtestCoordinator {
     /// # Arguments
     /// * `config` - Velo configuration
     /// * `max_workers` - Maximum number of concurrent workers (default: 1)
-    pub fn new(config: &VeloConfig, max_workers: usize) -> Result<Self> {
+    /// * `cov_path` - Optional coverage path for --cov integration
+    pub fn new(config: &VeloConfig, max_workers: usize, cov_path: Option<String>) -> Result<Self> {
         let socket_path = crate::zygote::core_ipc::default_socket_path();
         let zygote = ZygoteLauncher::new(socket_path.clone());
         let (results_tx, results_rx) = mpsc::channel();
@@ -275,6 +278,7 @@ impl VtestCoordinator {
             results_tx,
             pending: Vec::new(),
             pool: WorkerPool::new(max_workers),
+            cov_path,
         })
     }
 
@@ -328,12 +332,20 @@ impl VtestCoordinator {
         // Find the test runner script
         let runner_script = find_test_runner().context("Failed to find pytest_velo/runner.py")?;
 
+        // Build runner args (nodeid + optional --cov)
+        let mut runner_args: Vec<&str> = vec![test_id];
+        let cov_flag;
+        if let Some(ref path) = self.cov_path {
+            cov_flag = format!("--cov={}", path);
+            runner_args.push(&cov_flag);
+        }
+
         // Spawn worker via Zygote
         let handle = self
             .zygote
             .spawn_worker(
                 &runner_script,
-                &[test_id],
+                &runner_args,
                 false, // sync mode - wait for completion
                 false, // no fast mode
                 None,  // no bundle
@@ -455,7 +467,7 @@ mod tests {
             std::env::set_var("VELO_SOCKET_DIR", temp_dir.path().to_str().unwrap());
         }
         let config = VeloConfig::from_env_only();
-        let coordinator = VtestCoordinator::new(&config, 4);
+        let coordinator = VtestCoordinator::new(&config, 4, None);
         unsafe {
             std::env::remove_var("VELO_SOCKET_DIR");
         }

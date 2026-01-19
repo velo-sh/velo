@@ -97,6 +97,9 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
         log::info!("🚀 Starting vtest native orchestration (RFC-0028/Phase 13)...");
         log::debug!("vtest PID: {}", std::process::id());
 
+        // RFC-0028: Get coverage path if specified
+        let cov_path = matches.get_one::<String>("cov").cloned();
+
         // 1. NodeID Discovery (Phase 2)
         let nodeids = crate::vtest::collect_nodeids(test_path, tier, &extra_args_refs)
             .context("Failed to collect test NodeIDs")?;
@@ -114,7 +117,7 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
 
         // 2. Orchestration Initialization (Phase 1)
         let config = crate::config::VeloConfig::from_pyproject_toml();
-        let mut coordinator = crate::vtest::VtestCoordinator::new(&config, workers)
+        let mut coordinator = crate::vtest::VtestCoordinator::new(&config, workers, cov_path)
             .context("Failed to initialize VtestCoordinator")?;
 
         // Lifecycle: Zygote pre-flighting (Phase 3)
