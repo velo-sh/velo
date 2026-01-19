@@ -5,7 +5,10 @@
 **Date**: 2026-01-14
 
 ## 1. Introduction
-To maintain high velocity while ensuring industrial-grade stability, Velo employs a **Tiered Testing Strategy**. This standard defines the taxonomy, markers, and execution policies for all tests within the Velo ecosystem.
+To maintain high velocity while ensuring industrial-grade stability, Velo employs a **Tiered Testing Strategy**. This standard defines the taxonomy, markers, and execution policies for all tests within the Velo ecosystem. 
+
+> [!IMPORTANT]
+> All Velo native test orchestration components MUST follow **[SPEC-0009: vtest Naming Sovereignty](./SPEC-0009-vtest-naming-sovereignty.md)** to distinguish from standard pytest/unit tests.
 
 ## 2. Testing Taxonomy (The Five Tiers)
 

@@ -245,7 +245,7 @@ addopts = --velo --velo-preload=torch,pandas,myapp
 ### 10.2 Rust Coordinator
 
 ```rust
-// src/test/coordinator.rs
+// src/vtest/coordinator.rs
 pub struct TestCoordinator {
     zygote: ZygoteHandle,
     workers: Vec<WorkerHandle>,
