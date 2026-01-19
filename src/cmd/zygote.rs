@@ -49,6 +49,9 @@ pub enum ZygoteSubcommand {
         /// Environment variables to set (NAME=VALUE)
         #[arg(long)]
         env: Vec<String>,
+        /// Project root directory for worker CWD (defaults to current dir)
+        #[arg(long)]
+        project_root: Option<String>,
     },
 }
 
@@ -77,7 +80,13 @@ pub fn cmd_zygote(args: &[String]) -> Result<()> {
             arg,
             async_mode,
             env,
-        } => cmd_zygote_fork(&project_dir, &script, &arg, &env, async_mode),
+            project_root,
+        } => {
+            let fork_project_dir = project_root
+                .map(|p| Path::new(&p).to_path_buf())
+                .unwrap_or(project_dir);
+            cmd_zygote_fork(&fork_project_dir, &script, &arg, &env, async_mode)
+        }
     }
 }
 
@@ -158,7 +167,32 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
     if socket_path.exists() {
         println!("⚡ Zygote already running");
         println!("   Socket: {}", socket_path.display());
+        return Ok(());
     } else {
+        #[cfg(unix)]
+        if daemon {
+            unsafe {
+                match libc::fork() {
+                    -1 => anyhow::bail!("Fork failed"),
+                    0 => {
+                        // Child: continues to start the Zygote
+                        libc::setsid();
+                        // Redirect IO to null in the daemonized process
+                        if let Ok(null) = std::fs::File::open("/dev/null") {
+                            let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
+                            libc::dup2(fd, 0);
+                            libc::dup2(fd, 1);
+                            libc::dup2(fd, 2);
+                        }
+                    }
+                    _ => {
+                        // Parent: exits immediately after reporting success
+                        println!("🚀 Zygote daemonizing...");
+                        return Ok(());
+                    }
+                }
+            }
+        }
         let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
 
         // Parse --preload if provided

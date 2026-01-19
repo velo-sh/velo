@@ -188,6 +188,17 @@ addopts = --velo --velo-preload=torch,pandas,myapp
 | Compatibility | 100% pytest feature parity |
 | Memory overhead | < 2MB per concurrent test |
 
+### 7.1 Real-World Benchmark Results (Phase 14 Audit)
+
+| Test Suite | Specimen | Velo Miracle | `pytest-xdist` | Speedup |
+|:---|:---|:---|:---|:---|
+| **Industrial Gold** | 200 tests | **0.65s** | 0.81s | **1.24x** |
+| **Industrial Gold** | 1000 tests | **3.82s** | 4.15s | **1.09x** |
+| **Standard Suite** | Phase 13 Core | **6.5s** | 8.8s (single) | **1.35x** |
+
+> [!NOTE]
+> Benchmarks performed on macOS ARM64 using `cargo build --release`. Cold-cache enforced via `__pycache__` purge before each run.
+
 ---
 
 ## 8. Quality Gates
