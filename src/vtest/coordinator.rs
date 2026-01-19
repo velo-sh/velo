@@ -449,8 +449,16 @@ mod tests {
 
     #[test]
     fn test_coordinator_creation() {
+        // Use temp directory to avoid read-only filesystem issues in sandboxed tests
+        let temp_dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("VELO_SOCKET_DIR", temp_dir.path().to_str().unwrap());
+        }
         let config = VeloConfig::from_env_only();
         let coordinator = VtestCoordinator::new(&config, 4);
+        unsafe {
+            std::env::remove_var("VELO_SOCKET_DIR");
+        }
         assert!(coordinator.is_ok());
     }
 

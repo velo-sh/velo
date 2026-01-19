@@ -115,11 +115,11 @@ class VeloPaths:
                     f"Missing {env_key} or {base_key} in constants.py"
                 )
 
-            # Non-prod: Fallback to standardized temp location (matching ZygoteGateway)
-            import tempfile
+            # DEF-SOCKET-STABLE: Use ~/.local/state/velo/sockets/ instead of temp dir
+            # macOS temp directories can be cleaned up unexpectedly, causing socket issues
+            home = os.environ.get("HOME", "/tmp")
+            socket_path = Path(home) / ".local" / "state" / "velo" / "sockets"
 
-            uid = os.getuid() if hasattr(os, "getuid") else 0
-            socket_path = Path(tempfile.gettempdir()) / f"velo-{uid}" / "sockets"
         else:
             # 4. Expand Placeholders
             expanded_parent = VeloPaths._expand_placeholders(parent_path)

@@ -498,8 +498,16 @@ mod tests {
 
     #[test]
     fn test_generate_worker_socket_path() {
+        // Use temp directory to avoid read-only filesystem issues in sandboxed tests
+        let temp_dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("VELO_SOCKET_DIR", temp_dir.path().to_str().unwrap());
+        }
         let path1 = crate::common::paths::generate_worker_socket_path(1);
         let path2 = crate::common::paths::generate_worker_socket_path(2);
+        unsafe {
+            std::env::remove_var("VELO_SOCKET_DIR");
+        }
 
         // Format is now: v-worker-{id}-{seq}.sock (e.g., v-worker-1-0.sock)
         assert!(path1.to_string_lossy().contains("v-worker-1-"));
