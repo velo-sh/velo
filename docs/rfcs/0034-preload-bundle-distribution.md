@@ -8,6 +8,7 @@
 
 > **Note**: This RFC focuses on **source/software distribution** (static packaging).
 > For runtime optimization (native library pre-loading), see RFC-0035.
+> For v2.0 Hash Tree Distribution vision, see [RFC-0036](./0036-hash-tree-distribution.md).
 
 ---
 
