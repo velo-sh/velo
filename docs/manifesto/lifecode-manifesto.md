@@ -67,3 +67,7 @@ It is a life we cultivate.
 
 **LifeCode™.**
 *Software That Lives.*
+
+---
+
+> *LifeCode™ proposes a new computational ontology: software not as artifact, but as organism; execution not as process, but as birth; deployment not as operation, but as reproduction.*
