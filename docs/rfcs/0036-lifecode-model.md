@@ -222,14 +222,68 @@ Storage: torch-abc stored ONCE
 Both apps reference same hash
 ```
 
-### 5.3 Lazy Loading
+### 5.3 Instant Genesis™
 
+> *"Let there be app."*
+>
+> From a single hash, an organism springs to life in milliseconds.
+
+**Tagline**: *"From hash to running in milliseconds"*
+
+**The Process**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Instant Genesis™                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Step 1: Receive Hash (64 bytes)                           │
+│          sha256:abc123...                                   │
+│                    ↓                                        │
+│  Step 2: Fetch Manifest (2KB, ~10ms)                       │
+│          { name, version, entrypoint, organs... }          │
+│                    ↓                                        │
+│  Step 3: Bootstrap Entrypoint (~50ms)                      │
+│          Load only: main.py + critical deps                │
+│                    ↓                                        │
+│  Step 4: App Running! (< 100ms total)                      │
+│                    ↓                                        │
+│  Step 5: Lazy Load (on-demand, background)                 │
+│          torch/, models/, assets/... as accessed           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Comparison**:
+| Metric | Traditional | Instant Genesis™ |
+|:---|:---|:---|
+| **First byte to running** | 30s+ (download all) | < 100ms |
+| **Network transfer** | Entire package | Manifest only |
+| **Disk write before start** | Full extraction | Zero |
+| **Cold start** | Minutes | Milliseconds |
+
+**Code Example**:
+```python
+from velo import Organism
+
+# Instant Genesis™ - starts immediately
+org = Organism.instant_genesis("sha256:abc123")
+org.run()  # Running in < 100ms
+
+# Background: lazy loading torch, models as needed
+```
+
+**CLI**:
 ```bash
+# Instant Genesis™ mode (default)
 velo run sha256:abc123
 
-# Initial: Download root manifest
-# On-demand: Download subtrees as accessed
-# Cache: Never re-download same hash
+# Verbose: watch the genesis
+velo run --verbose sha256:abc123
+# [genesis] Fetching manifest... 12ms
+# [genesis] Bootstrapping entrypoint... 45ms
+# [genesis] App running! Total: 57ms
+# [lazy] Loading torch... (background)
+# [lazy] Loading model.safetensors... (background)
 ```
 
 ### 5.4 Adaptive Dependency Resolution
