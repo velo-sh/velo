@@ -222,7 +222,38 @@ Storage: torch-abc stored ONCE
 Both apps reference same hash
 ```
 
-### 5.3 Instant Genesis™
+### 5.3 Gene Spark™ & Instant Genesis™
+
+#### Gene Spark™ - The Ignition
+
+> *"One spark ignites the organism."*
+
+A dormant server receives a single hash - the **Gene Spark™** - and in that instant, life begins.
+
+```
+                        ┌─────────────────────────┐
+                        │      Server (Dormant)   │
+                        │   ░░░░░░░░░░░░░░░░░░░   │
+                        │   ░░░  Waiting...  ░░░   │
+                        └───────────┬─────────────┘
+                                    │
+                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                          ⚡ Gene Spark™ ⚡
+                           sha256:abc123
+                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                    │
+                                    ▼
+                        ┌─────────────────────────┐
+                        │      Server (ALIVE!)    │
+                        │   🧬 Organism Active    │
+                        │   ⚡ Instant Genesis™   │
+                        └─────────────────────────┘
+```
+
+**Gene Spark™** = The moment of ignition (receiving the hash)
+**Instant Genesis™** = The creation process that follows
+
+#### Instant Genesis™ - The Creation
 
 > *"Let there be app."*
 >
