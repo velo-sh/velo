@@ -336,9 +336,9 @@ velo_zygote/                    # ← Aligned with: src/zygote/
 
 | Task | Status | Priority |
 |:---|:---|:---|
-| Extract fork logic to `src/zygote/v_fork.rs` | ⏸️ DEFERRED | P1 |
+| Extract fork logic to `src/zygote/v_fork.rs` | 📋 TODO | **P0** |
 | Rename `src/lifecycle/safety.rs` → `v_shield.rs` | ⏸️ DEFERRED | P1 |
-| Update all Rust imports/references | ⏸️ DEFERRED | P1 |
+| Update all Rust imports/references | 📋 TODO | P0 |
 
 ### 10.4 Python Plugin (Thin Wrapper)
 
