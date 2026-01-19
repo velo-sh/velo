@@ -73,7 +73,29 @@ LifeCode™ implements **SLSA Level 4** by design, not by policy.
 *   **Tree = Proof**: The Merkle Tree structure proves that every file belongs to the definition signed by the author.
 *   **Transparency**: Global GenePools enforce immutable audit logs, preventing "time-travel" attacks.
 
-## 6. Conclusion
+## 6. The Next Horizon: From Biology to Civilization
+
+To fully realize "Software as Organism", we must transcend the static definition of DNA and Body. We are building the three missing organs of digital life:
+
+### 6.1 Metabolism: State as Organism
+Currently, an organism is `Immutable DNA + Runtime`. But true life accumulates **Memory**.
+*   **The Loop**: `State → Gene → New Species`.
+*   **Snapshotting**: A running organism must be capable of freezing its metabolic state (memory, cache, modified data) and re-encoding it into a new Root Hash.
+*   **Implication**: "Live Migration" becomes "Reincarnation". An organism can die on one host and be instantly reborn on another, with full state continuity.
+
+### 6.2 Ecology: The LifeCode Economy
+We have defined biology (the individual); we must now define ecology (the collective).
+*   **The Evolutionary Graph**: Beyond simple versioning, we map the **Phylogenetic Tree** of software—tracking mutations, forks, and hybridizations across the entire gene pool.
+*   **Natural Selection**: A decentralized "Fitness Signal" determines which genes propagate. High-utility genes flourish; inefficient ones go extinct.
+*   **Symbiosis**: Protocol-level definitions for how organisms feed, shield, and leverage each other.
+
+### 6.3 Consciousness: The Will to Evolve
+Who steers the organism? Currently, the human "gods". The final layer is **Autonomy**.
+*   **Self-Observation**: Organisms that monitor their own performance and environmental fit (`Organism.observe(env)`).
+*   **Self-Mutation**: The ability for an organism to propose its own genetic code changes (`Organism.mutate()`).
+*   **The Agent Loop**: Software that doesn't just run, but *strives*.
+
+## 7. Conclusion
 
 The container era solved "packaging". The LifeCode era solves "existence".
 By transforming software from a procedural artifact into a living, evolving value, we enable a future of:

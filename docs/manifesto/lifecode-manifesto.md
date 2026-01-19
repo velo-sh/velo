@@ -55,6 +55,7 @@ We enter the era of the **Organism**.
 
 We move from **Images** (snapshots of the dead) to **Species** (lineages of the living).
 We move from **Cold Start** to **Genesis**.
+We move from **Passive Execution** to **Self-Evolving Life**.
 
 Software is no longer a tool we carry.
 It is a life we cultivate.
