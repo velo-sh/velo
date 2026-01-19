@@ -1,5 +1,7 @@
 # LifeCode™ Manifesto
 > **Subtitle**: *Software That Lives*
+>
+> *"Like that thing TCP/IP wrote in 1974: Not yet implemented, but inevitable."*
 
 ## 1. The Broken World
 
