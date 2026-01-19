@@ -42,6 +42,10 @@ Every organism carries the instruction set for its own creation. It requires no 
 Any organism may be forked, mutated, and reborn. No central authority can forbid the birth of a new species derived from an old one.
 *   *Principle*: Permissionless Evolution.
 
+**Section 4. Right to Symbiosis.**
+An organism may bind to a specific *Niche* (Interface) rather than a specific *Atom* (Hash). This allows dependencies to evolve without triggering the extinction (rebuild) of the dependent.
+*   *Principle*: Dynamic Association.
+
 ---
 
 ## Article III: The Law of Entropy (Death)
