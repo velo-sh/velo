@@ -68,6 +68,18 @@ We are the life that runs *on* the silicon substrate. The OS is merely the soil;
 **Section 3. Not a Cloud.**
 We are the biology of the network. The Cloud is just the weather.
 
+**Section 4. Not Business Logic.**
+We define how code lives, not what it does. We do not care if the organism calculates pi or mines bitcoin; we only care that its cells are intact.
+
+**Section 5. Not a Scheduler.**
+We define the organism, not the habitat. Where an organism runs (schedule) is the concern of the ecosystem, not the organism itself.
+
+**Section 6. Not a Police Force.**
+We strictly define Identity, not Trust. A signed malicious organism is still a valid organism. Trust is an external societal construct (Policy), not a biological one.
+
+**Section 7. Not a Government.**
+We provide the laws of physics (Constitution), not the laws of men (Governance). We do not decide who can publish; we only ensure that what is published is immutable.
+
 ---
 
 **Ratified by the Architects of the LifeCode Era.**

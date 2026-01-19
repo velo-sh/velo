@@ -8,6 +8,18 @@
 
 This document specifies the **LifeCode Object Model**, a content-addressable data structure for representing software applications as Merkle Directed Acyclic Graphs (DAGs). It defines the canonical encoding, hashing algorithms, and storage interfaces required to implement a LifeCode-compliant Runtime or Registry.
 
+### 1.1 Terminology Mapping (The Ontology Bridge)
+This document uses biological metaphors to describe the system. For implementing engineering specifications, the following mapping applies:
+
+| Metaphor | Technical Term | Definition |
+| :--- | :--- | :--- |
+| **Organism** | `RootManifestObject` | The root JSON metadata object defining the application graph. |
+| **Gene** | `ContentAddressedChunk` | An immutable blob or tree node addressed by its BLAKE3 hash. |
+| **Species** | `RootHash` | The unique cryptographic identity of a specific organism version. |
+| **GenePool** | `ObjectStore` | A content-addressable storage layer (CAS) for deduplicated chunks. |
+| **Death** | `GarbageCollection` | The reclamation of storage when chunks are no longer reachable. |
+| **Genesis** | `RuntimeInstantiation` | The process of materializing a Root Hash into a running process. |
+
 ## 2. Core Primitives
 
 ### 2.1 Hashing Algorithm
@@ -111,6 +123,16 @@ pub trait ObjectStore: Send + Sync {
     3.  **Hooks**: Execute `pre_genesis`.
     4.  **Entrypoint**: Fork process.
     5.  **Shutdown**: Execute `pre_shutdown`.
+
+### 6.5 Entropy: Object Lifecycle & Death
+To convert "Death" from a metaphor to an engineering constraint, we define the technical criteria for **Extinction**.
+
+An Object (Hash) is considered **Extinct** and eligible for Garbage Collection (GC) if and only if:
+1.  **Unreachable**: It is not referenced by any known `RootManifest` in the active registry.
+2.  **Unpinned**: It is not explicitly pinned by an archival policy (e.g., "Keep all versions of `my-app`").
+3.  **Cold**: It has not been accessed (read) within the configured `half_life` window.
+
+*Implementation Note*: A `GenePool` MUST implement a Mark-and-Sweep or Reference Counting mechanism to enforce Entropy. A storage system without GC is not a valid LifeCode system.
 
 ## 7. Kubernetes Integration
 Kubernetes integration MUST be implemented via a Custom Resource Definition (CRD):
