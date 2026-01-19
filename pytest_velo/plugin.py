@@ -237,6 +237,12 @@ def pytest_addoption(parser: Any) -> None:
         default="",
         help="Comma-separated modules to preload in Zygote",
     )
+    group.addoption(
+        "--strict-compat",
+        action="store_true",
+        default=False,
+        help="Mimic vanilla pytest isolation (disable TMPDIR/socket isolation)",
+    )
 
 
 def hijack_execnet() -> None:
@@ -487,19 +493,28 @@ def pytest_unconfigure(config: Any) -> None:
 # =============================================================================
 
 
-def worker_environment_isolation() -> str:
+def worker_environment_isolation(strict_compat: bool = False) -> str | None:
     """
     Set up isolated environment for worker process.
 
     This MUST be called immediately after fork() in the child process.
-    Returns the worker-specific temp directory path.
+    Returns the worker-specific temp directory path, or None if strict_compat.
 
-    Isolation layers:
+    Args:
+        strict_compat: If True, skip isolation to mimic vanilla pytest behavior.
+
+    Isolation layers (when strict_compat=False):
     - P0: Isolated TMPDIR per worker
     - P1: Worker-specific socket namespace (via PID)
     - P2: Isolated log directory per worker
     """
     worker_pid = os.getpid()
+
+    # RFC-0028: --strict-compat skips isolation to mimic vanilla pytest
+    if strict_compat:
+        os.environ["VELO_WORKER_ID"] = str(worker_pid)
+        return None
+
     worker_base = f"/tmp/velo-worker-{worker_pid}"
 
     # P0: Isolated TMPDIR - prevents temp file collisions
@@ -536,11 +551,15 @@ def cleanup_worker_environment(worker_base: str) -> None:
         pass  # Best effort cleanup
 
 
-def run_in_zygote_fork(item: Any) -> bool:
+def run_in_zygote_fork(item: Any, strict_compat: bool = False) -> bool:
     """
     Execute a single test in a Zygote fork.
 
     P0-3 ENFORCEMENT: Child process MUST use os._exit(), never sys.exit().
+
+    Args:
+        item: pytest test item
+        strict_compat: If True, skip worker isolation to mimic vanilla pytest
 
     Returns True if test passed, False otherwise.
     """
@@ -618,7 +637,8 @@ def run_in_zygote_fork(item: Any) -> bool:
     if pid == 0:
         # ===== CHILD PROCESS =====
         # Environment isolation FIRST (before any other operations)
-        worker_base = worker_environment_isolation()
+        # RFC-0028: --strict-compat skips isolation
+        worker_base = worker_environment_isolation(strict_compat=strict_compat)
 
         # P0-3: Clean up atexit handlers to prevent double-cleanup
         child_process_hygiene()
@@ -646,9 +666,10 @@ def run_in_zygote_fork(item: Any) -> bool:
         # ===== PARENT PROCESS =====
         _, status = os.waitpid(pid, 0)
 
-        # Cleanup worker temp dirs (P0/P1/P2)
-        worker_base = f"/tmp/velo-worker-{pid}"
-        cleanup_worker_environment(worker_base)
+        # Cleanup worker temp dirs (P0/P1/P2) - skip if strict_compat (no dirs created)
+        if not strict_compat:
+            worker_base = f"/tmp/velo-worker-{pid}"
+            cleanup_worker_environment(worker_base)
 
         # Check if child exited normally with code 0
         if os.WIFEXITED(status):
@@ -686,9 +707,12 @@ def pytest_runtest_protocol(item: Any, nextitem: Any) -> bool | None:
     ihook = item.ihook
     ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
 
+    # RFC-0028: Get strict-compat mode from config
+    strict_compat = getattr(item.config.option, "strict_compat", False)
+
     # Execute in forked child with full P0 compliance
     start = timing.time()
-    success = run_in_zygote_fork(item)
+    success = run_in_zygote_fork(item, strict_compat=strict_compat)
     stop = timing.time()
 
     # DEF-13-004 FIX: Create proper CallInfo to report outcome

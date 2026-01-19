@@ -61,6 +61,12 @@ fn build_cli() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("strict_compat")
+                .long("strict-compat")
+                .help("Mimic vanilla pytest isolation (disable TMPDIR/socket isolation)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("pytest_args")
                 .help("Additional pytest arguments")
                 .last(true)
