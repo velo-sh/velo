@@ -64,18 +64,116 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 
 ### 3.2 Bundle Format (`.vpkg`)
 
-**File Format**: tar.zst (tar archive with Zstandard compression)
+**File Format**: Uncompressed tar with index (mmap-friendly)
+
+> **Design Principle**: `.vpkg` is directly runnable without extraction. Only `.so` files require caching.
+
+#### 3.2.1 Two-Layer Distribution Model
 
 ```
-app.vpkg (tar.zst)
-├── manifest.json           # Metadata + signature
-├── src/                    # Application source code
-├── site-packages/          # Pre-installed dependencies (wheels)
-├── assets/                 # Static assets (models, configs)
+Distribution:                              Runtime:
+app.vpkg.zst ──decompress once──▶ app.vpkg ──▶ velo run app.vpkg
+ (compressed)                    (mmap-ready)     (one-click)
+```
+
+| Layer | Format | Purpose |
+|:---|:---|:---|
+| **Distribution** | `.vpkg.zst` | Compressed for transfer (optional) |
+| **Runtime** | `.vpkg` | Uncompressed, mmap-friendly, directly runnable |
+
+#### 3.2.2 vpkg Internal Structure
+
+```
+app.vpkg (uncompressed tar with offset index)
+├── __velo_manifest__.json    # Metadata + file offset table
+├── src/                      # Application source code
+├── site-packages/            # Pre-installed dependencies
+│   ├── torch/__init__.py     # ← mmap direct read
+│   └── torch/lib/            # ← .so cached to ~/.velo/so-cache/
+├── assets/                   # Static assets
 │   ├── model.safetensors
 │   └── config.json
-└── pyproject.toml          # Project definition
+└── pyproject.toml
 ```
+
+#### 3.2.3 Runtime File Access Strategy
+
+| File Type | Access Method | Cache? |
+|:---|:---|:---|
+| `.py` | mmap from vpkg | ❌ No |
+| `.pyc` | mmap from vpkg | ❌ No |
+| `.json/.toml` | mmap from vpkg | ❌ No |
+| `.safetensors` | mmap from vpkg (SHM) | ❌ No |
+| **`.so/.pyd`** | Extract to cache, dlopen | ✅ Yes |
+
+#### 3.2.4 .so Caching Strategy (Content-Addressable)
+
+> **Design**: .so files cached with blake3 hash in filename for deduplication.
+
+```
+Manifest:
+{
+  "site-packages/torch/lib/libtorch.so": {
+    "offset": 5120,
+    "size": 524288000,
+    "blake3": "a1b2c3d4e5f6..."
+  }
+}
+
+Cache path (content-addressable):
+~/.velo/so-cache/libtorch-a1b2c3d4e5f6.so
+
+dlopen:
+dlopen("~/.velo/so-cache/libtorch-a1b2c3d4e5f6.so")
+```
+
+**Benefits**:
+| Aspect | Traditional | Content-Addressable |
+|:---|:---|:---|
+| Deduplication | ❌ Same .so stored per bundle | ✅ Shared across bundles |
+| Cache size | Large | ✅ Minimal |
+| Lookup | Directory scan | ✅ Direct path construction |
+| Cleanup | Complex | ✅ Simple LRU |
+
+**Why blake3?**
+- 10x faster than SHA256
+- Collision-resistant
+- 16-char prefix sufficient for uniqueness
+
+#### 3.2.5 UV Comparison: Cache Key Strategy
+
+> **Reference**: UV (Astral) uses version-based keys; Velo uses content hash for stricter guarantees.
+
+| Aspect | UV | Velo |
+|:---|:---|:---|
+| Cache key | `{name}-{version}-{platform}` | `{basename}-{blake3}` |
+| Precision | ⚠️ Same version may differ | ✅ Exact content match |
+| Reproducibility | May vary | ✅ 100% reproducible |
+| Complexity | Low | Medium |
+
+**Decision**: Content hash for Velo provides stronger reproducibility guarantees aligned with Zygote's security model.
+
+#### 3.2.6 Hardlink Strategy (Learned from UV)
+
+> UV uses hardlinks for deduplication. Velo adopts the same approach.
+
+```
+First extraction:
+  vpkg → extract .so → save to cache → hardlink count = 1
+
+Second vpkg (same .so):
+  check cache exists (blake3 match) → skip extraction → hardlink count = 2
+
+dlopen:
+  dlopen("~/.velo/so-cache/libtorch-{hash}.so")  // shared file
+```
+
+**Link Modes** (configurable via `VELO_LINK_MODE`):
+| Mode | Behavior | Use Case |
+|:---|:---|:---|
+| `hardlink` (default) | Create hardlink to cache | Same filesystem |
+| `copy` | Copy file | Cross-filesystem |
+| `reflink` | CoW clone (btrfs/APFS) | Best performance |
 
 ### 3.3 Manifest Format
 
@@ -92,25 +190,28 @@ app.vpkg (tar.zst)
   "entrypoint": "app:main",
   "preload_hint": ["torch", "transformers"],
   "files": {
-    "src/main.py": "sha256:abc123...",
-    "site-packages/torch/...": "sha256:def456..."
+    "src/main.py": { "offset": 4096, "size": 1024, "sha256": "abc123..." },
+    "site-packages/torch/lib/libtorch.so": { "offset": 5120, "size": 524288000, "sha256": "def456...", "type": "native" }
   },
   "signature": "ed25519:..."
 }
 ```
 
-> **Note**: `preload_hint` is advisory only. Actual preload.lock is generated at deployment time (RFC-0035).
+> **Key fields**:
+> - `offset`: Byte offset in vpkg for mmap access
+> - `type: "native"`: Marks .so files that require cache extraction
 
 ### 3.4 Deployment Lifecycle
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────────┐
-│ velo bundle │────▶│  .vpkg   │────▶│ velo deploy (or velo run)       │
-│   build     │     │   (ship)    │     │                                 │
-└─────────────┘     └─────────────┘     │  1. Verify signature            │
-      │                                 │  2. Extract to isolated dir     │
-      ▼                                 │  3. Generate preload.lock (0035)│
-  Static packaging                      │  4. Start Zygote + pre-warm     │
+│ velo bundle │────▶│  .vpkg      │────▶│ velo run app.vpkg               │
+│   build     │     │ (ship/run)  │     │                                 │
+└─────────────┘     └─────────────┘     │  1. Verify signature (optional) │
+      │                                 │  2. mmap vpkg file              │
+      ▼                                 │  3. Extract .so to cache        │
+  Preload-ordered                       │  4. Start Zygote + pre-warm     │
+  uncompressed tar                      └─────────────────────────────────┘
   (no runtime state)                    └─────────────────────────────────┘
 ```
 
@@ -278,16 +379,97 @@ madvise(mmap.as_ptr(), mmap.len(), MADV_SEQUENTIAL);
 | 4 | Network FS breaks prefetch (NFS/EBS) | Low | Document as local-SSD optimized |
 | 5 | Docker overlay2 adds indirection | Low | Best-effort optimization |
 
-#### 8.1.6 Format Alternatives (Future Consideration)
+#### 8.1.6 Why Compression Still Benefits from Layout
+
+> **Key Insight**: Compression preserves logical file order. Decompression restores the original layout.
+
+```
+Build-time:
+[File A] [File B] [File C] ...  (preload order)
+    ↓ zstd compress
+[zstd frame 1] [zstd frame 2] [zstd frame 3]
+
+Runtime:
+[zstd frame 1] [zstd frame 2] [zstd frame 3]
+    ↓ decompress (sequential I/O)
+[File A] [File B] [File C] ...  ← Original order restored!
+```
+
+**Benefits at Each Layer**:
+| Layer | Benefit |
+|:---|:---|
+| Disk I/O | Sequential read → kernel readahead effective |
+| CPU | Decompression has good cache locality |
+| Post-extract | Files laid out in preload order → mmap prefetch works |
+
+**No Degradation Guarantee**: Even in Docker/NFS scenarios, preload ordering doesn't make things worse—just less effective.
+
+#### 8.1.7 Format Alternatives (Future Consideration)
 
 | Format | Random Access | Security | Cross-Platform |
 |:---|:---|:---|:---|
 | **tar.zst** (current) | ❌ Stream-only | ✅ Audited | ✅ Yes |
 | **squashfs** | ✅ Block-level | ✅ Kernel-audited | ❌ Linux-only |
 | **zip (stored)** | ✅ O(1) seek | ✅ Audited | ✅ Yes |
+| **Private + Zstd** (v2.0) | ✅ Seekable blocks | ⚠️ Needs audit | ✅ Yes |
 
-> **Decision**: Keep tar.zst for v1.0. Layout optimization is best-effort for local storage. 
-> Re-evaluate squashfs for Linux-only deployments in future.
+#### 8.1.8 Private Format + Zstd: Loading Speed Advantages (v2.0 Candidate)
+
+> **When to invest**: If loading speed is the top priority, private format provides significant advantages.
+
+**1. Seekable Zstd (Block Compression + Index Table)**
+
+```
+Standard tar.zst:
+[====== single zstd stream ======]
+   ↓ load libtorch.so (in middle)
+   Must decompress from start ❌ slow
+
+Private format + Seekable Zstd:
+[block1][block2][block3]...[index table]
+   ↓ load libtorch.so
+   Query index → seek to block N → decompress only that block ✅ fast
+```
+
+**2. File-Level Parallel Decompression**
+
+```
+Standard: [decompress file1] → [file2] → [file3]  (serial)
+Private:  [decompress file1]
+          [decompress file2]   (parallel, multi-core)
+          [decompress file3]
+```
+Speed improvement: **2-4x** on multi-core CPUs
+
+**3. Prefetch Hints in Index**
+
+```json
+{
+  "libtorch.so": { "offset": 1024, "size": "500MB", "prefetch_priority": 0 },
+  "numpy.so": { "offset": "502MB", "size": "20MB", "prefetch_priority": 1 }
+}
+```
+Result: Hottest files available first, **reduce time-to-first-import**
+
+**4. Memory-Mapped Decompression (Zero-Copy Path)**
+
+```
+Standard: decompress → write to disk → mmap disk file
+Private:  mmap compressed block → decompress to memory directly
+
+Benefit: Skip disk write roundtrip
+```
+
+**Performance Estimate**:
+
+| Scenario | Standard tar.zst | Private Format |
+|:---|:---|:---|
+| Load 500MB .so from middle | ~3s | ~0.5s (direct seek) |
+| Decompress 1GB bundle (4-core) | ~2s | ~0.7s |
+| Time to first import | After full extract | After hot zone extract |
+
+> **Decision**: Keep tar.zst for v1.0 (simplicity, compatibility).
+> Private format is a v2.0 candidate when loading speed becomes blocking.
 
 ### 8.2 Optional Native Library Bundling
 
