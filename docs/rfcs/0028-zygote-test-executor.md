@@ -329,12 +329,16 @@ velo_zygote/                    # ← Aligned with: src/zygote/
 
 #### 10.3.5 Refactor Tracking
 
+> [!NOTE]
+> **2026-01-19 Alignment Review:** These refactors are **DEFERRED** to a future phase.
+> Phase 13/14 implementation is complete and production-ready.
+> Python modules already follow the `v_*` convention; Rust alignment is architectural, not functional.
+
 | Task | Status | Priority |
 |:---|:---|:---|
-| Rename `src/zygote/fork.rs` → `v_fork.rs` | 📋 TODO | P1 |
-| Rename `src/serve/rsgi.rs` → `v_rsgi.rs` | 📋 TODO | P1 |
-| Rename `src/security/shield.rs` → `v_shield.rs` | 📋 TODO | P1 |
-| Update all Rust imports/references | 📋 TODO | P1 |
+| Extract fork logic to `src/zygote/v_fork.rs` | ⏸️ DEFERRED | P1 |
+| Rename `src/lifecycle/safety.rs` → `v_shield.rs` | ⏸️ DEFERRED | P1 |
+| Update all Rust imports/references | ⏸️ DEFERRED | P1 |
 
 ### 10.4 Python Plugin (Thin Wrapper)
 
