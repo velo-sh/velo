@@ -387,6 +387,65 @@ impl VtestCoordinator {
         Ok(result)
     }
 
+    /// RFC-0028 Full IPC: Dispatch test via direct IPC command
+    ///
+    /// This method uses the RunTest command and receives TestComplete response
+    /// directly, eliminating temp file I/O for result collection.
+    #[allow(dead_code)] // Will be used in Phase 2 parallel execution
+    fn dispatch_via_ipc(&mut self, test_id: &str) -> Result<VtestResult> {
+        let _start = Instant::now();
+
+        // P1-3: Acquire worker permit for concurrency control
+        let _permit = self.pool.acquire();
+
+        log::debug!("Dispatching test via Full IPC: {}", test_id);
+
+        // Find the test runner script
+        let runner_script = find_test_runner().context("Failed to find pytest_velo/runner.py")?;
+
+        // Build environment with shield
+        let env = crate::lifecycle::EnvironmentShield::new(&self.config).compile_env();
+
+        // Send RunTest command
+        let response = crate::zygote::core_ipc::send_command(
+            &self.socket_path,
+            crate::zygote::core_ipc::ZygoteCommand::RunTest {
+                test_id: test_id.to_string(),
+                runner_path: runner_script,
+                cov_path: self.cov_path.clone(),
+                env: Box::new(env),
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            },
+            None,
+        )
+        .context("Failed to send RunTest command")?;
+
+        match response {
+            crate::zygote::core_ipc::ZygoteResponse::TestComplete {
+                worker_pid: _,
+                test_id: returned_id,
+                passed,
+                exit_code,
+                duration_ms,
+                stdout,
+                stderr,
+            } => Ok(VtestResult {
+                test_id: returned_id,
+                passed,
+                exit_code,
+                duration_ms,
+                stdout,
+                stderr,
+            }),
+            crate::zygote::core_ipc::ZygoteResponse::Error { message } => {
+                anyhow::bail!("Test execution failed: {}", message)
+            }
+            other => {
+                anyhow::bail!("Unexpected response: {:?}", other)
+            }
+        }
+    }
+
     /// Run all pending tests and collect results
     pub fn run_all(&mut self) -> Result<VtestReport> {
         let mut report = VtestReport::default();

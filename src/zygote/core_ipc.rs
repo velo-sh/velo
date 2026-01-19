@@ -112,6 +112,21 @@ pub enum ZygoteCommand {
         #[serde(default)]
         request_id: Option<String>,
     },
+    /// Run a test and return result via IPC (RFC-0028 Full IPC)
+    /// Returns TestComplete response instead of writing to temp files.
+    RunTest {
+        test_id: String,
+        /// Runner script path (pytest_velo/runner.py)
+        runner_path: PathBuf,
+        /// Optional coverage path
+        #[serde(default)]
+        cov_path: Option<String>,
+        /// Environment variables
+        #[serde(default)]
+        env: Box<std::collections::HashMap<String, String>>,
+        #[serde(default)]
+        request_id: Option<String>,
+    },
 }
 
 /// Responses sent from Zygote to Launcher
@@ -159,6 +174,17 @@ pub enum ZygoteResponse {
     Handshake {
         version: u8,
         capabilities: Vec<String>,
+    },
+    /// Test execution completed (RFC-0028 Full IPC)
+    /// Enables direct streaming of test results without temp file I/O.
+    TestComplete {
+        worker_pid: u32,
+        test_id: String,
+        passed: bool,
+        exit_code: i32,
+        duration_ms: u64,
+        stdout: Option<String>,
+        stderr: Option<String>,
     },
 }
 
