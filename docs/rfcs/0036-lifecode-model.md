@@ -1,4 +1,4 @@
-# RFC-0036: LifeCode Model
+# RFC-0036: LifeCode™ Model
 
 > *"Software That Lives"*
 
@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-**LifeCode** is a revolutionary software model that treats applications as living organisms composed of fundamental units (cells), genetic identifiers (hashes), and their relationships.
+**LifeCode™** is a revolutionary software model that treats applications as living organisms composed of fundamental units (cells), genetic identifiers (hashes), and their relationships.
 
 > **Core Questions**:
 > 1. How to describe a software organism? (Representation)
@@ -21,7 +21,7 @@
 
 | Aspect | Description |
 |:---|:---|
-| **Model Name** | LifeCode |
+| **Model Name** | LifeCode™ |
 | **Metaphor** | Software = Living Organism |
 | **Representation** | Hash Tree = Genetic Blueprint |
 | **Composition** | Rebuild organism from gene fragments |
