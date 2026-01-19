@@ -1,10 +1,12 @@
-# RFC-0034: Preload Binary Packaging & Distribution
+# RFC-0034: Velo Bundle (Application Packaging & Distribution)
 
 **Status**: DRAFT
 **Author**: Velo Architect
 **Date**: 2026-01-19
 **Phase**: Phase 15 (Future)
 **Scope**: Deployment, Distribution, Serverless
+
+> **Note**: This RFC focuses on **packaging and distribution**. For native library pre-loading optimization, see RFC-0035.
 
 ---
 
