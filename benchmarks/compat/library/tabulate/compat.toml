@@ -1,0 +1,17 @@
+[meta]
+package = "tabulate"
+category = "library"
+tier = 0
+
+description = "tabulate compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/astanin/python-tabulate.git"
+git_ref = "v0.9.0"
+test_path = "test"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

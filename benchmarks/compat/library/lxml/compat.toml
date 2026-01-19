@@ -1,0 +1,17 @@
+[meta]
+package = "lxml"
+category = "library"
+tier = 3
+
+description = "lxml compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/lxml/lxml.git"
+git_ref = "lxml-4.9.3"
+test_path = "src/lxml/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-p", "no:relaxed"]
+timeout = 300
+known_failures = []

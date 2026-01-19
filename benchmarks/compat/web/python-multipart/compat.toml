@@ -1,0 +1,17 @@
+[meta]
+package = "python-multipart"
+category = "web"
+tier = 0
+
+description = "python-multipart compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/Kludex/python-multipart.git"
+git_ref = "0.0.6"
+test_path = "multipart/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

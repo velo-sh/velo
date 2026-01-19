@@ -1,0 +1,18 @@
+[meta]
+package = "requests"
+category = "library"
+tier = 2
+description = "Python HTTP for Humans"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/psf/requests.git"
+git_ref = "v2.32.3"
+test_path = "tests"
+# Minimal deps based on requests tox.ini
+test_dependencies = ["pytest", "pytest-httpbin", "pytest-mock", "trustme", "flask"]
+pytest_args = []
+exclude_markers = []
+timeout = 300
+known_failures = []

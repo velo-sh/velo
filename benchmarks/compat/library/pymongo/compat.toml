@@ -1,0 +1,18 @@
+[meta]
+package = "pymongo"
+category = "library"
+tier = 3
+
+description = "pymongo compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/mongodb/mongo-python-driver.git"
+git_ref = "4.6.0"
+test_path = "test"
+test_dependencies = ["pytest", "pymongo-auth-aws"]
+run_cmd = ["/bin/sh", "-c", "ls -l test/ && rm -rf test/lambda && ls -l test/ && pytest test"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

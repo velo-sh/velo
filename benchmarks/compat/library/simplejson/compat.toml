@@ -1,0 +1,17 @@
+[meta]
+package = "simplejson"
+category = "library"
+tier = 0
+
+description = "simplejson compatibility test"
+
+[compat]
+sys_path_strategy = "source"
+source = "git"
+git_repo = "https://github.com/simplejson/simplejson.git"
+git_ref = "v3.19.2"
+test_path = "simplejson/tests"
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []

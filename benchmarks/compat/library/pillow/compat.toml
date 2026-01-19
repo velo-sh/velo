@@ -1,0 +1,19 @@
+[meta]
+package = "pillow"
+category = "library"
+tier = 3
+
+description = "pillow compatibility test"
+
+[compat]
+sys_path_strategy = "installed"
+source = "git"
+git_repo = "https://github.com/python-pillow/Pillow.git"
+git_ref = "10.1.0"
+test_path = "Tests"
+# manual run to hide src
+run_cmd = ["/bin/sh", "-c", "mv src src.bak && pytest Tests"]
+test_dependencies = ["pytest"]
+pytest_args = ["-x"]
+timeout = 300
+known_failures = []
