@@ -303,6 +303,22 @@ impl VeloPaths {
     /// RFC-0012: Path to the ephemeral forensic authentication file for a given socket.
     /// The file is stored alongside the socket in the same protected directory.
     pub fn auth_file_for_socket(socket_path: &Path) -> PathBuf {
+        // Handle Linux Abstract Namespace Sockets (start with \0)
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let bytes = socket_path.as_os_str().as_bytes();
+            if !bytes.is_empty() && bytes[0] == 0 {
+                // For abstract sockets, we can't just append extension (invalid path).
+                // Instead, derive a stable filename from the socket name hash.
+                let hash = Self::short_hash(&socket_path.to_string_lossy());
+                let dir = Self::socket_dir();
+                // Ensure directory exists (it might not if using abstract sockets purely)
+                let _ = ensure_socket_dir(&dir);
+                return dir.join(format!("abstract-{}.auth", hash));
+            }
+        }
+
         let mut auth_path = socket_path.to_path_buf();
         auth_path.set_extension("auth");
         auth_path
