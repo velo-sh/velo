@@ -232,6 +232,94 @@ velo run sha256:abc123
 # Cache: Never re-download same hash
 ```
 
+### 5.4 Adaptive Dependency Resolution
+
+> **One hash, any platform**: Automatically resolve and substitute dependencies based on runtime environment.
+
+**Manifest Declaration**:
+```json
+{
+  "name": "my-app",
+  "dependencies": {
+    "torch": {
+      "preferred": "torch==2.1.0",
+      "alternatives": [
+        { "variant": "cuda", "hash": "abc123...", "requires": "nvidia-gpu" },
+        { "variant": "rocm", "hash": "def456...", "requires": "amd-gpu" },
+        { "variant": "mps", "hash": "ghi789...", "requires": "apple-silicon" },
+        { "variant": "cpu", "hash": "jkl012...", "requires": null }
+      ],
+      "fallback": "cpu"
+    }
+  }
+}
+```
+
+**Runtime Behavior**:
+```
+velo run sha256:abc123
+
+[velo] Detecting environment...
+[velo] ✓ Apple M3 detected (MPS capable)
+[velo] Preferred torch-cuda not compatible
+[velo] Selecting alternative: torch-mps (gene: ghi789)
+[velo] Fetching from gene pool...
+[velo] ✓ Organism materialized
+[velo] ✓ App started
+```
+
+**Resolution Priority**:
+| Priority | Check | Action |
+|:---|:---|:---|
+| 1 | Preferred available locally | Use cached |
+| 2 | Preferred available remotely | Fetch & use |
+| 3 | Compatible alternative locally | Use cached |
+| 4 | Compatible alternative remotely | Fetch & use |
+| 5 | Fallback | Use CPU variant |
+
+### 5.5 Hash-based Deployment
+
+> **Deploy = Send Hash**: A single hash message deploys an entire application.
+
+**Deployment Flow**:
+```
+Developer                          Server
+   │                                 │
+   │  "sha256:abc123"                │
+   │ ────────────────────────►       │
+   │                                 │
+   │                    1. Receive hash
+   │                    2. Query registry
+   │                    3. Fetch genes (dedup)
+   │                    4. Materialize organism
+   │                    5. Start service
+   │                                 │
+   │     ◄──── Service Running ──    │
+```
+
+**CLI Examples**:
+```bash
+# Local run
+velo run sha256:abc123
+
+# Remote deploy (SSH)
+velo deploy sha256:abc123 --to server.example.com
+
+# Kubernetes
+velo deploy sha256:abc123 --to k8s://cluster/namespace
+
+# CI/CD pipeline
+echo "$RELEASE_HASH" | velo deploy --stdin --to production
+```
+
+**Benefits**:
+| Traditional | LifeCode™ |
+|:---|:---|
+| Build different packages per platform | One hash, auto-adapt |
+| Transfer large archives | Transfer hash, fetch delta |
+| Manual dependency resolution | Auto-resolve alternatives |
+| Complex deploy scripts | Single command |
+
 ---
 
 ## 6. CLI Interface (Draft)
