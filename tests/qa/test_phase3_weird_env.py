@@ -31,10 +31,18 @@ class WeirdEnv:
     def __init__(self):
         self.path = Path(tempfile.mkdtemp(prefix="weird_env_"))
         self.velo = get_velo_binary()
+        # Create isolated socket directory
+        self.socket_dir = self.path / ".sockets"
+        self.socket_dir.mkdir(exist_ok=True)
+        self.env_vars = {
+            "VELO_SOCKET_DIR": str(self.socket_dir),
+            "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
+        }
 
     def run_velo(self, args: list, timeout: float = 30, env: dict = None) -> tuple:
         """Run velo and return (returncode, stdout, stderr)."""
         full_env = os.environ.copy()
+        full_env.update(self.env_vars)
         if env:
             full_env.update(env)
 

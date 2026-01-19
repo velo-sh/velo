@@ -43,6 +43,13 @@ class SecurityEnv:
         self.path = Path(tempfile.mkdtemp(prefix="security_"))
         self.velo = get_velo_binary()
         self.socket_path = None
+        # Isolate sockets
+        self.socket_dir = self.path / ".sockets"
+        self.env_vars = {
+            "VELO_SOCKET_DIR": str(self.socket_dir),
+            "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
+        }
+        self.socket_dir.mkdir(exist_ok=True)
 
     def setup(self):
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
@@ -53,25 +60,22 @@ class SecurityEnv:
         """Start Zygote and return socket path."""
         if timeout is None:
             timeout = T_MEDIUM  # CI-aware timeout
+
+        full_env = os.environ.copy()
+        full_env.update(self.env_vars)
+
         result = subprocess.run(
             [self.velo, "zygote", "start"],
             cwd=self.path,
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=full_env,
         )
 
-        # Find socket - check multiple locations
-        # 1. /tmp/velo-zygote.sock (global socket)
-        global_sock = Path("/tmp/velo-zygote.sock")
-        if global_sock.exists():
-            self.socket_path = global_sock
-            return str(global_sock)
-
-        # 2. .velo_cache/*.sock (project-local socket)
-        cache_dir = self.path / ".velo_cache"
-        if cache_dir.exists():
-            for f in cache_dir.iterdir():
+        # Find socket in isolated dir
+        if self.socket_dir.exists():
+            for f in self.socket_dir.iterdir():
                 if f.suffix == ".sock":
                     self.socket_path = f
                     return str(f)
@@ -79,11 +83,14 @@ class SecurityEnv:
         return None
 
     def stop_zygote(self):
+        full_env = os.environ.copy()
+        full_env.update(self.env_vars)
         subprocess.run(
             [self.velo, "zygote", "stop"],
             cwd=self.path,
             capture_output=True,
             timeout=T_SHORT,  # CI-aware timeout
+            env=full_env,
         )
 
     def send_raw(self, data: bytes) -> bytes:
@@ -120,7 +127,11 @@ class SecurityEnv:
         (self.path / name).write_text(content)
 
     def cleanup(self):
-        subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
+        try:
+            self.stop_zygote()
+        except:
+            pass
+
         try:
             shutil.rmtree(self.path)
         except:

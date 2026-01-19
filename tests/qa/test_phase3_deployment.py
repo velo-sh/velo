@@ -39,6 +39,13 @@ class DeployEnv:
         self.velo = get_velo_binary()
         self.bin_dir = self.path / "bin"
         self.lib_dir = self.path / "lib"
+        # Isolate sockets
+        self.socket_dir = self.path / ".sockets"
+        self.env_vars = {
+            "VELO_SOCKET_DIR": str(self.socket_dir),
+            "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
+        }
+        self.socket_dir.mkdir(exist_ok=True)
 
     def setup(self):
         # Create typical install structure
@@ -66,17 +73,24 @@ class DeployEnv:
     def run(self, velo_path, args, timeout=None):
         if timeout is None:
             timeout = T_MEDIUM  # CI-aware timeout
+
+        env = os.environ.copy()
+        env.update(self.env_vars)
+
         result = subprocess.run(
-            [velo_path] + args,
-            cwd=self.project_dir,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            [velo_path] + args, cwd=self.project_dir, capture_output=True, text=True, timeout=timeout, env=env
         )
         return result.returncode, result.stdout, result.stderr
 
     def cleanup(self):
-        subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
+        # Stop Zygote gracefully via isolated socket
+        try:
+            env = os.environ.copy()
+            env.update(self.env_vars)
+            subprocess.run([self.velo, "zygote", "stop"], capture_output=True, timeout=5, env=env)
+        except Exception:
+            pass
+
         try:
             shutil.rmtree(self.path)
         except:

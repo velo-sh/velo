@@ -37,6 +37,13 @@ class AttackEnv:
     def __init__(self):
         self.path = Path(tempfile.mkdtemp(prefix="attack_"))
         self.velo = get_velo_binary()
+        # Create isolated socket directory
+        self.socket_dir = self.path / ".sockets"
+        self.socket_dir.mkdir(exist_ok=True)
+        self.env_vars = {
+            "VELO_SOCKET_DIR": str(self.socket_dir),
+            "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
+        }
 
     def setup(self):
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
@@ -48,6 +55,7 @@ class AttackEnv:
             timeout = T_MEDIUM
 
         full_env = os.environ.copy()
+        full_env.update(self.env_vars)
         if env:
             full_env.update(env)
         try:
@@ -70,8 +78,12 @@ class AttackEnv:
         (self.path / name).write_text(content)
 
     def cleanup(self):
-        # Kill any leftover Velo processes safely (Exact match only)
-        subprocess.run(["pkill", "^velo$"], capture_output=True)
+        # Stop Zygote gracefully via isolated socket
+        try:
+            self.run(["zygote", "stop"], timeout=5)
+        except Exception:
+            pass
+
         try:
             shutil.rmtree(self.path)
         except:
@@ -429,11 +441,10 @@ class TestIPCAttacks:
             # Start Zygote
             env.run(["zygote", "start"], timeout=T_SHORT)
 
-            # Find socket
+            # Find socket in isolated dir
             sock_path = None
-            cache_dir = env.path / ".velo_cache"
-            if cache_dir.exists():
-                for f in cache_dir.iterdir():
+            if env.socket_dir.exists():
+                for f in env.socket_dir.iterdir():
                     if f.suffix == ".sock":
                         sock_path = f
                         break
@@ -462,9 +473,8 @@ class TestIPCAttacks:
             env.run(["zygote", "start"], timeout=T_SHORT)
 
             sock_path = None
-            cache_dir = env.path / ".velo_cache"
-            if cache_dir.exists():
-                for f in cache_dir.iterdir():
+            if env.socket_dir.exists():
+                for f in env.socket_dir.iterdir():
                     if f.suffix == ".sock":
                         sock_path = f
                         break
@@ -500,9 +510,8 @@ class TestIPCAttacks:
             env.run(["zygote", "start"], timeout=T_SHORT)
 
             sock_path = None
-            cache_dir = env.path / ".velo_cache"
-            if cache_dir.exists():
-                for f in cache_dir.iterdir():
+            if env.socket_dir.exists():
+                for f in env.socket_dir.iterdir():
                     if f.suffix == ".sock":
                         sock_path = f
                         break
