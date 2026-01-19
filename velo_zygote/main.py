@@ -515,15 +515,19 @@ class ZygoteServer:
             ppid = os.getppid()
             if pid == ppid:
                 return True  # Fully trusted (Supervisor)
+            else:
+                LogUtils.debug_log(f"[SEC-005] Peer PID {pid} is NOT supervisor (PPID: {ppid}). Auth required.")
 
         # 3. Forensic Agent Auth (Authorized Secret required)
         if self._authorized_secret:
             # If a secret is set, ANY non-supervisor connection MUST perform Auth handshake.
+            LogUtils.debug_log(f"[SEC-005] Auth mandatory for non-supervisor PID {pid} due to active secret.")
             return False  # Needs Auth
 
         # 4. Default Trust (Same UID, No Secret)
         # If no secret is set, we trust same-UID peers (like Docker/Postgres model).
         # This allows 'velo status' to work without a global secret file.
+        LogUtils.debug_log(f"[SEC-005] Default Trust granted for same-UID peer (PID: {pid}).")
         return True
 
     async def _handle_client_socket(self, sock: socket.socket) -> None:
@@ -539,6 +543,8 @@ class ZygoteServer:
                 LogUtils.log(f"Access Denied: {e}")
                 sock.close()
                 return
+
+            LogUtils.debug_log(f"Handling client connection. Fully Trusted: {fully_trusted}")
 
             try:
                 await loop.run_in_executor(None, transport.send, {"type": "Ready"})

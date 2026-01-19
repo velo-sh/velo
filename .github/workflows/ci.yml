@@ -218,6 +218,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "velo-build"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Run Rust tests
         run: cargo test
 

@@ -546,6 +546,11 @@ impl ZygoteStream {
                 }
                 Err(e) => return Err(e),
             }
+        } else {
+            log::warn!(
+                "[SEC-005] Auth file missing or unreadable: {}. Forensic Agent may fail auth.",
+                auth_path.display()
+            );
         }
 
         Ok(stream)
