@@ -399,4 +399,65 @@ In Phase 14, we successfully integrated with `pytest-xdist` by hijacking the `ex
 
 ---
 
-**Last Updated**: 2026-01-18 (Roadmap Added)
+## 15. Phase 13 Core vtest Implementation (2026-01-19)
+
+### 15.1 DEF-SOCKET-STABLE: Socket Directory Stability
+
+**Problem**: macOS `${TMPDIR}` (`/var/folders/...`) is subject to system cleanup, causing the Zygote socket to disappear between test dispatches.
+
+**Solution**: Changed socket directory from volatile temp to stable user directory:
+```toml
+# config/constants.toml
+path_macos_base_socket_parent = "${HOME}/.local/state/velo/sockets"
+```
+
+| Path Type | Before | After |
+|:---|:---|:---|
+| macOS | `${TMPDIR}/velo-{UID}/` | `~/.local/state/velo/sockets/` |
+| Linux | `${XDG_RUNTIME_DIR}/velo-{UID}/` | (unchanged) |
+
+### 15.2 VELO_IS_ZYGOTE Worker Guard
+
+**Problem**: When `runner.py` calls `pytest.main()`, the pytest-velo plugin's `pytest_configure` would re-initialize Zygote logic in the forked worker.
+
+**Solution**: Environment variable guard in `pytest_configure`:
+```python
+# pytest_velo/plugin.py
+def pytest_configure(config):
+    if os.environ.get("VELO_IS_ZYGOTE") == "1":
+        return  # Skip in Zygote-spawned workers
+```
+
+Worker processes set this in `v_fork.py`:
+```python
+os.environ["VELO_IS_ZYGOTE"] = "1"
+```
+
+### 15.3 Asyncio Event Loop Cleanup (DEF-VTEST-ASYNCIO)
+
+**Problem**: Forked workers inherit parent Zygote's asyncio event loop with scheduled tasks, causing socket interference.
+
+**Solution**: Cancel inherited tasks and reset event loop in `post_fork_reinit`:
+```python
+# velo_zygote/lifecycle.py::hook_security
+import asyncio
+try:
+    loop = asyncio.get_running_loop()
+    for task in asyncio.all_tasks(loop):
+        task.cancel()
+except RuntimeError:
+    pass
+asyncio.set_event_loop(asyncio.new_event_loop())
+```
+
+### 15.4 vtest Orchestration Verification
+
+| Test | Result |
+|:---|:---|
+| `velo test --zygote --workers 2` | ✅ 5/5 passed |
+| Socket stability across dispatches | ✅ Stable |
+| Worker isolation | ✅ Confirmed |
+
+---
+
+**Last Updated**: 2026-01-19 (Phase 13 Core vtest Implementation)
