@@ -1,7 +1,10 @@
 # LifeCode™ Manifesto
 *Software That Lives*
 
-> *"Not yet implemented, but inevitable."*
+> *Not yet implemented, but inevitable.*
+>
+> This is not a product announcement.  
+> It is a declaration of a new form of existence.
 
 ## 1. The Broken World
 
