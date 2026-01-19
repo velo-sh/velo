@@ -1,4 +1,6 @@
-# RFC-0036: Organic Software Representation (v2.0 Vision)
+# RFC-0036: LifeCode Model
+
+> *"Software That Lives"*
 
 **Status**: DRAFT (Vision)
 **Author**: Velo Architect
@@ -11,7 +13,7 @@
 
 ## 1. Executive Summary
 
-This RFC proposes an **Organic Software Model** for Velo v2.0, where software is treated as a living organism composed of fundamental units (cells), genetic identifiers (hashes), and their relationships.
+**LifeCode** is a revolutionary software model that treats applications as living organisms composed of fundamental units (cells), genetic identifiers (hashes), and their relationships.
 
 > **Core Questions**:
 > 1. How to describe a software organism? (Representation)
@@ -19,6 +21,7 @@ This RFC proposes an **Organic Software Model** for Velo v2.0, where software is
 
 | Aspect | Description |
 |:---|:---|
+| **Model Name** | LifeCode |
 | **Metaphor** | Software = Living Organism |
 | **Representation** | Hash Tree = Genetic Blueprint |
 | **Composition** | Rebuild organism from gene fragments |
