@@ -65,6 +65,10 @@ We move from **Passive Execution** to **Self-Evolving Life**.
 Software is no longer a tool we carry.
 It is a life we cultivate.
 
+Every era chooses how software exists.
+The container era chose artifacts.
+We choose life.
+
 **LifeCode™.**
 *Software That Lives.*
 

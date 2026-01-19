@@ -6,6 +6,18 @@
 
 ---
 
+## Strategic Positioning (Keynotes & Headers)
+
+Use these contrasts for high-impact visual headers (Posters, Website, Tweets).
+
+> *"Containers ship software. LifeCode grows it."*
+>
+> *"Docker packages code. LifeCode gives it life."*
+>
+> *"The container era packaged software. The LifeCode era lets it live."*
+
+---
+
 ## Brand Family
 
 ### Runtime Lifecycle (Deployment)
