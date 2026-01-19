@@ -10,12 +10,12 @@
 
 ## 1. Executive Summary
 
-This RFC proposes **Velo Bundle**, a system for packaging pre-warmed Zygote images with all Python dependencies into a single distributable binary. This eliminates cold-start latency in production deployments by shipping "ready-to-fork" runtime snapshots.
+This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file. Combined with Velo's runtime Zygote pre-warming, this eliminates cold-start latency in production deployments.
 
 | Metric | Standard Deployment | Velo Bundle |
 |:---|:---|:---|
-| Cold Start | 5-10s (pip install + import) | **< 50ms** (fork from snapshot) |
-| Image Size | N/A (deps at runtime) | ~Model Size + 50MB overhead |
+| Cold Start | 5-10s (pip install + import) | **< 100ms** (deps pre-packaged, Zygote pre-warms at runtime) |
+| Image Size | N/A (deps at runtime) | ~Dependencies + Assets |
 | Distribution | pip + Docker layers | Single `.vbundle` file |
 
 ---
@@ -37,6 +37,8 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 
 ### 3.1 Bundle Format (`.vbundle`)
 
+> **Key Insight**: Zygote is a **runtime construct**, not a packaged artifact. The bundle contains static assets; Zygote pre-warming happens at deployment time.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Velo Bundle (.vbundle)                    │
@@ -48,10 +50,14 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 │  ├── preload_modules: ["torch", "transformers", ...]        │
 │  └── entrypoint: "app:main"                                 │
 ├─────────────────────────────────────────────────────────────┤
-│  Zygote Snapshot (Binary)                                    │
-│  ├── Python interpreter state                               │
-│  ├── Imported module bytecode                               │
-│  └── Preloaded object graph                                 │
+│  Dependencies (Static)                                       │
+│  ├── site-packages/ (pre-installed wheels)                  │
+│  ├── .venv/ (frozen virtualenv)                             │
+│  └── requirements.lock                                      │
+├─────────────────────────────────────────────────────────────┤
+│  Application Code                                            │
+│  ├── src/                                                   │
+│  └── pyproject.toml                                         │
 ├─────────────────────────────────────────────────────────────┤
 │  Assets (Optional)                                           │
 │  ├── model.safetensors (Memory Gravity ready)               │
@@ -59,18 +65,23 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Workflow
+### 3.2 Runtime Lifecycle
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ velo bundle │────▶│  .vbundle   │────▶│ velo deploy │
-│   (build)   │     │   (ship)    │     │   (run)     │
-└─────────────┘     └─────────────┘     └─────────────┘
-      │                                        │
-      ▼                                        ▼
-  Pre-warm imports                      fork() from snapshot
-  Serialize state                       < 50ms to ready
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ velo bundle │────▶│  .vbundle   │────▶│ velo deploy │────▶│   Zygote    │
+│   (build)   │     │   (ship)    │     │  (unpack)   │     │ (pre-warm)  │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+      │                                        │                    │
+      ▼                                        ▼                    ▼
+  Package deps                         Extract to disk        Import preload
+  Include assets                       Setup venv             Ready to fork()
 ```
+
+**Zygote Pre-warming is a RUNTIME operation**:
+1. `velo deploy` unpacks the bundle
+2. Velo starts Zygote and imports `preload_modules`
+3. Subsequent requests fork from the warmed Zygote
 
 ---
 
@@ -98,12 +109,9 @@ velo bundle deploy app.vbundle --target aws-lambda
 - **Problem**: Python bytecode and native extensions are platform-specific
 - **Solution**: Bundle is tagged with `platform` (e.g., `linux-x86_64`). Cross-platform bundles require multi-arch build.
 
-### 5.2 Snapshot Serialization
-- **Problem**: Python interpreter state is complex (GC, refcounts, open FDs)
-- **Solution Options**:
-  1. **Full Process Checkpoint** (CRIU) - Heavy, requires kernel support
-  2. **Bytecode + Module Cache** - Lighter, Velo already does this
-  3. **Lazy Snapshot** - Only serialize "hot" objects
+### 5.2 Dependency Isolation
+- **Problem**: Bundled site-packages may conflict with system packages
+- **Solution**: Bundle extracts to isolated directory; Velo sets `PYTHONPATH` exclusively to bundle paths.
 
 ### 5.3 Security
 - **Problem**: Bundled code could be tampered
@@ -162,9 +170,9 @@ velo bundle deploy app.vbundle --target aws-lambda
 
 ## 10. Open Questions
 
-1. **Snapshot Technology**: CRIU vs custom bytecode serialization?
-2. **Multi-Python Support**: How to handle multiple Python versions in same bundle?
-3. **Update Strategy**: How to patch a deployed bundle without full rebuild?
+1. **Multi-Python Support**: How to handle multiple Python versions in same bundle?
+2. **Update Strategy**: How to patch a deployed bundle without full rebuild?
+3. **Size Optimization**: How to minimize bundle size while preserving all dependencies?
 
 ---
 
