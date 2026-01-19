@@ -47,7 +47,7 @@ def test_b_{i}():
             print(result_velo.stderr)
 
         assert result_velo.returncode == 0
-        assert "200 passed" in result_velo.stdout
+        assert "Passed:  200" in result_velo.stdout or "200 passed" in result_velo.stdout
 
         # In a small test suite, overhead might dominate, but let's check it doesn't crash
         # and it should ideally be faster or comparable
@@ -104,7 +104,7 @@ def test_verify_zygote_presence():
             print(result.stderr)
 
         assert result.returncode == 0
-        assert "2 passed" in result.stdout
+        assert "Passed:  2" in result.stdout or "2 passed" in result.stdout
 
     finally:
         os.unlink(test_file)
