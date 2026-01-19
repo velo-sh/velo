@@ -73,6 +73,15 @@ class VeloPaths:
         if any(os.environ.get(k) for k in ci_indicators):
             return "ci"
 
+        # RFC-0012: Check if we are in a known project structure to favor 'dev'
+        # If we can find pyproject.toml or a .git dir, we are likely in dev
+        try:
+            cwd = Path.cwd()
+            if (cwd / "pyproject.toml").exists() or (cwd / ".git").exists():
+                return "dev"
+        except Exception:
+            pass
+
         # Default to dev mode (most permissive)
         return "dev"
 
@@ -80,7 +89,6 @@ class VeloPaths:
     def socket_dir() -> Path:
         """Get the canonical socket directory using hierarchical path resolution."""
         # 1. Check for environment override
-        # RFC-0012: In production, this should always be explicitly set or derive from Matrix.
         override = os.environ.get("VELO_SOCKET_DIR")
         if override:
             return Path(override)
@@ -90,29 +98,34 @@ class VeloPaths:
         env_mode = VeloPaths._infer_environment()
 
         # 3. Resolve using Matrix
-        env_key = f"PATH_{os_name}_{env_mode}_SOCKET_PARENT"
-        base_key = f"PATH_{os_name}_BASE_SOCKET_PARENT"
+        env_key = f"PATH_{os_name.upper()}_{env_mode.upper()}_SOCKET_PARENT"
+        base_key = f"PATH_{os_name.upper()}_BASE_SOCKET_PARENT"
 
         parent_path = VeloPaths._get_path_config(env_key)
         if not parent_path:
             parent_path = VeloPaths._get_path_config(base_key)
 
         if not parent_path:
-            # Rule 2: Throw IntegrityError instead of guessing /tmp
-            from .integrity import IntegrityError
+            # Rule 2: Throw IntegrityError in production
+            if env_mode == "prod":
+                from .integrity import IntegrityError
 
-            raise IntegrityError(
-                f"CRITICAL: Socket path matrix resolution failed for {os_name}/{env_mode}. "
-                f"Missing {env_key} or {base_key} in constants.py"
-            )
+                raise IntegrityError(
+                    f"CRITICAL: Socket path matrix resolution failed for {os_name}/{env_mode}. "
+                    f"Missing {env_key} or {base_key} in constants.py"
+                )
 
-        # 4. Expand Placeholders
-        expanded_parent = VeloPaths._expand_placeholders(parent_path)
+            # Non-prod: Fallback to standardized temp location (matching ZygoteGateway)
+            import tempfile
 
-        # 5. Append Dir Name
-        dir_name = VeloPaths._expand_placeholders(PATH_SOCKET_DIR_NAME)
-
-        socket_path = Path(expanded_parent) / dir_name
+            uid = os.getuid() if hasattr(os, "getuid") else 0
+            socket_path = Path(tempfile.gettempdir()) / f"velo-{uid}" / "sockets"
+        else:
+            # 4. Expand Placeholders
+            expanded_parent = VeloPaths._expand_placeholders(parent_path)
+            # 5. Append Dir Name
+            dir_name = VeloPaths._expand_placeholders(PATH_SOCKET_DIR_NAME)
+            socket_path = Path(expanded_parent) / dir_name
 
         # 6. Check Length Limit
         if len(str(socket_path)) + 30 > SOCKET_PATH_LIMIT:

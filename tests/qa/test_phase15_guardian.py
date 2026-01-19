@@ -1,6 +1,7 @@
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -30,7 +31,6 @@ def cleanup_zygote():
 
 
 @pytest.mark.tier1
-@pytest.mark.xfail(reason="P1.5: Restart loop requires socket cleanup timing refinement")
 def test_guardian_auto_restart():
     """
     Forensic Test: Verify Rust Guardian detects Zygote death and restarts it.
@@ -69,10 +69,19 @@ def test_guardian_basic_health_check():
     """
     Verify the Guardian starts successfully and Zygote reports health metrics.
     """
-    subprocess.Popen(
-        ["./target/debug/velo", "zygote", "start", "--daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    # Prefer release build for faster startup, fallback to debug
+    velo_bin = "./target/release/velo" if Path("./target/release/velo").exists() else "./target/debug/velo"
+
+    # Start Zygote and wait for it to be ready
+    result = subprocess.run(
+        [velo_bin, "zygote", "start", "--daemon"],
+        capture_output=True,
+        text=True,
+        timeout=30,  # Increased timeout for debug build
     )
-    time.sleep(3)
+    if result.returncode != 0:
+        print(f"Zygote start failed: {result.stderr}")
+    time.sleep(4)  # Extra time for Guardian to initialize
 
     status = get_zygote_status()
     assert "Running ✅" in status, f"Zygote should be running. Got: {status}"

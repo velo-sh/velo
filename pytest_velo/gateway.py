@@ -1,3 +1,4 @@
+import os
 import socket
 from typing import Any
 
@@ -9,8 +10,9 @@ from execnet.gateway_socket import SocketIO
 try:
     from velo_zygote.paths import VeloPaths
     from velo_zygote.transport_sync import ZygoteTransport
-except (ImportError, ValueError):
+except (ImportError, ValueError) as e:
     # Fallback/Diagnostic
+    print(f"!!! [Velo] Gateway Import Error: {e}")
     ZygoteTransport = None  # type: ignore
     VeloPaths = None  # type: ignore
 
@@ -21,7 +23,8 @@ class ZygoteGateway(execnet.gateway.Gateway):
     directly into an execnet listener.
     """
 
-    def __init__(self, spec: Any, socket_path: str = None, secret: str = None):
+    def __init__(self, spec: Any, socket_path: str = None, secret: str = None, project_root: str = None):
+        self.project_root = project_root
         if socket_path is None:
             # First Principles: Try VeloPaths, but gracefully fallback if unavailable
             try:
@@ -32,11 +35,10 @@ class ZygoteGateway(execnet.gateway.Gateway):
 
             if not socket_path:
                 # Ultimate fallback: standard temp location
-                import os
                 import tempfile
 
                 uid = os.getuid() if hasattr(os, "getuid") else 0
-                socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote-v01.sock"
+                socket_path = f"{tempfile.gettempdir()}/velo-{uid}/velo-zygote.sock"
 
         # 1. Physical Connect
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -66,15 +68,25 @@ class ZygoteGateway(execnet.gateway.Gateway):
             except Exception:
                 pass  # No auth file or unreadable - proceed without auth
 
-        if secret:
-            transport.send({"type": "Auth", "secret": secret})
-            auth_resp = transport.recv()
-            if not auth_resp or auth_resp.get("type") != "Ack":
-                sock.close()
-                raise RuntimeError(f"Velo Gateway Auth failed: {auth_resp}")
+        transport.send({"type": "Auth", "secret": secret})
+        auth_resp = transport.recv()
+        if not auth_resp or auth_resp.get("type") != "Ack":
+            sock.close()
+            raise RuntimeError(f"Velo Gateway Auth failed: {auth_resp}")
 
-        # C. Request Gateway Hijack
-        transport.send({"type": "GatewayFork", "nodeid": spec.id})
+        # C. Request Gateway Hijack (pass critical env vars for worker)
+        # RFC-0028: Propagate project root and PYTHONPATH to miracle workers
+        fork_env = {
+            "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
+            "VELO_ZYGOTE_SOCKET": os.environ.get("VELO_ZYGOTE_SOCKET", ""),
+            "VELO_ZYGOTE_AUTH": os.environ.get("VELO_ZYGOTE_AUTH", ""),
+            "VELO_MIRACLE_WORKER": "1",
+            "VELO_ENV": os.environ.get("VELO_ENV", "dev"),
+            # RFC-0029: Propagate xdist worker ID to prevent recursive fork bomb
+            "PYTEST_XDIST_WORKER": os.environ.get("PYTEST_XDIST_WORKER", ""),
+            "PYTEST_XDIST_WORKER_ID": os.environ.get("PYTEST_XDIST_WORKER_ID", ""),
+        }
+        transport.send({"type": "GatewayFork", "nodeid": spec.id, "env": fork_env, "project_root": self.project_root})
         fork_resp = transport.recv()
         if not fork_resp or fork_resp.get("type") != "Ack":
             sock.close()

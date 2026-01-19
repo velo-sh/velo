@@ -65,6 +65,8 @@ class ForkHandler:
         sock: Any,
         worker_registry: WorkerRegistry,
         nodeid: str = "worker",
+        env: dict[str, str] | None = None,
+        project_root: str | None = None,
     ) -> int:
         """
         Phase 14 P1: Fork a gateway worker that takes over the socket.
@@ -83,6 +85,19 @@ class ForkHandler:
                 # RFC-0029: Mark this as a miracle worker to bypass redundant forks
                 os.environ["VELO_MIRACLE_WORKER"] = "1"
                 os.environ["VELO_IS_ZYGOTE"] = "1"
+
+                # Apply env from pytest master (PYTHONPATH propagation)
+                if env:
+                    for key, value in env.items():
+                        if value:  # Only set non-empty values
+                            os.environ[key] = value
+
+                # RFC-0028: Project Root Alignment
+                if project_root and os.path.isdir(project_root):
+                    os.chdir(project_root)
+                    LogUtils.debug_log(f"Miracle Worker chdir to project_root: {project_root}")
+                    if project_root not in sys.path:
+                        sys.path.insert(0, project_root)
 
                 # 2. Run execnet bootstrap
                 ForkHandler._run_execnet_gateway(sock, nodeid=nodeid)
@@ -320,7 +335,16 @@ class ForkHandler:
 
             MacOSDeathSigMonitor.start_monitoring()
 
-        # 3. Path Normalization
+        # 3. Project Root Alignment (CRITICAL: Must happen BEFORE imports)
+        # This is THE fix for "file or directory not found" errors
+        if project_root and os.path.isdir(project_root):
+            os.chdir(project_root)
+            LogUtils.debug_log(f"Worker chdir to project_root: {project_root}")
+            # Also add to PYTHONPATH for imports
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+
+        # 3b. Path Normalization (script dir)
         if script_path:
             script_dir = os.path.dirname(os.path.abspath(script_path))
             if script_dir not in sys.path:

@@ -40,6 +40,38 @@ except ImportError:
 
 _zygote: Any | None = None
 _fork_reinit_callbacks: list[Callable[[], None]] = []
+_session_socket_path: Path | None = None  # Session-scoped socket for isolation
+
+
+# =============================================================================
+# Session Isolation Helpers (SPEC-0005 INV-SSOT-002: Pool Sovereignty)
+# =============================================================================
+
+
+def _short_hash(s: str) -> str:
+    """Generate 6-char hex hash using blake3 (project standard)."""
+    import blake3
+
+    return blake3.blake3(s.encode()).hexdigest()[:6]
+
+
+def _sanitize_name(path: str) -> str:
+    """8-char alphanumeric name (Rust parity with paths.rs:142-161)."""
+    name = Path(path).name if path else "sess"
+    clean = "".join(c for c in name if c.isalnum() or c == "_")[:8]
+    return clean or "sess"
+
+
+def _session_socket_name(rootdir: str) -> str:
+    """Generate unique readable socket name (Rust parity with paths.rs:200).
+
+    Format: velo-zygote-{name}-{hash}-v01.sock
+    Example: velo-zygote-velo-3f4a2b-v01.sock
+    """
+    name = _sanitize_name(rootdir)
+    # Include PID to ensure uniqueness across parallel sessions
+    hash_val = _short_hash(f"{rootdir}:{os.getpid()}")
+    return f"velo-zygote-{name}-{hash_val}-v01.sock"
 
 
 # =============================================================================
@@ -119,6 +151,27 @@ def is_xdist_worker() -> bool:
 def is_xdist_controller() -> bool:
     """Check if running as pytest-xdist controller (master) process."""
     return "PYTEST_XDIST_WORKER" not in os.environ
+
+
+def get_project_root(item: Any) -> Path:
+    """
+    RFC-0028: Derive project root from test file path.
+    Walk up to find a directory with conftest.py, pyproject.toml, or setup.py.
+    """
+    test_fspath = getattr(item, "fspath", None) or getattr(item, "path", None)
+    if not test_fspath:
+        return Path.cwd()
+
+    test_dir = Path(str(test_fspath)).parent
+    # Walk up to find project root (look for conftest.py, pyproject.toml, or setup.py)
+    project_root = test_dir
+    for parent in [test_dir] + list(test_dir.parents):
+        if (parent / "pyproject.toml").exists() or (parent / "setup.py").exists():
+            return parent
+        elif (parent / "conftest.py").exists():
+            project_root = parent
+            # Continue looking for pyproject.toml higher up
+    return project_root
 
 
 def validate_xdist_compatibility(config: Any) -> None:
@@ -203,6 +256,8 @@ def hijack_execnet() -> None:
         original_makegateway = execnet.multi.Group.makegateway
 
         def velo_makegateway(self: Any, spec: Any = None) -> Any:
+            import os as _os  # Explicit import to avoid closure scoping issues
+
             if not spec:
                 spec = self.defaultspec
             if not isinstance(spec, execnet.XSpec):
@@ -215,8 +270,11 @@ def hijack_execnet() -> None:
                 self.allocate_id(spec)
                 try:
                     # Capture secret from env (SSOT: VELO_ZYGOTE_AUTH)
-                    secret = os.environ.get("VELO_ZYGOTE_AUTH")
-                    gw = ZygoteGateway(spec, secret=secret)
+                    secret = _os.environ.get("VELO_ZYGOTE_AUTH")
+                    # RFC-0028: Determine project root for Miracle worker
+                    project_root = getattr(execnet.multi.Group, "_velo_project_root", _os.getcwd())
+
+                    gw = ZygoteGateway(spec, secret=secret, project_root=str(project_root))
                     self._register(gw)
                     return gw
                 except Exception as e:
@@ -249,6 +307,17 @@ def pytest_configure(config: Any) -> None:
         # P1-2: Prevent COW thrashing from .pyc writes
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
+        # P1 Miracle: Hijack execnet node creation EARLY (before worker spawning)
+        # This must happen before xdist creates workers, regardless of velo binary
+        if is_xdist_controller():
+            # RFC-0028: Cache project root on the Group class for hijackers
+            import execnet.multi
+
+            # Find project root from first item or config
+            root = getattr(config, "rootpath", None) or getattr(config, "rootdir", None)
+            execnet.multi.Group._velo_project_root = Path(str(root)) if root else Path.cwd()
+            hijack_execnet()
+
         velo_bin = shutil.which("velo")
 
         # Get preload modules and validate they exist
@@ -272,29 +341,106 @@ def pytest_configure(config: Any) -> None:
         if velo_bin:
             # Phase 14: Only the controller (or standalone) starts/stops the Zygote
             if is_xdist_controller():
-                # SEC-005: Generate forensic secret for this session if not provided
+                global _session_socket_path
+
+                # Session Isolation: Generate unique socket path for this session
+                rootdir = str(config.rootdir)
+                socket_name = _session_socket_name(rootdir)
+                uid = os.getuid() if hasattr(os, "getuid") else 0
+                import tempfile
+
+                socket_dir = Path(tempfile.gettempdir()) / f"velo-{uid}"
+                socket_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                _session_socket_path = socket_dir / socket_name
+                # Respect user-provided socket path (allows external Zygote sharing)
+                if not os.environ.get("VELO_ZYGOTE_SOCKET"):
+                    os.environ["VELO_ZYGOTE_SOCKET"] = str(_session_socket_path)
+
+                # P1 Miracle: Hijack execnet node creation
+                hijack_execnet()
+
+                # Phase 14: Check for existing Zygote before starting a new one
+                import socket as sock_module
+
+                existing_socket = os.environ.get("VELO_ZYGOTE_SOCKET")
+                if existing_socket and Path(existing_socket).exists():
+                    # Wait up to 5 seconds for existing socket to become ready
+                    for _ in range(50):
+                        try:
+                            test_sock = sock_module.socket(sock_module.AF_UNIX, sock_module.SOCK_STREAM)
+                            test_sock.settimeout(0.5)
+                            test_sock.connect(existing_socket)
+                            test_sock.close()
+                            # Zygote is already running and ready!
+                            _zygote = {"started_by_pytest": False, "velo_bin": velo_bin}
+                            hijack_execnet()
+                            return
+                        except Exception:
+                            import time
+
+                            time.sleep(0.1)
+
+                # RAII-style cleanup: register atexit handler
+                def _cleanup_zygote() -> None:
+                    # ONLY cleanup if WE started it
+                    if isinstance(_zygote, dict) and _zygote.get("started_by_pytest"):
+                        try:
+                            subprocess.run(
+                                [velo_bin, "zygote", "stop"],
+                                capture_output=True,
+                                timeout=5,
+                            )
+                        except Exception:
+                            pass
+
+                    try:
+                        if _session_socket_path and _session_socket_path.exists():
+                            _session_socket_path.unlink()
+                    except Exception:
+                        pass
+
+                atexit.register(_cleanup_zygote)
+
+                # SEC-005: Generate forensic secret for THIS session if not provided
                 if not os.environ.get("VELO_ZYGOTE_AUTH"):
                     import uuid
 
                     os.environ["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
 
-                # P1 Miracle: Hijack execnet node creation
-                hijack_execnet()
-
                 try:
-                    # Start Zygote in daemon mode
-                    result = subprocess.run(
+                    # Start Zygote in daemon mode with session-specific socket
+                    # Use Popen since daemon enters an infinite loop (doesn't exit)
+                    proc = subprocess.Popen(
                         [velo_bin, "zygote", "start", "--daemon"] + preload_args,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                     )
-                    if result.returncode == 0:
+
+                    # Wait for socket to become available (up to 10 seconds)
+                    socket_ready = False
+                    for _ in range(100):  # 100 * 0.1s = 10s
+                        if _session_socket_path and _session_socket_path.exists():
+                            # Try to connect to verify it's accepting
+                            try:
+                                test_sock = sock_module.socket(sock_module.AF_UNIX, sock_module.SOCK_STREAM)
+                                test_sock.settimeout(0.5)
+                                test_sock.connect(str(_session_socket_path))
+                                test_sock.close()
+                                socket_ready = True
+                                break
+                            except Exception:
+                                pass
+                        import time
+
+                        time.sleep(0.1)
+
+                    if socket_ready:
                         _zygote = {"started_by_pytest": True, "velo_bin": velo_bin}
                     else:
                         import warnings
 
-                        warnings.warn(f"Failed to start Zygote: {result.stderr}", RuntimeWarning)
+                        warnings.warn("Zygote socket not ready after 10s", RuntimeWarning)
+                        proc.terminate()
                         _zygote = True  # Fallback to direct fork mode
                 except Exception as e:
                     import warnings
@@ -409,6 +555,11 @@ def run_in_zygote_fork(item: Any) -> bool:
             if worker_id:
                 cmd.extend(["--env", f"VELO_WORKER_ID={worker_id}"])
 
+            # RFC-0028: Propagate PYTHONPATH so forked workers can import test packages
+            pythonpath = os.environ.get("PYTHONPATH")
+            if pythonpath:
+                cmd.extend(["--env", f"PYTHONPATH={pythonpath}"])
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -510,6 +661,12 @@ def pytest_runtest_protocol(item: Any, nextitem: Any) -> bool | None:
 
     DEF-13-004 FIX: Properly reports test outcomes to pytest.
     """
+    # TITANIUM RULE: Controller-Worker Separation
+    # If we are the xdist controller, we MUST NOT handle tests here.
+    # We let xdist delegate them to workers (which may be Miracle-forked).
+    if is_xdist_controller() and getattr(item.config.option, "numprocesses", None):
+        return None
+
     if not getattr(item.config.option, "velo", False) or not _zygote:
         return None  # Fallback to default pytest behavior
 

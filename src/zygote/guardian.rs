@@ -87,6 +87,21 @@ impl ZygoteGuardian {
     }
 
     async fn perform_restart(&self, params: &ZygoteStartParams) -> Result<()> {
+        // P1.5: Clean up stale socket before restart (prevents "Address already in use")
+        if self.socket_path.exists() {
+            log::info!(
+                "🧹 Cleaning up stale socket: {}",
+                self.socket_path.display()
+            );
+            if let Err(e) = std::fs::remove_file(&self.socket_path) {
+                log::warn!("⚠️ Failed to remove stale socket: {}", e);
+            }
+            // Also clean up auth file
+            let auth_path =
+                crate::common::paths::VeloPaths::auth_file_for_socket(&self.socket_path);
+            let _ = std::fs::remove_file(&auth_path);
+        }
+
         let mut launcher =
             ZygoteLauncher::new(self.socket_path.clone()).with_python(params.python_path.clone());
 
@@ -106,6 +121,10 @@ impl ZygoteGuardian {
             *pid_lock = new_pid;
             log::info!("✅ Zygote successfully restored. New PID: {}", new_pid);
         }
+
+        // CRITICAL: Forget the launcher to prevent Drop from calling stop()
+        // The new Zygote is now managed by the new Guardian spawned in launcher.start()
+        std::mem::forget(launcher);
 
         Ok(())
     }
