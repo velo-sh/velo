@@ -1010,3 +1010,283 @@ blake3:xyz789...    # Blake3 hash
 @my-app:latest      # Mutable tag
 ```
 
+### D. Rollback Strategy
+
+> **P0: Critical for production safety**
+
+```bash
+# View deployment history
+velo history my-app
+# v1.0.0  sha256:abc123  2026-01-19 10:00
+# v1.0.1  sha256:def456  2026-01-19 12:00  ← current
+# v1.0.2  sha256:ghi789  2026-01-19 14:00  ← failed
+
+# Instant rollback (gene already in pool)
+velo rollback my-app --to v1.0.1
+# [rollback] Switching to sha256:def456
+# [genesis] Restarting organism...
+# [success] Rolled back in 57ms
+```
+
+**Rollback Modes**:
+| Mode | Description | Use Case |
+|:---|:---|:---|
+| **Instant** | Switch to cached gene | Normal rollback |
+| **Canary** | Gradual traffic shift | Safe rollback |
+| **Force** | Immediate, skip health | Emergency |
+
+### E. Observability
+
+> **P1: Essential for production operations**
+
+**Metrics**:
+```
+# Prometheus format
+lifecode_genesis_duration_ms{app="my-app"} 57
+lifecode_gene_cache_hit_ratio{} 0.95
+lifecode_lazy_load_count{module="torch"} 1
+lifecode_organism_memory_bytes{app="my-app"} 1073741824
+```
+
+**Structured Logs**:
+```json
+{
+  "level": "info",
+  "event": "genesis_complete",
+  "app": "my-app",
+  "root_hash": "sha256:abc123",
+  "duration_ms": 57,
+  "genes_fetched": 3,
+  "genes_cached": 47
+}
+```
+
+**Tracing**:
+```
+velo run --trace sha256:abc123
+
+Trace ID: abc-123-xyz
+├── [10ms] fetch_manifest
+├── [5ms] parse_organs
+├── [30ms] bootstrap_entrypoint
+│   ├── [15ms] load_main
+│   └── [15ms] load_deps
+└── [12ms] start_app
+Total: 57ms
+```
+
+### F. Error Types
+
+> **P1: Clear error handling**
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum LifeCodeError {
+    // Network errors
+    #[error("Failed to fetch gene {hash}: {source}")]
+    FetchError { hash: Hash, source: reqwest::Error },
+    
+    #[error("Registry unreachable: {url}")]
+    RegistryUnavailable { url: String },
+    
+    // Integrity errors
+    #[error("Hash mismatch: expected {expected}, got {actual}")]
+    HashMismatch { expected: Hash, actual: Hash },
+    
+    #[error("Invalid signature for {hash}")]
+    InvalidSignature { hash: Hash },
+    
+    // Runtime errors
+    #[error("Entrypoint not found: {path}")]
+    EntrypointNotFound { path: String },
+    
+    #[error("Dependency conflict: {a} requires {dep_a}, {b} requires {dep_b}")]
+    DependencyConflict { a: String, dep_a: String, b: String, dep_b: String },
+    
+    // Resource errors
+    #[error("Insufficient disk space: need {need}, have {have}")]
+    InsufficientDisk { need: u64, have: u64 },
+}
+```
+
+### G. Configuration (lifecode.toml)
+
+> **P2: Project configuration**
+
+```toml
+[organism]
+name = "my-app"
+version = "1.0.0"
+entrypoint = "app:main"
+
+[organism.metadata]
+author = "0xMaster"
+license = "MIT"
+description = "A living application"
+
+[build]
+hash_algorithm = "blake3"
+chunk_threshold = "1MB"
+include = ["src/", "assets/"]
+exclude = ["*.pyc", "__pycache__/"]
+
+[dependencies]
+torch = { version = "2.1.0", alternatives = ["torch-cpu", "torch-mps"] }
+numpy = "1.26.0"
+
+[genepool]
+registry = "genepool.io"
+cache_dir = "~/.velo/objects"
+
+[runtime]
+lazy_load = true
+prefetch = ["torch"]  # Prefetch in background
+memory_limit = "8GB"
+```
+
+### H. Offline Mode
+
+> **P2: Air-gapped deployments**
+
+```bash
+# Export organism with all genes
+velo export sha256:abc123 --output organism.tar
+# Exports: manifest + all genes (fully self-contained)
+
+# Transfer to air-gapped environment
+scp organism.tar airgap:/deploy/
+
+# Import and run (no network required)
+velo import organism.tar
+velo run sha256:abc123  # Works offline
+```
+
+**Offline Bundle Structure**:
+```
+organism.tar
+├── manifest.json      # Root manifest
+├── objects/           # All genes
+│   ├── ab/c123...
+│   ├── de/f456...
+│   └── ...
+└── metadata.json      # Export info
+```
+
+### I. Environment Management
+
+> **P2: Multi-environment support**
+
+```bash
+# Tag for different environments
+velo tag sha256:abc123 @my-app:dev
+velo tag sha256:def456 @my-app:staging
+velo tag sha256:ghi789 @my-app:prod
+
+# Promote between environments
+velo promote @my-app:staging --to prod
+# → @my-app:prod now points to sha256:def456
+
+# Environment-specific config
+velo run @my-app:prod --env production
+```
+
+**Environment Matrix**:
+| Environment | Tag | Config | GenePool |
+|:---|:---|:---|:---|
+| Development | `@app:dev` | dev.toml | Local |
+| Staging | `@app:staging` | staging.toml | Private |
+| Production | `@app:prod` | prod.toml | Private + Mirror |
+
+### J. Key Management
+
+> **P1: Secure key handling**
+
+```bash
+# Generate signing key
+velo key generate --output ~/.velo/keys/signing.key
+
+# Sign organism
+velo sign sha256:abc123 --key ~/.velo/keys/signing.key
+
+# Verify signature
+velo verify sha256:abc123 --keyring ~/.velo/keys/trusted/
+
+# Key rotation
+velo key rotate --old old.key --new new.key --resign
+```
+
+**Trust Model**:
+```
+Root of Trust (Organization Key)
+        │
+        ├── Team A Key (signs team A apps)
+        │   ├── Dev 1 Key
+        │   └── Dev 2 Key
+        │
+        └── Team B Key (signs team B apps)
+            └── Dev 3 Key
+```
+
+### K. Benchmarking Strategy
+
+> **P3: Performance validation**
+
+```bash
+# Run standard benchmark suite
+velo benchmark sha256:abc123
+
+# Results:
+# ┌────────────────────────┬──────────┬──────────┐
+# │ Metric                 │ Measured │ Target   │
+# ├────────────────────────┼──────────┼──────────┤
+# │ Genesis time           │ 57ms     │ < 100ms  │
+# │ Manifest parse         │ 8ms      │ < 50ms   │
+# │ Gene cache hit ratio   │ 95%      │ > 90%    │
+# │ Lazy load (torch)      │ 1.2s     │ < 2s     │
+# │ Memory footprint       │ 128MB    │ < 256MB  │
+# └────────────────────────┴──────────┴──────────┘
+# ✓ All targets met
+```
+
+### L. System Integration
+
+> **P3: OS-level integration**
+
+**Systemd Service**:
+```ini
+[Unit]
+Description=LifeCode Organism: my-app
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/velo run @my-app:prod
+ExecStop=/usr/bin/velo stop @my-app:prod
+Restart=on-failure
+RestartSec=5s
+
+Environment=VELO_GENEPOOL=genepool.io
+Environment=VELO_LOG_LEVEL=info
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Signal Handling**:
+| Signal | Action |
+|:---|:---|
+| SIGTERM | Graceful shutdown (30s timeout) |
+| SIGINT | Graceful shutdown (10s timeout) |
+| SIGHUP | Reload configuration |
+| SIGUSR1 | Dump diagnostics |
+
+**Health Check**:
+```bash
+# Liveness probe
+velo health @my-app:prod --liveness
+# Exit 0 = alive, Exit 1 = dead
+
+# Readiness probe
+velo health @my-app:prod --readiness
+# Exit 0 = ready, Exit 1 = not ready
+```
