@@ -21,6 +21,25 @@ Velo is evolving from a single CLI tool into a multi-service runtime platform. C
 
 We will transition to a tiered Workspace structure:
 
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Velo Workspace                            │
+├─────────────────────────────────────────────────────────────┤
+│  Tier 1: velo-core (Shared Primitives)                       │
+│  ├── Zygote Lifecycle, COW Fork                             │
+│  ├── IPC Protocol, SHM Registry                             │
+│  └── 0 Dependencies on L7 protocols                         │
+├─────────────────────────────────────────────────────────────┤
+│  Tier 2: Domain Engines (Independent Compile, Deploy)       │
+│  ├── velo-vtest-engine  (Test orchestration, pytest)        │
+│  ├── velo-serve-engine  (HTTP proxy, Granian)               │
+│  └── velo-live-engine   (Hot-reload, file watch)            │
+├─────────────────────────────────────────────────────────────┤
+│  Tier 3: velo-cli (Thin Dispatch Layer)                      │
+│  └── < 50 lines/command, pure flag -> Engine call           │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ### 3.1. Tier 1: The Sovereign Foundation (`velo-core`)
 - **Responsibility**: Zygote lifecycle, COW IPC protocol, SHM Management, Governance/SOP Enforcement.
 - **Invariants**: 0 Dependencies on L7 protocols (HTTP/RSGI). Pure system-level logic.
