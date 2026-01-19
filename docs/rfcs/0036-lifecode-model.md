@@ -3,7 +3,7 @@
 > *"Software That Lives"*
 
 **Status**: DRAFT (Vision)
-**Author**: Velo Architect
+**Author**: 0xMaster
 **Date**: 2026-01-19
 **Phase**: Future (v2.0)
 **Scope**: Software Representation & Composition

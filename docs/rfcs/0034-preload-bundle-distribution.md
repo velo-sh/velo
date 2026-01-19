@@ -1,7 +1,7 @@
 # RFC-0034: Velo Bundle (Application Packaging & Distribution)
 
 **Status**: DRAFT
-**Author**: Velo Architect
+**Author**: 0xMaster
 **Date**: 2026-01-19
 **Phase**: Phase 15 (Future)
 **Scope**: Packaging, Distribution, Deployment
