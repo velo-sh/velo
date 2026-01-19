@@ -1,6 +1,6 @@
 # LifeCode™ Manifesto
-> **Subtitle**: *Software That Lives*
->
+*Software That Lives*
+
 > *"Not yet implemented, but inevitable."*
 
 ## 1. The Broken World
