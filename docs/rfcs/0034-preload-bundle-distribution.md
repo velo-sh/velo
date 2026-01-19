@@ -14,12 +14,12 @@
 
 ## 1. Executive Summary
 
-This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file (`.vpkg`). This is a **source distribution format**, not a runtime image.
+This RFC proposes **Velo Bundle**, a system for packaging Python applications with all dependencies and assets into a single distributable file (`.lcpkg`). This is a **source distribution format**, not a runtime image.
 
 | Aspect | Description |
 |:---|:---|
 | **Scope** | Source code + dependencies + assets |
-| **Format** | Single `.vpkg` archive (tar.zst) |
+| **Format** | Single `.lcpkg` archive (tar.zst) |
 | **Runtime** | Zygote pre-warming happens at deployment, not in bundle |
 | **Target** | Clean machines with Velo installed |
 
@@ -55,7 +55,7 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 │              RFC-0034 (This RFC)    │    RFC-0035           │
 │              STATIC / BUILD-TIME    │    RUNTIME            │
 ├─────────────────────────────────────┼───────────────────────┤
-│  .vpkg file                      │   preload.lock        │
+│  .lcpkg file                      │   preload.lock        │
 │  ├── source code                    │   native lib dlopen   │
 │  ├── site-packages/                 │   Zygote pre-warming  │
 │  ├── assets (.safetensors)          │   fingerprint verify  │
@@ -63,55 +63,55 @@ Velo's Zygote architecture already solves import overhead via COW fork. The next
 └─────────────────────────────────────┴───────────────────────┘
 ```
 
-### 3.2 Bundle Format (`.vpkg`)
+### 3.2 Bundle Format (`.lcpkg`)
 
 **File Format**: Uncompressed tar with index (mmap-friendly)
 
-> **Design Principle**: `.vpkg` is directly runnable without extraction. Only `.so` files require caching.
+> **Design Principle**: `.lcpkg` is directly runnable without extraction. Only `.so` files require caching.
 
 #### 3.2.1 Two-Layer Distribution Model
 
 ```
 Distribution:                              Runtime:
-app.vpkg.zst ──decompress once──▶ app.vpkg ──▶ velo run app.vpkg
+app.lcpkg.zst ──decompress once──▶ app.lcpkg ──▶ velo run app.lcpkg
  (compressed)                    (mmap-ready)     (one-click)
 ```
 
 | Layer | Format | Purpose |
 |:---|:---|:---|
-| **Distribution** | `.vpkg.zst` | Compressed for transfer (optional) |
-| **Runtime** | `.vpkg` | Uncompressed, mmap-friendly, directly runnable |
+| **Distribution** | `.lcpkg.zst` | Compressed for transfer (optional) |
+| **Runtime** | `.lcpkg` | Uncompressed, mmap-friendly, directly runnable |
 
 #### 3.2.1.1 Compressed Format Handling
 
-> **Behavior**: Velo auto-detects `.vpkg.zst` and extracts to cache before running.
+> **Behavior**: Velo auto-detects `.lcpkg.zst` and extracts to cache before running.
 
 | Input | Behavior |
 |:---|:---|
-| `velo run app.vpkg` | Direct mmap, no extraction |
-| `velo run app.vpkg.zst` | Auto-extract to cache → run |
-| `velo bundle extract app.vpkg.zst` | Explicit extract to user-specified path |
+| `velo run app.lcpkg` | Direct mmap, no extraction |
+| `velo run app.lcpkg.zst` | Auto-extract to cache → run |
+| `velo bundle extract app.lcpkg.zst` | Explicit extract to user-specified path |
 
 **Auto-Extraction Cache**:
 ```
-~/.velo/bundles/{content-hash}/app.vpkg
+~/.velo/bundles/{content-hash}/app.lcpkg
 ```
 
 **CLI Examples**:
 ```bash
 # Compressed: auto-extract to cache
-velo run app.vpkg.zst
-# → Extracts to ~/.velo/bundles/abc123/app.vpkg
+velo run app.lcpkg.zst
+# → Extracts to ~/.velo/bundles/abc123/app.lcpkg
 # → Subsequent runs use cached extraction
 
 # Flat: direct run
-velo run app.vpkg
+velo run app.lcpkg
 
 # Explicit extract (user control)
-velo bundle extract app.vpkg.zst -o ./app.vpkg
+velo bundle extract app.lcpkg.zst -o ./app.lcpkg
 
 # Remote download (auto-cache)
-velo run https://registry.example.com/app.vpkg.zst
+velo run https://registry.example.com/app.lcpkg.zst
 # → Downloads + extracts to ~/.velo/bundles/{hash}/
 ```
 
@@ -129,7 +129,7 @@ velo run https://registry.example.com/app.vpkg.zst
 
 | Approach | Description | Chosen |
 |:---|:---|:---|
-| **Whole-file** | `vpkg (flat) → zstd → .vpkg.zst` | ✅ Yes |
+| **Whole-file** | `lcpkg (flat) → zstd → .lcpkg.zst` | ✅ Yes |
 | **Internal** | `[file1.zst, file2.zst, ...] → tar` | ❌ No |
 
 **Rationale**:
@@ -142,33 +142,33 @@ velo run https://registry.example.com/app.vpkg.zst
 | Audit-friendly | ✅ Transparent | ❌ Opaque |
 | Build disk space | ⚠️ 2x (flat + compressed) | ✅ 1x (stream) |
 
-> **Trade-off**: Build requires ~2x disk space temporarily (flat vpkg + compressed vpkg.zst).
+> **Trade-off**: Build requires ~2x disk space temporarily (flat lcpkg + compressed lcpkg.zst).
 > For large bundles (>10GB), use streaming build: `velo bundle build --stream`
 
 **Streaming Build (Future Optimization)**:
 
 ```
 Standard (2-pass):
-  files → tar → app.vpkg (disk) → zstd → app.vpkg.zst (disk)
+  files → tar → app.lcpkg (disk) → zstd → app.lcpkg.zst (disk)
   Disk: 2x bundle size
 
 Streaming (1-pass):
-  files → tar → zstd (pipe) → app.vpkg.zst (disk only)
+  files → tar → zstd (pipe) → app.lcpkg.zst (disk only)
   Disk: 1x bundle size
 ```
 
 | Mode | CLI | Output | Disk Space |
 |:---|:---|:---|:---|
-| Standard | `velo bundle build` | .vpkg | 1x |
-| Compressed | `velo bundle build --compress` | .vpkg + .vpkg.zst | 2x |
-| Stream | `velo bundle build --stream` | .vpkg.zst only | 1x |
+| Standard | `velo bundle build` | .lcpkg | 1x |
+| Compressed | `velo bundle build --compress` | .lcpkg + .lcpkg.zst | 2x |
+| Stream | `velo bundle build --stream` | .lcpkg.zst only | 1x |
 
-> **Note**: Streaming mode only outputs `.vpkg.zst`. Flat `.vpkg` is generated on target via extraction.
+> **Note**: Streaming mode only outputs `.lcpkg.zst`. Flat `.lcpkg` is generated on target via extraction.
 
-#### 3.2.2 vpkg Internal Structure
+#### 3.2.2 lcpkg Internal Structure
 
 ```
-app.vpkg (uncompressed tar with offset index)
+app.lcpkg (uncompressed tar with offset index)
 ├── __velo_manifest__.json    # Metadata + file offset table
 ├── src/                      # Application source code
 ├── site-packages/            # Pre-installed dependencies
@@ -184,10 +184,10 @@ app.vpkg (uncompressed tar with offset index)
 
 | File Type | Access Method | Cache? |
 |:---|:---|:---|
-| `.py` | mmap from vpkg | ❌ No |
-| `.pyc` | mmap from vpkg | ❌ No |
-| `.json/.toml` | mmap from vpkg | ❌ No |
-| `.safetensors` | mmap from vpkg (SHM) | ❌ No |
+| `.py` | mmap from lcpkg | ❌ No |
+| `.pyc` | mmap from lcpkg | ❌ No |
+| `.json/.toml` | mmap from lcpkg | ❌ No |
+| `.safetensors` | mmap from lcpkg (SHM) | ❌ No |
 | **`.so/.pyd`** | Extract to cache, dlopen | ✅ Yes |
 
 #### 3.2.4 .so Caching Strategy (Content-Addressable)
@@ -243,9 +243,9 @@ dlopen("~/.velo/so-cache/libtorch-a1b2c3d4e5f6.so")
 
 ```
 First extraction:
-  vpkg → extract .so → save to cache → hardlink count = 1
+  lcpkg → extract .so → save to cache → hardlink count = 1
 
-Second vpkg (same .so):
+Second lcpkg (same .so):
   check cache exists (blake3 match) → skip extraction → hardlink count = 2
 
 dlopen:
@@ -315,10 +315,10 @@ dlopen:
 **CLI Interface**:
 ```bash
 # Default: bundle only, fail on platform mismatch
-velo run app.vpkg
+velo run app.lcpkg
 
 # Explicit fallback permission
-velo run --allow-fallback app.vpkg
+velo run --allow-fallback app.lcpkg
 ```
 
 **Priority Modes**:
@@ -367,7 +367,7 @@ velo run --allow-fallback app.vpkg
 
 **Standard Output (always)**:
 ```
-[velo] Loading app.vpkg (v0.1.0, linux-x86_64)
+[velo] Loading app.lcpkg (v0.1.0, linux-x86_64)
 [velo] .so cache: ~/.velo/so-cache/
 [velo] .so priority: bundle
 ```
@@ -378,7 +378,7 @@ velo run --allow-fallback app.vpkg
 [velo] libtorch-a1b2c3d4.so: cached ✓
 [velo] libcudnn-e5f6g7h8.so: extracting...
 [velo] Platform: linux-x86_64-glibc2.31
-[velo] mmap vpkg: 2.1GB → 0.3ms
+[velo] mmap lcpkg: 2.1GB → 0.3ms
 [velo] Zygote pre-warm: torch, transformers
 ```
 
@@ -392,7 +392,7 @@ velo run --allow-fallback app.vpkg
 | Platform | `❌ Cannot load libtorch.so` (glibc mismatch, missing deps) |
 | Cache | `❌ Cache write failed` (disk full, permission denied) |
 | Security | `❌ Bundle signature verification failed` |
-| Resource | `❌ Failed to mmap vpkg` (insufficient memory) |
+| Resource | `❌ Failed to mmap lcpkg` (insufficient memory) |
 
 #### 3.2.9 Cache Management CLI
 
@@ -403,7 +403,7 @@ velo run --allow-fallback app.vpkg
 | `velo cache info` | Show cache status |
 | `velo cache clean` | Clean all cache |
 | `velo cache prune --max-age 30d` | Remove old entries |
-| `velo bundle warm app.vpkg` | Pre-warm cache |
+| `velo bundle warm app.lcpkg` | Pre-warm cache |
 
 #### 3.2.10 Concurrency Safety
 
@@ -412,7 +412,7 @@ velo run --allow-fallback app.vpkg
 ```rust
 let lock = FileLock::exclusive(&cache_path.with_extension("lock"))?;
 if !cache_path.exists() {
-    extract_so(vpkg, &cache_path)?;
+    extract_so(lcpkg, &cache_path)?;
 }
 drop(lock);
 ```
@@ -440,17 +440,17 @@ drop(lock);
 ```
 
 > **Key fields**:
-> - `offset`: Byte offset in vpkg for mmap access
+> - `offset`: Byte offset in lcpkg for mmap access
 > - `type: "native"`: Marks .so files that require cache extraction
 
 ### 3.4 Deployment Lifecycle
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────────────┐
-│ velo bundle │────▶│  .vpkg      │────▶│ velo run app.vpkg               │
+│ velo bundle │────▶│  .lcpkg      │────▶│ velo run app.lcpkg               │
 │   build     │     │ (ship/run)  │     │                                 │
 └─────────────┘     └─────────────┘     │  1. Verify signature (optional) │
-      │                                 │  2. mmap vpkg file              │
+      │                                 │  2. mmap lcpkg file              │
       ▼                                 │  3. Extract .so to cache        │
   Preload-ordered                       │  4. Start Zygote + pre-warm     │
   uncompressed tar                      └─────────────────────────────────┘
@@ -487,26 +487,26 @@ drop(lock);
 
 ```bash
 # Build (no signing by default)
-velo bundle build --output app.vpkg
+velo bundle build --output app.lcpkg
 
 # Run (no verification by default)
-velo bundle run app.vpkg
+velo bundle run app.lcpkg
 
 # Optional: Build with signing
-velo bundle build --sign --key ~/.velo/signing.key --output app.vpkg
+velo bundle build --sign --key ~/.velo/signing.key --output app.lcpkg
 
 # Optional: Verify before run
-velo bundle run --verify --trust ~/.velo/trusted-keys/ app.vpkg
+velo bundle run --verify --trust ~/.velo/trusted-keys/ app.lcpkg
 ```
 
 ### 5.3 Future: Sigstore Integration
 
 ```bash
 # Keyless signing via GitHub OIDC
-velo bundle build --sign-sigstore --output app.vpkg
+velo bundle build --sign-sigstore --output app.lcpkg
 
 # Verify with transparency log
-velo bundle verify app.vpkg --sigstore
+velo bundle verify app.lcpkg --sigstore
 # Checks: signature + Rekor log entry + certificate identity
 ```
 
@@ -546,7 +546,7 @@ fn extract_bundle(bundle: &Path) -> Result<PathBuf> {
 | **Docker** | ~2s (layer extract) | Container registry | No container runtime needed |
 | **Lambda Layers** | ~1s | AWS-specific | Platform agnostic |
 | **PyInstaller** | ~500ms | Single binary | + COW fork + SHM sharing |
-| **Velo Bundle** | **< 50ms** | `.vpkg` file | Full Zygote ecosystem |
+| **Velo Bundle** | **< 50ms** | `.lcpkg` file | Full Zygote ecosystem |
 
 ---
 
@@ -570,7 +570,7 @@ fn extract_bundle(bundle: &Path) -> Result<PathBuf> {
 #### 8.1.2 Physical Layout
 
 ```
-app.vpkg physical layout:
+app.lcpkg physical layout:
 ├── [HOT ZONE] ────────────────────────
 │   ├── torch/lib/libtorch.so          # First import
 │   ├── torch/lib/libtorch_cpu.so      # Sequential read
@@ -719,13 +719,13 @@ Benefit: Skip disk write roundtrip
 **CLI Interface**:
 ```bash
 # Default: portable (no native libs)
-velo bundle build --output app.vpkg
+velo bundle build --output app.lcpkg
 
 # Self-contained: include native libraries
-velo bundle build --include-native --output app.vpkg
+velo bundle build --include-native --output app.lcpkg
 
 # Cross-platform build (future)
-velo bundle build --include-native --platform linux-x86_64 --output app.vpkg
+velo bundle build --include-native --platform linux-x86_64 --output app.lcpkg
 ```
 
 **Manifest Extension**:
@@ -749,7 +749,7 @@ velo bundle build --include-native --platform linux-x86_64 --output app.vpkg
 ## 9. Implementation Phases
 
 ### Phase 1: Core Bundle Format
-- [ ] Define `.vpkg` file format specification
+- [ ] Define `.lcpkg` file format specification
 - [ ] Implement `velo bundle build` command
 - [ ] Implement `velo bundle run` command
 

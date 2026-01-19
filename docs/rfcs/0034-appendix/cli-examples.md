@@ -20,34 +20,34 @@
 ### Basic Build
 ```bash
 # Build from pyproject.toml
-velo bundle build --output app.vpkg
+velo bundle build --output app.lcpkg
 
 # Build with preload hints
-velo bundle build --preload "torch,transformers" --output app.vpkg
+velo bundle build --preload "torch,transformers" --output app.lcpkg
 
 # Build with model assets (Memory Gravity)
-velo bundle build --include model.safetensors --output app.vpkg
+velo bundle build --include model.safetensors --output app.lcpkg
 ```
 
 ### Native Library Options
 ```bash
 # Default: portable (no native libs)
-velo bundle build --output app.vpkg
+velo bundle build --output app.lcpkg
 
 # Self-contained: include native libraries
-velo bundle build --include-native --output app.vpkg
+velo bundle build --include-native --output app.lcpkg
 
 # Cross-platform build (future)
-velo bundle build --include-native --platform linux-x86_64 --output app.vpkg
+velo bundle build --include-native --platform linux-x86_64 --output app.lcpkg
 
 # CPU-only variant (no CUDA)
-velo bundle build --variant cpu --output app.vpkg
+velo bundle build --variant cpu --output app.lcpkg
 ```
 
 ### Platform-Specific Builds
 ```bash
 # Rebuild for older glibc
-velo bundle build --platform linux-glibc2.17 --output app.vpkg
+velo bundle build --platform linux-glibc2.17 --output app.lcpkg
 ```
 
 ---
@@ -57,25 +57,25 @@ velo bundle build --platform linux-glibc2.17 --output app.vpkg
 ### Basic Run
 ```bash
 # Run bundle directly
-velo bundle run app.vpkg
+velo bundle run app.lcpkg
 
 # Run with verbose output
-velo bundle run -v app.vpkg
+velo bundle run -v app.lcpkg
 
 # Run with debug logging
-VELO_DEBUG=1 velo bundle run app.vpkg
+VELO_DEBUG=1 velo bundle run app.lcpkg
 ```
 
 ### Fallback Options
 ```bash
 # Default: bundle only, fail on platform mismatch
-velo run app.vpkg
+velo run app.lcpkg
 
 # Explicit fallback permission
-velo run --allow-fallback app.vpkg
+velo run --allow-fallback app.lcpkg
 
 # Use streaming mode (low memory)
-velo run --stream app.vpkg
+velo run --stream app.lcpkg
 ```
 
 ---
@@ -94,7 +94,7 @@ velo cache clean
 velo cache prune --max-age 30d
 
 # Pre-warm cache (for cold start scenarios)
-velo bundle warm app.vpkg
+velo bundle warm app.lcpkg
 ```
 
 ---
@@ -104,19 +104,19 @@ velo bundle warm app.vpkg
 ### Signing (v1.x Optional)
 ```bash
 # Build with signing
-velo bundle build --sign --key ~/.velo/signing.key --output app.vpkg
+velo bundle build --sign --key ~/.velo/signing.key --output app.lcpkg
 
 # Verify before run
-velo bundle run --verify --trust ~/.velo/trusted-keys/ app.vpkg
+velo bundle run --verify --trust ~/.velo/trusted-keys/ app.lcpkg
 ```
 
 ### Sigstore (Future)
 ```bash
 # Keyless signing via GitHub OIDC
-velo bundle build --sign-sigstore --output app.vpkg
+velo bundle build --sign-sigstore --output app.lcpkg
 
 # Verify with transparency log
-velo bundle verify app.vpkg --sigstore
+velo bundle verify app.lcpkg --sigstore
 # Checks: signature + Rekor log entry + certificate identity
 ```
 
@@ -126,10 +126,10 @@ velo bundle verify app.vpkg --sigstore
 
 ```bash
 # Deploy to serverless
-velo bundle deploy app.vpkg --target aws-lambda
+velo bundle deploy app.lcpkg --target aws-lambda
 
 # Deploy with environment
-velo bundle deploy app.vpkg --env production --target gcp-cloud-run
+velo bundle deploy app.lcpkg --env production --target gcp-cloud-run
 ```
 
 ---

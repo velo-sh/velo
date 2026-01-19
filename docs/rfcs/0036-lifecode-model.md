@@ -268,7 +268,7 @@ velo gc --keep-days 30
 
 | Version | Format | Compatibility |
 |:---|:---|:---|
-| **v1.0** | tar.zst (.vpkg) | Current RFC-0034 |
+| **v1.0** | tar.zst (.lcpkg) | Current RFC-0034 |
 | **v1.5** | tar.zst + manifest hash | Hybrid (hash in manifest) |
 | **v2.0** | Full Hash Tree | Native content-addressable |
 
@@ -276,11 +276,11 @@ velo gc --keep-days 30
 
 ```bash
 # Convert v1.0 bundle to v2.0 tree
-velo bundle convert app.vpkg --to-tree
+velo bundle convert app.lcpkg --to-tree
 # → Outputs root hash
 
 # Run either format
-velo run app.vpkg           # v1.0
+velo run app.lcpkg           # v1.0
 velo run sha256:abc123      # v2.0
 ```
 

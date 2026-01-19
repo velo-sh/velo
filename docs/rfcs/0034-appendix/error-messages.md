@@ -24,7 +24,7 @@ All errors follow the pattern:
    Reason: Your system glibc (2.17) is older than required (2.31)
    
    Fix: Either:
-     1. velo run --allow-fallback app.vpkg  (use system libtorch if available)
+     1. velo run --allow-fallback app.lcpkg  (use system libtorch if available)
      2. Rebuild bundle for your platform: velo bundle build --platform linux-glibc2.17
 ```
 
@@ -35,7 +35,7 @@ All errors follow the pattern:
    Reason: Bundle was built without --include-native
    
    Fix: Install CUDA toolkit, or rebuild:
-     velo bundle build --include-native --output app.vpkg
+     velo bundle build --include-native --output app.lcpkg
 ```
 
 ### Missing Dependency Chain
@@ -47,7 +47,7 @@ All errors follow the pattern:
    Reason: CUDA runtime not installed
    
    Fix: Install CUDA 12.x or use CPU-only bundle:
-     velo bundle build --variant cpu --output app.vpkg
+     velo bundle build --variant cpu --output app.lcpkg
 ```
 
 ### Symbol Not Found
@@ -96,7 +96,7 @@ All errors follow the pattern:
    Reason: Cache file corrupted
    
    Fix: Clear cache and retry:
-     velo cache clean && velo run app.vpkg
+     velo cache clean && velo run app.lcpkg
 ```
 
 ---
@@ -123,14 +123,14 @@ All errors follow the pattern:
 
 ### Insufficient Memory
 ```
-❌ Failed to mmap vpkg
+❌ Failed to mmap lcpkg
 
    Reason: Insufficient memory for 2.1GB bundle
    Available: 1.5GB
    
    Fix: Either:
      1. Close other applications to free memory
-     2. Use streaming mode: velo run --stream app.vpkg
+     2. Use streaming mode: velo run --stream app.lcpkg
 ```
 
 ---
