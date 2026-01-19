@@ -420,7 +420,7 @@ impl EnvironmentShield {
             let canonical = match path.canonicalize() {
                 Ok(p) => p,
                 Err(_) => {
-                    eprintln!("⚠️ Warning: Skipping invalid path entry: {:?}", entry);
+                    // eprintln!("⚠️ Warning: Skipping invalid path entry: {:?}", entry);
                     continue;
                 }
             };

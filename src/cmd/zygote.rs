@@ -164,73 +164,77 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
     let python_path = python::detect_python(project_dir)?;
     let socket_path = zygote::core_ipc::default_socket_path();
 
-    if socket_path.exists() {
+    // SEC-005: Check both socket and auth file to determine if running
+    let auth_path = VeloPaths::auth_file_for_socket(&socket_path);
+    if socket_path.exists() && auth_path.exists() {
         println!("⚡ Zygote already running");
         println!("   Socket: {}", socket_path.display());
         return Ok(());
+    } else if socket_path.exists() {
+        // Socket exists but Auth missing -> Stale/Broken state
+        // Fall through to let ZygoteLauncher::start() handle the healing/restart
+        println!("⚠️  Zygote socket exists but auth file is missing. Attempting to heal...");
     } else {
-        #[cfg(unix)]
-        if daemon {
-            unsafe {
-                match libc::fork() {
-                    -1 => anyhow::bail!("Fork failed"),
-                    0 => {
-                        // Child: continues to start the Zygote
-                        libc::setsid();
-                        // Redirect IO to null in the daemonized process
-                        if let Ok(null) = std::fs::File::open("/dev/null") {
-                            let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
-                            libc::dup2(fd, 0);
-                            libc::dup2(fd, 1);
-                            libc::dup2(fd, 2);
-                        }
+        // Normal cold start case
+    }
+    #[cfg(unix)]
+    if daemon {
+        unsafe {
+            match libc::fork() {
+                -1 => anyhow::bail!("Fork failed"),
+                0 => {
+                    // Child: continues to start the Zygote
+                    libc::setsid();
+                    // Redirect IO to null in the daemonized process
+                    if let Ok(null) = std::fs::File::open("/dev/null") {
+                        let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
+                        libc::dup2(fd, 0);
+                        libc::dup2(fd, 1);
+                        libc::dup2(fd, 2);
                     }
-                    _ => {
-                        // Parent: exits immediately after reporting success
-                        println!("🚀 Zygote daemonizing...");
-                        return Ok(());
-                    }
+                }
+                _ => {
+                    // Parent: exits immediately after reporting success
+                    println!("🚀 Zygote daemonizing...");
+                    return Ok(());
                 }
             }
         }
-        let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
+    }
+    let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
 
-        // Parse --preload if provided
-        let preload: Vec<&str> = preload_arg
-            .as_ref()
-            .map(|s| s.split(',').collect())
-            .unwrap_or_default();
+    // Parse --preload if provided
+    let preload: Vec<&str> = preload_arg
+        .as_ref()
+        .map(|s| s.split(',').collect())
+        .unwrap_or_default();
 
-        let config =
-            crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
+    let config = crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(project_dir));
 
-        println!(
-            "🚀 Starting Zygote{}...",
-            if daemon { " daemon" } else { "" }
-        );
-        match launcher.start(&preload, None, daemon, &config) {
-            Ok(()) => {
-                log::info!(
-                    "[ZYGOTE] status=started socket={} preload={:?}",
-                    socket_path.display(),
-                    preload
-                );
-                println!("✅ Zygote started");
-                println!("   Socket: {}", socket_path.display());
+    println!(
+        "🚀 Starting Zygote{}...",
+        if daemon { " daemon" } else { "" }
+    );
+    match launcher.start(&preload, None, daemon, &config) {
+        Ok(()) => {
+            log::info!(
+                "[ZYGOTE] status=started socket={} preload={:?}",
+                socket_path.display(),
+                preload
+            );
+            println!("✅ Zygote started");
+            println!("   Socket: {}", socket_path.display());
 
-                if daemon {
-                    println!(
-                        "🛡️  Guardian engaged. Press Ctrl+C to stop (or use 'velo zygote stop')"
-                    );
-                }
-
-                // Keep launcher alive by forgetting it
-                std::mem::forget(launcher);
+            if daemon {
+                println!("🛡️  Guardian engaged. Press Ctrl+C to stop (or use 'velo zygote stop')");
             }
-            Err(e) => {
-                log::error!("[ZYGOTE] status=failed error={}", e);
-                bail!("Failed to start Zygote: {}", e);
-            }
+
+            // Keep launcher alive by forgetting it
+            std::mem::forget(launcher);
+        }
+        Err(e) => {
+            log::error!("[ZYGOTE] status=failed error={}", e);
+            bail!("Failed to start Zygote: {}", e);
         }
     }
     Ok(())

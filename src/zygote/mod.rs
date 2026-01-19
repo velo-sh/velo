@@ -293,8 +293,18 @@ impl ZygoteLauncher {
         // BUG-001 FIX: Re-check is_running AFTER acquiring lock
         // Another process may have started Zygote while we were waiting for the lock
         if self.is_running() {
-            // Release lock (happens on drop) and return success
-            return Ok(());
+            // SEC-005: Ensure auth file also exists (Healing for Stale/Broken State)
+            let auth_path = VeloPaths::auth_file_for_socket(&self.socket_path);
+            if auth_path.exists() {
+                // Release lock (happens on drop) and return success
+                return Ok(());
+            } else {
+                log::warn!(
+                    "⚠️ Zygote socket exists but auth file is missing: {}. Triggering restart/healing.",
+                    auth_path.display()
+                );
+                // Proceed to restart logic below...
+            }
         }
 
         // ... existing implementation ...
