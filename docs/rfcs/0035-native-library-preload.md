@@ -173,5 +173,28 @@ fn prefault_library(lib: &Library) {
 
 ---
 
+## 9. Grand Council Review (2026-01-19)
+
+**Verdict**: 🔶 **CONDITIONAL APPROVAL** (Linux-first)
+
+### P0 Blocker (macOS)
+- **dyld semantic mismatch**: macOS uses two-level namespace; RTLD_GLOBAL behaves differently
+- **Resolution**: macOS support OUT OF SCOPE for v1.0; requires separate RFC
+
+### P1 Issues (Must Fix)
+| Issue | Recommendation |
+|:---|:---|
+| RTLD_GLOBAL symbol pollution | Default to RTLD_LOCAL; GLOBAL only via opt-in |
+| Version mismatch | Add `velo preload verify` command |
+| Extension module flag mismatch | Match flags that Python would use |
+
+### Approval Conditions
+1. Linux-first implementation
+2. Default to RTLD_LOCAL
+3. Ship `velo preload analyze` with version hash tracking
+
+---
+
 **Custodian**: Velo Architect
 **Last Updated**: 2026-01-19
+
