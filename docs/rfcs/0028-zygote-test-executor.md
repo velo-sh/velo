@@ -259,7 +259,84 @@ impl TestCoordinator {
 }
 ```
 
-### 10.3 Python Plugin (Thin Wrapper)
+### 10.3 Python Module Architecture (STRICT ALIGNMENT)
+
+> **Invariant**: Python modules MUST follow the same layered architecture as Rust.
+
+#### 10.3.1 `v_*` Naming Convention
+
+> **The `v_` prefix is the Velo standard for core runtime components.**
+> Python modules already follow this convention; Rust modules MUST be refactored to align.
+
+| Component | Python (Standard) | Rust (MUST Refactor) |
+|:---|:---|:---|
+| Fork Handler | `v_fork.py` ✅ | `fork.rs` → **`v_fork.rs`** |
+| RSGI Protocol | `v_rsgi.py` ✅ | `rsgi.rs` → **`v_rsgi.rs`** |
+| Security Shield | `v_shield.py` ✅ | `shield.rs` → **`v_shield.rs`** |
+
+#### 10.3.2 Module Hierarchy
+
+```
+pytest_velo/                    # ← Aligned with: src/vtest/
+├── plugin.py                   # ← src/vtest/mod.rs
+├── gateway.py                  # ← src/vtest/coordinator.rs
+├── runner.py                   # ← src/vtest/runner.rs
+└── ISOLATION.md                # ← Architecture doc (MANDATORY)
+
+velo_zygote/                    # ← Aligned with: src/zygote/
+├── main.py                     # ← src/zygote/mod.rs
+├── v_fork.py                   # ← src/zygote/v_fork.rs (REFACTOR REQUIRED)
+├── v_rsgi.py                   # ← src/serve/v_rsgi.rs (REFACTOR REQUIRED)
+├── v_shield.py                 # ← src/security/v_shield.rs (REFACTOR REQUIRED)
+├── lifecycle.py                # ← src/zygote/guardian.rs
+├── settings.py                 # ← src/config.rs
+├── paths.py                    # ← src/zygote/path.rs
+├── protocol.py                 # ← src/zygote/protocol.rs
+├── bootstrap.py                # ← src/custody/mod.rs
+├── env_profile.py              # ← src/python.rs
+├── worker_launcher.py          # ← src/serve/worker.rs
+├── transport_sync.py           # ← src/zygote/ipc.rs
+├── serializer.py               # ← (Internal)
+├── preflight.py                # ← (Internal)
+└── utils.py                    # ← (Internal)
+```
+
+#### 10.3.3 Responsibility Matrix (Python → Rust)
+
+| Python Module | Responsibility | Rust (Current → Target) |
+|:---|:---|:---|
+| `pytest_velo/plugin.py` | pytest hooks | `src/vtest/mod.rs` |
+| `pytest_velo/gateway.py` | execnet hijack | `src/vtest/coordinator.rs` |
+| `pytest_velo/runner.py` | Worker pytest.main() | `src/vtest/runner.rs` |
+| `velo_zygote/main.py` | Zygote 主循环 | `src/zygote/mod.rs` |
+| `velo_zygote/v_fork.py` | Fork 生命周期 | `fork.rs` → **`v_fork.rs`** |
+| `velo_zygote/v_rsgi.py` | RSGI 协议 | `rsgi.rs` → **`v_rsgi.rs`** |
+| `velo_zygote/v_shield.py` | 安全屏障 | `shield.rs` → **`v_shield.rs`** |
+| `velo_zygote/lifecycle.py` | Security hooks | `src/zygote/guardian.rs` |
+| `velo_zygote/settings.py` | 配置 SSOT | `src/config.rs` |
+| `velo_zygote/paths.py` | 路径解析 | `src/zygote/path.rs` |
+| `velo_zygote/worker_launcher.py` | Worker 启动 | `src/serve/worker.rs` |
+| `velo_zygote/transport_sync.py` | 同步 IPC | `src/zygote/ipc.rs` |
+
+#### 10.3.4 Cross-Layer Invariants
+
+> [!IMPORTANT]
+> **INV-ARCH-001**: Python 模块必须与对应的 Rust 模块保持功能对齐。
+> **INV-ARCH-002**: 配置必须通过 Rust 注入 (`VELO_*` env vars)，Python 只读。
+> **INV-ARCH-003**: Python 不允许直接调用 libc；所有底层操作通过 Rust PyO3。
+> **INV-ARCH-004**: 每个 Python 模块必须有对应的 Rust 单元测试验证协议兼容性。
+> **INV-ARCH-005**: `v_*` 前缀是 Velo 核心组件标准命名，Python 和 Rust 必须统一。
+
+#### 10.3.5 Refactor Tracking
+
+| Task | Status | Priority |
+|:---|:---|:---|
+| Rename `src/zygote/fork.rs` → `v_fork.rs` | 📋 TODO | P1 |
+| Rename `src/serve/rsgi.rs` → `v_rsgi.rs` | 📋 TODO | P1 |
+| Rename `src/security/shield.rs` → `v_shield.rs` | 📋 TODO | P1 |
+| Update all Rust imports/references | 📋 TODO | P1 |
+
+### 10.4 Python Plugin (Thin Wrapper)
 
 ```python
 # pytest_velo/plugin.py
@@ -271,7 +348,7 @@ def pytest_runtest_protocol(item):
     return velo.run_test(item.nodeid)
 ```
 
-### 10.4 Performance Impact
+### 10.5 Performance Impact
 
 | Operation | Python | Rust | Speedup |
 |:---|:---|:---|:---|
