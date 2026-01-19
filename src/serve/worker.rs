@@ -25,7 +25,7 @@ fn build_worker_env(
 ) -> Box<std::collections::HashMap<String, String>> {
     // RFC-0012: Always use EnvironmentShield for SSOT environment building.
     // This ensures all workers (Zygote/Direct/Native) are scrubbed identically.
-    let shield = crate::lifecycle::safety::EnvironmentShield::new(config);
+    let shield = crate::lifecycle::v_shield::EnvironmentShield::new(config);
     let mut env = shield.compile_env();
 
     // Pass additional runtime-specific variables that aren't in the global whitelist
@@ -193,7 +193,7 @@ impl Worker {
         cmd.env_clear();
 
         // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
-        let shield = crate::lifecycle::safety::EnvironmentShield::new(config);
+        let shield = crate::lifecycle::v_shield::EnvironmentShield::new(config);
 
         // Phase 7.3: Unified Python Environment Resolution (SSOT) via Shield
         shield
@@ -273,7 +273,7 @@ impl Worker {
         // RFC-0012: Always use EnvironmentShield for environment sanitization.
         // REFACTOR: Use shield.apply() to enforce strict whitelist (clears toxins)
 
-        let shield = crate::lifecycle::safety::EnvironmentShield::new(_config);
+        let shield = crate::lifecycle::v_shield::EnvironmentShield::new(_config);
         if let Err(e) = shield.apply(&mut cmd) {
             log::warn!("Security Shield Warning: {}", e);
         }

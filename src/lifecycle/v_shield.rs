@@ -1,6 +1,8 @@
-//! Socket Hygiene - Utilities for safe socket file management
+//! v_shield.rs - Security Shield and Socket Hygiene (RFC-0028 §10.3.1)
 //!
-//! RFC-0011 B.2.4: Clean stale sockets before binding.
+//! This module implements the security shield for environment sanitization,
+//! socket hygiene, and FD management.
+//! Aligned with Python: velo_zygote/v_shield.py
 //!
 //! ## Safety
 //!
