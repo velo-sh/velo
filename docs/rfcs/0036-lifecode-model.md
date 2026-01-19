@@ -277,9 +277,11 @@ velo run sha256:abc123
 | 4 | Compatible alternative remotely | Fetch & use |
 | 5 | Fallback | Use CPU variant |
 
-### 5.5 Hash-based Deployment
+### 5.5 Gene as Deploy™ (GaD)
 
-> **Deploy = Send Hash**: A single hash message deploys an entire application.
+> *"Drop a gene, deploy an app"*
+>
+> A single gene (hash) transmission deploys an entire application.
 
 **Deployment Flow**:
 ```
