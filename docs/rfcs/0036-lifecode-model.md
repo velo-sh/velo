@@ -41,10 +41,15 @@
 | **Gene (DNA)** | Hash | Unique identifier, defines characteristics |
 | **Organ** | Module (tree) | Organic combination of cells |
 | **Organism** | Application (root) | Complete system of all organs |
-| **Species** | Root Hash | Unique identity of the organism |
+| **Species** | Root Hash | **Global Consistency**: Root Hash = Species. The species identity is globally unique and immutable. |
 | **Gene Pool** | Object Store | Shared storage for all gene fragments |
 | **Reproduction** | Distribution | Transmit Root Hash = transmit blueprint |
 | **Evolution** | Version Update | Mutation = content change = new Hash |
+
+> **Global Consistency**:
+> *"Root Hash = Species."*
+> This setting naturally supports global consistency. Any divergence in environment or build results in a different Species.
+
 
 ```
                   ┌─────────────────────────────────────────┐
@@ -141,6 +146,19 @@ Composition Pipeline:
 | **Lazy Materialization** | Materialize on demand | Fast startup |
 | **Virtual Materialization** | mmap + overlay | Large models |
 
+### 2.5 Theoretical Foundation
+
+> *"LifeCode™ turns software from a procedural artifact into a referentially transparent value."*
+
+By treating software as a **Persistent Graph of Meaningful Atoms**, LifeCode™ achieves properties of a **Purely Functional Store**:
+
+*   **Software = Value**: The entire organism is a single, immutable value (Root Hash), not a collection of files.
+*   **Deployment = Pass-by-Value**: distribution is simply transmitting the value reference.
+*   **Rollback = Pointer Swap**: Changing versions is an atomic pointer move, isomorphic to variable reassignment in functional programming.
+*   **Execution = Evaluation**: Running an organism is evaluating the value in a runtime context.
+
+This shifts system architecture from **Imperative State Mutation** (apt-get install, docker pull) to **OS-Level Lambda Calculus**.
+
 ---
 
 ## 3. Design Principles
@@ -180,10 +198,28 @@ Composition Pipeline:
   "metadata": {
     "name": "my-app",
     "version": "1.0.0",
-    "entrypoint": "app:main"
+    "entrypoint": "app:main",
+    "build": {
+      "toolchain": "velo@2.0",
+      "source_hash": "sha256:git-commit-hash",
+      "reproducible": true,
+      "timestamp": "2026-01-20T12:00:00Z"
+    },
+    "sbom": {
+      "format": "spdx-json",
+      "hash": "sha256:sbom-hash..."
+    }
   }
 }
 ```
+
+### 3.4 Deterministic Identity (Canonical Encoding)
+
+> **Critical**: To ensure `Hash(A) == Hash(B)` across all platforms, we strictly define Canonical Encoding.
+
+1.  **Sorted Keys**: All map keys (e.g., in Manifest) must be sorted lexicographically.
+2.  **Deterministic Serialization**: Use a strict subset of JSON (or CBOR in v2.0) with no whitespace.
+3.  **Normalized Paths**: All file paths inside trees are relative, forward-slash `/`, and normalized (no `./` or `../`).
 
 ---
 
@@ -194,8 +230,16 @@ Composition Pipeline:
 | **Git** | Object store, SHA, trees | Git is for source, Velo for distribution |
 | **IPFS** | Content-addressable, DAG | IPFS is p2p, Velo is client-server |
 | **Nix** | `/nix/store/{hash}-{name}` | Nix is system-wide, Velo is app-focused |
-| **OSTree** | Atomic updates, hardlinks | OSTree is for OS, Velo for apps |
 | **Docker** | Layer dedup | Docker is containers, Velo is packages |
+
+### 4.1 Paradigm Shift: OCI vs LifeCode™
+
+| Feature | OCI / Container | LifeCode™ Organism |
+|:---|:---|:---|
+| **Form Factor** | Image (Static Tarball) | Organism (Living Tree) |
+| **Startup** | Download Full Image → Start | Recieve Hash → Spark → Background Growth |
+| **Composition** | OverlayFS Layers | Gene-level Sharing |
+| **Cold Start** | Seconds (Pull + Extract) | Milliseconds (Manifest + Instant Genesis) |
 
 ---
 
@@ -538,7 +582,7 @@ velo run sha256:abc123
 # Remote deploy (SSH)
 velo deploy sha256:abc123 --to server.example.com
 
-# Kubernetes
+# Kubernetes (via Velo Operator)
 velo deploy sha256:abc123 --to k8s://cluster/namespace
 
 # CI/CD pipeline
@@ -555,7 +599,7 @@ echo "$RELEASE_HASH" | velo deploy --stdin --to production
 
 ---
 
-## 6. GenePool™ Distribution
+## 7. GenePool™ Distribution
 
 > *"The universal gene pool"*
 >
@@ -627,9 +671,34 @@ velo genepool list --mine
 | **Mirror** | Full replication | Air-gapped environments |
 | **Selective** | Replicate specific organisms | Regional deployment |
 
+### 6.5 Privacy & Isolation (Council Advisory)
+
+> **Warning**: Global deduplication in a public pool creates a "Privacy Oracle" side-channel (existence confirmation).
+
+To mitigate this, GenePool™ implements **Tenant Isolation**:
+
+*   **Public GenePool™**: Global deduplication. Public content only.
+*   **Private GenePool™**: Scoped deduplication (per-org or per-tenant).
+    *   *Convergent Encryption*: Optional. Encrypts genes before storage using a key derived from the content itself, allowing deduplication only among holders of the same content.
+
+### 6.6 Process Model & Lifecycle Hooks
+
+> **Process Model**:
+> *   **Scaling**: Organisms fork from the Zygote.
+> *   **Memory**: Multi-replica organisms share the same read-only memory pages (code/assets) via `mmap`, maximizing density.
+> *   **Cache**: All replicas share the node-local GenePool cache.
+
+**Lifecycle Hooks (`manifest.toml`)**:
+```toml
+[runtime.hooks]
+pre_genesis = "check_gpu"      # Run before app start
+post_genesis = "warm_model"    # Run background warmer
+pre_shutdown = "flush_state"   # Graceful termination
+```
+
 ---
 
-## 17. CLI Interface (Draft)
+## 8. CLI Interface (Draft)
 
 ```bash
 # Pull by root hash
@@ -681,9 +750,9 @@ velo run sha256:abc123      # v2.0
 
 ---
 
-## 17. Security Model & Threat Analysis
+## 10. Security Model & Threat Analysis
 
-### 8.1 Threat Model
+### 10.1 Threat Model
 
 | Threat | Attack Vector | Mitigation |
 |:---|:---|:---|
@@ -692,7 +761,13 @@ velo run sha256:abc123      # v2.0
 | **Registry Compromise** | Attacker modifies registry | Signed root + transparency log |
 | **Man-in-the-Middle** | Intercept and modify downloads | TLS + hash verification |
 | **Replay Attack** | Serve old vulnerable version | Manifest versioning + revocation list |
+| **Replay Attack** | Serve old vulnerable version | Manifest versioning + revocation list |
 | **Supply Chain** | Compromised dependency | Hash pinning + SBOM integration |
+
+> **Structural Security**: LifeCode™ naturally satisfies **SLSA Level 4** requirements.
+> *   **Identity**: Hash = Identity.
+> *   **Proof**: Tree = Proof. 
+> *   **Authority**: Root = Authority.
 
 ### 8.2 Hash Verification
 
@@ -726,20 +801,27 @@ Verification Pipeline:
 }
 ```
 
-### 8.4 Transparency Log (Future)
+### 10.4 Transparency Log (Immutable Audit)
 
-```
-Sigstore/Rekor Integration:
-- Every publish recorded in immutable log
-- Auditable history of all versions
-- Revocation detection
-```
+> **Requirement**: GenePool™ must not be a black box.
+
+1.  **Immutable Audit Log**: Every `push` event is legally recorded in a append-only log (e.g., Trillian/Rekor).
+2.  **First-Seen Verification**: Clients can query "When was hash `abc123` first seen?".
+    *   *Mitigation*: Prevents "Time-Travel Attacks" where an attacker tries to backdate a malicious package.
+3.  **Organ-Level SBOM**: Every Organ carries its own SBOM, aggregated automatically at the Root Manifest.
+
+### 8.5 Merkle Proofs & Partial Verification
+
+> Allows "Partial Verification" instead of full root verification. Critical for Edge/IoT.
+
+*   **Mechanism**: A client can request a specific file (Gene) plus a "Merkle Proof" (sibling hashes path to Root).
+*   **Benefit**: Verify a single 1KB configuration file is part of the 10GB Organism without downloading the 10GB.
 
 ---
 
-## 17. Core Abstractions
+## 11. Core Abstractions
 
-### 9.1 Rust Traits
+### 11.1 Rust Traits
 
 ```rust
 /// Hash digest (256-bit blake3)
@@ -753,11 +835,11 @@ pub trait ObjectStore: Send + Sync {
     /// Store object, returns computed hash
     fn put(&self, content: &[u8]) -> Result<Hash>;
     
-    /// Check if object exists
-    fn exists(&self, hash: &Hash) -> bool;
+    /// Check if object exists (Async)
+    async fn exists(&self, hash: &Hash) -> bool;
     
-    /// List all objects (for GC)
-    fn list(&self) -> Box<dyn Iterator<Item = Hash>>;
+    /// List all objects (Async Stream for Scalability)
+    fn list(&self) -> impl Stream<Item = Result<Hash>> + Send;
 }
 
 /// Object types in the tree
@@ -1290,3 +1372,47 @@ velo health @my-app:prod --liveness
 velo health @my-app:prod --readiness
 # Exit 0 = ready, Exit 1 = not ready
 ```
+
+---
+
+## 12. Future Architecture (Orbit)
+
+### 12.1 P2P Data Plane
+
+> LifeCode™ becomes "The BitTorrent + git of Software".
+
+*   **GenePool™ (Control Plane)**: Centralized registry for Root Hashes and Metadata (DNS-like).
+*   **P2P (Data Plane)**: Nodes exchange Genes (Blobs) directly.
+    *   *Scenario*: A cluster of 1000 nodes needs to upgrade. Instead of 1000 requests to GenePool, they peer-to-peer share the Genes.
+
+### 12.2 Kubernetes Native (CRD)
+
+> **Vision**: LifeCode™ as "Cloud Native v2".
+
+```yaml
+apiVersion: lifecode.io/v1
+kind: Organism
+metadata:
+  name: my-ai-service
+spec:
+  species: "sha256:abc123..."
+  mode: lazy            # Instant Genesis + Background Load
+  replicas: 3           # 3 Organisms
+  genePool:
+    policy: AlwaysPull  # Vs IfNotPresent
+```
+
+---
+
+## 13. Conclusion: The Three Leaps
+
+> LifeCode™ is not just a package manager, a faster container, or a smarter registry.
+> **It is a redefinition of software existence: from "File System Object" to "Composable Organism".**
+
+We have achieved three fundamental paradigm leaps:
+
+1.  **Storage**: From **Archive** (Zip/Tar) → **Merkle Graph** (Meaningful Atoms)
+2.  **Distribution**: From **Transmission** (Copy) → **Reproduction** (Biological Propagation)
+3.  **Runtime**: From **Cold Start** (Boot) → **Genesis** (Instant Life)
+
+**LifeCode™ transforms software from a procedural artifact into a living, evolving value.**
