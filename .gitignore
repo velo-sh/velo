@@ -45,3 +45,4 @@ assets/uv.*
 test_deploy_tmp/
 artifacts/
 tests/qa/forensic_benchmarks/
+video_assets/

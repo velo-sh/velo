@@ -1,25 +1,12 @@
 #!/bin/bash
-# HIO-002 (LangChain Fast-path) Demo Script
-# Supports --compare mode for real A/B validation
+# HIO-002 (LangChain/Pydantic Fast-path) Demo Script
+# Demonstrates Velo's schema pre-locking optimization
+
+set -e
 
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 PROJECT_ROOT=$(pwd)/examples/langchain-fast
-VELO_ROOT=$(pwd)
-
-# RFC-0018: Velo binary path (use built binary by default)
-VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
-if [ ! -x "$VELO_BIN" ]; then
-    VELO_BIN="$VELO_ROOT/target/debug/velo"
-fi
-
-# Dependency Pre-check (RFC-0018: via Velo Integrated Python)
-check_deps() {
-    $VELO_BIN python -c "import rich" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "[INFO] 'rich' not installed, using fallback mode."
-    fi
-}
 
 # Parse Arguments
 COMPARE_MODE=false
@@ -33,38 +20,26 @@ for arg in "$@"; do
         --runs=*)
             RUNS="${arg#*=}"
             ;;
+        --help|-h)
+            echo "HIO-002 (LangChain/Pydantic) - Schema Generation Benchmark"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --compare     Run A/B comparison mode"
+            echo "  --runs=N      Number of iterations (default: 3)"
+            exit 0
+            ;;
     esac
 done
-
-check_deps
 
 echo -e "\033[38;5;33m[Velo HIO] Initializing LangChain Fast-path Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Time Trial Mode (RFC-0018: via Velo)
-    $VELO_BIN run $PROJECT_ROOT/langchain_race.py --runs=$RUNS 2>/dev/null
+    # A/B Comparison Mode (using uv run with dependencies)
+    uv run --with pydantic python "$PROJECT_ROOT/langchain_race.py" --runs="$RUNS"
 else
-    # Traditional Demo Mode
-    echo -e "\nPhase 1: Zygote Warm-up ➔ \033[90mImporting LangChain & Pydantic...\033[0m"
-    echo -e "Phase 2: Schema Locking ➔ \033[1;32mFreezing 100+ Pydantic Schemas...\033[0m"
-
-    # Execute synthetic load and capture time (RFC-0018: via Velo)
-    RESULT=$($VELO_BIN python -W ignore:NotOpenSSLWarning $PROJECT_ROOT/simulate_load.py 2>/dev/null)
-    echo "$RESULT"
-
-    # Extract time and calculate HIO Score
-    TIME_MS=$(echo "$RESULT" | grep -oE '[0-9]+\.[0-9]+ms' | head -1 | sed 's/ms//')
-    if [ -n "$TIME_MS" ]; then
-        $VELO_BIN python examples/scripts/hio_engine.py \
-            --project "HIO-002 (LangChain)" \
-            --slogan "Schema Locking: Import Once, Run Forever." \
-            --baseline 2000 2100 1950 \
-            --velo $TIME_MS $TIME_MS $TIME_MS \
-            --mem-reduction 0.60 2>/dev/null
-    fi
+    echo "Run benchmark: $0 --compare"
 fi
 
-echo -e "\033[1;32m[DONE] LangChain HIO-002 High-Precision Demo is Ready.\033[0m"
-
-# Reproduction Hint
-echo -e "\n\033[90m📎 Reproduce: ./examples/langchain-fast/run_hio.sh --compare --runs=3 | Full docs: velo.dev/hio\033[0m"
+echo -e "\033[1;32m[DONE] LangChain HIO-002 Complete.\033[0m"

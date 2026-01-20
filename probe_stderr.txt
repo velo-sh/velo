@@ -1,2 +1,0 @@
-[Zygote] Starting ParentMonitor thread for parent 62344
-[Zygote] Monitor started for Parent 62344 (Polling Mode)

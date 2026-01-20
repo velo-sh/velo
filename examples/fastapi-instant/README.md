@@ -49,3 +49,29 @@ With Copy-On-Write (CoW), forked workers share the parent's memory pages:
 - **Traditional**: Each of N resets spawns an independent process, each allocating ~49MB
 - **Velo**: One Zygote (~50MB) shared across all N workers via CoW
 - **Total memory**: 490MB vs 50MB = **~90% reduction**
+
+---
+
+## Running the Demo
+
+### Prerequisites
+
+Install [uv](https://github.com/astral-sh/uv) package manager:
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or via Homebrew (macOS)
+brew install uv
+```
+
+### Run the Benchmark
+
+```bash
+# Quick start (uv handles dependencies automatically)
+./examples/fastapi-instant/run_hio.sh --compare --resets=20
+
+# Or run directly with uv
+uv run --with fastapi --with uvicorn python examples/fastapi-instant/rollback_race.py --resets=20
+```
