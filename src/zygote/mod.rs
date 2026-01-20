@@ -271,7 +271,14 @@ impl ZygoteLauncher {
         // and spawn 100+ instances before socket exists.
         let lock_path = VeloPaths::socket_dir().join("zygote-startup.lock");
         if let Some(parent) = lock_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if !parent.exists() {
+                // [H-GOV HARDENING] Strictly refuse to 'heal' non-existent parent directories.
+                return Err(ZygoteError::IOError(format!(
+                    "Cannot start Zygote: parent directory for lock does not exist: {:?}",
+                    parent
+                ))
+                .into());
+            }
         }
 
         let lock_file = OpenOptions::new()
@@ -316,7 +323,7 @@ impl ZygoteLauncher {
         });
 
         // RFC-0011: Standardized socket path
-        let socket_path = crate::zygote::core_ipc::default_socket_path();
+        let socket_path = self.socket_path.clone();
         log::info!("🚀 Zygote using socket: {}", socket_path.display());
 
         // Find zygote module

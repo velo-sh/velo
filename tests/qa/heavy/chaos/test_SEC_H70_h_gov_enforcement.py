@@ -50,7 +50,7 @@ class TestHGovEnforcement(unittest.TestCase):
         res = self.run_velo(
             {
                 "VELO_ENV": "prod",
-                "VELO_ZYGOTE_SOCKET": "/tmp/non_existent_dir/fail.sock",
+                "VELO_SOCKET_DIR": "/restricted_root/fail",
             },
             ["run", "--zygote", "simple.py"],
         )
@@ -87,7 +87,7 @@ class TestHGovEnforcement(unittest.TestCase):
         res_dev = self.run_velo(
             {
                 "VELO_ENV": "dev",
-                "VELO_ZYGOTE_SOCKET": "/tmp/non_existent_dir/fail.sock",
+                "VELO_ZYGOTE_SOCKET": "/restricted_root/fail.sock",
             },
             ["run", "--zygote", "simple.py"],
         )
@@ -103,7 +103,7 @@ class TestHGovEnforcement(unittest.TestCase):
         res_prod = self.run_velo(
             {
                 "VELO_ENV": "prod",
-                "VELO_ZYGOTE_SOCKET": "/tmp/non_existent_dir/fail.sock",
+                "VELO_ZYGOTE_SOCKET": "/restricted_root/fail.sock",
             },
             ["run", "--zygote", "simple.py"],
         )
@@ -183,7 +183,7 @@ class TestHGovEnforcement(unittest.TestCase):
         res = self.run_velo(
             {
                 "VELO_ENV": "chaos",
-                "VELO_ZYGOTE_SOCKET": "/tmp/non_existent_dir/fail.sock",
+                "VELO_SOCKET_DIR": "/restricted_root/fail",
             },
             ["run", "--zygote", "simple.py"],
         )
@@ -238,7 +238,10 @@ class TestHGovEnforcement(unittest.TestCase):
         socket_path.touch()  # Create a fake stale socket to ensure Zygote start fails
 
         res = self.run_velo(
-            {"VELO_ENV": "prod"},
+            {
+                "VELO_ENV": "prod",
+                "VELO_SOCKET_DIR": "/restricted_root/fail",
+            },
             [
                 "serve",
                 "--zygote",

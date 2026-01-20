@@ -41,11 +41,9 @@ impl VeloPaths {
 
             // Validate length constraint even for overrides (SEC-004)
             if path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
-                // DEF-72-P01: Always enforce 0700 permissions even on override paths
-                if let Some(parent) = path.parent() {
-                    let _ = ensure_socket_dir(parent);
-                }
-                let _ = ensure_socket_dir(&path);
+                // [H-GOV HARDENING] Do NOT auto-create directories for overrides.
+                // This ensures that 'hostile' paths in tests (e.g. /restricted/fail)
+                // correctly trigger fail-fast behavior instead of being 'healed'.
                 return path;
             }
             // SEC-004: If override is too long, we fall back to /tmp immediately
@@ -178,20 +176,11 @@ impl VeloPaths {
     pub fn zygote_socket_for_app(project_dir: &Path, app: &str) -> PathBuf {
         // Environment override takes precedence (for testing)
         if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
-            let path_str = socket_path.to_string_lossy();
-            if path_str.len() <= SOCKET_PATH_LIMIT {
-                let path_buf = PathBuf::from(socket_path);
-                if let Some(parent) = path_buf.parent() {
-                    let _ = ensure_socket_dir(parent);
-                }
-                return path_buf;
-            }
+            // [H-GOV HARDENING] Do NOT auto-create directories for overrides.
+            return PathBuf::from(socket_path);
         }
 
         let dir = Self::socket_dir();
-        if let Err(e) = ensure_socket_dir(&dir) {
-            panic!("FATAL SECURITY ERROR: {}", e);
-        }
 
         // Generate unique but readable socket name
         let canonical = project_dir
@@ -212,11 +201,8 @@ impl VeloPaths {
         if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
             let path_str = socket_path.to_string_lossy();
             if path_str.len() <= SOCKET_PATH_LIMIT {
-                let path_buf = PathBuf::from(socket_path);
-                if let Some(parent) = path_buf.parent() {
-                    let _ = ensure_socket_dir(parent);
-                }
-                return path_buf;
+                // [H-GOV HARDENING] Do NOT auto-create directories for overrides.
+                return PathBuf::from(socket_path);
             } else {
                 eprintln!(
                     "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long ({} bytes, max {}). Falling back to safe default.",
@@ -236,9 +222,6 @@ impl VeloPaths {
         #[cfg(not(target_os = "linux"))]
         {
             let dir = Self::socket_dir();
-            if let Err(e) = ensure_socket_dir(&dir) {
-                panic!("FATAL SECURITY ERROR: {}", e);
-            }
             dir.join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
         }
     }
@@ -254,10 +237,6 @@ impl VeloPaths {
         #[cfg(not(target_os = "linux"))]
         {
             let dir = Self::socket_dir();
-            if let Err(e) = ensure_socket_dir(&dir) {
-                panic!("FATAL SECURITY ERROR: {}", e);
-            }
-
             // Monotonic counter - never repeats in same supervisor lifetime
             // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
             let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);

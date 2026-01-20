@@ -88,6 +88,12 @@ fn suggest_command(target: &str) -> Option<&'static str> {
 
 /// Main entry point for CLI
 pub fn run() -> Result<()> {
+    // RFC-0020: Force colors if requested (even when piped/captured)
+    // This ensures H-Gov audit signals maintain their ANSI formatting in CI/Logs.
+    if std::env::var("CLICOLOR_FORCE").is_ok() || std::env::var("FORCE_COLOR").is_ok() {
+        colored::control::set_override(true);
+    }
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {

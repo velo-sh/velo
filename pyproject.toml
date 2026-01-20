@@ -70,10 +70,16 @@ markers = [
     "heavy: Resource-intensive tests",
     "shm: Shared memory or Linux-specific features (SPEC-0008)",
     "stress: High-pressure stress tests (SPEC-0008)",
-    "timeout: Tests with custom timeout requirements",
+    "sad_path: Negative test cases (error handling/failure modes)",
     "happy_path: Level 1 happy path journey tests",
+    "tier2: Specialized edge and scale tests (Phase 6+)",
+    "config: CLI and configuration related tests",
     "cli: CLI-specific integration tests",
+    "security: Security and isolation tests (SPEC-0008)",
+    "performance: Performance and timing verification",
+    "vtest: Hybrid Velo/Pytest coordinator tests",
     "benchmark: Performance benchmark tests",
+    "timeout: Tests with custom timeout requirements",
 ]
 
 [tool.mypy]
@@ -139,5 +145,6 @@ dev = [
     "ruff>=0.9.0",
     "jsonschema>=4.23.0",
     "pytest-xdist>=3.8.0",
+    "pytest-timeout>=2.3.1",
 ]
 
