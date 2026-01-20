@@ -226,32 +226,48 @@ impl VeloPaths {
             }
         }
 
-        let dir = Self::socket_dir();
-        if let Err(e) = ensure_socket_dir(&dir) {
-            panic!("FATAL SECURITY ERROR: {}", e);
+        #[cfg(target_os = "linux")]
+        {
+            return PathBuf::from(Self::zygote_abstract_socket_name());
         }
-        dir.join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let dir = Self::socket_dir();
+            if let Err(e) = ensure_socket_dir(&dir) {
+                panic!("FATAL SECURITY ERROR: {}", e);
+            }
+            dir.join(format!("velo-zygote-v{:02x}.sock", PROTOCOL_VERSION))
+        }
     }
 
     /// Generate a standardized, short path for a worker socket.
     /// Uses atomic counter to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
-        let dir = Self::socket_dir();
-        if let Err(e) = ensure_socket_dir(&dir) {
-            panic!("FATAL SECURITY ERROR: {}", e);
+        #[cfg(target_os = "linux")]
+        {
+            return PathBuf::from(Self::worker_abstract_socket_name(worker_id));
         }
 
-        // Monotonic counter - never repeats in same supervisor lifetime
-        // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
-        let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
-        eprintln!(
-            "[PATHS] Generated worker socket: {} (id={}, seq={})",
-            path.display(),
-            worker_id,
-            seq
-        );
-        path
+        #[cfg(not(target_os = "linux"))]
+        {
+            let dir = Self::socket_dir();
+            if let Err(e) = ensure_socket_dir(&dir) {
+                panic!("FATAL SECURITY ERROR: {}", e);
+            }
+
+            // Monotonic counter - never repeats in same supervisor lifetime
+            // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
+            let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
+            eprintln!(
+                "[PATHS] Generated worker socket: {} (id={}, seq={})",
+                path.display(),
+                worker_id,
+                seq
+            );
+            path
+        }
     }
 
     /// Get the log path for the Zygote.
