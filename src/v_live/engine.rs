@@ -225,6 +225,25 @@ impl VibeEngine {
                     libc::dup2(w_fd, 2);
                 }
 
+                // SINC-002: Load .env file before Python execution (Environment Drift Fix)
+                // Each fork() should pick up the latest .env values from disk.
+                let project_dir = target.parent().unwrap_or(std::path::Path::new("."));
+                let dotenv_path = project_dir.join(".env");
+                if dotenv_path.exists()
+                    && let Ok(content) = std::fs::read_to_string(&dotenv_path)
+                {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.is_empty() || line.starts_with('#') {
+                            continue;
+                        }
+                        if let Some((key, value)) = line.split_once('=') {
+                            // SAFETY: This is in a forked child before any threads
+                            unsafe { std::env::set_var(key.trim(), value.trim()) };
+                        }
+                    }
+                }
+
                 // Initialize Python and capture result
                 #[allow(deprecated)]
                 // prepare_freethreaded_python is still often needed in forked child
@@ -232,6 +251,47 @@ impl VibeEngine {
 
                 #[allow(deprecated)]
                 let result = Python::with_gil(|py| -> Value {
+                    // SINC-001: Refresh Python import system for newly installed packages (Genotype Aging Fix)
+                    // After fork, the parent's import cache is stale. We need to:
+                    // 1. Detect the active venv's site-packages from VIRTUAL_ENV
+                    // 2. Ensure it's in sys.path
+                    // 3. Clear the path importer cache
+                    // 4. Invalidate all finder caches
+                    let refresh_code = r#"
+import sys
+import os
+import site
+import importlib
+import glob
+
+# Clear the path importer cache to force re-scanning
+sys.path_importer_cache.clear()
+
+# Invalidate caches in all meta path finders
+importlib.invalidate_caches()
+
+# Get the active venv's site-packages from VIRTUAL_ENV
+venv = os.environ.get('VIRTUAL_ENV')
+if venv:
+    # Find site-packages in the venv (handles different Python versions)
+    sp_pattern = os.path.join(venv, 'lib', 'python*', 'site-packages')
+    matches = glob.glob(sp_pattern)
+    for sp in matches:
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
+        # Re-add using addsitedir to process .pth files
+        site.addsitedir(sp)
+
+# Also refresh standard site-packages
+for sp in site.getsitepackages():
+    if os.path.exists(sp):
+        site.addsitedir(sp)
+
+# Final cache invalidation
+importlib.invalidate_caches()
+"#;
+                    let _ = py.run(&CString::new(refresh_code).unwrap_or_default(), None, None);
+
                     match (|| -> Result<Value, PyErr> {
                         let code = std::fs::read_to_string(&target).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string())

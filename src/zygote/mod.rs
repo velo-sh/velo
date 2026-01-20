@@ -802,11 +802,35 @@ impl ZygoteLauncher {
             log::info!("Zygote deep probe successful (PID: {}).", pid);
 
             // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
+            // SINC-001/002: Detect paths for invalidation monitoring
+            let (site_packages_path, dotenv_path) = {
+                let mut sp_path: Option<PathBuf> = None;
+                let mut de_path: Option<PathBuf> = None;
+
+                // Detect site-packages from PythonEnv (SINC-001)
+                if let Ok(py_env) = crate::common::python_env::PythonEnv::detect(&python) {
+                    sp_path = py_env.site_packages;
+                    log::debug!("[SINC-001] Monitoring site-packages: {:?}", sp_path);
+                }
+
+                // Detect .env from project root (SINC-002)
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let env_file = cwd.join(".env");
+                if env_file.exists() {
+                    de_path = Some(env_file);
+                    log::debug!("[SINC-002] Monitoring .env: {:?}", de_path);
+                }
+
+                (sp_path, de_path)
+            };
+
             let params = guardian::ZygoteStartParams {
                 preload: preload.iter().map(|s| s.to_string()).collect(),
                 app_name: app_name.map(|s| s.to_string()),
                 python_path: python.clone(),
                 config: config.clone(),
+                site_packages_path,
+                dotenv_path,
             };
 
             let guardian =

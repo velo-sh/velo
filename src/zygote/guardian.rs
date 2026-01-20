@@ -3,7 +3,7 @@ use crate::zygote::core_ipc;
 use crate::zygote::error::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 
 /// Parameters needed to restart a Zygote service.
@@ -13,24 +13,64 @@ pub struct ZygoteStartParams {
     pub app_name: Option<String>,
     pub python_path: PathBuf,
     pub config: crate::config::VeloConfig,
+    /// SINC-001: Path to site-packages for genotype aging detection
+    pub site_packages_path: Option<PathBuf>,
+    /// SINC-002: Path to .env for environment drift detection
+    pub dotenv_path: Option<PathBuf>,
+}
+
+/// Cached mtime state for invalidation detection (SINC-001/002)
+#[derive(Clone, Debug)]
+struct InvalidationState {
+    site_packages_mtime: Option<SystemTime>,
+    dotenv_mtime: Option<SystemTime>,
 }
 
 /// ZygoteGuardian - Rust-side supervisor for the Python Zygote.
-/// Monitors health, memory, and lifecycle to ensure HFT-grade stability.
+/// Monitors health, memory, lifecycle, and environment changes to ensure HFT-grade stability.
+/// SINC-001/002: Includes invalidation detection for site-packages and .env changes.
 pub struct ZygoteGuardian {
     socket_path: PathBuf,
     zygote_pid: Arc<Mutex<u32>>,
     heartbeat_interval: Duration,
     start_params: Option<ZygoteStartParams>,
+    /// SINC-001/002: Cached mtime for invalidation detection
+    #[allow(dead_code)] // Used in check_invalidation() async context
+    invalidation_state: Arc<Mutex<InvalidationState>>,
 }
 
 impl ZygoteGuardian {
     pub fn new(socket_path: PathBuf, zygote_pid: u32, params: Option<ZygoteStartParams>) -> Self {
+        // SINC-001/002: Initialize invalidation state from monitored paths
+        let invalidation_state =
+            if let Some(ref p) = params {
+                InvalidationState {
+                    site_packages_mtime: p.site_packages_path.as_ref().and_then(|path| {
+                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+                    }),
+                    dotenv_mtime: p.dotenv_path.as_ref().and_then(|path| {
+                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+                    }),
+                }
+            } else {
+                InvalidationState {
+                    site_packages_mtime: None,
+                    dotenv_mtime: None,
+                }
+            };
+
+        log::debug!(
+            "[Guardian] Invalidation state initialized: site-packages={:?}, .env={:?}",
+            invalidation_state.site_packages_mtime,
+            invalidation_state.dotenv_mtime
+        );
+
         Self {
             socket_path,
             zygote_pid: Arc::new(Mutex::new(zygote_pid)),
             heartbeat_interval: Duration::from_secs(5),
             start_params: params,
+            invalidation_state: Arc::new(Mutex::new(invalidation_state)),
         }
     }
 
