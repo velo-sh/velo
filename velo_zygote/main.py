@@ -725,6 +725,7 @@ class ZygoteServer:
                     http="auto",
                     lifespan="on",
                     log_config=None,
+                    proxy_headers=True,  # RFC-0011: FORCED for L7 proxy header trust
                 )
                 self._warmed_server = uvicorn.Server(self._warmed_config)  # type: ignore[assignment, arg-type]
                 # Force config load and module inspection in Zygote (Saves 44ms in worker)

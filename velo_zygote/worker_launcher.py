@@ -88,6 +88,20 @@ class UDSProxyMiddleware:
         await self.app(scope, receive, send)
 
 
+def _wrap_app_with_middleware(app_path: str) -> Any:
+    """
+    RFC-0011 GOLD-013: Load and wrap app with UDSProxyMiddleware.
+    
+    This is required for UDS connections where uvicorn's proxy_headers
+    doesn't work (no TCP client to trust).
+    """
+    import importlib
+    module_name, attr_name = app_path.rsplit(":", 1)
+    module = importlib.import_module(module_name)
+    app = getattr(module, attr_name)
+    return UDSProxyMiddleware(app)
+
+
 def main() -> None:
     try:
 
@@ -125,7 +139,7 @@ def main() -> None:
                 "loop": "auto",
                 "http": "auto",
                 "lifespan": "on",
-                "proxy_headers": getattr(args, "proxy_headers", False),
+                "proxy_headers": True,  # RFC-0011: FORCED for L7 proxy header trust
                 "log_config": None,
             }
             if args.uds:
@@ -155,10 +169,17 @@ def main() -> None:
                         warmed_config.uds = args.uds
                         warmed_config.host = None
                         warmed_config.port = None
+                        # RFC-0011 GOLD-013: Force proxy_headers for UDS
+                        warmed_config.proxy_headers = True
                     else:
                         warmed_config.uds = None
                         warmed_config.host = args.host or "127.0.0.1"
                         warmed_config.port = args.port or 8000
+
+                    # RFC-0011 GOLD-013: Wrap app with UDSProxyMiddleware for scope['client'] population
+                    # This is required because uvicorn's proxy_headers doesn't work for UDS connections
+                    if args.uds and warmed_config.loaded_app is not None:
+                        warmed_config.loaded_app = UDSProxyMiddleware(warmed_config.loaded_app)
 
                     # Recreate Server with patched config (socket binding is determined at run time)
                     server = uvicorn.Server(warmed_config)
@@ -168,15 +189,24 @@ def main() -> None:
                     _prof_log("[PROF] Using Deep-Warmed uvicorn Server (legacy).")
                     if args.uds:
                         warmed_server.config.uds = args.uds
+                        # RFC-0011 GOLD-013: Wrap for UDS
+                        if warmed_server.config.loaded_app is not None:
+                            warmed_server.config.loaded_app = UDSProxyMiddleware(warmed_server.config.loaded_app)
                     else:
                         warmed_server.config.host = args.host or "127.0.0.1"
                         warmed_server.config.port = args.port or 8000
                     warmed_server.run()
                 else:
                     _prof_log("[PROF] warmed_server is None, falling back to uvicorn.run()")
+                    # RFC-0011 GOLD-013: Wrap app for UDS fallback
+                    if args.uds:
+                        config_kwargs["app"] = _wrap_app_with_middleware(args.app)
                     uvicorn.run(**config_kwargs)
             except Exception as e:
                 _prof_log(f"[PROF] Execution Error: {e}")
+                # RFC-0011 GOLD-013: Wrap app for UDS fallback (exception path)
+                if args.uds:
+                    config_kwargs["app"] = _wrap_app_with_middleware(args.app)
                 uvicorn.run(**config_kwargs)
             finally:
                 profiler.disable()
