@@ -8,7 +8,7 @@ mod tests {
         let fork = MiracleFork::new();
 
         let start = Instant::now();
-        let result = fork
+        let (pid, result) = fork
             .execute(|| {
                 // Simulated worker task
                 42
@@ -16,6 +16,7 @@ mod tests {
             .expect("Fork failed");
         let duration = start.elapsed();
 
+        assert!(pid > 0);
         assert_eq!(result, 42);
         println!(
             "Miracle Fork Latency: {:.3}ms",

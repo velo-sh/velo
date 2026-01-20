@@ -19,12 +19,38 @@ impl MiracleFork {
         Self
     }
 
-    /// Execute a closure in a forked child process and return the result.
+    /// Execute a closure in a forked child process.
+    /// Returns the child PID.
     ///
     /// # Safety
     ///
     /// Child process uses libc::_exit(0) to bypass all cleanups for performance.
-    pub fn execute<F, T>(&self, f: F) -> Result<T>
+    pub fn spawn<F>(&self, f: F) -> Result<libc::pid_t>
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        match unsafe { fork() } {
+            Ok(ForkResult::Child) => {
+                // ORPHAN PROTECTION (RFC-0029 Pillar 5)
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                }
+
+                // Execute task
+                f();
+
+                // BYPASS ALL CLEANUPS (The "Miracle" part)
+                unsafe { libc::_exit(0) };
+            }
+            Ok(ForkResult::Parent { child }) => Ok(child.as_raw()),
+            Err(e) => bail!("Fork failed: {:?}", e),
+        }
+    }
+
+    /// Synchronous version that waits for result via pipe.
+    /// Returns (child_pid, result).
+    pub fn execute<F, T>(&self, f: F) -> Result<(libc::pid_t, T)>
     where
         F: FnOnce() -> T,
         T: serde::Serialize + serde::de::DeserializeOwned,
@@ -36,41 +62,33 @@ impl MiracleFork {
 
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
-                // Inside child: Close reader
                 unsafe { libc::close(r_fd) };
-
                 let mut writer = unsafe { File::from_raw_fd(w_fd) };
 
-                // Execute task
-                let result = f();
+                // ORPHAN PROTECTION
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                }
 
-                // Serialize and send result
+                let result = f();
                 let serialized = serde_json::to_vec(&result).unwrap_or_default();
                 let _ = writer.write_all(&serialized);
                 let _ = writer.flush();
                 drop(writer);
-
-                // BYPASS ALL CLEANUPS (The "Miracle" part)
                 unsafe { libc::_exit(0) };
             }
-            Ok(ForkResult::Parent { child: _ }) => {
-                // Inside parent: Close writer
+            Ok(ForkResult::Parent { child }) => {
+                let pid = child.as_raw();
                 unsafe { libc::close(w_fd) };
-
                 let mut reader = unsafe { File::from_raw_fd(r_fd) };
-
-                // Read result from child
                 let mut buffer = Vec::new();
                 reader
                     .read_to_end(&mut buffer)
                     .context("Failed to read from child pipe")?;
-
                 let result: T = serde_json::from_slice(&buffer)
                     .context("Failed to deserialize child result")?;
-
-                // Master Reaper handles the cleanup (zombie reaping)
-
-                Ok(result)
+                Ok((pid, result))
             }
             Err(e) => bail!("Fork failed: {:?}", e),
         }
