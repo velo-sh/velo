@@ -3001,6 +3001,7 @@ dependencies = [
  "nix",
  "notify",
  "once_cell",
+ "parking_lot",
  "pin-project-lite",
  "pyo3",
  "regex",

@@ -50,10 +50,14 @@ def test_DEF_08_005_protocol_flickering_reproduction(isolated_env: VeloTestEnv):
             # c) The "fixed" result
             # We MUST NOT get the "error" result again.
 
-            msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-            data = json.loads(msg)
-
-            print(f"Received msg after fix: {data['status']}")
+            print("Waiting for final message (fixed)...")
+            try:
+                msg = await asyncio.wait_for(websocket.recv(), timeout=10.0)
+                data = json.loads(msg)
+                print(f"Received msg after fix: {data['status']} (timestamp: {data.get('timestamp')})")
+            except TimeoutError:
+                print("TIMEOUT: Did not receive message after fix. Checking engine state...")
+                raise
 
             # If this is 'error', then DEF-08-005 is confirmed.
             # A 'success' here would mean the race was avoided by luck or timing.

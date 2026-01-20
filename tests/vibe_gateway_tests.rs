@@ -8,7 +8,7 @@ use velo::v_live::gateway::VibeGateway;
 async fn test_gateway_broadcasts_json() {
     // 1. Start Gateway in background
     let addr = "127.0.0.1:9999";
-    let gateway = VibeGateway::new(addr);
+    let gateway = VibeGateway::new(addr, "test.py".into());
     let _rx = gateway.subscribe();
 
     let server_handle = tokio::spawn(async move {
@@ -24,7 +24,7 @@ async fn test_gateway_broadcasts_json() {
 
     // 3. Broadcast message
     let test_msg = serde_json::json!({"status": "ok", "payload": "test"});
-    VibeGateway::broadcast(test_msg.clone()).await;
+    VibeGateway::broadcast_sync(test_msg.clone());
 
     // 4. Verify client received JSON
     let msg = timeout(Duration::from_secs(1), ws_stream.next())

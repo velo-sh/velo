@@ -31,9 +31,10 @@ pub struct VibeEngine {
 impl VibeEngine {
     pub fn new(target: PathBuf, gateway_addr: &str) -> Self {
         let socket_path = target.with_extension("vibe.sock");
+        let target_clone = target.clone();
         Self {
             target,
-            gateway: Arc::new(VibeGateway::new(gateway_addr)),
+            gateway: Arc::new(VibeGateway::new(gateway_addr, target_clone)),
             fence: Arc::new(PipeFence::new(socket_path)),
             current_worker: Arc::new(Mutex::new(None)),
         }
@@ -98,7 +99,7 @@ impl VibeEngine {
         self.fence.cleanup()?;
 
         // 4. Clear last result from gateway cache to prevent stale push to late joiners
-        VibeGateway::clear_last_result().await;
+        VibeGateway::clear_last_result();
 
         // 5. Spawn worker in background
         // We use a separate task so the Master remains responsive to new events
@@ -225,7 +226,7 @@ impl VibeEngine {
                     && !data.is_empty()
                     && let Ok(val) = serde_json::from_slice::<Value>(&data)
                 {
-                    VibeGateway::broadcast(val).await;
+                    VibeGateway::broadcast_sync(val);
                 }
 
                 // Cleanup PID tracking when done
@@ -248,6 +249,9 @@ struct EngineHandler {
 
 impl WatchHandler for EngineHandler {
     fn on_change(&self, _path: &str) {
+        // PROACTIVE CACHE INVALIDATION (RFC-0029 Pillar 6)
+        VibeGateway::clear_last_result();
+
         let engine = self.engine.clone();
         self.handle.spawn(async move {
             let engine = engine.lock().await;
