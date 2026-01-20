@@ -97,7 +97,10 @@ impl VibeEngine {
         // 3. Pipe-Fence: Clear stale resources (Pillar 3)
         self.fence.cleanup()?;
 
-        // 4. Spawn worker in background
+        // 4. Clear last result from gateway cache to prevent stale push to late joiners
+        VibeGateway::clear_last_result().await;
+
+        // 5. Spawn worker in background
         // We use a separate task so the Master remains responsive to new events
         let engine = self.clone();
         tokio::spawn(async move {
@@ -133,7 +136,7 @@ impl VibeEngine {
                     let ppid = unsafe { libc::getppid() };
                     std::thread::spawn(move || {
                         loop {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            std::thread::sleep(std::time::Duration::from_millis(100));
                             if unsafe { libc::getppid() } != ppid {
                                 unsafe { libc::_exit(0) };
                             }

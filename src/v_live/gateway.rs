@@ -35,14 +35,27 @@ impl VibeGateway {
 
     /// Broadcast a JSON message to all connected clients.
     pub async fn broadcast(msg: Value) {
-        // Update last result for late joiners
+        // Update last result for late joiners (P1 Fix: DEF-08-004)
+        // We only cache successes to avoid breaking recovery tests (STABILITY-102)
+        // and to ensure clients always see a "last known good" state.
         {
             let mut last = LAST_RESULT.lock().await;
-            *last = Some(msg.clone());
+            if msg.get("status").and_then(|s| s.as_str()) == Some("success") {
+                *last = Some(msg.clone());
+            } else {
+                // Clear cache on error to force clients to wait for the next recovery
+                *last = None;
+            }
         }
 
         let (tx, _) = &*BROADCAST_CHANNEL;
         let _ = tx.send(msg);
+    }
+
+    /// Clear the cached result (called at start of new execution).
+    pub async fn clear_last_result() {
+        let mut last = LAST_RESULT.lock().await;
+        *last = None;
     }
 
     /// Get a receiver for the broadcast channel.
