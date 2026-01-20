@@ -114,10 +114,16 @@ def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv):
                 # Now trigger the fix
                 isolated_env.create_app("app.py", "print('fixed')")
 
-                # Receive message
-                msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                print(f"Received msg: {msg}")
-                return "fixed" in msg or "success" in msg
+                # Receive message(s). We might get the initial error (correct if we connected pre-fix)
+                # followed by the recovery success.
+                start_time = time.time()
+                while time.time() - start_time < 5:
+                    msg = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                    data = json.loads(msg)
+                    print(f"Received msg: {data.get('status')} at {data.get('timestamp')}")
+                    if data.get("status") == "success" and "fixed" in data.get("output", ""):
+                        return True
+                return False
         except Exception as e:
             print(f"Recovery Error: {e}")
             return False

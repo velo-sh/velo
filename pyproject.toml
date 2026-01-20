@@ -30,9 +30,9 @@ packages = ["pytest_velo", "velo_zygote"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["tests/qa/forensic_benchmarks"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-norecursedirs = ["tests/qa/forensic_benchmarks"]
 addopts = "-v --tb=short"
 markers = [
     # SPEC-0008: Tier Markers (SSOT for test discovery)
