@@ -228,7 +228,9 @@ impl VeloPaths {
 
         #[cfg(target_os = "linux")]
         {
-            return PathBuf::from(Self::zygote_abstract_socket_name());
+            let path = PathBuf::from(zygote_abstract_socket_name());
+            eprintln!("[DEBUG] zygote_socket returning path: {:?}", path);
+            return path;
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -246,7 +248,7 @@ impl VeloPaths {
     pub fn worker_socket(worker_id: u64) -> PathBuf {
         #[cfg(target_os = "linux")]
         {
-            return PathBuf::from(Self::worker_abstract_socket_name(worker_id));
+            return PathBuf::from(worker_abstract_socket_name(worker_id));
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -317,22 +319,18 @@ impl VeloPaths {
     }
 
     /// RFC-0012: Path to the ephemeral forensic authentication file for a given socket.
-    /// The file is stored alongside the socket in the same protected directory.
+    /// The file is stored alongside the socket in the same    #[cfg(target_os = "linux")]
     pub fn auth_file_for_socket(socket_path: &Path) -> PathBuf {
-        // Handle Linux Abstract Namespace Sockets (start with \0)
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::ffi::OsStrExt;
-            let bytes = socket_path.as_os_str().as_bytes();
-            if !bytes.is_empty() && bytes[0] == 0 {
-                // For abstract sockets, we can't just append extension (invalid path).
-                // Instead, derive a stable filename from the socket name hash.
-                let hash = Self::short_hash(&socket_path.to_string_lossy());
-                let dir = Self::socket_dir();
-                // Ensure directory exists (it might not if using abstract sockets purely)
-                let _ = ensure_socket_dir(&dir);
-                return dir.join(format!("abstract-{}.auth", hash));
-            }
+        // Handle Linux Abstract Namespace Sockets (start with @ for internal representation)
+        let path_str = socket_path.to_string_lossy();
+        if path_str.starts_with('@') {
+            // For abstract sockets, we can't just append extension (invalid path).
+            // Instead, derive a stable filename from the socket name hash.
+            let hash = Self::short_hash(&path_str);
+            let dir = Self::socket_dir();
+            // Ensure directory exists (it might not if using abstract sockets purely)
+            let _ = ensure_socket_dir(&dir);
+            return dir.join(format!("abstract-{}.auth", hash));
         }
 
         let mut auth_path = socket_path.to_path_buf();
@@ -411,15 +409,11 @@ pub fn is_abstract_socket_supported() -> bool {
 /// On non-Linux systems, returns None (use filesystem paths instead).
 #[cfg(target_os = "linux")]
 pub fn worker_abstract_socket_name(worker_id: u64) -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static ABSTRACT_COUNTER: AtomicU64 = AtomicU64::new(0);
-
     let uid = unsafe { libc::getuid() };
-    let seq = ABSTRACT_COUNTER.fetch_add(1, Ordering::Relaxed);
-
-    // FIX(SEC-005): Explicitly include \0 prefix so other components (auth_file_for_socket)
-    // can detect it is abstract.
-    format!("\0velo-{}-w-{}-{}", uid, worker_id, seq)
+    // FIX(SEC-005): Use @ prefix for internal representation of abstract sockets
+    // to avoid \0 null byte issues in Path conversions.
+    let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("@velo-{}-w-{}-{}", uid, worker_id, seq)
 }
 
 /// Generate an abstract socket name for the Zygote (Linux only).
@@ -427,20 +421,22 @@ pub fn worker_abstract_socket_name(worker_id: u64) -> String {
 #[cfg(target_os = "linux")]
 pub fn zygote_abstract_socket_name() -> String {
     let uid = unsafe { libc::getuid() };
-    format!("\0velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
+    format!("@velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
 }
 
 /// Create a SocketAddr for abstract namespace socket (Linux).
 #[cfg(target_os = "linux")]
 pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::SocketAddr> {
-    let bytes = name.as_bytes();
-    // If name already starts with \0 (our internal convention for abstract strings),
+    // If name starts with @ (our internal convention for abstract strings),
     // strip it because from_abstract_name treats the input as the CONTENT of the name,
-    // and implicitly handles the abstract namespace bit.
-    let effective_name = if !bytes.is_empty() && bytes[0] == 0 {
-        &bytes[1..]
+    // and implicitly handles the abstract namespace bit (adds \0).
+    let effective_name = if name.starts_with('@') {
+        name.strip_prefix('@').unwrap_or(name)
+    } else if name.starts_with('\0') {
+         // Fallback legacy support if strictly passed
+         name.strip_prefix('\0').unwrap_or(name)
     } else {
-        bytes
+        name
     };
     std::os::unix::net::SocketAddr::from_abstract_name(effective_name)
 }
@@ -448,9 +444,63 @@ pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::S
 /// Bind to an abstract namespace socket (Linux).
 #[cfg(target_os = "linux")]
 pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::UnixListener> {
-    use std::os::unix::net::UnixListener;
-    let addr = abstract_socket_addr(name)?;
-    UnixListener::bind_addr(&addr)
+    eprintln!("[DEBUG] bind_abstract_socket called with name: {:?}", name);
+    // Use nix to handle abstract socket binding reliably, bypassing std limitations
+    use nix::sys::socket::{socket, bind, listen, UnixAddr, AddressFamily, SockType, SockFlag};
+    use std::os::unix::io::{FromRawFd, IntoRawFd, AsRawFd};
+    
+    // Strip @ prefix if present
+    let effective_name = if name.starts_with('@') {
+        &name[1..]
+    } else if name.starts_with('\0') {
+         &name[1..]
+    } else {
+        name
+    };
+
+    let addr = UnixAddr::new_abstract(effective_name.as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SockFlag::empty(), None)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    bind(fd.as_raw_fd(), &addr)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    // Backlog 128 is standard
+    listen(&fd, 128)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd.into_raw_fd()) };
+    Ok(listener)
+}
+
+/// Connect to an abstract namespace socket (Linux).
+#[cfg(target_os = "linux")]
+pub fn connect_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::UnixStream> {
+    use nix::sys::socket::{socket, connect, UnixAddr, AddressFamily, SockType, SockFlag};
+    use std::os::unix::io::{FromRawFd, IntoRawFd, AsRawFd};
+
+    // Strip @ prefix if present
+    let effective_name = if name.starts_with('@') {
+        &name[1..]
+    } else if name.starts_with('\0') {
+         &name[1..]
+    } else {
+        name
+    };
+
+    let addr = UnixAddr::new_abstract(effective_name.as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let fd = socket(AddressFamily::Unix, SockType::Stream, SockFlag::empty(), None)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    connect(fd.as_raw_fd(), &addr)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd.into_raw_fd()) };
+    Ok(stream)
 }
 #[cfg(test)]
 mod tests {

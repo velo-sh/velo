@@ -391,11 +391,18 @@ class TestSEC07001IPCAtomicIsolation:
         env = os.environ.copy()
         env["VELO_TEST_MODE"] = "1"
         env["TMPDIR"] = str(tmp_path)
+        # Force Zygote usage to verify Zygote socket creation
+        env["VELO_USE_ZYGOTE"] = "1"
 
         # Start velo serve in background
         # We use a dummy app that exists
         proc = subprocess.Popen(
-            [velo_binary, "serve", "os:getcwd"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            [velo_binary, "serve", "os:getcwd"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            # capture stderr to debug startup
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
         try:
@@ -409,8 +416,10 @@ class TestSEC07001IPCAtomicIsolation:
             with open("/proc/net/unix") as f:
                 sockets = f.read()
 
-            # Zygote socket name contains 'velo-zygote'
-            assert "@velo-zygote" in sockets, "Abstract socket not found in /proc/net/unix"
+            # Zygote socket name contains 'velo-{uid}-zygote' (see common/paths.rs)
+            # We match the partial name to be robust against version suffix
+            expected_partial = f"@velo-{os.getuid()}-zygote"
+            assert expected_partial in sockets, f"Abstract socket '{expected_partial}' not found in /proc/net/unix"
 
             # Verify NO file on disk
             socket_dir = tmp_path / f"velo-{os.getuid()}"
@@ -442,6 +451,7 @@ class TestSEC07001IPCAtomicIsolation:
             actual_mode = stat.st_mode & 0o777
             assert actual_mode == 0o700, f"Expected 0o700, got {oct(actual_mode)}"
 
+    @pytest.mark.skipif(sys.platform == "linux", reason="Linux uses abstract sockets (no directory security needed)")
     def test_conflicting_directory_detection(self, velo_binary, tmp_path):
         """Pre-created conflicting directory must be detected and handled safely."""
         # Simulate attack: pre-create socket directory with insecure permissions

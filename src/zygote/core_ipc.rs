@@ -229,10 +229,20 @@ pub fn socket_path_for_app(project_dir: &Path, app: &str) -> PathBuf {
 pub fn is_socket_alive(socket_path: &Path) -> bool {
     #[cfg(target_os = "linux")]
     {
+        // Check for @ prefix which indicates abstract socket internal representation
+        let name_str = socket_path.to_string_lossy();
+        if name_str.starts_with('@') {
+             if let Ok(_) = crate::common::paths::connect_abstract_socket(&name_str) {
+                 return true;
+             }
+        }
+
         use std::os::unix::ffi::OsStrExt;
         let bytes = socket_path.as_os_str().as_bytes();
         if !bytes.is_empty() && bytes[0] == 0 {
-            return std::os::unix::net::UnixStream::connect(socket_path).is_ok();
+             // Fallback logic if passed with \0
+             let name = socket_path.to_string_lossy();
+             return crate::common::paths::connect_abstract_socket(&name).is_ok();
         }
     }
 
@@ -304,6 +314,26 @@ pub fn cleanup_stale_sockets() {
 pub fn create_listener(socket_path: &Path) -> Result<UnixListener> {
     // Remove existing socket if present
     cleanup_socket(socket_path);
+
+    #[cfg(target_os = "linux")]
+    {
+        // Check for @ prefix which indicates abstract socket internal representation
+        // (to avoid \0 NULL byte handling issues in Path/String conversions)
+        let name_str = socket_path.to_string_lossy();
+        if name_str.starts_with('@') {
+            return crate::common::paths::bind_abstract_socket(&name_str)
+                .map_err(|e| ZygoteError::SocketError(e.to_string()));
+        }
+
+        // Legacy check just in case
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = socket_path.as_os_str().as_bytes();
+        if !bytes.is_empty() && bytes[0] == 0 {
+             let name = socket_path.to_string_lossy();
+             return crate::common::paths::bind_abstract_socket(&name)
+                .map_err(|e| ZygoteError::SocketError(e.to_string()));
+        }
+    }
 
     UnixListener::bind(socket_path).map_err(|e| ZygoteError::SocketError(e.to_string()))
 }
@@ -514,8 +544,22 @@ pub struct ZygoteStream {
 impl ZygoteStream {
     /// Connect to Zygote and verify the initial "Ready" greeting
     pub fn connect(socket_path: &Path) -> Result<Self> {
-        let mut stream = UnixStream::connect(socket_path)
-            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
+        let mut stream = {
+           #[cfg(target_os = "linux")]
+           {
+               let name = socket_path.to_string_lossy();
+               if name.starts_with('@') {
+                   crate::common::paths::connect_abstract_socket(&name)
+               } else if name.starts_with('\0') {
+                   // Legacy Fallback
+                   crate::common::paths::connect_abstract_socket(&name)
+               } else {
+                   UnixStream::connect(socket_path)
+               }
+           }
+           #[cfg(not(target_os = "linux"))]
+           UnixStream::connect(socket_path)
+        }.map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
         // WB-002: Reliability - Set handshake timeout to prevent supervisor hang
         // if Zygote is unresponsive.
