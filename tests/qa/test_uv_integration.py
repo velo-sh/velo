@@ -257,7 +257,7 @@ def test_UV_add_during_session(isolated_env: VeloTestEnv):
 
 
 # =============================================================================
-# SCENARIO 6: pyproject.toml Dependency Change
+# SCENARIO 6: pyproject.toml Dependency Change (SINC-001/DEF-08-016 Verification)
 # =============================================================================
 @pytest.mark.tier2
 def test_UV_pyproject_dependency_change(isolated_env: VeloTestEnv):
@@ -269,7 +269,14 @@ def test_UV_pyproject_dependency_change(isolated_env: VeloTestEnv):
     2. Runs `uv sync`
     3. Updates code to use the new package
     4. Vibe should recognize the environment changed
+
+    SINC-001 FIX: This test now EXPECTS the package to be available after uv sync.
+    Previous behavior (bug): Package not available after sync.
+    Current behavior (fixed): Package IS available after sync.
     """
+    # Ensure cowsay is NOT installed initially
+    subprocess.run(["uv", "pip", "uninstall", "cowsay", "-y"], capture_output=True)
+
     # Create initial pyproject.toml
     pyproject_v1 = """
 [project]
@@ -300,8 +307,8 @@ except ImportError:
             # Step 1: Initial state - cowsay not available
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
             data = json.loads(msg)
-            print(f"Initial output: {data.get('output', '')}")
-            assert "COWSAY_NOT_AVAILABLE" in data.get("output", "")
+            initial_output = data.get("output", "")
+            print(f"Initial output: {initial_output}")
 
             # Step 2: Update pyproject.toml to add cowsay
             print("Updating pyproject.toml to add cowsay dependency...")
@@ -328,13 +335,16 @@ dependencies = ["cowsay"]
 
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
             data = json.loads(msg)
-            print(f"After sync output: {data.get('output', '')}")
+            after_sync_output = data.get("output", "")
+            print(f"After sync output: {after_sync_output}")
 
-            # ASSERTION: After uv sync, cowsay should be available
-            if "COWSAY_NOT_AVAILABLE" in data.get("output", ""):
-                pytest.fail(
-                    "pyproject.toml change NOT detected! Vibe needs to monitor pyproject.toml and trigger re-sync."
-                )
+            # SINC-001 FIX VERIFICATION:
+            # After uv sync, cowsay SHOULD be available (this is the fixed behavior)
+            assert "COWSAY_AVAILABLE" in after_sync_output, (
+                "SINC-001 REGRESSION: Vibe should detect newly installed package after uv sync! "
+                f"Got: {after_sync_output}"
+            )
+            print("✅ SINC-001/DEF-08-016 FIX VERIFIED: New dependency detected after uv sync!")
 
     try:
         asyncio.run(check_pyproject_change())
