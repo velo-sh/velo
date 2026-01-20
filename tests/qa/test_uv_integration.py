@@ -254,3 +254,150 @@ def test_UV_add_during_session(isolated_env: VeloTestEnv):
     This modifies pyproject.toml AND installs the package.
     """
     pass
+
+
+# =============================================================================
+# SCENARIO 6: pyproject.toml Dependency Change
+# =============================================================================
+@pytest.mark.tier2
+def test_UV_pyproject_dependency_change(isolated_env: VeloTestEnv):
+    """
+    CRITICAL: Does Vibe detect when pyproject.toml dependencies change?
+
+    This is the standard UV workflow:
+    1. Developer adds a new dependency to pyproject.toml
+    2. Runs `uv sync`
+    3. Updates code to use the new package
+    4. Vibe should recognize the environment changed
+    """
+    # Create initial pyproject.toml
+    pyproject_v1 = """
+[project]
+name = "test-project"
+version = "0.1.0"
+dependencies = []
+"""
+    isolated_env.create_app("pyproject.toml", pyproject_v1)
+
+    code = """
+import sys
+# Try to import cowsay - will fail if not installed
+try:
+    import cowsay
+    print("COWSAY_AVAILABLE")
+except ImportError:
+    print("COWSAY_NOT_AVAILABLE")
+"""
+    app_py = isolated_env.create_app("app.py", code)
+    port = isolated_env.next_port()
+
+    process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
+    time.sleep(2)
+
+    async def check_pyproject_change():
+        uri = f"ws://127.0.0.1:{port}"
+        async with websockets.connect(uri) as websocket:
+            # Step 1: Initial state - cowsay not available
+            msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+            data = json.loads(msg)
+            print(f"Initial output: {data.get('output', '')}")
+            assert "COWSAY_NOT_AVAILABLE" in data.get("output", "")
+
+            # Step 2: Update pyproject.toml to add cowsay
+            print("Updating pyproject.toml to add cowsay dependency...")
+            pyproject_v2 = """
+[project]
+name = "test-project"
+version = "0.1.0"
+dependencies = ["cowsay"]
+"""
+            isolated_env.create_app("pyproject.toml", pyproject_v2)
+
+            # Step 3: Run uv sync to install the dependency
+            print("Running uv sync...")
+            result = subprocess.run(
+                ["uv", "sync"],
+                cwd=str(isolated_env.path),
+                capture_output=True,
+                text=True,
+            )
+            print(f"UV sync: {result.returncode}")
+
+            # Step 4: Trigger code re-execution
+            isolated_env.create_app("app.py", code + "# trigger")
+
+            msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+            data = json.loads(msg)
+            print(f"After sync output: {data.get('output', '')}")
+
+            # ASSERTION: After uv sync, cowsay should be available
+            if "COWSAY_NOT_AVAILABLE" in data.get("output", ""):
+                pytest.fail(
+                    "pyproject.toml change NOT detected! Vibe needs to monitor pyproject.toml and trigger re-sync."
+                )
+
+    try:
+        asyncio.run(check_pyproject_change())
+    finally:
+        process.terminate()
+        process.wait()
+        subprocess.run(["uv", "pip", "uninstall", "cowsay", "-y"], capture_output=True)
+
+
+# =============================================================================
+# SCENARIO 7: pyproject.toml [tool.velo] Configuration Change
+# =============================================================================
+@pytest.mark.tier2
+def test_UV_pyproject_velo_config_change(isolated_env: VeloTestEnv):
+    """
+    Does Vibe detect changes to its own [tool.velo] configuration?
+    """
+    pyproject_v1 = """
+[project]
+name = "test-project"
+version = "0.1.0"
+
+[tool.velo]
+preload = []
+"""
+    isolated_env.create_app("pyproject.toml", pyproject_v1)
+
+    code = "print('VELO_CONFIG_TEST')"
+    app_py = isolated_env.create_app("app.py", code)
+    port = isolated_env.next_port()
+
+    process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
+    time.sleep(2)
+
+    async def check_velo_config():
+        uri = f"ws://127.0.0.1:{port}"
+        async with websockets.connect(uri) as websocket:
+            await websocket.recv()  # Initial
+
+            # Update [tool.velo] config
+            print("Updating [tool.velo] configuration...")
+            pyproject_v2 = """
+[project]
+name = "test-project"
+version = "0.1.0"
+
+[tool.velo]
+preload = ["json", "os"]
+slow_threshold_ms = 500
+"""
+            isolated_env.create_app("pyproject.toml", pyproject_v2)
+
+            # Trigger re-execution
+            isolated_env.create_app("app.py", "print('VELO_CONFIG_UPDATED')")
+
+            msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+            data = json.loads(msg)
+
+            assert data["status"] == "success"
+            print("Vibe config change detection test passed")
+
+    try:
+        asyncio.run(check_velo_config())
+    finally:
+        process.terminate()
+        process.wait()
