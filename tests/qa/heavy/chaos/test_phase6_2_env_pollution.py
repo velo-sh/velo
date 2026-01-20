@@ -16,19 +16,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-import pytest
+from conftest_utils import T_MEDIUM, get_velo_binary, get_repo_root
 
 
-def get_velo_binary():
-    """Get the velo binary from the current project."""
-    repo_root = Path(__file__).parents[4]
-    for path in [
-        repo_root / "target" / "release" / "velo",
-        repo_root / "target" / "debug" / "velo",
-    ]:
-        if path.exists():
-            return str(path)
-    pytest.skip("velo binary not found")
+def get_velo_binary_local():  # Renamed to avoid collision if still used locally
+    return get_velo_binary()
 
 
 @pytest.mark.regression
@@ -45,7 +37,7 @@ class TestEnvironmentPollutionRegression:
         This test verifies that when a project has a .venv, Zygote uses it.
         """
         velo = get_velo_binary()
-        project_root = Path(__file__).parents[4]
+        project_root = get_repo_root()
         venv_python = project_root / ".venv" / "bin" / "python"
 
         if not venv_python.exists():
@@ -118,11 +110,8 @@ class TestEnvironmentPollutionRegression:
 
         The fix (runtime path sensing) prioritizes std::env::current_exe() parent.
         """
-        velo = get_velo_binary()
-        velo_path = Path(velo)
-
         # Verify the velo binary's parent directory contains the correct velo_zygote
-        expected_zygote = velo_path.parents[2] / "velo_zygote" / "main.py"
+        expected_zygote = Path(velo).parents[2] / "velo_zygote" / "main.py"
 
         # This is a sanity check that our path sensing would find the right module
         assert expected_zygote.exists(), f"velo_zygote/main.py not found at {expected_zygote}"

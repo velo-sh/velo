@@ -27,7 +27,7 @@ import psutil
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_MEDIUM, T_SHORT
+from conftest_utils import T_MEDIUM, T_SHORT, get_velo_binary
 
 try:
     import requests
@@ -37,18 +37,7 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-def get_velo_binary():
-    """Get path to velo binary."""
-    repo_root = Path(__file__).parents[4]
-    release = repo_root / "target" / "release" / "velo"
-    debug = repo_root / "target" / "debug" / "velo"
-
-    if release.exists():
-        return str(release)
-    elif debug.exists():
-        return str(debug)
-    else:
-        pytest.skip("velo binary not found - run cargo build first")
+# Using get_velo_binary from conftest_utils
 
 
 def is_port_open(port: int, host: str = "127.0.0.1") -> bool:

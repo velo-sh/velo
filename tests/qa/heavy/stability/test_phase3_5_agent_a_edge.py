@@ -17,21 +17,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_MEDIUM, T_SHORT
-
-
-def get_velo_binary():
-    """Get path to velo binary."""
-    repo_root = Path(__file__).parents[4]
-    release = repo_root / "target" / "release" / "velo"
-    debug = repo_root / "target" / "debug" / "velo"
-
-    if release.exists():
-        return str(release)
-    elif debug.exists():
-        return str(debug)
-    else:
-        pytest.skip("velo binary not found - run cargo build first")
+from conftest_utils import T_MEDIUM, T_SHORT, get_velo_binary
 
 
 class TestServeCliEdgeCases:

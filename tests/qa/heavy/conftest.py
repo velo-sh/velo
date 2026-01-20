@@ -78,6 +78,11 @@ class VeloServeProcess:
         """Check if the main process is still running."""
         return self.proc.poll() is None
 
+    def get_socket_path(self) -> str | None:
+        """Return the Zygote socket path."""
+        return self.socket_path
+
+
     def wait_ready(self, timeout: float = None) -> None:
         """Wait for server to be ready to accept requests."""
         if timeout is None:
@@ -254,10 +259,17 @@ def shm_test_env(isolated_env: VeloTestEnv):
     yield isolated_env
 
 SAMPLE_APP_CODE = '''
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 import os
+import asyncio
+import time
 
 app = FastAPI()
+
+# Global counter for concurrency testing
+active_requests = 0
+max_concurrent_seen = 0
 
 @app.get("/")
 async def root():
@@ -274,4 +286,70 @@ async def ping():
 @app.get("/whoami")
 async def whoami():
     return {"pid": os.getpid(), "ppid": os.getppid()}
+
+@app.get("/headers")
+async def get_headers(request: Request):
+    return dict(request.headers)
+
+@app.get("/scope")
+async def get_scope(request: Request):
+    # Filter scope for JSON serialization
+    safe_scope = {}
+    for k, v in request.scope.items():
+        if isinstance(v, (str, int, float, bool, list, dict)) or v is None:
+            safe_scope[k] = v
+        elif isinstance(v, bytes):
+            safe_scope[k] = v.decode("latin1")
+        elif k == "client" or k == "server":
+            safe_scope[k] = list(v) if v else None
+    return safe_scope
+
+@app.get("/client-ip")
+async def get_client_ip(request: Request):
+    return {
+        "client_host": request.client.host if request.client else None,
+        "client_port": request.client.port if request.client else None,
+        "xff": request.headers.get("x-forwarded-for"),
+    }
+
+@app.post("/echo")
+async def echo(request: Request):
+    data = await request.json()
+    return {
+        "received_message": data.get("message"),
+        "received_number": data.get("number"),
+        "worker_pid": os.getpid(),
+    }
+
+@app.get("/concurrent")
+async def concurrent_test():
+    global active_requests, max_concurrent_seen
+    active_requests += 1
+    max_concurrent_seen = max(max_concurrent_seen, active_requests)
+    await asyncio.sleep(0.1)
+    res = {"max_concurrent_seen": max_concurrent_seen}
+    active_requests -= 1
+    return res
+
+@app.get("/large")
+async def large_response(size_kb: int = 1):
+    data = "V" * (size_kb * 1024)
+    return {"size_kb": size_kb, "data": data}
+
+@app.get("/slow")
+async def slow_response(seconds: float = 1.0):
+    await asyncio.sleep(seconds)
+    return {"slept": seconds}
+
+@app.get("/error/{code}")
+async def error_response(code: int):
+    status_map = {
+        404: "Not Found",
+        500: "Internal Server Error",
+        503: "Service Unavailable",
+    }
+    return JSONResponse(
+        status_code=code,
+        content={"error": status_map.get(code, "Unknown Error")}
+    )
 '''

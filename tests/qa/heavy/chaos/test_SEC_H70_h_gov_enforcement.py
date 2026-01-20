@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pathlib import Path
 
-repo_root = Path(__file__).parents[4]
+repo_root = Path(__file__).resolve().parents[4]
 VELO_BIN = str((repo_root / "target" / "release" / "velo").resolve())
 if not Path(VELO_BIN).exists():
     VELO_BIN = str((repo_root / "target" / "debug" / "velo").resolve())

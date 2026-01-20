@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants from parent conftest
-sys.path.append(str(Path(__file__).parents[4]))
+sys.path.append(str(Path(__file__).resolve().parents[4]))
 from conftest_utils import T_SHORT
 
 # Mark all tests in this module as security tests

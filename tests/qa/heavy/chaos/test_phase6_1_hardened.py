@@ -7,15 +7,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
-    repo_root = Path(__file__).parents[4]
-    debug = repo_root / "target" / "debug" / "velo"
-    release = repo_root / "target" / "release" / "velo"
-    if debug.exists():
-        return str(debug)
-    if release.exists():
-        return str(release)
-    pytest.skip("velo binary not found")
+from conftest_utils import get_velo_binary
 
 
 def setup_test_project(tmp_path):

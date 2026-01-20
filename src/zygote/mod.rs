@@ -580,10 +580,12 @@ impl ZygoteLauncher {
                         }
 
                         // RFC-0012 TITANIUM Hardening: No Orphans Rule
-                        // PR_SET_PDEATHSIG ensures that the Zygote is killed if its parent supervisor dies.
-                        // This prevents leaks and "Shadow Traps" in production.
-                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
-                            // Fallback gracefully if not supported
+                        // Only set PR_SET_PDEATHSIG if we are NOT in daemon mode.
+                        // A daemonized Zygote is INTENDED to outlive its parent CLI.
+                        if !daemon {
+                            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                                // Fallback gracefully if not supported
+                            }
                         }
                     }
 

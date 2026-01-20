@@ -20,15 +20,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_MEDIUM
-
-
-def get_velo_binary():
-    repo_root = Path(__file__).parents[4]
-    release = repo_root / "target" / "release" / "velo"
-    if release.exists():
-        return str(release)
-    pytest.skip("velo binary not found")
+from conftest_utils import T_MEDIUM, get_velo_binary
 
 
 class DeployEnv:

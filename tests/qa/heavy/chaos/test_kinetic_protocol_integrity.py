@@ -16,10 +16,13 @@ PROTOCOL_VERSION = 1
 MAX_MESSAGE_SIZE = 65536
 
 
+from conftest_utils import get_repo_root
+
+
 @pytest.fixture
 def zygote_process():
     """Start Zygote directly via Python for controlled testing."""
-    repo_root = Path(__file__).parents[4]
+    repo_root = get_repo_root()
     sock_path = f"/tmp/velo_test_integrity_{os.getpid()}.sock"
     if os.path.exists(sock_path):
         os.unlink(sock_path)

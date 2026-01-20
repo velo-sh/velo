@@ -433,7 +433,8 @@ class ZygoteServer:
                 os.chmod(self.socket_path, 0o600)
             except OSError as e:
                 LogUtils.log(f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}")
-        server_sock.listen(128)
+        # RFC-0012: Increased backlog for TITANIUM resilience against burst connections
+        server_sock.listen(512)
         server_sock.setblocking(False)
 
         # 2. Start Guardian
