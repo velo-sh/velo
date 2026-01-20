@@ -122,7 +122,7 @@ class TestEnvironmentPollutionRegression:
         velo_path = Path(velo)
 
         # Verify the velo binary's parent directory contains the correct velo_zygote
-        expected_zygote = velo_path.parents[4] / "velo_zygote" / "main.py"
+        expected_zygote = velo_path.parents[2] / "velo_zygote" / "main.py"
 
         # This is a sanity check that our path sensing would find the right module
         assert expected_zygote.exists(), f"velo_zygote/main.py not found at {expected_zygote}"

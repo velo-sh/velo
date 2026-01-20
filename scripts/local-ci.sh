@@ -207,8 +207,11 @@ run_quick_check() {
     log_step "Quick build..."
     cargo build --release
     
-    log_step "Quick test..."
+    log_step "Quick test (Rust)..."
     cargo test --lib
+    
+    log_step "Quick test (Python)..."
+    run_python_tests ".venv" "$TEST_PATHS_QUICK"
     
     echo ""
     log_success "Quick check passed!"

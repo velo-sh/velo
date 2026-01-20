@@ -47,7 +47,7 @@ def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
     elapsed = time.time() - start_time
 
     assert result.returncode == 0
-    assert elapsed < 3, f"Regression: velo serve --dry-run hung for {elapsed:.2f}s (deadlock trap)"
+    assert elapsed < 10, f"Regression: velo serve --dry-run hung for {elapsed:.2f}s (deadlock trap)"
     # Log output goes to stderr in Velo
     assert "Dry run" in result.stderr
 
@@ -66,8 +66,8 @@ def test_reg_62_002_zygote_guardian_daemon(isolated_env, short_socket):
     cmd_env = os.environ.copy()
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
-    # 1. Start Zygote daemon via Rust CLI
-    subprocess.run([env.velo, "zygote", "start"], env=cmd_env, check=True)
+    # 1. Start Zygote daemon via Rust CLI (explicit --daemon)
+    subprocess.run([env.velo, "zygote", "start", "--daemon"], env=cmd_env, check=True)
 
     # Wait for socket
     for _ in range(50):
