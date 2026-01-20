@@ -28,9 +28,35 @@ impl PipeFence {
         Ok(())
     }
 
+    /// Hold a non-blocking lock on the fence path.
+    /// Returns true if lock was acquired, false if already locked.
+    pub fn lock(&self) -> Result<bool> {
+        use std::os::unix::io::AsRawFd;
+
+        if !self.path.exists() {
+            if let Some(parent) = self.path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::File::create(&self.path)?;
+        }
+
+        let file = fs::File::open(&self.path)?;
+        let fd = file.as_raw_fd();
+
+        let res = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+        if res == 0 {
+            // Leak the file handle so the lock stays held until process exit
+            std::mem::forget(file);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Atomically (as much as possible) cleans up and binds a new UDS listener.
     pub fn bind(&self) -> Result<UnixListener> {
         self.cleanup()?;
+        // ... (rest remains same)
 
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {

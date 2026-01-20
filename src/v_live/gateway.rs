@@ -114,7 +114,14 @@ impl VibeGateway {
         if let Some(val) = last_val
             && let Ok(json_str) = serde_json::to_string(&val)
         {
-            let _ = ws_stream.send(Message::Text(json_str)).await;
+            if json_str.len() <= MAX_FRAME_SIZE {
+                let _ = ws_stream.send(Message::Text(json_str)).await;
+            } else {
+                log::warn!(
+                    "Suppressed large vibe cache egress ({} bytes)",
+                    json_str.len()
+                );
+            }
         }
 
         loop {

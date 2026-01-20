@@ -4,6 +4,7 @@
 //! Implements the sub-10ms "Miracle Fork".
 
 use anyhow::{Context, Result, bail};
+use futures_util::FutureExt;
 use nix::unistd::{ForkResult, fork, pipe};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -30,7 +31,11 @@ pub struct VibeEngine {
 
 impl VibeEngine {
     pub fn new(target: PathBuf, gateway_addr: &str) -> Self {
-        let socket_path = target.with_extension("vibe.sock");
+        let target_file_name = target
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("vibe");
+        let socket_path = target.with_file_name(format!(".{}.vibe.sock", target_file_name));
         let target_clone = target.clone();
         Self {
             target,
@@ -54,9 +59,46 @@ impl VibeEngine {
         // 2. Initial execution
         self.trigger_execution().await?;
 
-        // 3. Start Watcher
+        // 3. Start Debouncer Task
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(32);
+        let engine = self.clone();
+        tokio::spawn(async move {
+            let mut next_trigger: Option<tokio::time::Instant> = None;
+            let quiescence = std::time::Duration::from_millis(200);
+
+            loop {
+                // We use a BoxFuture to select over a dynamic sleep/pending
+                let sleep = if let Some(t) = next_trigger {
+                    tokio::time::sleep_until(t).boxed()
+                } else {
+                    futures_util::future::pending().boxed()
+                };
+
+                tokio::select! {
+                    biased;
+                    _ = rx.recv() => {
+                        next_trigger = Some(tokio::time::Instant::now() + quiescence);
+                        // Drain channel to consolidate rapid events
+                        while rx.try_recv().is_ok() {
+                            next_trigger = Some(tokio::time::Instant::now() + quiescence);
+                        }
+                    }
+                    _ = sleep => {
+                        next_trigger = None;
+                        let e = engine.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = e.trigger_execution().await {
+                                log::error!("Vibe execution failed: {:?}", err);
+                            }
+                        });
+                    }
+                }
+            }
+        });
+
+        // 4. Start Watcher
         let engine_handler = EngineHandler {
-            engine: Arc::new(Mutex::new(self.clone())),
+            tx,
             handle: tokio::runtime::Handle::current(),
         };
         let mut watcher = VibeWatcher::new(engine_handler);
@@ -71,7 +113,7 @@ impl VibeEngine {
         }
         watcher.watch(watch_dir.to_str().unwrap())?;
 
-        // 4. Entering master loop (Greedy Reaper)
+        // 5. Entering master loop (Greedy Reaper)
         loop {
             reaper::reap_zombies();
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -80,6 +122,7 @@ impl VibeEngine {
 
     async fn trigger_execution(&self) -> Result<()> {
         log::info!("Triggering Vibe execution...");
+        // ... (rest of implementation remains same)
 
         // 1. Greedy Reaper: Clean up any dead workers (Pillar 1)
         reaper::reap_zombies();
@@ -125,6 +168,16 @@ impl VibeEngine {
                 // Inside child: Close reader
                 unsafe { libc::close(r_fd) };
 
+                // DEF-08-010: Pipe-Fence (RFC-0029 Pillar 3 Hardening)
+                // Attempt to lock the fence. If it fails, another worker is active or stale.
+                if let Ok(locked) = self.fence.lock()
+                    && !locked
+                {
+                    // This should be rare due to Master's SIGKILL management, but provides
+                    // forensic-grade protection against process management leaks.
+                    unsafe { libc::_exit(1) };
+                }
+
                 // ORPHAN PROTECTION (RFC-0029 Pillar 5)
                 #[cfg(target_os = "linux")]
                 unsafe {
@@ -145,6 +198,33 @@ impl VibeEngine {
                     });
                 }
 
+                // DEF-08-011: Resource Capping (RFC-0029 Hardening)
+                // We set hard limits on memory and CPU to prevent resource exhaustion.
+                unsafe {
+                    // 1GB Address Space (AS)
+                    let mem_limit = 1024 * 1024 * 1024;
+                    let rlimit_as = libc::rlimit {
+                        rlim_cur: mem_limit,
+                        rlim_max: mem_limit,
+                    };
+                    libc::setrlimit(libc::RLIMIT_AS, &rlimit_as);
+
+                    // 10 Seconds CPU Time
+                    let cpu_limit = 10;
+                    let rlimit_cpu = libc::rlimit {
+                        rlim_cur: cpu_limit,
+                        rlim_max: cpu_limit,
+                    };
+                    libc::setrlimit(libc::RLIMIT_CPU, &rlimit_cpu);
+                }
+
+                // REDIRECT STDOUT/STDERR NATIVELY (RFC-0029 Pillar G1 Hardening)
+                // We redirect to the pipe so native code output is captured.
+                unsafe {
+                    libc::dup2(w_fd, 1);
+                    libc::dup2(w_fd, 2);
+                }
+
                 // Initialize Python and capture result
                 #[allow(deprecated)]
                 // prepare_freethreaded_python is still often needed in forked child
@@ -160,25 +240,18 @@ impl VibeEngine {
                         let globals = PyDict::new(py);
                         globals.set_item("__name__", "__main__")?;
 
-                        // Capture stdout (RFC-0029 requirement for feedback)
-                        let sys = py.import("sys")?;
-                        let io = py.import("io")?;
-                        let stdout = io.call_method0("StringIO")?;
-                        sys.setattr("stdout", &stdout)?;
-
                         let c_code = CString::new(code).map_err(|e| {
                             PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
                         })?;
 
+                        // Run the code. Standard output now goes directly to the pipe (w_fd).
                         py.run(c_code.as_c_str(), Some(&globals), None)?;
-
-                        let output: String = stdout.call_method0("getvalue")?.extract()?;
 
                         Ok(json!({
                             "status": "success",
                             "target": target.to_string_lossy(),
                             "timestamp": chrono::Utc::now().to_rfc3339(),
-                            "output": output
+                            // Output is now handled by the native redirection and read by master
                         }))
                     })() {
                         Ok(val) => val,
@@ -191,9 +264,11 @@ impl VibeEngine {
                     }
                 });
 
-                // Write result to Master natively
+                // Write metadata JSON as a single line at the end
+                // The master will read the entire pipe. Anything before the last line is raw output.
                 let mut writer = unsafe { std::fs::File::from_raw_fd(w_fd) };
-                let serialized = serde_json::to_vec(&result).unwrap_or_default();
+                let mut serialized = serde_json::to_vec(&result).unwrap_or_default();
+                serialized.push(b'\n');
                 let _ = writer.write_all(&serialized);
                 let _ = writer.flush();
                 drop(writer);
@@ -212,21 +287,53 @@ impl VibeEngine {
                 }
 
                 // Read result from child asynchronously
-                let mut reader = unsafe { std::fs::File::from_raw_fd(r_fd) };
+                let reader = unsafe { std::fs::File::from_raw_fd(r_fd) };
 
-                // We use spawn_blocking for the file I/O to avoid blocking the reactor
+                // DEF-08-012: Master OOM Protection (RFC-0029 Hardening)
+                // We use take(10MB) to prevent a malicious or buggy worker from spiking Master RSS.
                 let read_res = tokio::task::spawn_blocking(move || {
                     let mut b = Vec::new();
-                    reader.read_to_end(&mut b).map(|_| b)
+                    // Limit reading to 10MB + some headroom for metadata
+                    let mut handler = reader.take(11 * 1024 * 1024);
+                    handler.read_to_end(&mut b).map(|_| b)
                 })
                 .await
                 .context("Worker read task panicked")?;
 
                 if let Ok(data) = read_res
                     && !data.is_empty()
-                    && let Ok(val) = serde_json::from_slice::<Value>(&data)
                 {
-                    VibeGateway::broadcast_sync(val);
+                    // PARSE COMBINED FORMAT (Output + JSON Metdata)
+                    // The metadata is the last non-empty line.
+                    let mut lines: Vec<&[u8]> = data.split(|&b| b == b'\n').collect();
+                    // Remove potential trailing empty line from push(b'\n')
+                    if lines.last().is_some_and(|l| l.is_empty()) {
+                        lines.pop();
+                    }
+
+                    if let Some(last_line) = lines.last() {
+                        if let Ok(mut val) = serde_json::from_slice::<Value>(last_line) {
+                            // Combine preceding lines as "output"
+                            let mut output_bytes = Vec::new();
+                            for line in lines.iter().take(lines.len() - 1) {
+                                output_bytes.extend_from_slice(line);
+                                output_bytes.push(b'\n');
+                            }
+                            let output = String::from_utf8_lossy(&output_bytes).to_string();
+
+                            // Update the value with real captured output
+                            if let Some(obj) = val.as_object_mut() {
+                                obj.insert("output".to_string(), json!(output));
+                            }
+
+                            VibeGateway::broadcast_sync(val);
+                        } else {
+                            log::error!(
+                                "Failed to parse metadata JSON from worker. Last line: {:?}",
+                                String::from_utf8_lossy(last_line)
+                            );
+                        }
+                    }
                 }
 
                 // Cleanup PID tracking when done
@@ -243,7 +350,7 @@ impl VibeEngine {
 }
 
 struct EngineHandler {
-    engine: Arc<Mutex<VibeEngine>>,
+    tx: tokio::sync::mpsc::Sender<()>,
     handle: tokio::runtime::Handle,
 }
 
@@ -252,12 +359,9 @@ impl WatchHandler for EngineHandler {
         // PROACTIVE CACHE INVALIDATION (RFC-0029 Pillar 6)
         VibeGateway::clear_last_result();
 
-        let engine = self.engine.clone();
+        let tx = self.tx.clone();
         self.handle.spawn(async move {
-            let engine = engine.lock().await;
-            if let Err(e) = engine.trigger_execution().await {
-                log::error!("Vibe execution failed: {:?}", e);
-            }
+            let _ = tx.send(()).await;
         });
     }
 }
