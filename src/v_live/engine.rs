@@ -47,14 +47,18 @@ impl VibeEngine {
         // 3. Start Watcher
         let engine_handler = EngineHandler {
             engine: Arc::new(Mutex::new(self.clone_for_handler())),
+            handle: tokio::runtime::Handle::current(),
         };
         let mut watcher = VibeWatcher::new(engine_handler);
 
-        let watch_dir = self
+        let mut watch_dir = self
             .target
             .parent()
             .unwrap_or(std::path::Path::new("."))
             .to_path_buf();
+        if watch_dir.to_str().map(|s| s.is_empty()).unwrap_or(true) {
+            watch_dir = std::path::PathBuf::from(".");
+        }
         watcher.watch(watch_dir.to_str().unwrap())?;
 
         // 4. Entering master loop (Greedy Reaper)
@@ -102,12 +106,13 @@ impl VibeEngine {
 
 struct EngineHandler {
     engine: Arc<Mutex<VibeEngine>>,
+    handle: tokio::runtime::Handle,
 }
 
 impl WatchHandler for EngineHandler {
     fn on_change(&self, _path: &str) {
         let engine = self.engine.clone();
-        tokio::spawn(async move {
+        self.handle.spawn(async move {
             let engine = engine.lock().await;
             if let Err(e) = engine.trigger_execution().await {
                 log::error!("Vibe execution failed: {:?}", e);
