@@ -34,11 +34,21 @@ class ZygoteTestEnv(VeloTestEnv):
 
         Returns None if start fails.
         """
-        result = run_velo(["zygote", "start"], cwd=self.path, timeout=timeout)
+        result = run_velo(
+            ["zygote", "start"],
+            cwd=self.path,
+            env={"VELO_SOCKET_DIR": str(self.socket_path.parent)},
+            timeout=timeout,
+        )
 
         if result.success:
             # Try to get PID from status
-            status = run_velo(["zygote", "status"], cwd=self.path, timeout=2)
+            status = run_velo(
+                ["zygote", "status"],
+                cwd=self.path,
+                env={"VELO_SOCKET_DIR": str(self.socket_path.parent)},
+                timeout=2,
+            )
             if status.success:
                 # Parse PID from output (format: "PID: 12345")
                 for line in status.stdout.split("\n"):
@@ -69,7 +79,12 @@ class ZygoteTestEnv(VeloTestEnv):
             except Exception:
                 return False
 
-        result = run_velo(["zygote", "stop"], cwd=self.path, timeout=5)
+        result = run_velo(
+            ["zygote", "stop"],
+            cwd=self.path,
+            env={"VELO_SOCKET_DIR": str(self.socket_path.parent)},
+            timeout=5,
+        )
         if result.success:
             self.zygote_pid = None
         return result.success
@@ -85,7 +100,12 @@ class ZygoteTestEnv(VeloTestEnv):
                 return False
 
         # Check via status command
-        result = run_velo(["zygote", "status"], cwd=self.path, timeout=2)
+        result = run_velo(
+            ["zygote", "status"],
+            cwd=self.path,
+            env={"VELO_SOCKET_DIR": str(self.socket_path.parent)},
+            timeout=2,
+        )
         return result.success and "running" in result.stdout.lower()
 
     def send_raw_ipc(self, data: bytes, timeout: float = 2.0) -> bytes | None:

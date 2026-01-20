@@ -38,7 +38,12 @@ class TestIPCAttacks:
             env.socket_path.parent.mkdir(parents=True, exist_ok=True)
             os.chmod(str(env.socket_path.parent), 0o000)
 
-            result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            result = run_velo(
+                ["zygote", "start"],
+                cwd=env.path,
+                env={"VELO_SOCKET_DIR": str(env.socket_path.parent)},
+                timeout=10,
+            )
 
             assert_no_crash(result)
             # Should fail with permission error
@@ -68,7 +73,12 @@ class TestIPCAttacks:
             env.socket_path.parent.mkdir(parents=True, exist_ok=True)
             env.socket_path.mkdir(exist_ok=True)
 
-            result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            result = run_velo(
+                ["zygote", "start"],
+                cwd=env.path,
+                env={"VELO_SOCKET_DIR": str(env.socket_path.parent)},
+                timeout=10,
+            )
 
             assert_no_crash(result)
             # Should handle gracefully
@@ -94,7 +104,7 @@ class TestIPCAttacks:
             env.create_uv_lock()
 
             # Start Zygote first
-            start_result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            start_result = run_velo(["zygote", "start"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=10)
 
             if start_result.success and env.socket_path.exists():
                 # Send garbage
@@ -102,7 +112,7 @@ class TestIPCAttacks:
                 response = env.send_raw_ipc(garbage, timeout=2)
 
                 # Zygote should still be running
-                status = run_velo(["zygote", "status"], cwd=env.path, timeout=5)
+                status = run_velo(["zygote", "status"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=5)
                 assert_no_crash(status)
         finally:
             env.cleanup()
@@ -120,7 +130,7 @@ class TestIPCAttacks:
             env.create_uv_lock()
 
             # Start Zygote
-            start_result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            start_result = run_velo(["zygote", "start"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=10)
 
             if start_result.success and env.socket_path.exists():
                 # Send partial message
@@ -129,7 +139,7 @@ class TestIPCAttacks:
 
                 # Should timeout, not hang forever
                 # Zygote should survive
-                status = run_velo(["zygote", "status"], cwd=env.path, timeout=5)
+                status = run_velo(["zygote", "status"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=5)
                 assert_no_crash(status)
         finally:
             env.cleanup()
@@ -147,7 +157,7 @@ class TestIPCAttacks:
             env.create_uv_lock()
 
             # Start Zygote
-            start_result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            start_result = run_velo(["zygote", "start"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=10)
 
             if start_result.success and env.socket_path.exists():
                 # Send huge message
@@ -160,7 +170,7 @@ class TestIPCAttacks:
 
                 # Zygote should survive
                 time.sleep(0.5)
-                status = run_velo(["zygote", "status"], cwd=env.path, timeout=5)
+                status = run_velo(["zygote", "status"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=5)
                 # Either recovers or we get clear error
                 assert_no_crash(status)
         finally:
@@ -179,7 +189,7 @@ class TestIPCAttacks:
             env.create_uv_lock()
 
             # Start Zygote
-            start_result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            start_result = run_velo(["zygote", "start"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=10)
 
             if start_result.success and env.socket_path.exists():
                 results = []
@@ -204,7 +214,7 @@ class TestIPCAttacks:
                     t.join(timeout=10)
 
                 # Zygote should survive
-                status = run_velo(["zygote", "status"], cwd=env.path, timeout=5)
+                status = run_velo(["zygote", "status"], cwd=env.path, env={"VELO_SOCKET_DIR": str(env.socket_path.parent)}, timeout=5)
                 assert_no_crash(status)
         finally:
             env.cleanup()
