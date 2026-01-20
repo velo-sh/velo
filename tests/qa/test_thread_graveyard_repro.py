@@ -1,11 +1,58 @@
 """
-Thread Graveyard Deadlock: AGGRESSIVE Direct Fork Reproduction
-===============================================================
-This test BYPASSES the Vibe abstraction and directly tests the
-fundamental fork() + threading behavior that would occur in a
-true Zygote-preload architecture.
+Thread Graveyard Deadlock: EDUCATIONAL Reference Test
+======================================================
 
-THIS TEST WILL FAIL if the Thread Graveyard issue exists.
+⚠️ IMPORTANT: THIS IS AN EDUCATIONAL TEST, NOT A BUG REPORT ⚠️
+
+This test demonstrates a fundamental operating system behavior with fork() + threading.
+It is NOT a vulnerability in Velo's implementation. Our architecture is fork-safe by design.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WHAT IS THREAD GRAVEYARD?                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ When fork() is called:                                                       │
+│  1. Only the calling thread is copied to the child process                   │
+│  2. Other threads "disappear" but their held locks remain LOCKED             │
+│  3. If the child tries to acquire these locks → DEADLOCK (100%)              │
+│                                                                              │
+│ Common trigger scenarios:                                                    │
+│  - import logging (internal locks)                                          │
+│  - import torch (CUDA threads)                                              │
+│  - import sqlalchemy (connection pool threads)                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WHY VELO'S ZYGOTE ARCHITECTURE IS SAFE                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Our Zygote follows a fork-safe lifecycle:                                    │
+│                                                                              │
+│   [Startup] ───► [Preload Modules] ───► [Create Worker Pool] ───► [Ready]   │
+│                        │                       │                             │
+│                   NO THREADS YET          fork() happens HERE               │
+│                        │                       │                             │
+│                 ┌──────▼──────┐         ┌──────▼──────┐                     │
+│                 │ safe to     │         │ preload     │                     │
+│                 │ import ANY  │         │ already     │                     │
+│                 │ module      │         │ complete    │                     │
+│                 └─────────────┘         └─────────────┘                     │
+│                                                                              │
+│ KEY INSIGHT: Preload happens BEFORE any threads exist, and BEFORE fork().   │
+│              The worker pool only starts AFTER modules are safely loaded.   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PURPOSE OF THIS TEST FILE                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. EDUCATIONAL: Demonstrates the Thread Graveyard phenomenon                │
+│ 2. DOCUMENTATION: Proves why fork-after-thread is dangerous                 │
+│ 3. REGRESSION PREVENTION: Ensures future changes don't break fork safety    │
+│ 4. REFERENCE: Helps developers understand our design decisions              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Related:
+- DEF-08-013: Original audit finding (RESOLVED by architecture)
+- RFC-0028: Zygote lifecycle specification
+- velo_zygote/main.py: ZygoteServer._async_preload() implementation
 """
 
 import multiprocessing
@@ -19,15 +66,18 @@ import pytest
 
 
 # =============================================================================
-# SCENARIO 1: Direct Fork with Lock-Holding Thread
+# SCENARIO 1: Direct Fork with Lock-Holding Thread (EDUCATIONAL DEMONSTRATION)
 # =============================================================================
 @pytest.mark.tier5
 def test_AGGRESSIVE_direct_fork_thread_graveyard():
     """
-    AGGRESSIVE TEST: Direct fork() with a lock-holding thread.
+    EDUCATIONAL TEST: Demonstrates Thread Graveyard phenomenon.
 
-    This bypasses Vibe entirely and tests the raw OS behavior
-    that ANY fork-based execution system must handle.
+    NOTE: This test is EXPECTED TO FAIL in a fork-after-thread scenario.
+    It proves WHY Velo's Zygote preloads BEFORE creating any threads.
+
+    This test DOES NOT indicate a bug in Velo - it demonstrates the OS-level
+    behavior that our architecture is specifically designed to avoid.
     """
 
     def run_parent():
