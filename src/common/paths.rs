@@ -401,8 +401,9 @@ pub fn worker_abstract_socket_name(worker_id: u64) -> String {
     let uid = unsafe { libc::getuid() };
     let seq = ABSTRACT_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    // Note: The actual \0 prefix is added when creating SocketAddr
-    format!("velo-{}-w-{}-{}", uid, worker_id, seq)
+    // FIX(SEC-005): Explicitly include \0 prefix so other components (auth_file_for_socket)
+    // can detect it is abstract.
+    format!("\0velo-{}-w-{}-{}", uid, worker_id, seq)
 }
 
 /// Generate an abstract socket name for the Zygote (Linux only).
@@ -410,13 +411,22 @@ pub fn worker_abstract_socket_name(worker_id: u64) -> String {
 #[cfg(target_os = "linux")]
 pub fn zygote_abstract_socket_name() -> String {
     let uid = unsafe { libc::getuid() };
-    format!("velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
+    format!("\0velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
 }
 
 /// Create a SocketAddr for abstract namespace socket (Linux).
 #[cfg(target_os = "linux")]
 pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::SocketAddr> {
-    std::os::unix::net::SocketAddr::from_abstract_name(name.as_bytes())
+    let bytes = name.as_bytes();
+    // If name already starts with \0 (our internal convention for abstract strings),
+    // strip it because from_abstract_name treats the input as the CONTENT of the name,
+    // and implicitly handles the abstract namespace bit.
+    let effective_name = if !bytes.is_empty() && bytes[0] == 0 {
+        &bytes[1..]
+    } else {
+        bytes
+    };
+    std::os::unix::net::SocketAddr::from_abstract_name(effective_name)
 }
 
 /// Bind to an abstract namespace socket (Linux).
