@@ -6,8 +6,9 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde_json::Value;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex, broadcast};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -17,6 +18,9 @@ const MAX_FRAME_SIZE: usize = 5 * 1024 * 1024;
 /// Global broadcast channel for Vibe messages
 static BROADCAST_CHANNEL: Lazy<(broadcast::Sender<Value>, broadcast::Receiver<Value>)> =
     Lazy::new(|| broadcast::channel(1024));
+
+/// Store last result for late joiners (P1 Fix: DEF-08-004)
+static LAST_RESULT: Lazy<Arc<Mutex<Option<Value>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 pub struct VibeGateway {
     addr: String,
@@ -31,6 +35,12 @@ impl VibeGateway {
 
     /// Broadcast a JSON message to all connected clients.
     pub async fn broadcast(msg: Value) {
+        // Update last result for late joiners
+        {
+            let mut last = LAST_RESULT.lock().await;
+            *last = Some(msg.clone());
+        }
+
         let (tx, _) = &*BROADCAST_CHANNEL;
         let _ = tx.send(msg);
     }
@@ -68,6 +78,18 @@ impl VibeGateway {
         let mut ws_stream = accept_async(stream)
             .await
             .context("Error during WebSocket handshake")?;
+
+        // Send last result immediately to late joiners (DEF-08-004)
+        let last_val = {
+            let last = LAST_RESULT.lock().await;
+            last.clone()
+        };
+
+        if let Some(val) = last_val
+            && let Ok(json_str) = serde_json::to_string(&val)
+        {
+            let _ = ws_stream.send(Message::Text(json_str)).await;
+        }
 
         loop {
             tokio::select! {
