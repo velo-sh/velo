@@ -186,6 +186,7 @@ print(mymodule.VALUE)
             )
 
     @pytest.mark.config
+    @pytest.mark.heavy
     def test_run_fast_flag(self, simple_project, velo_binary):
         """
         --fast flag enables bundle loader

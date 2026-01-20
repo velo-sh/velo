@@ -38,6 +38,7 @@ def velo_binary():
     pytest.skip("velo binary not found")
 
 
+@pytest.mark.heavy
 def test_stress_001_marshal_bomb(tmp_path, velo_binary):
     """
     STRESS-SEC-001: Marshal Bomb Protection
@@ -83,6 +84,7 @@ def test_stress_001_marshal_bomb(tmp_path, velo_binary):
     assert result.returncode != -11
 
 
+@pytest.mark.heavy
 def test_bug_001_zygote_fast_conflict(tmp_path, velo_binary):
     """
     BUG-51-001: Zygote-Fast Flag Incompatibility

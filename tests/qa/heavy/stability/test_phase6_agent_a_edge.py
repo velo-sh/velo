@@ -32,6 +32,7 @@ class TestAgentAEdge:
         assert result.returncode == 0, f"Deep DAG ({depth}) failed: {result.stderr}"
         assert f"CHAIN_DEPTH_{depth}" in result.stdout, f"Output mismatch: {result.stdout}"
 
+    @pytest.mark.heavy
     def test_L0_1_ast_dependency_classification(self, isolated_env):
         """L0-1: Verify dependency classification (Hard vs Soft)."""
         env = isolated_env
@@ -60,6 +61,7 @@ def f(): import soft_fn  # Soft
         result = env.run_velo("run", "--fast", "main.py")
         assert result.returncode == 0
 
+    @pytest.mark.heavy
     def test_L0_2_scc_cyclic_handle(self, isolated_env):
         """L0-2: Verify Tarjan's SCC handling for circular imports (a -> b -> c -> a)."""
         env = isolated_env
@@ -98,6 +100,7 @@ def f(): import soft_fn  # Soft
         assert result.returncode == 0
         assert "tail" in result.stdout
 
+    @pytest.mark.heavy
     def test_EDGE_602_string_interning_scale(self, isolated_env):
         """EDGE-602: Verify interning of module name prefixes for large projects (500 modules)."""
         env = isolated_env

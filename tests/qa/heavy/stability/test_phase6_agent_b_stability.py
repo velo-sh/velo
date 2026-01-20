@@ -37,6 +37,7 @@ __path__.append(os.path.join(os.path.dirname(__file__), 'extra'))
         assert result.returncode == 0
         assert "nested_detected" in result.stdout
 
+    @pytest.mark.heavy
     def test_FUNC_605_namespace_package_clash(self, isolated_env):
         """FUNC-605: Verify PEP 420 Namespace Package split across bundle and disk."""
         env = isolated_env
@@ -67,6 +68,7 @@ print(f"A:{{ns_pkg.mod_a.SOURCE}} B:{{ns_pkg.mod_b.SOURCE}}")
         assert result.returncode == 0
         assert "A:bundle B:disk" in result.stdout
 
+    @pytest.mark.heavy
     def test_L4_1_dynamic_import_fallback(self, isolated_env):
         """L4-1: Verify that dynamic imports (importlib) work and log fallback."""
         env = isolated_env
@@ -167,6 +169,7 @@ x = mod
             mod_idx = result.stdout.find("MOD_EXECUTED")
             assert main_idx < mod_idx
 
+    @pytest.mark.heavy
     def test_FUNC_604_phf_fallback_on_collision(self, isolated_env):
         """FUNC-604: Verify fallback to standard HashMap if PHF generation fails."""
         env = isolated_env

@@ -252,6 +252,7 @@ class TestL1HappyPath:
         )
 
     @pytest.mark.happy_path
+    @pytest.mark.heavy
     def test_100_module_project(self, large_project, velo_binary):
         """
         L1-04: 100-module project works correctly.
@@ -313,6 +314,7 @@ class TestL1Dependencies:
     """
 
     @pytest.mark.happy_path
+    @pytest.mark.heavy
     def test_stdlib_imports(self, tmp_path, velo_binary):
         """Standard library imports work from bundle."""
         main_py = tmp_path / "main.py"

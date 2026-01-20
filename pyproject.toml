@@ -68,6 +68,8 @@ markers = [
     "integration: Tier 2 integration-level tests",
     "regression: Phase 6.2 regression probes",
     "heavy: Resource-intensive tests",
+    "shm: Shared memory or Linux-specific features (SPEC-0008)",
+    "stress: High-pressure stress tests (SPEC-0008)",
     "timeout: Tests with custom timeout requirements",
     "happy_path: Level 1 happy path journey tests",
     "cli: CLI-specific integration tests",
