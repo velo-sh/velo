@@ -16,8 +16,7 @@ fn build_cli() -> Command {
         .arg(
             Arg::new("path")
                 .help("Test path (default: tests/)")
-                .default_value("tests/")
-                .index(1),
+                .default_value("tests/"),
         )
         .arg(
             Arg::new("workers")
@@ -61,6 +60,12 @@ fn build_cli() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("vibe")
+                .long("vibe")
+                .help("Enable Vibe-Coding (Instant TDD) loop")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("pytest_args")
                 .help("Additional pytest arguments")
                 .last(true)
@@ -70,6 +75,16 @@ fn build_cli() -> Command {
 
 /// Main entry point for `velo test`
 pub fn cmd_vtest(args: &[String]) -> Result<()> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("Failed to build tokio runtime")?;
+
+    rt.block_on(cmd_vtest_impl(args))
+}
+
+async fn cmd_vtest_impl(args: &[String]) -> Result<()> {
+    use colored::Colorize;
     let cli = build_cli();
     let matches = cli.try_get_matches_from(&args[1..])?;
 
@@ -84,6 +99,7 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
     let use_zygote = matches.get_flag("zygote");
     let cov_path = matches.get_one::<String>("cov");
     let verbose = matches.get_flag("verbose");
+    let use_vibe = matches.get_flag("vibe");
     let extra_args: Vec<&String> = matches
         .get_many::<String>("pytest_args")
         .map(|v| v.collect())
@@ -149,6 +165,17 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
     // Pass through extra pytest args
     for arg in extra_args {
         cmd.arg(arg);
+    }
+
+    // Vibe Orchestration (RFC-0029)
+    if use_vibe {
+        use crate::v_live::engine::VibeEngine;
+        use std::path::PathBuf;
+
+        println!("{}", "🏛️  Vibe Instant TDD Activated".green().bold());
+        let engine = VibeEngine::new(PathBuf::from(test_path), "127.0.0.1:8080");
+        // TODO: This currently blocks and might need different orchestration for vtest
+        return engine.start().await;
     }
 
     // Execute pytest

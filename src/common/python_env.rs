@@ -140,14 +140,28 @@ impl PythonEnv {
             let pyvenv_cfg = venv_root.join("pyvenv.cfg");
             if pyvenv_cfg.exists() {
                 let (base, version) = Self::parse_pyvenv_cfg_full(&pyvenv_cfg);
+
+                // On macOS, 'home' in pyvenv.cfg often points to /usr/local/bin,
+                // but base_prefix is in /Library/Frameworks.
+                // If we only have 'home' and no explicit 'base-prefix',
+                // we should NOT trust the home parent as base_prefix.
                 if let (Some(b), Some(v)) = (base, version) {
-                    log::debug!("[SSOT] Prefix/Version from pyvenv.cfg: {:?}, {}", b, v);
-                    return Ok((b, v));
+                    // Check if we also have base-prefix explicitly
+                    let content = std::fs::read_to_string(&pyvenv_cfg).unwrap_or_default();
+                    if content.contains("base-prefix") || content.contains("base-exec-prefix") {
+                        log::debug!(
+                            "[SSOT] Prefix/Version from pyvenv.cfg (explicit): {:?}, {}",
+                            b,
+                            v
+                        );
+                        return Ok((b, v));
+                    }
+                    // Otherwise, we'll fall back to subprocess for base_prefix but maybe keep version
                 }
             }
         }
 
-        // Fallback: Query Python version ( subprocess)
+        // Fallback: Query Python version (subprocess)
         let version = Self::detect_version(python_path)?;
 
         // Fallback: Query base_prefix
