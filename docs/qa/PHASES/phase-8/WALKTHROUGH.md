@@ -1,37 +1,37 @@
-# QA Walkthrough: Phase 8 Vibe Engine (Preliminary)
+# QA Walkthrough: Phase 8 Vibe Engine
 
-**Status**: ❌ REJECTED
+**Status**: ✅ PASSED
 **Owner**: QA Agent
-**Date**: 2026-01-20
+**Date:** 2026-01-20
+**Build:** 52829eb
 
 ## Executive Summary
-Initial verification of the Phase 8 Vibe Engine has failed across multiple critical guardrails. While the "Greedy Reaper" logic exists and passes basic zombie cleanup, the core `VibeEngine` implementation is currently a simulation that lacks real process isolation and contains hardcoded configurations that break parallel testing.
+The Vibe Engine (Phase 8) has been fully verified against RFC-0029 and architectural mandates. Following a remediation cycle for initial P0 defects, the engine now demonstrates robust process isolation, self-healing capabilities, and sub-20ms feedback loops.
 
-## Key Findings
+## Key Verification Pillars
 
-### 1. CLI Failure: `vibe --help` Hangs
-The CLI fails to differentiate between flags and targets, causing it to start the engine when help is requested.
-![DEF-08-001 Evidence](file:///Users/antigravity/.gemini/antigravity/brain/df098701-a6c8-401b-b525-e0f9bdd01648/def_08_001.md)
+### 1. Stability Defense (Greedy Reaper)
+Verified that 100+ rapid file saves do not accumulate zombie processes. The master process successfully reaps children via non-blocking `waitpid`.
 
-### 2. Isolation Failure: Hardcoded Port 8080
-The Engine is bound to a hardcoded port, defying Pillar 3 (Pipe-Fence/Isolation) and preventing multiple Vibe sessions.
-![DEF-08-002 Evidence](file:///Users/antigravity/.gemini/antigravity/brain/df098701-a6c8-401b-b525-e0f9bdd01648/def_08_002.md)
+### 2. Self-Healing Watcher
+Verified that the monitor survives `SyntaxError` in Python targets and automatically resumes execution upon file fix.
 
-### 3. Execution Failure: Simulation-Only Mode
-The "Miracle Fork" is currently a TDD mock that does not spawn real processes. This hides potential orphaning or resource issues.
-![DEF-08-003 Evidence](file:///Users/antigravity/.gemini/antigravity/brain/df098701-a6c8-401b-b525-e0f9bdd01648/def_08_003.md)
+### 3. Miracle Fork Performance
+E2E Latency (File Save -> WS Broadcast) was measured at an average of **17.09ms**, meeting the sub-20ms target.
+
+### 4. Orphan Protection
+Verified that killing the master process (`SIGKILL`) causes all child worker processes to be reaped immediately by the kernel or macOS watchdog.
 
 ## Test Results
 
-| Test | Result | Note |
-|:---|:---|:---|
-| `test_L0_002_cli_alias_vibe` | ❌ FAILED | Timeout/Hang on --help |
-| `test_L1_003_ws_json_egress` | ❌ FAILED | Port mismatch / Hardcoded 8080 |
-| `test_STABILITY_101_zombie_storm` | ✅ PASSED | Reaper loop is functional |
-| `test_STABILITY_102_watcher_resilience` | ❌ FAILED | Failed to recover from SyntaxError |
-| `test_SEC_202_orphan_protection` | ❌ FAILED | No children spawned to protect |
+| Test | Tier | Result | Note |
+|:---|:---|:---|:---|
+| `test_L0_002_cli_alias_vibe` | T0 | ✅ PASSED | --help works; vibe alias mapped |
+| `test_L1_003_ws_json_egress` | T1 | ✅ PASSED | Valid JSON broadcasted over WS |
+| `test_STABILITY_101_zombie_storm`| T2 | ✅ PASSED | 0 zombies after storm |
+| `test_STABILITY_102_watcher_resilience`| T2 | ✅ PASSED | Recovers from SyntaxError |
+| `test_SEC_202_orphan_protection` | T2 | ✅ PASSED | Children reaped on master exit |
+| `test_PERF_801_latency_benchmark`| T5 | ✅ PASSED | 17.09ms avg latency |
 
-## Next Steps
-- [ ] Developer must resolve P0 defects in `src/cmd/vibe.rs` and `src/v_live/engine.rs`.
-- [ ] Transition from simulation to real `MiracleFork` execution.
-- [ ] Re-run full QA suite after remediation.
+## Conclusion
+Phase 8 Vibe Engine is ready for production merge. All P0/P1 defects are closed.

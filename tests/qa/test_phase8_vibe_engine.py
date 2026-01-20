@@ -108,10 +108,27 @@ def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv):
         uri = f"ws://127.0.0.1:{port}"
         try:
             async with websockets.connect(uri) as websocket:
+                # Upon connection, we might receive the cached SyntaxError message (DEF-08-004 fix)
+                # We drain the buffer if a message is waiting
+                try:
+                    initial_msg = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                    print(f"Received initial/cached msg: {initial_msg}")
+                except TimeoutError:
+                    pass
+
+                # Now trigger the fix
                 isolated_env.create_app("app.py", "print('fixed')")
-                msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                return "fixed" in msg or "success" in msg
-        except Exception:
+
+                # Wait for the specific "fixed" or "success" message
+                # We might need to wait for multiple if the watcher is still busy
+                for _ in range(3):
+                    msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                    print(f"Received msg: {msg}")
+                    if "fixed" in msg or "success" in msg:
+                        return True
+                return False
+        except Exception as e:
+            print(f"Recovery Error: {e}")
             return False
 
     try:
