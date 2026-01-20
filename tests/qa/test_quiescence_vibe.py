@@ -37,7 +37,7 @@ def test_ADVERSARIAL_H1_quiescence_failure(isolated_env: VeloTestEnv):
                     msg = await asyncio.wait_for(websocket.recv(), timeout=0.5)
                     print(f"Received msg: {msg[:100]}...")
                     msgs.append(msg)
-                except (asyncio.TimeoutError, TimeoutError):
+                except TimeoutError:
                     continue
 
             print(f"Received {len(msgs)} messages.")
