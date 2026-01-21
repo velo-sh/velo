@@ -34,7 +34,11 @@ CARGO_REGISTRY="velo-cargo-registry"
 print_usage() {
     echo "Velo Local CI"
     echo ""
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: [ENV_VARS] $0 [OPTIONS]"
+    echo ""
+    echo "Environment Variables (Docker):"
+    echo "  VELO_CI_TIER=N    Run specific test tier (0, 1, 2, 3, quick, full)"
+    echo "  SKIP_BUILD=true   Skip Rust build phase if binary exists"
     echo ""
     echo "Options:"
     echo "  (no args)    Run full CI locally (macOS)"
@@ -78,36 +82,59 @@ docker_run() {
         -e GITHUB_ACTIONS=true \
         -e UV_PYTHON=python3.11 \
         -e UV_HTTP_TIMEOUT=120 \
+        -e VELO_CI_TIER="${VELO_CI_TIER:-}" \
+        -e SKIP_BUILD="${SKIP_BUILD:-false}" \
         "$IMAGE_NAME" \
         bash -c '
             echo "🚀 Velo CI (Docker)"
             echo ""
+            
+            # Phase 1: Setup Python
             echo "==================== Phase 1: Setup Python ===================="
-            # Create Docker-specific venv FIRST to avoid architecture mismatch with host
             uv venv --python 3.11 .venv_docker
             source .venv_docker/bin/activate
             uv sync --all-groups
             
-            # Set PYO3_PYTHON for Rust build (required by build.rs sentinel)
             export PYO3_PYTHON=/workspace/.venv_docker/bin/python
             echo "PYO3_PYTHON=$PYO3_PYTHON"
             
-            echo ""
-            echo "==================== Phase 2: Build ===================="
-            cargo build --release
+            # Phase 2: Build
+            if [ "${SKIP_BUILD:-false}" = "true" ] && [ -f "./target/release/velo" ]; then
+                echo "==================== Phase 2: Build (SKIPPED) ===================="
+                echo "Reusing existing binary: ./target/release/velo"
+            else
+                echo "==================== Phase 2: Build ===================="
+                cargo build --release
+            fi
+
             echo ""
             echo "==================== Phase 3: Pre-Flight ===================="
             ./target/release/velo debug pre-flight || true
+            
             echo ""
             echo "==================== Phase 4: Test ===================="
             rm -rf .pytest_cache
             source scripts/ci-common.sh
-            # Use the Tier-2 Docker CI suite from test-suites.conf
             source scripts/test-suites.conf
-            run_python_tests ".venv_docker" "$TEST_PATHS_DOCKER"
+            
+            # Determine which tier to run
+            SELECTED_TESTS="$TEST_PATHS_DOCKER"
+            if [ -n "${VELO_CI_TIER:-}" ]; then
+                case "$VELO_CI_TIER" in
+                    0) SELECTED_TESTS="${TIER0_TESTS[*]}" ;;
+                    1) SELECTED_TESTS="${TIER1_TESTS[*]}" ;;
+                    2) SELECTED_TESTS="${TIER2_TESTS[*]}" ;;
+                    3) SELECTED_TESTS="${TIER3_TESTS[*]}" ;;
+                    quick) SELECTED_TESTS="$TEST_PATHS_QUICK" ;;
+                    full) SELECTED_TESTS="$TEST_PATHS_FULL" ;;
+                esac
+                echo "🎯 Running specific Tier: $VELO_CI_TIER"
+            fi
+            
+            run_python_tests ".venv_docker" "$SELECTED_TESTS"
             echo ""
             echo "=========================================="
-            echo "✅ ALL CI CHECKS PASSED!"
+            echo "✅ CI CHECKS COMPLETED!"
             echo "=========================================="
         '
 }
