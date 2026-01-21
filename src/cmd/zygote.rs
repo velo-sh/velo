@@ -117,6 +117,7 @@ fn cmd_zygote_fork(
 
     let handle = launcher.spawn_worker(
         script_path,
+        None, // module
         &args_slice,
         async_mode,
         false, // fast_mode

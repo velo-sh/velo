@@ -62,6 +62,7 @@ with open('{}', 'w') as f:
         let worker = launcher
             .spawn_worker(
                 &script_path,
+                None,
                 &[],
                 false,
                 false,
@@ -200,6 +201,7 @@ with open('{}', 'w') as f:
         launcher
             .spawn_worker(
                 &script_path,
+                None,
                 &args,
                 false,
                 false,

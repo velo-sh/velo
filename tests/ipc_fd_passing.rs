@@ -91,6 +91,7 @@ except Exception as e:
     // 6. Send Fork Command WITH FD
     let fork_cmd = ZygoteCommand::Fork {
         script_path: worker_script.clone(),
+        module: None,
         args: vec![],
         async_mode: false, // Wait for exit
         stdout_path: None,

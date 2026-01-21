@@ -172,6 +172,7 @@ impl WorkerHandle {
 pub fn spawn_worker(
     socket_path: &Path,
     script: &Path,
+    module: Option<String>,
     args: &[&str],
     async_mode: bool,
     fast_mode: bool,
@@ -222,6 +223,7 @@ pub fn spawn_worker(
         socket_path,
         core_ipc::ZygoteCommand::Fork {
             script_path,
+            module,
             args: args.iter().map(|s| s.to_string()).collect(),
             async_mode,
             stdout_path: Some(stdout_path.clone()),

@@ -508,12 +508,13 @@ fn close_non_standard_fds() {
             // SAFETY: d_name is a null-terminated C string
             let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
             if let Ok(name_str) = name.to_str()
-                && let Ok(fd) = name_str.parse::<i32>() {
-                    // Only close FDs > 2 (keep stdin/stdout/stderr) and not the dir FD
-                    if fd > 2 && fd != dir_fd {
-                        fds_to_close.push(fd);
-                    }
+                && let Ok(fd) = name_str.parse::<i32>()
+            {
+                // Only close FDs > 2 (keep stdin/stdout/stderr) and not the dir FD
+                if fd > 2 && fd != dir_fd {
+                    fds_to_close.push(fd);
                 }
+            }
         }
 
         // SAFETY: closedir is safe on a valid DIR*
@@ -782,12 +783,15 @@ mod tests {
         #[cfg(target_os = "macos")]
         {
             use std::time::Instant;
-            
+
             // Verify we can enumerate /dev/fd efficiently
             let start = Instant::now();
             let fd_path = std::path::Path::new("/dev/fd");
-            assert!(fd_path.exists(), "/dev/fd must exist for efficient FD cleanup");
-            
+            assert!(
+                fd_path.exists(),
+                "/dev/fd must exist for efficient FD cleanup"
+            );
+
             // Count open FDs (should be fast with enumeration vs. range-close)
             let count = std::fs::read_dir(fd_path)
                 .expect("Should be able to read /dev/fd")
@@ -796,14 +800,14 @@ mod tests {
                 .filter(|fd| *fd > 2)
                 .count();
             let elapsed = start.elapsed();
-            
+
             // Enumeration should complete in <1ms (vs. 1024+ syscalls for range-close)
             assert!(
                 elapsed.as_millis() < 10,
                 "FD enumeration took {:?}, expected <10ms",
                 elapsed
             );
-            
+
             eprintln!(
                 "✅ RFC-0030 §9.1.3: FD enumeration found {} FDs in {:?} (target: <100μs)",
                 count, elapsed
@@ -814,7 +818,10 @@ mod tests {
         {
             // On Linux, verify /proc/self/fd exists
             let fd_path = std::path::Path::new("/proc/self/fd");
-            assert!(fd_path.exists(), "/proc/self/fd must exist for efficient FD cleanup");
+            assert!(
+                fd_path.exists(),
+                "/proc/self/fd must exist for efficient FD cleanup"
+            );
             eprintln!("✅ RFC-0030 §9.1.3: /proc/self/fd available for FD enumeration");
         }
     }

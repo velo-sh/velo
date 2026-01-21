@@ -345,6 +345,7 @@ impl VtestCoordinator {
             .zygote
             .spawn_worker(
                 &runner_script,
+                None, // module
                 &runner_args,
                 false, // sync mode - wait for completion
                 false, // no fast mode

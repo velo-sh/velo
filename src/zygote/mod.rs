@@ -860,6 +860,7 @@ impl ZygoteLauncher {
     pub fn spawn_worker(
         &mut self,
         script: &Path,
+        module: Option<String>,
         args: &[&str],
         async_mode: bool,
         fast_mode: bool,
@@ -873,6 +874,7 @@ impl ZygoteLauncher {
         v_fork::spawn_worker(
             &self.socket_path,
             script,
+            module,
             args,
             async_mode,
             fast_mode,

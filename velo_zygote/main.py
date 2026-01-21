@@ -153,7 +153,9 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
         }
 
     script_path = cmd.get("script_path", "")
-    if script_path:
+    module_name = cmd.get("module")
+
+    if script_path and not module_name:
         p = Path(script_path)
         if not p.exists():
             return {
@@ -167,8 +169,11 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
                 "message": f"Security Intent Violation: Target '{script_path}' failed shield validation: {err}",
             }
 
-    if not server.app_name and script_path:
-        server.app_name = Path(script_path).name
+    if not server.app_name:
+        if module_name:
+            server.app_name = module_name
+        elif script_path:
+            server.app_name = Path(script_path).name
 
     try:
         # RFC-0028 Phase 14: Use Fork Queue (Connection Pooling)

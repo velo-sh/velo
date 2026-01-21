@@ -86,6 +86,7 @@ impl Worker {
             zygote_socket,
             ipc::ZygoteCommand::Fork {
                 script_path: launcher_path,
+                module: None,
                 args,
                 async_mode: true,
                 stdout_path: None,
@@ -142,6 +143,7 @@ impl Worker {
             zygote_socket,
             ipc::ZygoteCommand::Fork {
                 script_path: launcher_path,
+                module: None,
                 args,
                 async_mode: true,
                 stdout_path: None,

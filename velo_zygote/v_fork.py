@@ -162,6 +162,7 @@ class ForkHandler:
                 # 3. Standard Child Execution
                 exit_code = ForkHandler._child_process(
                     script_path=cmd.get("script_path", ""),
+                    module_name=cmd.get("module"),
                     args=cmd.get("args", []),
                     env=cmd.get("env", {}),
                     stdout_path=cmd.get("stdout_path"),
@@ -196,7 +197,12 @@ class ForkHandler:
         warmed_config: Any = None,
     ) -> int:
         """Fork and execute script."""
+        # Memory Gravity (SHM Support)
+        shm = InboundSharedMemory.from_command(cmd)
+        shm_fd = shm.fd if shm else None
+
         script_path = cmd.get("script_path")
+        module_name = cmd.get("module")
         args = cmd.get("args", [])
         env = cmd.get("env", {})
         stdout_path = cmd.get("stdout_path")
@@ -204,11 +210,7 @@ class ForkHandler:
         exit_code_path = cmd.get("exit_code_path")
         worker_ttl = cmd.get("worker_ttl", 3600)
 
-        # Memory Gravity (SHM Support)
-        shm = InboundSharedMemory.from_command(cmd)
-        shm_fd = shm.fd if shm else None
-
-        LogUtils.log(f"Forking child process for {script_path}...")
+        LogUtils.log(f"Forking child process for {module_name or script_path}...")
         pid = os.fork()
 
         if pid == 0:  # Child process
@@ -242,6 +244,7 @@ class ForkHandler:
                 # 2. Execution
                 exit_code = ForkHandler._child_process(
                     script_path=str(script_path) if script_path else "",
+                    module_name=module_name,
                     args=args,
                     env=env,
                     stdout_path=stdout_path,
@@ -273,6 +276,7 @@ class ForkHandler:
     @staticmethod
     def _child_process(
         script_path: str,
+        module_name: str | None,
         args: list[str],
         env: dict[str, str],
         stdout_path: str | None,
@@ -288,6 +292,9 @@ class ForkHandler:
         warmed_server: Any = None,
         warmed_config: Any = None,
     ) -> int:
+        # RFC-0030: Mark as Zygote-accelerated for process diagnostics
+        os.environ["VELO_IS_ZYGOTE"] = "1"
+
         # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
         #    Ensure THIS child dies if Zygote (Parent) dies.
         #    Ported from main branch commit e10380a.
@@ -360,10 +367,37 @@ class ForkHandler:
         # 5. Execution
         exit_code = 0
         try:
-            if not script_path and not fast_mode:
-                raise ValueError("Neither script_path nor fast_mode provided")
+            if not script_path and not fast_mode and not module_name:
+                raise ValueError("Neither script_path, module_name nor fast_mode provided")
 
-            if script_path:
+            if module_name:
+                # Module execution via runpy (Phase 9.x Alignment)
+                import runpy
+
+                sys.argv = [module_name] + args
+
+                # Injection of Zygote environment
+                child_globals = {
+                    "__VELO_WARM_SERVER__": warmed_server,
+                    "__VELO_WARM_CONFIG__": warmed_config,
+                }
+
+                # SHM Hand-off (Phase 7.3)
+                if shm_fd is not None:
+                    os.environ["VELO_SHM_FD"] = str(shm_fd)
+                    os.environ["VELO_SHM_SIZE"] = str(shm_size)
+                    try:
+                        from velo_zygote.memory import MEMORY_MANAGER
+
+                        shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size if shm_size else 0)
+                        if shm_obj is not None:
+                            child_globals["VELO_SHM"] = shm_obj
+                    except Exception:
+                        pass
+
+                runpy.run_module(module_name, init_globals=child_globals, run_name="__main__", alter_sys=True)
+
+            elif script_path:
                 # Standard script execution
                 sys.argv = [script_path] + args
                 p = Path(script_path)

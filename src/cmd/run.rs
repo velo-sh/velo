@@ -376,6 +376,52 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
     let python_path = python::detect_python(&project_dir)?;
 
     // Build command: python -m <module> [args...]
+    // RFC-0030: Jupyter Integration acceleration logic
+    // RFC-0030: Consolidate positional 'script' and trailing 'args'
+    // When -m is used, the first positional argument (script) is actually the first arg for the module
+    let mut all_args = Vec::new();
+    if let Some(s) = &cmd.script {
+        all_args.push(s.as_str());
+    }
+    for arg in &cmd.args {
+        all_args.push(arg.as_str());
+    }
+
+    // If zygote is requested or it's a known heavy module (like ipykernel), try zygote
+    if cmd.zygote {
+        use crate::zygote::ZygoteLauncher;
+        use crate::zygote::core_ipc::default_socket_path;
+        let mut launcher = ZygoteLauncher::new(default_socket_path());
+        if launcher.is_running() {
+            log::info!("🚀 Accelerating module {} via Iron Zygote...", module_name);
+            match launcher.spawn_worker(
+                &PathBuf::from(&python_path), // Use python_path as "script" for metadata
+                Some(module_name.clone()),
+                &all_args,
+                false, // async_mode
+                false, // fast_mode
+                None,  // bundle_path
+                None,  // project_root
+                None,  // max_bundle_size
+                None,  // shm_file
+                None,  // env_overrides
+                &config,
+            ) {
+                Ok(worker) => {
+                    let exit_code = worker.wait().unwrap_or(1);
+                    std::process::exit(exit_code);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "⚠️ Zygote acceleration failed: {}. Falling back to native.",
+                        e
+                    );
+                    log::warn!("Zygote acceleration failed: {}. Falling back to native.", e);
+                }
+            }
+        }
+    }
+
     let mut py_cmd = Command::new(&python_path);
 
     // RFC-0012: Surgical Environment Management
@@ -399,8 +445,8 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
     // Build args: -m module_name [trailing args...]
     py_cmd.arg("-m").arg(module_name);
 
-    // Pass through trailing arguments (e.g., -f {connection_file} for ipykernel)
-    for arg in &cmd.args {
+    // Pass through consolidated arguments
+    for arg in all_args {
         py_cmd.arg(arg);
     }
 
@@ -492,6 +538,7 @@ fn try_zygote_run(
 
         match launcher.spawn_worker(
             script,
+            None,
             &[],
             async_enabled,
             fast_enabled,
@@ -557,6 +604,7 @@ fn try_zygote_run(
 
                         if let Ok(worker) = launcher.spawn_worker(
                             script,
+                            None,
                             &[],
                             async_enabled,
                             fast_enabled,

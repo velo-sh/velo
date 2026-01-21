@@ -40,6 +40,7 @@ mod ipc_tests {
         // Test FORK command with MessagePack
         let fork_cmd = ZygoteCommand::Fork {
             script_path: PathBuf::from("/tmp/test.py"),
+            module: None,
             args: vec!["--arg1".to_string()],
             stdout_path: None,
             stderr_path: None,
@@ -160,6 +161,7 @@ mod ipc_tests {
             &socket_path,
             ZygoteCommand::Fork {
                 script_path: PathBuf::from("/tmp/test.py"),
+                module: None,
                 args: vec![],
                 stdout_path: None,
                 stderr_path: None,

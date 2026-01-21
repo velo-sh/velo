@@ -30,6 +30,9 @@ pub enum ZygoteCommand {
     /// Fork a new worker to execute a script
     Fork {
         script_path: PathBuf,
+        /// Optional module name for `python -m` execution
+        #[serde(default)]
+        module: Option<String>,
         args: Vec<String>,
         /// Whether to return PID immediately without waiting for completion
         #[serde(default)]
@@ -712,6 +715,7 @@ mod tests {
     fn test_fork_command_serialization() {
         let cmd = ZygoteCommand::Fork {
             script_path: std::env::temp_dir().join("test.py"),
+            module: None,
             args: vec!["--flag".to_string()],
             async_mode: true,
             stdout_path: None,
@@ -746,6 +750,7 @@ mod tests {
     fn test_message_size_smaller_than_json() {
         let cmd = ZygoteCommand::Fork {
             script_path: std::env::temp_dir().join("test.py"),
+            module: Some("test_module".to_string()),
             args: vec!["arg1".to_string(), "arg2".to_string()],
             async_mode: true,
             stdout_path: Some(std::env::temp_dir().join("out.txt")),

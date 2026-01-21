@@ -458,6 +458,7 @@ fn run_with_profile(
             let worker = launcher
                 .spawn_worker(
                     &wrapper_path,
+                    None, // module
                     &[],
                     false, // async_mode
                     false, // fast_mode
