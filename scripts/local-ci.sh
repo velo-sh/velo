@@ -82,14 +82,19 @@ docker_run() {
         bash -c '
             echo "🚀 Velo CI (Docker)"
             echo ""
-            echo "==================== Phase 1: Build ===================="
-            cargo build --release
-            echo ""
-            echo "==================== Phase 2: Setup Python ===================="
-            # Use a separate venv for Docker to avoid architecture mismatch with host
+            echo "==================== Phase 1: Setup Python ===================="
+            # Create Docker-specific venv FIRST to avoid architecture mismatch with host
             uv venv --python 3.11 .venv_docker
             source .venv_docker/bin/activate
             uv sync --all-groups
+            
+            # Set PYO3_PYTHON for Rust build (required by build.rs sentinel)
+            export PYO3_PYTHON=/workspace/.venv_docker/bin/python
+            echo "PYO3_PYTHON=$PYO3_PYTHON"
+            
+            echo ""
+            echo "==================== Phase 2: Build ===================="
+            cargo build --release
             echo ""
             echo "==================== Phase 3: Pre-Flight ===================="
             ./target/release/velo debug pre-flight || true
