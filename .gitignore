@@ -33,6 +33,7 @@ test_large_bundle/
 build/
 .venv/
 benchmarks/top100/top100_v2_results.json
+result_100.json
 failure-bundle-*.tar.gz
 failure-test-*.tar.gz
 failure-test_*.tar.gz

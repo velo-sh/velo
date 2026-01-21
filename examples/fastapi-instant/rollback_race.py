@@ -131,7 +131,7 @@ def measure_traditional_resets(n: int, workspace: str, progress, task_id, is_ric
         proc.terminate()
         proc.wait()
     
-    return total_time, n * per_proc_rss, per_proc_rss, times
+    return total_time, per_proc_rss, per_proc_rss, times
 
 
 def measure_velo_forks(n: int, workspace: str, progress, task_id, is_rich: bool) -> tuple:

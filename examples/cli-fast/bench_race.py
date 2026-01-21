@@ -14,6 +14,7 @@ import importlib
 import importlib.util
 import concurrent.futures
 import resource
+import tempfile
 from pathlib import Path
 
 # Add shared HIO visual helper to path
@@ -32,7 +33,7 @@ try:
         export_results_json,
         IS_QUIET
     )
-except ImportError as e:
+except ImportError:
     # Fallback for standalone execution
     def print_lab_environment(): print("=== VELO PERFORMANCE LABS ===")
     def print_race_result(c, v, mode="", memory_data=None):
@@ -46,6 +47,7 @@ except ImportError as e:
             def __exit__(self, *a): pass
             def add_task(self, *a, **k): return 0
             def advance(self, *a): pass
+            def remove_task(self, *a): pass
         return D(), False
     def export_results_json(*a, **k): pass
     IS_QUIET = False
@@ -76,7 +78,8 @@ def run_task_unit(mode="CPython"):
         # Simulate path scanning overhead
         original_path = sys.path[:]
         try:
-            sys.path = [f"/tmp/fake_{i}" for i in range(500)] + sys.path
+            tmp_dir = tempfile.gettempdir()
+            sys.path = [f"{tmp_dir}/fake_{i}" for i in range(500)] + sys.path
             # Council: Re-import inside try specifically after path tampering
             app_module = importlib.import_module("app")
             app_module.run_heavy_logic()

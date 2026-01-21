@@ -55,17 +55,43 @@ except ImportError:
 def measure_import_speed(use_velo: bool = False) -> tuple:
     """Measure Pydantic complex model schema generation time."""
     if use_velo:
-        # Velo Mode: Schema pre-locked in parent
+        # Velo Mode: Full 500 models schema generation (same workload as CPython)
         script = '''
 import time
 import resource
 import sys
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any, Union
+from datetime import datetime
+from enum import Enum
 
 start = time.perf_counter()
-class CachedModel(BaseModel):
-    field1: str
-CachedModel.model_json_schema()
+
+class Status(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+class Address(BaseModel):
+    street: str
+    city: str
+    country: str = "USA"
+
+class Metadata(BaseModel):
+    created_at: datetime = Field(default_factory=datetime.now)
+    tags: List[str] = []
+
+models = []
+for i in range(500):
+    model = type(f"ComplexModel{i}", (BaseModel,), {
+        "__annotations__": {
+            "id": int, "name": str, "status": Status,
+            "address": Optional[Address], "metadata": Metadata,
+            "related_ids": List[int], "config": Dict[str, Union[str, int]],
+        },
+        "model_config": ConfigDict(strict=True),
+    })
+    models.append(model)
+    model.model_json_schema()
 
 rusage_denom = 1024 * 1024 if sys.platform == "darwin" else 1024
 rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
@@ -143,8 +169,8 @@ def main():
     parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations")
     parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
-    if args.runs < 1 or args.warmup < 1:
-        print("\n[ERROR] Invalid parameters: --runs and --warmup must be >= 1.")
+    if args.runs < 1 or args.warmup < 0:
+        print("\n[ERROR] Invalid parameters: --runs must be >= 1 and --warmup must be >= 0.")
         sys.exit(1)
     
     # Print LAB ENVIRONMENT
@@ -159,13 +185,14 @@ def main():
     progress, _ = create_progress_context()
     with progress:
         # Warmup Phase
-        warmup_task = progress.add_task("🔥 Warming up...", total=args.warmup * 2)
-        for _ in range(args.warmup):
-            measure_import_speed(use_velo=False)
-            progress.advance(warmup_task)
-            measure_import_speed(use_velo=True)
-            progress.advance(warmup_task)
-        progress.remove_task(warmup_task)
+        if args.warmup > 0:
+            warmup_task = progress.add_task("🔥 Warming up...", total=args.warmup * 2)
+            for _ in range(args.warmup):
+                measure_import_speed(use_velo=False)
+                progress.advance(warmup_task)
+                measure_import_speed(use_velo=True)
+                progress.advance(warmup_task)
+            progress.remove_task(warmup_task)
         
         # CPython Benchmark
         cp_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=args.runs)

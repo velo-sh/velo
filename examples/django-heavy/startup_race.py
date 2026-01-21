@@ -171,7 +171,7 @@ def main():
     velo_times = []
     velo_rss_list = []
     
-    progress, is_rich = create_progress_context()
+    progress, _is_rich = create_progress_context()
     with progress:
         # Warmup Phase
         if args.warmup > 0 and not IS_QUIET:

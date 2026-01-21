@@ -39,9 +39,13 @@ def run_heavy_logic():
 @click.command()
 @click.option("--count", default=1, help="Number of times to run logic")
 def main(count):
+    if count < 1:
+        raise click.BadParameter("count must be >= 1")
+    
     console = rich.console.Console()
     console.print("[bold green]Heavy CLI Tool Starting...[/bold green]")
     
+    result = 0
     for _ in range(count):
         result = run_heavy_logic()
     

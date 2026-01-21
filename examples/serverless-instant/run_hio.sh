@@ -11,6 +11,8 @@ set -e
 DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VELO_ROOT="$(cd "$DEMO_ROOT/../../" && pwd)"
 
+COMPARE_MODE=false
+RUNS=5
 ran_benchmark=false
 
 # Parse arguments
@@ -48,6 +50,9 @@ export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
 # macOS fork safety
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
+# Verify uv is in PATH (needed for both modes)
+command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
+
 # Function to print banner
 print_banner() {
     echo "=================================================="
@@ -66,8 +71,6 @@ echo -e "\033[90m  Runs: $RUNS\033[0m"
 if [ "$COMPARE_MODE" = true ]; then
     # A/B Comparison Mode (using uv run for portability)
     cd "$DEMO_ROOT"
-    # Council: Verify uv is in PATH
-    command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
     uv run python benchmark.py --runs="$RUNS"
 else
     # Quick Demo Mode

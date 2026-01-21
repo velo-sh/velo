@@ -78,12 +78,15 @@ def run_benchmark(runs: int = 5, warmup: int = 1) -> BenchmarkResult:
     
     with progress:
         # --- Warmup Phase ---
-        if warmup > 0 and not IS_QUIET:
-            warmup_task = progress.add_task("🔥 Warming up...", total=warmup * 2)
+        if warmup > 0:
+            if not IS_QUIET:
+                warmup_task = progress.add_task("🔥 Warming up...", total=warmup)
             for _ in range(warmup):
                 _ = cpython_single({"warmup": True})
-                progress.advance(warmup_task)
-            progress.remove_task(warmup_task)
+                if not IS_QUIET:
+                    progress.advance(warmup_task)
+            if not IS_QUIET:
+                progress.remove_task(warmup_task)
         
         # --- CPython Baseline ---
         cp_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=runs)

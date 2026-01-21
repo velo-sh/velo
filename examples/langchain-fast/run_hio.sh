@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse Arguments
 COMPARE_MODE=false
-RUNS=3
+RUNS=20
 ran_benchmark=false
 
 for arg in "$@"; do
@@ -29,7 +29,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --compare     Run A/B comparison mode"
-            echo "  --runs=N      Number of iterations (default: 3)"
+            echo "  --runs=N      Number of iterations (default: 20)"
             exit 0
             ;;
     esac
