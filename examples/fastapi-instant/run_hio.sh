@@ -6,22 +6,21 @@ set -e
 
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
-export VELO_WORKSPACE="/tmp/velo_hio_003"
-PROJECT_ROOT=$(pwd)/examples/fastapi-instant
-
-mkdir -p "$VELO_WORKSPACE"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse Arguments
 COMPARE_MODE=false
-RESETS=10
+RUNS=10
+ran_benchmark=false
 
 for arg in "$@"; do
     case $arg in
         --compare)
             COMPARE_MODE=true
+            ran_benchmark=true
             ;;
-        --resets=*)
-            RESETS="${arg#*=}"
+        --runs=*|--resets=*)
+            RUNS="${arg#*=}"
             ;;
         --help|-h)
             echo "HIO-003 (FastAPI) - Environment Reset Benchmark"
@@ -30,7 +29,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --compare       Run A/B comparison mode"
-            echo "  --resets=N      Number of environment resets (default: 10)"
+            echo "  --runs=N        Number of environment resets (default: 10)"
             exit 0
             ;;
     esac
@@ -39,10 +38,15 @@ done
 echo -e "\033[38;5;33m[Velo HIO] Initializing FastAPI Instant Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
+    # Council: Verify uv is in PATH
+    command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
+    
     # A/B Comparison Mode (using uv run with dependencies)
-    uv run --with fastapi --with uvicorn python "$PROJECT_ROOT/rollback_race.py" --resets="$RESETS"
+    uv run --with fastapi --with uvicorn python "$PROJECT_ROOT/rollback_race.py" --runs="$RUNS"
 else
     echo "Run benchmark: $0 --compare"
 fi
 
-echo -e "\033[1;32m[DONE] FastAPI HIO-003 Complete.\033[0m"
+if [ "$ran_benchmark" = true ]; then
+    echo -e "\033[1;32m[DONE] FastAPI HIO-003 Complete.\033[0m"
+fi

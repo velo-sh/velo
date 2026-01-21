@@ -6,31 +6,29 @@ This file represents a real-world, dependency-heavy CLI tool.
 It contains NO benchmarking or Velo-specific measurement logic.
 """
 
-import sys
 # Heavy Imports
 import rich.console
 import click
 import pydantic
 from pydantic import BaseModel, Field
-from typing import List, Optional
 
 class SubItem(BaseModel):
     id: int
     name: str
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
 class MainConfig(BaseModel):
     version: str
     debug: bool
-    items: List[SubItem]
-    metadata: Optional[dict] = None
+    items: list[SubItem]
+    metadata: dict | None = None
 
 def run_heavy_logic():
     """
-    Simultate real-world business logic: Constructing complex Pydantic models.
+    Simulate real-world business logic: Constructing complex Pydantic models.
     """
     data = []
-    for i in range(100):
+    for _ in range(100):
         data.append(MainConfig(
             version="1.0.0",
             debug=True,

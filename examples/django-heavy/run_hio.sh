@@ -6,16 +6,18 @@ set -e
 
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
-PROJECT_ROOT=$(pwd)/examples/django-heavy
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse Arguments
 COMPARE_MODE=false
 RUNS=3
+ran_benchmark=false
 
 for arg in "$@"; do
     case $arg in
         --compare)
             COMPARE_MODE=true
+            ran_benchmark=true
             ;;
         --runs=*)
             RUNS="${arg#*=}"
@@ -42,4 +44,6 @@ else
     echo "Run benchmark: $0 --compare"
 fi
 
-echo -e "\033[1;32m[DONE] Django HIO-001 Complete.\033[0m"
+if [ "$ran_benchmark" = true ]; then
+    echo -e "\033[1;32m[DONE] Django HIO-001 Complete.\033[0m"
+fi

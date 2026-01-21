@@ -58,13 +58,16 @@ def wait_for_port(port: int, timeout: float = 5.0) -> bool:
     start = time.time()
     while time.time() - start < timeout:
         try:
+            # Add timeout to nc call to avoid hanging
             subprocess.run(["nc", "-z", "127.0.0.1", str(port)], 
-                          check=True, capture_output=True)
+                          check=True, capture_output=True, timeout=0.5)
             return True
-        except subprocess.CalledProcessError:
-            time.sleep(0.02)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            time.sleep(0.05)
     return False
 
+
+DEFAULT_RSS_MB = 49.2
 
 def get_process_rss(pid: int) -> float:
     """Get RSS of a process in MB."""
@@ -79,12 +82,12 @@ def get_process_rss(pid: int) -> float:
     try:
         if sys.platform == "darwin":
             result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], 
-                                   capture_output=True, text=True)
+                                   capture_output=True, text=True, timeout=1.0)
             if result.returncode == 0:
                 return float(result.stdout.strip()) / 1024
-    except:
+    except (subprocess.SubprocessError, OSError, ValueError):
         pass
-    return 49.2  # Default estimate
+    return DEFAULT_RSS_MB
 
 
 def measure_traditional_resets(n: int, workspace: str, progress, task_id, is_rich: bool) -> tuple:
@@ -94,10 +97,11 @@ def measure_traditional_resets(n: int, workspace: str, progress, task_id, is_ric
     env["VELO_WORKSPACE"] = workspace
     
     total_time = 0.0
-    per_proc_rss = 49.2
+    per_proc_rss = DEFAULT_RSS_MB
     proc = None
+    times = []
     
-    for i in range(n):
+    for _ in range(n):
         start = time.perf_counter()
         
         if proc:
@@ -118,18 +122,23 @@ def measure_traditional_resets(n: int, workspace: str, progress, task_id, is_ric
         if rss > 0:
             per_proc_rss = rss
         
-        total_time += time.perf_counter() - start
+        elapsed = time.perf_counter() - start
+        total_time += elapsed
+        times.append(elapsed)
         progress.advance(task_id)
     
     if proc:
         proc.terminate()
         proc.wait()
     
-    return total_time, n * per_proc_rss, per_proc_rss
+    return total_time, n * per_proc_rss, per_proc_rss, times
 
 
 def measure_velo_forks(n: int, workspace: str, progress, task_id, is_rich: bool) -> tuple:
     """Measure N forks in Velo Mode."""
+    if os.name != "posix":
+        raise RuntimeError("Velo Zygote fork benchmark requires a POSIX-compliant OS.")
+
     server_script = str(BASE_DIR / "server.py")
     env = os.environ.copy()
     env["VELO_WORKSPACE"] = workspace
@@ -147,6 +156,7 @@ def measure_velo_forks(n: int, workspace: str, progress, task_id, is_rich: bool)
     
     # Subsequent: Real fork measurements
     fork_total = 0.0
+    times = [zygote_startup]
     for _ in range(n - 1):
         f_start = time.perf_counter()
         pid = os.fork()
@@ -154,13 +164,15 @@ def measure_velo_forks(n: int, workspace: str, progress, task_id, is_rich: bool)
             os._exit(0)
         else:
             os.waitpid(pid, 0)
-            fork_total += (time.perf_counter() - f_start)
+            elapsed = time.perf_counter() - f_start
+            fork_total += elapsed
+            times.append(elapsed)
         progress.advance(task_id)
     
     proc.terminate()
     proc.wait()
     
-    return zygote_startup + fork_total, zygote_rss
+    return zygote_startup + fork_total, zygote_rss, times
 
 
 def check_dependencies() -> bool:
@@ -171,14 +183,18 @@ def check_dependencies() -> bool:
 
 
 def main():
+    import tempfile
     parser = argparse.ArgumentParser(description="HIO-003: FastAPI Reset Race")
-    parser.add_argument("--resets", type=int, default=10, help="Number of resets")
+    parser.add_argument("--runs", type=int, default=10, help="Number of resets")
     parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
     
-    n = args.resets
-    workspace = "/tmp/velo_hio_race"
-    os.makedirs(workspace, exist_ok=True)
+    n = args.runs
+    if n < 1:
+        print("\n[ERROR] runs must be >= 1")
+        sys.exit(1)
+
+    workspace = tempfile.mkdtemp(prefix="velo_hio_race_")
     
     # Print LAB ENVIRONMENT
     print_lab_environment()
@@ -192,51 +208,56 @@ def main():
     
     trad_time, trad_rss, per_proc = 0, 0, 0
     velo_time, velo_rss = 0, 0
+    trad_times = []
+    velo_times = []
     
     progress, is_rich = create_progress_context()
-    with progress:
-        # Traditional Benchmark
-        trad_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=n)
-        trad_time, trad_rss, per_proc = measure_traditional_resets(n, workspace, progress, trad_task, is_rich)
+    try:
+        with progress:
+            # Traditional Benchmark
+            trad_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=n)
+            trad_time, trad_rss, per_proc, trad_times = measure_traditional_resets(n, workspace, progress, trad_task, is_rich)
+            
+            # Velo Benchmark
+            ve_task = progress.add_task("⚡ Running Velo (Zygote Optimization)", total=n)
+            velo_time, velo_rss, velo_times = measure_velo_forks(n, workspace, progress, ve_task, is_rich)
         
-        # Velo Benchmark
-        ve_task = progress.add_task("⚡ Running Velo (Zygote Optimization)", total=n)
-        velo_time, velo_rss = measure_velo_forks(n, workspace, progress, ve_task, is_rich)
-    
-    # Calculate results
-    speedup = trad_time / max(velo_time, 0.001)
-    mem_reduction = (trad_rss - velo_rss) / max(trad_rss, 1)
-    
-    print()
-    
-    # Print comparison table
-    print_race_result(
-        trad_time, velo_time,
-        mode=f"{n}x Environment Resets",
-        memory_data=(trad_rss, velo_rss)
-    )
-    
-    print()
-    
-    # Print verdict
-    print_verdict(speedup, mem_reduction)
-    
-    # Reproduction hint
-    print_reproduce_hint(f"./examples/fastapi-instant/run_hio.sh --compare --resets={n}")
-    
-    # Cleanup
-    shutil.rmtree(workspace, ignore_errors=True)
-    
-    # Export JSON if requested
-    if args.export_json:
-        export_results_json(
-            args.export_json,
-            [trad_time],
-            [velo_time],
-            cpython_label="Traditional (Full Restart)",
-            velo_label="Velo (Zygote Fork)"
+        # Calculate results
+        speedup = trad_time / max(velo_time, 0.0001)
+        mem_reduction = (trad_rss - velo_rss) / max(trad_rss, 1)
+        
+        print()
+        
+        # Print comparison table
+        print_race_result(
+            trad_time, velo_time,
+            mode=f"{n}x Environment Resets",
+            memory_data=(trad_rss, velo_rss)
         )
-
+        
+        print()
+        
+        # Print verdict
+        print_verdict(speedup, mem_reduction)
+        
+        # Reproduction hint
+        print_reproduce_hint(f"./examples/fastapi-instant/run_hio.sh --compare --runs={n}")
+        
+        # Export JSON if requested
+        if args.export_json:
+            export_results_json(
+                args.export_json,
+                trad_times,
+                velo_times,
+                cpython_label="Traditional (Full Restart)",
+                velo_label="Velo (Zygote Fork)"
+            )
+    finally:
+        # Council Recommendation: Safe cleanup in finally block
+        try:
+            shutil.rmtree(workspace, ignore_errors=True)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()

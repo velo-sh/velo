@@ -209,12 +209,16 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
         print(f"CPython: {format_time(cpython_time)} | Velo: {format_time(velo_time)} | Speedup: {cpython_time/max(velo_time, 0.0001):.1f}x{mem_str}")
         return
     
-    speedup = cpython_time / max(velo_time, 0.0001)
     max_time = max(cpython_time, velo_time)
-    
-    # Calculate time progress bar widths
-    c_width = int((cpython_time / max_time) * 30)
-    v_width = int((velo_time / max_time) * 30)
+    if max_time == 0:
+        speedup = 1.0
+        c_width = 0
+        v_width = 0
+    else:
+        speedup = cpython_time / max(velo_time, 0.0001)
+        # Calculate time progress bar widths
+        c_width = int((cpython_time / max_time) * 30)
+        v_width = int((velo_time / max_time) * 30)
     
     # Calculate memory progress bar widths (if provided)
     c_mem, v_mem = (0, 0)
@@ -315,9 +319,9 @@ def print_reproduce_hint(command: str):
         return
     
     if RICH_AVAILABLE:
-        console.print(f"\n[dim]📎 Reproduce: {command} | Docs: velo.dev/hio[/]")
+        console.print(f"\n[dim]📎 Reproduce: {command}[/]")
     else:
-        print(f"\n📎 Reproduce: {command} | Docs: velo.dev/hio")
+        print(f"\n📎 Reproduce: {command}")
 
 
 # ============================================================================

@@ -11,7 +11,6 @@ EXAMPLE_DIR="$PROJECT_ROOT/examples/cli-fast"
 # Visual Styles
 CYAN="\033[36m"
 GREEN="\033[32m"
-RED="\033[31m"
 RESET="\033[0m"
 
 usage() {
@@ -41,8 +40,12 @@ done
 cd "$PROJECT_ROOT"
 
 if [ "$COMPARE" = true ]; then
+    # Council: Verify uv is in PATH
+    command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
+
     # A/B Comparison Mode (using uv run with dependencies)
     uv run --with pydantic --with rich --with click python "$EXAMPLE_DIR/bench_race.py" --runs="$RUNS"
+    echo -e "\n${GREEN}[DONE] HIO-005 CLI Accelerator Complete.${RESET}"
 else
     echo -e "${CYAN}Velo HIO: CLI Accelerator${RESET}"
     echo "--------------------------"
@@ -52,5 +55,3 @@ else
     echo "Full benchmark (10 runs):"
     echo "  $0 --compare --runs=10"
 fi
-
-echo -e "\n${GREEN}[DONE] HIO-005 CLI Accelerator Complete.${RESET}"

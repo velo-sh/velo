@@ -143,6 +143,9 @@ def main():
     parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations")
     parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
+    if args.runs < 1 or args.warmup < 1:
+        print("\n[ERROR] Invalid parameters: --runs and --warmup must be >= 1.")
+        sys.exit(1)
     
     # Print LAB ENVIRONMENT
     print_lab_environment()
@@ -153,17 +156,16 @@ def main():
     velo_times = []
     velo_rss_list = []
     
-    progress, is_rich = create_progress_context()
+    progress, _ = create_progress_context()
     with progress:
         # Warmup Phase
-        if args.warmup > 0 and not IS_QUIET:
-            warmup_task = progress.add_task("🔥 Warming up...", total=args.warmup * 2)
-            for _ in range(args.warmup):
-                measure_import_speed(use_velo=False)
-                progress.advance(warmup_task)
-                measure_import_speed(use_velo=True)
-                progress.advance(warmup_task)
-            progress.remove_task(warmup_task)
+        warmup_task = progress.add_task("🔥 Warming up...", total=args.warmup * 2)
+        for _ in range(args.warmup):
+            measure_import_speed(use_velo=False)
+            progress.advance(warmup_task)
+            measure_import_speed(use_velo=True)
+            progress.advance(warmup_task)
+        progress.remove_task(warmup_task)
         
         # CPython Benchmark
         cp_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=args.runs)
@@ -185,7 +187,7 @@ def main():
     
     # Handle errors
     if not cpython_times or not velo_times:
-        print("\n[ERROR] Pydantic is not installed!")
+        print("\n[ERROR] Pydantic is not installed or benchmark failed!")
         print("Run: pip install 'pydantic>=2.0'")
         sys.exit(1)
     
@@ -209,7 +211,7 @@ def main():
     print_verdict(speedup, mem_reduction)
     
     # Reproduction hint
-    print_reproduce_hint("./examples/langchain-fast/run_hio.sh --compare --runs=3")
+    print_reproduce_hint(f"./examples/langchain-fast/run_hio.sh --compare --runs={args.runs}")
     
     # Export JSON if requested
     if args.export_json:

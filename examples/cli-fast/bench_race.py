@@ -64,7 +64,6 @@ def run_task_unit(mode="CPython"):
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
     
-    import app
     if mode == "CPython":
         # Simulate cold start: clear cached modules
         for mod in ["rich", "click", "pydantic", "app"]:
@@ -76,12 +75,16 @@ def run_task_unit(mode="CPython"):
         
         # Simulate path scanning overhead
         original_path = sys.path[:]
-        sys.path = [f"/tmp/fake_{i}" for i in range(500)] + sys.path
-        importlib.import_module("app")
-        sys.path = original_path
-        app.run_heavy_logic()
+        try:
+            sys.path = [f"/tmp/fake_{i}" for i in range(500)] + sys.path
+            # Council: Re-import inside try specifically after path tampering
+            app_module = importlib.import_module("app")
+            app_module.run_heavy_logic()
+        finally:
+            sys.path = original_path
     else:
         # Velo mode: modules already warm
+        import app
         app.run_heavy_logic()
 
 
@@ -115,7 +118,7 @@ def main():
     cpython_times = []
     velo_times = []
 
-    progress, is_rich = create_progress_context()
+    progress, _ = create_progress_context()
     with progress:
         # Warmup Phase
         if args.warmup > 0 and not IS_QUIET:
@@ -169,7 +172,7 @@ def main():
     print_verdict(speedup, mem_reduction)
     
     # Reproduction hint
-    print_reproduce_hint("./examples/cli-fast/run_hio.sh --compare --runs=5")
+    print_reproduce_hint(f"./examples/cli-fast/run_hio.sh --compare --runs={args.runs}")
 
     # Export JSON if requested
     if args.export_json:

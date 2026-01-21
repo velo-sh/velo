@@ -60,6 +60,8 @@ def measure_django_startup(use_velo: bool = False) -> tuple:
 import time
 import os
 import sys
+import django
+from django.apps import apps
 
 skeleton_path = os.getcwd() + "/examples/django-heavy/skeleton"
 sys.path.insert(0, skeleton_path)
@@ -67,13 +69,20 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "demo_project.settings")
 
 start = time.perf_counter()
 
+# Council: Execute same workload for parity
+django.setup()
+for app_config in apps.get_app_configs():
+    for model in app_config.get_models():
+        pass
+
 # Zygote Mode: Heavy dependency memory already in parent
 # Child inherits via CoW
 try:
     import resource
     rusage_denom = 1024 * 1024 if sys.platform == "darwin" else 1024
     total_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
-    rss_mb = max(8.5, total_rss - 50.0)
+    # Velo overhead is extremely low, but we report total RSS for the worker
+    rss_mb = total_rss
 except ImportError:
     rss_mb = 0.0
 
@@ -149,6 +158,9 @@ def main():
     parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations")
     parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
+    if args.runs < 1 or args.warmup < 0:
+        print("\n[ERROR] Invalid parameters: --runs must be >= 1 and --warmup must be >= 0.")
+        sys.exit(1)
     
     # Print LAB ENVIRONMENT
     print_lab_environment()
@@ -215,7 +227,7 @@ def main():
     print_verdict(speedup, mem_reduction)
     
     # Reproduction hint
-    print_reproduce_hint("./examples/django-heavy/run_hio.sh --compare --runs=3")
+    print_reproduce_hint(f"./examples/django-heavy/run_hio.sh --compare --runs={args.runs}")
     
     # Export JSON if requested
     if args.export_json:

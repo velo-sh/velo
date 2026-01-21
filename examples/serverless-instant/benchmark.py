@@ -68,7 +68,7 @@ def run_benchmark(runs: int = 5, warmup: int = 1) -> BenchmarkResult:
     from cpython_runner import run_batch as cpython_batch, run_single as cpython_single
     from velo_runner import VeloZygote
     
-    progress, is_rich = create_progress_context()
+    progress, _ = create_progress_context()
     
     cpython_times = []
     velo_times = []
@@ -128,6 +128,9 @@ def main():
     parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations")
     parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
+    if args.runs < 1 or args.warmup < 0:
+        print("\n[ERROR] Invalid parameters: --runs must be >= 1 and --warmup must be >= 0.")
+        sys.exit(1)
     
     # Print LAB ENVIRONMENT
     print_lab_environment()
@@ -136,10 +139,14 @@ def main():
     # Run benchmark
     result = run_benchmark(runs=args.runs, warmup=args.warmup)
     
+    if not result.cpython_times or not result.velo_times:
+        print("\n[ERROR] Benchmark produced no results. Check your environment.")
+        sys.exit(1)
+
     # Calculate statistics
     cpython_mean = statistics.mean(result.cpython_times)
     velo_mean = statistics.mean(result.velo_times)
-    speedup = cpython_mean / max(velo_mean, 0.001)
+    speedup = cpython_mean / max(velo_mean, 0.0001)
     mem_reduction = (result.cpython_rss - result.velo_rss) / max(result.cpython_rss, 1)
     
     print()
@@ -157,7 +164,7 @@ def main():
     print_verdict(speedup, mem_reduction)
     
     # Reproduction hint
-    print_reproduce_hint("./examples/serverless-instant/run_hio.sh --compare --runs=5")
+    print_reproduce_hint(f"./examples/serverless-instant/run_hio.sh --compare --runs={args.runs}")
     
     # Export JSON if requested
     if args.export_json:

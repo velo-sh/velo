@@ -11,15 +11,14 @@ set -e
 DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VELO_ROOT="$(cd "$DEMO_ROOT/../../" && pwd)"
 
-# Default arguments
-COMPARE_MODE=false
-RUNS=5
+ran_benchmark=false
 
 # Parse arguments
 for arg in "$@"; do
     case $arg in
         --compare)
             COMPARE_MODE=true
+            ran_benchmark=true
             ;;
         --runs=*)
             RUNS="${arg#*=}"
@@ -67,6 +66,8 @@ echo -e "\033[90m  Runs: $RUNS\033[0m"
 if [ "$COMPARE_MODE" = true ]; then
     # A/B Comparison Mode (using uv run for portability)
     cd "$DEMO_ROOT"
+    # Council: Verify uv is in PATH
+    command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
     uv run python benchmark.py --runs="$RUNS"
 else
     # Quick Demo Mode
@@ -78,4 +79,6 @@ else
     uv run python velo_runner.py
 fi
 
-echo -e "\n\033[1;32m[DONE] HIO-004 Serverless Instant Demo Complete.\033[0m"
+if [ "$ran_benchmark" = true ]; then
+    echo -e "\n\033[1;32m[DONE] HIO-004 Serverless Instant Demo Complete.\033[0m"
+fi
