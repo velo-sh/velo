@@ -5,6 +5,7 @@
 > **Author**: Architect
 > **Date**: 2026-01-21
 > **Target**: Phase 8 Completion
+> **Status**: ✅ RESOLVED (986f5ecf)
 
 ---
 
@@ -144,11 +145,12 @@ velo run --help
 
 ## 8. Sign-off
 
-- [ ] Developer implements changes
-- [ ] CLI tests pass
-- [ ] `velo run --vibe` works end-to-end
-- [ ] `velo vibe` removed or deprecated
+- [x] Developer implements changes
+- [x] CLI tests pass
+- [x] `velo run --vibe` works end-to-end
+- [x] `velo vibe` deprecated (kept for backward compat, routes to run --vibe)
 
 ---
 
 **Architect Approval**: ✅ Ready for Development
+**Implementation**: ✅ COMPLETE (986f5ecf)
