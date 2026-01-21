@@ -79,6 +79,7 @@ docker_run() {
     fi
     
     log_step "Running CI in Docker (Ubuntu + Python 3.11)..."
+    set +u
     docker run --rm \
         -v "$PROJECT_ROOT:/workspace" \
         -v "$CARGO_CACHE:/workspace/target" \
@@ -148,6 +149,7 @@ docker_run() {
             echo "✅ CI CHECKS COMPLETED!"
             echo "=========================================="
         ' -- "${EXTRA_ARGS[@]}"
+    set -u
 }
 
 docker_shell() {

@@ -234,7 +234,7 @@ run_python_tests() {
     fi
     
     set +e # Allow test failure to capture artifacts
-    uv run --active pytest $test_paths $parallel_args -v
+    uv run --active python -m pytest $test_paths $parallel_args -v
     EXIT_CODE=$?
     set -e
 
