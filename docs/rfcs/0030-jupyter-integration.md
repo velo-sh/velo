@@ -378,6 +378,45 @@ Kernel 2 (user: bob, pid: 5678):
 | **Phase 3** | High-density mode + memory benchmark | 2 days |
 | **Phase 4** | Security (namespaces, cgroups) | 3 days |
 
+### 9.1 Engineering Risk Notes (P0 Action Items)
+
+> [!WARNING]
+> The following details are critical for achieving true "Drop-in" compatibility.
+
+#### 9.1.1 Signal Propagation
+
+**Problem**: When user clicks "Stop" in Jupyter UI, SIGINT is sent to the parent process (`velo`).
+
+**Requirement**: Velo MUST act as a transparent proxy and forward ALL signals (SIGINT, SIGTERM, SIGHUP) to the child process (`ipykernel`). Otherwise, users cannot stop infinite loops.
+
+```rust
+// Required in Velo process management
+signal::forward_to_child(child_pid, &[SIGINT, SIGTERM, SIGHUP]);
+```
+
+#### 9.1.2 Connection File Permissions
+
+**Problem**: Jupyter generates `kernel-xxx.json` in `/tmp` or Runtime directory.
+
+**Requirement**: Forked child process MUST have read access to this file. If using Namespace isolation (RFC-0019), bind mount the path into the namespace.
+
+```
+/tmp/kernel-{uuid}.json → accessible to forked kernel
+```
+
+#### 9.1.3 File Descriptor Leak Prevention
+
+**Requirement**: After Zygote fork, before exec'ing ipykernel, MUST close all unnecessary file descriptors (except ZMQ sockets and log pipes). This ensures a clean environment.
+
+```rust
+// Post-fork cleanup
+for fd in 3..max_fd {
+    if !preserved_fds.contains(&fd) {
+        libc::close(fd);
+    }
+}
+```
+
 ---
 
 ## 10. VS Code Integration
