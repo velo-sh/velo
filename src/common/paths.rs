@@ -229,26 +229,18 @@ impl VeloPaths {
     /// Generate a standardized, short path for a worker socket.
     /// Uses atomic counter to prevent collisions when workers respawn.
     pub fn worker_socket(worker_id: u64) -> PathBuf {
-        #[cfg(target_os = "linux")]
-        {
-            return PathBuf::from(worker_abstract_socket_name(worker_id));
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            let dir = Self::socket_dir();
-            // Monotonic counter - never repeats in same supervisor lifetime
-            // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
-            let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
-            eprintln!(
-                "[PATHS] Generated worker socket: {} (id={}, seq={})",
-                path.display(),
-                worker_id,
-                seq
-            );
-            path
-        }
+        let dir = Self::socket_dir();
+        // Monotonic counter - never repeats in same supervisor lifetime
+        // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
+        let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
+        eprintln!(
+            "[PATHS] Generated worker socket: {} (id={}, seq={})",
+            path.display(),
+            worker_id,
+            seq
+        );
+        path
     }
 
     /// Get the log path for the Zygote.
