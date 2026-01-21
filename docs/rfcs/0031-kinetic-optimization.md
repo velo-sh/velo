@@ -135,3 +135,30 @@ static BUFFER_REC_QUEUE: Lazy<ArrayQueue<Vec<u8>>> = ...
 
 ## 7. Approval
 > Pending Council Review
+
+---
+
+## Appendix A: Implementation Handover
+
+> **Status**: 🚧 READY FOR DEV | **Target**: v0.11.0
+
+### Red Lines (Architect Mandate)
+
+| Rule | Requirement |
+|:---|:---|
+| 🔴 Zero Heavy Deps | NO `governor` or `tokio-rate-limit`. Use `AtomicU64` Token Bucket |
+| 🔴 Forensic Preservation | First `[SPOOFED]` tag MUST always be logged (bypass rate limit) |
+| 🔴 Feature-Gated Unsafe | `#[cfg(feature = "unsafe_log_fast_path")]`, disabled by default |
+
+### Quick Implementation Guide
+
+**Files to modify**:
+- `src/common/util_log_sanitize.rs` → Rate Limiter
+- `src/zygote/core_ipc.rs` → Buffer Pool + SmallVec
+
+**Dependencies**: `cargo add smallvec crossbeam-queue`
+
+### Verification
+
+1. **DoS Test**: Worker prints 1M lines → Supervisor CPU < 10%, Log < 10MB
+2. **Allocation Bench**: `cargo bench --bench ipc_fork` → malloc -90%
