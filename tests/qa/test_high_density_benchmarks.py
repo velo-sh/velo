@@ -7,6 +7,7 @@ Validates Velo's high-density kernel architecture:
 - Memory sharing via Zygote COW
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -185,38 +186,59 @@ class TestMemoryDensity:
         """
         RFC-0030 §5.2: Verify 100 kernels < 5GB total memory.
 
-        This test validates the Zygote COW architecture provides
-        20x memory reduction compared to vanilla ipykernel.
+        FIXED [QA]: Switched to persistent processes (logic loop) to prevent
+        premature exit from masking total memory usage.
         """
         import psutil
 
         processes = []
         initial_mem = psutil.virtual_memory().used
 
+        # Create a persistent module for testing
+        test_dir = Path("qa_bench_mod")
+        test_dir.mkdir(exist_ok=True)
+        (test_dir / "__init__.py").write_text("import time; time.sleep(30)")
+
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(Path.cwd())
+
         try:
             # Spawn 100 kernel processes
             for i in range(100):
+                # FIXED [QA]: Added mandatory --zygote flag plus module mode
                 proc = subprocess.Popen(
-                    [VELO_BINARY, "run", "--zygote", "-m", "site", "--", "--help"],
+                    [VELO_BINARY, "run", "--zygote", "-m", "qa_bench_mod"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=env,
                 )
                 processes.append(proc)
 
-                if i % 10 == 0:
+                if i % 20 == 0:
                     print(f"   Spawned {i + 1}/100 kernels...")
 
-            # Wait for all to start
-            time.sleep(2)
+            # Wait for all to initialize
+            time.sleep(5)
 
-            # Measure memory
+            # Measure memory WHILE they are running
             final_mem = psutil.virtual_memory().used
             delta_mb = (final_mem - initial_mem) / (1024 * 1024)
             per_kernel_mb = delta_mb / 100
 
-            print("\n📊 100 Kernels Memory:")
+            # CRITICAL [QA]: Verify Zygote actually handled these workers
+            status = subprocess.run([VELO_BINARY, "zygote", "status"], capture_output=True, text=True)
+            zygote_active = "Running" in status.stdout and "100 modules" not in status.stdout  # Rough check
+
+            print("\n📊 100 Kernels Memory (HONEST):")
             print(f"   Total Delta: {delta_mb:.1f} MB")
             print(f"   Per Kernel:  {per_kernel_mb:.1f} MB")
+            print(f"   Zygote Active: {'✅' if 'Running' in status.stdout else '❌'}")
+
+            # Verification: If Zygote isn't running, the high-density claim is a lie.
+            if "Running" not in status.stdout:
+                pytest.fail(
+                    "HONESTY FAIL: 100 kernels spawned but Zygote is NOT running. High-density claim is invalid."
+                )
 
             # RFC-0030 target: 100 kernels < 5GB (50MB per kernel)
             assert delta_mb < 5000, f"100 kernels exceed 5GB: {delta_mb:.1f}MB"
@@ -225,7 +247,14 @@ class TestMemoryDensity:
             for proc in processes:
                 proc.terminate()
             for proc in processes:
-                proc.wait(timeout=5)
+                try:
+                    proc.wait(timeout=2)
+                except:
+                    proc.kill()
+            if test_dir.exists():
+                import shutil
+
+                shutil.rmtree(test_dir)
 
 
 class TestZygoteCOW:
