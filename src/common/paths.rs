@@ -412,8 +412,8 @@ pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::S
     let effective_name = if name.starts_with('@') {
         name.strip_prefix('@').unwrap_or(name)
     } else if name.starts_with('\0') {
-         // Fallback legacy support if strictly passed
-         name.strip_prefix('\0').unwrap_or(name)
+        // Fallback legacy support if strictly passed
+        name.strip_prefix('\0').unwrap_or(name)
     } else {
         name
     };
@@ -425,14 +425,14 @@ pub fn abstract_socket_addr(name: &str) -> std::io::Result<std::os::unix::net::S
 pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::UnixListener> {
     eprintln!("[DEBUG] bind_abstract_socket called with name: {:?}", name);
     // Use nix to handle abstract socket binding reliably, bypassing std limitations
-    use nix::sys::socket::{socket, bind, listen, UnixAddr, AddressFamily, SockType, SockFlag};
-    use std::os::unix::io::{FromRawFd, IntoRawFd, AsRawFd};
-    
+    use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, bind, listen, socket};
+    use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
+
     // Strip @ prefix if present
     let effective_name = if name.starts_with('@') {
         &name[1..]
     } else if name.starts_with('\0') {
-         &name[1..]
+        &name[1..]
     } else {
         name
     };
@@ -440,15 +440,18 @@ pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::U
     let addr = UnixAddr::new_abstract(effective_name.as_bytes())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-    let fd = socket(AddressFamily::Unix, SockType::Stream, SockFlag::empty(), None)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let fd = socket(
+        AddressFamily::Unix,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-    bind(fd.as_raw_fd(), &addr)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    bind(fd.as_raw_fd(), &addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     // Backlog 128 is standard
-    listen(&fd, 128)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    listen(&fd, 128).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd.into_raw_fd()) };
     Ok(listener)
@@ -457,14 +460,14 @@ pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::U
 /// Connect to an abstract namespace socket (Linux).
 #[cfg(target_os = "linux")]
 pub fn connect_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::UnixStream> {
-    use nix::sys::socket::{socket, connect, UnixAddr, AddressFamily, SockType, SockFlag};
-    use std::os::unix::io::{FromRawFd, IntoRawFd, AsRawFd};
+    use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, connect, socket};
+    use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
 
     // Strip @ prefix if present
     let effective_name = if name.starts_with('@') {
         &name[1..]
     } else if name.starts_with('\0') {
-         &name[1..]
+        &name[1..]
     } else {
         name
     };
@@ -472,8 +475,13 @@ pub fn connect_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net
     let addr = UnixAddr::new_abstract(effective_name.as_bytes())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-    let fd = socket(AddressFamily::Unix, SockType::Stream, SockFlag::empty(), None)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let fd = socket(
+        AddressFamily::Unix,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     connect(fd.as_raw_fd(), &addr)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

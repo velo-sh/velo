@@ -12,11 +12,11 @@ import os
 import signal
 import time
 
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import (
     ZygoteTestEnv,
     count_zombie_processes,
 )
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestZygoteLifecycleCHAOS:

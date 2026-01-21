@@ -10,8 +10,8 @@ Critical: Performance is Velo's core value proposition.
 
 import statistics
 
-from qa_harness import run_velo
 from phase3_harness import ZygoteTestEnv
+from qa_harness import run_velo
 
 
 class TestZygotePerformance:

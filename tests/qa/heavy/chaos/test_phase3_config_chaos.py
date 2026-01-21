@@ -10,8 +10,8 @@ Goal: Break the config parser with malformed input!
 
 import os
 
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import ZygoteTestEnv
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestConfigChaos:

@@ -78,7 +78,7 @@ class TestSSOTParity(unittest.TestCase):
             # We allow the existence if they are default values, but we log them
             if active_contamination:
                 print(f"WARN: Found LINUX constants exported on macOS: {active_contamination}")
-            
+
             # Strict check for sockets/paths that MUST NOT EXIST on macOS
             strictly_forbidden = ["PATH_LINUX_BASE_SOCKET_PARENT", "PATH_LINUX_FD_DIR"]
             found_forbidden = [x for x in strictly_forbidden if x in py_attrs]

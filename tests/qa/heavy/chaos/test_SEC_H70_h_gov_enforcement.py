@@ -9,7 +9,6 @@ from pathlib import Path
 # SOP Ritual 11.2: Hostile Hygiene - Strict Initialization
 # SOP Ritual 70: Heartbeat Governance Enforcement Probe
 
-from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[4]
 VELO_BIN = str((repo_root / "target" / "release" / "velo").resolve())

@@ -91,11 +91,12 @@ class UDSProxyMiddleware:
 def _wrap_app_with_middleware(app_path: str) -> Any:
     """
     RFC-0011 GOLD-013: Load and wrap app with UDSProxyMiddleware.
-    
+
     This is required for UDS connections where uvicorn's proxy_headers
     doesn't work (no TCP client to trust).
     """
     import importlib
+
     module_name, attr_name = app_path.rsplit(":", 1)
     module = importlib.import_module(module_name)
     app = getattr(module, attr_name)

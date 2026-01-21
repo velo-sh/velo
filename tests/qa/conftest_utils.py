@@ -173,23 +173,19 @@ def get_cow_stats(pid: int) -> dict:
 
 def _validate_binary_platform(binary_path: Path) -> tuple[bool, str]:
     """Validate that a binary is compatible with the current platform.
-    
+
     Returns:
         (is_valid, reason_if_invalid)
     """
     import platform
+
     current_system = platform.system().lower()  # 'linux' or 'darwin'
-    
+
     # Use 'file' command to detect binary architecture on Linux/macOS
     try:
-        result = subprocess.run(
-            ["file", str(binary_path)],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = subprocess.run(["file", str(binary_path)], capture_output=True, text=True, timeout=5)
         file_output = result.stdout.lower()
-        
+
         if current_system == "linux":
             # On Linux, we need ELF binaries
             if "mach-o" in file_output or "macho" in file_output:
@@ -201,7 +197,7 @@ def _validate_binary_platform(binary_path: Path) -> tuple[bool, str]:
             # On macOS, we need Mach-O binaries
             if "elf" in file_output:
                 return False, "binary=linux, system=macos"
-        
+
         return True, ""
     except Exception:
         # If 'file' command fails, assume it's OK (don't block tests)
@@ -216,11 +212,11 @@ def get_velo_binary() -> str:
     2. Path sensing relative to this file
     3. Path sensing relative to current working directory
     4. Auto-build (only outside CI)
-    
+
     All candidates are validated for platform compatibility before returning.
     """
     import pytest
-    
+
     # 1. Environment variable override (highest priority)
     env_binary = os.environ.get("VELO_BINARY")
     if env_binary and Path(env_binary).exists():
@@ -235,10 +231,10 @@ def get_velo_binary() -> str:
     root_file = Path(__file__).resolve().parents[2]
     # B: Relative to CWD
     root_cwd = Path.cwd().resolve()
-    
+
     # Check candidates for repo root (must contain a 'target' or 'src' as a sanity check)
     candidates = [root_file, root_cwd]
-    
+
     # Also check if we are already in the repo root or a subdirectory
     curr = root_cwd
     for _ in range(5):
@@ -277,12 +273,14 @@ def get_velo_binary() -> str:
         except Exception as e:
             print(f"❌ Failed to auto-build: {e}")
 
-    raise RuntimeError("Velo binary not found or platform mismatch. Run 'cargo build --release' first or set VELO_BINARY.")
+    raise RuntimeError(
+        "Velo binary not found or platform mismatch. Run 'cargo build --release' first or set VELO_BINARY."
+    )
 
 
 def get_repo_root() -> Path:
     """Find the repository root consistently across host and container.
-    
+
     Priority:
     1. Parent of VELO_BINARY if set
     2. Path sensing relative to this file

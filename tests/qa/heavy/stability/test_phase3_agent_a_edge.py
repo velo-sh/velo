@@ -11,8 +11,8 @@ Agent A's mission: If it can break, I will break it.
 import threading
 import time
 
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import ZygoteTestEnv
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestEdgeCasesLifecycle:

@@ -4,9 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
-
 from conftest_utils import get_velo_binary
 
 

@@ -16,8 +16,8 @@ import platform
 import subprocess
 
 import pytest
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import ZygoteTestEnv
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestMemoryUsage:

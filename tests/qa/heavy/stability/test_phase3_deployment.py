@@ -17,8 +17,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import pytest
-
 # Import CI-aware timeout constants
 from conftest_utils import T_MEDIUM, get_velo_binary
 

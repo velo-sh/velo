@@ -10,8 +10,8 @@ Agent B's mission: Stability above all else.
 
 import statistics
 
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import ZygoteTestEnv
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestCoreFlow:

@@ -16,7 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from conftest_utils import T_MEDIUM, get_velo_binary, get_repo_root
+from conftest_utils import get_repo_root, get_velo_binary
 
 
 def get_velo_binary_local():  # Renamed to avoid collision if still used locally

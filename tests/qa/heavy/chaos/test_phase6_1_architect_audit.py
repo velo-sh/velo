@@ -10,11 +10,8 @@ Verifies compliance with ADR-0010-001 mandates:
 import json
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
-
-
 from conftest_utils import get_velo_binary
 
 

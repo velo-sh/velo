@@ -1,4 +1,3 @@
-import os
 import signal
 import subprocess
 import sys
@@ -31,29 +30,24 @@ if str(utils_path) not in sys.path:
 try:
     import conftest_utils
     from conftest_utils import (
+        IS_LINUX,
+        IS_MACOS,
         T_MEDIUM,
         T_SHORT,
         VeloTestEnv,
-        IS_LINUX,
-        IS_MACOS,
         skip_unless_linux,
     )
 except ImportError:
     sys.path.append(str(qa_path))
-    import conftest_utils
     from conftest_utils import (
+        IS_MACOS,
         T_MEDIUM,
         T_SHORT,
         VeloTestEnv,
-        IS_LINUX,
-        IS_MACOS,
-        skip_unless_linux,
     )
 
 # Common skip markers for Memory Gravity tests
-skip_on_macos_security = pytest.mark.skipif(
-    IS_MACOS, reason="macOS has no kernel-level sealing protection"
-)
+skip_on_macos_security = pytest.mark.skipif(IS_MACOS, reason="macOS has no kernel-level sealing protection")
 skip_on_macos_numa = pytest.mark.skipif(IS_MACOS, reason="macOS is single-NUMA-node")
 skip_on_macos_hugepages = pytest.mark.skipif(IS_MACOS, reason="macOS has no HugePages support")
 skip_on_macos_pid_namespace = pytest.mark.skipif(IS_MACOS, reason="macOS has no PID namespace support")
@@ -61,6 +55,7 @@ skip_on_macos_pid_namespace = pytest.mark.skipif(IS_MACOS, reason="macOS has no 
 # =============================================================================
 # VELO SERVE FIXTURE (Migrated from Phase 6.1.1)
 # =============================================================================
+
 
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
@@ -82,11 +77,10 @@ class VeloServeProcess:
         """Return the Zygote socket path."""
         return self.socket_path
 
-
     def wait_ready(self, timeout: float = None) -> None:
         """Wait for server to be ready to accept requests."""
         if timeout is None:
-            timeout = T_MEDIUM + T_SHORT  
+            timeout = T_MEDIUM + T_SHORT
         import requests
 
         start = time.time()
@@ -178,6 +172,7 @@ class VeloServeProcess:
                 self.proc.kill()
                 self.proc.wait()
 
+
 class VeloServeFactory:
     """Factory for creating VeloServeProcess instances."""
 
@@ -198,6 +193,7 @@ class VeloServeFactory:
         """Start a velo serve process."""
         if port is None:
             import socket
+
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("", 0))
                 port = s.getsockname()[1]
@@ -211,18 +207,20 @@ class VeloServeFactory:
             cmd.extend(extra_args)
 
         env = self.test_env.env.copy()
-        
+
         import hashlib
+
         h = hashlib.md5(str(self.test_env.root).encode()).hexdigest()[:8]
         socket_dir = Path("/tmp") / f"velo-test-{h}"
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
-        
+
         env["VELO_ZYGOTE_PATH"] = str(Path(__file__).parents[3] / "velo_zygote/main.py")
         env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
-        
+
         import uuid
+
         env["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
 
         proc = subprocess.Popen(cmd, cwd=self.test_env.root, env=env, stdout=None, stderr=None)
@@ -237,6 +235,7 @@ class VeloServeFactory:
             except Exception:
                 pass
 
+
 @pytest.fixture
 def velo_serve_fixture(velo_test_env, velo_binary: str):
     """Fixture for starting velo serve processes."""
@@ -249,6 +248,7 @@ def velo_serve_fixture(velo_test_env, velo_binary: str):
     yield factory
     factory.cleanup()
 
+
 @pytest.fixture
 def shm_test_env(isolated_env: VeloTestEnv):
     """
@@ -258,7 +258,8 @@ def shm_test_env(isolated_env: VeloTestEnv):
     test_data_dir.mkdir(exist_ok=True)
     yield isolated_env
 
-SAMPLE_APP_CODE = '''
+
+SAMPLE_APP_CODE = """
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import os
@@ -352,4 +353,4 @@ async def error_response(code: int):
         status_code=code,
         content={"error": status_map.get(code, "Unknown Error")}
     )
-'''
+"""

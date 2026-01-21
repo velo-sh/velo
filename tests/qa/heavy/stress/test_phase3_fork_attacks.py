@@ -10,11 +10,11 @@ Goal: Break the fork mechanism with resource attacks!
 
 import time
 
-from qa_harness import assert_no_crash, run_velo
 from phase3_harness import (
     ZygoteTestEnv,
     count_zombie_processes,
 )
+from qa_harness import assert_no_crash, run_velo
 
 
 class TestForkAttacks:

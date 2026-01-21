@@ -95,12 +95,14 @@ def test_reg_62_002_zygote_guardian_daemon(isolated_env, short_socket):
         if not proc.is_running():
             # Diagnostic check: Why did it die?
             # On Linux, PR_SET_PDEATHSIG might have killed it if we forgot !daemon fix.
-            pytest.fail("Regression: Zygote (daemon) killed itself after parent exited. "
-                        "Check if PR_SET_PDEATHSIG is being incorrectly applied to daemons.")
+            pytest.fail(
+                "Regression: Zygote (daemon) killed itself after parent exited. "
+                "Check if PR_SET_PDEATHSIG is being incorrectly applied to daemons."
+            )
     except psutil.NoSuchProcess:
         pytest.fail(f"Regression: Zygote (daemon) PID {zygote_pid} no longer found after parent exit.")
     except psutil.AccessDenied:
-        pass # If we can't access it, it's likely still running as root/other user
+        pass  # If we can't access it, it's likely still running as root/other user
 
     # 4. Clean up
     subprocess.run([env.velo, "zygote", "stop"], env=cmd_env, check=True)

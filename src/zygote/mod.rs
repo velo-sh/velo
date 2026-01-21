@@ -271,13 +271,12 @@ impl ZygoteLauncher {
         // and spawn 100+ instances before socket exists.
         let lock_path = VeloPaths::socket_dir().join("zygote-startup.lock");
         if let Some(parent) = lock_path.parent() {
+            // [H-GOV HARDENING] Strictly refuse to 'heal' non-existent parent directories.
             if !parent.exists() {
-                // [H-GOV HARDENING] Strictly refuse to 'heal' non-existent parent directories.
                 return Err(ZygoteError::IOError(format!(
                     "Cannot start Zygote: parent directory for lock does not exist: {:?}",
                     parent
-                ))
-                .into());
+                )));
             }
         }
 
