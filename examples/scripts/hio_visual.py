@@ -170,7 +170,7 @@ def create_progress_context():
             TaskProgressColumn(),
             TimeElapsedColumn(),
             console=console,
-            transient=True, # Auto-remove when done to keep output clean
+            transient=False, # Keep in terminal history for better benchmark context
             refresh_per_second=10 # Reduced frequency to minimize overhead
         )
         return progress, True
