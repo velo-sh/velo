@@ -83,10 +83,10 @@ print(f"VELO_IS_ZYGOTE: {os.environ.get('VELO_IS_ZYGOTE')}")
             # Native run should NOT have VELO_IS_ZYGOTE
             assert "VELO_IS_ZYGOTE: None" in result_native.stdout
 
-            # 3. Start Zygote
-            start_res = run_velo(["zygote", "start"], tmp_path, velo_binary, env=env)
+            # 3. Start Zygote as a daemon to ensure it persists (RFC-0030)
+            start_res = run_velo(["zygote", "start", "--daemon"], tmp_path, velo_binary, env=env)
             assert start_res.returncode == 0, f"Zygote start failed: {start_res.stderr}"
-            time.sleep(1)
+            time.sleep(2)
 
             # 4. Accelerated Run
             result_zygote = run_velo(
@@ -124,8 +124,8 @@ for i, arg in enumerate(sys.argv):
         stop_zygote(velo_binary, tmp_path)
 
         try:
-            run_velo(["zygote", "start"], tmp_path, velo_binary, env=env)
-            time.sleep(1)
+            run_velo(["zygote", "start", "--daemon"], tmp_path, velo_binary, env=env)
+            time.sleep(2)
 
             # Pass some complex args
             args = ["--flag", "value", "-f", "{connection_file}", "--", "trailing"]

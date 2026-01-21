@@ -393,7 +393,7 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
         use crate::zygote::core_ipc::default_socket_path;
         let mut launcher = ZygoteLauncher::new(default_socket_path());
         if launcher.is_running() {
-            log::info!("🚀 Accelerating module {} via Iron Zygote...", module_name);
+            eprintln!("🚀 Accelerating module {} via Iron Zygote...", module_name);
             match launcher.spawn_worker(
                 &PathBuf::from(&python_path), // Use python_path as "script" for metadata
                 Some(module_name.clone()),
