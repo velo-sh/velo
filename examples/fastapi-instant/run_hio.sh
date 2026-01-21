@@ -42,7 +42,7 @@ if [ "$COMPARE_MODE" = true ]; then
     command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please install it first."; exit 1; }
     
     # A/B Comparison Mode (using uv run with dependencies)
-    uv run --with fastapi --with uvicorn python "$PROJECT_ROOT/rollback_race.py" --runs="$RUNS"
+    uv run --with fastapi --with uvicorn --with rich python "$PROJECT_ROOT/rollback_race.py" --runs="$RUNS"
 else
     echo "Run benchmark: $0 --compare"
 fi

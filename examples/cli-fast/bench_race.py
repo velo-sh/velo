@@ -67,12 +67,13 @@ def run_task_unit(mode="CPython"):
         sys.path.insert(0, str(BASE_DIR))
     
     if mode == "CPython":
-        # Simulate cold start: clear cached modules
-        for mod in ["rich", "click", "pydantic", "app"]:
+        # Simulate cold start: clear cached modules (but preserve hio_visual and its dependencies)
+        preserved_modules = {"hio_visual", "rich", "rich.console", "rich.panel", "rich.table", "rich.text", "rich.style", "rich.markup", "rich.segment", "rich.cells", "rich._null_file", "rich.color", "rich.terminal_theme", "rich.default_styles", "rich.palette", "rich.repr", "rich.pretty", "rich.highlighter", "rich.traceback", "rich.abc", "rich.theme", "rich.measure", "rich.emoji", "rich.align", "rich.padding", "rich.box", "rich.columns", "rich.containers", "markdown_it"}
+        for mod in ["click", "pydantic", "app"]:
             if mod in sys.modules: 
                 del sys.modules[mod]
         for key in list(sys.modules.keys()):
-            if key.startswith(("rich.", "click.", "pydantic.")):
+            if key.startswith(("click.", "pydantic.")):
                 del sys.modules[key]
         
         # Simulate path scanning overhead

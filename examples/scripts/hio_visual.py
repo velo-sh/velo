@@ -22,10 +22,21 @@ IS_CI = os.getenv("CI", "").lower() in ("true", "1", "yes") or os.getenv("GITHUB
 IS_QUIET = os.getenv("HIO_QUIET", "").lower() in ("true", "1", "yes")
 NO_COLOR = os.getenv("NO_COLOR", "") != "" or "--no-color" in sys.argv
 
-# DISABLED: Rich has compatibility issues in some environments.
-# All output uses plain print for maximum stability.
+# Rich library support (requires rich>=13.0.0, pinned in pyproject.toml)
 RICH_AVAILABLE = False
 console = None
+Panel = None
+Table = None
+
+if not NO_COLOR and not IS_CI:
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        console = Console(force_terminal=IS_TTY or FORCE_VISUAL)
+        RICH_AVAILABLE = True
+    except ImportError:
+        pass
 
 # ============================================================================
 # SYSTEM INFO DETECTION

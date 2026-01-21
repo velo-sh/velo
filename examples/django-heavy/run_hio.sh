@@ -39,7 +39,7 @@ echo -e "\033[38;5;33m[Velo HIO] Initializing Django Heavyweight Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
     # A/B Comparison Mode (using uv run with dependencies)
-    uv run --with django python "$PROJECT_ROOT/startup_race.py" --runs="$RUNS"
+    uv run --with django --with rich python "$PROJECT_ROOT/startup_race.py" --runs="$RUNS"
 else
     echo "Run benchmark: $0 --compare"
 fi

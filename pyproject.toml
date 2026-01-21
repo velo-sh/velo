@@ -23,6 +23,7 @@ benchmark = [
     "sqlalchemy>=2.0",
     "numpy>=1.24",
     "django>=4.0",
+    "rich>=13.0.0",
 ]
 
 # RFC-0028: pytest-velo plugin registration

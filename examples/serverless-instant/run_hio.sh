@@ -71,7 +71,7 @@ echo -e "\033[90m  Runs: $RUNS\033[0m"
 if [ "$COMPARE_MODE" = true ]; then
     # A/B Comparison Mode (using uv run for portability)
     cd "$DEMO_ROOT"
-    uv run python benchmark.py --runs="$RUNS"
+    uv run --with rich python benchmark.py --runs="$RUNS"
 else
     # Quick Demo Mode
     echo -e "\n\033[1;36m=== Phase 1: CPython Cold Start ===\033[0m"
