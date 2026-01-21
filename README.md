@@ -101,6 +101,10 @@ velo run script.py
 # 🧬 Run with Instant Mode (49x faster!)
 velo run --zygote script.py
 
+# 🎸 Vibe Coding Mode (Phase 8) - Real-time hot reload
+velo vibe app.py                      # Edit-save-see instant feedback
+velo vibe app.py --port 9191          # Custom WebSocket port
+
 # Manage Zygote daemon
 velo zygote start    # Start pre-warming daemon
 velo zygote status   # Check status
@@ -184,7 +188,7 @@ cargo fmt && cargo clippy -- -D warnings
 
 - **Python**: 3.11, 3.12, 3.13+ (single binary)
 - **Packages**: Full PyPI compatibility (NumPy, Pandas, FastAPI, Django, etc.)
-- **Environment**: Works with `uv`-managed virtual environments
+- **Environment**: `uv` is **first-class** - auto-detection, instant sync, one-click setup
 
 ### 🏛️ Engineering Governance (TITANIUM)
 - [SOP-001: Master Lifecycle](./docs/architecture/SOP-001-master-lifecycle.md)
@@ -203,7 +207,8 @@ cargo fmt && cargo clippy -- -D warnings
 - [x] Phase 6: Static Import Graph & Security Hardening (H1-H10)
 - [x] **Phase 6.1: velo serve + velo analyze (The Hook)** 🎣
 - [x] **Phase 13: Zygote-accelerated testing (`pytest --velo`)** 🧪
-- [ ] Phase 14: Parallel Velo Testing (`pytest-xdist` integration) 🛰️
+- [x] **Phase 14: Parallel Velo Testing (`pytest-xdist` integration)** 🛰️
+- [x] **Phase 8: Vibe Engine (`velo vibe`) - Real-time Vibe Coding** 🎸
 
 ## License
 
