@@ -78,9 +78,9 @@ jobs:
 
 ---
 
-## Future: `--strict-compat` Mode (Roadmap)
+## `--strict-compat` Mode (RFC-0028)
 
-> **Status**: Planned for future implementation
+> **Status**: ✅ **IMPLEMENTED**
 
 A `--strict-compat` flag that mimics vanilla pytest behavior:
 

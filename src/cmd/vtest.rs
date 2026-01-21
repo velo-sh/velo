@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Arg, ArgAction, Command};
+use std::path::Path;
 use std::process::{Command as ProcessCommand, Stdio};
 
 /// Build the clap Command for `velo test`
@@ -60,9 +61,9 @@ fn build_cli() -> Command {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("vibe")
-                .long("vibe")
-                .help("Enable Vibe-Coding (Instant TDD) loop")
+            Arg::new("strict_compat")
+                .long("strict-compat")
+                .help("Mimic vanilla pytest isolation (disable TMPDIR/socket isolation)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -75,42 +76,110 @@ fn build_cli() -> Command {
 
 /// Main entry point for `velo test`
 pub fn cmd_vtest(args: &[String]) -> Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .context("Failed to build tokio runtime")?;
-
-    rt.block_on(cmd_vtest_impl(args))
-}
-
-async fn cmd_vtest_impl(args: &[String]) -> Result<()> {
-    use colored::Colorize;
     let cli = build_cli();
     let matches = cli.try_get_matches_from(&args[1..])?;
 
-    let test_path = matches.get_one::<String>("path").unwrap();
-    let workers: u32 = matches
+    let test_path_str = matches.get_one::<String>("path").unwrap();
+    let test_path = Path::new(test_path_str);
+    let workers: usize = matches
         .get_one::<String>("workers")
         .unwrap()
         .parse()
         .context("Invalid worker count")?;
+
+    let use_zygote = matches.get_flag("zygote");
+    let verbose = matches.get_flag("verbose");
     let tier = matches.get_one::<String>("tier");
     let preload = matches.get_one::<String>("preload");
-    let use_zygote = matches.get_flag("zygote");
-    let cov_path = matches.get_one::<String>("cov");
-    let verbose = matches.get_flag("verbose");
-    let use_vibe = matches.get_flag("vibe");
-    let extra_args: Vec<&String> = matches
+
+    let extra_args_refs: Vec<&String> = matches
         .get_many::<String>("pytest_args")
         .map(|v| v.collect())
         .unwrap_or_default();
 
-    // Use uv run pytest which handles Python environment automatically
+    // vtest Sovereignty: If Zygote or native orchestration is requested,
+    // we use the NodeID dispatch loop instead of coarse-grained subprocesses.
+    if use_zygote {
+        log::info!("🚀 Starting vtest native orchestration (RFC-0028/Phase 13)...");
+        log::debug!("vtest PID: {}", std::process::id());
+
+        // RFC-0028: Get coverage path if specified
+        let cov_path = matches.get_one::<String>("cov").cloned();
+
+        // 1. NodeID Discovery (Phase 2)
+        let nodeids = crate::vtest::collect_nodeids(test_path, tier, &extra_args_refs)
+            .context("Failed to collect test NodeIDs")?;
+
+        log::info!("📊 Discovered {} test cases.", nodeids.len());
+
+        if nodeids.is_empty() {
+            log::warn!(
+                "⚠️ No tests discovered at path: {} (tier: {:?})",
+                test_path_str,
+                tier
+            );
+            return Ok(());
+        }
+
+        // 2. Orchestration Initialization (Phase 1)
+        let config = crate::config::VeloConfig::from_pyproject_toml();
+        let mut coordinator = crate::vtest::VtestCoordinator::new(&config, workers, cov_path)
+            .context("Failed to initialize VtestCoordinator")?;
+
+        // Lifecycle: Zygote pre-flighting (Phase 3)
+        let preload_list: Vec<&str> = if let Some(p) = preload {
+            p.split(',').map(|s| s.trim()).collect()
+        } else {
+            Vec::new()
+        };
+
+        coordinator.ensure_zygote(&preload_list)?;
+
+        // 3. Dispatch & Execution Loop (Phase 3)
+        for nodeid in nodeids {
+            coordinator.add_test(nodeid)?;
+        }
+
+        let report = match coordinator.run_all() {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("🔥 Fatal error during test orchestration: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+
+        // 4. Reporting (Phase 4)
+        if verbose || !report.all_passed() {
+            for res in &report.results {
+                if !res.passed {
+                    log::error!("❌ FAILED: {}", res.test_id);
+                    if let Some(ref err) = res.stderr {
+                        eprintln!("{}", err);
+                    }
+                } else if verbose {
+                    log::info!("✅ PASSED: {}", res.test_id);
+                }
+            }
+        }
+
+        println!("\nTest Summary:");
+        println!("  Total:   {}", report.total);
+        println!("  Passed:  {}", report.passed);
+        println!("  Failed:  {}", report.failed);
+        println!("  Time:    {}ms", report.total_duration_ms);
+
+        if !report.all_passed() {
+            std::process::exit(1);
+        }
+
+        return Ok(());
+    }
+
+    // Fallback: Legacy/Standard pytest path (INV-001 notes we should gradually deprecate this)
     let mut cmd = ProcessCommand::new("uv");
     cmd.arg("run").arg("pytest");
 
     // Ensure pytest_velo module is discoverable
-    // This is needed when running from a different directory (e.g., temp dir in E2E tests)
     if let Ok(exe_path) = std::env::current_exe()
         && let Some(project_root) = exe_path
             .parent()
@@ -123,68 +192,24 @@ async fn cmd_vtest_impl(args: &[String]) -> Result<()> {
         cmd.env("PYTHONPATH", pythonpath);
     }
 
-    // Add test path
-    cmd.arg(test_path);
+    cmd.arg(test_path_str);
 
-    // Add Zygote flags if enabled
-    if use_zygote {
-        cmd.arg("--velo");
-        if let Some(modules) = preload {
-            cmd.arg(format!("--velo-preload={}", modules));
-        }
+    if workers > 1 {
+        cmd.arg("-n").arg(workers.to_string());
     }
 
-    // Add tier marker filter
-    if let Some(t) = tier {
-        cmd.arg("-m").arg(t);
-    }
-
-    // Add verbosity
     if verbose {
         cmd.arg("-v");
     }
 
-    // Add coverage if requested
-    if let Some(path) = cov_path {
-        cmd.arg(format!("--cov={}", path));
-        cmd.arg("--cov-report=term-missing");
-    }
-
-    // Parallel workers: pass -n to pytest
-    // Phase 14: --workers + --zygote now supported (xdist + Zygote acceleration)
-    if workers > 1 {
-        cmd.arg("-n").arg(workers.to_string());
-        if use_zygote {
-            log::info!(
-                "Running with {} xdist workers + Zygote acceleration",
-                workers
-            );
-        }
-    }
-
-    // Pass through extra pytest args
-    for arg in extra_args {
+    for arg in extra_args_refs {
         cmd.arg(arg);
     }
 
-    // Vibe Orchestration (RFC-0029)
-    if use_vibe {
-        use crate::v_live::engine::VibeEngine;
-        use std::path::PathBuf;
-
-        println!("{}", "🏛️  Vibe Instant TDD Activated".green().bold());
-        let engine = VibeEngine::new(PathBuf::from(test_path), "127.0.0.1:8080");
-        // TODO: This currently blocks and might need different orchestration for vtest
-        return engine.start().await;
-    }
-
-    // Execute pytest
     cmd.stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
     let status = cmd.status().context("Failed to execute pytest")?;
-
-    // Exit with pytest's exit code
     std::process::exit(status.code().unwrap_or(1));
 }

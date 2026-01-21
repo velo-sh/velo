@@ -4,7 +4,7 @@
 
 import sys
 
-BUILD_SCM_HASH = "98a023c-dirty"
+BUILD_SCM_HASH = "ee50691-dirty"
 PROTOCOL_VERSION = 1
 PYTHON_VERSION = "3.11"
 SOCKET_PATH_LIMIT = 104
@@ -28,7 +28,7 @@ PATH_LOG_DIR_RELATIVE = ".local/state/velo"
 # These are fallback defaults; the platform-specific blocks below override them.
 PATH_MACOS_FD_DIR = "/dev/fd"
 PATH_LINUX_FD_DIR = "/proc/self/fd"
-PATH_MACOS_BASE_SOCKET_PARENT = "${TMPDIR}"
+PATH_MACOS_BASE_SOCKET_PARENT = "${HOME}/.local/state/velo/sockets"
 PATH_LINUX_BASE_SOCKET_PARENT = "${XDG_RUNTIME_DIR}"
 
 # Level 1: macOS specific
@@ -43,7 +43,7 @@ if sys.platform == "darwin":
     SECURITY_MACOS_PROD_TRUSTED_PREFIXES = "${OS_BASE}"
     SECURITY_MACOS_PROD_ENV_WHITELIST = "${OS_BASE}"
     # Paths
-    PATH_MACOS_BASE_SOCKET_PARENT = "${TMPDIR}"
+    PATH_MACOS_BASE_SOCKET_PARENT = "${HOME}/.local/state/velo/sockets"
     PATH_MACOS_BASE_LOG_PARENT = "${HOME}"
     PATH_MACOS_CI_SOCKET_PARENT = "${TMPDIR}"
     PATH_MACOS_FD_DIR = "/dev/fd"

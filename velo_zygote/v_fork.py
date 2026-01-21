@@ -316,6 +316,9 @@ class ForkHandler:
         # 2. Environment Setup
         os.environ.update(env)
 
+        # DEF-VTEST-GUARD: Mark as Zygote worker to prevent pytest-velo plugin re-initialization
+        os.environ["VELO_IS_ZYGOTE"] = "1"
+
         # 2.5 Security: Activate ImportShield (Trap 178.5)
         try:
             from velo_zygote.v_shield import ImportShield

@@ -3,7 +3,7 @@ use crate::zygote::core_ipc;
 use crate::zygote::error::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 /// Parameters needed to restart a Zygote service.
@@ -13,64 +13,24 @@ pub struct ZygoteStartParams {
     pub app_name: Option<String>,
     pub python_path: PathBuf,
     pub config: crate::config::VeloConfig,
-    /// SINC-001: Path to site-packages for genotype aging detection
-    pub site_packages_path: Option<PathBuf>,
-    /// SINC-002: Path to .env for environment drift detection
-    pub dotenv_path: Option<PathBuf>,
-}
-
-/// Cached mtime state for invalidation detection (SINC-001/002)
-#[derive(Clone, Debug)]
-struct InvalidationState {
-    site_packages_mtime: Option<SystemTime>,
-    dotenv_mtime: Option<SystemTime>,
 }
 
 /// ZygoteGuardian - Rust-side supervisor for the Python Zygote.
-/// Monitors health, memory, lifecycle, and environment changes to ensure HFT-grade stability.
-/// SINC-001/002: Includes invalidation detection for site-packages and .env changes.
+/// Monitors health, memory, and lifecycle to ensure HFT-grade stability.
 pub struct ZygoteGuardian {
     socket_path: PathBuf,
     zygote_pid: Arc<Mutex<u32>>,
     heartbeat_interval: Duration,
     start_params: Option<ZygoteStartParams>,
-    /// SINC-001/002: Cached mtime for invalidation detection
-    #[allow(dead_code)] // Used in check_invalidation() async context
-    invalidation_state: Arc<Mutex<InvalidationState>>,
 }
 
 impl ZygoteGuardian {
     pub fn new(socket_path: PathBuf, zygote_pid: u32, params: Option<ZygoteStartParams>) -> Self {
-        // SINC-001/002: Initialize invalidation state from monitored paths
-        let invalidation_state =
-            if let Some(ref p) = params {
-                InvalidationState {
-                    site_packages_mtime: p.site_packages_path.as_ref().and_then(|path| {
-                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
-                    }),
-                    dotenv_mtime: p.dotenv_path.as_ref().and_then(|path| {
-                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
-                    }),
-                }
-            } else {
-                InvalidationState {
-                    site_packages_mtime: None,
-                    dotenv_mtime: None,
-                }
-            };
-
-        log::debug!(
-            "[Guardian] Invalidation state initialized: site-packages={:?}, .env={:?}",
-            invalidation_state.site_packages_mtime,
-            invalidation_state.dotenv_mtime
-        );
-
         Self {
             socket_path,
             zygote_pid: Arc::new(Mutex::new(zygote_pid)),
             heartbeat_interval: Duration::from_secs(5),
             start_params: params,
-            invalidation_state: Arc::new(Mutex::new(invalidation_state)),
         }
     }
 
@@ -178,9 +138,10 @@ impl ZygoteGuardian {
             ));
         }
 
-        // 2. RSS Memory Monitoring (P1)
+        // Guardian Memory Monitoring (P1.5)
         if let Some(rss) = self.get_rss(pid) {
             let rss_mb = rss / 1024 / 1024;
+            log::debug!("📊 Zygote PID {} RSS: {} MB", pid, rss_mb);
             if rss_mb > 1024 {
                 // 1GB threshold for now
                 log::warn!(
@@ -243,10 +204,60 @@ impl ZygoteGuardian {
     fn get_rss(&self, _pid: u32) -> Option<u64> {
         #[cfg(target_os = "macos")]
         {
-            // Note: Modern libc crate might not expose proc_taskinfo easily.
-            // Using a simplified check or parsing 'ps' as fallback if needed.
-            // For now, return None to avoid compilation complexity in this pass,
-            // but the logic is stubbed for forensic refinement.
+            // Guardian: Native macOS RSS monitoring via libproc
+            // Ref: https://opensource.apple.com/source/Libproc/Libproc-32/libproc.h.auto.html
+            use libc::{c_int, c_void};
+
+            #[repr(C)]
+            struct proc_taskinfo {
+                pub pti_virtual_size: u64,
+                pub pti_resident_size: u64,
+                pub pti_total_user: u64,
+                pub pti_total_system: u64,
+                pub pti_threads_user: u64,
+                pub pti_threads_system: u64,
+                pub pti_policy: i32,
+                pub pti_faults: i32,
+                pub pti_pageins: i32,
+                pub pti_cow_faults: i32,
+                pub pti_messages_sent: i32,
+                pub pti_messages_received: i32,
+                pub pti_syscalls_mach: i32,
+                pub pti_syscalls_unix: i32,
+                pub pti_csw: i32,
+                pub pti_threadnum: i32,
+                pub pti_numrunning: i32,
+                pub pti_priority: i32,
+            }
+
+            const PROC_PIDTASKINFO: c_int = 4;
+
+            unsafe extern "C" {
+                fn proc_pidinfo(
+                    pid: c_int,
+                    flavor: c_int,
+                    arg: u64,
+                    buffer: *mut c_void,
+                    buffersize: c_int,
+                ) -> c_int;
+            }
+
+            let mut info = std::mem::MaybeUninit::<proc_taskinfo>::uninit();
+            let size = std::mem::size_of::<proc_taskinfo>() as c_int;
+
+            unsafe {
+                let res = proc_pidinfo(
+                    _pid as c_int,
+                    PROC_PIDTASKINFO,
+                    0,
+                    info.as_mut_ptr() as *mut c_void,
+                    size,
+                );
+
+                if res == size {
+                    return Some(info.assume_init().pti_resident_size);
+                }
+            }
             None
         }
         #[cfg(target_os = "linux")]

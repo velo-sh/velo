@@ -45,3 +45,8 @@ assets/uv.*
 test_deploy_tmp/
 artifacts/
 tests/qa/forensic_benchmarks/
+collection.txt
+*.log
+.venv_docker
+quick_ci_run.log
+docker_ci_run.log

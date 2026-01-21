@@ -4,7 +4,6 @@
 
 use anyhow::{Result, bail};
 use clap::Parser;
-use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use crate::cache::EnvCache;
@@ -44,10 +43,6 @@ pub struct RunCmd {
     /// Map a .safetensors file into shared memory (Memory Gravity)
     #[arg(long, value_name = "PATH")]
     pub shm: Option<PathBuf>,
-
-    /// Enter Vibe-Coding loop (RFC-0029)
-    #[arg(long)]
-    pub vibe: bool,
 }
 
 impl RunCmd {
@@ -76,19 +71,6 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
 
     // Validate
     cmd.validate()?;
-
-    if cmd.vibe {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
-        return rt.block_on(async {
-            let script_path = Path::new(&cmd.script);
-            println!("{}", "🏛️  Vibe Run Activated".green().bold());
-            crate::v_live::engine::VibeEngine::new(script_path.to_path_buf(), "127.0.0.1:8080")
-                .start()
-                .await
-        });
-    }
 
     // Run the script
     run_script_impl(&cmd)
@@ -321,8 +303,6 @@ fn try_zygote_run(
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
     let started_new = if !socket_path.exists() {
-        // Read preload config from pyproject.toml (DEV-FIX-001) with Env Var overrides
-        let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(Path::new(".")));
         let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
         if profile {
@@ -333,7 +313,10 @@ fn try_zygote_run(
             }
         }
 
-        if let Err(e) = launcher.start(&preload, None, true, &config) {
+        if let Err(e) = launcher.start(&preload, None, true, config) {
+            if config.strict_optimizations {
+                return Err(e.into());
+            }
             eprintln!("⚠️ Failed to start Zygote: {}", e);
             eprintln!("   Falling back to normal mode");
             return Ok(None);
@@ -457,6 +440,9 @@ fn try_zygote_run(
                     }
 
                     // Final fallback
+                    if config.strict_optimizations {
+                        return Err(e.into());
+                    }
                     eprintln!("⚠️ Zygote spawn failed: {}", e);
                     return Ok(None);
                 }

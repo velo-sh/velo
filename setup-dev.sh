@@ -53,6 +53,12 @@ echo "🔗 Installing pre-commit hooks..."
 git config core.hooksPath .githooks
 echo -e "${GREEN}✅${NC} Pre-commit hooks installed"
 
+# Configure safe merge strategy (prevent accidental merge commits)
+echo
+echo "🛡️  Configuring safe merge strategy..."
+git config pull.ff only
+echo -e "${GREEN}✅${NC} pull.ff=only (safe merge) configured"
+
 echo
 echo "=========================================="
 echo -e "${GREEN}✨ Setup complete! You're ready to develop.${NC}"

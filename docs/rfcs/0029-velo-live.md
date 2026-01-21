@@ -1,6 +1,6 @@
 # RFC-0029: Velo Live (Instant Python Feedback)
 
-**Status**: PROVISIONALLY APPROVED (Architect Review 2026-01-20)
+**Status**: DRAFT
 **Author**: Architect
 **Date**: 2026-01-14
 **Phase**: Phase 8.x
@@ -14,13 +14,6 @@
 ## 1. Summary
 
 **Velo Live** delivers a **"What You See Is What You Get"** experience for Python development. Like hot-reload in web development, every code change triggers instant execution and feedback.
-
-### 1.1 The Vibe Engine (Velo + Vibe-Coding)
-
-To support the AI-driven **"Vibe-Coding"** movement, Velo establishes the **Vibe Engine**. 
-- **Definition**: Vibe-coding requires a zero-latency feedback loop where the developer's "vibe" (intent) is manifested and verified instantly. 
-- **The Prerequisite**: True vibe-coding is impossible with 2-second reload times. Velo's sub-10ms Miracle Fork provides the only industrial-grade infrastructure that can keep up with AI-speed iteration.
-- **Sovereign Alias**: The `velo` CLI will expose **`vibe`** as the primary entry point for live development.
 
 | Metric | Traditional | Velo Live |
 |:---|:---|:---|
@@ -83,22 +76,6 @@ velo live --preload "torch,pandas" app.py
 
 # Watch specific function
 velo live app.py::predict
-
-### 4.1 CLI Ergonomics (The Triple-Tier Strategy)
-
-To provide the shortest path to "Flow" while maintaining CLI consistency, Velo implements a tiered access model:
-
-1.  **Sovereign Command (`vibe`)**: A standalone binary alias for the ultimate shorthand.
-    *   `vibe app.py` -> Instant execution.
-    *   `vibe test` -> Instant TDD.
-2.  **Explicit Flag (`--vibe` / `--live`)**: A toggle for existing core commands.
-    *   `velo run --vibe app.py`
-    *   `velo serve --live app:app`
-3.  **Formal Command (`velo vibe`)**: The rooted command structure for long-term stability.
-    *   `velo vibe serve app:app`
-    *   `velo vibe test`
-
-- **`--auto-reload`**: Passive alias for `--vibe`, provided for compatibility with legacy uvicorn/flask workflows.
 ```
 
 ---
@@ -131,18 +108,6 @@ x = compute_something()
 
 # Preview panel shows:
 # x = {'result': 42, 'time': 0.003}
-
-### 5.4 Process Lifecycle Management (v_live Hardening)
-
-To maintain **TITANIUM** reliability during high-frequency edit loops, the `v_live` engine must implement the following lifecycle protections:
-
-1.  **Debounce Mechanism**: A minimum 50ms stable-state delay is required before triggering a new Zygote fork.
-2.  **Greedy Reaper (TITANIUM)**: The Master process MUST implement a greedy reaper loop: `while waitpid(-1, &status, WNOHANG) > 0` to clean up all terminated workers in a single cycle.
-3.  **Self-Healing Watcher**: The `v_live` monitor MUST survive Python `SyntaxError` and runtime crashes in the child worker, remaining active to watch for fixed code.
-4.  **Pipe-Fence Logic**: To prevent log interleaving (SPEC-0006), the Master MUST ensure the active UDS/Pipe of the previous worker is fully drained and closed before binding the new worker's stream.
-5.  **Orphan Prevention**: All live workers MUST be spawned with `PR_SET_PDEATHSIG` (Linux) or equivalent kernel-level supervision.
-6.  **Exit Hygiene (SPEC-0006)**: Workers MUST exit via `os._exit()` to bypass genotype `atexit` hooks.
-7.  **Resource Caps**: Hard limits on CPU/Memory per session.
 ```
 
 ---
@@ -246,16 +211,6 @@ velo live serve app:app --notify-url http://localhost:5173/__velo_reload
 | Next.js + uvicorn | ~2s | ~2s |
 | Next.js + FastAPI (--reload) | ~500ms | ~550ms |
 | **Vite + Velo Live** | **~10ms** | **~60ms** |
-
-### 10.5 Native WebSocket Gateway
-
-To achieve the <60ms target, Velo will implement a native **WebSocket Gateway** written in Rust (`src/v_live/gateway.rs`). 
-
-- **Zygote workers push results to a locked-free queue in the Rust master via MessagePack (Internal SSoT).
-- **IDE/Browser Binding**: The Master process hosts a WebSocket server that broadcasts results as **JSON Strings**.
-- **Performance Tier (Future Work)**: Binary MessagePack egress is deferred to future optimizations to prioritize initial stability and zero-friction integration.
-- **Native Serialization (TITANIUM)**: Payload extraction from Worker results handled via native Rust logic to minimize bridge latency.
-- **Protocol Limits (SPEC-0007)**: WebSocket frames are capped at **5MB**.
 
 ---
 

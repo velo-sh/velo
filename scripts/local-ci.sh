@@ -77,6 +77,7 @@ docker_run() {
         -v "$CARGO_REGISTRY:/root/.cargo/registry" \
         -e GITHUB_ACTIONS=true \
         -e UV_PYTHON=python3.11 \
+        -e UV_HTTP_TIMEOUT=120 \
         "$IMAGE_NAME" \
         bash -c '
             echo "🚀 Velo CI (Docker)"
@@ -85,16 +86,20 @@ docker_run() {
             cargo build --release
             echo ""
             echo "==================== Phase 2: Setup Python ===================="
-            uv venv --python 3.11 .venv
-            source .venv/bin/activate
-            uv sync
+            # Use a separate venv for Docker to avoid architecture mismatch with host
+            uv venv --python 3.11 .venv_docker
+            source .venv_docker/bin/activate
+            uv sync --all-groups
             echo ""
             echo "==================== Phase 3: Pre-Flight ===================="
             ./target/release/velo debug pre-flight || true
             echo ""
             echo "==================== Phase 4: Test ===================="
+            rm -rf .pytest_cache
             source scripts/ci-common.sh
-            pytest tests/qa -v --tb=short
+            # Use the Tier-2 Docker CI suite from test-suites.conf
+            source scripts/test-suites.conf
+            run_python_tests ".venv_docker" "$TEST_PATHS_DOCKER"
             echo ""
             echo "=========================================="
             echo "✅ ALL CI CHECKS PASSED!"
@@ -207,8 +212,11 @@ run_quick_check() {
     log_step "Quick build..."
     cargo build --release
     
-    log_step "Quick test..."
+    log_step "Quick test (Rust)..."
     cargo test --lib
+    
+    log_step "Quick test (Python)..."
+    run_python_tests ".venv" "$TEST_PATHS_QUICK"
     
     echo ""
     log_success "Quick check passed!"

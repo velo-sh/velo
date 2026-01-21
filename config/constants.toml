@@ -89,8 +89,10 @@ path_socket_dir_name = "velo-${UID}"
 path_log_dir_relative = ".local/state/velo"
 path_cache_dir_name = ".velo/cache"
 
-# Level 1: macOS Base Paths
-path_macos_base_socket_parent = "${TMPDIR}"
+# DEF-SOCKET-STABLE: Use stable ~/.local/state/velo/sockets instead of TMPDIR
+# macOS temp directories can be cleaned up unexpectedly, causing socket issues
+path_macos_base_socket_parent = "${HOME}/.local/state/velo/sockets"
+
 path_macos_base_log_parent = "${HOME}"
 path_macos_base_xdg_fallback = "${TMPDIR}"
 

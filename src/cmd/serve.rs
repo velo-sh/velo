@@ -112,10 +112,6 @@ pub struct ServeCmd {
     /// Force RSGI mode (RFC-0019)
     #[arg(long)]
     pub rsgi: bool,
-
-    /// Enable Vibe-Coding (Instant Reload) loop
-    #[arg(long)]
-    pub vibe: bool,
 }
 
 impl ServeCmd {
@@ -265,14 +261,6 @@ fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<S
 }
 
 pub fn cmd_serve(args: &[String]) -> Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(cmd_serve_impl(args))
-}
-
-async fn cmd_serve_impl(args: &[String]) -> Result<()> {
-    use colored::Colorize;
     // Parse with clap - skip "velo serve" prefix
     let cmd = ServeCmd::try_parse_from(&args[1..])?;
 
@@ -306,16 +294,6 @@ async fn cmd_serve_impl(args: &[String]) -> Result<()> {
     let config =
         crate::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
 
-    // Vibe Orchestration
-    if cmd.vibe {
-        use crate::v_live::engine::VibeEngine;
-
-        println!("{}", "🏛️  Vibe Serve Activated".green().bold());
-        let target = cmd.app.clone().unwrap_or_default();
-        let engine = VibeEngine::new(PathBuf::from(target), "127.0.0.1:8080");
-        return rt_vibe_start(engine);
-    }
-
     // Run the server with reload loop (RFC-0010)
     while let serve::runner::ServerExit::Reload =
         serve::run_server(&serve_args, &python_path, &project_dir, &config)?
@@ -327,13 +305,6 @@ async fn cmd_serve_impl(args: &[String]) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn rt_vibe_start(engine: crate::v_live::engine::VibeEngine) -> Result<()> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(engine.start())
 }
 
 #[cfg(test)]

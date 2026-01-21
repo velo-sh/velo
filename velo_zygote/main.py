@@ -397,11 +397,27 @@ class ZygoteServer:
         LogUtils.log(f"Zygote initializing (PID: {os.getpid()})")
 
         # 1. Open Socket
+        # DEF-SOCKET-COLLISION: Check if socket is already in use by another Zygote
         if not self.is_abstract and os.path.exists(self.socket_path):
+            # Check if the socket is live before unlinking
             try:
-                os.unlink(self.socket_path)
-            except OSError as e:
-                LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
+                test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                test_sock.settimeout(0.5)
+                test_sock.connect(self.socket_path)
+                test_sock.close()
+                # Another Zygote is already running on this socket!
+                LogUtils.log(
+                    f"Socket Collision Detected: Another Zygote is already running at '{self.socket_path}'. "
+                    "This process will exit to avoid conflict."
+                )
+                sys.exit(0)  # Exit gracefully - the other Zygote is handling requests
+            except (ConnectionRefusedError, FileNotFoundError, OSError):
+                # Socket exists but no listener - stale socket, safe to remove
+                try:
+                    os.unlink(self.socket_path)
+                    LogUtils.log(f"Cleaned stale socket at '{self.socket_path}'")
+                except OSError as e:
+                    LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
 
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -417,7 +433,8 @@ class ZygoteServer:
                 os.chmod(self.socket_path, 0o600)
             except OSError as e:
                 LogUtils.log(f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}")
-        server_sock.listen(128)
+        # RFC-0012: Increased backlog for TITANIUM resilience against burst connections
+        server_sock.listen(512)
         server_sock.setblocking(False)
 
         # 2. Start Guardian
@@ -708,6 +725,7 @@ class ZygoteServer:
                     http="auto",
                     lifespan="on",
                     log_config=None,
+                    proxy_headers=True,  # RFC-0011: FORCED for L7 proxy header trust
                 )
                 self._warmed_server = uvicorn.Server(self._warmed_config)  # type: ignore[assignment, arg-type]
                 # Force config load and module inspection in Zygote (Saves 44ms in worker)

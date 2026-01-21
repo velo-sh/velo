@@ -22,8 +22,6 @@ USAGE:
     velo bundle <inspect|build> [OPTIONS]
     velo zygote <start|stop|status|auto-config>
     velo debug <zygote> [OPTIONS]
-    velo vibe [target]               # Sovereign Vibe-Coding loop (RFC-0029)
-    velo live [target]               # Alias for vibe
     velo info
     velo audit
     velo graph <generate|verify> [OPTIONS]
@@ -39,8 +37,6 @@ COMMANDS:
     debug    Internal debugging tools (RFC-0020)
     info     Show environment information
     audit    Verify architectural governance (audit SSOT/Naming/Perf)
-    vibe     Enter the sub-60ms Vibe-Coding loop
-    live     Alias for vibe
 
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
@@ -92,6 +88,12 @@ fn suggest_command(target: &str) -> Option<&'static str> {
 
 /// Main entry point for CLI
 pub fn run() -> Result<()> {
+    // RFC-0020: Force colors if requested (even when piped/captured)
+    // This ensures H-Gov audit signals maintain their ANSI formatting in CI/Logs.
+    if std::env::var("CLICOLOR_FORCE").is_ok() || std::env::var("FORCE_COLOR").is_ok() {
+        colored::control::set_override(true);
+    }
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
@@ -124,7 +126,6 @@ pub fn run() -> Result<()> {
         "zygote" => cmd::cmd_zygote(&args),
         "debug" => cmd::cmd_debug(&args),
         "graph" => cmd::cmd_graph(&args),
-        "vibe" | "live" => cmd::cmd_vibe(&args), // RFC-0029: Vibe Engine
         "worker-native" => cmd::cmd_worker_native(&args),
         cmd => {
             eprintln!("{}: unknown command '{}'", "error".red().bold(), cmd);

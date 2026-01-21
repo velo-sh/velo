@@ -22,6 +22,10 @@ pub mod core_ipc;
 pub mod error;
 pub mod guardian;
 pub mod peer_check;
+pub mod v_fork;
+
+// Re-export v_fork types for backward compatibility (RFC-0028 §10.3.5)
+pub use v_fork::{WorkerHandle, spawn_worker};
 
 extern crate log;
 
@@ -52,11 +56,6 @@ pub fn is_supported() -> bool {
 #[cfg(not(unix))]
 pub fn is_supported() -> bool {
     false
-}
-
-fn get_worker_timeout_secs() -> u64 {
-    // Both worker and socket timeouts are now centralized
-    VeloConfig::from_env_only().zygote_socket_timeout
 }
 
 fn get_socket_timeout_secs() -> u64 {
@@ -218,139 +217,7 @@ pub fn find_worker_launcher(config: &VeloConfig) -> Result<PathBuf> {
     }
 }
 
-/// Handle to a spawned worker process
-pub struct WorkerHandle {
-    pid: u32,
-    stdout_path: Option<PathBuf>,
-    stderr_path: Option<PathBuf>,
-    exit_code_path: Option<PathBuf>,
-}
-
-impl WorkerHandle {
-    /// Wait for the worker to complete with 30s timeout (DEF-P3-012)
-    /// We detect completion by waiting for the exit_code file to appear.
-    /// If timeout expires, we kill the worker process.
-    #[cfg(unix)]
-    pub fn wait(&self) -> Result<i32> {
-        let start = std::time::Instant::now();
-        let timeout_secs = get_worker_timeout_secs();
-        let timeout = std::time::Duration::from_secs(timeout_secs);
-
-        // Wait for exit_code file to exist (worker writes it when done)
-        let mut timed_out = false;
-        if let Some(ref path) = self.exit_code_path {
-            // Poll for file existence with fast checks
-            loop {
-                if path.exists() {
-                    // File exists - script completed
-                    break;
-                }
-
-                // Check timeout
-                if start.elapsed() > timeout {
-                    timed_out = true;
-                    eprintln!(
-                        "⏱️ Worker {} timed out after {}s, killing...",
-                        self.pid, timeout_secs
-                    );
-                    // Kill the worker process
-                    unsafe {
-                        libc::kill(self.pid as i32, libc::SIGKILL);
-                    }
-                    break;
-                }
-
-                // Fast polling (10ms floor) ensures low latency while reducing log volume.
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        }
-
-        // Flush stdout and stderr files to real stdout/stderr
-        self.flush_stdout();
-        self.flush_stderr();
-
-        // Read exit code from file (DEF-P3-013/014)
-        let exit_code = self.read_exit_code();
-
-        // Return timeout exit code if timed out
-        if timed_out {
-            Ok(124) // Standard timeout exit code
-        } else {
-            Ok(exit_code)
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn wait(&self) -> Result<i32> {
-        // Windows: not supported
-        Ok(0)
-    }
-
-    /// Flush captured stdout from tempfile to real stdout
-    #[allow(clippy::collapsible_if)]
-    fn flush_stdout(&self) {
-        if let Some(ref path) = self.stdout_path {
-            if path.exists() {
-                if let Ok(contents) = std::fs::read_to_string(path) {
-                    if !contents.is_empty() {
-                        print!("{}", contents);
-                        use std::io::Write;
-                        let _ = std::io::stdout().flush();
-                    }
-                }
-                let _ = std::fs::remove_file(path);
-            }
-        }
-    }
-
-    /// Flush captured stderr from tempfile to real stderr
-    #[allow(clippy::collapsible_if)]
-    fn flush_stderr(&self) {
-        if let Some(ref path) = self.stderr_path {
-            if path.exists() {
-                if let Ok(contents) = std::fs::read_to_string(path) {
-                    if !contents.is_empty() {
-                        eprint!("{}", contents);
-                        use std::io::Write;
-                        let _ = std::io::stderr().flush();
-                    }
-                }
-                let _ = std::fs::remove_file(path);
-            }
-        }
-    }
-
-    /// Read exit code from tempfile (DEF-P3-013/014)
-    #[allow(clippy::collapsible_if)]
-    fn read_exit_code(&self) -> i32 {
-        if let Some(ref path) = self.exit_code_path {
-            if path.exists() {
-                if let Ok(contents) = std::fs::read_to_string(path) {
-                    let _ = std::fs::remove_file(path);
-                    if let Ok(code) = contents.trim().parse::<i32>() {
-                        return code;
-                    }
-                }
-            }
-        }
-        0 // Default to 0 if no exit code file
-    }
-
-    /// Get the worker's PID
-    pub fn pid(&self) -> u32 {
-        self.pid
-    }
-
-    /// Get path to captured stdout
-    pub fn stdout_path(&self) -> Option<&PathBuf> {
-        self.stdout_path.as_ref()
-    }
-
-    /// Get path to captured stderr
-    pub fn stderr_path(&self) -> Option<&PathBuf> {
-        self.stderr_path.as_ref()
-    }
-}
+// WorkerHandle is now defined in v_fork.rs and re-exported above
 
 /// Zygote launcher - manages the Zygote process lifecycle
 pub struct ZygoteLauncher {
@@ -399,8 +266,51 @@ impl ZygoteLauncher {
         // DEF-61-004: Clean up stale sockets from previous versions before starting
         core_ipc::cleanup_stale_sockets();
 
+        // BUG-001 FIX: Acquire startup lock to prevent race condition
+        // Multiple concurrent `velo zygote start` would otherwise all pass is_running()
+        // and spawn 100+ instances before socket exists.
+        let lock_path = VeloPaths::socket_dir().join("zygote-startup.lock");
+        if let Some(parent) = lock_path.parent() {
+            // [H-GOV HARDENING] Strictly refuse to 'heal' non-existent parent directories.
+            if !parent.exists() {
+                return Err(ZygoteError::IOError(format!(
+                    "Cannot start Zygote: parent directory for lock does not exist: {:?}",
+                    parent
+                )));
+            }
+        }
+
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| ZygoteError::IOError(format!("Failed to open startup lock: {}", e)))?;
+
+        #[cfg(unix)]
+        {
+            use fs2::FileExt;
+            lock_file.lock_exclusive().map_err(|e| {
+                ZygoteError::IOError(format!("Failed to acquire startup lock: {}", e))
+            })?;
+        }
+
+        // BUG-001 FIX: Re-check is_running AFTER acquiring lock
+        // Another process may have started Zygote while we were waiting for the lock
         if self.is_running() {
-            return Ok(());
+            // SEC-005: Ensure auth file also exists (Healing for Stale/Broken State)
+            let auth_path = VeloPaths::auth_file_for_socket(&self.socket_path);
+            if auth_path.exists() {
+                // Release lock (happens on drop) and return success
+                return Ok(());
+            } else {
+                log::warn!(
+                    "⚠️ Zygote socket exists but auth file is missing: {}. Triggering restart/healing.",
+                    auth_path.display()
+                );
+                // Proceed to restart logic below...
+            }
         }
 
         // ... existing implementation ...
@@ -412,7 +322,7 @@ impl ZygoteLauncher {
         });
 
         // RFC-0011: Standardized socket path
-        let socket_path = crate::zygote::core_ipc::default_socket_path();
+        let socket_path = self.socket_path.clone();
         log::info!("🚀 Zygote using socket: {}", socket_path.display());
 
         // Find zygote module
@@ -438,9 +348,7 @@ impl ZygoteLauncher {
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
 
-        // =========================================================================
-        // Phase 7.3: Unified Python Environment Resolution (SSOT)
-        // =========================================================================
+        // Unified Python Environment Resolution (SSOT)
         // Defect Fix: Ensure Zygote environment is derived from the Python binary
         // (via PythonEnv::detect) rather than relying on unstable manual forwarding.
         // This handles PYTHONHOME/VIRTUAL_ENV reconstruction automatically.
@@ -671,10 +579,12 @@ impl ZygoteLauncher {
                         }
 
                         // RFC-0012 TITANIUM Hardening: No Orphans Rule
-                        // PR_SET_PDEATHSIG ensures that the Zygote is killed if its parent supervisor dies.
-                        // This prevents leaks and "Shadow Traps" in production.
-                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
-                            // Fallback gracefully if not supported
+                        // Only set PR_SET_PDEATHSIG if we are NOT in daemon mode.
+                        // A daemonized Zygote is INTENDED to outlive its parent CLI.
+                        if !daemon {
+                            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
+                                // Fallback gracefully if not supported
+                            }
                         }
                     }
 
@@ -802,43 +712,22 @@ impl ZygoteLauncher {
             log::info!("Zygote deep probe successful (PID: {}).", pid);
 
             // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
-            // SINC-001/002: Detect paths for invalidation monitoring
-            let (site_packages_path, dotenv_path) = {
-                let mut sp_path: Option<PathBuf> = None;
-                let mut de_path: Option<PathBuf> = None;
+            // Skip Guardian for daemon mode (vtest use case) - the caller manages lifecycle
+            if !daemon {
+                let params = guardian::ZygoteStartParams {
+                    preload: preload.iter().map(|s| s.to_string()).collect(),
+                    app_name: app_name.map(|s| s.to_string()),
+                    python_path: python.clone(),
+                    config: config.clone(),
+                };
 
-                // Detect site-packages from PythonEnv (SINC-001)
-                if let Ok(py_env) = crate::common::python_env::PythonEnv::detect(&python) {
-                    sp_path = py_env.site_packages;
-                    log::debug!("[SINC-001] Monitoring site-packages: {:?}", sp_path);
+                let guardian =
+                    guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
+                if let Err(e) = guardian.start() {
+                    log::warn!("[Guardian] Failed to start background supervisor: {}", e);
+                } else {
+                    log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
                 }
-
-                // Detect .env from project root (SINC-002)
-                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                let env_file = cwd.join(".env");
-                if env_file.exists() {
-                    de_path = Some(env_file);
-                    log::debug!("[SINC-002] Monitoring .env: {:?}", de_path);
-                }
-
-                (sp_path, de_path)
-            };
-
-            let params = guardian::ZygoteStartParams {
-                preload: preload.iter().map(|s| s.to_string()).collect(),
-                app_name: app_name.map(|s| s.to_string()),
-                python_path: python.clone(),
-                config: config.clone(),
-                site_packages_path,
-                dotenv_path,
-            };
-
-            let guardian =
-                guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
-            if let Err(e) = guardian.start() {
-                log::warn!("[Guardian] Failed to start background supervisor: {}", e);
-            } else {
-                log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
             }
         } else {
             return Err(ZygoteError::StartFailed(
@@ -915,6 +804,10 @@ impl ZygoteLauncher {
         }
 
         // Cleanup socket file
+        log::debug!(
+            "[ZygoteLauncher::stop] Cleaning up socket: {:?}",
+            self.socket_path
+        );
         core_ipc::cleanup_socket(&self.socket_path);
         self.zygote_pid = None;
 
@@ -937,10 +830,8 @@ impl ZygoteLauncher {
             match child.try_wait() {
                 Ok(None) => {
                     // Process is still running according to the OS.
-                    // WB-002: Liveness Probe Handshake (Friendly)
-                    // We must verify the Zygote is actually responsive to IPC,
-                    // not just "running" in a deadlocked or stale state.
-                    core_ipc::is_socket_responsive(&self.socket_path)
+                    // Trust the OS handle - deep probes are expensive.
+                    true
                 }
                 _ => {
                     // Process died or error
@@ -964,7 +855,7 @@ impl ZygoteLauncher {
     }
 
     /// Fork a new worker from the Zygote
-    #[cfg(unix)]
+    /// Delegates to v_fork::spawn_worker (RFC-0028 §10.3.5)
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_worker(
         &mut self,
@@ -979,114 +870,19 @@ impl ZygoteLauncher {
         env_overrides: Option<std::collections::HashMap<String, String>>,
         config: &VeloConfig,
     ) -> Result<WorkerHandle> {
-        if !self.is_running() {
-            return Err(ZygoteError::NotRunning);
-        }
-
-        // Canonicalize script path - Zygote may have different CWD
-        let script_path = if script.is_absolute() {
-            script.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map(|cwd| cwd.join(script))
-                .unwrap_or_else(|_| script.to_path_buf())
-        };
-
-        // Create tempfiles for I/O capture (use CLI PID + timestamp for uniqueness)
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let pid = std::process::id();
-
-        let stdout_path = std::env::temp_dir().join(format!("velo-out-{}-{}.tmp", pid, timestamp));
-        let stderr_path = std::env::temp_dir().join(format!("velo-err-{}-{}.tmp", pid, timestamp));
-        let exit_code_path =
-            std::env::temp_dir().join(format!("velo-exit-{}-{}.tmp", pid, timestamp));
-
-        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
-            use std::os::unix::io::AsRawFd;
-            let meta = file
-                .metadata()
-                .map_err(|e| ZygoteError::IOError(e.to_string()))?;
-            (Some(file.as_raw_fd()), Some(meta.len() as usize))
-        } else {
-            (None, None)
-        };
-
-        // Send FORK command over socket
-        let response = core_ipc::send_command(
+        v_fork::spawn_worker(
             &self.socket_path,
-            core_ipc::ZygoteCommand::Fork {
-                script_path,
-                args: args.iter().map(|s| s.to_string()).collect(),
-                async_mode,
-                stdout_path: Some(stdout_path.clone()),
-                stderr_path: Some(stderr_path.clone()),
-                exit_code_path: Some(exit_code_path.clone()),
-                fast_mode,
-                bundle_path,
-                project_root,
-                max_bundle_size,
-                env: {
-                    let mut base_env =
-                        crate::lifecycle::EnvironmentShield::new(config).compile_env();
-                    if let Some(overrides) = env_overrides {
-                        for (k, v) in overrides {
-                            base_env.insert(k, v);
-                        }
-                    }
-                    Box::new(base_env)
-                },
-                shm_size,
-                request_id: Some(uuid::Uuid::now_v7().to_string()),
-            },
-            fd_to_pass,
-        )?;
-
-        match response {
-            core_ipc::ZygoteResponse::Forked {
-                worker_pid,
-                exit_code,
-            } => {
-                // If we have an exit code already (sync mode), we can write it to the temp file
-                // to reuse the existing WorkerHandle::wait() logic or just handle it here.
-                #[allow(clippy::collapsible_if)]
-                if let Some(code) = exit_code {
-                    if let Err(e) = std::fs::write(&exit_code_path, code.to_string()) {
-                        eprintln!("⚠️ Failed to write premature exit code: {}", e);
-                    }
-                }
-
-                Ok(WorkerHandle {
-                    pid: worker_pid,
-                    stdout_path: Some(stdout_path),
-                    stderr_path: Some(stderr_path),
-                    exit_code_path: Some(exit_code_path),
-                })
-            }
-            core_ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
-            _ => Err(ZygoteError::ProtocolError(
-                "Unexpected response to Fork command".to_string(),
-            )),
-        }
-    }
-
-    #[cfg(not(unix))]
-    pub fn spawn_worker(
-        &mut self,
-        _script: &Path,
-        _args: &[&str],
-        _async_mode: bool,
-        _fast_mode: bool,
-        _bundle_path: Option<PathBuf>,
-        _project_root: Option<PathBuf>,
-        _max_bundle_size: Option<u64>,
-        _shm_file: Option<&std::fs::File>,
-        _env_overrides: Option<std::collections::HashMap<String, String>>,
-        _config: &VeloConfig,
-    ) -> Result<WorkerHandle> {
-        Err(ZygoteError::NotSupported)
+            script,
+            args,
+            async_mode,
+            fast_mode,
+            bundle_path,
+            project_root,
+            max_bundle_size,
+            shm_file,
+            env_overrides,
+            config,
+        )
     }
 }
 
