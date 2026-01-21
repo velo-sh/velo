@@ -406,10 +406,20 @@ signal::forward_to_child(child_pid, &[SIGINT, SIGTERM, SIGHUP]);
 
 #### 9.1.3 File Descriptor Leak Prevention
 
-**Requirement**: After Zygote fork, before exec'ing ipykernel, MUST close all unnecessary file descriptors (except ZMQ sockets and log pipes). This ensures a clean environment.
+**Requirement**: After Zygote fork, before exec'ing ipykernel, MUST close all unnecessary file descriptors. Use an **allow-list** approach to avoid accidentally closing ZMQ sockets.
+
+> [!CAUTION]
+> Do NOT use simple range close. Build explicit allow-list first.
 
 ```rust
-// Post-fork cleanup
+// Post-fork cleanup - ALLOW-LIST approach
+let preserved_fds: HashSet<RawFd> = [
+    0, 1, 2,                      // stdin/stdout/stderr
+    zygote_control_fd,            // Zygote IPC
+    zmq_shell_fd, zmq_iopub_fd,   // ZMQ sockets
+    log_pipe_fd,                  // Log pipe
+].into_iter().collect();
+
 for fd in 3..max_fd {
     if !preserved_fds.contains(&fd) {
         libc::close(fd);
