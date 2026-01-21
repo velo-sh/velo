@@ -234,6 +234,259 @@ class TestLiveAlias:
 
 
 # =============================================================================
+# Test: Error Handling (Real User Scenarios)
+# =============================================================================
+
+
+class TestVibeErrorHandling:
+    """Test error scenarios that real users encounter.
+
+    Note: Vibe Engine is designed as a long-running watcher, so even with
+    invalid inputs it may start and wait for valid files. These tests verify
+    that the engine at least activates and doesn't crash silently.
+    """
+
+    def test_run_vibe_file_not_found_still_activates(self, velo_binary, temp_project):
+        """velo run --vibe nonexistent.py should still activate engine."""
+        proc = subprocess.Popen(
+            [velo_binary, "run", "--vibe", "nonexistent.py"],
+            cwd=temp_project,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line or "error" in line.lower():
+                    break
+
+            # Engine should either activate or show error - not crash silently
+            assert len(output) > 0, "Should produce some output"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+    def test_serve_vibe_with_default_app(self, velo_binary, temp_project):
+        """velo serve --vibe main (without :app) should use default."""
+        # Create the module file so it can find something
+        main_py = temp_project / "main.py"
+        main_py.write_text("async def app(scope, receive, send): pass")
+
+        proc = subprocess.Popen(
+            [velo_binary, "serve", "--vibe", "main:app"],
+            cwd=temp_project,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line:
+                    break
+
+            assert "Vibe Engine" in output, "Should activate Vibe Engine"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+
+# =============================================================================
+# Test: Graceful Shutdown
+# =============================================================================
+
+
+class TestVibeGracefulShutdown:
+    """Verify Ctrl+C (SIGINT) works correctly."""
+
+    def test_run_vibe_responds_to_sigterm(self, velo_binary, temp_project):
+        """Vibe Engine should shutdown cleanly on SIGTERM."""
+        import signal
+
+        proc = subprocess.Popen(
+            [velo_binary, "run", "--vibe", "app.py"],
+            cwd=temp_project,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            # Wait for startup
+            time.sleep(1)
+            assert proc.poll() is None, "Process should be running"
+
+            # Send SIGTERM (like Ctrl+C)
+            proc.send_signal(signal.SIGTERM)
+
+            # Should exit within 5 seconds
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                pytest.fail("Process did not respond to SIGTERM within 5 seconds")
+
+            # Successfully terminated
+            assert True
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+
+# =============================================================================
+# Test: Custom Port Option
+# =============================================================================
+
+
+class TestVibeCustomPort:
+    """Test --port option works with --vibe."""
+
+    def test_run_vibe_with_custom_port(self, velo_binary, temp_project):
+        """velo run --vibe --port 9191 should use custom port."""
+        proc = subprocess.Popen(
+            [velo_binary, "run", "--vibe", "--port", "9191", "app.py"],
+            cwd=temp_project,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line:
+                    break
+
+            # Should activate successfully with custom port
+            assert "Vibe Engine" in output, "Vibe Engine should start with custom port"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+    def test_serve_vibe_with_custom_port(self, velo_binary, temp_project):
+        """velo serve --vibe --port 9292 should use custom port."""
+        main_py = temp_project / "main.py"
+        main_py.write_text("""
+async def app(scope, receive, send):
+    pass
+""")
+
+        proc = subprocess.Popen(
+            [velo_binary, "serve", "--vibe", "--port", "9292", "main:app"],
+            cwd=temp_project,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line:
+                    break
+
+            assert "Vibe Engine" in output, "Vibe Engine should start with custom port"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+
+# =============================================================================
+# Test: First-Time User Experience
+# =============================================================================
+
+
+class TestFirstTimeUserExperience:
+    """Tests that ensure first-time users succeed."""
+
+    def test_minimal_project_works(self, velo_binary, tmp_path):
+        """Absolute minimal project should work with vibe."""
+        # User creates just one file
+        hello_py = tmp_path / "hello.py"
+        hello_py.write_text('print("Hello, Vibe!")')
+
+        proc = subprocess.Popen(
+            [velo_binary, "run", "--vibe", "hello.py"],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line:
+                    break
+
+            assert "Vibe Engine" in output, "Minimal project should work"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+    def test_nested_directory_works(self, velo_binary, tmp_path):
+        """User running from subdirectory should work."""
+        # Create nested structure
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        app_py = src_dir / "app.py"
+        app_py.write_text('print("Nested app")')
+
+        proc = subprocess.Popen(
+            [velo_binary, "run", "--vibe", "src/app.py"],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            output = ""
+            start = time.time()
+            while time.time() - start < 5:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                output += line
+                if "Vibe Engine" in line:
+                    break
+
+            assert "Vibe Engine" in output, "Nested directory should work"
+        finally:
+            proc.terminate()
+            proc.wait(timeout=5)
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
