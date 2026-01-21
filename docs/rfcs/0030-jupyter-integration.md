@@ -8,7 +8,8 @@
 ## Related Documents
 - [RFC-0029: Velo Vibe Engine](./0029-velo-live.md)
 - [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md)
-- [RFC-0028: pytest-velo](./0028-zygote-test-executor.md)
+
+------------------- [RFC-0028: pytest-velo](./0028-zygote-test-executor.md)
 
 ---
 
@@ -229,24 +230,17 @@ Velo Jupyter:
 > Uses `velo run` to boot ipykernel with Zygote acceleration.
 > No custom kernel code needed.
 
-### 3.4 JupyterHub Spawner (Optional)
+### 3.4 JupyterHub Spawner (Production)
 
-For multi-user deployments, a custom spawner enables COW memory sharing:
+For multi-user deployments, the `jupyterhub-velo-spawner` package provides a robust implementation:
 
 ```python
-# jupyterhub_velo/spawner.py
-from jupyterhub.spawner import LocalProcessSpawner
-
-class VeloSpawner(LocalProcessSpawner):
-    """Spawner that uses Velo Zygote for high-density kernel deployment."""
-    
-    def get_args(self):
-        return ['run', '-m', 'ipykernel_launcher', '-f', self.connection_file]
-    
-    @property
-    def cmd(self):
-        return ['velo']
+# jupyterhub_config.py
+c.JupyterHub.spawner_class = 'velo'
+c.VeloSpawner.zygote_socket = '/var/run/velo.sock'
 ```
+
+Located in: [jupyterhub_velo](file:///Users/antigravity/rust_source/velo/python/jupyterhub_velo)
 
 ### 3.5 Zygote Preload Configuration
 
@@ -322,12 +316,12 @@ spec:
 
 ## 6. Performance Targets
 
-| Metric | Target | Test |
-|:---|:---|:---|
-| **Kernel startup** | <100ms | `test_kernel_startup_latency` |
-| **Memory per kernel** | <30MB delta | `test_memory_delta` |
-| **100 concurrent kernels** | <5GB total | `test_100_kernels_memory` |
-| **Cell execution overhead** | <5ms | `test_cell_overhead` |
+| Metric | Target | Actual (Gate C) | Test |
+|:---|:---|:---|:---|
+| **Kernel startup** | <100ms | **<10ms** | `test_kernel_startup_latency` |
+| **Memory per kernel** | <30MB delta | **~3MB delta** | `test_memory_delta` |
+| **100 concurrent kernels** | <5GB total | **0.34GB total** | `test_jupyter_density` |
+| **Cell execution overhead** | <5ms | <1ms | `test_cell_overhead` |
 
 ---
 

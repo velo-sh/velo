@@ -1,0 +1,138 @@
+"""
+QA: Jupyter Density Verification (Gate C)
+
+Verifies that Velo can support 100 concurrent Jupyter kernels in <5GB RSS.
+Target: 100 kernels * ~20MB private + 500MB shared = ~2.5GB (Target <5GB)
+"""
+
+import os
+import subprocess
+import time
+from pathlib import Path
+
+import psutil
+import pytest
+
+
+@pytest.fixture
+def velo_binary():
+    root = Path(__file__).parent.parent.parent.parent
+    release_path = root / "target" / "release" / "velo"
+    if release_path.exists():
+        return str(release_path)
+    debug_path = root / "target" / "debug" / "velo"
+    if debug_path.exists():
+        return str(debug_path)
+    return "velo"
+
+
+def get_total_rss(pids):
+    """Calculate total RSS for a list of PIDs."""
+    total = 0
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            total += proc.memory_info().rss
+        except psutil.NoSuchProcess:
+            continue
+    return total
+
+
+def test_jupyter_density_100_kernels(velo_binary, tmp_path):
+    """
+    Gate C: 100 kernels in <5GB RSS.
+    """
+    # 1. Setup a mock ipykernel_launcher that imports heavy libs
+    # We want to simulate a real scientific stack kernel.
+    mock_kernel_dir = tmp_path / "ipykernel_launcher"
+    mock_kernel_dir.mkdir()
+    (mock_kernel_dir / "__init__.py").write_text("")
+    (mock_kernel_dir / "__main__.py").write_text("""
+import sys
+import time
+import os
+
+# Simulate heavy imports if available, otherwise just use memory
+try:
+    import numpy as np
+    # Force a large allocation that stays in memory
+    _data = np.zeros((1000, 1000)) 
+except ImportError:
+    # Fallback to pure python memory pressure
+    _data = [0] * (10**6) 
+
+# Stay alive until killed
+print(f"KERNEL_READY_PID_{os.getpid()}")
+sys.stdout.flush()
+while True:
+    time.sleep(1)
+""")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(tmp_path)
+
+    # 2. Start Zygote with preload
+    # Preload numpy to ensure it's shared via COW
+    subprocess.run([velo_binary, "zygote", "stop"], capture_output=True)
+    time.sleep(1)
+
+    print("🚀 Starting Zygote with preload...")
+    # Note: Preloading 'numpy' if available
+    start_res = subprocess.run(
+        [velo_binary, "zygote", "start", "--daemon", "--preload", "numpy"], capture_output=True, text=True, env=env
+    )
+    if start_res.returncode != 0:
+        print(f"Warning: Zygote start failed (maybe numpy not found): {start_res.stderr}")
+        # Try without preload
+        subprocess.run([velo_binary, "zygote", "start", "--daemon"], env=env)
+
+    time.sleep(2)
+
+    # 3. Spawn 100 kernels
+    processes = []
+    pids = []
+    print("🔋 Spawning 100 kernels...")
+    for i in range(100):
+        p = subprocess.Popen(
+            [velo_binary, "run", "--zygote", "-m", "ipykernel_launcher"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        processes.append(p)
+        # We need to wait for the worker to be spawned by Zygote.
+        # Velo CLI prints the worker PID to stderr: "⚡ Running via Zygote (PID: 1234)"
+
+    # Wait a bit for all to settle
+    time.sleep(5)
+
+    # Find all child PIDs of the Zygote or workers
+    # Actually, we can just look for processes matching our mock_kernel
+    all_pids = []
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        cmdline = proc.info["cmdline"]
+        if cmdline and "ipykernel_launcher" in " ".join(cmdline):
+            all_pids.append(proc.info["pid"])
+
+    print(f"✅ Found {len(all_pids)} active kernels.")
+
+    # 4. Measure Memory
+    total_rss = get_total_rss(all_pids)
+    total_gb = total_rss / (1024**3)
+
+    print(f"📊 Total RSS for {len(all_pids)} kernels: {total_gb:.2f} GB")
+
+    # Cleanup
+    for p in processes:
+        p.terminate()
+    subprocess.run([velo_binary, "zygote", "stop"])
+
+    # Assert Gate C
+    assert len(all_pids) >= 100, f"Expected 100 kernels, found {len(all_pids)}"
+    assert total_gb < 5.0, f"Memory usage too high: {total_gb:.2f} GB (Gate C limit: 5GB)"
+
+
+if __name__ == "__main__":
+    # If run directly, just execute the test
+    pytest.main([__file__, "-s"])
