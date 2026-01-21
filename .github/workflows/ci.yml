@@ -169,7 +169,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-build-v2"
           cache-on-failure: true
 
       - name: Install uv
@@ -217,7 +217,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-build-v2"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -239,7 +239,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-build-v2"
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
