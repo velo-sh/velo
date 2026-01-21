@@ -1,9 +1,10 @@
-# RFC-0029: Velo Live (Instant Python Feedback)
+# RFC-0029: Velo Vibe Engine (Instant Python Feedback)
 
-**Status**: DRAFT
+**Status**: ✅ IMPLEMENTED
 **Author**: Architect
 **Date**: 2026-01-14
-**Phase**: Phase 8.x
+**Updated**: 2026-01-21
+**Phase**: Phase 8
 
 ## Related Documents
 - [RFC-0019: Native Sovereignty](./0019-native-sovereignty.md) (Zygote Architecture)
@@ -68,14 +69,17 @@ Current Python development pain points:
 ## 4. Interface
 
 ```bash
-# Start live mode
-velo live app.py
+# Start vibe mode (real-time hot reload)
+velo run --vibe app.py
 
 # With specific preloads
-velo live --preload "torch,pandas" app.py
+velo run --vibe --preload "torch,pandas" app.py
 
-# Watch specific function
-velo live app.py::predict
+# Custom WebSocket port
+velo run --vibe --port 9191 app.py
+
+# Alias: --live is equivalent to --vibe
+velo run --live app.py
 ```
 
 ---

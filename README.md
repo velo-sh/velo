@@ -102,8 +102,9 @@ velo run script.py
 velo run --zygote script.py
 
 # 🎸 Vibe Coding Mode (Phase 8) - Real-time hot reload
-velo vibe app.py                      # Edit-save-see instant feedback
-velo vibe app.py --port 9191          # Custom WebSocket port
+velo run --vibe app.py                # Edit-save-see instant feedback
+velo run --vibe --port 9191 app.py    # Custom WebSocket port
+# Alias: --live is equivalent to --vibe
 
 # Manage Zygote daemon
 velo zygote start    # Start pre-warming daemon
