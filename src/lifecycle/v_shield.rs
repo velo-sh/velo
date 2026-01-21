@@ -393,11 +393,20 @@ impl EnvironmentShield {
         env.insert("NUMEXPR_NUM_THREADS".to_string(), thread_val);
 
         // 4. Python Specific Isolation
+        // RFC-0012: Ensure worker processes are isolated from user site-packages
         env.insert("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string());
         env.insert("PYTHONUNBUFFERED".to_string(), "1".to_string());
         env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
         env.insert("PYTHONUTF8".to_string(), "1".to_string());
         env.insert("PYTHONNOUSERSITE".to_string(), "1".to_string());
+        env.insert("PYTHONUSERBASE".to_string(), "/dev/null".to_string()); // Block user-site installation
+
+        // RFC-0012: Block any potentially toxic environment variables not explicitly whitelisted
+        for var in &["PYTHONUSERBASE", "PYTHONEXECUTABLE"] {
+            if !self.env_whitelist.contains(&(*var).to_string()) {
+                env.remove(*var);
+            }
+        }
 
         env
     }

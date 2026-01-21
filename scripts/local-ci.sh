@@ -15,6 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Strict Environment Enforcement (RFC-0012)
+export VELO_STRICT_SSOT=1
+
 # Source common library
 source "$SCRIPT_DIR/ci-common.sh"
 
