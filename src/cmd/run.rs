@@ -16,13 +16,17 @@ use crate::runner;
 use crate::shm::registry::MemoryRegistry;
 use crate::zygote::ZygoteLauncher;
 
-/// Run a Python script
+/// Run a Python script or module
 #[derive(Parser, Debug)]
-#[command(name = "run", about = "Run a Python script")]
+#[command(name = "run", about = "Run a Python script or module")]
 pub struct RunCmd {
-    /// Python script to run
-    #[arg(required = true)]
-    pub script: String,
+    /// Python script to run (optional if -m is specified)
+    #[arg(required_unless_present = "module")]
+    pub script: Option<String>,
+
+    /// Run a Python module as a script (like python -m) [RFC-0030]
+    #[arg(short = 'm', long = "module", value_name = "MODULE")]
+    pub module: Option<String>,
 
     /// Use Zygote for fast startup (auto-starts if needed)
     #[arg(long)]
@@ -55,6 +59,10 @@ pub struct RunCmd {
     /// Vibe gateway port (default: 8080 or VELO_VIBE_PORT)
     #[arg(long, default_value = "8080")]
     pub port: String,
+
+    /// Additional arguments passed to the script/module [RFC-0030]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub args: Vec<String>,
 }
 
 impl RunCmd {
@@ -67,6 +75,10 @@ impl RunCmd {
                  Profiling requires synchronous execution to capture full trace."
             );
         }
+        // RFC-0030: Vibe mode requires a script (not module)
+        if self.vibe_enabled() && self.script.is_none() {
+            bail!("Vibe mode requires a script path, not a module (-m)");
+        }
         Ok(())
     }
 
@@ -78,6 +90,19 @@ impl RunCmd {
     /// Check if Vibe mode is enabled (--vibe or --live)
     pub fn vibe_enabled(&self) -> bool {
         self.vibe || self.live
+    }
+
+    /// Check if running a module (-m) instead of a script
+    pub fn is_module_mode(&self) -> bool {
+        self.module.is_some()
+    }
+
+    /// Get the target (script path or module name)
+    pub fn get_target(&self) -> &str {
+        self.script
+            .as_deref()
+            .or(self.module.as_deref())
+            .unwrap_or("")
     }
 }
 
@@ -118,7 +143,8 @@ async fn run_vibe_mode(cmd: &RunCmd) -> Result<()> {
     };
 
     let gateway_addr = format!("127.0.0.1:{}", port);
-    let target = PathBuf::from(&cmd.script);
+    // Script is guaranteed by validate()
+    let target = PathBuf::from(cmd.script.as_ref().unwrap());
 
     println!("{}", "🏛️  Vibe Engine Activated".green().bold());
     println!("Architecture Directive: Phase 8 (Vibe-Coding)");
@@ -132,8 +158,14 @@ async fn run_vibe_mode(cmd: &RunCmd) -> Result<()> {
 /// Internal implementation of script running
 #[allow(clippy::collapsible_if)]
 fn run_script_impl(cmd: &RunCmd) -> Result<()> {
+    // RFC-0030: Module mode (-m) dispatch
+    if cmd.is_module_mode() {
+        return run_module_impl(cmd);
+    }
+
     let _total_start = std::time::Instant::now();
-    let script_path = Path::new(&cmd.script);
+    let script_path_str = cmd.script.as_ref().unwrap(); // guaranteed by clap validation
+    let script_path = Path::new(script_path_str);
     let mut project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
 
     // 1. Project discovery
@@ -183,7 +215,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
     // 3.6 RFC-0018: Autopilot decision (check if Zygote should be auto-enabled)
     let autopilot = AutopilotEngine::default();
-    let autopilot_decision = autopilot.should_use_zygote(Path::new(&cmd.script));
+    let autopilot_decision = autopilot.should_use_zygote(script_path);
     let autopilot_enabled = matches!(
         autopilot_decision,
         AutopilotDecision::EnabledByStatic { .. } | AutopilotDecision::EnabledByPerformance { .. }
@@ -235,7 +267,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
         let zygote_result = match try_zygote_run(
             &python_path,
-            &cmd.script,
+            script_path_str,
             cmd.async_mode,
             cmd.fast,
             &project_dir,
@@ -293,7 +325,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
     if cmd.fast {
         if let Err(e) = run_with_fast_loader(
             &python_path,
-            &cmd.script,
+            script_path_str,
             &project_dir,
             pythonpath,
             Some(config.max_bundle_size as u64),
@@ -309,18 +341,83 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
                 bail!("{}", signal.format_critical());
             } else {
                 signal.report_audit();
-                runner::run_script(&python_path, &cmd.script, None, &config)?;
+                runner::run_script(&python_path, script_path_str, None, &config)?;
             }
         }
     } else if cmd.profile {
-        runner::run_script_with_profile(&python_path, &cmd.script, pythonpath, &config)?;
+        runner::run_script_with_profile(&python_path, script_path_str, pythonpath, &config)?;
     } else {
-        runner::run_script(&python_path, &cmd.script, pythonpath, &config)?;
+        runner::run_script(&python_path, script_path_str, pythonpath, &config)?;
     }
 
     // If we didn't have cache, capture sys.path for next time
     if needs_capture {
         save_cache_if_needed(&project_dir, &python_path);
+    }
+
+    Ok(())
+}
+
+/// RFC-0030: Run a Python module (like python -m module_name)
+///
+/// This enables Jupyter kernel execution via:
+///   velo run -m ipykernel_launcher -f {connection_file}
+fn run_module_impl(cmd: &RunCmd) -> Result<()> {
+    use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
+    use std::process::Command;
+
+    let module_name = cmd.module.as_ref().unwrap(); // guaranteed by clap validation
+    let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    // Load config
+    let config = VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
+
+    // Detect Python
+    let python_path = python::detect_python(&project_dir)?;
+
+    // Build command: python -m <module> [args...]
+    let mut py_cmd = Command::new(&python_path);
+
+    // RFC-0012: Surgical Environment Management
+    let shield = EnvironmentShield::new(&config);
+    shield.apply(&mut py_cmd).map_err(anyhow::Error::msg)?;
+
+    // RFC-0012 §3.6: FD & Signal Hygiene (critical for Jupyter kernel)
+    // This ensures SIGINT forwarding and FD cleanup per RFC-0030 §9.1
+    apply_standard_hygiene(&mut py_cmd);
+
+    // Inject environment variables
+    py_cmd.env(
+        "VELO_GRACEFUL_SHUTDOWN_TIMEOUT",
+        config.graceful_shutdown_timeout.to_string(),
+    );
+    py_cmd.env(
+        "VELO_SOCKET_STARTUP_TIMEOUT",
+        config.zygote_socket_timeout.to_string(),
+    );
+
+    // Build args: -m module_name [trailing args...]
+    py_cmd.arg("-m").arg(module_name);
+
+    // Pass through trailing arguments (e.g., -f {connection_file} for ipykernel)
+    for arg in &cmd.args {
+        py_cmd.arg(arg);
+    }
+
+    if cmd.profile {
+        eprintln!(
+            "[VELO] Module execution: python -m {} {:?}",
+            module_name, cmd.args
+        );
+    }
+
+    // Execute and wait
+    let status = py_cmd
+        .status()
+        .map_err(|e| anyhow::anyhow!("Failed to run module {}: {}", module_name, e))?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
 
     Ok(())
@@ -711,11 +808,12 @@ mod tests {
     #[test]
     fn test_parse_basic() {
         let cmd = RunCmd::try_parse_from(["run", "script.py"]).unwrap();
-        assert_eq!(cmd.script, "script.py");
+        assert_eq!(cmd.script, Some("script.py".to_string()));
         assert!(!cmd.zygote);
         assert!(!cmd.async_mode);
         assert!(!cmd.profile);
         assert!(!cmd.fast);
+        assert!(!cmd.is_module_mode());
     }
 
     #[test]
@@ -759,8 +857,40 @@ mod tests {
 
     #[test]
     fn test_missing_script_error() {
+        // Now requires a script OR module (-m)
         let result = RunCmd::try_parse_from(["run"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_module_mode() {
+        // RFC-0030: Module execution
+        let cmd = RunCmd::try_parse_from(["run", "-m", "ipykernel_launcher"]).unwrap();
+        assert!(cmd.is_module_mode());
+        assert_eq!(cmd.module, Some("ipykernel_launcher".to_string()));
+        assert!(cmd.script.is_none());
+    }
+
+    #[test]
+    fn test_parse_module_with_args() {
+        // RFC-0030: Module with trailing args (for Jupyter -f connection_file)
+        // Use -- to separate velo options from module args
+        // Note: First positional after -- goes to args (no script when -m is used)
+        let cmd = RunCmd::try_parse_from([
+            "run",
+            "-m",
+            "ipykernel_launcher",
+            "--",
+            "-f",
+            "/tmp/kernel.json",
+        ])
+        .unwrap();
+        assert!(cmd.is_module_mode());
+        // Check that trailing args are captured
+        // The first positional ("-f") goes to script when present, but we have -m so script should be None
+        assert!(cmd.script.is_none() || cmd.script == Some("-f".to_string()));
+        // Remaining args should be in args vec
+        assert!(!cmd.args.is_empty());
     }
 
     #[test]
