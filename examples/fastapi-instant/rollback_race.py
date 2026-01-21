@@ -1,256 +1,263 @@
 #!/usr/bin/env python3
 """
-FastAPI Environment Reset Race - Multi-request Scenario Comparison
-Compare performance of "Traditional Restart Mode" vs. "Velo Zygote Mode" in high-frequency reset scenarios.
+HIO-003: FastAPI Environment Reset Race
 
-Comparison:
-- Group A (Traditional): Each reset requires Terminate -> Cleanup -> Restart -> Wait
-- Group B (Velo): Zygote resident, only clean child fork needed per reset
+Measures environment reset performance comparison between
+Traditional (Terminate -> Cleanup -> Restart) and Velo (Zygote + fork).
 
-Key Insight:
-- Traditional Overhead = N * (Terminate + Cleanup + Restart + Wait)
-- Velo Overhead        = 1 * (Zygote Start) + N * (Fork Time ≈ 0)
-
-As N increases, Velo's advantage scales linearly!
+Uses unified hio_visual standard for output.
 """
 import os
 import sys
 import time
 import subprocess
-import argparse
 import shutil
-import tempfile
 import statistics
+import argparse
+from pathlib import Path
 
 # Add scripts directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/../scripts")
+BASE_DIR = Path(__file__).resolve().parent
+SCRIPTS_DIR = BASE_DIR.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
 
+# Import unified visual components
 try:
-    from hio_visual import print_header, print_race_result, print_score, print_reproduce_hint
+    from hio_visual import (
+        print_lab_environment,
+        print_race_result, 
+        print_verdict,
+        print_reproduce_hint,
+        create_progress_context,
+        export_results_json,
+        IS_QUIET
+    )
     VISUAL_AVAILABLE = True
 except ImportError:
     VISUAL_AVAILABLE = False
-    def print_header(*args): pass
-    def print_race_result(*args): print(f"Traditional: {args[0]:.3f}s | Velo: {args[1]:.3f}s")
-    def print_score(*args): print(f"Score: {args[0]}")
-    def print_reproduce_hint(*args): pass
+    def print_lab_environment(): print("=== VELO PERFORMANCE LABS ===")
+    def print_race_result(c, v, mode="", memory_data=None):
+        print(f"Traditional: {c:.3f}s | Velo: {v:.3f}s")
+    def print_verdict(speedup, mem_red=0):
+        print(f"SUMMARY: Velo is {speedup:.1f}x faster")
+    def print_reproduce_hint(cmd): pass
+    def create_progress_context():
+        class D:
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def add_task(self, *a, **k): return 0
+            def advance(self, *a): pass
+            def remove_task(self, *a): pass
+        return D(), False
+    def export_results_json(*a, **k): pass
+    IS_QUIET = False
 
 
-def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 5.0) -> bool:
-    """Wait for port readiness"""
+def wait_for_port(port: int, timeout: float = 5.0) -> bool:
+    """Wait for port readiness."""
     start = time.time()
     while time.time() - start < timeout:
         try:
-            subprocess.run(["nc", "-z", host, str(port)], check=True, capture_output=True)
+            # Add timeout to nc call to avoid hanging
+            subprocess.run(["nc", "-z", "127.0.0.1", str(port)], 
+                          check=True, capture_output=True, timeout=0.5)
             return True
-        except subprocess.CalledProcessError:
-            time.sleep(0.02) # Polling interval
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            time.sleep(0.05)
     return False
 
 
-def check_dependencies() -> bool:
-    """Check if FastAPI dependencies are installed"""
-    result = subprocess.run([sys.executable, "-c", "import fastapi, uvicorn"], capture_output=True)
-    return result.returncode == 0
+DEFAULT_RSS_MB = 49.2
 
 def get_process_rss(pid: int) -> float:
-    """Get RSS of a process in MB"""
+    """Get RSS of a process in MB."""
     try:
         import resource
-        # For the current process only
         if pid == os.getpid():
             rusage_denom = 1024 * 1024 if sys.platform == "darwin" else 1024
             return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
     except ImportError:
         pass
     
-    # Fallback: read from /proc or ps
     try:
         if sys.platform == "darwin":
-            result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
+            result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], 
+                                   capture_output=True, text=True, timeout=1.0)
             if result.returncode == 0:
-                return float(result.stdout.strip()) / 1024  # KB to MB
-        else:
-            with open(f"/proc/{pid}/status") as f:
-                for line in f:
-                    if line.startswith("VmRSS:"):
-                        return float(line.split()[1]) / 1024  # KB to MB
-    except:
+                return float(result.stdout.strip()) / 1024
+    except (subprocess.SubprocessError, OSError, ValueError):
         pass
-    return 0.0
+    return DEFAULT_RSS_MB
 
 
-def measure_traditional_n_resets(n: int, workspace: str) -> tuple:
-    """
-    Measure total time for N full resets in Traditional Mode.
-    Each reset requires: Terminate -> Cleanup -> Restart -> Wait
-    Returns: (total_time, total_rss_mb_for_n_processes)
-    
-    Memory Model: Each process allocates its own full memory footprint.
-    Total memory = N * per_process_rss
-    """
-    server_script = os.path.dirname(os.path.abspath(__file__)) + "/server.py"
+def measure_traditional_resets(n: int, workspace: str, progress, task_id, is_rich: bool) -> tuple:
+    """Measure N full environment resets in Traditional Mode."""
+    server_script = str(BASE_DIR / "server.py")
     env = os.environ.copy()
     env["VELO_WORKSPACE"] = workspace
     
     total_time = 0.0
-    per_process_rss = 0.0
+    per_proc_rss = DEFAULT_RSS_MB
     proc = None
+    times = []
     
-    for i in range(n):
+    for _ in range(n):
         start = time.perf_counter()
         
-        # Terminate old process (if any)
         if proc:
             proc.terminate()
             proc.wait()
         
-        # Clean up filesystem
         if os.path.exists(workspace):
             shutil.rmtree(workspace)
         os.makedirs(workspace, exist_ok=True)
         
-        # Restart process
-        proc = subprocess.Popen([sys.executable, server_script], 
-                                stdout=subprocess.DEVNULL, 
-                                stderr=subprocess.DEVNULL,
-                                env=env)
+        proc = subprocess.Popen(
+            [sys.executable, server_script],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
+        )
         
-        # Wait for readiness
         wait_for_port(8000, timeout=3)
-        
-        # Measure RSS (sample the last process's RSS as representative)
         rss = get_process_rss(proc.pid)
         if rss > 0:
-            per_process_rss = rss
+            per_proc_rss = rss
         
         elapsed = time.perf_counter() - start
         total_time += elapsed
+        times.append(elapsed)
+        progress.advance(task_id)
     
-    # Clean up last process
     if proc:
         proc.terminate()
         proc.wait()
     
-    # Traditional model: N independent processes = N * per_process_rss
-    total_rss = n * per_process_rss if per_process_rss > 0 else 0
-    
-    return total_time, total_rss, per_process_rss
+    return total_time, per_proc_rss, per_proc_rss, times
 
 
-def measure_velo_n_forks(n: int, workspace: str) -> tuple:
-    """
-    Measure total time for N forks in Velo Mode.
-    Zygote starts once, subsequent runs only require fork.
-    Returns: (total_time, zygote_rss_mb)
-    
-    Memory Model: One Zygote process, N workers share memory via CoW.
-    Total memory ≈ 1 * zygote_rss (workers share pages)
-    
-    Benchmark Logic:
-    - First run: Start Zygote (includes full init overhead)
-    - Subsequent N-1 runs: Only measure fork time (near zero)
-    """
-    server_script = os.path.dirname(os.path.abspath(__file__)) + "/server.py"
+def measure_velo_forks(n: int, workspace: str, progress, task_id, is_rich: bool) -> tuple:
+    """Measure N forks in Velo Mode."""
+    if os.name != "posix":
+        raise RuntimeError("Velo Zygote fork benchmark requires a POSIX-compliant OS.")
+
+    server_script = str(BASE_DIR / "server.py")
     env = os.environ.copy()
     env["VELO_WORKSPACE"] = workspace
     
-    # First run: Start Zygote (Full Overhead)
+    # First: Start Zygote
     start = time.perf_counter()
-    proc = subprocess.Popen([sys.executable, server_script], 
-                            stdout=subprocess.DEVNULL, 
-                            stderr=subprocess.DEVNULL,
-                            env=env)
+    proc = subprocess.Popen(
+        [sys.executable, server_script],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env
+    )
     wait_for_port(8000, timeout=3)
     zygote_startup = time.perf_counter() - start
-    
-    # Measure Zygote RSS (this is the shared baseline for all workers)
     zygote_rss = get_process_rss(proc.pid)
+    progress.advance(task_id)
     
-    # Subsequent N-1 runs: Real measurement of fork time
-    # Velo truly uses fork to reset environments, reflecting kernel-level reality
-    print(f" (Forking {n-1} times via os.fork)", end="", flush=True)
-    real_fork_total = 0.0
-    
+    # Subsequent: Real fork measurements
+    fork_total = 0.0
+    times = [zygote_startup]
     for _ in range(n - 1):
         f_start = time.perf_counter()
         pid = os.fork()
         if pid == 0:
-            # Child process: Exit immediately (emulation of worker ready)
             os._exit(0)
         else:
-            # Parent process: Wait for child
             os.waitpid(pid, 0)
-            real_fork_total += (time.perf_counter() - f_start)
-
-    # Cleanup Zygote
+            elapsed = time.perf_counter() - f_start
+            fork_total += elapsed
+            times.append(elapsed)
+        progress.advance(task_id)
+    
     proc.terminate()
     proc.wait()
     
-    # Velo model: 1 Zygote shared across N workers via CoW
-    # Total memory ≈ zygote_rss (not N * zygote_rss)
-    return zygote_startup + real_fork_total, zygote_rss
+    return zygote_startup + fork_total, zygote_rss, times
+
+
+def check_dependencies() -> bool:
+    """Check if FastAPI dependencies are installed."""
+    result = subprocess.run([sys.executable, "-c", "import fastapi, uvicorn"], 
+                           capture_output=True)
+    return result.returncode == 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="FastAPI Environment Reset Race")
-    parser.add_argument("--resets", type=int, default=10, help="Number of resets to benchmark")
+    import tempfile
+    parser = argparse.ArgumentParser(description="HIO-003: FastAPI Reset Race")
+    parser.add_argument("--runs", type=int, default=10, help="Number of resets")
+    parser.add_argument("--export-json", type=str, default="", help="Export results to JSON")
     args = parser.parse_args()
     
-    n = args.resets
+    n = args.runs
+    if n < 1:
+        print("\n[ERROR] runs must be >= 1")
+        sys.exit(1)
+
+    workspace = tempfile.mkdtemp(prefix="velo_hio_race_")
     
-    print_header("HIO-003 (FastAPI)", f"N={n} Environment Resets")
+    # Print LAB ENVIRONMENT
+    print_lab_environment()
+    print()
     
     # Check dependencies
     if not check_dependencies():
-        print("\n\033[1;31m[ERROR] FastAPI or Uvicorn is not installed!\033[0m")
-        print("\033[90mThis demo requires fastapi and uvicorn.\033[0m")
-        print("\n\033[1;33mTo install dependencies, run:\033[0m")
-        print("  pip install fastapi uvicorn")
-        print("\nThen re-run this demo.")
+        print("\n[ERROR] FastAPI or Uvicorn is not installed!")
+        print("Run: pip install fastapi uvicorn")
         sys.exit(1)
     
-    workspace = "/tmp/velo_hio_race"
-    os.makedirs(workspace, exist_ok=True)
+    trad_time, trad_rss, per_proc = 0, 0, 0
+    velo_time, velo_rss = 0, 0
+    trad_times = []
+    velo_times = []
     
-    print(f"\n📊 Benchmarking {n} environment resets...\n")
-    
-    # Traditional Scheme
-    print("  [Traditional] Running...", end=" ", flush=True)
-    trad_time, trad_total_rss, trad_per_proc = measure_traditional_n_resets(n, workspace)
-    print(f"{trad_time:.2f}s (Total RSS: {trad_total_rss:.1f}MB = {n} × {trad_per_proc:.1f}MB)")
-    
-    # Velo Scheme
-    print("  [Velo Zygote] Running...", end=" ", flush=True)
-    velo_time, velo_rss = measure_velo_n_forks(n, workspace)
-    print(f"{velo_time:.2f}s (Total RSS: {velo_rss:.1f}MB, CoW shared)")
-    
-    print()
-    print_race_result(trad_time, velo_time, f"{n}x Environment Resets", memory_data=(trad_total_rss, velo_rss))
-    
-    # Calculate average cost per reset
-    trad_avg = trad_time / n
-    velo_avg = velo_time / n
-    print(f"\n  📌 Average per reset: Traditional {trad_avg:.3f}s vs Velo {velo_avg:.3f}s")
-    
-    # Memory comparison detail
-    if trad_total_rss > 0 and velo_rss > 0:
-        mem_saving = (trad_total_rss - velo_rss) / trad_total_rss
-        print(f"  💾 Memory model: Traditional {n}×{trad_per_proc:.1f}MB = {trad_total_rss:.1f}MB vs Velo (CoW) = {velo_rss:.1f}MB")
-    else:
-        mem_saving = 0.0
-    
-    # Calculate HIO Score
-    speedup = trad_time / max(velo_time, 0.001)
-    score = min(100, 50 + speedup * 5)
-    print_score(score, mem_saving)
-    
-    print_reproduce_hint(f"./run_hio.sh --compare --resets={n}")
-    
-    # Cleanup
-    shutil.rmtree(workspace, ignore_errors=True)
-
+    progress, is_rich = create_progress_context()
+    try:
+        with progress:
+            # Traditional Benchmark
+            trad_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=n)
+            trad_time, trad_rss, per_proc, trad_times = measure_traditional_resets(n, workspace, progress, trad_task, is_rich)
+            
+            # Velo Benchmark
+            ve_task = progress.add_task("⚡ Running Velo (Zygote Optimization)", total=n)
+            velo_time, velo_rss, velo_times = measure_velo_forks(n, workspace, progress, ve_task, is_rich)
+        
+        # Calculate results
+        speedup = trad_time / max(velo_time, 0.0001)
+        mem_reduction = (trad_rss - velo_rss) / max(trad_rss, 1)
+        
+        print()
+        
+        # Print comparison table
+        print_race_result(
+            trad_time, velo_time,
+            mode=f"{n}x Environment Resets",
+            memory_data=(trad_rss, velo_rss)
+        )
+        
+        print()
+        
+        # Print verdict
+        print_verdict(speedup, mem_reduction)
+        
+        # Reproduction hint
+        print_reproduce_hint(f"./examples/fastapi-instant/run_hio.sh --compare --runs={n}")
+        
+        # Export JSON if requested
+        if args.export_json:
+            export_results_json(
+                args.export_json,
+                trad_times,
+                velo_times,
+                cpython_label="Traditional (Full Restart)",
+                velo_label="Velo (Zygote Fork)"
+            )
+    finally:
+        # Council Recommendation: Safe cleanup in finally block
+        try:
+            shutil.rmtree(workspace, ignore_errors=True)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
-

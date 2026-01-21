@@ -1,76 +1,49 @@
 #!/bin/bash
 # HIO-001 (Django Heavyweight) Demo Script
-# Supports --compare mode for real A/B validation
+# Demonstrates Velo's Django App Registry pre-loading optimization
+
+set -e
 
 export PYTHONPATH=$PYTHONPATH:.
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
-PROJECT_ROOT=$(pwd)/examples/django-heavy
-VELO_ROOT=$(pwd)
-
-# RFC-0018: Velo binary path (use built binary by default)
-VELO_BIN="${VELO_BIN:-$VELO_ROOT/target/release/velo}"
-if [ ! -x "$VELO_BIN" ]; then
-    VELO_BIN="$VELO_ROOT/target/debug/velo"
-fi
-
-# Dependency Pre-check (RFC-0018: via Velo Integrated Python)
-check_deps() {
-    $VELO_BIN python -c "import rich" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "[INFO] 'rich' not installed, using fallback mode. Install with: uv pip install rich"
-    fi
-}
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse Arguments
 COMPARE_MODE=false
 RUNS=3
-COLD=false
+ran_benchmark=false
 
 for arg in "$@"; do
     case $arg in
         --compare)
             COMPARE_MODE=true
+            ran_benchmark=true
             ;;
         --runs=*)
             RUNS="${arg#*=}"
             ;;
-        --cold)
-            COLD=true
+        --help|-h)
+            echo "HIO-001 (Django) - App Registry Startup Benchmark"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --compare     Run A/B comparison mode"
+            echo "  --runs=N      Number of iterations (default: 3)"
+            exit 0
             ;;
     esac
 done
 
-check_deps
-
 echo -e "\033[38;5;33m[Velo HIO] Initializing Django Heavyweight Demo...\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
-    # A/B Comparison Mode (RFC-0018: via Velo)
-    COLD_FLAG=""
-    if [ "$COLD" = true ]; then
-        COLD_FLAG="--cold"
-    fi
-    $VELO_BIN run $PROJECT_ROOT/startup_race.py --runs=$RUNS $COLD_FLAG
+    # A/B Comparison Mode (using uv run with dependencies)
+    uv run --with django python "$PROJECT_ROOT/startup_race.py" --runs="$RUNS"
 else
-    # Traditional Demo Mode
-    # 1. Setup Skeleton (Idempotent)
-    $VELO_BIN python "$PROJECT_ROOT/skeleton/setup_skeleton.py"
-
-    # 2. Performance Comparison (Benchmark)
-    echo -e "Phase 1: Environment Freezing ➔ \033[90mScanning App Registry...\033[0m"
-    sleep 0.5
-    echo -e "Phase 2: Instant Clone ➔ \033[1;32mForking 10 Workers via Velo Zygote...\033[0m"
-    sleep 0.5
-    
-    # 3. Visualization + Memory Analysis
-    # Display memory chart (Simulated vs Real)
-    $VELO_BIN python "$PROJECT_ROOT/metrics_monitor.py" --demo
-
-    # Calculate HIO Score
-    $VELO_BIN python "examples/scripts/hio_engine.py" --startup=0.001 --saving=89 --metric="RSS"
+    echo "Run benchmark: $0 --compare"
 fi
 
-echo -e "\033[1;32m[DONE] Django HIO-001 High-Precision Demo is Ready.\033[0m"
-
-# Reproduction Hint
-echo -e "\n\033[90m📎 Reproduce: ./examples/django-heavy/run_hio.sh --compare --runs=3 | Full docs: velo.dev/hio\033[0m"
+if [ "$ran_benchmark" = true ]; then
+    echo -e "\033[1;32m[DONE] Django HIO-001 Complete.\033[0m"
+fi
