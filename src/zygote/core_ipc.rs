@@ -231,10 +231,10 @@ pub fn is_socket_alive(socket_path: &Path) -> bool {
     {
         // Check for @ prefix which indicates abstract socket internal representation
         let name_str = socket_path.to_string_lossy();
-        if name_str.starts_with('@') {
-            if let Ok(_) = crate::common::paths::connect_abstract_socket(&name_str) {
-                return true;
-            }
+        if name_str.starts_with('@')
+            && crate::common::paths::connect_abstract_socket(&name_str).is_ok()
+        {
+            return true;
         }
 
         use std::os::unix::ffi::OsStrExt;

@@ -581,10 +581,10 @@ impl ZygoteLauncher {
                         // RFC-0012 TITANIUM Hardening: No Orphans Rule
                         // Only set PR_SET_PDEATHSIG if we are NOT in daemon mode.
                         // A daemonized Zygote is INTENDED to outlive its parent CLI.
-                        if !daemon {
-                            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0 {
-                                // Fallback gracefully if not supported
-                            }
+                        if !daemon
+                            && libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0
+                        {
+                            // Fallback gracefully if not supported
                         }
                     }
 
