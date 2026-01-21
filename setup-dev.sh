@@ -43,7 +43,7 @@ rustup target add x86_64-unknown-linux-gnu
 # Create Python venv and install deps from pyproject.toml (Single Source of Truth)
 echo
 echo "🐍 Setting up Python environment from pyproject.toml..."
-uv venv --python 3.11
+uv venv
 uv sync  # Single source: pyproject.toml
 echo -e "${GREEN}✅${NC} Python environment ready"
 
@@ -52,7 +52,7 @@ echo -e "${GREEN}✅${NC} Python environment ready"
 echo
 echo "🔗 Configuring PyO3 Python..."
 # Use uv's standalone Python (not venv) for consistent builtin modules
-UV_PYTHON=$(uv python list --only-installed 2>/dev/null | grep "3.11" | awk '{print $2}' | head -1)
+UV_PYTHON=$(uv python find)
 if [ -n "$UV_PYTHON" ] && [ -x "$UV_PYTHON" ]; then
     # Write to .cargo/config.toml for persistent build-time configuration
     mkdir -p .cargo
@@ -64,7 +64,7 @@ PYO3_PYTHON = "$UV_PYTHON"
 EOF
     echo -e "${GREEN}✅${NC} PYO3_PYTHON auto-configured: $UV_PYTHON"
 else
-    echo -e "${YELLOW}⚠️${NC} Could not detect uv Python 3.11, using default"
+    echo -e "${YELLOW}⚠️${NC} Could not detect uv Python, using default"
 fi
 
 # Install pre-commit hooks

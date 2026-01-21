@@ -231,12 +231,18 @@ impl VeloPaths {
     pub fn worker_socket(worker_id: u64) -> PathBuf {
         let dir = Self::socket_dir();
         // Monotonic counter - never repeats in same supervisor lifetime
-        // Format: w-{worker_id}-{seq}.s (e.g., w-0-5.s = worker 0's 5th spawn)
+        // Format: v-w-{pid}-{worker_id}-{seq}.sock (e.g., v-w-1234-0-5.sock)
         let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = dir.join(format!("v-worker-{}-{}.sock", worker_id, seq));
+        let path = dir.join(format!(
+            "v-w-{}-{}-{}.sock",
+            std::process::id(),
+            worker_id,
+            seq
+        ));
         eprintln!(
-            "[PATHS] Generated worker socket: {} (id={}, seq={})",
+            "[PATHS] Generated worker socket: {} (pid={}, id={}, seq={})",
             path.display(),
+            std::process::id(),
             worker_id,
             seq
         );

@@ -410,14 +410,26 @@ fn enforce_environment_ssot() {
     // 2. .venv/bin/python (uv-managed project venv)
     // 3. python3 (system fallback - NOT RECOMMENDED)
     let python_path = env::var("PYO3_PYTHON").unwrap_or_else(|_| {
-        // Check for uv-managed .venv first
+        // SSOT: Try uv python find first
+        let uv_find_out = Command::new("uv").args(["python", "find"]).output();
+
+        if let Ok(o) = uv_find_out
+            && o.status.success()
+        {
+            let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            println!("cargo:warning=[SSOT] Auto-detected uv Python: {}", path);
+            println!("cargo:rustc-env=PYO3_PYTHON={}", path);
+            return path;
+        }
+
+        // Fallback to uv-managed .venv path
         let venv_python = Path::new(".venv/bin/python");
         if venv_python.exists() {
             let canonical = venv_python
                 .canonicalize()
                 .unwrap_or_else(|_| venv_python.to_path_buf());
             println!(
-                "cargo:warning=[SSOT] Auto-detected uv venv Python: {}",
+                "cargo:warning=[SSOT] Auto-detected .venv Python: {}",
                 canonical.display()
             );
             // CRITICAL: Tell PyO3 to use this Python for compilation
@@ -427,7 +439,7 @@ fn enforce_environment_ssot() {
 
         // Fallback to system python with warning
         println!(
-            "cargo:warning=[SSOT] WARNING: No .venv found, using system python3. \
+            "cargo:warning=[SSOT] WARNING: No uv or .venv found, using system python3. \
              This may cause runtime issues with different Python installations."
         );
         "python3".to_string()

@@ -31,11 +31,30 @@ import requests
 
 
 def get_velo_binary() -> str:
-    repo_root = Path(__file__).parents[4]
-    release = repo_root / "target" / "release" / "velo"
-    if release.exists():
-        return str(release)
-    pytest.skip("velo binary not found")
+    repo_root = Path(__file__).parents[4].resolve()
+
+    # Common search locations
+    possible_paths = [
+        repo_root / "target" / "release" / "velo",
+        repo_root / "target" / "debug" / "velo",
+        # Docker CI specific volume paths
+        Path("/workspace/target/release/velo"),
+        Path("/workspace/target/debug/velo"),
+        Path("/root/.cargo/bin/velo"),
+    ]
+
+    for p in possible_paths:
+        if p.exists():
+            return str(p)
+
+    # Try which command
+    import shutil
+
+    which_velo = shutil.which("velo")
+    if which_velo:
+        return which_velo
+
+    pytest.skip(f"velo binary not found (looked in: {[str(p) for p in possible_paths]})")
 
 
 class EvilTestProject:
@@ -66,7 +85,8 @@ dev-dependencies = []
         return self
 
     def install_deps(self, timeout: float = 180):
-        subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
+        cmd = ["uv", "sync"]
+        subprocess.run(cmd, cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
     def start_server(self, app_module: str, port: int = None):

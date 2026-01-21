@@ -85,14 +85,17 @@ class UDSProxyMiddleware:
                     try:
                         client_host = h_val.decode().split(",")[0].strip()
                         has_proxy_headers = True
-                        break
                     except Exception:
                         pass
                 elif name_lower == b"x-real-ip":
                     try:
                         client_host = h_val.decode().strip()
                         has_proxy_headers = True
-                        break
+                    except Exception:
+                        pass
+                elif name_lower == b"x-forwarded-proto":
+                    try:
+                        scope["scheme"] = h_val.decode().strip()
                     except Exception:
                         pass
 

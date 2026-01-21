@@ -69,6 +69,7 @@ docker_build() {
 }
 
 docker_run() {
+    local EXTRA_ARGS=("$@")
     # Ensure image exists
     if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
         docker_build
@@ -80,23 +81,27 @@ docker_run() {
         -v "$CARGO_CACHE:/workspace/target" \
         -v "$CARGO_REGISTRY:/root/.cargo/registry" \
         -e GITHUB_ACTIONS=true \
-        -e UV_PYTHON=python3.11 \
         -e UV_HTTP_TIMEOUT=120 \
         -e VELO_CI_TIER="${VELO_CI_TIER:-}" \
         -e SKIP_BUILD="${SKIP_BUILD:-false}" \
         "$IMAGE_NAME" \
         bash -c '
+            set -euo pipefail
             echo "🚀 Velo CI (Docker)"
             echo ""
             
             # Phase 1: Setup Python
             echo "==================== Phase 1: Setup Python ===================="
-            uv venv --python 3.11 .venv_docker
-            source .venv_docker/bin/activate
-            uv sync --all-groups
-            
-            export PYO3_PYTHON=/workspace/.venv_docker/bin/python
+            # SSOT: Use uv to manage and find the authoritative Python interpreter
+            # Derived automatically from pyproject.toml (requires-python)
+            uv python install
+            export PYO3_PYTHON=$(uv python find)
             echo "PYO3_PYTHON=$PYO3_PYTHON"
+            
+            # Create/Sync venv
+            uv venv
+            source .venv/bin/activate
+            uv sync --all-groups
             
             # Phase 2: Build
             if [ "${SKIP_BUILD:-false}" = "true" ] && [ -f "./target/release/velo" ]; then
@@ -104,7 +109,8 @@ docker_run() {
                 echo "Reusing existing binary: ./target/release/velo"
             else
                 echo "==================== Phase 2: Build ===================="
-                cargo build --release
+                # Use uv run to ensure build env alignment
+                uv run cargo build --release
             fi
 
             echo ""
@@ -131,12 +137,14 @@ docker_run() {
                 echo "🎯 Running specific Tier: $VELO_CI_TIER"
             fi
             
-            run_python_tests ".venv_docker" "$SELECTED_TESTS"
+            # Pass extra arguments to pytest
+            # Shift the first few args if needed, but here we just pass all from docker_run
+            run_python_tests ".venv" "$SELECTED_TESTS $@"
             echo ""
             echo "=========================================="
             echo "✅ CI CHECKS COMPLETED!"
             echo "=========================================="
-        '
+        ' -- "${EXTRA_ARGS[@]}"
 }
 
 docker_shell() {
@@ -151,7 +159,6 @@ docker_shell() {
         -v "$CARGO_CACHE:/workspace/target" \
         -v "$CARGO_REGISTRY:/root/.cargo/registry" \
         -e GITHUB_ACTIONS=true \
-        -e UV_PYTHON=python3.11 \
         "$IMAGE_NAME" \
         bash
 }
@@ -177,7 +184,7 @@ run_local_ci() {
     # Fix DEF-72-CI-001: CI Toolchain Misalignment (macOS)
     # Ensure rust-cpython/pyo3 links against the hermetic uv python, not system python.
     log_step "Configuring build toolchain..."
-    export PYO3_PYTHON=$(uv python find 3.11)
+    export PYO3_PYTHON=$(uv python find)
     log_success "Toolchain aligned: PYO3_PYTHON=$PYO3_PYTHON"
     
     # Run full CI pipeline with SSOT test paths from test-suites.conf
@@ -264,7 +271,11 @@ case "${1:-}" in
     --docker)
         export CHECK_DOCKER=true
         check_env_fast
-        docker_run
+        shift
+        if [[ "${1:-}" == "--" ]]; then
+            shift
+        fi
+        docker_run "$@"
         ;;
     --build)
         export CHECK_DOCKER=true

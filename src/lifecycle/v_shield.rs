@@ -511,9 +511,21 @@ mod tests {
             std::env::remove_var("VELO_SOCKET_DIR");
         }
 
-        // Format is now: v-worker-{id}-{seq}.sock (e.g., v-worker-1-0.sock)
-        assert!(path1.to_string_lossy().contains("v-worker-1-"));
-        assert!(path2.to_string_lossy().contains("v-worker-2-"));
+        // Format is now: v-w-{pid}-{id}-{seq}.sock (e.g., v-w-47958-1-0.sock)
+        let s1 = path1.to_string_lossy();
+        let s2 = path2.to_string_lossy();
+        assert!(s1.contains("v-w-"));
+        assert!(
+            s1.contains(&format!("-{}-", 1)),
+            "Path {} should contain worker ID -1-",
+            s1
+        );
+        assert!(s2.contains("v-w-"));
+        assert!(
+            s2.contains(&format!("-{}-", 2)),
+            "Path {} should contain worker ID -2-",
+            s2
+        );
         assert!(path1.to_string_lossy().ends_with(".sock"));
         assert!(path2.to_string_lossy().ends_with(".sock"));
         // Different worker IDs should produce different paths
