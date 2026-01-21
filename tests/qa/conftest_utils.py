@@ -411,6 +411,15 @@ class VeloTestEnv:
             kwargs["text"] = True
         return subprocess.Popen([self.velo, *args], env=env, cwd=kwargs.pop("cwd", self.root), **kwargs)
 
+    def install(self, *packages: str):
+        """Install packages into the isolated environment."""
+        # RFC-0012: Ensure we use the isolated venv's pip or just pip in the current env
+        # Since we set PATH to include current_venv/bin, 'pip' should be correct.
+        import subprocess
+
+        cmd = [sys.executable, "-m", "pip", "install"] + list(packages)
+        return subprocess.run(cmd, env=self.env, check=True, capture_output=True)
+
     def create_app(self, name: str, code: str) -> Path:
         p = self.root / name
         p.write_text(code)

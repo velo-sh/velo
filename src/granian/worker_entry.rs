@@ -290,6 +290,7 @@ def make_hooks(loop, app):
                 
                 # SPEC-0006 §6: Generate TraceID for cross-language observability
                 trace_id = f"velo-{int(time.time() * 1000)}-{id(rsgi_scope):x}"
+                print(f"[{trace_id}] asgi_bridge START")
                 
                 # RFC-0019/INV-POLY-005: Robust Protocol Identification
                 # Detect if this is a WebSocket request (either natively or via headers)
@@ -409,7 +410,7 @@ def make_hooks(loop, app):
                         body = await proto()
                         ctx["body_received"] = True
                         return {"type": "http.request", "body": body or b"", "more_body": False}
-                    except Exception:
+                    except Exception as e:
                         ctx["body_received"] = True
                         return {"type": "http.request", "body": b"", "more_body": False}
                 
@@ -747,14 +748,6 @@ fn load_asgi_app<'py>(
             }
         }
     }
-
-    // DEBUG: Log current sys.path and executable
-    let executable: String = sys.getattr("executable")?.extract()?;
-    eprintln!("DEBUG: Embedded Python Executable: {}", executable);
-    let current_path: Vec<String> = path.extract()?;
-    eprintln!("DEBUG: Embedded Python sys.path: {:?}", current_path);
-    let builtins: Vec<String> = sys.getattr("builtin_module_names")?.extract()?;
-    eprintln!("DEBUG: Embedded Python builtins: {:?}", builtins);
 
     let parts: Vec<&str> = app_path.split(':').collect();
     if parts.len() != 2 {

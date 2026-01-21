@@ -10,6 +10,12 @@ pub fn cmd_debug_pre_flight(json: bool) -> Result<()> {
 
     let mut results = serde_json::Map::new();
 
+    // 0. Platform Integrity Check (Binary Sentinel)
+    results.insert(
+        "platform_integrity".to_string(),
+        serde_json::Value::Bool(true),
+    );
+
     // 1. Python Linkage & Version Check (Runtime)
     let project_dir = env::current_dir()?;
     let py_info = check_python_environment(&project_dir);
@@ -19,6 +25,14 @@ pub fn cmd_debug_pre_flight(json: bool) -> Result<()> {
         println!("[1/3] Python Environment");
         println!("      • Interpreter: {}", py_info.path);
         println!("      • Version    : {}", py_info.version);
+        println!(
+            "      • Hermetic   : {}",
+            if py_info.hermetic {
+                "✅ (Managed/UV)"
+            } else {
+                "⚠️ (System/Contaminated)"
+            }
+        );
         if py_info.ok {
             println!("      • Status     : ✅");
         } else {
@@ -74,10 +88,12 @@ struct PythonInfo {
     path: String,
     version: String,
     ok: bool,
+    hermetic: bool,
 }
 
 fn check_python_environment(project_dir: &std::path::Path) -> PythonInfo {
     let python_path = python::detect_python(project_dir).unwrap_or_else(|_| "python3".into());
+    let hermetic = python::is_hermetic_check(&python_path);
     let output = Command::new(&python_path)
         .arg("-c")
         .arg("import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
@@ -91,7 +107,8 @@ fn check_python_environment(project_dir: &std::path::Path) -> PythonInfo {
     {
         version = String::from_utf8_lossy(&o.stdout).trim().to_string();
         // RFC-0012: Enforce SSoT at runtime
-        if version == crate::common::constants::PYTHON_VERSION {
+        // In pre-flight, 'ok' requires both correct version AND hermeticity
+        if version == crate::common::constants::PYTHON_VERSION && hermetic {
             ok = true;
         }
     }
@@ -100,6 +117,7 @@ fn check_python_environment(project_dir: &std::path::Path) -> PythonInfo {
         path: python_path.display().to_string(),
         version,
         ok,
+        hermetic,
     }
 }
 

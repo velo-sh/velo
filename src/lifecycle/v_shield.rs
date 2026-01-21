@@ -393,11 +393,20 @@ impl EnvironmentShield {
         env.insert("NUMEXPR_NUM_THREADS".to_string(), thread_val);
 
         // 4. Python Specific Isolation
+        // RFC-0012: Ensure worker processes are isolated from user site-packages
         env.insert("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string());
         env.insert("PYTHONUNBUFFERED".to_string(), "1".to_string());
         env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
         env.insert("PYTHONUTF8".to_string(), "1".to_string());
         env.insert("PYTHONNOUSERSITE".to_string(), "1".to_string());
+        env.insert("PYTHONUSERBASE".to_string(), "/dev/null".to_string()); // Block user-site installation
+
+        // RFC-0012: Block any potentially toxic environment variables not explicitly whitelisted
+        for var in &["PYTHONUSERBASE", "PYTHONEXECUTABLE"] {
+            if !self.env_whitelist.contains(&(*var).to_string()) {
+                env.remove(*var);
+            }
+        }
 
         env
     }
@@ -604,9 +613,21 @@ mod tests {
             std::env::remove_var("VELO_SOCKET_DIR");
         }
 
-        // Format is now: v-worker-{id}-{seq}.sock (e.g., v-worker-1-0.sock)
-        assert!(path1.to_string_lossy().contains("v-worker-1-"));
-        assert!(path2.to_string_lossy().contains("v-worker-2-"));
+        // Format is now: v-w-{pid}-{id}-{seq}.sock (e.g., v-w-47958-1-0.sock)
+        let s1 = path1.to_string_lossy();
+        let s2 = path2.to_string_lossy();
+        assert!(s1.contains("v-w-"));
+        assert!(
+            s1.contains(&format!("-{}-", 1)),
+            "Path {} should contain worker ID -1-",
+            s1
+        );
+        assert!(s2.contains("v-w-"));
+        assert!(
+            s2.contains(&format!("-{}-", 2)),
+            "Path {} should contain worker ID -2-",
+            s2
+        );
         assert!(path1.to_string_lossy().ends_with(".sock"));
         assert!(path2.to_string_lossy().ends_with(".sock"));
         // Different worker IDs should produce different paths

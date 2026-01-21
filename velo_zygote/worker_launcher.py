@@ -74,17 +74,35 @@ class UDSProxyMiddleware:
         )
         if scope["type"] in ("http", "websocket") and is_client_missing:
             headers = scope.get("headers", [])
-            has_proxy_headers = any(k.lower() in (b"x-forwarded-for", b"x-real-ip") for k, v in headers)
-            if has_proxy_headers:
-                client_host = "127.0.0.1"
-                for h_name, h_val in headers:
-                    if h_name.lower() == b"x-forwarded-for":
+            has_proxy_headers = False
+            client_host = "127.0.0.1"
+
+            # RFC-0011 §6A.4: Recover client IP from X-Forwarded-For injected by Rust Proxy
+            # Standard ASGI headers are (lowercase_bytes, bytes)
+            for h_name, h_val in headers:
+                name_lower = h_name.lower()
+                if name_lower == b"x-forwarded-for":
+                    try:
                         client_host = h_val.decode().split(",")[0].strip()
-                        break
-                    if h_name.lower() == b"x-real-ip":
+                        has_proxy_headers = True
+                    except Exception:
+                        pass
+                elif name_lower == b"x-real-ip":
+                    try:
                         client_host = h_val.decode().strip()
-                        break
-                scope["client"] = [client_host, 0]
+                        has_proxy_headers = True
+                    except Exception:
+                        pass
+                elif name_lower == b"x-forwarded-proto":
+                    try:
+                        scope["scheme"] = h_val.decode().strip()
+                    except Exception:
+                        pass
+
+            if has_proxy_headers:
+                # RFC-0011: scope['client'] MUST be a tuple of (host, port)
+                scope["client"] = (client_host, 0)
+
         await self.app(scope, receive, send)
 
 
