@@ -24,6 +24,7 @@ pub mod rsgi; // RFC-0019: Native Sovereignty (RSGI Host Engine - Legacy)
 pub mod runner;
 pub mod serve;
 pub mod shm; // RFC-0015: Memory Gravity
+pub mod v_live; // RFC-0029: Vibe Engine (Phase 8)
 pub mod vtest; // RFC-0028: Zygote-accelerated testing
 pub mod zygote;
 // CI cache test Sun Jan 18 19:12:13 CST 2026

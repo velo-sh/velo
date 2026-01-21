@@ -40,6 +40,9 @@ COMMANDS:
 
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
+    --vibe     Enable Vibe Coding mode (real-time hot reload)
+    --live     Alias for --vibe
+    --port <PORT>  Vibe gateway port (default: 8080)
     --profile  Show detailed startup timing breakdown
     --shm <PATH>  Map .safetensors into shared memory (Memory Gravity)
 

@@ -43,6 +43,18 @@ pub struct RunCmd {
     /// Map a .safetensors file into shared memory (Memory Gravity)
     #[arg(long, value_name = "PATH")]
     pub shm: Option<PathBuf>,
+
+    /// Enable Vibe Coding mode (real-time hot reload) [RFC-0029]
+    #[arg(long)]
+    pub vibe: bool,
+
+    /// Alias for --vibe
+    #[arg(long)]
+    pub live: bool,
+
+    /// Vibe gateway port (default: 8080 or VELO_VIBE_PORT)
+    #[arg(long, default_value = "8080")]
+    pub port: String,
 }
 
 impl RunCmd {
@@ -62,6 +74,11 @@ impl RunCmd {
     pub fn zygote_enabled(&self) -> bool {
         self.zygote || self.async_mode || self.shm.is_some()
     }
+
+    /// Check if Vibe mode is enabled (--vibe or --live)
+    pub fn vibe_enabled(&self) -> bool {
+        self.vibe || self.live
+    }
 }
 
 /// Handle 'velo run' command (entry point from cli.rs)
@@ -72,8 +89,44 @@ pub fn cmd_run(args: &[String]) -> Result<()> {
     // Validate
     cmd.validate()?;
 
+    // RFC-0029/GAP-001: Vibe mode takes precedence
+    if cmd.vibe_enabled() {
+        return run_vibe_mode(&cmd);
+    }
+
     // Run the script
     run_script_impl(&cmd)
+}
+
+/// Run in Vibe Coding mode (RFC-0029 / GAP-001)
+///
+/// This function delegates to the VibeEngine for real-time hot reload.
+#[tokio::main]
+async fn run_vibe_mode(cmd: &RunCmd) -> Result<()> {
+    use crate::v_live::engine::VibeEngine;
+    use colored::Colorize;
+
+    // Determine port: CLI arg > Env Var > Default
+    let port = if let Ok(env_port) = std::env::var("VELO_VIBE_PORT") {
+        if !env_port.is_empty() {
+            env_port
+        } else {
+            cmd.port.clone()
+        }
+    } else {
+        cmd.port.clone()
+    };
+
+    let gateway_addr = format!("127.0.0.1:{}", port);
+    let target = PathBuf::from(&cmd.script);
+
+    println!("{}", "🏛️  Vibe Engine Activated".green().bold());
+    println!("Architecture Directive: Phase 8 (Vibe-Coding)");
+
+    let engine = VibeEngine::new(target, &gateway_addr);
+    engine.start().await?;
+
+    Ok(())
 }
 
 /// Internal implementation of script running
