@@ -390,14 +390,14 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
     }
 
     // If zygote is requested or it's a known heavy module (like ipykernel), try zygote
-    if cmd.zygote {
+    if cmd.zygote_enabled() {
         match try_zygote_run(
             &PathBuf::from(&python_path),
             None,
             Some(module_name.clone()),
             &all_args,
-            false, // async_mode
-            false, // fast_mode
+            cmd.async_mode,
+            cmd.fast,
             &project_dir,
             &config,
             cmd.profile,
@@ -547,13 +547,16 @@ fn try_zygote_run(
             config,
         ) {
             Ok(worker) => {
-                if async_enabled && profile {
+                if async_enabled {
+                    println!("Worker PID: {}", worker.pid());
                     eprintln!("⚡ Worker spawned in background (PID: {})", worker.pid());
-                    if let Some(stdout) = worker.stdout_path() {
-                        eprintln!("📝 Logs (stdout): {}", stdout.display());
-                    }
-                    if let Some(stderr) = worker.stderr_path() {
-                        eprintln!("📝 Logs (stderr): {}", stderr.display());
+                    if profile {
+                        if let Some(stdout) = worker.stdout_path() {
+                            eprintln!("📝 Logs (stdout): {}", stdout.display());
+                        }
+                        if let Some(stderr) = worker.stderr_path() {
+                            eprintln!("📝 Logs (stderr): {}", stderr.display());
+                        }
                     }
 
                     // Keep Zygote alive but exit CLI immediately

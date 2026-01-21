@@ -82,6 +82,7 @@ fn cmd_jupyter_install(sys_prefix: bool, preload: Option<&str>, display_name: &s
         "argv": [
             velo_path_str,
             "run",
+            "--zygote",
             "-m",
             "ipykernel_launcher",
             "--",
@@ -137,6 +138,11 @@ fn cmd_jupyter_install(sys_prefix: bool, preload: Option<&str>, display_name: &s
 
 /// Get the Jupyter kernels directory
 fn get_kernel_directory(sys_prefix: bool) -> Result<PathBuf> {
+    // RFC-0030: Respect JUPYTER_DATA_DIR if set
+    if let Ok(data_dir) = std::env::var("JUPYTER_DATA_DIR") {
+        return Ok(PathBuf::from(data_dir).join("kernels").join("velo"));
+    }
+
     if sys_prefix {
         // System-wide: {sys.prefix}/share/jupyter/kernels/velo
         // We need to detect Python to get sys.prefix

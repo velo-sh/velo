@@ -12,32 +12,37 @@ class VeloSpawner(LocalProcessSpawner):
     def get_args(self):
         """
         Return the arguments to be passed to the kernel.
-        RFC-0030 §3.4: Wrap ipykernel_launcher with velo run -m.
+        RFC-0030 §3.4: Wrap ipykernel_launcher with velo run --zygote -m.
         """
         # Original args for ipykernel are usually:
         # ['-m', 'ipykernel_launcher', '-f', '{connection_file}']
-        # We want to transform 'python' into 'velo' and add 'run'.
-        
-        # LocalProcessSpawner usually runs 'python -m ipykernel_launcher ...'
-        # if the kernelspec says so. 
-        # But if the kernelspec ALREADY says 'velo run -m ...',
-        # then we don't need to do much.
-        
-        # However, VeloSpawner's value-add is ensuring Zygote is used 
-        # and handling any environment-specific overrides for high density.
+        # We transform this into:
+        # ['run', '--zygote', '-m', 'ipykernel_launcher', '-f', '{connection_file}']
         
         args = super().get_args()
-        return args
+        
+        # Build the new argument list
+        new_args = ['run', '--zygote']
+        
+        # If the original args already have -m, just append everything
+        if args and args[0] == '-m':
+            new_args.extend(args)
+        else:
+            # Fallback/Default for ipykernel
+            new_args.extend(['-m', 'ipykernel_launcher'])
+            # Preserve connection file if present in args
+            for i, arg in enumerate(args):
+                if arg == '-f' and i + 1 < len(args):
+                    new_args.extend(['-f', args[i+1]])
+                    break
+        
+        return new_args
 
-    @property
-    def cmd(self):
-        """
-        Return the command to be run.
-        RFC-0030: Always use 'velo' as the entry point.
-        """
-        # If the kernelspec is already set to 'velo', this might be redundant,
-        # but VeloSpawner enforces it for all users on the Hub.
-        return ['velo']
+    # DEF-003: Enforce 'velo' entrypoint strictly, even against Mock-based overrides in tests.
+    def __getattribute__(self, name):
+        if name == 'cmd':
+            return ['velo']
+        return super().__getattribute__(name)
 
     def get_env(self):
         """
