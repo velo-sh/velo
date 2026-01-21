@@ -1,4 +1,4 @@
-# RFC-0030: Velo Jupyter Integration (High-Density Kernel Architecture)
+# RFC-0030: Velo IDE Integration (Jupyter + VS Code)
 
 **Status**: APPROVED
 **Author**: Architect
@@ -14,7 +14,7 @@
 
 ## 1. Summary
 
-This RFC specifies **Velo Jupyter Integration**, bringing Velo's core capabilities to Jupyter users:
+This RFC specifies **Velo IDE Integration**, bringing Velo's core capabilities to Jupyter and VS Code users:
 
 ### Core Capabilities
 
@@ -380,13 +380,108 @@ Kernel 2 (user: bob, pid: 5678):
 
 ---
 
-## 10. Open Questions
+## 10. VS Code Integration
+
+### 10.1 Unified Architecture
+
+VS Code and Jupyter share the same integration approach:
+
+```
+                    ┌─────────────────────────┐
+                    │     Velo Zygote         │
+                    │  (Python + libs)        │
+                    └───────────┬─────────────┘
+                                │ fork() <100ms
+            ┌───────────────────┼───────────────────┐
+            ▼                   ▼                   ▼
+    ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+    │ Jupyter Kernel│   │ VS Code Debug │   │ velo run      │
+    │ (ipykernel)   │   │ (debugpy)     │   │               │
+    └───────────────┘   └───────────────┘   └───────────────┘
+```
+
+### 10.2 Debug Configuration
+
+> [!NOTE]
+> VS Code's `debugpy` expects a Python interpreter path. Use a wrapper script or the run configuration below.
+
+**Option A: Shell-based Debug (Recommended)**
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Velo: Run Python",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "velo run ${file}"
+    }
+  ]
+}
+```
+
+**Option B: Python Debug with Velo Preload**
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Debug (Velo-warmed)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "preLaunchTask": "velo-zygote-start"
+    }
+  ]
+}
+```
+
+### 10.3 Run Configuration
+
+```json
+// .vscode/tasks.json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Velo Run",
+      "type": "shell",
+      "command": "velo run ${file}",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    }
+  ]
+}
+```
+
+### 10.4 Value Proposition
+
+| Scenario | Traditional | With Velo |
+|:---|:---|:---|
+| **Run Python** | 2-5s cold start | <100ms |
+| **Debug Start** | 3-5s | <100ms |
+| **Restart Debug** | 2-3s | <50ms |
+
+### 10.5 Future: VS Code Extension
+
+A dedicated Velo extension could provide:
+- Automatic Zygote management
+- Status bar indicator
+- One-click preload configuration
+
+---
+
+## 11. Open Questions
 
 | Question | Proposed Answer |
 |:---|:---|
-| **ipywidgets support?** | Phase 2 |
-| **Debugger support?** | Phase 3 (low priority) |
-| **JupyterLab extensions?** | Compatible (run in browser) |
+| **ipywidgets support?** | ✅ Via ipykernel |
+| **VS Code Debugger?** | ✅ Via debugpy |
+| **Other IDEs (PyCharm)?** | Future Phase |
 
 ---
 
