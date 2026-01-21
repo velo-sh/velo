@@ -112,6 +112,14 @@ pub struct ServeCmd {
     /// Force RSGI mode (RFC-0019)
     #[arg(long)]
     pub rsgi: bool,
+
+    /// Enable Vibe Coding mode (real-time hot reload) [RFC-0029]
+    #[arg(long)]
+    pub vibe: bool,
+
+    /// Alias for --vibe
+    #[arg(long)]
+    pub live: bool,
 }
 
 impl ServeCmd {
@@ -260,9 +268,42 @@ fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<S
     best_match
 }
 
+/// Run serve in Vibe Coding mode (RFC-0029)
+///
+/// This starts the VibeEngine with the app as the target.
+#[tokio::main]
+async fn run_vibe_serve_mode(cmd: &ServeCmd) -> Result<()> {
+    use crate::v_live::engine::VibeEngine;
+    use colored::Colorize;
+
+    let app = cmd.app.clone().unwrap_or_else(|| "main:app".to_string());
+    let gateway_addr = format!("{}:{}", cmd.host, cmd.port);
+
+    println!(
+        "{}",
+        "🏛️  Vibe Engine (Serve Mode) Activated".green().bold()
+    );
+    println!("Architecture Directive: Phase 8 (Vibe-Coding)");
+    println!("App: {}", app);
+
+    // For serve mode, we watch the module file corresponding to the app
+    let (module, _) = app.split_once(':').unwrap_or((&app, "app"));
+    let target = PathBuf::from(format!("{}.py", module.replace('.', "/")));
+
+    let engine = VibeEngine::new(target, &gateway_addr);
+    engine.start().await?;
+
+    Ok(())
+}
+
 pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Parse with clap - skip "velo serve" prefix
     let cmd = ServeCmd::try_parse_from(&args[1..])?;
+
+    // RFC-0029/GAP-001: Vibe mode takes precedence
+    if cmd.vibe || cmd.live {
+        return run_vibe_serve_mode(&cmd);
+    }
 
     // Determine project directory
     let project_dir = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());

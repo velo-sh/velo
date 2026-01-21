@@ -72,6 +72,43 @@ fn build_cli() -> Command {
                 .last(true)
                 .num_args(0..),
         )
+        .arg(
+            Arg::new("vibe")
+                .long("vibe")
+                .help("Enable Vibe Coding mode for real-time test feedback [RFC-0029]")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("live")
+                .long("live")
+                .help("Alias for --vibe")
+                .action(ArgAction::SetTrue),
+        )
+}
+
+/// Run tests in Vibe Coding mode (RFC-0029)
+///
+/// This starts the VibeEngine watching the test path for instant re-execution.
+#[tokio::main]
+async fn run_vibe_test_mode(test_path: &Path) -> Result<()> {
+    use colored::Colorize;
+
+    println!("{}", "🏛️  Vibe Engine (Test Mode) Activated".green().bold());
+    println!("Architecture Directive: Phase 8 (Vibe-Coding)");
+    println!("Watching: {}", test_path.display());
+    println!();
+    println!("Tests will re-run automatically on file changes.");
+    println!("Press Ctrl+C to stop.");
+
+    // For test mode, we use a simpler file watcher approach
+    // that triggers pytest on any .py file change in the test directory
+    let target = test_path.to_path_buf();
+    let gateway_addr = "127.0.0.1:8080";
+
+    let engine = crate::v_live::engine::VibeEngine::new(target, gateway_addr);
+    engine.start().await?;
+
+    Ok(())
 }
 
 /// Main entry point for `velo test`
@@ -88,6 +125,7 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
         .context("Invalid worker count")?;
 
     let use_zygote = matches.get_flag("zygote");
+    let use_vibe = matches.get_flag("vibe") || matches.get_flag("live");
     let verbose = matches.get_flag("verbose");
     let tier = matches.get_one::<String>("tier");
     let preload = matches.get_one::<String>("preload");
@@ -96,6 +134,11 @@ pub fn cmd_vtest(args: &[String]) -> Result<()> {
         .get_many::<String>("pytest_args")
         .map(|v| v.collect())
         .unwrap_or_default();
+
+    // RFC-0029: Vibe mode for real-time test feedback
+    if use_vibe {
+        return run_vibe_test_mode(test_path);
+    }
 
     // vtest Sovereignty: If Zygote or native orchestration is requested,
     // we use the NodeID dispatch loop instead of coarse-grained subprocesses.

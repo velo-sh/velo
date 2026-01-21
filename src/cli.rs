@@ -51,6 +51,8 @@ SERVE OPTIONS:
     --port <PORT>    Bind port (default: 8000)
     --workers <N>    Number of workers (default: 1)
     --reload         Enable hot reload
+    --vibe           Enable Vibe Coding mode (real-time hot reload)
+    --live           Alias for --vibe
     --no-zygote      Disable Zygote integration
 
 ANALYZE OPTIONS:
