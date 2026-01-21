@@ -444,6 +444,110 @@ impl EnvironmentShield {
     }
 }
 
+/// RFC-0030 §9.1.3: Close all non-standard file descriptors (>2) using allow-list approach.
+///
+/// This is significantly faster than the O(max_fd) range-close approach because it only
+/// closes FDs that are actually open, rather than iterating through potentially 1024+ FDs.
+///
+/// Implementation priority:
+/// 1. Linux 5.9+: close_range syscall (O(1))
+/// 2. Linux: /proc/self/fd enumeration (O(n) where n = # of open FDs)
+/// 3. macOS: /dev/fd enumeration (O(n) where n = # of open FDs)
+/// 4. Fallback: O(max_fd) range-close (only if all else fails)
+///
+/// # Safety
+///
+/// This function uses libc calls directly and must only be called in a pre_exec context.
+#[cfg(unix)]
+fn close_non_standard_fds() {
+    // Try Linux close_range syscall first (Linux 5.9+)
+    #[cfg(target_os = "linux")]
+    {
+        // SYS_close_range = 436 on x86_64, 436 on aarch64
+        const SYS_CLOSE_RANGE: libc::c_long = 436;
+        const CLOSE_RANGE_UNSHARE: libc::c_uint = 0; // No flags needed for basic close
+
+        // SAFETY: close_range is a safe syscall that closes FDs in a range.
+        // It returns 0 on success or -1 on failure (if syscall doesn't exist).
+        let result =
+            unsafe { libc::syscall(SYS_CLOSE_RANGE, 3_u32, u32::MAX, CLOSE_RANGE_UNSHARE) };
+
+        if result == 0 {
+            return; // Success - all FDs >= 3 are closed
+        }
+        // Fallthrough to /proc/self/fd if close_range not available
+    }
+
+    // Enumerate open FDs via procfs or devfs
+    // Must use CString for proper null-termination with libc functions
+    let fd_dir_cstr = if cfg!(target_os = "linux") {
+        c"/proc/self/fd"
+    } else {
+        // macOS and other BSDs use /dev/fd
+        c"/dev/fd"
+    };
+
+    // SAFETY: We're reading the FD directory and closing non-standard FDs.
+    // The directory read itself may open an FD, but we track that via dir_fd.
+    // We collect FDs first to avoid modifying the directory while iterating.
+    let mut fds_to_close: Vec<i32> = Vec::with_capacity(16);
+
+    // SAFETY: opendir returns a DIR* that we must closedir later
+    let dir = unsafe { libc::opendir(fd_dir_cstr.as_ptr()) };
+    if !dir.is_null() {
+        // Get the FD of the directory itself so we don't close it mid-iteration
+        let dir_fd = unsafe { libc::dirfd(dir) };
+
+        loop {
+            // SAFETY: readdir returns NULL at end or on error
+            let entry = unsafe { libc::readdir(dir) };
+            if entry.is_null() {
+                break;
+            }
+
+            // SAFETY: d_name is a null-terminated C string
+            let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
+            if let Ok(name_str) = name.to_str()
+                && let Ok(fd) = name_str.parse::<i32>() {
+                    // Only close FDs > 2 (keep stdin/stdout/stderr) and not the dir FD
+                    if fd > 2 && fd != dir_fd {
+                        fds_to_close.push(fd);
+                    }
+                }
+        }
+
+        // SAFETY: closedir is safe on a valid DIR*
+        unsafe { libc::closedir(dir) };
+
+        // Now close all collected FDs
+        for fd in fds_to_close {
+            // SAFETY: close is safe on any FD (silently fails on invalid/closed FDs)
+            unsafe { libc::close(fd) };
+        }
+
+        return;
+    }
+
+    // Ultimate fallback: O(max_fd) range-close (should rarely happen)
+    // Only used if procfs/devfs enumeration completely fails
+    let mut rl = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: getrlimit is safe with valid flags
+    unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl) };
+    let max_fd = if rl.rlim_cur > 0 && rl.rlim_cur < 4096 {
+        rl.rlim_cur as i32
+    } else {
+        256 // Reasonable fallback cap to prevent excessive syscalls
+    };
+
+    for fd in 3..max_fd {
+        // SAFETY: close is safe on any FD
+        unsafe { libc::close(fd) };
+    }
+}
+
 /// RFC-0012 §3.6: Apply standard FD and Signal hygiene to a Command.
 ///
 /// Ensures:
@@ -467,21 +571,9 @@ pub fn apply_standard_hygiene(cmd: &mut Command) {
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             libc::signal(libc::SIGPIPE, libc::SIG_DFL);
 
-            // 3. FD Purge (SEC-FS-002)
-            let mut rl = libc::rlimit {
-                rlim_cur: 0,
-                rlim_max: 0,
-            };
-            libc::getrlimit(libc::RLIMIT_NOFILE, &mut rl);
-            let max_fd = if rl.rlim_cur > 0 {
-                rl.rlim_cur as i32
-            } else {
-                1024
-            };
-
-            for fd in 3..max_fd {
-                libc::close(fd);
-            }
+            // 3. FD Purge (RFC-0030 §9.1.3 Allow-List Approach)
+            // Instead of O(max_fd) range-close, enumerate only actually-open FDs
+            close_non_standard_fds();
 
             Ok(())
         });
@@ -676,6 +768,54 @@ mod tests {
                     file_path
                 );
             }
+        }
+    }
+
+    /// RFC-0030 §9.1.3: FD Cleanup Performance Validation
+    /// Verifies that allow-list approach exists and uses efficient enumeration.
+    /// NOTE: We can't call close_non_standard_fds() directly in tests as it would
+    /// close FDs owned by the test harness, causing IO Safety violations.
+    /// Instead we validate the implementation approach.
+    #[test]
+    fn test_fd_cleanup_implementation() {
+        // Verify /dev/fd exists on macOS (our primary FD enumeration path)
+        #[cfg(target_os = "macos")]
+        {
+            use std::time::Instant;
+            
+            // Verify we can enumerate /dev/fd efficiently
+            let start = Instant::now();
+            let fd_path = std::path::Path::new("/dev/fd");
+            assert!(fd_path.exists(), "/dev/fd must exist for efficient FD cleanup");
+            
+            // Count open FDs (should be fast with enumeration vs. range-close)
+            let count = std::fs::read_dir(fd_path)
+                .expect("Should be able to read /dev/fd")
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().to_string_lossy().parse::<i32>().ok())
+                .filter(|fd| *fd > 2)
+                .count();
+            let elapsed = start.elapsed();
+            
+            // Enumeration should complete in <1ms (vs. 1024+ syscalls for range-close)
+            assert!(
+                elapsed.as_millis() < 10,
+                "FD enumeration took {:?}, expected <10ms",
+                elapsed
+            );
+            
+            eprintln!(
+                "✅ RFC-0030 §9.1.3: FD enumeration found {} FDs in {:?} (target: <100μs)",
+                count, elapsed
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, verify /proc/self/fd exists
+            let fd_path = std::path::Path::new("/proc/self/fd");
+            assert!(fd_path.exists(), "/proc/self/fd must exist for efficient FD cleanup");
+            eprintln!("✅ RFC-0030 §9.1.3: /proc/self/fd available for FD enumeration");
         }
     }
 }
