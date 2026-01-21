@@ -144,6 +144,8 @@ fn main() {
          pub const GRACEFUL_SHUTDOWN_TIMEOUT: u64 = {graceful_shutdown_timeout};\n\
          pub const DEFAULT_PORT: u16 = {default_port};\n\
          pub const BUILD_SCM_HASH: &str = \"{git_hash}\";\n\
+         pub const BUILD_TARGET: &str = \"{target}\";\n\
+         pub const BUILD_TARGET_ARCH: &str = \"{target_arch}\";\n\
          pub const PYTHON_VERSION: &str = \"{python_version}\";\n\
          \n\
          // Python Environment SSOT (Phase 7.3+)\n\
@@ -160,6 +162,8 @@ fn main() {
         graceful_shutdown_timeout = constants.graceful_shutdown_timeout,
         default_port = constants.default_port,
         git_hash = git_hash,
+        target = env::var("TARGET").unwrap_or_else(|_| "unknown".into()),
+        target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".into()),
         python_version = constants.python_version,
         py_required_version = py_env.required_version,
         py_venv_path = py_env.venv_path,

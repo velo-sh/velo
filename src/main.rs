@@ -12,6 +12,9 @@ fn main() -> Result<()> {
         .format_module_path(false)
         .init();
 
+    // 🚨 SENTINEL: Cross-platform Binary Guard
+    velo::common::check_platform_integrity();
+
     // RFC-0017: Ignore SIGPIPE to prevent Rust runtime crashes when writing to broken pipes.
     // This is standard practice for CLI tools (ripgrep, fd, bat, etc.).
     #[cfg(unix)]

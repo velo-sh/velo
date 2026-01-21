@@ -10,6 +10,12 @@ pub fn cmd_debug_pre_flight(json: bool) -> Result<()> {
 
     let mut results = serde_json::Map::new();
 
+    // 0. Platform Integrity Check (Binary Sentinel)
+    results.insert(
+        "platform_integrity".to_string(),
+        serde_json::Value::Bool(true),
+    );
+
     // 1. Python Linkage & Version Check (Runtime)
     let project_dir = env::current_dir()?;
     let py_info = check_python_environment(&project_dir);

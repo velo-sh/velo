@@ -118,7 +118,7 @@ docker_run() {
 
             echo ""
             echo "==================== Phase 3: Pre-Flight ===================="
-            ./target/release/velo debug pre-flight || true
+            ./target/release/velo debug pre-flight || exit 1
             
             echo ""
             echo "==================== Phase 4: Test ===================="
