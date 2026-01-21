@@ -267,7 +267,9 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
 
         let zygote_result = match try_zygote_run(
             &python_path,
-            script_path_str,
+            Some(script_path_str),
+            None,
+            &cmd.args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
             cmd.async_mode,
             cmd.fast,
             &project_dir,
@@ -389,35 +391,27 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
 
     // If zygote is requested or it's a known heavy module (like ipykernel), try zygote
     if cmd.zygote {
-        use crate::zygote::ZygoteLauncher;
-        use crate::zygote::core_ipc::default_socket_path;
-        let mut launcher = ZygoteLauncher::new(default_socket_path());
-        if launcher.is_running() {
-            eprintln!("🚀 Accelerating module {} via Iron Zygote...", module_name);
-            match launcher.spawn_worker(
-                &PathBuf::from(&python_path), // Use python_path as "script" for metadata
-                Some(module_name.clone()),
-                &all_args,
-                false, // async_mode
-                false, // fast_mode
-                None,  // bundle_path
-                None,  // project_root
-                None,  // max_bundle_size
-                None,  // shm_file
-                None,  // env_overrides
-                &config,
-            ) {
-                Ok(worker) => {
-                    let exit_code = worker.wait().unwrap_or(1);
-                    std::process::exit(exit_code);
-                }
-                Err(e) => {
-                    eprintln!(
-                        "⚠️ Zygote acceleration failed: {}. Falling back to native.",
-                        e
-                    );
-                    log::warn!("Zygote acceleration failed: {}. Falling back to native.", e);
-                }
+        match try_zygote_run(
+            &PathBuf::from(&python_path),
+            None,
+            Some(module_name.clone()),
+            &all_args,
+            false, // async_mode
+            false, // fast_mode
+            &project_dir,
+            &config,
+            cmd.profile,
+            None, // shm_file
+        ) {
+            Ok(Some(())) => return Ok(()),
+            Ok(None) => {
+                // Zygote not available or failed to start, fallback already logged/printed
+            }
+            Err(e) => {
+                eprintln!(
+                    "⚠️ Zygote acceleration failed: {}. Falling back to native.",
+                    e
+                );
             }
         }
     }
@@ -474,7 +468,9 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
 #[allow(clippy::too_many_arguments)]
 fn try_zygote_run(
     python_path: &Path,
-    script_path: &str,
+    script_path: Option<&str>,
+    module_name: Option<String>,
+    args: &[&str],
     async_enabled: bool,
     fast_enabled: bool,
     project_dir: &Path,
@@ -489,7 +485,9 @@ fn try_zygote_run(
     }
 
     let socket_path = zygote::core_ipc::default_socket_path();
-    let script = Path::new(script_path);
+    let script = script_path
+        .map(Path::new)
+        .unwrap_or_else(|| Path::new(python_path));
 
     // config is already loaded and passed in
     let _timeout = config.zygote_socket_timeout;
@@ -498,9 +496,8 @@ fn try_zygote_run(
     let mut launcher =
         ZygoteLauncher::new(socket_path.clone()).with_python(python_path.to_path_buf());
 
+    let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
     let started_new = if !socket_path.exists() {
-        let preload: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
-
         if profile {
             if preload.is_empty() {
                 eprintln!("🚀 Starting Zygote...");
@@ -529,7 +526,7 @@ fn try_zygote_run(
     if socket_path.exists() {
         let (bundle_path, max_size) = if fast_enabled {
             (
-                find_bundle(project_dir, script_path),
+                find_bundle(project_dir, script.to_str().unwrap_or("")),
                 Some(config.max_bundle_size as u64),
             )
         } else {
@@ -538,8 +535,8 @@ fn try_zygote_run(
 
         match launcher.spawn_worker(
             script,
-            None,
-            &[],
+            module_name.clone(),
+            args,
             async_enabled,
             fast_enabled,
             bundle_path.clone(),
@@ -566,6 +563,7 @@ fn try_zygote_run(
                     std::process::exit(0);
                 }
 
+                eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
                 // Wait for worker to complete and get exit code
                 let exit_code = worker.wait().unwrap_or(1);
 
@@ -589,13 +587,13 @@ fn try_zygote_run(
                     eprintln!("🔄 Stale socket detected, restarting Zygote...");
                     zygote::core_ipc::cleanup_socket(&socket_path);
 
-                    if let Ok(()) = launcher.start(&[], None, false, config) {
+                    if let Ok(()) = launcher.start(&preload, None, true, config) {
                         eprintln!("✅ Zygote ready");
 
                         // Retry spawn
                         let (bundle_path, max_size) = if fast_enabled {
                             (
-                                find_bundle(project_dir, script_path),
+                                find_bundle(project_dir, script.to_str().unwrap_or("")),
                                 Some(config.max_bundle_size as u64),
                             )
                         } else {
@@ -604,8 +602,8 @@ fn try_zygote_run(
 
                         if let Ok(worker) = launcher.spawn_worker(
                             script,
-                            None,
-                            &[],
+                            module_name,
+                            args,
                             async_enabled,
                             fast_enabled,
                             bundle_path,

@@ -98,7 +98,7 @@ print(f"VELO_IS_ZYGOTE: {os.environ.get('VELO_IS_ZYGOTE')}")
 
             # CRITICAL: Verify it actually used the Zygote
             assert "VELO_IS_ZYGOTE: 1" in result_zygote.stdout
-            assert "🚀 Accelerating module my_test_module via Iron Zygote..." in result_zygote.stderr
+            assert "Running via Zygote" in result_zygote.stderr
 
         finally:
             stop_zygote(velo_binary, tmp_path)
