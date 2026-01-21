@@ -181,6 +181,11 @@ class VeloServeFactory:
         self.velo_binary = velo_binary
         self.processes: list[VeloServeProcess] = []
 
+    @property
+    def tmp_path(self) -> Path:
+        """Return the test environment root path for creating test files."""
+        return self.test_env.root
+
     def start(
         self,
         app: str,

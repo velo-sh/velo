@@ -111,6 +111,7 @@ class TestEnvironmentPollutionRegression:
 
         The fix (runtime path sensing) prioritizes std::env::current_exe() parent.
         """
+        velo = get_velo_binary()
         # Verify the velo binary's parent directory contains the correct velo_zygote
         expected_zygote = Path(velo).parents[2] / "velo_zygote" / "main.py"
 
