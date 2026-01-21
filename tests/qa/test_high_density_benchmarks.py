@@ -144,16 +144,23 @@ class TestMemoryDensity:
     @pytest.mark.slow
     def test_single_kernel_memory(self):
         """Measure memory footprint of a single Velo kernel process."""
+        # Create a simple script that sleeps
+        import tempfile
+
         import psutil
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("import time; time.sleep(10)")
+            script_path = f.name
 
         # Start a simple Python process via Velo
         proc = subprocess.Popen(
-            [VELO_BINARY, "run", "-m", "time", "--", "-v", "-c", "import time; time.sleep(5)"],
+            [VELO_BINARY, "run", script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
 
-        time.sleep(1)  # Let it initialize
+        time.sleep(2)  # Let it initialize
 
         try:
             if proc.poll() is None:
@@ -174,7 +181,6 @@ class TestMemoryDensity:
 
     @pytest.mark.benchmark
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Requires significant resources - run manually")
     def test_100_kernels_memory(self):
         """
         RFC-0030 §5.2: Verify 100 kernels < 5GB total memory.
