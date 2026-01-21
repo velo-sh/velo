@@ -12,6 +12,33 @@ use std::process::Command;
 
 use crate::cache::EnvCache;
 
+/// Check if a Python interpreter path is "hermetic" (resides within a managed environment).
+pub fn is_hermetic_check(python_path: &Path) -> bool {
+    let path_str = python_path.to_string_lossy();
+
+    // 1. Check if it lives inside a .venv within the current directory
+    if let Ok(cwd) = std::env::current_dir()
+        && path_str.starts_with(&cwd.to_string_lossy().to_string())
+        && path_str.contains("/.venv/")
+    {
+        return true;
+    }
+
+    // 2. Check for UV hermetic paths (default for uv managed pythons)
+    if path_str.contains("/.local/share/uv/python/") {
+        return true;
+    }
+
+    // 3. Check for specific common UV cache locations on Linux/macOS
+    if path_str.contains("/Library/Application Support/uv/python/")
+        || path_str.contains("/.cache/uv/python/")
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Detect the project's Python interpreter.
 /// Priority:
 /// 1. VELO_PYTHON environment variable (explicit override for testing/CI)
@@ -61,12 +88,32 @@ pub fn detect_python(project_dir: &Path) -> Result<PathBuf> {
     }
 
     // 4. Fall back to system python3
-    // First check if python3 exists in PATH
+    // Use 'which' to find python3 in PATH
     if let Ok(output) = Command::new("which").arg("python3").output()
         && output.status.success()
     {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Ok(std::path::PathBuf::from(path));
+        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let path = PathBuf::from(path_str);
+
+        // SENTINEL: Check for system Python contamination
+        if !is_hermetic_check(&path) {
+            let strict = std::env::var("VELO_STRICT_SSOT").unwrap_or_else(|_| "0".into()) == "1";
+            let msg = format!(
+                "🚨 [SENTINEL] System Python Contamination Detected: {}\n\
+                 Velo is currently configured to use a non-hermetic system Python.\n\
+                 This causes environment drift and ModuleNotFound errors.\n\
+                 FIX: Run 'uv sync' or 'source .venv/bin/activate'",
+                path.display()
+            );
+
+            if strict {
+                anyhow::bail!(msg);
+            } else {
+                eprintln!("[WARN] {}", msg);
+            }
+        }
+
+        return Ok(path);
     }
 
     anyhow::bail!("No Python interpreter found. Please create a .venv or set VELO_PYTHON")

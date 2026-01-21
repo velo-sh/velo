@@ -57,6 +57,14 @@ class RSGIWorker:
     async def run(self) -> None:
         """Main RSGI loop."""
         LogUtils.debug_log(f"RSGI Worker starting server on {self.socket_path}...")
+
+        # TITANIUM: Unlink if exists to prevent "Address already in use" (RFC-0012)
+        if os.path.exists(self.socket_path):
+            try:
+                os.unlink(self.socket_path)
+            except OSError:
+                pass
+
         server = await asyncio.start_unix_server(self.handle_connection, self.socket_path)
         LogUtils.debug_log(f"RSGI Worker listening on {self.socket_path}")
         async with server:
@@ -225,17 +233,33 @@ class RSGIWorker:
 
         LogUtils.debug_log(f"RSGI Request: {method} {clean_path} (Query: {query_string})")
 
+        # RFC-0011: Recover client information from proxy headers
+        client_host = "127.0.0.1"
+        scheme = "http"
+        for k, v in headers:
+            k_lower = k.lower()
+            if k_lower == "x-forwarded-for":
+                try:
+                    client_host = v.split(",")[0].strip()
+                except Exception:
+                    pass
+            elif k_lower == "x-forwarded-proto":
+                try:
+                    scheme = v.strip()
+                except Exception:
+                    pass
+
         scope = {
             "type": "http",
             "asgi": {"version": "3.0", "spec_version": "2.3"},
             "http_version": "1.1",
             "method": method,
-            "scheme": "http",
+            "scheme": scheme,
             "path": clean_path,
             "raw_path": clean_path.encode("ascii", errors="replace"),
             "query_string": query_string.encode("ascii", errors="replace"),
             "headers": asgi_headers,
-            "client": tuple(client) if client else None,
+            "client": (client_host, 0),
             "server": None,
             "rsgi.id": req_id,
         }
@@ -243,10 +267,16 @@ class RSGIWorker:
         # Request Body Buffer
         body_buffer = bytearray()
         body_complete = asyncio.Event()
+        body_delivered = False  # DEF-72-C06: Ensure receive() only returns body once
 
         async def receive() -> dict[str, Any]:
             """ASGI receive callable - reads streamed request body from Host."""
+            nonlocal body_delivered
+            if body_delivered:
+                return {"type": "http.disconnect"}
+
             await body_complete.wait()
+            body_delivered = True
             return {"type": "http.request", "body": bytes(body_buffer), "more_body": False}
 
         async def send(message: dict[str, Any]) -> None:

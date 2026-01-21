@@ -381,8 +381,8 @@ jobs:
   # Phase 3.5: Tiered QA Testing (velo serve)
   # ============================================
 
-  qa-serve-suite:
-    name: "QA 3.5: Serve Full Suite (Tiers 0-2)"
+  qa-serve-matrix:
+    name: "QA 3.5: Serve Tier ${{ matrix.tier }}"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -390,16 +390,16 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Run tiers in sequence within one setup to save overhead
-          command: |
-            ./scripts/qa-fast.sh 0
-            ./scripts/qa-fast.sh 1
-            ./scripts/qa-fast.sh 2
+          command: ./scripts/qa-fast.sh ${{ matrix.tier }}
 
 
   qa-serve-heavy:
@@ -427,8 +427,8 @@ jobs:
   # Phase 5.0: Fast Loader QA (velo run --fast)
   # ============================================
 
-  qa-fast-loader-suite:
-    name: "QA 5.0: Fast Loader Full Suite"
+  qa-fast-loader-matrix:
+    name: "QA 5.0: Fast Loader ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -436,23 +436,29 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Smoke & Happy", path: "tests/qa/phase5/test_l0_smoke.py tests/qa/test_phase5_loader.py tests/qa/phase5/test_l1_happy_path.py" }
+          - { name: "Sad & Config", path: "tests/qa/phase5/test_l2_sad_path.py tests/qa/phase5/test_l3_config.py" }
+          - { name: "Security & Chaos", path: "tests/qa/phase5/test_l4_security.py tests/qa/phase5/test_l5_chaos.py" }
+          - { name: "CLI & Utils", path: "tests/qa/phase5/test_cli_bundle.py tests/qa/phase5/test_python_loader.py" }
+        include:
+          - suite: { name: "Smoke & Happy" }
+            suite_name: "Smoke & Happy"
+          - suite: { name: "Sad & Config" }
+            suite_name: "Sad & Config"
+          - suite: { name: "Security & Chaos" }
+            suite_name: "Security & Chaos"
+          - suite: { name: "CLI & Utils" }
+            suite_name: "CLI & Utils"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase5/test_l0_smoke.py \
-               tests/qa/test_phase5_loader.py \
-               tests/qa/phase5/test_l1_happy_path.py \
-               tests/qa/phase5/test_l2_sad_path.py \
-               tests/qa/phase5/test_l3_config.py \
-               tests/qa/phase5/test_python_loader.py \
-               tests/qa/phase5/test_cli_bundle.py \
-               tests/qa/phase5/test_l4_security.py \
-               tests/qa/phase5/test_l5_chaos.py \
-               -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -532,8 +538,8 @@ jobs:
           # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
           command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
 
-  qa-phase611-suite:
-    name: "QA 6.1.1: Full Integration Suite"
+  qa-phase611-matrix:
+    name: "QA 6.1.1: ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -542,24 +548,32 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Smoke & Gold", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
+          - { name: "Features & Integration", path: "tests/qa/phase_6_1_1/test_phase611_features.py tests/qa/phase_6_1_1/test_phase611_integration.py" }
+          - { name: "Isolation & Agents", path: "tests/qa/phase_6_1_1/test_isolation.py tests/qa/phase_6_1_1/test_phase611_agent_*.py" }
+          - { name: "Security & Expert", path: "tests/qa/phase_6_1_1/test_security_hardened.py tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
+          - { name: "Release Blockers & Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
+        include:
+          - suite: { name: "Smoke & Gold" }
+            suite_name: "Smoke & Gold"
+          - suite: { name: "Features & Integration" }
+            suite_name: "Features & Integration"
+          - suite: { name: "Isolation & Agents" }
+            suite_name: "Isolation & Agents"
+          - suite: { name: "Security & Expert" }
+            suite_name: "Security & Expert"
+          - suite: { name: "Release Blockers & Whitebox" }
+            suite_name: "Release Blockers & Whitebox"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase_6_1_1/test_phase611_smoke.py \
-               tests/qa/phase_6_1_1/test_phase611_golden_path.py \
-               tests/qa/phase_6_1_1/test_phase611_features.py \
-               tests/qa/phase_6_1_1/test_phase611_integration.py \
-               tests/qa/phase_6_1_1/test_isolation.py \
-               tests/qa/phase_6_1_1/test_phase611_agent_*.py \
-               tests/qa/phase_6_1_1/test_phase611_expert_concerns.py \
-               tests/qa/phase_6_1_1/test_phase611_release_blockers.py \
-               tests/qa/phase_6_1_1/test_phase611_whitebox.py \
-               tests/qa/phase_6_1_1/test_security_hardened.py \
-               -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
   qa-phase611-perf:
     name: "QA 6.1.1: Performance Baselines"

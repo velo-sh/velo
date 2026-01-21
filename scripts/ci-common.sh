@@ -16,7 +16,7 @@ set -euo pipefail
 
 # RFC-0010: Ensure shared libraries are found for uv-managed Python (Linux)
 if [[ "${OSTYPE}" == "linux-gnu"* ]] && command -v uv &>/dev/null; then
-    PY_EXEC=$(uv python find 3.11 2>/dev/null | head -n 1 || true)
+    PY_EXEC=$(uv python find 2>/dev/null | head -n 1 || true)
     if [[ -n "$PY_EXEC" ]]; then
         # uv find returns the executable path. We need the lib directory.
         # Usually: .../bin/python -> .../lib/
@@ -234,7 +234,7 @@ run_python_tests() {
     fi
     
     set +e # Allow test failure to capture artifacts
-    uv run --active pytest $test_paths $parallel_args -v
+    uv run --active python -m pytest $test_paths $parallel_args -v
     EXIT_CODE=$?
     set -e
 

@@ -144,6 +144,8 @@ fn main() {
          pub const GRACEFUL_SHUTDOWN_TIMEOUT: u64 = {graceful_shutdown_timeout};\n\
          pub const DEFAULT_PORT: u16 = {default_port};\n\
          pub const BUILD_SCM_HASH: &str = \"{git_hash}\";\n\
+         pub const BUILD_TARGET: &str = \"{target}\";\n\
+         pub const BUILD_TARGET_ARCH: &str = \"{target_arch}\";\n\
          pub const PYTHON_VERSION: &str = \"{python_version}\";\n\
          \n\
          // Python Environment SSOT (Phase 7.3+)\n\
@@ -160,6 +162,8 @@ fn main() {
         graceful_shutdown_timeout = constants.graceful_shutdown_timeout,
         default_port = constants.default_port,
         git_hash = git_hash,
+        target = env::var("TARGET").unwrap_or_else(|_| "unknown".into()),
+        target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".into()),
         python_version = constants.python_version,
         py_required_version = py_env.required_version,
         py_venv_path = py_env.venv_path,
@@ -410,14 +414,26 @@ fn enforce_environment_ssot() {
     // 2. .venv/bin/python (uv-managed project venv)
     // 3. python3 (system fallback - NOT RECOMMENDED)
     let python_path = env::var("PYO3_PYTHON").unwrap_or_else(|_| {
-        // Check for uv-managed .venv first
+        // SSOT: Try uv python find first
+        let uv_find_out = Command::new("uv").args(["python", "find"]).output();
+
+        if let Ok(o) = uv_find_out
+            && o.status.success()
+        {
+            let path = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            println!("cargo:warning=[SSOT] Auto-detected uv Python: {}", path);
+            println!("cargo:rustc-env=PYO3_PYTHON={}", path);
+            return path;
+        }
+
+        // Fallback to uv-managed .venv path
         let venv_python = Path::new(".venv/bin/python");
         if venv_python.exists() {
             let canonical = venv_python
                 .canonicalize()
                 .unwrap_or_else(|_| venv_python.to_path_buf());
             println!(
-                "cargo:warning=[SSOT] Auto-detected uv venv Python: {}",
+                "cargo:warning=[SSOT] Auto-detected .venv Python: {}",
                 canonical.display()
             );
             // CRITICAL: Tell PyO3 to use this Python for compilation
@@ -427,7 +443,7 @@ fn enforce_environment_ssot() {
 
         // Fallback to system python with warning
         println!(
-            "cargo:warning=[SSOT] WARNING: No .venv found, using system python3. \
+            "cargo:warning=[SSOT] WARNING: No uv or .venv found, using system python3. \
              This may cause runtime issues with different Python installations."
         );
         "python3".to_string()
