@@ -33,6 +33,14 @@ if not NO_COLOR and not IS_CI:
         from rich.console import Console
         from rich.panel import Panel
         from rich.table import Table
+        from rich.progress import (
+            Progress, 
+            SpinnerColumn, 
+            TextColumn, 
+            BarColumn, 
+            TaskProgressColumn,
+            TimeElapsedColumn
+        )
         console = Console(force_terminal=IS_TTY or FORCE_VISUAL)
         RICH_AVAILABLE = True
     except ImportError:
@@ -152,9 +160,21 @@ def create_progress_context():
     """
     Create a Progress context manager.
     Returns (Progress, is_rich) tuple.
-    
-    Uses simple print-based progress for maximum compatibility.
     """
+    if RICH_AVAILABLE and not IS_QUIET:
+        # High-performance progress bar configuration (low overhead)
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=30),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True, # Auto-remove when done to keep output clean
+            refresh_per_second=10 # Reduced frequency to minimize overhead
+        )
+        return progress, True
+
     class SimpleProgress:
         def __init__(self):
             self._tasks = {}
