@@ -184,7 +184,7 @@ jobs:
         run: uv sync --python 3.11
 
       - name: Set PYO3_PYTHON for Rust build
-        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Build Release
         run: cargo build --release --all-features
@@ -228,7 +228,7 @@ jobs:
       - name: Sync Python deps
         run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
-        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: Run Rust tests
         run: cargo test
 
@@ -254,7 +254,7 @@ jobs:
           python-version: '3.11'
       - run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
-        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
