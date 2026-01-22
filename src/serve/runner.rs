@@ -106,6 +106,37 @@ fn cleanup_descendants_for_test(parent_pid: i32) {
 }
 
 #[cfg(unix)]
+fn cleanup_uvicorn_workers_for_test(socket_dir: &Path) {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    let Ok(text) = String::from_utf8(output.stdout) else {
+        return;
+    };
+    let socket_dir_str = socket_dir.to_string_lossy();
+    for line in text.lines() {
+        if !line.contains("uvicorn")
+            || !line.contains("--uds")
+            || !line.contains(socket_dir_str.as_ref())
+        {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(pid_str) = parts.next() else {
+            continue;
+        };
+        if let Ok(pid) = pid_str.parse::<i32>() {
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
 fn cleanup_zygote_process_group_for_test(socket_path: &Path) {
     use crate::zygote::core_ipc::{ZygoteCommand, ZygoteResponse, send_command};
     if let Ok(ZygoteResponse::Status { pid, .. }) = send_command(
@@ -125,6 +156,7 @@ pub fn cleanup_test_processes(project_dir: &Path, app: &str) {
     cleanup_zygote_process_group_for_test(&socket_path);
     cleanup_zygote_processes_for_test(&socket_path);
     cleanup_descendants_for_test(std::process::id() as i32);
+    cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
 }
 
 // ============================================================================
@@ -279,9 +311,7 @@ fn build_server_command(
             if args.workers > 1 {
                 cmd.arg("--workers").arg(args.workers.to_string());
             }
-            if args.reload {
-                cmd.arg("--reload");
-            }
+            // Velo handles reload supervision; avoid nested reloader processes.
             // STB-RS-004: Ensure uvicorn exits quickly on SIGTERM to avoid supervisor hangs
             cmd.arg("--timeout-graceful-shutdown").arg("1");
         }
@@ -293,9 +323,6 @@ fn build_server_command(
                 .arg("--timeout")
                 .arg(args.timeout.to_string());
 
-            if args.reload {
-                cmd.arg("--reload");
-            }
             cmd.arg(&args.app);
         }
         Server::RSGI => {
@@ -666,6 +693,12 @@ fn spawn_signal_forwarder(
             for signal in signals.pending() {
                 if test_mode && signal == SIGTERM {
                     eprintln!("CHILD_RECEIVED_SIGTERM");
+                }
+                if test_mode && (signal == SIGINT || signal == SIGTERM) {
+                    eprintln!("[SHUTDOWN] signal received: {}", signal);
+                }
+                if signal == SIGINT || signal == SIGTERM {
+                    shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                 }
                 if tx.send(ServerEvent::Signal(signal)).is_err() {
                     return;
@@ -1221,7 +1254,7 @@ pub fn run_server(
             _native_listener = Some(listener);
         } else {
             // Partial failure: cleanup
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -1268,7 +1301,7 @@ pub fn run_server(
             use_proxy = true;
         } else {
             // Partial failure: cleanup and fallback
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -1310,7 +1343,7 @@ pub fn run_server(
         if workers.len() == args.workers as usize {
             use_proxy = true;
         } else {
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -1393,10 +1426,13 @@ pub fn run_server(
         // Main loop: Wait for Signal or Events (Zero Busy Wait)
         loop {
             if shutdown_coordinator.is_shutting_down() {
+                if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                    eprintln!("[SHUTDOWN] coordinator flag set in proxy loop");
+                }
                 eprintln!("\n🛑 Shutdown requested, stopping workers...");
                 let shutdown_timeout =
-                    Duration::from_secs(args.timeout).min(Duration::from_secs(5));
-                for w in &workers {
+                    Duration::from_secs(args.timeout).min(Duration::from_secs(3));
+                for w in &mut workers {
                     let _ = w.shutdown(shutdown_timeout);
                 }
                 if let Some(mut launcher) = _zygote_guard.take() {
@@ -1410,6 +1446,7 @@ pub fn run_server(
                         cleanup_zygote_process_group_for_test(&socket_path);
                         cleanup_zygote_processes_for_test(&socket_path);
                         cleanup_descendants_for_test(std::process::id() as i32);
+                        cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
                     }
                 }
                 return Ok(ServerExit::Shutdown);
@@ -1421,10 +1458,13 @@ pub fn run_server(
                 Ok(ServerEvent::Signal(sig)) => {
                     use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
                     if sig == SIGINT || sig == SIGTERM {
+                        if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                            eprintln!("[SHUTDOWN] signal event in proxy loop: {}", sig);
+                        }
                         eprintln!("\n🛑 Received shutdown signal, stopping workers...");
                         let shutdown_timeout =
-                            Duration::from_secs(args.timeout).min(Duration::from_secs(5));
-                        for w in &workers {
+                            Duration::from_secs(args.timeout).min(Duration::from_secs(3));
+                        for w in &mut workers {
                             let _ = w.shutdown(shutdown_timeout);
                         }
                         if let Some(mut launcher) = _zygote_guard.take() {
@@ -1440,6 +1480,9 @@ pub fn run_server(
                                 cleanup_zygote_process_group_for_test(&socket_path);
                                 cleanup_zygote_processes_for_test(&socket_path);
                                 cleanup_descendants_for_test(std::process::id() as i32);
+                                cleanup_uvicorn_workers_for_test(
+                                    &crate::common::paths::get_socket_dir(),
+                                );
                             }
                         }
                         return Ok(ServerExit::Shutdown);
@@ -1451,7 +1494,7 @@ pub fn run_server(
 
                 Ok(ServerEvent::Reload) => {
                     logger.info("Changes detected (Proxy Mode), restarting workers...");
-                    for w in &workers {
+                    for w in &mut workers {
                         let _ = w.shutdown(Duration::from_secs(args.timeout));
                     }
                     return Ok(ServerExit::Reload);
@@ -1598,6 +1641,16 @@ pub fn run_server(
     // STB-RS-005: Respawn Loop
     // Logic: If reload is enabled, we loop here to respawn the server on change events.
     loop {
+        if shutdown_coordinator.is_shutting_down() {
+            if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                eprintln!("[SHUTDOWN] flag set before respawn loop");
+            }
+            if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                #[cfg(unix)]
+                cleanup_descendants_for_test(std::process::id() as i32);
+            }
+            return Ok(ServerExit::Shutdown);
+        }
         let start_time = Instant::now();
 
         if server == Server::Uvicorn && args.workers >= 1 {
@@ -1655,6 +1708,40 @@ pub fn run_server(
                     }
                     #[cfg(not(unix))]
                     let _ = child.terminate();
+                    let shutdown_wait =
+                        if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                            Duration::from_secs(args.timeout).min(Duration::from_secs(3))
+                        } else {
+                            Duration::from_secs(args.timeout)
+                        };
+                    match child.wait_timeout(shutdown_wait) {
+                        Ok(Some(_)) => {
+                            logger.info("Server stopped gracefully");
+                        }
+                        _ => {
+                            logger.warn("Shutdown timeout expired, force killing process group...");
+                            #[cfg(unix)]
+                            {
+                                let pid = child.id() as i32;
+                                let target = if let Some(pgid) = child.pgid() {
+                                    -pgid
+                                } else {
+                                    pid
+                                };
+                                unsafe {
+                                    libc::kill(target, libc::SIGKILL);
+                                }
+                            }
+                            #[cfg(not(unix))]
+                            let _ = child.kill();
+                        }
+                    }
+                    if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                        #[cfg(unix)]
+                        cleanup_descendants_for_test(std::process::id() as i32);
+                        #[cfg(unix)]
+                        cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
+                    }
                     return Ok(ServerExit::Shutdown);
                 }
                 // Block until event received
@@ -1732,13 +1819,23 @@ pub fn run_server(
                                     if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1")
                                     {
                                         Duration::from_secs(args.timeout)
-                                            .min(Duration::from_secs(5))
+                                            .min(Duration::from_secs(3))
                                     } else {
                                         Duration::from_secs(args.timeout)
                                     };
                                 match child.wait_timeout(shutdown_wait) {
                                     Ok(Some(_)) => {
                                         logger.info("Server stopped gracefully");
+                                        if std::env::var("VELO_TEST_MODE").ok().as_deref()
+                                            == Some("1")
+                                        {
+                                            #[cfg(unix)]
+                                            cleanup_descendants_for_test(std::process::id() as i32);
+                                            #[cfg(unix)]
+                                            cleanup_uvicorn_workers_for_test(
+                                                &crate::common::paths::get_socket_dir(),
+                                            );
+                                        }
                                         return Ok(ServerExit::Shutdown);
                                     }
                                     _ => {
@@ -1759,6 +1856,16 @@ pub fn run_server(
                                         }
                                         #[cfg(not(unix))]
                                         let _ = child.kill();
+                                        if std::env::var("VELO_TEST_MODE").ok().as_deref()
+                                            == Some("1")
+                                        {
+                                            #[cfg(unix)]
+                                            cleanup_descendants_for_test(std::process::id() as i32);
+                                            #[cfg(unix)]
+                                            cleanup_uvicorn_workers_for_test(
+                                                &crate::common::paths::get_socket_dir(),
+                                            );
+                                        }
                                         return Ok(ServerExit::Shutdown);
                                     }
                                 }
@@ -1791,7 +1898,13 @@ pub fn run_server(
                         // Break inner loop to trigger fresh spawn in the caller
                         break;
                     }
-                    Err(_) => break, // Bus disconnected
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        // No events yet; keep waiting to avoid respawn churn.
+                        continue;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break; // Bus disconnected
+                    }
                     _ => {}
                 }
             }
