@@ -1,16 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
-from bundle_builder import build_from_project
-
-
-def build_bundle(project_dir: Path) -> Path:
-    cache_dir = project_dir / ".velo" / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
-
-
 """
 Phase 5.0 Fast Loader: L2 Sad Path Tests
 
@@ -23,17 +10,42 @@ Test IDs:
 - REBUILD-001: Source changed triggers auto-rebuild
 """
 
+import shutil
 import subprocess
+import sys
 import time
+import uuid
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
+from bundle_builder import build_from_project
+
+
+def build_bundle(project_dir: Path) -> Path:
+    cache_dir = project_dir / ".velo" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+
 
 @pytest.fixture
-def simple_project(tmp_path):
-    """Create minimal Python project."""
-    main_py = tmp_path / "main.py"
+def simple_project():
+    """Create minimal Python project.
+
+    Note: Uses workspace-local directory instead of /tmp to avoid
+    Velo's InsecureLocation security check (bundle caching rejects
+    shared directories like /tmp).
+    """
+    # Use workspace-local test directory to avoid InsecureLocation errors
+    workspace_root = Path(__file__).parent.parent.parent.parent
+    local_test_dir = workspace_root / ".test_projects"
+    local_test_dir.mkdir(exist_ok=True)
+
+    project_dir = local_test_dir / f"proj_{uuid.uuid4().hex}"
+    project_dir.mkdir()
+
+    main_py = project_dir / "main.py"
     main_py.write_text(
         """
 import json
@@ -42,7 +54,7 @@ print(json.dumps({"status": "ok"}))
 """
     )
 
-    pyproject = tmp_path / "pyproject.toml"
+    pyproject = project_dir / "pyproject.toml"
     pyproject.write_text(
         """
 [project]
@@ -51,7 +63,11 @@ version = "0.1.0"
 """
     )
 
-    return tmp_path
+    yield project_dir
+
+    # Cleanup
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
 
 
 @pytest.fixture

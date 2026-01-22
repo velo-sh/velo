@@ -65,16 +65,31 @@ def velo_binary():
 
 
 @pytest.fixture
-def simple_project(tmp_path):
+def simple_project():
     """
     Create minimal Python project for testing.
 
     Structure:
-        tmp_path/
+        project_dir/
         ├── main.py          (prints "Hello from Fast Loader!")
         └── pyproject.toml
+
+    Note: Uses workspace-local directory instead of /tmp to avoid
+    Velo's InsecureLocation security check (bundle caching rejects
+    shared directories like /tmp).
     """
-    main_py = tmp_path / "main.py"
+    import shutil
+    import uuid
+
+    # Use workspace-local test directory to avoid InsecureLocation errors
+    workspace_root = Path(__file__).parent.parent.parent.parent
+    local_test_dir = workspace_root / ".test_projects"
+    local_test_dir.mkdir(exist_ok=True)
+
+    project_dir = local_test_dir / f"proj_{uuid.uuid4().hex}"
+    project_dir.mkdir()
+
+    main_py = project_dir / "main.py"
     main_py.write_text(
         """
 import json
@@ -84,7 +99,7 @@ print(data)
 """
     )
 
-    pyproject = tmp_path / "pyproject.toml"
+    pyproject = project_dir / "pyproject.toml"
     pyproject.write_text(
         """
 [project]
@@ -94,7 +109,11 @@ requires-python = ">=3.11"
 """
     )
 
-    return tmp_path
+    yield project_dir
+
+    # Cleanup
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
 
 
 @pytest.fixture

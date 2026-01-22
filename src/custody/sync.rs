@@ -78,12 +78,21 @@ impl EnvironmentSync {
             let _ = state.save(project_dir);
         }
 
-        let status = Command::new(&uv_path)
-            .args(["sync", "--no-config", "--frozen"])
+        let mut cmd = Command::new(&uv_path);
+        cmd.arg("sync").arg("--no-config");
+
+        // Only use --frozen if uv.lock exists.
+        // RFC-0018: Shadow syncs should be frozen when possible to prevent side-effects.
+        if project_dir.join("uv.lock").exists() {
+            cmd.arg("--frozen");
+        }
+
+        let status = cmd
             .current_dir(project_dir)
-            // Surgical environment
+            // Surgical environment: remove inherited Python vars that might conflict with the target project
             .env_remove("PYTHONPATH")
             .env_remove("PYTHONHOME")
+            .env_remove("VIRTUAL_ENV")
             .status()
             .map_err(|e| CustodyError::SyncFailed(format!("failed to execute uv sync: {}", e)))?;
 
