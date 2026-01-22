@@ -8,7 +8,7 @@ from bundle_builder import build_from_project
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return build_from_project(project_dir, cache_dir / "bundle.veloc")  # type: ignore[no-any-return]
 
 
 """
@@ -44,7 +44,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 120):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -56,7 +56,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 120):
     return result
 
 
-def create_simple_project(path: Path):
+def create_simple_project(path: Path) -> None:
     """Create minimal project."""
     main_py = path / "main.py"
     main_py.write_text('print("ok")')

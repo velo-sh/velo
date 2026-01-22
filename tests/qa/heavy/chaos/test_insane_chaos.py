@@ -25,9 +25,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import pytest
-import requests
+if TYPE_CHECKING:
+    from _subprocess import Popen
+else:
+    from subprocess import Popen
 
 
 def get_velo_binary() -> str:
@@ -45,8 +48,8 @@ class ChaosTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"chaos_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: Popen[str] | None = None
 
     def set_pyproject(self, deps: list[Any]) -> "ChaosTestProject":
         content = f"""[project]

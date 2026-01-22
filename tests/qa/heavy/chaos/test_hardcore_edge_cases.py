@@ -25,6 +25,12 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from _subprocess import Popen
+else:
+    from subprocess import Popen
 
 import pytest
 import requests
@@ -45,8 +51,8 @@ class HardcoreTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"hardcore_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: Popen[str] | None = None
 
     def set_pyproject(self, deps: list[Any]) -> "HardcoreTestProject":
         content = f"""[project]

@@ -33,7 +33,7 @@ VELO_BIN = Path("./target/release/velo").absolute()
 PROJECT_ROOT = Path(__file__).parents[4]
 
 
-def ensure_velo_binary():
+def ensure_velo_binary() -> None:
     """Ensure velo binary exists."""
     if not VELO_BIN.exists():
         pytest.skip(f"Velo binary not found at {VELO_BIN}. Run `cargo build --release`")
