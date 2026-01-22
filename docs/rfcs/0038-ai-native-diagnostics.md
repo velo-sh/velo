@@ -97,6 +97,21 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 - `[4ms]` Environment Shield Active
 - `[12ms]` Application Entry
 - `[462ms]` First Heavy Import (`torch`)
+
+### 3.4 Mermaid Integration (Visual Dependency Graph)
+The report MAY include a Mermaid Gantt chart for the startup timeline. This provides dual utility: a visual timeline for human users in GitHub/VS Code previews, and a precise temporal dependency graph for Agents.
+
+```mermaid
+gantt
+    title Velo Startup Phase
+    dateFormat  x
+    axisFormat %Lms
+    section Boot
+    Zygote       : 0, 12
+    Env Shield   : 4, 12
+    section Runtime
+    App Entry    : 12, 462
+    Torch Import : crit, 462, 890
 ```
 
 ### 3.3 Agent-Friendly Markers
@@ -125,6 +140,12 @@ The Markdown report MUST be written **atomically** at the end of the process exe
     - **Constraint**: Agent Hints MUST be derived from empirical telemetry, not generative inference.
 - **AI Suggestions**: Future releases may include a `## 🤖 AI Suggestions (Experimental)` section, which MUST be explicitly labeled to distinguish from empirical telemetry.
 
+### 4.5 Protocol Versioning Strategy (SemVer)
+To ensure Agent prompts remain stable over years of evolution:
+- **Minor Version (v1.1)**: Adding new columns or sections is allowed. Agents MUST be prompted to ignore unknown keys.
+- **Major Version (v2.0)**: Renaming existing columns or changing units (e.g., `ms` to `us`) requires a major version bump.
+- **Guarantee**: Velo guarantees backward compatibility for the `## 📋 Summary` and `## Hot Functions` table structures for at least 6 months post-deprecation.
+
 ---
 
 ## 5. AI Integration: Reference Prompt
@@ -141,16 +162,22 @@ Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 2.  **Marketing Alignment**: Positions Velo as the "World's First AI-Native Python Runtime."
 3.  **Integration**: Seamless integration with Cursor, VS Code Copilot, and custom DevOps agents.
 
+## 7. Future Work: Differential Analysis
+
+Velo's deterministic Markdown output enables a powerful future workflow: **Differential Diagnostics**.
+
+Velo targets a future `velo diff baseline.md current.md` command. This will generate a **Delta Report** specifically designed for Agents to comment on Pull Requests (e.g., *"Performance Regression: `heavy_compute` slowed down by 150ms"*).
+
 ---
 
-## 7. Engineering Risks
+## 8. Engineering Risks
 
 - **Runtime Overhead**: Capturing data for detailed profiling always adds overhead. This should only run when requested.
 - **Protocol Stability**: Moving to a structured format requires stable column names to avoid breaking AI prompts.
 
 ---
 
-## 8. Open Questions
+## 9. Open Questions
 
 - Should we support JSON instead of Markdown? 
     - **Decision**: Markdown is preferred as it is human-readable AND LLMs are natively trained on Markdown structure, whereas JSON consumes more tokens and can be more brittle for partial reads.
@@ -159,7 +186,7 @@ Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 
 ---
 
-## 9. Quality Gates
+## 10. Quality Gates
 
 - **Gate A**: Output passes standard Markdown linting (`mdl`).
 - **Gate B**: AI-generated "Top 3 bottlenecks" from the report match actual data with 100% accuracy.
