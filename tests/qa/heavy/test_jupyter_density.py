@@ -88,11 +88,12 @@ while True:
 
     time.sleep(2)
 
-    # 3. Spawn 100 kernels
+    # 3. Spawn 100 kernels concurrently (Thundering Herd)
+    import concurrent.futures
+
     processes = []
-    pids = []
-    print("🔋 Spawning 100 kernels...")
-    for i in range(100):
+
+    def spawn_kernel(i):
         p = subprocess.Popen(
             [velo_binary, "run", "--zygote", "-m", "ipykernel_launcher"],
             stdout=subprocess.PIPE,
@@ -100,9 +101,17 @@ while True:
             text=True,
             env=env,
         )
-        processes.append(p)
-        # We need to wait for the worker to be spawned by Zygote.
-        # Velo CLI prints the worker PID to stderr: "⚡ Running via Zygote (PID: 1234)"
+        return p
+
+    print("🔋 Spawning 100 kernels concurrently (Thundering Herd)...")
+    start_spawn = time.time()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(spawn_kernel, i) for i in range(100)]
+        for f in concurrent.futures.as_completed(futures):
+            processes.append(f.result())
+
+    spawn_duration = time.time() - start_spawn
+    print(f"⏱️  Spawned 100 kernels in {spawn_duration:.2f}s")
 
     # Wait a bit for all to settle
     time.sleep(5)

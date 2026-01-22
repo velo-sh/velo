@@ -1,0 +1,1 @@
+import time; import sys; print('STARTED'); sys.stdout.flush(); time.sleep(10)
