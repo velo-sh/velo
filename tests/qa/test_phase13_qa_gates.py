@@ -207,7 +207,8 @@ class TestGateD_Compatibility:
 
         class MockConfig:
             class Option:
-                pass
+                velo: bool = False
+                numprocesses: int = 0
 
             option = Option()
 

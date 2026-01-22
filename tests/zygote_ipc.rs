@@ -13,7 +13,13 @@ mod ipc_tests {
     fn test_socket_path_generation() {
         // Socket should be in temp directory with unique name
         let socket_path = velo::zygote::core_ipc::default_socket_path();
-        assert!(socket_path.to_string_lossy().contains("velo-zygote"));
+        let path_str = socket_path.to_string_lossy();
+        // Match either abstract socket or filesystem socket
+        assert!(
+            path_str.contains("zygote"),
+            "Socket path {:?} should contain 'zygote'",
+            path_str
+        );
     }
 
     /// Test basic socket creation and cleanup

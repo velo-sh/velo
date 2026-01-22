@@ -71,7 +71,10 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             resp_a = requests.get("http://127.0.0.1:8001/")
         except Exception as e:
             if proc_a.poll() is not None:
-                print(f"Proc A failed: {proc_a.stderr.read().decode()}")
+                stderr = ""
+                if proc_a.stderr:
+                    stderr = proc_a.stderr.read().decode()
+                print(f"Proc A failed: {stderr}")
             raise e
         assert resp_a.json() == {"ws": "A"}
 

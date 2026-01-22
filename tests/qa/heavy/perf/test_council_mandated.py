@@ -21,6 +21,10 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from _subprocess import Popen
 
 import pytest
 import requests
@@ -51,10 +55,10 @@ class CouncilTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"council_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> Self:
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -67,15 +71,15 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> Self:
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> Self:
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, port: int = None):
+    def start_server(self, app_module: str, port: int | None = None) -> Self:
         if port is None:
             import socket
 
@@ -106,23 +110,23 @@ dev-dependencies = []
         return self
 
     @property
-    def port(self) -> int:
+    def port(self) -> int | None:
         return self._port
 
     @property
     def alive(self) -> bool:
-        return self._proc and self._proc.poll() is None
+        return bool(self._proc and self._proc.poll() is None)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -969,7 +973,7 @@ async def app(scope, receive, send):
             p.install_deps()
             p.start_server("main:app")
 
-            if p.alive:
+            if p.alive and p._proc:
                 import psutil
 
                 proc = psutil.Process(p._proc.pid)

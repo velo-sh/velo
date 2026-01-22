@@ -17,12 +17,14 @@ import pytest
 @pytest.fixture
 def velo_binary():
     root = Path(__file__).parent.parent.parent.parent
-    release_path = root / "target" / "release" / "velo"
-    if release_path.exists():
-        return str(release_path)
     debug_path = root / "target" / "debug" / "velo"
     if debug_path.exists():
-        return str(debug_path)
+        path = str(debug_path.absolute())
+        print(f"DEBUG: Using Velo Binary: {path}")
+        # Verify version
+        res = subprocess.run([path, "--version"], capture_output=True, text=True)
+        print(f"DEBUG: Velo Version: {res.stdout.strip()}")
+        return path
     return "velo"
 
 
@@ -105,32 +107,52 @@ while True:
 
     print("🔋 Spawning 100 kernels concurrently (Thundering Herd)...")
     start_spawn = time.time()
+    all_pids = []
+
+    def spawn_kernel(i):
+        p = subprocess.Popen(
+            [velo_binary, "run", "--zygote", "-m", "ipykernel_launcher"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        # Read lines until we find the PID marker
+        pid = None
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            if "KERNEL_READY_PID_" in line:
+                try:
+                    pid = int(line.strip().split("_")[-1])
+                    break
+                except ValueError:
+                    pass
+        return pid, p
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [executor.submit(spawn_kernel, i) for i in range(100)]
+        futures = {executor.submit(spawn_kernel, i): i for i in range(100)}
         for f in concurrent.futures.as_completed(futures):
-            processes.append(f.result())
+            pid, p = f.result()
+            if pid:
+                all_pids.append(pid)
+            processes.append(p)
 
     spawn_duration = time.time() - start_spawn
-    print(f"⏱️  Spawned 100 kernels in {spawn_duration:.2f}s")
-
-    # Wait a bit for all to settle
-    time.sleep(5)
-
-    # Find all child PIDs of the Zygote or workers
-    # Actually, we can just look for processes matching our mock_kernel
-    all_pids = []
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        cmdline = proc.info["cmdline"]
-        if cmdline and "ipykernel_launcher" in " ".join(cmdline):
-            all_pids.append(proc.info["pid"])
-
-    print(f"✅ Found {len(all_pids)} active kernels.")
+    print(f"⏱️  Spawned {len(all_pids)} verified kernels in {spawn_duration:.2f}s")
 
     # 4. Measure Memory
-    total_rss = get_total_rss(all_pids)
-    total_gb = total_rss / (1024**3)
-
-    print(f"📊 Total RSS for {len(all_pids)} kernels: {total_gb:.2f} GB")
+    if not all_pids:
+        print("❌ No kernels reported ready!")
+        # Drain stderr for debugging
+        for p in processes[:1]:
+            _, err = p.communicate(timeout=1)
+            print(f"Sample Kernel Error: {err}")
+    else:
+        total_rss = get_total_rss(all_pids)
+        total_gb = total_rss / (1024**3)
+        print(f"📊 Total RSS for {len(all_pids)} kernels: {total_gb:.2f} GB")
 
     # Cleanup
     for p in processes:

@@ -25,9 +25,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-import pytest
-import requests
+if TYPE_CHECKING:
+    from _subprocess import Popen
+else:
+    from subprocess import Popen
 
 
 def get_velo_binary() -> str:
@@ -45,10 +48,10 @@ class ChaosTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"chaos_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[Any]) -> "ChaosTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -61,15 +64,17 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "ChaosTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "ChaosTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, workers: int = 2, extra_args: list = None):
+    def start_server(
+        self, app_module: str, workers: int = 2, extra_args: list[Any] | None = None
+    ) -> "ChaosTestProject":
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -108,7 +113,7 @@ dev-dependencies = []
 
     @property
     def pid(self) -> int:
-        return self._proc.pid if self._proc else None
+        return self._proc.pid if self._proc else 0
 
     def cleanup(self):
         if self._proc and self._proc.poll() is None:

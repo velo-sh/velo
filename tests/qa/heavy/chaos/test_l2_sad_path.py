@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).parents[4] / "python"))
 from bundle_builder import build_from_project
@@ -8,7 +9,7 @@ from bundle_builder import build_from_project
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return cast(Path, build_from_project(project_dir, cache_dir / "bundle.veloc"))
 
 
 """
@@ -55,7 +56,7 @@ version = "0.1.0"
 
 
 @pytest.fixture
-def velo_binary():
+def velo_binary() -> str:
     """Get path to velo binary."""
     cargo_path = Path(__file__).parents[4] / "target" / "release" / "velo"
     if cargo_path.exists():
@@ -66,7 +67,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
