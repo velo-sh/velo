@@ -67,7 +67,7 @@ class EvilTestProject:
         self._port = None
         self._proc = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[Any]) -> "EvilTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -80,16 +80,16 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "EvilTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "EvilTestProject":
         cmd = ["uv", "sync"]
         subprocess.run(cmd, cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, port: int = None):
+    def start_server(self, app_module: str, port: int | None = None) -> "EvilTestProject":
         if port is None:
             import socket
 
@@ -120,12 +120,12 @@ dev-dependencies = []
         return self
 
     @property
-    def port(self) -> int:
+    def port(self) -> int | None:
         return self._port
 
     @property
     def alive(self) -> bool:
-        return self._proc and self._proc.poll() is None
+        return bool(self._proc and self._proc.poll() is None)
 
     def cleanup(self):
         if self._proc and self._proc.poll() is None:
