@@ -71,12 +71,18 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 | **PYTHON_GIL** | `Enabled` |
 | **PLATFORM** | `Darwin 14.2` |
 
+> [!CAUTION]
+> **Secrets Sanitizer**: The environment dumper MUST apply a `sensitive_key_filter`. Any variable name containing `KEY`, `SECRET`, `TOKEN`, or `PASSWORD` (case-insensitive) MUST have its value redacted to `***` before output.
+
 ## 🔍 Top Bottleneck Analysis
 
 ### 1. `heavy_compute` (492ms)
 **Location:** `utils.py:45`
 **Signature:** `def heavy_compute(data: List[int]) -> int:`
 > **Agent Hint [loop-hot]**: High self-time in a loop. Check for nested list comprehensions.
+
+> [!CAUTION]
+> **Snippet Bounds**: Any code context or signature provided MUST be truncated to the **Top 5 lines** (Def + Docstring) to maintain token budget.
 
 ## Hot Functions (Top 20)
 | Self % | Self | Function | Location |
