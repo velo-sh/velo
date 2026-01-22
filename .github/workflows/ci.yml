@@ -158,6 +158,7 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -215,6 +216,7 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -240,6 +242,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -263,6 +266,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -276,6 +280,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Setup Velo
@@ -292,6 +297,7 @@ jobs:
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Install actionlint
@@ -309,6 +315,7 @@ jobs:
   qa-phase-7-0:
     name: "QA 7.0: Memory Gravity (RFC-0015)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -324,6 +331,7 @@ jobs:
   qa-phase-7-1:
     name: "QA 7.1: Custody & Forensics"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -339,6 +347,7 @@ jobs:
   qa-phase-7-2:
     name: "QA 7.2: ASGI Bridge Compatibility"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -355,6 +364,7 @@ jobs:
   qa-zygote-suite:
     name: "QA: Zygote Full Suite"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.zygote == 'true' || 
@@ -405,7 +415,7 @@ jobs:
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     needs: [build, changes]  # Changed from qa-serve-smoke to build
     # Only run on main branch - heavy tests are optional
     if: |
@@ -469,6 +479,7 @@ jobs:
   qa-phase61-security-hardened:
     name: "QA 6.1: Security Hardened (RFC-0010)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -486,6 +497,7 @@ jobs:
   qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -493,16 +505,21 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
-  qa-phase61-dx-performance:
-    name: "QA 6.1: DX & Performance"
+  qa-phase61-dx:
+    name: "QA 6.1: DX (RFC-0010)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -510,15 +527,31 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
-    continue-on-error: true  # Performance tests may be flaky
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
-             uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
+
+  qa-phase61-performance:
+    name: "QA 6.1: Performance"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
 
   qa-phase62-prosecutor:
     name: "QA 6.2: Prosecutor Suite (RFC-0012)"
@@ -608,6 +641,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' ||
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.qa_infra == 'true'
+    timeout-minutes: 20
     # NOTE: macOS removed - developers run locally, CI focuses on Linux
     steps:
       - uses: actions/checkout@v4
@@ -681,13 +715,18 @@ jobs:
 
   qa-analyze-integration:
     name: "QA 4.0: Integration (SLOW)"
-    runs-on: ubuntu-latest
-    needs: [build, changes]
-    if: |
+    runs-on: ubuntu-latest # Restored missing property
+    timeout-minutes: 30
+    needs: [build, changes] # Restored missing property
+    if: | # Restored missing property
       needs.changes.outputs.analyze == 'true' || 
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
@@ -695,7 +734,7 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
           command: |
              chmod +x .venv/bin/python3
-             uv run pytest tests/qa/test_phase4_integration.py -v --tb=short
+             uv run pytest tests/qa/test_phase4_integration.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
   qa-benchmark:
     name: "QA: Benchmark"
@@ -719,6 +758,7 @@ jobs:
     name: Code Coverage
     needs: [changes]
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -245,6 +245,9 @@ class TestSocketHijack:
             f.write("def app(scope, receive, send): pass")
 
         env = os.environ.copy()
+        # Force filesystem socket to trigger directory permission remediation
+        # (Otherwise Velo defaults to abstract sockets on Linux which skip this check)
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_dir / "test-zygote.sock")
         env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_TEST_MODE"] = "1"
 

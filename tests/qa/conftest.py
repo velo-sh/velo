@@ -115,6 +115,12 @@ def session_log_directory(tmp_path_factory):
     # Export for child processes (Zygote, workers, etc.)
     os.environ["VELO_SESSION_LOG_DIR"] = str(session_dir)
 
+    # RFC-0019/SEC-005: Isolate abstract sockets for parallel test runners (e.g. xdist)
+    if not os.environ.get("VELO_ZYGOTE_ID"):
+        # Use short UUID or xdist worker id
+        worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+        os.environ["VELO_ZYGOTE_ID"] = f"{worker_id}-{uuid.uuid4().hex[:4]}"
+
     # Store globally for artifact collection
     _session_log_dir = session_dir
 
@@ -168,6 +174,16 @@ def cleanup_zygote_between_modules():
                 shutil.rmtree(str(sock_dir))
             except OSError:
                 pass
+
+        # Kill any stray zygotes or workers associated with this session's binary
+        # using pgrep if available, or just rely on the socket cleanup for now
+        # Actually, best way to kill stray zygotes is to send 'Shutdown' cmd if we can find them,
+        # but here we are cleaning up for a new module.
+        try:
+            # Force kill any velo processes running from this build to avoid collisions
+            subprocess.run(["pkill", "-f", "target/.*velo"], check=False)
+        except Exception:
+            pass
 
     cleanup_sockets()
     yield

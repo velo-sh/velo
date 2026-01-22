@@ -402,7 +402,13 @@ pub fn worker_abstract_socket_name(worker_id: u64) -> String {
     // FIX(SEC-005): Use @ prefix for internal representation of abstract sockets
     // to avoid \0 null byte issues in Path conversions.
     let seq = SOCKET_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("@velo-{}-w-{}-{}", uid, worker_id, seq)
+
+    // Allow isolation for parallel tests (RFC-0019 Extension)
+    if let Ok(id) = std::env::var("VELO_ZYGOTE_ID") {
+        format!("@velo-{}-w-{}-{}-{}", uid, id, worker_id, seq)
+    } else {
+        format!("@velo-{}-w-{}-{}", uid, worker_id, seq)
+    }
 }
 
 /// Generate an abstract socket name for the Zygote (Linux only).
@@ -410,7 +416,13 @@ pub fn worker_abstract_socket_name(worker_id: u64) -> String {
 #[cfg(target_os = "linux")]
 pub fn zygote_abstract_socket_name() -> String {
     let uid = unsafe { libc::getuid() };
-    format!("@velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
+
+    // Allow isolation for parallel tests (RFC-0019 Extension)
+    if let Ok(id) = std::env::var("VELO_ZYGOTE_ID") {
+        format!("@velo-{}-zygote-{}-v{:02x}", uid, id, PROTOCOL_VERSION)
+    } else {
+        format!("@velo-{}-zygote-v{:02x}", uid, PROTOCOL_VERSION)
+    }
 }
 
 /// Create a SocketAddr for abstract namespace socket (Linux).
