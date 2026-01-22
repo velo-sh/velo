@@ -185,9 +185,9 @@ def cleanup_zygote_between_modules():
         except Exception:
             pass
 
-    cleanup_sockets()
+    cleanup_sockets()  # type: ignore[no-untyped-call]
     yield
-    cleanup_sockets()
+    cleanup_sockets()  # type: ignore[no-untyped-call]
 
 
 @pytest.fixture(scope="session")
