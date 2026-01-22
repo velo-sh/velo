@@ -189,6 +189,8 @@ fn preload_library_isolated(lib: &NativeLibFingerprint) -> PreloadResult {
             }
             // If child exited 0, the main process can now safely dlopen the same inode
             // knowing that the initializer has been "vetted" in the sub-process.
+            // NOTE: Parent process dlopen after successful child vetting is still subject to kernel-level 
+            // loader bugs; this risk is equivalent to standard Python import and is considered acceptable.
             unsafe { libc::dlopen(lib.path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
         }
         Err(_) => return PreloadResult::Failed,
