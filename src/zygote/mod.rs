@@ -421,6 +421,9 @@ impl ZygoteLauncher {
         if let Ok(val) = std::env::var("VELO_ZYGOTE_SOCKET") {
             cmd.env("VELO_ZYGOTE_SOCKET", val);
         }
+        if let Ok(val) = std::env::var("VELO_ZYGOTE_ID") {
+            cmd.env("VELO_ZYGOTE_ID", val);
+        }
 
         // Identify this as the Zygote process for bootstrap logic (Trap 178.4)
         cmd.env("VELO_IS_ZYGOTE", "1");

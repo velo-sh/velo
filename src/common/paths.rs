@@ -199,10 +199,17 @@ impl VeloPaths {
     /// Get the full Zygote socket path.
     pub fn zygote_socket() -> PathBuf {
         if let Some(socket_path) = std::env::var_os("VELO_ZYGOTE_SOCKET") {
-            let path_str = socket_path.to_string_lossy();
+            let path = PathBuf::from(socket_path);
+            let path_str = path.to_string_lossy();
             if path_str.len() <= SOCKET_PATH_LIMIT {
-                // [H-GOV HARDENING] Do NOT auto-create directories for overrides.
-                return PathBuf::from(socket_path);
+                // [H-GOV HARDENING] Ensure parent directory exists for filesystem paths
+                if !path_str.starts_with('@')
+                    && !path_str.starts_with('\0')
+                    && let Some(parent) = path.parent()
+                {
+                    let _ = ensure_socket_dir(parent);
+                }
+                return path;
             } else {
                 eprintln!(
                     "⚠️ WARNING: VELO_ZYGOTE_SOCKET is too long ({} bytes, max {}). Falling back to safe default.",
