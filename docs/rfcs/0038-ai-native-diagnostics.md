@@ -39,12 +39,13 @@ Output must follow GitHub Flavored Markdown (GFM) standards.
 
 #### Example: `velo run --prof-md script.py`
 ```markdown
-# Velo Profile Report
+# Velo Diagnostic Report v1
 
 | Metric | Value | Status |
 | :--- | :--- | :--- |
 | **Total Runtime** | 1.04s | 🟢 Within Budget |
 | **Startup (Zygote)** | 12ms | ⚡ Instant |
+| **Memory Delta** | +24MB | ✅ COW Efficient |
 | **Import Latency** | 450ms | ⚠️ High |
 
 ## Hot Functions (Self Time)
@@ -73,10 +74,10 @@ Output must follow GitHub Flavored Markdown (GFM) standards.
 Add a boolean flag `prof_md` to `RunCmd` and `BenchCmd`.
 
 ### 4.2 Formatter Module
-Implement a `MarkdownFormatter` in `src/common/diagnostics.rs` that takes a `TraceEvent` or `ProfileResult` and converts it to a String.
+Implement a `MarkdownFormatter` in `src/common/diagnostics.rs` that takes a `TraceEvent` or `ProfileResult` and converts it to a String. This module must strictly enforce **ANSI Purity** by stripping all escape codes.
 
-### 4.3 ANSI Stripping
-When `--prof-md` is active, Velo MUST disable all ANSI color codes in the diagnostic section to maintain token purity.
+### 4.3 Zero-Cost Instrumentation
+All data collection required for `--prof-md` MUST be lazy-initialized and gated. If the flag is not present, no additional memory or CPU overhead should be incurred (Zero-Cost Path).
 
 ---
 
