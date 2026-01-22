@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 # Import CI-aware timeout constants
-from conftest_utils import T_MEDIUM, T_SHORT, get_velo_binary
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT, get_velo_binary
 
 
 class SecurityTestEnv:
@@ -27,7 +27,7 @@ class SecurityTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 

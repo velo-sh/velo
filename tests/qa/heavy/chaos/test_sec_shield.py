@@ -1,7 +1,6 @@
 # RFC-0011 QA: SandboxShield Verification Suite (Executioners)
 # tests/qa/phase_6_1_1/test_sec_shield.py
 
-import os
 import subprocess
 import time
 
@@ -60,14 +59,15 @@ class TestSandboxShield:
             (ws / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
 
             # Use default socket directory logic
-            return subprocess.Popen(
+            p = subprocess.Popen(
                 [velo_binary, "serve", "main:app", "--port", "0"],
                 cwd=ws,
-                env=os.environ,
+                env=os.environ.copy(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            return p
 
         p1 = start_velo_in(ws1)
         time.sleep(5)  # Wait for Zygote 1
@@ -79,8 +79,13 @@ class TestSandboxShield:
         # Verification logic: check logs or lsof for socket paths
         try:
             # Cleanup
-            p1.terminate()
-            p2.terminate()
+            for p in [p1, p2]:
+                try:
+                    p.terminate()
+                    p.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    p.wait()
         except:
             pass
 

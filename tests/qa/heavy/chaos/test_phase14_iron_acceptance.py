@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 GOLD_DIR = Path("/tmp/gold_200_phase14")
 VELO_BIN = Path("./target/release/velo").absolute()
@@ -38,9 +39,9 @@ def clear_pycache(target_dir: Path) -> None:
             pass  # Ignore errors if directory is already gone
 
 
-def run_cmd(cmd, env=None, cwd=None):
+def run_cmd(cmd, env=None, cwd=None, timeout=T_LONG):
     start = time.perf_counter()
-    res = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd, timeout=timeout)
     duration = time.perf_counter() - start
     return res, duration
 
@@ -89,8 +90,8 @@ def test_phase14_iron_performance_acceptance():
     # 1. Warm Performance Test (Pre-started Zygote)
     # Surgical Cleanup: Kill both Rust wrapper and Python backend
     cwd_name = Path.cwd().name
-    subprocess.run(["pkill", "-9", "-f", "velo.*zygote.*start.*--daemon"], capture_output=True)
-    subprocess.run(["pkill", "-9", "-f", f"python.*{cwd_name}.*velo_zygote.main"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "velo.*zygote.*start.*--daemon"], capture_output=True, timeout=T_SHORT)
+    subprocess.run(["pkill", "-9", "-f", f"python.*{cwd_name}.*velo_zygote.main"], capture_output=True, timeout=T_SHORT)
     time.sleep(1.0)
 
     env = gold_200_env()
@@ -98,7 +99,7 @@ def test_phase14_iron_performance_acceptance():
     env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
     # Start Zygote with explicit socket
-    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], env=env, capture_output=True)
+    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], env=env, capture_output=True, timeout=T_MEDIUM)
 
     # Wait for socket and auth file (Wait up to 10s)
     auth_secret = None
@@ -209,7 +210,7 @@ def test_phase14_iron_chaos_audit():
     assert GOLD_DIR.exists()
 
     # 1. Start Zygote
-    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True)
+    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True, timeout=T_MEDIUM)
 
     # 2. Start a long run in background
     env = gold_200_env()
@@ -226,7 +227,7 @@ def test_phase14_iron_chaos_audit():
 
     time.sleep(1.0)
     print("[Chaos] Slapping Zygote (SIGKILL)...")
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote/main.py"], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "velo_zygote/main.py"], capture_output=True, timeout=T_SHORT)
 
     # 3. Wait for test to finish or hang
     try:
@@ -324,8 +325,8 @@ def test_phase14_orphan_storm_prevention():
         return len([x for x in result.stdout.strip().split("\n") if x])
 
     # 2. Start Zygote
-    print("\\n[Orphan Test] Starting Zygote...")
-    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True)
+    print("\n[Orphan Test] Starting Zygote...")
+    subprocess.run([str(VELO_BIN), "zygote", "start", "--daemon"], capture_output=True, timeout=T_MEDIUM)
     time.sleep(1.0)
 
     initial_count = count_zygote_processes()
@@ -359,7 +360,7 @@ def test_phase14_orphan_storm_prevention():
 
     # 4. Stop Zygote
     print("[Orphan Test] Stopping Zygote...")
-    subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True)
+    subprocess.run([str(VELO_BIN), "zygote", "stop"], capture_output=True, timeout=T_SHORT)
     time.sleep(1.0)
 
     final_count = count_zygote_processes()

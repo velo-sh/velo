@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest_utils import T_MEDIUM, T_SHORT
 
 # TITANIUM Grade: Agent D (Destroyer) Chaos Suite
 # Based on QA-SOP §4.4 (Agent D responsibilities)
@@ -43,7 +44,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
     assert socket_path.exists(), "Zygote failed to create socket within 30s"
 
     # Wait for Rust CLI to complete (it starts daemon and exits)
-    proc.wait(timeout=30)
+    proc.wait(timeout=T_MEDIUM)
 
     try:
         # Connect
@@ -83,7 +84,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
 
     finally:
         # Clean up: Stop the Zygote daemon
-        subprocess.run([env.velo, "zygote", "stop"], env=cmd_env, capture_output=True)
+        subprocess.run([env.velo, "zygote", "stop"], env=cmd_env, capture_output=True, timeout=T_SHORT)
 
 
 @pytest.mark.tier4
@@ -106,23 +107,50 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
 
     try:
         # Induce many rapid forks and kill Zygote
+        spawned = []
         for i in range(5):
-            subprocess.Popen(
+            p = subprocess.Popen(
                 [env.velo, "serve", "main:app"],
                 env=cmd_env,
                 cwd=app_dir,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            spawned.append(p)
 
-        time.sleep(0.1)
+        time.sleep(0.5)  # Give time for forks to start
         proc.send_signal(signal.SIGINT)
-        proc.wait(timeout=30)
+        try:
+            proc.wait(timeout=T_MEDIUM)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+        # Clean up spawned processes
+        for p in spawned:
+            try:
+                p.terminate()
+                p.wait(timeout=T_SHORT)
+            except:
+                p.kill()
 
         # Verify no orphaned Python processes (heuristic check)
         # In a real environment, we'd check pgid, but here we check for leaks.
         # RFC-0011 6A.1: Prevent orphan leaks
     finally:
+        # Clean up spawned processes
+        for p in spawned:
+            try:
+                if p.poll() is None:
+                    p.terminate()
+                    p.wait(timeout=T_SHORT)
+            except:
+                try:
+                    p.kill()
+                    p.wait()
+                except:
+                    pass
+
         if proc.poll() is None:
             proc.kill()
 

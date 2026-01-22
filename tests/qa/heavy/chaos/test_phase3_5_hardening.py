@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from conftest_utils import get_velo_binary
+from conftest_utils import T_LONG, get_velo_binary
 
 
 class RealUserEnv:
@@ -20,7 +20,7 @@ class RealUserEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 

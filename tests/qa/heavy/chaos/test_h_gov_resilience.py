@@ -1,6 +1,12 @@
 import os
 import subprocess
+
+# Add tests/qa to path for imports
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[4] / "tests" / "qa"))
+from conftest_utils import T_LONG
 
 repo_root = Path(__file__).parents[4]
 VELO_BIN = str((repo_root / "target" / "release" / "velo").resolve())
@@ -11,12 +17,12 @@ TEST_ST = str(Path(__file__).parent / "test.safetensors")
 SIMPLE_PY = str(Path(__file__).parent / "simple.py")
 
 
-def run_velo(env, args):
+def run_velo(env, args, timeout=T_LONG):
     """Run Velo with specific environment and arguments."""
     full_env = os.environ.copy()
     full_env.update(env)
 
-    result = subprocess.run([VELO_BIN] + args, env=full_env, capture_output=True, text=True)
+    result = subprocess.run([VELO_BIN] + args, env=full_env, capture_output=True, text=True, timeout=timeout)
     if result.returncode != 0:
         print("--- FAILURE DETAILS ---")
         print(f"STDOUT: {result.stdout}")

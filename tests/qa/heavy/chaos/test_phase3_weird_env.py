@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from conftest_utils import get_velo_binary
+from conftest_utils import T_LONG, T_SHORT, get_velo_binary
 
 
 class WeirdEnv:
@@ -49,7 +49,7 @@ class WeirdEnv:
 
     def setup_basic(self):
         """Minimal setup."""
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
 
     def create_script(self, name: str, content: str):
@@ -335,7 +335,7 @@ class TestWeirdFilesystem:
 
         try:
             # Create real venv elsewhere
-            subprocess.run(["uv", "venv", "--quiet", str(real_venv)], check=True)
+            subprocess.run(["uv", "venv", "--quiet", str(real_venv)], check=True, timeout=T_LONG)
 
             # Symlink it
             (env.path / ".venv").symlink_to(real_venv)
@@ -418,7 +418,7 @@ class TestWeirdPython:
             # Create nested project with its own venv
             nested = env.path / "subproject"
             nested.mkdir()
-            subprocess.run(["uv", "venv", "--quiet"], cwd=nested, check=True)
+            subprocess.run(["uv", "venv", "--quiet"], cwd=nested, check=True, timeout=T_LONG)
             (nested / "uv.lock").write_text("{}")
 
             env.create_script("test.py", 'print("multi venv")')
@@ -548,7 +548,7 @@ time.sleep(10)
             time.sleep(0.5)
 
             # Check for orphan sleep processes
-            ps_result = subprocess.run(["pgrep", "-f", "sleep 100"], capture_output=True)
+            ps_result = subprocess.run(["pgrep", "-f", "sleep 100"], capture_output=True, timeout=T_SHORT)
             orphans = ps_result.stdout.decode().strip().split("\n")
             orphans = [o for o in orphans if o]
 
