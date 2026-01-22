@@ -67,7 +67,7 @@ def zygote_process():
         os.unlink(sock_path)
 
 
-def send_raw_hostile(sock_path, total_len, version, payload_bytes):
+def send_raw_hostile(sock_path: str, total_len: int, version: int, payload_bytes: bytes) -> None:
     """Low-level socket injector."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(2.0)
@@ -238,7 +238,7 @@ def test_state_lifecycle_progression():
         # Read Greeting
         s.recv(1024)
 
-        def get_state(sock):
+        def get_state(sock: socket.socket) -> str:
             cmd = {"type": "Status"}
             p = msgpack.packb(cmd)
             h = struct.pack("<I", 1 + len(p))
@@ -246,7 +246,7 @@ def test_state_lifecycle_progression():
             rh = sock.recv(5)
             l = struct.unpack("<I", rh[:4])[0]
             rp = sock.recv(l - 1)
-            return msgpack.unpackb(rp)["state"]
+            return str(msgpack.unpackb(rp)["state"])  # type: ignore[no-any-return]
 
         # 2. Check for PRELOADING or IDLE/PRELOADING transition
         state = get_state(s)

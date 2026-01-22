@@ -4,6 +4,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -69,7 +70,7 @@ def get_random():
             import select
 
             r, _, _ = select.select([proc.stderr], [], [], 0.5)
-            if r:
+            if r and proc.stderr:
                 line = proc.stderr.readline()
                 if "All workers ready" in line or "Uvicorn running on" in line:
                     ready = True
@@ -79,7 +80,7 @@ def get_random():
             pytest.fail("Server failed to start within 20s")
 
         # Collect random numbers from different workers
-        samples = {}
+        samples: dict[int, list[dict[str, Any]]] = {}
         for _ in range(30):
             try:
                 res = subprocess.run(

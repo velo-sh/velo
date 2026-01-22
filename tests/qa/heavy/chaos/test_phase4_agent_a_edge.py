@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any, Self
 
 import pytest
 
@@ -49,11 +50,11 @@ def check_analyze_available():
 class EdgeProject:
     """Isolated project for edge case testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_edge_"))
         self.velo = get_velo_binary()
 
-    def set_pyproject(self, deps=None):
+    def set_pyproject(self, deps: list[str] | None = None) -> Self:
         content = f"""[project]
 name = "edge-test"
 version = "0.1.0"
@@ -62,11 +63,11 @@ dependencies = {json.dumps(deps or [])}
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_file(self, name: str, content: str):
+    def set_file(self, name: str, content: str) -> Self:
         (self.path / name).write_text(content)
         return self
 
-    def analyze(self, *args, timeout: float = 30) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 30) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
             cwd=self.path,
@@ -75,13 +76,13 @@ dependencies = {json.dumps(deps or [])}
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

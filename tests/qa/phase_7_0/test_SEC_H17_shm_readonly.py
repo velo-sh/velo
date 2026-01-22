@@ -1,5 +1,7 @@
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -80,23 +82,47 @@ time.sleep(10)
         try:
             # Phase 1: Wait for READY signal (Ritual 43.1: Synchronous Readiness)
             # This ensures the worker has started and mapped the SHM (or tried to)
-            line = proc.stdout.readline()
-            while line and "READY" not in line:
+            # In CI, we expect "⚠️ H-GOV AUDIT" messages if HugePages are missing.
+            # We drain stderr while waiting for stdout to avoid stalls.
+
+            ready_found = False
+            start_time = time.time()
+            timeout = 15 * int(os.environ.get("VELO_TIMEOUT_MULTIPLIER", 1))
+
+            while time.time() - start_time < timeout:
                 line = proc.stdout.readline()
+                if not line:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                    continue
 
-            if not line:
+                if "READY" in line:
+                    ready_found = True
+                    print(f"✅ Velo reported READY: {line.strip()}")
+                    break
+
+                if "⚠️ H-GOV AUDIT" in line:
+                    print(f"📡 Caught Audit Signal: {line.strip()}")
+
+            if not ready_found:
                 stdout_rem, stderr = proc.communicate(timeout=5)
-                pytest.fail(f"Velo failed to reach READY state! STDERR={stderr}")
-
-            print(f"✅ Velo reported READY: {line.strip()}")
+                # If we see the expected CI fallback audit, don't necessarily fail here
+                # but if we didn't get READY eventually, it's still a failure.
+                pytest.fail(
+                    f"Velo failed to reach READY state within {timeout}s! \nSTDERR={stderr}\nSTDOUT={stdout_rem}"
+                )
 
             # Phase 2: Read Maps Dump from stdout
             maps_content = ""
             line = proc.stdout.readline()
-            if "---MAPS_START---" in line:
+            while line and "---MAPS_START---" not in line:
+                line = proc.stdout.readline()
+
+            if line and "---MAPS_START---" in line:
                 while True:
                     line = proc.stdout.readline()
-                    if "---MAPS_END---" in line or not line:
+                    if not line or "---MAPS_END---" in line:
                         break
                     maps_content += line
 

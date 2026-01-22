@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).parents[4] / "python"))
 from bundle_builder import build_from_project
@@ -8,7 +9,7 @@ from bundle_builder import build_from_project
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return cast(Path, build_from_project(project_dir, cache_dir / "bundle.veloc"))
 
 
 """
@@ -45,7 +46,9 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30, env=None):
+def run_velo(
+    args: list[str], cwd: Path, velo_binary: str, timeout: int = 30, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     run_env = os.environ.copy()
     if env:
@@ -61,7 +64,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30, env=Non
     return result
 
 
-def create_simple_project(path: Path):
+def create_simple_project(path: Path) -> None:
     """Create minimal project."""
     main_py = path / "main.py"
     main_py.write_text('print("ok")')

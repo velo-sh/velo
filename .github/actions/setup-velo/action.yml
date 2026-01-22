@@ -48,7 +48,17 @@ runs:
         # RFC-0019: Export LD_LIBRARY_PATH for native pyo3 workers
         # Note: uv-managed Python shared libraries are in the LIBDIR
         PYTHON_LIB_DIR=$(.venv/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+        # Try to find libpython in typical locations if sysconfig fails
+        if [ ! -f "$PYTHON_LIB_DIR/libpython3.11.so.1.0" ]; then
+           # Search in .venv
+           VENV_LIB=$(find $(pwd)/.venv -name "libpython3.11.so.1.0" -print -quit | xargs dirname)
+           if [ -n "$VENV_LIB" ]; then
+             PYTHON_LIB_DIR="$VENV_LIB"
+           fi
+        fi
         echo "LD_LIBRARY_PATH=$PYTHON_LIB_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "Final LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+        ls -l $PYTHON_LIB_DIR/libpython* || echo "libpython still not found in $PYTHON_LIB_DIR"
 
     - name: Determine artifact name
       if: inputs.download-binary == 'true'

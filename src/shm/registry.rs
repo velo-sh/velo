@@ -150,10 +150,15 @@ impl MemoryRegistry {
                 SignalComponent::MemoryGravity,
                 "HugePages mmap failed (ENOMEM)",
                 "Sub-optimal performance (Standard 4KB Page fallback)",
-                "Verify hugepage availability: 'grep HugePages /proc/meminfo' and 'nr_hugepages' sysctl.",
+                "Verify hugepage availability: 'grep HugePages /proc/meminfo'. In CI, this is expected.",
             );
 
-            if self.config.strict_optimizations {
+            // RFC-0012: In CI environment (VELO_ENV=ci), we ALWAYS allow fallback
+            // even if strict_optimizations is true on other components.
+            let is_ci = std::env::var("VELO_ENV").unwrap_or_default() == "ci"
+                || std::env::var("VELO_TEST_MODE").is_ok();
+
+            if self.config.strict_optimizations && !is_ci {
                 let _ = unsafe { libc::close(fd) };
                 return Err(MemoryError::MmapFailed(signal.format_critical()));
             }

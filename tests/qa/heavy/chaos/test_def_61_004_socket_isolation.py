@@ -20,6 +20,7 @@ import socket
 import sys
 import threading
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -46,7 +47,7 @@ EXPECTED_SOCKET_NAME = f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
 
 
 @pytest.fixture
-def temp_socket_dir(tmp_path):
+def temp_socket_dir(tmp_path: Path) -> Path:
     """Create a temporary socket directory for testing."""
     socket_dir = tmp_path / f"velo-{os.getuid()}"
     socket_dir.mkdir(mode=0o700)
@@ -67,7 +68,7 @@ def create_stale_socket(temp_socket_dir):
     """Factory fixture to create stale socket files."""
 
     def _create(version: int = 0) -> Path:
-        socket_path = temp_socket_dir / f"velo-zygote-v{version:02x}.sock"
+        socket_path = cast(Path, temp_socket_dir / f"velo-zygote-v{version:02x}.sock")
         socket_path.touch()
         return socket_path
 

@@ -94,7 +94,7 @@ def main() -> int:
     try:
         result = run_single_test(args.nodeid, cov_path=args.cov_path)
         print(json.dumps(result))
-        return result["exit_code"]
+        return int(result["exit_code"])
     except Exception as e:
         print(
             json.dumps(

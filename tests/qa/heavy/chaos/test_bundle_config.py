@@ -18,7 +18,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
