@@ -25,17 +25,19 @@ Bun recently introduced `--cpu-prof-md`, allowing LLMs to read profiling data di
 ### 2.3 Problems with Current Output
 1.  **ANSI Noise**: Escape codes confuse smaller LLMs and waste token context.
 2.  **Unstructured Timing**: Chronological logs are harder to grep than tabulated data.
-3.  **No Clear "Hot" Markers**: AI agents benefit from explicit `**Top 10**` or `## Hot Functions` headers to focus their attention.
+3.  **Context Gap**: Knowing a function is "Hot" at `line 45` isn't enough; the Agent needs to see the signature to suggest a fix immediately.
+4.  **Stream Pollution**: Dumping diagnostics to `stdout` breaks piping for tools like `jq` or `grep`.
 
 ---
 
 ## 3. Proposed Protocol
 
-### 3.1 `--prof-md` Flag
-Add a global or command-specific `--prof-md` flag to `run`, `bench`, and `audit`.
+### 3.1 Output Dest & Truncation
+- **Default**: Diagnostics MUST be written to `stderr` or a specified file (`--prof-md=report.md`).
+- **Truncation**: Large tables (Hot Functions) MUST be truncated to the **Top 20** entries to prevent token overflow. A summary footer (e.g., "...and 45 other calls") must be included.
 
 ### 3.2 Standard Output Schema (GFM)
-Output must follow GitHub Flavored Markdown (GFM) standards.
+Output must follow GitHub Flavored Markdown (GFM) standards and include **Context Snippets**.
 
 #### Example: `velo run --prof-md script.py`
 ```markdown
@@ -46,13 +48,28 @@ Output must follow GitHub Flavored Markdown (GFM) standards.
 | **Total Runtime** | 1.04s | 🟢 Within Budget |
 | **Startup (Zygote)** | 12ms | ⚡ Instant |
 | **Memory Delta** | +24MB | ✅ COW Efficient |
-| **Import Latency** | 450ms | ⚠️ High |
 
-## Hot Functions (Self Time)
+## 💻 System Environment
+| Variable | Value |
+| :--- | :--- |
+| **VELO_MODE** | `dev` |
+| **PYTHON_GIL** | `Enabled` |
+| **PLATFORM** | `Darwin 14.2` |
+
+## 🔍 Top Bottleneck Analysis
+
+### 1. `heavy_compute` (492ms)
+**Location:** `utils.py:45`
+**Signature:** `def heavy_compute(data: List[int]) -> int:`
+> **Agent Hint**: High self-time in a loop. Check for nested list comprehensions.
+
+## Hot Functions (Top 20)
 | Self % | Self | Function | Location |
 | :--- | :--- | :--- | :--- |
 | 47.3% | 492ms | `heavy_compute` | `utils.py:45` |
 | 36.1% | 376ms | `_data_load` | `data/loader.py:12` |
+... (truncated) ...
+```
 
 ## Startup Timeline
 - `[0ms]` Zygote Spawn
@@ -74,10 +91,21 @@ Output must follow GitHub Flavored Markdown (GFM) standards.
 Add a boolean flag `prof_md` to `RunCmd` and `BenchCmd`.
 
 ### 4.2 Formatter Module
-Implement a `MarkdownFormatter` in `src/common/diagnostics.rs` that takes a `TraceEvent` or `ProfileResult` and converts it to a String. This module must strictly enforce **ANSI Purity** by stripping all escape codes.
+Implement a `MarkdownFormatter` in `src/common/diagnostics.rs`. 
+- **Efficiency**: Use `std::fmt::Write` to build the string buffer without excessive heap allocations.
+- **Purity**: Use `strip-ansi-escapes` to ensure no binary noise enters the token stream.
+- **Safety**: Verify UTF-8 compatibility to prevent breaking LLM decoders with corrupted binary garbage.
 
 ### 4.3 Zero-Cost Instrumentation
 All data collection required for `--prof-md` MUST be lazy-initialized and gated. If the flag is not present, no additional memory or CPU overhead should be incurred (Zero-Cost Path).
+
+---
+
+## 5. AI Integration: The Prompt Preamble
+
+Velo provides a recommended **System Prompt Preamble** for AI-assisted profiling:
+
+> "You are a Performance Engineer. When analyzing Velo Markdown Reports (RFC-0038), prioritize 'Self Time' over 'Total Time' to find actual optimization targets. Use the provided 'Code Context Snippets' to identify algorithmic inefficiencies without manually reading files unless necessary."
 
 ---
 
