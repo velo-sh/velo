@@ -103,7 +103,7 @@ print(f"mod_500 value: {{mod_500.VALUE_500}}")
 
         # Build
         bundle_path = build_bundle(tmp_path)
-        assert bundle_path.exists(), f"Build failed: {result.stderr}"
+        assert bundle_path.exists(), "Build failed: bundle.veloc not found"
 
         # Run
         result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary, timeout=120)
@@ -294,7 +294,7 @@ class TestL5Boundary:
 
         # Build should succeed (under 256MB)
         bundle_path = build_bundle(tmp_path)
-        assert bundle_path.exists(), f"Build failed: {result.stderr}"
+        assert bundle_path.exists(), "Build failed: bundle.veloc not found"
 
     @pytest.mark.edge
     def test_edge_002_over_256mb_rejected(self, tmp_path, velo_binary):

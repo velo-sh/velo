@@ -39,7 +39,9 @@ def ensure_velo_binary():
         pytest.skip(f"Velo binary not found at {VELO_BIN}. Run `cargo build --release`")
 
 
-def run_velo_cmd(args: list, timeout: int = 30, env: dict = None) -> subprocess.CompletedProcess:
+def run_velo_cmd(
+    args: list[str], timeout: int = 30, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run velo command with proper environment."""
     cmd_env = os.environ.copy()
     cmd_env["VELO_ENV"] = "dev"
@@ -99,7 +101,7 @@ class TestL0_Smoke:
 
     def test_L0_001_zygote_start_stop(self):
         """TEST-L0-001: Zygote can start and stop cleanly"""
-        ensure_velo_binary()
+        ensure_velo_binary()  # type: ignore[no-untyped-call]
 
         # Clean any existing Zygote for this project
         run_velo_cmd(["zygote", "stop"])
@@ -348,7 +350,7 @@ class TestL2_Performance:
         """TEST-L2-001: Fork latency < 2ms (R3, R7 Gate C)"""
         from pytest_velo.plugin import measure_fork_latency
 
-        latencies = sorted([measure_fork_latency() for _ in range(100)])
+        latencies = sorted([measure_fork_latency() for _ in range(100)])  # type: ignore[no-untyped-call]
         p50 = latencies[50]
         p99 = latencies[99]
 
@@ -358,7 +360,7 @@ class TestL2_Performance:
     def test_L2_002_memory_overhead_under_2mb(self):
         """TEST-L2-002: Memory overhead < 2MB per fork (R4)"""
 
-        def get_rss_kb():
+        def get_rss_kb() -> int:
             return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 
         parent_rss_before = get_rss_kb()
@@ -406,7 +408,7 @@ class TestL2_Performance:
             proc.wait()
             return (time.perf_counter() - start) * 1000
 
-        subprocess_times = [measure_subprocess() for _ in range(10)]
+        subprocess_times = [measure_subprocess() for _ in range(10)]  # type: ignore[no-untyped-call]
         subprocess_avg = sum(subprocess_times) / len(subprocess_times)
 
         speedup = subprocess_avg / fork_avg
