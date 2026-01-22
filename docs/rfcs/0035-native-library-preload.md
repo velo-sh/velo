@@ -26,48 +26,46 @@ This RFC proposes **Native Library Preload**, extending Velo's existing fingerpr
 ## 2. Core Invariants
 
 > [!IMPORTANT]
-> **INV-PRELOAD-001**: Native libraries MUST be fingerprint-verified before loading.
+> **INV-PRELOAD-001**: Native libraries MUST be fingerprint-verified (full binary hash or rolling header hash) before loading.
 > **INV-PRELOAD-002**: Only libraries in trusted paths (site-packages, explicit whitelist) may be preloaded.
 > **INV-PRELOAD-003**: Fingerprint mismatch MUST block preload and warn user.
-> **INV-PRELOAD-004**: preload.lock MUST include runtime fingerprint (os, arch, python_version).
-> **INV-PRELOAD-005**: Runtime mismatch MUST block preload with clear error.
+> **INV-PRELOAD-004**: `preload.lock` MUST include runtime fingerprint (os, arch, python_version, libc_version, SOABI).
+> **INV-PRELOAD-005**: Runtime mismatch (Current < Required) MUST block preload.
 > **INV-PRELOAD-006**: Implementation MUST NOT require any modification to the user's Python source code (Drop-in Purity).
 > **INV-PRELOAD-007**: **Silent Resilience (Mismatches)**: Preloading failure due to missing, mismatched, or stale fingerprints MUST NOT terminate the process; Velo MUST silently fallback to standard Python import.
-> **INV-PRELOAD-008**: **Invisible Fatalities**: Velo acknowledges that native library static initializers (C/C++ `__attribute__((constructor))`) can cause fatal segfaults during `dlopen`. To mitigate this, Velo MUST isolate the preload sequence in a Zygote sub-process (Crash Containment).
-> **INV-PRELOAD-009**: **Deferred Visibility Promotion**: Velo MUST support `GlobalOnImport` mode, where libraries are preloaded with `RTLD_LOCAL` and promoted to `RTLD_GLOBAL` only upon the first standard Python `import`.
+> **INV-PRELOAD-008**: **The Death Pact (Vet-then-Load)**: To protect Zygote from `ld.so` state corruption, Velo MUST spawn a disposable "Vet" child process to attempt preloading. Only libraries that survive vetting are loaded into the main Zygote. Any segfault in the "Vet" phase is considered fatal to that specific library's preload but not to the main process.
+> **INV-PRELOAD-009**: **Split-Stage Loading**: Velo MUST distinguish between **Native Dependencies** (preloaded before Python init) and **Extension Modules** (preloaded after Python init, before fork).
+> **INV-PRELOAD-010**: **Portability**: Paths in `preload.lock` MUST be relative to the virtual environment root.
 
 ---
 
 ## 3. Architecture
 
-### 3.1 Fingerprint-First Design
-
-Native library preload extends the existing `EnvironmentFingerprint` system:
-
 ```rust
-// src/custody/fingerprint.rs (EXTENSION)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeLibFingerprint {
-    /// Absolute path to the library (canonicalized)
-    pub path: PathBuf,
-    /// Parent package (e.g., "torch" for libtorch.so)
+    /// Relative path to venv root
+    pub relative_path: PathBuf,
+    /// Parent package (e.g., "torch")
     pub package: String,
-    /// ELF SONAME (e.g., "libtorch.so.2.1.0") - handles symlinks
-    pub soname: Option<String>,
-    /// Fast check: mtime of file
-    pub mtime: u64,
-    /// Authority: BLAKE3 hash of ELF/Mach-O header (first 4KB)
-    pub header_hash: String,
+    /// ELF SONAME
+    pub soname: String,
+    /// Full BLAKE3 hash (Integrity)
+    pub hash: String,
     /// Platform metadata
     pub platform: LibPlatform,
+    /// Stage: Pre-Init vs Post-Init
+    pub load_stage: LoadStage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibPlatform {
-    pub os: String,        // "linux" | "darwin"
-    pub arch: String,      // "x86_64" | "aarch64"
-    pub libc_type: String, // "glibc" | "musl"
-    pub elf_osabi: Option<u8>,  // ELF OS/ABI byte
+    pub os: String,
+    pub arch: String,
+    pub python_version: String,
+    pub libc_type: String,
+    pub libc_version: String,
+    pub soabi: String,
 }
 ```
 
@@ -152,51 +150,49 @@ rtld_mode = "local"  # "local" (default, safe) | "global" (opt-in, risk)
   ]
 }
 
-### 3.5 "Drop-in" Guarantee Implementation
+### 3.4 Recursive Dependency Walker
+To minimize manual configuration, Velo MUST implement a recursive `DT_NEEDED` walker:
+1. User identifies a root library (e.g., `torch`).
+2. Velo reads the ELF dynamic section for `DT_NEEDED` tags.
+3. Velo auto-discovers and fingerprints all transitive dependencies (e.g., `libc10.so`, `libtorch_cpu.so`) located within the venv.
+
+### 3.5 Path & Security Sanitization
+- **RPATH Sanitization**: Velo MUST warn if a preloaded library contains `$ORIGIN` or `RPATH` pointing outside of the authorized `site-packages` or system directories.
+- **Header vs Full Hash**: Defaults to rolling header hash for speed; `deep_verify: true` triggers full-file BLAKE3 verification.
 
 To ensure the user's Python code remains untouched (`import torch` just works), we strictly separate Memory Mapping from Python Initialization.
 
 ```rust
-// Core logic ensuring Drop-in Compatibility & Crash Containment
-fn preload_library_isolated(lib: &NativeLibFingerprint) -> PreloadResult {
-    // 1. VERIFY: Check hashes/paths (Safe Fallback if fails)
-    if let Err(e) = verify_fingerprint(lib) {
-        warn!("Skipping preload for {}: {}", lib.package, e);
-        return PreloadResult::Skipped; 
-    }
+// Revised Preload Logic: Risk Management via the "Death Pact" (Vet-then-Load)
+// Stage 1: Native Dependencies (Pre-Python Init)
+// Stage 2: Extension Modules (Post-Python Init)
 
-    // 2. ISOLATE: Fork a temporary zygote-child to perform the dlopen
-    // This protects the main Zygote from "Bad Library" static initializers.
+fn preload_sequence_zygote(libs: &[NativeLibFingerprint]) {
+    // 1. Spawn a "Vet" child process to experiment with the load
     match unsafe { fork() } {
         Ok(ForkResult::Child) => {
-            // Perform actual dlopen
-            let flags = match lib.rtld_mode.as_str() {
-                "global" => libc::RTLD_NOW | libc::RTLD_GLOBAL,
-                _ => libc::RTLD_NOW | libc::RTLD_LOCAL,
-            };
-            let handle = unsafe { libc::dlopen(lib.path.as_ptr(), flags) };
-            if handle.is_null() { exit(1); }
-            
-            // Keep child alive if success, or exit gracefully
-            exit(0); 
+            for lib in libs {
+                // RTLD_NOW ensures all relocations happen in the child for vetting
+                let handle = unsafe { libc::dlopen(lib.path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+                if handle.is_null() { exit(1); }
+            }
+            exit(0); // All vetted!
         }
         Ok(ForkResult::Parent { child }) => {
-            // Monitor for Segfault (SIGSEGV) or success
             let status = waitpid(child, None);
-            if status_was_segfault(status) {
-                error!("CRITICAL: Library {} caused a segfault in initializer. Disabling preload.", lib.package);
-                return PreloadResult::FatalCrash; 
+            if status_was_success(status) {
+                // 2. CHILD SURVIVED: Main process safely loads and relocates (True COW sharing)
+                for lib in libs {
+                    let flags = libc::RTLD_NOW | libc::RTLD_LOCAL;
+                    let handle = unsafe { libc::dlopen(lib.path.as_ptr(), flags) };
+                    std::mem::forget(handle); // Intentional Leak (Directive A)
+                }
+            } else {
+                warn!("Vetting failed (Death Pact triggered). Falling back to standard Python import.");
             }
-            // If child exited 0, the main process can now safely dlopen the same inode
-            // knowing that the initializer has been "vetted" in the sub-process.
-            // NOTE: Parent process dlopen after successful child vetting is still subject to kernel-level 
-            // loader bugs; this risk is equivalent to standard Python import and is considered acceptable.
-            unsafe { libc::dlopen(lib.path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
         }
-        Err(_) => return PreloadResult::Failed,
+        Err(_) => warn!("Failed to spawn Vet sandbox."),
     }
-    
-    PreloadResult::Success
 }
 ```
 
@@ -207,11 +203,12 @@ To solve the Symbol Visibility issue, we provide a "Known Good" configuration pr
 ```toml
 [tool.velo.native_preload]
 # Explicitly handle complex libraries to ensure compatibility
+# Velo classifies these into Stage 1 (Native) and Stage 2 (Extension)
 libraries = [
-    # PyTorch requires GLOBAL symbols for its plugins
-    { package = "torch", path = "lib/libtorch.so", mode = "global" },
-    # Standard libs are fine with LOCAL (safer)
-    { package = "numpy", path = "core/libopenblas.so", mode = "local" }
+    # Phase 2: Python Extension (Loaded AFTER Python Init)
+    { package = "torch", path = "lib/libtorch.so", stage = "extension" },
+    # Phase 1: Native Dependency (Loaded BEFORE Python Init)
+    { package = "numpy", path = "core/libopenblas.so", stage = "native" }
 ]
 ```
 ```
@@ -356,28 +353,29 @@ velo run --preload "torch::libtorch.so" main.py
 
 | ID | Requirement | Rationale |
 |:---|:---|:---|
-| **REQ-REMED-001** | **Deep Verification Flag** | Add `deep_verify: bool` for full binary BLAKE3 hash to prevent deep patching attacks in high-security zones. |
-| **REQ-REMED-002** | **SOABI-Based Tracking** | Refactor `RuntimeFingerprint` to use `sys.config.get_config_var('SOABI')` for robust ABI compatibility tracking. |
-| **REQ-REMED-003** | **Parallel Loading Protocol** | IPC protocol MUST support batching `PRELOAD_LIB` requests for concurrent `dlopen` via a thread pool in Zygote. |
-| **REQ-REMED-004** | **Symbol Boundary Audit** | Explicit requirement to verify `dlopen(RTLD_LOCAL)` doesn't break `torch.cuda` symbol dependencies. |
+| **REQ-REMED-001** | **Deep Verification Flag** | Add `deep_verify: bool` for full binary BLAKE3 hash. |
+| **REQ-REMED-002** | **SOABI-Based Tracking** | Refactor `RuntimeFingerprint` to use `SOABI` and `libc_version`. |
+| **REQ-REMED-003** | **Zygote Path Sanitization** | Explicitly clean `LD_LIBRARY_PATH` and sanitize environment before preload. |
+| **REQ-REMED-004** | **Relative Path Schema** | Implement relative-to-venv addressing in `preload.lock`. |
 
 ### Addressed Issues (v1.0 -> v2.0)
 
 | Issue | Resolution |
 |:---|:---|
 | Fingerprint requirement | ✅ INV-PRELOAD-001: Mandatory verification |
-| RTLD_GLOBAL pollution | ✅ Default to RTLD_LOCAL |
-| Untrusted path attack | ✅ Trusted path validation |
-| Version mismatch | ✅ `velo preload verify` command |
+| RTLD_GLOBAL pollution | ✅ Defaults to LOCAL; GLOBAL requires opt-in |
+| Untrusted path attack | ✅ INV-PRELOAD-002: Venv-bound containment |
+| Version mismatch | ✅ `libc_version` (Current >= Required) |
 | macOS dyld | ✅ Out of scope for v1.0 |
-| Runtime fingerprint | ✅ REQ-REMED-002: SOABI-based check |
+| Relocation sharing | ✅ INV-PRELOAD-008: Prefork Preload |
 
 ### Future Work (P2)
 
 | Item | Description |
 |:---|:---|
 | `user` field | Track generator UID for multi-user shared environments. |
-| Parallel preload | Implementation of Parallel Loading Protocol (REQ-REMED-003). |
+| Parallel preload | Use a thread pool for concurrent `dlopen` of multiple libraries. |
+| Visibility Promotion | `GlobalOnImport` mode (Deferred Promotion). |
 
 ---
 
