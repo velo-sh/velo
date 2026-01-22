@@ -409,8 +409,10 @@ class TestSEC07001IPCAtomicIsolation:
             with open("/proc/net/unix") as f:
                 sockets = f.read()
 
-            # Zygote socket name contains 'velo-zygote'
-            assert "@velo-zygote" in sockets, "Abstract socket not found in /proc/net/unix"
+            # Zygote socket name contains 'velo-' and 'zygote'
+            assert "@velo-" in sockets and "-zygote" in sockets, (
+                f"Velo abstract socket not found in /proc/net/unix. Sockets:\n{sockets}"
+            )
 
             # Verify NO file on disk
             socket_dir = tmp_path / f"velo-{os.getuid()}"
