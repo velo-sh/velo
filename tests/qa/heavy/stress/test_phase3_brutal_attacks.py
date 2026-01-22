@@ -38,7 +38,7 @@ class AttackEnv:
         }
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 

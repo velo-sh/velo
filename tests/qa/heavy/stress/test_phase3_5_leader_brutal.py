@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest_utils import get_velo_binary
+from conftest_utils import T_LONG, get_velo_binary
 
 
 class BrutalTestEnv:
@@ -34,7 +34,7 @@ class BrutalTestEnv:
         self.velo = get_velo_binary()
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
