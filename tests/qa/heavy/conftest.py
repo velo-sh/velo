@@ -100,6 +100,11 @@ class VeloServeProcess:
             time.sleep(0.01)
 
         self.proc.terminate()
+        try:
+            self.proc.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
         raise TimeoutError(f"Server not ready after {timeout}s")
 
     def _detect_zygote_pid(self) -> None:
