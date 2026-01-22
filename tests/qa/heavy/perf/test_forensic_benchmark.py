@@ -17,14 +17,14 @@ BENCH_ROOT = BASE_DIR / "tests" / "qa" / "forensic_benchmarks"
 CACHE_BUSTER = BASE_DIR / "scripts" / "qa" / "cache_buster.py"
 
 
-def bust_cache(target_path: Path):
+def bust_cache(target_path: Path) -> None:
     print(f"\n❄️  Busting OS Cache for {target_path}...")
     subprocess.run([sys.executable, str(CACHE_BUSTER), str(target_path)], check=True)
     # Wait for OS to settle
     time.sleep(2)
 
 
-def run_bench(cmd, env, label):
+def run_bench(cmd: list[str], env: dict[str, str], label: str) -> tuple[float, str]:
     print(f"🏃 Running {label}...")
     start = time.perf_counter()
     result = subprocess.run(cmd, env=env, capture_output=True, text=True)

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).parents[4] / "python"))
 from bundle_builder import build_from_project
@@ -8,7 +9,7 @@ from bundle_builder import build_from_project
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return cast(Path, build_from_project(project_dir, cache_dir / "bundle.veloc"))
 
 
 """

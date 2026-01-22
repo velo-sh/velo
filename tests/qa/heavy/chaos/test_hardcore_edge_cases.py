@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
     from _subprocess import Popen
@@ -125,16 +125,16 @@ dev-dependencies = []
     def alive(self) -> bool:
         return bool(self._proc and self._proc.poll() is None)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

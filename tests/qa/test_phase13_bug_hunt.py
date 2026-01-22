@@ -152,8 +152,8 @@ class TestEdgeCase_ForkWithOpenFiles:
             assert result is True
 
             # Parent reads file
-            with open(temp_path) as tf:
-                content = tf.read()
+            with open(temp_path) as f:
+                content = f.read()
 
             assert "before fork" in content
             assert "child pid=" in content
