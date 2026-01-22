@@ -66,11 +66,14 @@ def get_random():
         start_time = time.time()
         ready = False
         while time.time() - start_time < 20:
-            line = proc.stderr.readline()
-            if "All workers ready" in line or "Uvicorn running on" in line:
-                ready = True
-                break
-            time.sleep(0.1)
+            import select
+
+            r, _, _ = select.select([proc.stderr], [], [], 0.5)
+            if r:
+                line = proc.stderr.readline()
+                if "All workers ready" in line or "Uvicorn running on" in line:
+                    ready = True
+                    break
 
         if not ready:
             pytest.fail("Server failed to start within 20s")

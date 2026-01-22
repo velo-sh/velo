@@ -10,6 +10,19 @@ import pytest
 
 @pytest.mark.perf
 class TestPhase61PerformanceHardened:
+    def _read_with_timeout(self, stream, timeout=5):
+        import select
+        import time
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            r, _, _ = select.select([stream], [], [], 0.1)
+            if r:
+                line = stream.readline()
+                if line:
+                    return line
+        return None
+
     def test_perf_01_instant_restart_latency(self, isolated_env):
         """
         PERF-01: Instant Restart Latency
@@ -34,10 +47,12 @@ class TestPhase61PerformanceHardened:
         try:
             # Wait for startup
             for _ in range(100):
-                line = proc.stdout.readline()
+                line = self._read_with_timeout(proc.stdout, timeout=10)
+                if not line:
+                    if proc.poll() is not None:
+                        break
+                    continue
                 if "Started server process" in line:
-                    break
-                if not line and proc.poll() is not None:
                     break
 
             latencies = []
@@ -50,13 +65,15 @@ class TestPhase61PerformanceHardened:
 
                 reload_start = None
                 while True:
-                    line = proc.stdout.readline()
-                    if not line and proc.poll() is not None:
-                        # Capture remaining output
-                        stdout_rem, stderr_rem = proc.communicate()
-                        raise RuntimeError(
-                            f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}"
-                        )
+                    line = self._read_with_timeout(proc.stdout, timeout=15)
+                    if not line:
+                        if proc.poll() is not None:
+                            # Capture remaining output
+                            stdout_rem, stderr_rem = proc.communicate()
+                            raise RuntimeError(
+                                f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}"
+                            )
+                        break  # Timeout but still running? Continue loop or fail?
                     if "Changes detected, restarting server..." in line:
                         reload_start = time.time()
                         print(f"Reload detected at {reload_start}")

@@ -25,8 +25,19 @@ def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> t
     arch_latency = None
     total_latency = None
 
+    import select
+
     try:
         while True:
+            # Non-blocking read with timeout
+            r, _, _ = select.select([proc.stdout], [], [], 0.1)
+            if not r:
+                if proc.poll() is not None:
+                    break
+                if (time.perf_counter() - start) > 20.0:
+                    raise TimeoutError("Server failed to start (total timeout)")
+                continue
+
             line = proc.stdout.readline()
             if not line:
                 break

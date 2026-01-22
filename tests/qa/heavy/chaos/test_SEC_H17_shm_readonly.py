@@ -16,6 +16,19 @@ except ImportError:
 
 @pytest.mark.tier3
 class TestSecH17ShmReadonly:
+    def _read_with_timeout(self, stream, timeout=5):
+        import select
+        import time
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            r, _, _ = select.select([stream], [], [], 0.1)
+            if r:
+                line = stream.readline()
+                if line:
+                    return line
+        return None
+
     """
     [SOP Section 13.1] Security Invariant H-17: SHM ReadOnly.
     [SOP Section 4.3] Implementation Rules: Isolated Environment, Explicit Assertions.
@@ -80,9 +93,10 @@ time.sleep(10)
         try:
             # Phase 1: Wait for READY signal (Ritual 43.1: Synchronous Readiness)
             # This ensures the worker has started and mapped the SHM (or tried to)
-            line = proc.stdout.readline()
-            while line and "READY" not in line:
-                line = proc.stdout.readline()
+            while True:
+                line = self._read_with_timeout(proc.stdout, timeout=10)
+                if not line or "READY" in line:
+                    break
 
             if not line:
                 stdout_rem, stderr = proc.communicate(timeout=5)
@@ -92,11 +106,11 @@ time.sleep(10)
 
             # Phase 2: Read Maps Dump from stdout
             maps_content = ""
-            line = proc.stdout.readline()
-            if "---MAPS_START---" in line:
+            line = self._read_with_timeout(proc.stdout, timeout=5)
+            if line and "---MAPS_START---" in line:
                 while True:
-                    line = proc.stdout.readline()
-                    if "---MAPS_END---" in line or not line:
+                    line = self._read_with_timeout(proc.stdout, timeout=5)
+                    if not line or "---MAPS_END---" in line:
                         break
                     maps_content += line
 

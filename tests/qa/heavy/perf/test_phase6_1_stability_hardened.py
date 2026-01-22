@@ -273,8 +273,10 @@ time.sleep(60)
         )
 
         # Wait for child ready
-        while "CHILD_READY" not in proc.stdout.readline():
-            pass
+        while True:
+            line = self._read_with_timeout(proc.stdout, timeout=scaled_timeout(15))
+            if not line or "CHILD_READY" in line:
+                break
 
         # Sent SIGTERM to Velo
         proc.terminate()
@@ -379,7 +381,11 @@ time.sleep(60)
         # Wait for ready
         line_count = 0
         while line_count < 10:
-            line = proc.stdout.readline()
+            line = self._read_with_timeout(proc.stdout, timeout=scaled_timeout(10))
+            if not line:
+                # Still count attempts to avoid infinite loop if no output
+                line_count += 1
+                continue
             if "READY" in line:
                 break
             line_count += 1
