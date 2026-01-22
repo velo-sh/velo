@@ -143,6 +143,7 @@ class TestAuditTrigger_ArchitectureClarity:
         from pytest_velo.plugin import worker_environment_isolation
 
         doc = inspect.getdoc(worker_environment_isolation)
+        assert doc is not None, "worker_environment_isolation missing docstring"
         assert "P0" in doc, "P0 layer must be documented"
         assert "P1" in doc, "P1 layer must be documented"
         assert "P2" in doc, "P2 layer must be documented"
