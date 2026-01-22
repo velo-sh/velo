@@ -45,7 +45,9 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30, env=None):
+def run_velo(
+    args: list[str], cwd: Path, velo_binary: str, timeout: int = 30, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     run_env = os.environ.copy()
     if env:
@@ -61,7 +63,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30, env=Non
     return result
 
 
-def create_simple_project(path: Path):
+def create_simple_project(path: Path) -> None:
     """Create minimal project."""
     main_py = path / "main.py"
     main_py.write_text('print("ok")')

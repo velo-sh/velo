@@ -16,7 +16,7 @@ GOLD_DIR = Path("/tmp/gold_200_phase14")
 VELO_BIN = Path("./target/release/velo").absolute()
 
 
-def gold_200_env() -> dict:
+def gold_200_env() -> dict[str, str]:
     """Return env dict with PYTHONPATH set for gold_200 external project."""
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
@@ -39,7 +39,12 @@ def clear_pycache(target_dir: Path) -> None:
             pass  # Ignore errors if directory is already gone
 
 
-def run_cmd(cmd, env=None, cwd=None, timeout=T_LONG):
+def run_cmd(
+    cmd: list[str] | list[Path | str],
+    env: dict[str, str] | None = None,
+    cwd: Path | str | None = None,
+    timeout: float = T_LONG,
+) -> tuple[subprocess.CompletedProcess[str], float]:
     start = time.perf_counter()
     res = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd, timeout=timeout)
     duration = time.perf_counter() - start
@@ -84,8 +89,8 @@ def test_phase14_iron_performance_acceptance():
     import tempfile
 
     session_socket_dir = Path(tempfile.mkdtemp(prefix="velo-perf-"))
-    socket_path = session_socket_dir / "velo-zygote.sock"
-    auth_path = socket_path.with_suffix(".auth")
+    v_socket_path = session_socket_dir / "velo-zygote.sock"
+    v_auth_path = v_socket_path.with_suffix(".auth")
 
     # 1. Warm Performance Test (Pre-started Zygote)
     # Surgical Cleanup: Kill both Rust wrapper and Python backend
@@ -104,15 +109,15 @@ def test_phase14_iron_performance_acceptance():
     # Wait for socket and auth file (Wait up to 10s)
     auth_secret = None
     for _ in range(100):
-        if auth_path.exists() and socket_path.exists():
-            auth_secret = auth_path.read_text().strip()
+        if v_auth_path.exists() and v_socket_path.exists():
+            auth_secret = v_auth_path.read_text().strip()
             break
         time.sleep(0.1)
 
     if not auth_secret:
-        pytest.fail(f"Failed to start Zygote or discover secret at {auth_path}")
+        pytest.fail(f"Failed to start Zygote or discover secret at {v_auth_path}")
 
-    print(f"[Debug] VELO_ZYGOTE_SOCKET={socket_path}")
+    print(f"[Debug] VELO_ZYGOTE_SOCKET={v_socket_path}")
     print(f"[Debug] VELO_ZYGOTE_AUTH_VAL={auth_secret}")
 
     # Target: Miracle (Warmup)
@@ -314,7 +319,7 @@ def test_phase14_orphan_storm_prevention():
                 pass
     time.sleep(1.0)
 
-    def count_zygote_processes():
+    def count_zygote_processes() -> int:
         # Match only the actual zygote module AND the current project directory
         cwd_name = Path.cwd().name
         result = subprocess.run(

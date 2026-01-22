@@ -26,12 +26,12 @@ import pytest
 VELO_BIN = Path("./target/release/velo").absolute()
 
 
-def ensure_velo():
+def ensure_velo() -> None:
     if not VELO_BIN.exists():
         pytest.skip("Velo binary not found")
 
 
-def run_velo(args, timeout=30, env=None):
+def run_velo(args: list[str], timeout: int = 30, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     cmd_env = os.environ.copy()
     cmd_env["VELO_ENV"] = "dev"
     if env:
@@ -167,7 +167,7 @@ def test_slow_{i}():
                 f"After cleanup: {final}. Orphans not cleaned up!"
             )
 
-    def _count_velo_processes(self):
+    def _count_velo_processes(self) -> int:
         result = subprocess.run(["pgrep", "-f", "velo_zygote"], capture_output=True, text=True)
         if result.returncode != 0:
             return 0
@@ -449,7 +449,7 @@ class TestAttack_ResourceExhaustion:
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
 
         # Get current open FDs
-        def count_fds():
+        def count_fds() -> int:
             return len(os.listdir("/dev/fd"))
 
         before_fds = count_fds()

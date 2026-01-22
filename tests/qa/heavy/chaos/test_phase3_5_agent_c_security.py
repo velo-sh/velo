@@ -12,6 +12,7 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,11 +23,11 @@ from conftest_utils import T_LONG, T_MEDIUM, T_SHORT, get_velo_binary
 class SecurityTestEnv:
     """Test environment for security tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_security_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> Self:
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
@@ -34,7 +35,7 @@ class SecurityTestEnv:
     def create_script(self, name: str, content: str):
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
         result = subprocess.run(
@@ -46,16 +47,16 @@ class SecurityTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

@@ -46,7 +46,7 @@ EXPECTED_SOCKET_NAME = f"velo-zygote-v{PROTOCOL_VERSION:02x}.sock"
 
 
 @pytest.fixture
-def temp_socket_dir(tmp_path):
+def temp_socket_dir(tmp_path: Path) -> Path:
     """Create a temporary socket directory for testing."""
     socket_dir = tmp_path / f"velo-{os.getuid()}"
     socket_dir.mkdir(mode=0o700)

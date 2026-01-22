@@ -246,7 +246,7 @@ def test_state_lifecycle_progression():
             rh = sock.recv(5)
             l = struct.unpack("<I", rh[:4])[0]
             rp = sock.recv(l - 1)
-            return msgpack.unpackb(rp)["state"]
+            return str(msgpack.unpackb(rp)["state"])  # type: ignore[no-any-return]
 
         # 2. Check for PRELOADING or IDLE/PRELOADING transition
         state = get_state(s)

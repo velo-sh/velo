@@ -24,7 +24,14 @@ import shutil
 import subprocess
 import tempfile
 import time
+import typing
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from _subprocess import Popen
+else:
+    from subprocess import Popen
 
 import pytest
 import requests
@@ -64,8 +71,8 @@ class EvilTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"evil_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: Popen[str] | None = None
 
     def set_pyproject(self, deps: list[Any]) -> "EvilTestProject":
         content = f"""[project]
@@ -127,16 +134,16 @@ dev-dependencies = []
     def alive(self) -> bool:
         return bool(self._proc and self._proc.poll() is None)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "EvilTestProject":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -651,7 +658,7 @@ async def app(scope, receive, send):
 
             if p.alive:
 
-                def gen():
+                def gen() -> typing.Generator[bytes, None, None]:
                     for i in range(5):
                         yield f"chunk{i}".encode()
 

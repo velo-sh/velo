@@ -22,7 +22,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -34,7 +34,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
@@ -72,7 +72,7 @@ class TestZygoteAsyncAdvanced:
         worker_pid = int(match.group(1))
 
         # Verify worker is running
-        assert os.kill(worker_pid, 0) is None
+        os.kill(worker_pid, 0)
 
         # Stop Zygote (the "parent" of the worker)
         stop_zygote(velo_binary, tmp_path)
