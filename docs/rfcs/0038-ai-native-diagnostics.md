@@ -1,5 +1,6 @@
 # RFC-0038: AI-Native Diagnostics & LLM-Friendly Profiling Protocol
 
+**Type**: Protocol RFC
 **Status**: Draft
 **Created**: 2026-01-22
 **Author**: Antigravity (Arch)
@@ -41,6 +42,9 @@ Bun recently introduced `--cpu-prof-md`, allowing LLMs to read profiling data di
 
 ### 3.2 Standard Output Schema (GFM)
 Output must follow GitHub Flavored Markdown (GFM) standards and include **Context Snippets**.
+
+> [!IMPORTANT]
+> **Placement Rule**: The `## 📋 Summary` table MUST appear immediately after the report title to allow Agents to perform "Early Skip" decisions for token efficiency.
 
 #### Example: `velo run --prof-md script.py`
 ```markdown
@@ -111,7 +115,8 @@ Implement a `MarkdownFormatter` in `src/common/diagnostics.rs`.
 The Markdown report MUST be written **atomically** at the end of the process execution. This prevents AI agents from reading partial or corrupted MD files during a crash. 
 
 ### 4.4 Extension Points
-- **Agent Hints**: Reserved tag format `[tag-name]` for future routing hints (e.g., `[memory-leak]`, `[io-blocking]`).
+- **Agent Hints**: Reserved tag format `[tag-name]` for future routing hints (e.g., `[memory-leak]`, `[io-blocking]`). 
+    - **Constraint**: Agent Hints MUST be derived from empirical telemetry, not generative inference.
 - **AI Suggestions**: Future releases may include a `## 🤖 AI Suggestions (Experimental)` section, which MUST be explicitly labeled to distinguish from empirical telemetry.
 
 ---
@@ -124,7 +129,7 @@ Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 
 ---
 
-## 5. Value Proposition
+## 6. Value Proposition
 
 1.  **Lower TCO (Total Cost of Optimization)**: AI agents can fix performance bugs in seconds.
 2.  **Marketing Alignment**: Positions Velo as the "World's First AI-Native Python Runtime."
@@ -132,14 +137,14 @@ Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 
 ---
 
-## 6. Engineering Risks
+## 7. Engineering Risks
 
 - **Runtime Overhead**: Capturing data for detailed profiling always adds overhead. This should only run when requested.
 - **Protocol Stability**: Moving to a structured format requires stable column names to avoid breaking AI prompts.
 
 ---
 
-## 7. Open Questions
+## 8. Open Questions
 
 - Should we support JSON instead of Markdown? 
     - **Decision**: Markdown is preferred as it is human-readable AND LLMs are natively trained on Markdown structure, whereas JSON consumes more tokens and can be more brittle for partial reads.
@@ -148,7 +153,7 @@ Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 
 ---
 
-## 8. Quality Gates
+## 9. Quality Gates
 
 - **Gate A**: Output passes standard Markdown linting (`mdl`).
 - **Gate B**: AI-generated "Top 3 bottlenecks" from the report match actual data with 100% accuracy.
