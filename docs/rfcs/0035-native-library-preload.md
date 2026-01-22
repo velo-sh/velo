@@ -33,7 +33,8 @@ This RFC proposes **Native Library Preload**, extending Velo's existing fingerpr
 > **INV-PRELOAD-005**: Runtime mismatch MUST block preload with clear error.
 > **INV-PRELOAD-006**: Implementation MUST NOT require any modification to the user's Python source code (Drop-in Purity).
 > **INV-PRELOAD-007**: **Silent Resilience (Mismatches)**: Preloading failure due to missing, mismatched, or stale fingerprints MUST NOT terminate the process; Velo MUST silently fallback to standard Python import.
-> **INV-PRELOAD-008**: **Visibility Control**: Velo MUST support configurable symbol visibility (`RTLD_GLOBAL` vs `RTLD_LOCAL`) to maintain compatibility with complex libraries (e.g., PyTorch) that rely on global symbols for their extensions.
+> **INV-PRELOAD-008**: **Invisible Fatalities**: Velo acknowledges that native library static initializers (C/C++ `__attribute__((constructor))`) can cause fatal segfaults during `dlopen`. To mitigate this, Velo MUST isolate the preload sequence in a Zygote sub-process (Crash Containment).
+> **INV-PRELOAD-009**: **Deferred Visibility Promotion**: Velo MUST support `GlobalOnImport` mode, where libraries are preloaded with `RTLD_LOCAL` and promoted to `RTLD_GLOBAL` only upon the first standard Python `import`.
 
 ---
 
@@ -156,33 +157,41 @@ rtld_mode = "local"  # "local" (default, safe) | "global" (opt-in, risk)
 To ensure the user's Python code remains untouched (`import torch` just works), we strictly separate Memory Mapping from Python Initialization.
 
 ```rust
-// Core logic ensuring Drop-in Compatibility
-fn preload_library(lib: &NativeLibFingerprint) -> PreloadResult {
+// Core logic ensuring Drop-in Compatibility & Crash Containment
+fn preload_library_isolated(lib: &NativeLibFingerprint) -> PreloadResult {
     // 1. VERIFY: Check hashes/paths (Safe Fallback if fails)
     if let Err(e) = verify_fingerprint(lib) {
         warn!("Skipping preload for {}: {}", lib.package, e);
-        return PreloadResult::Skipped; // SILENT FALLBACK
+        return PreloadResult::Skipped; 
     }
 
-    // 2. LOAD: Use raw dlopen. 
-    // We DO NOT call PyInit_xxx. We only map the binary.
-    // This allows Python to "claim" the module later via standard import.
-    let flags = match lib.rtld_mode.as_str() {
-        "global" => libc::RTLD_NOW | libc::RTLD_GLOBAL, 
-        _ => libc::RTLD_NOW | libc::RTLD_LOCAL,
-    };
-
-    unsafe {
-        // If this fails, we just log it. Python will try again later and
-        // raise the standard ImportError if it's truly broken.
-        // NOTE: Initializer-level crashes (Segfaults) in bad libraries are fatal.
-        let handle = libc::dlopen(lib.path.as_ptr(), flags);
-        
-        if handle.is_null() {
-            let msg = CStr::from_ptr(libc::dlerror());
-            warn!("Preload dlopen failed: {:?}", msg);
-            return PreloadResult::Failed; // SILENT FALLBACK
+    // 2. ISOLATE: Fork a temporary zygote-child to perform the dlopen
+    // This protects the main Zygote from "Bad Library" static initializers.
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            // Perform actual dlopen
+            let flags = match lib.rtld_mode.as_str() {
+                "global" => libc::RTLD_NOW | libc::RTLD_GLOBAL,
+                _ => libc::RTLD_NOW | libc::RTLD_LOCAL,
+            };
+            let handle = unsafe { libc::dlopen(lib.path.as_ptr(), flags) };
+            if handle.is_null() { exit(1); }
+            
+            // Keep child alive if success, or exit gracefully
+            exit(0); 
         }
+        Ok(ForkResult::Parent { child }) => {
+            // Monitor for Segfault (SIGSEGV) or success
+            let status = waitpid(child, None);
+            if status_was_segfault(status) {
+                error!("CRITICAL: Library {} caused a segfault in initializer. Disabling preload.", lib.package);
+                return PreloadResult::FatalCrash; 
+            }
+            // If child exited 0, the main process can now safely dlopen the same inode
+            // knowing that the initializer has been "vetted" in the sub-process.
+            unsafe { libc::dlopen(lib.path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        }
+        Err(_) => return PreloadResult::Failed,
     }
     
     PreloadResult::Success
