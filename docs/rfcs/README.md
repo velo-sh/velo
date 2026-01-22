@@ -42,6 +42,7 @@ RFCs are design documents that describe proposed changes to Velo. They provide a
 | [SPEC-0006](../architecture/SPEC-0006-POLYGLOT-GOVERNANCE.md) | **Polyglot Service Governance** | ✅ **Master** | v0.8.2 |
 | [SPEC-0007](../architecture/SPEC-0007-PERFORMANCE-MASTER-STANDARD.md) | **High-Performance Master Standard** | ✅ **Master** | v0.8.2 |
 | [SPEC-0008](../architecture/SPEC-0008-TIERED-TESTING-STANDARD.md) | **Tiered Testing Master Standard** | ✅ **Master** | v0.8.2 |
+| [0038](./0038-ai-native-diagnostics.md) | AI-Native Diagnostics | 📝 Draft | v0.9.5 |
 
 ## Quality Assurance Reports
 
