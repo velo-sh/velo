@@ -84,10 +84,12 @@ docker_run() {
         -v "$PROJECT_ROOT:/workspace" \
         -v "$CARGO_CACHE:/workspace/target" \
         -v "$CARGO_REGISTRY:/root/.cargo/registry" \
+        -v "$PROJECT_ROOT/.velo-docker-data:/root/.local/state/velo" \
         -e GITHUB_ACTIONS=true \
         -e UV_HTTP_TIMEOUT=120 \
         -e VELO_CI_TIER="${VELO_CI_TIER:-}" \
         -e SKIP_BUILD="${SKIP_BUILD:-false}" \
+        -e CARGO_BUILD_JOBS=1 \
         "$IMAGE_NAME" \
         bash -c '
             set -euo pipefail
@@ -122,7 +124,22 @@ docker_run() {
             ./target/release/velo debug pre-flight || exit 1
             
             echo ""
+            echo ""
             echo "==================== Phase 4: Test ===================="
+            # SSOT: Align with ci.yml - Run Rust tests FIRST
+            echo "▶ Running Rust tests..."
+            cargo test --lib
+            
+            # Phase 4.1: Lint (Full CI only)
+            if [ "${VELO_CI_TIER:-}" = "full" ] || [ -z "${VELO_CI_TIER:-}" ]; then
+                echo ""
+                echo "==================== Phase 4.1: Lint ===================="
+                echo "▶ Running Clippy..."
+                cargo clippy --all-targets --all-features -- -D warnings
+                echo "▶ Checking Format..."
+                cargo fmt --check
+            fi
+
             rm -rf .pytest_cache
             source scripts/ci-common.sh
             source scripts/test-suites.conf

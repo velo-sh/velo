@@ -187,11 +187,43 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
                     // Child: continues to start the Zygote
                     libc::setsid();
                     // Redirect IO to null in the daemonized process
-                    if let Ok(null) = std::fs::File::open("/dev/null") {
-                        let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
-                        libc::dup2(fd, 0);
+                    // Redirect IO to log file in the daemonized process
+                    let log_path = crate::common::paths::VeloPaths::zygote_log();
+                    // Ensure logging directory exists
+                    if let Some(parent) = log_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+
+                    if let Ok(log_file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log_path)
+                    {
+                        let fd = std::os::unix::io::AsRawFd::as_raw_fd(&log_file);
+
+                        // stdin -> /dev/null
+                        if let Ok(null) = std::fs::File::open("/dev/null") {
+                            let null_fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
+                            libc::dup2(null_fd, 0);
+                        }
+
+                        // stdout -> log
                         libc::dup2(fd, 1);
+                        // stderr -> log
                         libc::dup2(fd, 2);
+
+                        // Leak file raw fd to keep it open across process lifetime
+                        // (File object drop would try to close it, but dup2 makes copies)
+                        // Actually, File drop closes original FD, but dup2'd FDs (1, 2) remain open.
+                        // We must ensure 'log_file' lives long enough for dup2, which it does in this scope.
+                    } else {
+                        // Fallback to /dev/null if logging fails
+                        if let Ok(null) = std::fs::File::open("/dev/null") {
+                            let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
+                            libc::dup2(fd, 0);
+                            libc::dup2(fd, 1);
+                            libc::dup2(fd, 2);
+                        }
                     }
                 }
                 _ => {

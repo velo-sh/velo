@@ -216,7 +216,7 @@ impl VeloPaths {
         {
             let path = PathBuf::from(zygote_abstract_socket_name());
             eprintln!("[DEBUG] zygote_socket returning path: {:?}", path);
-            return path;
+            path
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -256,6 +256,18 @@ impl VeloPaths {
             .filter(|p| !p.is_empty())
         {
             return PathBuf::from(path_str);
+        }
+
+        // Priority 2: Session-scoped logging (CI/Test)
+        if let Some(session_dir) = std::env::var("VELO_SESSION_LOG_DIR")
+            .ok()
+            .filter(|p| !p.is_empty())
+        {
+            let dir = PathBuf::from(session_dir);
+            // Only use it if it exists (created by test runner)
+            if dir.exists() {
+                return dir.join("zygote.log");
+            }
         }
 
         let home = std::env::var("HOME")
@@ -427,16 +439,16 @@ pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::U
     use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
 
     // Strip @ prefix if present
-    let effective_name = if name.starts_with('@') {
-        &name[1..]
-    } else if name.starts_with('\0') {
-        &name[1..]
+    // Strip @ prefix if present (or \0 for legacy)
+    let effective_name = if let Some(stripped) = name.strip_prefix('@') {
+        stripped
+    } else if let Some(stripped) = name.strip_prefix('\0') {
+        stripped
     } else {
         name
     };
 
-    let addr = UnixAddr::new_abstract(effective_name.as_bytes())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let addr = UnixAddr::new_abstract(effective_name.as_bytes()).map_err(std::io::Error::other)?;
 
     let fd = socket(
         AddressFamily::Unix,
@@ -444,12 +456,12 @@ pub fn bind_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net::U
         SockFlag::empty(),
         None,
     )
-    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    .map_err(std::io::Error::other)?;
 
-    bind(fd.as_raw_fd(), &addr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    bind(fd.as_raw_fd(), &addr).map_err(std::io::Error::other)?;
 
     // Backlog 128 is standard
-    listen(&fd, 128).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    listen(&fd, 128).map_err(std::io::Error::other)?;
 
     let listener = unsafe { std::os::unix::net::UnixListener::from_raw_fd(fd.into_raw_fd()) };
     Ok(listener)
@@ -461,17 +473,16 @@ pub fn connect_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net
     use nix::sys::socket::{AddressFamily, SockFlag, SockType, UnixAddr, connect, socket};
     use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
 
-    // Strip @ prefix if present
-    let effective_name = if name.starts_with('@') {
-        &name[1..]
-    } else if name.starts_with('\0') {
-        &name[1..]
+    // Strip @ prefix if present (or \0 for legacy)
+    let effective_name = if let Some(stripped) = name.strip_prefix('@') {
+        stripped
+    } else if let Some(stripped) = name.strip_prefix('\0') {
+        stripped
     } else {
         name
     };
 
-    let addr = UnixAddr::new_abstract(effective_name.as_bytes())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let addr = UnixAddr::new_abstract(effective_name.as_bytes()).map_err(std::io::Error::other)?;
 
     let fd = socket(
         AddressFamily::Unix,
@@ -479,10 +490,9 @@ pub fn connect_abstract_socket(name: &str) -> std::io::Result<std::os::unix::net
         SockFlag::empty(),
         None,
     )
-    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    .map_err(std::io::Error::other)?;
 
-    connect(fd.as_raw_fd(), &addr)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    connect(fd.as_raw_fd(), &addr).map_err(std::io::Error::other)?;
 
     let stream = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd.into_raw_fd()) };
     Ok(stream)

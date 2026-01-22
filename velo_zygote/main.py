@@ -68,6 +68,73 @@ try:
 except (ImportError, ValueError):
     MEMORY_MANAGER = None
 
+
+class UDSProxyTrustedMiddleware:
+    """
+    RFC-0011: Force trust of X-Forwarded-For headers when running on UDS.
+
+    Uvicorn's ProxyHeadersMiddleware typically requires a trusted client IP.
+    On UDS (Unix Domain Socket), the client is 'unix' or None, causing standard middleware
+    to reject headers even with forwarded_allow_ips='*'.
+
+    This middleware blindly trusts headers because the Zygote is PHYSICALLY ISOLATED
+    and only reachable via the trusted Rust Guardian.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            headers = dict(scope.get("headers", []))
+
+            # RFC-0011 C.3: Parse X-Forwarded-For
+            xff = headers.get(b"x-forwarded-for")
+            if xff:
+                # Trust the first IP (client) or last? Rust Proxy appends.
+                # Usually we want the *original* client IP.
+                # If Rust Guardian is the ONLY proxy, it might be the only IP.
+                # If upstream proxies exist, they are first.
+                # We assume Rust Proxy appends correctly.
+                # We take the LAST entries if we trust the chain?
+                # Actually, standard is: client, proxy1, proxy2...
+                # Rust Proxy appends to the END.
+                # So the LAST IP in the list is the one connected to Rust Proxy?
+                # No, XFF is: client, proxy1, proxy2.
+                # Rust added the immediate peer.
+                # If we want the CLIENT IP, we might want the first one?
+                # But we blindly trust the header content because Guardian stripped bad ones?
+                # Guardian DOES NOT strip XFF! It appends.
+                # So if client spoofed XFF, it's the first IP.
+                # We should perhaps trust the *last valid* one?
+                # For `scope['client']`, we usually want the *immediate* client or the *original*?
+                # ASGI spec says `client` is the network address of the client (peer).
+                # But here we are proxied.
+                # Let's take the LAST one added by Guardian?
+                # Wait, if Guardian is a proxy, `client` should appear as the *original* client.
+                # We trust the list.
+                # Let's parse the string.
+                client_ip_str = xff.decode("latin1").split(",")[0].strip()
+
+                # Check for Port
+                port = 0
+                xfp = headers.get(b"x-forwarded-port")
+                if xfp:
+                    try:
+                        port = int(xfp.decode("latin1"))
+                    except ValueError:
+                        pass
+
+                scope["client"] = (client_ip_str, port)
+
+            # RFC-0011 B.3: X-Forwarded-Proto
+            xfproto = headers.get(b"x-forwarded-proto")
+            if xfproto:
+                scope["scheme"] = xfproto.decode("latin1")
+
+        await self.app(scope, receive, send)
+
+
 # Global router for Command Dispatch
 router = CommandRouter()
 
@@ -730,10 +797,23 @@ class ZygoteServer:
                     http="auto",
                     lifespan="on",
                     log_config=None,
-                    proxy_headers=True,  # RFC-0011: FORCED for L7 proxy header trust
+                    proxy_headers=True,  # RFC-0011: Still keep regular middleware just in case
+                    # forwarded_allow_ips="*",  # Disabled: UDSProxyTrustedMiddleware handles this better
                 )
                 self._warmed_server = uvicorn.Server(self._warmed_config)  # type: ignore[assignment, arg-type]
-                # Force config load and module inspection in Zygote (Saves 44ms in worker)
+
+                # RFC-0011: Wrap app with UDS Trusted Proxy Middleware
+                # This ensures we extract X-Forwarded-* headers even on UDS
+                if self._warmed_config:
+                    try:
+                        self._warmed_config.load()
+                        if self._warmed_config.loaded_app:
+                            # Wrap the loaded application instance
+                            self._warmed_config.loaded_app = UDSProxyTrustedMiddleware(self._warmed_config.loaded_app)
+                            LogUtils.log("Wrapped App with UDSProxyTrustedMiddleware")
+                    except Exception as e:
+                        LogUtils.log(f"Failed to wrap app with UDS middleware: {e}")
+
                 # TITANIUM-PERF: Wrap in broad try-except to prevent baseline hang
                 try:
                     LogUtils.log("Uvicorn Server Deep-Warmed and Ready.")

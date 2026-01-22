@@ -401,6 +401,12 @@ impl EnvironmentShield {
         env.insert("PYTHONNOUSERSITE".to_string(), "1".to_string());
         env.insert("PYTHONUSERBASE".to_string(), "/dev/null".to_string()); // Block user-site installation
 
+        // 5. Velo Internal Protocol (Forensic Logging / Test Infrastructure)
+        // Ensure CI/Test log locations are propagated to children
+        if let Ok(log_dir) = std::env::var("VELO_SESSION_LOG_DIR") {
+            env.insert("VELO_SESSION_LOG_DIR".to_string(), log_dir);
+        }
+
         // RFC-0012: Block any potentially toxic environment variables not explicitly whitelisted
         for var in &["PYTHONUSERBASE", "PYTHONEXECUTABLE"] {
             if !self.env_whitelist.contains(&(*var).to_string()) {
