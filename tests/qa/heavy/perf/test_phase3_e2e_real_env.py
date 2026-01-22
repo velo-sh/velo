@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any, Self
 
 import pytest
 from conftest_utils import get_velo_binary
@@ -23,18 +24,18 @@ from conftest_utils import get_velo_binary
 class RealUserEnv:
     """Simulates a REAL user project directory (no velo source files)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="user_project_"))
         self.velo = get_velo_binary()
         # Create isolated socket directory for this test instance
         self.socket_dir = self.path / ".sockets"
         self.socket_dir.mkdir(exist_ok=True)
-        self.env_vars = {
+        self.env_vars: dict[str, str] = {
             "VELO_SOCKET_DIR": str(self.socket_dir),
             "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
         }
 
-    def setup(self):
+    def setup(self) -> Self:
         """Create minimal Python project."""
         # Virtual env
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
@@ -44,11 +45,11 @@ class RealUserEnv:
 
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         """Create a Python script."""
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 30) -> tuple[int, str, str, float]:
         """Run velo and return (returncode, stdout, stderr, duration)."""
         start = time.perf_counter()
 
@@ -60,16 +61,16 @@ class RealUserEnv:
             [self.velo] + args, cwd=self.path, capture_output=True, text=True, timeout=timeout, env=env
         )
         duration = (time.perf_counter() - start) * 1000  # ms
-        return result.returncode, result.stdout, result.stderr, duration
+        return int(result.returncode), str(result.stdout), str(result.stderr), float(duration)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         # Stop any stale Zygote (scoped to this test env)
         subprocess.run(
             [self.velo, "zygote", "stop"], capture_output=True, timeout=5, env={**os.environ, **self.env_vars}
@@ -77,7 +78,7 @@ class RealUserEnv:
         time.sleep(0.2)  # Give time for cleanup
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         # Stop Zygote (scoped)
         subprocess.run(
             [self.velo, "zygote", "stop"], capture_output=True, timeout=5, env={**os.environ, **self.env_vars}

@@ -12,7 +12,7 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -32,7 +32,7 @@ class SecurityTestEnv:
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
     def run_velo(self, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
