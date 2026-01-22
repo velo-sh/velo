@@ -19,8 +19,7 @@ pub mod worker;
 pub use config::{LogFormat, ServeArgs};
 pub use error::ServeError;
 pub use framework::{
-    Framework, Server, check_server_installed, detect_framework, get_preload_modules,
-    get_server_type,
+    AppProtocol, Server, check_server_installed, detect_app_protocol, get_server_type,
 };
 pub use health::{HealthError, HealthServer};
 pub use runner::{ManagedChild, run_server};

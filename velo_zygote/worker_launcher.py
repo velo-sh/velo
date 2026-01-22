@@ -35,6 +35,7 @@ except ImportError:
 # ----------------------------------------------
 
 import argparse
+import inspect
 import signal
 import time
 import traceback
@@ -61,6 +62,24 @@ from velo_zygote.v_shield import ImportShield
 
 _T2 = time.perf_counter()
 _prof_log(f"[PROF] Velo Framework Imported: +{(_T2 - _T1) * 1000:.2f}ms")
+
+if hasattr(uvicorn, "Server") and hasattr(uvicorn.Server, "install_signal_handlers"):
+    _original_install_signal_handlers = uvicorn.Server.install_signal_handlers
+
+    def _install_signal_handlers_with_marker(self):
+        _original_install_signal_handlers(self)
+        previous = signal.getsignal(signal.SIGTERM)
+
+        def _sigterm_marker(sig: int, frame: FrameType | None) -> None:
+            print("CHILD_RECEIVED_SIGTERM", flush=True)
+            if callable(previous):
+                previous(sig, frame)
+            elif previous == signal.SIG_DFL:
+                raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, _sigterm_marker)
+
+    uvicorn.Server.install_signal_handlers = _install_signal_handlers_with_marker
 
 
 class UDSProxyMiddleware:
@@ -103,7 +122,9 @@ class UDSProxyMiddleware:
                 # RFC-0011: scope['client'] MUST be a tuple of (host, port)
                 scope["client"] = (client_host, 0)
 
-        await self.app(scope, receive, send)
+        result = self.app(scope, receive, send)
+        if inspect.isawaitable(result):
+            await result
 
 
 def _wrap_app_with_middleware(app_path: str) -> Any:
@@ -127,8 +148,9 @@ def main() -> None:
         def _graceful_exit(sig: int, frame: FrameType | None) -> None:
             raise SystemExit(0)
 
+        # Respect app-level SIGTERM handlers for graceful shutdown.
+        # Keep SIGINT fast-exit for interactive use.
         signal.signal(signal.SIGINT, _graceful_exit)
-        signal.signal(signal.SIGTERM, _graceful_exit)
         parser = argparse.ArgumentParser(description="Velo Worker Launcher")
         parser.add_argument("--app", required=True)
         parser.add_argument("--uds")

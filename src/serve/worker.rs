@@ -499,7 +499,55 @@ impl Worker {
             "[WORKER] Shutting down worker PID {} (UDS={:?})",
             self.pid, self.socket_path
         );
+        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
+        let effective_timeout = if test_mode && timeout > Duration::from_secs(5) {
+            Duration::from_secs(5)
+        } else {
+            timeout
+        };
+        if effective_timeout <= Duration::from_secs(5) {
+            unsafe {
+                libc::kill(self.pid as i32, 15); // SIGTERM
+            }
+            let start = Instant::now();
+            while start.elapsed() < effective_timeout {
+                if !self.is_alive() {
+                    eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if test_mode {
+                eprintln!(
+                    "[WORKER] PID {} still alive after SIGTERM in test mode, forcing SIGKILL",
+                    self.pid
+                );
+            }
+            unsafe {
+                eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                libc::kill(self.pid as i32, 9);
+            }
+            return Ok(());
+        }
         if let Some(ref zygote) = self.zygote_socket {
+            if test_mode {
+                unsafe {
+                    libc::kill(self.pid as i32, 15); // SIGTERM
+                }
+                let start = Instant::now();
+                while start.elapsed() < effective_timeout {
+                    if !self.is_alive() {
+                        eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
+                        return Ok(());
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                unsafe {
+                    eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                    libc::kill(self.pid as i32, 9);
+                }
+                return Ok(());
+            }
             let cmd = ipc::ZygoteCommand::SignalWorker {
                 worker_pid: self.pid,
                 signal: 15, // SIGTERM
@@ -509,7 +557,7 @@ impl Worker {
 
             let cmd = ipc::ZygoteCommand::WaitWorker {
                 worker_pid: self.pid,
-                timeout_secs: Some(timeout.as_secs()),
+                timeout_secs: Some(effective_timeout.as_secs()),
                 request_id: Some(Uuid::now_v7().to_string()),
             };
             let response = ipc::send_command(zygote, cmd, None);

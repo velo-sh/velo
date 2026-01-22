@@ -1,148 +1,109 @@
-//! Framework detection for automatic Zygote preloading
+//! App protocol detection for the serve command.
 //!
-//! Detects web frameworks (FastAPI, Django, Flask) to optimize Zygote startup.
+//! Avoids hardcoded framework lists by probing the app object at runtime.
 
-use crate::common::paths::*;
 use std::path::Path;
+use std::process::Command;
 
-/// Detected web framework type
+/// Detected application protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Framework {
-    FastAPI,
-    Django,
-    Flask,
-    Starlette,
+pub enum AppProtocol {
+    Asgi,
+    Wsgi,
     Unknown,
 }
 
-impl std::fmt::Display for Framework {
+impl std::fmt::Display for AppProtocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Framework::FastAPI => write!(f, "FastAPI"),
-            Framework::Django => write!(f, "Django"),
-            Framework::Flask => write!(f, "Flask"),
-            Framework::Starlette => write!(f, "Starlette"),
-            Framework::Unknown => write!(f, "Unknown"),
+            AppProtocol::Asgi => write!(f, "ASGI"),
+            AppProtocol::Wsgi => write!(f, "WSGI"),
+            AppProtocol::Unknown => write!(f, "Unknown"),
         }
     }
 }
 
-/// Detect framework from app module path and project directory
-///
-/// Strategy:
-/// 1. Check pyproject.toml/requirements.txt for framework dependencies
-/// 2. Infer from app module name patterns
-#[allow(clippy::collapsible_if)]
-pub fn detect_framework(app_module: &str, project_dir: &Path) -> Framework {
-    // Check pyproject.toml for dependencies
-    let pyproject = VeloPaths::pyproject(project_dir);
-    if pyproject.exists() {
-        if let Ok(content) = std::fs::read_to_string(&pyproject) {
-            return detect_from_deps(&content);
-        }
-    }
+const PROTOCOL_PROBE_SCRIPT: &str = r#"
+import importlib
+import inspect
+import sys
 
-    // Check requirements.txt
-    let requirements = VeloPaths::project_file(project_dir, REQUIREMENTS_TXT);
-    if requirements.exists() {
-        if let Ok(content) = std::fs::read_to_string(&requirements) {
-            return detect_from_deps(&content);
-        }
-    }
+module_name = sys.argv[1]
+raw_app = sys.argv[2]
+is_factory = raw_app.endswith("()")
+app_name = raw_app[:-2] if is_factory else raw_app
 
-    // Check uv.lock for dependencies
-    let uv_lock = VeloPaths::uv_lock(project_dir);
-    if uv_lock.exists() {
-        if let Ok(content) = std::fs::read_to_string(&uv_lock) {
-            return detect_from_deps(&content);
-        }
-    }
+try:
+    mod = importlib.import_module(module_name)
+    app = getattr(mod, app_name)
+    if is_factory:
+        app = app()
+except Exception:
+    sys.exit(2)
 
-    // Infer from module name pattern (e.g., "django.core.wsgi:application")
-    if app_module.contains("django") {
-        return Framework::Django;
-    }
+def is_asgi(obj):
+    if inspect.iscoroutinefunction(obj):
+        return True
+    call = getattr(obj, "__call__", None)
+    if call and inspect.iscoroutinefunction(call):
+        return True
+    return False
 
-    Framework::Unknown
-}
+def classify_by_signature(obj):
+    call = obj
+    if not inspect.isfunction(obj) and not inspect.ismethod(obj):
+        call = getattr(obj, "__call__", obj)
+    try:
+        sig = inspect.signature(call)
+    except (TypeError, ValueError):
+        return None
+    params = [
+        p for p in sig.parameters.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    arity = len(params)
+    if arity >= 3:
+        return "asgi"
+    if arity == 2:
+        return "wsgi"
+    return None
 
-/// Infer Django settings module path
-pub fn detect_django_settings(project_dir: &Path) -> Option<String> {
-    // Strategy: find settings.py in a subdirectory (recursive depth 2)
-    // Common layouts:
-    // 1. project/myproj/settings.py
-    // 2. project/src/myproj/settings.py
-    fn search(current_dir: &Path, depth: u8) -> Option<String> {
-        if depth == 0 {
-            return None;
-        }
-        if let Ok(entries) = std::fs::read_dir(current_dir) {
-            for entry in entries.flatten() {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    let path = entry.path();
-                    let settings = path.join("settings.py");
+if is_asgi(app):
+    print("asgi")
+    sys.exit(0)
+if callable(app):
+    classified = classify_by_signature(app)
+    if classified == "asgi":
+        print("asgi")
+        sys.exit(0)
+    if classified == "wsgi":
+        print("wsgi")
+        sys.exit(0)
+    print("wsgi")
+    sys.exit(0)
+print("unknown")
+sys.exit(3)
+"#;
 
-                    if settings.exists()
-                        && path.join("__init__.py").exists()
-                        && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
-                    {
-                        // If we are at depth 1, it's "dir_name.settings"
-                        // If we crawled deeper, we need to handle that, but for now depth 2 usually means
-                        // one level below the root or src.
-                        return Some(format!("{}.settings", dir_name));
-                    }
+/// Detect ASGI/WSGI protocol by importing the app object.
+pub fn detect_app_protocol(
+    python_path: &Path,
+    project_dir: &Path,
+    module: &str,
+    app: &str,
+) -> AppProtocol {
+    let output = Command::new(python_path)
+        .args(["-c", PROTOCOL_PROBE_SCRIPT, module, app])
+        .current_dir(project_dir)
+        .output();
 
-                    // Recurse once if we haven't found it
-                    if depth > 1
-                        && let Some(found) = search(&path, depth - 1)
-                    {
-                        return Some(found);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    search(project_dir, 2)
-}
-
-/// Detect framework from dependency file contents
-fn detect_from_deps(content: &str) -> Framework {
-    let content_lower = content.to_lowercase();
-
-    // Check in priority order (most specific first)
-    if content_lower.contains("fastapi") {
-        Framework::FastAPI
-    } else if content_lower.contains("django") {
-        Framework::Django
-    } else if content_lower.contains("flask") {
-        Framework::Flask
-    } else if content_lower.contains("starlette") {
-        Framework::Starlette
-    } else {
-        Framework::Unknown
-    }
-}
-
-/// Get recommended preload modules for a framework
-///
-/// These modules will be pre-imported in the Zygote process
-/// to speed up worker startup.
-pub fn get_preload_modules(framework: Framework) -> Vec<&'static str> {
-    match framework {
-        Framework::FastAPI => vec![
-            "fastapi",
-            "pydantic",
-            "starlette",
-            "starlette.routing",
-            "starlette.middleware",
-            "uvicorn",
-        ],
-        Framework::Django => vec!["django", "django.core", "django.conf", "django.http"],
-        Framework::Flask => vec!["flask", "werkzeug", "jinja2"],
-        Framework::Starlette => vec!["starlette", "starlette.routing", "starlette.middleware"],
-        Framework::Unknown => vec![],
+    match output {
+        Ok(out) if out.status.success() => match String::from_utf8_lossy(&out.stdout).trim() {
+            "asgi" => AppProtocol::Asgi,
+            "wsgi" => AppProtocol::Wsgi,
+            _ => AppProtocol::Unknown,
+        },
+        _ => AppProtocol::Unknown,
     }
 }
 
@@ -191,16 +152,12 @@ impl Server {
     }
 }
 
-/// Get the appropriate server for a framework
-///
-/// Per RFC §4.2:
-/// - FastAPI, Starlette → uvicorn (ASGI)
-/// - Django, Flask → gunicorn (WSGI)
-pub fn get_server_type(framework: Framework) -> Server {
-    match framework {
-        Framework::FastAPI | Framework::Starlette => Server::Uvicorn,
-        Framework::Django | Framework::Flask => Server::Gunicorn,
-        Framework::Unknown => Server::Uvicorn, // Default to uvicorn
+/// Get the appropriate server for an application protocol.
+pub fn get_server_type(protocol: AppProtocol) -> Server {
+    match protocol {
+        AppProtocol::Asgi => Server::Uvicorn,
+        AppProtocol::Wsgi => Server::Gunicorn,
+        AppProtocol::Unknown => Server::Uvicorn, // Default to uvicorn
     }
 }
 
@@ -219,46 +176,6 @@ pub fn check_server_installed(server: Server, python_path: &std::path::Path) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_detect_fastapi_from_pyproject() {
-        let content = r#"
-[project]
-dependencies = ["fastapi", "uvicorn"]
-"#;
-        assert_eq!(detect_from_deps(content), Framework::FastAPI);
-    }
-
-    #[test]
-    fn test_detect_django_from_requirements() {
-        let content = "Django>=4.0\npsycopg2\n";
-        assert_eq!(detect_from_deps(content), Framework::Django);
-    }
-
-    #[test]
-    fn test_detect_flask() {
-        let content = "flask==2.0.0\ngunicorn\n";
-        assert_eq!(detect_from_deps(content), Framework::Flask);
-    }
-
-    #[test]
-    fn test_detect_unknown() {
-        let content = "requests\nnumpy\n";
-        assert_eq!(detect_from_deps(content), Framework::Unknown);
-    }
-
-    #[test]
-    fn test_preload_modules_fastapi() {
-        let modules = get_preload_modules(Framework::FastAPI);
-        assert!(modules.contains(&"fastapi"));
-        assert!(modules.contains(&"pydantic"));
-    }
-
-    #[test]
-    fn test_preload_modules_unknown() {
-        let modules = get_preload_modules(Framework::Unknown);
-        assert!(modules.is_empty());
-    }
 
     // ========================================================================
     // Server enum tests (D4)
@@ -299,56 +216,32 @@ dependencies = ["fastapi", "uvicorn"]
     // ========================================================================
 
     #[test]
-    fn test_get_server_type_fastapi_returns_uvicorn() {
-        let server = get_server_type(Framework::FastAPI);
+    fn test_get_server_type_asgi_returns_uvicorn() {
+        let server = get_server_type(AppProtocol::Asgi);
         assert_eq!(server, Server::Uvicorn);
     }
 
     #[test]
-    fn test_get_server_type_starlette_returns_uvicorn() {
-        let server = get_server_type(Framework::Starlette);
+    fn test_get_server_type_asgi_returns_uvicorn_again() {
+        let server = get_server_type(AppProtocol::Asgi);
         assert_eq!(server, Server::Uvicorn);
     }
 
     #[test]
-    fn test_get_server_type_django_returns_gunicorn() {
-        let server = get_server_type(Framework::Django);
+    fn test_get_server_type_wsgi_returns_gunicorn() {
+        let server = get_server_type(AppProtocol::Wsgi);
         assert_eq!(server, Server::Gunicorn);
     }
 
     #[test]
-    fn test_get_server_type_flask_returns_gunicorn() {
-        let server = get_server_type(Framework::Flask);
+    fn test_get_server_type_wsgi_returns_gunicorn_again() {
+        let server = get_server_type(AppProtocol::Wsgi);
         assert_eq!(server, Server::Gunicorn);
     }
 
     #[test]
     fn test_get_server_type_unknown_defaults_to_uvicorn() {
-        let server = get_server_type(Framework::Unknown);
+        let server = get_server_type(AppProtocol::Unknown);
         assert_eq!(server, Server::Uvicorn);
-    }
-
-    // ========================================================================
-    // Preload modules tests - additional
-    // ========================================================================
-
-    #[test]
-    fn test_preload_modules_django() {
-        let modules = get_preload_modules(Framework::Django);
-        assert!(modules.contains(&"django"));
-        assert!(modules.contains(&"django.core"));
-    }
-
-    #[test]
-    fn test_preload_modules_flask() {
-        let modules = get_preload_modules(Framework::Flask);
-        assert!(modules.contains(&"flask"));
-        assert!(modules.contains(&"werkzeug"));
-    }
-
-    #[test]
-    fn test_preload_modules_starlette() {
-        let modules = get_preload_modules(Framework::Starlette);
-        assert!(modules.contains(&"starlette"));
     }
 }

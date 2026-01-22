@@ -11,7 +11,7 @@ use std::sync::{
     Mutex,
     mpsc::{Receiver, channel},
 };
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::serve::error::ServeError;
 
@@ -67,6 +67,9 @@ struct FileWatcherInner {
     debounce_delay: Duration,
     event_count: usize,
     event_window_start: Instant,
+    watched_root: Option<std::path::PathBuf>,
+    last_scan: Instant,
+    last_py_mtime: Option<SystemTime>,
 }
 
 impl FileWatcher {
@@ -90,6 +93,9 @@ impl FileWatcher {
                 debounce_delay: Duration::from_millis(debounce_ms),
                 event_count: 0,
                 event_window_start: Instant::now(),
+                watched_root: None,
+                last_scan: Instant::now(),
+                last_py_mtime: None,
             }),
             shutdown_flag,
         })
@@ -133,6 +139,10 @@ impl FileWatcher {
             .watcher
             .watch(path, RecursiveMode::Recursive)
             .map_err(|e| ServeError::WatcherError(e.to_string()))
+            .map(|_| {
+                inner.watched_root = Some(path.to_path_buf());
+                inner.last_py_mtime = inner.scan_py_mtime(2_000);
+            })
     }
 
     /// Poll for changes. Returns Ok(true) if restart should be triggered.
@@ -155,10 +165,10 @@ impl FileWatcher {
             match result {
                 Ok(event) => {
                     if inner.should_trigger_reload(&event) {
-                        // Rate limiting check (SEC-P0-006)
-                        if !inner.check_rate_limit() {
-                            continue;
-                        }
+                        // Rate limiting check (SEC-P0-006).
+                        // Even when rate limited, we still update debounce state so the
+                        // hard-cap can trigger and prevent starvation.
+                        let _rate_limited = !inner.check_rate_limit();
 
                         let now = Instant::now();
                         match inner.state {
@@ -182,6 +192,9 @@ impl FileWatcher {
                 }
             }
         }
+
+        // Polling fallback: when notify is unreliable, scan for .py mtime changes.
+        inner.maybe_scan_fallback();
 
         // State machine transitions
         match inner.state {
@@ -229,6 +242,73 @@ impl FileWatcher {
 }
 
 impl FileWatcherInner {
+    fn scan_py_mtime(&self, max_files: usize) -> Option<SystemTime> {
+        let root = self.watched_root.as_ref()?;
+        let mut latest: Option<SystemTime> = None;
+        let mut stack = vec![root.clone()];
+        let mut seen = 0usize;
+
+        while let Some(dir) = stack.pop() {
+            let entries = match std::fs::read_dir(&dir) {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().map(|ext| ext == "py").unwrap_or(false) {
+                    seen += 1;
+                    if seen > max_files {
+                        return None;
+                    }
+                    if let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) {
+                        latest = match latest {
+                            Some(curr) if curr >= mtime => Some(curr),
+                            _ => Some(mtime),
+                        };
+                    }
+                }
+            }
+        }
+
+        latest
+    }
+
+    fn maybe_scan_fallback(&mut self) {
+        if self.last_scan.elapsed() < Duration::from_millis(250) {
+            return;
+        }
+        self.last_scan = Instant::now();
+
+        let latest = self.scan_py_mtime(2_000);
+        let changed = match (self.last_py_mtime, latest) {
+            (None, Some(_)) => true,
+            (Some(prev), Some(curr)) => curr != prev,
+            _ => false,
+        };
+        if changed {
+            self.last_py_mtime = latest;
+            let now = Instant::now();
+            match self.state {
+                WatcherState::Debouncing { first_event, .. } => {
+                    self.state = WatcherState::Debouncing {
+                        last_event: now,
+                        first_event,
+                    };
+                }
+                _ => {
+                    self.state = WatcherState::Debouncing {
+                        last_event: now,
+                        first_event: now,
+                    };
+                }
+            }
+        }
+    }
+
     /// Check if we're within rate limits (SEC-P0-006)
     fn check_rate_limit(&mut self) -> bool {
         self.event_count += 1;
@@ -248,17 +328,14 @@ impl FileWatcherInner {
             return false;
         }
 
-        // Only watch for data modifications or file creations/deletions
+        // Watch for any meaningful modifications or file creations/deletions.
         match event.kind {
-            notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+            notify::EventKind::Modify(_)
             | notify::EventKind::Create(_)
-            | notify::EventKind::Remove(_) => {
-                // Check if any of the affected files are Python files
-                event
-                    .paths
-                    .iter()
-                    .any(|p| p.extension().map(|ext| ext == "py").unwrap_or(false))
-            }
+            | notify::EventKind::Remove(_) => event
+                .paths
+                .iter()
+                .any(|p| p.extension().map(|ext| ext == "py").unwrap_or(false)),
             _ => false,
         }
     }

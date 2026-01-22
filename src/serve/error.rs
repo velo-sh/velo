@@ -154,7 +154,7 @@ impl ServeError {
                 ));
                 output.push_str(&format!("   {}\n", "|".blue().bold()));
                 output.push_str(&format!(
-                    "   {} help: Add `app = FastAPI()` or `app = Flask(__name__)` to your file\n",
+                    "   {} help: Add `app = create_app()` or `application = create_app()` to your file\n",
                     "=".blue().bold()
                 ));
             }

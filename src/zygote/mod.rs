@@ -411,6 +411,9 @@ impl ZygoteLauncher {
             (None, _) => "dev".to_string(),
         };
         cmd.env("VELO_ENV", &env_mode);
+        if let Ok(val) = std::env::var("VELO_TEST_MODE") {
+            cmd.env("VELO_TEST_MODE", val);
+        }
 
         if let Ok(val) = std::env::var("VELO_SOCKET_DIR") {
             cmd.env("VELO_SOCKET_DIR", val);
@@ -529,7 +532,8 @@ impl ZygoteLauncher {
             cmd.arg("--authorized-secret").arg(secret);
         }
 
-        if daemon {
+        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
+        if daemon && !test_mode {
             cmd.arg("--no-guardian");
         }
 
@@ -555,10 +559,14 @@ impl ZygoteLauncher {
         {
             use std::os::unix::process::CommandExt;
 
+            let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
             unsafe {
                 cmd.pre_exec(move || {
                     // 1. Create new session (setsid) to detach from parent
-                    libc::setsid();
+                    // Skip in test mode to keep process group cleanup effective.
+                    if !test_mode || daemon {
+                        libc::setsid();
+                    }
 
                     // 2. Linux-specific Hardening (Pillar 3+)
                     #[cfg(target_os = "linux")]
@@ -594,27 +602,29 @@ impl ZygoteLauncher {
         }
 
         // Setup logging - Redirect stdout/stderr to log file for daemon mode
-        let log_path = get_log_path();
-        if let Some(parent) = log_path.parent() {
-            let _ = fs::create_dir_all(parent);
+        if daemon {
+            let log_path = get_log_path();
+            if let Some(parent) = log_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+
+            let log_file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+                .map_err(|e| {
+                    ZygoteError::StartFailed(format!(
+                        "Failed to open log file {}: {}",
+                        log_path.display(),
+                        e
+                    ))
+                })?;
+
+            cmd.stdout(Stdio::from(log_file.try_clone().map_err(|e| {
+                ZygoteError::StartFailed(format!("Failed to clone log file handle: {}", e))
+            })?));
+            cmd.stderr(Stdio::from(log_file));
         }
-
-        let log_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-            .map_err(|e| {
-                ZygoteError::StartFailed(format!(
-                    "Failed to open log file {}: {}",
-                    log_path.display(),
-                    e
-                ))
-            })?;
-
-        cmd.stdout(Stdio::from(log_file.try_clone().map_err(|e| {
-            ZygoteError::StartFailed(format!("Failed to clone log file handle: {}", e))
-        })?));
-        cmd.stderr(Stdio::from(log_file));
 
         // Spawn the Zygote process
         let child = cmd
@@ -752,7 +762,9 @@ impl ZygoteLauncher {
     /// Only sends Shutdown if this launcher owns the Zygote process
     pub fn stop(&mut self) -> Result<()> {
         // Only stop if we OWN the Zygote process (not just connecting to existing one)
-        if self.zygote_process.is_none() {
+        // In test mode, allow shutdown even without ownership to prevent orphaned daemons.
+        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
+        if self.zygote_process.is_none() && !test_mode {
             return Ok(());
         }
 
@@ -760,6 +772,30 @@ impl ZygoteLauncher {
         if self.socket_path.exists() {
             let _ =
                 core_ipc::send_command(&self.socket_path, core_ipc::ZygoteCommand::Shutdown, None);
+        }
+
+        #[cfg(unix)]
+        if test_mode
+            && let Ok(output) = std::process::Command::new("/bin/ps")
+                .args(["-ax", "-o", "pid=,command="])
+                .output()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            let needle = self.socket_path.to_string_lossy();
+            for line in text.lines() {
+                if !line.contains("velo_zygote/main.py") || !line.contains(needle.as_ref()) {
+                    continue;
+                }
+                let mut parts = line.split_whitespace();
+                let Some(pid_str) = parts.next() else {
+                    continue;
+                };
+                if let Ok(pid) = pid_str.parse::<i32>() {
+                    unsafe {
+                        let _ = libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
         }
 
         // SEC-005: Clean up ephemeral auth file
