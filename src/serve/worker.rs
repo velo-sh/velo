@@ -5,6 +5,7 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use std::{io::Read, thread};
 
 use crate::zygote::core_ipc as ipc;
 use uuid::Uuid;
@@ -17,6 +18,7 @@ pub struct Worker {
     script_path: Option<PathBuf>,
     /// UDS socket path (RFC-0011 Phase 2)
     pub socket_path: Option<PathBuf>,
+    child: Option<std::process::Child>,
 }
 
 #[allow(clippy::box_collection)]
@@ -43,6 +45,17 @@ fn build_worker_env(
 }
 
 impl Worker {
+    fn spawn_output_forwarder<R: Read + Send + 'static>(mut reader: R, is_stdout: bool) {
+        thread::spawn(move || {
+            if is_stdout {
+                let mut out = std::io::stdout();
+                let _ = std::io::copy(&mut reader, &mut out);
+            } else {
+                let mut out = std::io::stderr();
+                let _ = std::io::copy(&mut reader, &mut out);
+            }
+        });
+    }
     /// Spawn worker via Zygote IPC (UDS mode)
     pub fn spawn_uds_via_zygote(
         zygote_socket: &Path,
@@ -111,6 +124,7 @@ impl Worker {
                 zygote_socket: Some(zygote_socket.to_path_buf()),
                 script_path: None,
                 socket_path: Some(socket_path),
+                child: None,
             })
         } else {
             anyhow::bail!("Zygote failed to fork worker: {:?}", response);
@@ -168,6 +182,7 @@ impl Worker {
                 zygote_socket: Some(zygote_socket.to_path_buf()),
                 script_path: None,
                 socket_path: None,
+                child: None,
             })
         } else {
             anyhow::bail!("Zygote failed to fork worker: {:?}", response);
@@ -224,10 +239,38 @@ impl Worker {
             ]);
         }
 
-        let child = cmd
+        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
+        if test_mode {
+            cmd.stdout(std::process::Stdio::piped());
+            cmd.stderr(std::process::Stdio::piped());
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setpgid(0, 0) != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn direct worker: {}", e))?;
         let pid = child.id();
+
+        if test_mode {
+            if let Some(stdout) = child.stdout.take() {
+                Self::spawn_output_forwarder(stdout, true);
+            }
+            if let Some(stderr) = child.stderr.take() {
+                Self::spawn_output_forwarder(stderr, false);
+            }
+        }
 
         Ok(Self {
             pid,
@@ -236,6 +279,7 @@ impl Worker {
             zygote_socket: None,
             script_path: None,
             socket_path: Some(socket_path),
+            child: Some(child),
         })
     }
 
@@ -363,6 +407,7 @@ impl Worker {
             zygote_socket: None,
             script_path: None,
             socket_path: None,
+            child: Some(child),
         })
     }
 
@@ -494,7 +539,16 @@ impl Worker {
         true
     }
 
-    pub fn shutdown(&self, timeout: Duration) -> Result<()> {
+    fn child_exited(&mut self) -> bool {
+        if let Some(child) = self.child.as_mut()
+            && let Ok(Some(_)) = child.try_wait()
+        {
+            return true;
+        }
+        false
+    }
+
+    pub fn shutdown(&mut self, timeout: Duration) -> Result<()> {
         eprintln!(
             "[WORKER] Shutting down worker PID {} (UDS={:?})",
             self.pid, self.socket_path
@@ -505,13 +559,21 @@ impl Worker {
         } else {
             timeout
         };
+        let use_pgid = self.zygote_socket.is_none();
         if effective_timeout <= Duration::from_secs(5) {
             unsafe {
-                libc::kill(self.pid as i32, 15); // SIGTERM
+                #[cfg(unix)]
+                if use_pgid {
+                    libc::kill(-(self.pid as i32), 15);
+                } else {
+                    libc::kill(self.pid as i32, 15);
+                }
+                #[cfg(not(unix))]
+                libc::kill(self.pid as i32, 15);
             }
             let start = Instant::now();
             while start.elapsed() < effective_timeout {
-                if !self.is_alive() {
+                if self.child_exited() || !self.is_alive() {
                     eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
                     return Ok(());
                 }
@@ -525,7 +587,21 @@ impl Worker {
             }
             unsafe {
                 eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                #[cfg(unix)]
+                if use_pgid {
+                    libc::kill(-(self.pid as i32), 9);
+                } else {
+                    libc::kill(self.pid as i32, 9);
+                }
+                #[cfg(not(unix))]
                 libc::kill(self.pid as i32, 9);
+            }
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_secs(2) {
+                if self.child_exited() || !self.is_alive() {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
             }
             return Ok(());
         }
@@ -536,7 +612,7 @@ impl Worker {
                 }
                 let start = Instant::now();
                 while start.elapsed() < effective_timeout {
-                    if !self.is_alive() {
+                    if self.child_exited() || !self.is_alive() {
                         eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
                         return Ok(());
                     }
@@ -545,6 +621,13 @@ impl Worker {
                 unsafe {
                     eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
                     libc::kill(self.pid as i32, 9);
+                }
+                let start = Instant::now();
+                while start.elapsed() < Duration::from_secs(2) {
+                    if self.child_exited() || !self.is_alive() {
+                        return Ok(());
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
                 }
                 return Ok(());
             }
@@ -626,12 +709,19 @@ impl Worker {
                 self.pid
             );
             unsafe {
-                libc::kill(self.pid as i32, 15); // SIGTERM
+                #[cfg(unix)]
+                if use_pgid {
+                    libc::kill(-(self.pid as i32), 15);
+                } else {
+                    libc::kill(self.pid as i32, 15);
+                }
+                #[cfg(not(unix))]
+                libc::kill(self.pid as i32, 15);
             }
             // Wait for exit or kill
             let start = Instant::now();
             while start.elapsed() < timeout {
-                if !self.is_alive() {
+                if self.child_exited() || !self.is_alive() {
                     eprintln!("[WORKER] PID {} died after SIGTERM", self.pid);
                     return Ok(());
                 }
@@ -639,7 +729,21 @@ impl Worker {
             }
             unsafe {
                 eprintln!("[WORKER] PID {} SIGTERM timeout, sending SIGKILL", self.pid);
+                #[cfg(unix)]
+                if use_pgid {
+                    libc::kill(-(self.pid as i32), 9);
+                } else {
+                    libc::kill(self.pid as i32, 9);
+                }
+                #[cfg(not(unix))]
                 libc::kill(self.pid as i32, 9);
+            }
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_secs(2) {
+                if self.child_exited() || !self.is_alive() {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(100));
             }
             Ok(())
         }
