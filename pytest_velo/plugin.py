@@ -291,7 +291,7 @@ def hijack_execnet() -> None:
             return original_makegateway(self, spec)
 
         execnet.multi.Group.makegateway = velo_makegateway
-        execnet.multi.Group._velo_hijacked = True  # type: ignore
+        execnet.multi.Group._velo_hijacked = True
 
         # Also patch the global makegateway for any direct calls
         import execnet
@@ -326,7 +326,7 @@ def pytest_configure(config: Any) -> None:
 
             # Find project root from first item or config
             root = getattr(config, "rootpath", None) or getattr(config, "rootdir", None)
-            execnet.multi.Group._velo_project_root = Path(str(root)) if root else Path.cwd()
+            execnet.multi.Group._velo_project_root = Path(str(root)) if root else Path.cwd()  # type: ignore[attr-defined]
             hijack_execnet()
 
         velo_bin = shutil.which("velo")
@@ -616,7 +616,7 @@ def run_in_zygote_fork(item: Any, strict_compat: bool = False) -> bool:
                     if test_result.get("error"):
                         sys.stderr.write(f"\nZYGOTE WORKER ERROR: {test_result['error']}\n")
 
-                    return test_result.get("passed", False)
+                    return bool(test_result.get("passed", False))
                 else:
                     sys.stderr.write(f"\nZYGOTE FORK RAW STDOUT: {result.stdout}\n")
                     sys.stderr.write(f"ZYGOTE FORK RAW STDERR: {result.stderr}\n")
