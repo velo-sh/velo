@@ -66,7 +66,7 @@ _prof_log(f"[PROF] Velo Framework Imported: +{(_T2 - _T1) * 1000:.2f}ms")
 if hasattr(uvicorn, "Server") and hasattr(uvicorn.Server, "install_signal_handlers"):
     _original_install_signal_handlers = uvicorn.Server.install_signal_handlers
 
-    def _install_signal_handlers_with_marker(self):
+    def _install_signal_handlers_with_marker(self: uvicorn.Server) -> None:
         _original_install_signal_handlers(self)
         previous = signal.getsignal(signal.SIGTERM)
 
