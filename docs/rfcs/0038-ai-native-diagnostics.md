@@ -23,8 +23,8 @@ By implementing structured Markdown output (`--prof-md`) for all performance-cri
 ### 2.1 The Agentic Era
 Modern development is increasingly "Agent-First." AI agents perform code reviews, fix performance regressions, and manage infra. However, most CLI tools output ANSI-encoded text optimized for human eyeballs, which is sub-optimal for LLMs.
 
-### 2.2 The "Bun" Inspiration
-Bun recently introduced `--cpu-prof-md`, allowing LLMs to read profiling data directly. Velo, as the "Vibe Engine," must lead in AI-assisted developer experience (DX).
+### 2.2 The AI-First Infrastructure Thesis
+In the upcoming AI Era, the primary "users" of infrastructure are no longer humans, but AI Agents. Traditional CLI diagnostics optimized for terminal rendering are a legacy burden. Velo mandates a structural shift: **Infrastructure must be machine-native to be human-useful.** Velo is architected to be the bridge where the runtime speaks the same language as the Agent assisting the developer.
 
 ### 2.3 Problems with Current Output
 1.  **ANSI Noise**: Escape codes confuse smaller LLMs and waste token context.
