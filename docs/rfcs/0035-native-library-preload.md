@@ -370,6 +370,20 @@ velo run --preload "torch::libtorch.so" main.py
 
 ---
 
+## 11. Final Engineering Directives
+
+### Directive A: The "Double-Load" Optimization
+**Rule**: To maintain the optimization for the process lifetime, the implementation MUST NOT call `dlclose` on preloaded handles. The handle MUST intentionally leak so that the OS reference count remains >= 1, allowing Python to reuse the existing mapping upon its standard `import`.
+
+### Directive B: The "Global" Allowlist Presets
+**Rule**: By default, Velo MUST promote the following libraries to `RTLD_GLOBAL` visibility:
+- `libtorch.so`
+- `libtensorflow.so`
+- `libpython*.so`
+- *All others default to `RTLD_LOCAL` (Safety First).*
+
+---
+
 **Custodian**: Velo Architect
 **Last Updated**: 2026-01-22
 
