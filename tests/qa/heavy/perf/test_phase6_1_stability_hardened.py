@@ -283,11 +283,14 @@ time.sleep(60)
 
         # Verify child received it
         output = ""
-        while True:
-            line = self._read_with_timeout(proc.stdout, timeout=scaled_timeout(10))
+        loop_start = time.time()
+        while time.time() - loop_start < scaled_timeout(20):
+            line = self._read_with_timeout(proc.stdout, timeout=5)
             if not line:
                 break
             output += line
+            if "Started server process" in output and output.count("Started server process") >= 2:
+                break
             if "CHILD_RECEIVED_SIGTERM" in line:
                 break
 
@@ -405,12 +408,15 @@ time.sleep(60)
         # Requirement: It should only restart once or twice, not for every chunk.
         # And specifically, it should eventually reach FINAL_READY.
         output = ""
+        loop_start = time.time()
         try:
-            while True:
-                line = self._read_with_timeout(proc.stdout, timeout=15)
+            while time.time() - loop_start < scaled_timeout(45):
+                line = self._read_with_timeout(proc.stdout, timeout=5)
                 if not line:
                     break
                 output += line
+                if "FINAL_READY" in output:
+                    break
         finally:
             proc.kill()
 
