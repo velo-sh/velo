@@ -1,9 +1,9 @@
 # RFC-0035: Native Library Preload Optimization (.so Pre-warming)
 
-**Status**: DRAFT
+**Status**: EXECUTION_APPROVED (v2.4)
 **Author**: Velo Architect
-**Date**: 2026-01-19
-**Phase**: Phase 15 (Future)
+**Date**: 2026-01-22
+**Phase**: Phase 15 (Native Preload Implementation)
 **Scope**: Performance, Startup Optimization, Security
 
 > **Note**: This RFC focuses on **native library pre-loading**. For application packaging, see RFC-0034.
@@ -130,6 +130,10 @@ rtld_mode = "local"  # "local" (default, safe) | "global" (opt-in, risk)
 {
   "version": 1,
   "generated_at": 1705678900,
+  "generator": {
+    "velo_version": "0.9.5",
+    "git_commit": "3701969"
+  },
   "runtime_fingerprint": {
     "os": "linux",
     "arch": "x86_64",
@@ -257,6 +261,9 @@ fn validate_library_path(lib_path: &Path, venv_root: &Path) -> Result<()> {
 }
 ```
 
+> [!NOTE]
+> **System Dependency Blocking**: If a preloaded library (e.g., NumPy) depends on system-level libraries (e.g., `libopenblas.so` in `/usr/lib`), Velo's strict venv containment WILL block the preloading of those system dependencies. This is **by design** to ensure the preloading process remains hermetic and bound to the virtual environment's fingerprint.
+
 **Why this is the best approach**:
 | Aspect | Benefit |
 |:---|:---|
@@ -342,6 +349,7 @@ velo run --preload "torch::libtorch.so" main.py
 | **Gate B** | Fingerprint mismatch blocks preload with clear error |
 | **Gate C** | Untrusted path (/tmp) is rejected |
 | **Gate D** | No symbol resolution errors with RTLD_LOCAL |
+| **Gate E** | **Sharing Validation**: `Shared_Clean` in `smaps_rollup` > 200MB (for Torch) |
 
 ---
 
