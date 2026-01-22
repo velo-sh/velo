@@ -399,37 +399,8 @@ impl ZygoteLauncher {
             config.security_hpc_threads.to_string(),
         );
 
-        // --- Bridge of Truth: Inject Environment Context ---
-        let github_actions = std::env::var("GITHUB_ACTIONS")
-            .map(|v| v.to_lowercase())
-            .unwrap_or_default();
-        let velo_env_current = std::env::var("VELO_ENV").ok();
-
-        let env_mode = match (velo_env_current, github_actions.as_str()) {
-            (Some(env), _) => env,
-            (None, "true") => "ci".to_string(),
-            (None, _) => "dev".to_string(),
-        };
-        cmd.env("VELO_ENV", &env_mode);
-
-        if let Ok(val) = std::env::var("VELO_SOCKET_DIR") {
-            cmd.env("VELO_SOCKET_DIR", val);
-        }
-        if let Ok(val) = std::env::var("VELO_ZYGOTE_LOG") {
-            cmd.env("VELO_ZYGOTE_LOG", val);
-        }
-        if let Ok(val) = std::env::var("VELO_ZYGOTE_SOCKET") {
-            cmd.env("VELO_ZYGOTE_SOCKET", val);
-        }
-        if let Ok(val) = std::env::var("VELO_ZYGOTE_ID") {
-            cmd.env("VELO_ZYGOTE_ID", val);
-        }
-        if let Ok(val) = std::env::var("VELO_TEST_MODE") {
-            cmd.env("VELO_TEST_MODE", val);
-        }
-        if let Ok(val) = std::env::var("VELO_STRICT_OPTIMIZATIONS") {
-            cmd.env("VELO_STRICT_OPTIMIZATIONS", val);
-        }
+        // --- Bridge of Truth: Structured Environment Propagation (SPEC-0005) ---
+        Self::propagate_velo_context(&mut cmd);
 
         // Identify this as the Zygote process for bootstrap logic (Trap 178.4)
         cmd.env("VELO_IS_ZYGOTE", "1");
@@ -894,6 +865,39 @@ impl ZygoteLauncher {
             env_overrides,
             config,
         )
+    }
+
+    /// Propagate Velo context from Supervisor to Zygote/Worker (SPEC-0005)
+    ///
+    /// Following the "Prefix-Directed Intent" (SPEC-0006), this automatically
+    /// inherits all VELO_ prefixed variables except VELO_SYS_ secrets.
+    fn propagate_velo_context(cmd: &mut std::process::Command) {
+        // 1. Explicitly inherit platform context for CI resilience
+        for key in &["CI", "GITHUB_ACTIONS"] {
+            if let Ok(val) = std::env::var(key) {
+                cmd.env(key, val);
+            }
+        }
+
+        // 2. Resolve default VELO_ENV if not set (Ritual 21.4)
+        if std::env::var("VELO_ENV").is_err() {
+            let is_ci = std::env::var("GITHUB_ACTIONS")
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            let mode = if is_ci { "ci" } else { "dev" };
+            cmd.env("VELO_ENV", mode);
+        }
+
+        // 3. Structured inheritance of Sovereign variables
+        for (key, val) in std::env::vars() {
+            if key.starts_with("VELO_") {
+                // Tiered Security: Scrub System/Secret variables (SPEC-0005)
+                if key.starts_with("VELO_SYS_") {
+                    continue;
+                }
+                cmd.env(key, val);
+            }
+        }
     }
 }
 
