@@ -12,6 +12,9 @@
 This RFC proposes a new diagnostic standard for Velo: **AI-Native Diagnostics**. 
 By implementing structured Markdown output (`--prof-md`) for all performance-critical commands, Velo enables AI agents (like Claude, Gemini, and Cursor) to accurately parse, analyze, and optimize Python applications without regex-based guesswork.
 
+> [!IMPORTANT]
+> This RFC establishes a **Platform Contract**. The section headers and column names defined herein are part of Velo's **Stable Public Protocol** to ensure long-term Agent compatibility.
+
 ---
 
 ## 2. Motivation
@@ -41,11 +44,19 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 
 #### Example: `velo run --prof-md script.py`
 ```markdown
+<!-- velo:diagnostics v=1 -->
 # Velo Diagnostic Report v1
+
+## 📋 Summary
+| Key | Value |
+| :--- | :--- |
+| **Total Runtime** | 1.04s |
+| **Primary Bottleneck** | `heavy_compute` |
+| **Optimization Budget**| CPU-bound |
+| **Status** | 🟢 Within Budget |
 
 | Metric | Value | Status |
 | :--- | :--- | :--- |
-| **Total Runtime** | 1.04s | 🟢 Within Budget |
 | **Startup (Zygote)** | 12ms | ⚡ Instant |
 | **Memory Delta** | +24MB | ✅ COW Efficient |
 
@@ -61,7 +72,7 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 ### 1. `heavy_compute` (492ms)
 **Location:** `utils.py:45`
 **Signature:** `def heavy_compute(data: List[int]) -> int:`
-> **Agent Hint**: High self-time in a loop. Check for nested list comprehensions.
+> **Agent Hint [loop-hot]**: High self-time in a loop. Check for nested list comprehensions.
 
 ## Hot Functions (Top 20)
 | Self % | Self | Function | Location |
@@ -96,14 +107,18 @@ Implement a `MarkdownFormatter` in `src/common/diagnostics.rs`.
 - **Purity**: Use `strip-ansi-escapes` to ensure no binary noise enters the token stream.
 - **Safety**: Verify UTF-8 compatibility to prevent breaking LLM decoders with corrupted binary garbage.
 
-### 4.3 Zero-Cost Instrumentation
-All data collection required for `--prof-md` MUST be lazy-initialized and gated. If the flag is not present, no additional memory or CPU overhead should be incurred (Zero-Cost Path).
+### 4.3 Atomic Writing
+The Markdown report MUST be written **atomically** at the end of the process execution. This prevents AI agents from reading partial or corrupted MD files during a crash. 
+
+### 4.4 Extension Points
+- **Agent Hints**: Reserved tag format `[tag-name]` for future routing hints (e.g., `[memory-leak]`, `[io-blocking]`).
+- **AI Suggestions**: Future releases may include a `## 🤖 AI Suggestions (Experimental)` section, which MUST be explicitly labeled to distinguish from empirical telemetry.
 
 ---
 
-## 5. AI Integration: The Prompt Preamble
+## 5. AI Integration: Reference Prompt
 
-Velo provides a recommended **System Prompt Preamble** for AI-assisted profiling:
+Velo provides a **Reference System Prompt Preamble** for AI-assisted profiling:
 
 > "You are a Performance Engineer. When analyzing Velo Markdown Reports (RFC-0038), prioritize 'Self Time' over 'Total Time' to find actual optimization targets. Use the provided 'Code Context Snippets' to identify algorithmic inefficiencies without manually reading files unless necessary."
 
