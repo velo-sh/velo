@@ -24,7 +24,8 @@ import pytest
 import requests
 
 # Import CI-aware timeout constants
-from conftest_utils import T_MEDIUM, T_SHORT, get_velo_binary
+# Import CI-aware timeout constants
+from conftest_utils import T_LONG, T_MEDIUM, T_SHORT, get_velo_binary
 
 
 def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -59,7 +60,7 @@ class DestroyerTestEnv:
         self.procs = []
 
     def setup(self):
-        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
+        subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
@@ -138,6 +139,7 @@ def health():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18001
@@ -180,6 +182,7 @@ def root():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             # Use custom port
@@ -218,6 +221,7 @@ def get_pid():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18002
@@ -393,6 +397,7 @@ def cleanup():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18005
@@ -433,6 +438,7 @@ def root():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18006
@@ -475,6 +481,7 @@ def timing():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18007
@@ -529,6 +536,7 @@ def framework():
                 ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18008
@@ -561,6 +569,7 @@ def framework():
                 ["uv", "pip", "install", "flask", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
+                timeout=T_LONG,
             )
 
             port = 18009
