@@ -32,7 +32,8 @@ This RFC proposes **Native Library Preload**, extending Velo's existing fingerpr
 > **INV-PRELOAD-004**: preload.lock MUST include runtime fingerprint (os, arch, python_version).
 > **INV-PRELOAD-005**: Runtime mismatch MUST block preload with clear error.
 > **INV-PRELOAD-006**: Implementation MUST NOT require any modification to the user's Python source code (Drop-in Purity).
-> **INV-PRELOAD-007**: Any preloading failure MUST NOT terminate the process; Velo MUST silently fallback to standard Python import (Silent Resilience).
+> **INV-PRELOAD-007**: **Silent Resilience (Mismatches)**: Preloading failure due to missing, mismatched, or stale fingerprints MUST NOT terminate the process; Velo MUST silently fallback to standard Python import.
+> **INV-PRELOAD-008**: **Visibility Control**: Velo MUST support configurable symbol visibility (`RTLD_GLOBAL` vs `RTLD_LOCAL`) to maintain compatibility with complex libraries (e.g., PyTorch) that rely on global symbols for their extensions.
 
 ---
 
@@ -149,6 +150,59 @@ rtld_mode = "local"  # "local" (default, safe) | "global" (opt-in, risk)
     }
   ]
 }
+
+### 3.5 "Drop-in" Guarantee Implementation
+
+To ensure the user's Python code remains untouched (`import torch` just works), we strictly separate Memory Mapping from Python Initialization.
+
+```rust
+// Core logic ensuring Drop-in Compatibility
+fn preload_library(lib: &NativeLibFingerprint) -> PreloadResult {
+    // 1. VERIFY: Check hashes/paths (Safe Fallback if fails)
+    if let Err(e) = verify_fingerprint(lib) {
+        warn!("Skipping preload for {}: {}", lib.package, e);
+        return PreloadResult::Skipped; // SILENT FALLBACK
+    }
+
+    // 2. LOAD: Use raw dlopen. 
+    // We DO NOT call PyInit_xxx. We only map the binary.
+    // This allows Python to "claim" the module later via standard import.
+    let flags = match lib.rtld_mode.as_str() {
+        "global" => libc::RTLD_NOW | libc::RTLD_GLOBAL, 
+        _ => libc::RTLD_NOW | libc::RTLD_LOCAL,
+    };
+
+    unsafe {
+        // If this fails, we just log it. Python will try again later and
+        // raise the standard ImportError if it's truly broken.
+        // NOTE: Initializer-level crashes (Segfaults) in bad libraries are fatal.
+        let handle = libc::dlopen(lib.path.as_ptr(), flags);
+        
+        if handle.is_null() {
+            let msg = CStr::from_ptr(libc::dlerror());
+            warn!("Preload dlopen failed: {:?}", msg);
+            return PreloadResult::Failed; // SILENT FALLBACK
+        }
+    }
+    
+    PreloadResult::Success
+}
+```
+
+### 3.6 Configuration for Complex Libraries (Torch/NumPy)
+
+To solve the Symbol Visibility issue, we provide a "Known Good" configuration preset in `pyproject.toml`.
+
+```toml
+[tool.velo.native_preload]
+# Explicitly handle complex libraries to ensure compatibility
+libraries = [
+    # PyTorch requires GLOBAL symbols for its plugins
+    { package = "torch", path = "lib/libtorch.so", mode = "global" },
+    # Standard libs are fine with LOCAL (safer)
+    { package = "numpy", path = "core/libopenblas.so", mode = "local" }
+]
+```
 ```
 
 ---
