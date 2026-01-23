@@ -61,6 +61,8 @@ pub struct ProfileData {
     pub import_times: HashMap<String, f64>,
     /// Total import time
     pub total_import_time_ms: f64,
+    /// Memory growth during execution (MB)
+    pub memory_delta_mb: f64,
 }
 
 impl ProfileData {
@@ -77,6 +79,7 @@ impl ProfileData {
         Ok(Self {
             import_times,
             total_import_time_ms,
+            memory_delta_mb: 0.0, // Initialized later by runner
         })
     }
 

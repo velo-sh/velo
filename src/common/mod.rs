@@ -1,5 +1,6 @@
 pub mod diagnostics;
 pub mod governance;
+pub mod memory;
 pub mod paths;
 pub mod python_env;
 pub mod util_log_sanitize;

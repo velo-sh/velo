@@ -4,6 +4,7 @@
 //! agent-friendly diagnostic reports.
 
 use anyhow::{Context, Result};
+use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -17,31 +18,28 @@ pub const HINT_PRELOAD_MISS: &str = "[preload-miss]";
 
 /// Formatter for AI-Native Diagnostic Reports (RFC-0038)
 pub struct MarkdownFormatter {
-    title: String,
     version: u32,
 }
 
 impl MarkdownFormatter {
-    pub fn new(title: &str) -> Self {
-        Self {
-            title: title.to_string(),
-            version: 1,
-        }
+    pub fn new(_title: &str) -> Self {
+        Self { version: 1 }
     }
 
     /// Generate the full Markdown report
     pub fn format_report(
         &self,
         total_runtime: std::time::Duration,
+        memory_delta_mb: f64,
         environment: &HashMap<String, String>,
         bottlenecks: Vec<BottleneckInfo>,
         timeline: StartupTimeline,
     ) -> String {
         let mut md = String::new();
 
-        // Header and Summary
+        // Header and Summary (RFC-0038 §3.2 & Council P0)
         md.push_str(&format!("<!-- velo:diagnostics v={} -->\n", self.version));
-        md.push_str(&format!("# {}\n\n", self.title));
+        md.push_str("# Velo Diagnostic Report v1\n\n");
 
         md.push_str("## 📋 Summary\n");
         md.push_str("| Key | Value |\n");
@@ -53,6 +51,15 @@ impl MarkdownFormatter {
             .map(|b| format!("`{}`", b.name))
             .unwrap_or_else(|| "N/A".to_string());
         md.push_str(&format!("| **Primary Bottleneck** | {} |\n", primary));
+        md.push_str(&format!(
+            "| **Memory Delta** | {:+.1}MB | {} |\n",
+            memory_delta_mb,
+            if memory_delta_mb < 50.0 {
+                "✅ COW Efficient"
+            } else {
+                "⚠️ Heavy Allocation"
+            }
+        ));
         md.push_str("| **Optimization Budget**| CPU-bound |\n");
         md.push_str("| **Status** | 🟢 Within Budget |\n\n");
 
@@ -61,8 +68,10 @@ impl MarkdownFormatter {
         md.push_str("| Variable | Value |\n");
         md.push_str("| :--- | :--- |\n");
 
-        // Pick a few stable ones
-        for &key in &["VELO_MODE", "PYTHONPATH", "PLATFORM"] {
+        // Show all sanitized environment variables
+        let mut keys: Vec<_> = environment.keys().collect();
+        keys.sort();
+        for key in keys {
             if let Some(val) = environment.get(key) {
                 md.push_str(&format!("| **{}** | `{}` |\n", key, val));
             }
@@ -142,13 +151,20 @@ impl MarkdownFormatter {
 
     /// Atomic write to file
     pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
+        let stripped = Self::strip_ansi(content);
         let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, content).with_context(|| {
+        fs::write(&temp_path, stripped).with_context(|| {
             format!("Failed to write temporary diagnostic file: {:?}", temp_path)
         })?;
         fs::rename(&temp_path, path)
             .with_context(|| format!("Failed to move diagnostic file to final path: {:?}", path))?;
         Ok(())
+    }
+
+    /// Strip ANSI escape codes to ensure "Purity" (Council P0)
+    fn strip_ansi(text: &str) -> String {
+        let re = Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap();
+        re.replace_all(text, "").to_string()
     }
 }
 

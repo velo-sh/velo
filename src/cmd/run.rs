@@ -342,7 +342,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             zygote_ms: _discovery_time.as_millis() as u64
                 + _config_time.as_millis() as u64
                 + _python_time.as_millis() as u64,
-            app_entry_ms: total_time.as_millis() as u64 / 10, // heuristic for "app entry" in profile
+            app_entry_ms: total_time.as_millis() as u64 / 10,
             total_ms: total_time.as_millis() as u64,
         };
 
@@ -350,13 +350,19 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let env_map: HashMap<String, String> = std::env::vars().collect();
         let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
 
-        let bottlenecks = if let Some(pd) = profile_data {
-            pd.to_bottlenecks(20)
+        let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
+            (pd.to_bottlenecks(20), pd.memory_delta_mb)
         } else {
-            Vec::new()
+            (Vec::new(), 0.0)
         };
 
-        let report = formatter.format_report(total_time, &sanitized_env, bottlenecks, timeline);
+        let report = formatter.format_report(
+            total_time,
+            memory_delta_mb,
+            &sanitized_env,
+            bottlenecks,
+            timeline,
+        );
         MarkdownFormatter::write_atomic(prof_md_path, &report)?;
 
         eprintln!("📝 Diagnostic report written to {}", prof_md_path.display());
@@ -479,13 +485,19 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
         let env_map: HashMap<String, String> = std::env::vars().collect();
         let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
 
-        let bottlenecks = if let Some(pd) = profile_data {
-            pd.to_bottlenecks(20)
+        let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
+            (pd.to_bottlenecks(20), pd.memory_delta_mb)
         } else {
-            Vec::new()
+            (Vec::new(), 0.0)
         };
 
-        let report = formatter.format_report(total_time, &sanitized_env, bottlenecks, timeline);
+        let report = formatter.format_report(
+            total_time,
+            memory_delta_mb,
+            &sanitized_env,
+            bottlenecks,
+            timeline,
+        );
         MarkdownFormatter::write_atomic(prof_md_path, &report)?;
 
         eprintln!("📝 Diagnostic report written to {}", prof_md_path.display());

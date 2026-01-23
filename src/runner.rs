@@ -180,7 +180,8 @@ pub fn run_script_with_profile_capture(
         None => format!("{}:{}", temp_dir_str, script_dir),
     };
 
-    // Measure total time
+    // Measure memory and time
+    let rss_before = crate::common::memory::get_process_rss_bytes().unwrap_or(0);
     let start = std::time::Instant::now();
 
     // Run the script
@@ -217,10 +218,17 @@ pub fn run_script_with_profile_capture(
         .status()
         .context("Failed to run Python")?;
     let total_time = start.elapsed();
+    let rss_after = crate::common::memory::get_process_rss_bytes().unwrap_or(0);
 
     // Capture results
     let profile_data = if profile_output.exists() {
-        profile::ProfileData::from_file(&profile_output).ok()
+        profile::ProfileData::from_file(&profile_output)
+            .ok()
+            .map(|mut pd| {
+                pd.memory_delta_mb =
+                    (rss_after.saturating_sub(rss_before) as f64) / (1024.0 * 1024.0);
+                pd
+            })
     } else {
         None
     };
@@ -262,7 +270,8 @@ pub fn run_module_with_profile_capture(
     let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let final_pythonpath = format!("{}:{}", temp_dir_str, current_dir.display());
 
-    // Measure total time
+    // Measure memory and time
+    let rss_before = crate::common::memory::get_process_rss_bytes().unwrap_or(0);
     let start = std::time::Instant::now();
 
     // Run the module
@@ -301,10 +310,17 @@ pub fn run_module_with_profile_capture(
 
     let status = cmd.status().context("Failed to run Python module")?;
     let total_time = start.elapsed();
+    let rss_after = crate::common::memory::get_process_rss_bytes().unwrap_or(0);
 
     // Capture results
     let profile_data = if profile_output.exists() {
-        profile::ProfileData::from_file(&profile_output).ok()
+        profile::ProfileData::from_file(&profile_output)
+            .ok()
+            .map(|mut pd| {
+                pd.memory_delta_mb =
+                    (rss_after.saturating_sub(rss_before) as f64) / (1024.0 * 1024.0);
+                pd
+            })
     } else {
         None
     };
