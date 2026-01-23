@@ -3,6 +3,7 @@ pub mod governance;
 pub mod memory;
 pub mod paths;
 pub mod python_env;
+pub mod snippet_extractor;
 pub mod util_log_sanitize;
 
 // Import generated constants from OUT_DIR

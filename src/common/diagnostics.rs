@@ -130,9 +130,33 @@ impl MarkdownFormatter {
                 b.name,
                 b.duration_ms
             ));
-            if let Some(loc) = &b.location {
+
+            // RFC-0038-ext: Render code snippet if available
+            if let Some(ref snippet) = b.code_snippet {
+                // Show file path with line number
+                if let Some(ref path) = b.file_path {
+                    md.push_str(&format!(
+                        "**Location:** `{}:{}`\n",
+                        path.display(),
+                        snippet.start_line
+                    ));
+                }
+                md.push_str(&format!("**Signature:** `{}`\n", snippet.signature));
+                md.push_str("```python\n");
+                for line in &snippet.lines {
+                    md.push_str(line);
+                    md.push('\n');
+                }
+                md.push_str("```\n");
+            } else if let Some(loc) = &b.location {
+                // Fallback to location hint
                 md.push_str(&format!("**Location:** `{}`\n", loc));
+                // Check if this is a C-extension or missing source
+                if b.file_path.is_none() || loc.contains("C-extension") || loc.contains(".so") {
+                    md.push_str("> ⚠️ Source unavailable (C-extension or pre-compiled)\n");
+                }
             }
+
             if let Some(hint) = &b.agent_hint {
                 md.push_str(&format!(
                     "> **Agent Hint {}**: {}\n",
@@ -212,10 +236,21 @@ impl MarkdownFormatter {
         let slow_imports_json: Vec<serde_json::Value> = slow_imports
             .iter()
             .map(|b| {
+                // RFC-0038-ext: Include code snippet in JSON
+                let snippet_json = b.code_snippet.as_ref().map(|s| {
+                    json!({
+                        "signature": s.signature,
+                        "lines": s.lines,
+                        "start_line": s.start_line
+                    })
+                });
+
                 json!({
                     "name": b.name,
                     "duration_ms": b.duration_ms,
+                    "file_path": b.file_path.as_ref().map(|p| p.display().to_string()),
                     "location": b.location,
+                    "code_snippet": snippet_json,
                     "agent_hint": b.agent_hint.as_ref().map(|h| json!({
                         "tag": h.tag,
                         "message": h.message
@@ -256,10 +291,17 @@ impl MarkdownFormatter {
     }
 }
 
+/// RFC-0038-ext: Re-export CodeSnippet from snippet_extractor
+pub use crate::common::snippet_extractor::CodeSnippet;
+
 pub struct SlowImportInfo {
     pub name: String,
     pub duration_ms: f64,
+    /// RFC-0038-ext: Absolute file path for snippet extraction
+    pub file_path: Option<std::path::PathBuf>,
     pub location: Option<String>,
+    /// RFC-0038-ext: Extracted code snippet
+    pub code_snippet: Option<CodeSnippet>,
     pub agent_hint: Option<AgentHint>,
 }
 
