@@ -172,20 +172,11 @@ print(f"new_module works: {new_module.NEW_VALUE}")
         assert "new_module works: 42" in result.stdout
 
     @pytest.mark.sad_path
-    @pytest.mark.skip(
-        reason="Auto-rebuild on source change requires bundle invalidation, "
-        "which is not fully implemented yet. Test skipped to avoid CI flakiness."
-    )
     def test_rebuild_001_source_changed(self, simple_project: Any, velo_binary: Any) -> None:
         """
         REBUILD-001: Source changed triggers auto-rebuild
 
         RFC-0006: Modified source should invalidate bundle.
-
-        NOTE: This test is currently skipped because auto-rebuild requires:
-        1. Bundle fingerprint validation against source mtimes
-        2. Automatic rebuild when fingerprint mismatches
-        These features are not yet fully implemented.
         """
         # Initial build
         build_bundle(simple_project)

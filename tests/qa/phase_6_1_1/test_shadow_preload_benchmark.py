@@ -16,11 +16,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import pytest
-
-# Mark entire module as Zygote flaky - skip in CI due to timing/resource issues
-pytestmark = [pytest.mark.zygote_flaky, pytest.mark.perf]
-
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))

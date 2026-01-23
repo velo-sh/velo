@@ -1076,7 +1076,7 @@ mod tests {
             "ipykernel_launcher",
             "--",
             "-f",
-            "/tmp/kernel.json",
+            &std::env::temp_dir().join("kernel.json").to_string_lossy(),
         ])
         .unwrap();
         assert!(cmd.is_module_mode());

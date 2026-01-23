@@ -253,18 +253,6 @@ I will review/implement with [ROLE]'s perspective.
 
 > For governance rules and role transition policies, see [Universal Identity & Role Governance](#-universal-identity--role-governance) above.
 
-### ✅ Role Transitions & Governance Logs
-
--[ID-LOCK-002] Phase 5.x Implementation Handover complete. Role: 💻 Developer.
--Authorized by: gjwang (2026-01-03 13:30)
--[ID-LOCK-003] Phase 4 Stability Remediation. Role: 💻 Developer.
--Authorized by: gjwang (2026-01-03 14:15) via QA Leader directive.
--Objective: Fix H-4 (Marshal recursion bypass) and Zygote IPC sync (BUG-51-001).
-
-+[ID-LOCK-004] Phase XI: Kinetic Optimization. Role: 💻 Developer (Rust Core).
-+Authorized by: gjwang (2026-01-06 18:17)
-+Objective: Implement Kinetic Protocol (UDP/IPC Handshake & Silent Fallback) per RFC-0013 v1.1.
-
 
 ---
 
