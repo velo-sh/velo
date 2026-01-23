@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -37,7 +38,7 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -58,11 +59,11 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except:
+    except Exception:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -74,22 +75,22 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
     return False
 
 
-def get_child_pids(parent_pid: int) -> list:
+def get_child_pids(parent_pid: int) -> list[int]:
     """Get all child process PIDs."""
     try:
         parent = psutil.Process(parent_pid)
         return [p.pid for p in parent.children(recursive=True)]
-    except:
+    except Exception:
         return []
 
 
 class ComprehensiveTestEnv:
     """Test environment for comprehensive tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_comp_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
         self._port_counter = 19200
 
     def next_port(self) -> int:
@@ -97,7 +98,7 @@ class ComprehensiveTestEnv:
         self._port_counter += 1
         return self._port_counter
 
-    def setup(self, with_project=True):
+    def setup(self, with_project: bool = True) -> "ComprehensiveTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         if with_project:
             (self.path / "pyproject.toml").write_text(
@@ -108,7 +109,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             )
         return self
 
-    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+    def run_velo(self, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         # Create env with isolated sockets
         env = os.environ.copy()
         env["VIRTUAL_ENV"] = str(self.path / ".venv")
@@ -150,7 +151,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             print(f"TIMEOUT in run_velo. Args: {args}\nStdout: {stdout}\nStderr: {stderr}")
             raise
 
-    def install(self, *packages):
+    def install(self, *packages: str) -> None:
         pkgs = list(packages)
         if "msgpack" not in pkgs:
             pkgs.append("msgpack")
@@ -163,10 +164,10 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             env=env,
         )
 
-    def create_app(self, name: str, code: str):
+    def create_app(self, name: str, code: str) -> None:
         (self.path / name).write_text(code)
 
-    def serve(self, app: str, port: int, capture: bool = False, **opts) -> subprocess.Popen:
+    def serve(self, app: str, port: int, capture: bool = False, **opts: Any) -> subprocess.Popen[str]:
         # Use 'uv run' to ensure the local venv is used for dependencies
         env = os.environ.copy()
         env["VIRTUAL_ENV"] = str(self.path / ".venv")
@@ -208,8 +209,8 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             self.stderr_log = self.path / "stderr.log"
             self.stdout_f = open(self.stdout_log, "w")
             self.stderr_f = open(self.stderr_log, "w")
-            stdout = self.stdout_f
-            stderr = self.stderr_f
+            stdout: Any = self.stdout_f
+            stderr: Any = self.stderr_f
         else:
             stdout = subprocess.DEVNULL
             stderr = subprocess.DEVNULL
@@ -225,7 +226,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
@@ -246,12 +247,12 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "ComprehensiveTestEnv":
         # By default, setup with project metadata.
         # Individual tests like l0_003 can override if they call setup(False) manually.
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

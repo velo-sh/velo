@@ -11,6 +11,7 @@ Run: pytest tests/qa/test_phase5_loader.py -v
 import marshal
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,7 +25,7 @@ from velo_loader import VeloBundle, install_hook, uninstall_hook
 class TestVeloBundleBuilder:
     """Tests for bundle building"""
 
-    def test_build_simple_module(self, tmp_path: Path):
+    def test_build_simple_module(self, tmp_path: Path) -> None:
         """Test building a bundle with one module"""
         builder = VeloBundleBuilder()
 
@@ -44,7 +45,7 @@ class TestVeloBundleBuilder:
         with open(output, "rb") as f:
             assert f.read(4) == b"VELO"
 
-    def test_build_from_source(self, tmp_path: Path):
+    def test_build_from_source(self, tmp_path: Path) -> None:
         """Test building from .py source"""
         # Create test source
         src = tmp_path / "hello.py"
@@ -58,7 +59,7 @@ class TestVeloBundleBuilder:
 
         assert output.exists()
 
-    def test_build_from_project(self, tmp_path: Path):
+    def test_build_from_project(self, tmp_path: Path) -> None:
         """Test building from project directory"""
         # Create project structure
         (tmp_path / "mypackage").mkdir()
@@ -87,7 +88,7 @@ class TestVeloBundle:
         builder.build(output)
         return output
 
-    def test_open_bundle(self, simple_bundle: Path):
+    def test_open_bundle(self, simple_bundle: Path) -> None:
         """Test opening a bundle"""
         bundle = VeloBundle(simple_bundle)
         bundle.open()
@@ -97,7 +98,7 @@ class TestVeloBundle:
 
         bundle.close()
 
-    def test_get_code(self, simple_bundle: Path):
+    def test_get_code(self, simple_bundle: Path) -> None:
         """Test getting module code from bundle"""
         bundle = VeloBundle(simple_bundle)
         bundle.open()
@@ -111,7 +112,7 @@ class TestVeloBundle:
 
         bundle.close()
 
-    def test_reject_oversized_bundle(self, tmp_path: Path):
+    def test_reject_oversized_bundle(self, tmp_path: Path) -> None:
         """Test 256MB size limit"""
         # Create a fake oversized file (we won't actually write 256MB)
         # This tests the size check logic
@@ -119,7 +120,7 @@ class TestVeloBundle:
 
         assert MAX_BUNDLE_SIZE == 256 * 1024 * 1024
 
-    def test_fallback_for_missing_module(self, simple_bundle: Path):
+    def test_fallback_for_missing_module(self, simple_bundle: Path) -> None:
         """Test that missing modules return None (fallback)"""
         bundle = VeloBundle(simple_bundle)
         bundle.open()
@@ -134,7 +135,7 @@ class TestVeloFinder:
     """Tests for import hook"""
 
     @pytest.fixture
-    def bundle_with_hook(self, tmp_path: Path):
+    def bundle_with_hook(self, tmp_path: Path) -> Any:
         """Create bundle and install hook"""
         # Create project
         (tmp_path / "testpkg").mkdir()
@@ -160,7 +161,7 @@ class TestVeloFinder:
             if mod.startswith("testpkg"):
                 del sys.modules[mod]
 
-    def test_find_spec_for_bundled_module(self, bundle_with_hook):
+    def test_find_spec_for_bundled_module(self, bundle_with_hook: Any) -> None:
         """Test finder returns spec for bundled modules"""
         bundle, finder, _ = bundle_with_hook
 
@@ -168,14 +169,14 @@ class TestVeloFinder:
         assert spec is not None
         assert spec.name == "testpkg.module"
 
-    def test_find_spec_returns_none_for_missing(self, bundle_with_hook):
+    def test_find_spec_returns_none_for_missing(self, bundle_with_hook: Any) -> None:
         """Test finder returns None for non-bundled modules (fallback)"""
         bundle, finder, _ = bundle_with_hook
 
         spec = finder.find_spec("nonexistent_module", None)
         assert spec is None  # Triggers fallback
 
-    def test_import_from_bundle(self, bundle_with_hook):
+    def test_import_from_bundle(self, bundle_with_hook: Any) -> None:
         """Test actual import from bundle"""
         bundle, finder, _ = bundle_with_hook
 
@@ -188,7 +189,7 @@ class TestVeloFinder:
 class TestVeloLoader:
     """Tests for module loading"""
 
-    def test_exec_module_verifies_hash(self, tmp_path: Path):
+    def test_exec_module_verifies_hash(self, tmp_path: Path) -> None:
         """Test that loader verifies BLAKE3 hash"""
         # Create bundle
         builder = VeloBundleBuilder()
@@ -218,7 +219,7 @@ class TestVeloLoader:
 class TestIntegration:
     """Integration tests"""
 
-    def test_full_workflow(self, tmp_path: Path):
+    def test_full_workflow(self, tmp_path: Path) -> None:
         """Test complete build → load → import workflow"""
         # Create project
         (tmp_path / "myapp").mkdir()

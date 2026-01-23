@@ -4,11 +4,12 @@ import struct
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def send_msgpack(conn, data):
+def send_msgpack(conn: socket.socket, data: Any) -> None:
     import msgpack
 
     payload = msgpack.packb(data, use_bin_type=True)
@@ -19,11 +20,11 @@ def send_msgpack(conn, data):
 
 
 class DeletingZygote:
-    def __init__(self, socket_path):
+    def __init__(self, socket_path: Path) -> None:
         self.socket_path = socket_path
         self.stop_event = threading.Event()
 
-    def start(self):
+    def start(self) -> None:
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -32,7 +33,7 @@ class DeletingZygote:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
-    def _run(self):
+    def _run(self) -> None:
         try:
             while not self.stop_event.is_set():
                 self.server.settimeout(0.5)
@@ -54,13 +55,13 @@ class DeletingZygote:
         finally:
             self.server.close()
 
-    def stop(self):
+    def stop(self) -> None:
         self.stop_event.set()
         self.thread.join()
 
 
 @pytest.mark.tier2
-def test_EDGE_621_socket_deleted_mid_handshake(isolated_env):
+def test_EDGE_621_socket_deleted_mid_handshake(isolated_env: Any) -> None:
     """EDGE-621: Verify resilience when socket is deleted mid-handshake.
     RFC-0013 §3.1 / Silent Fallback Invariant.
     """

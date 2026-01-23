@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 
 
-def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> tuple[float, float]:
+def measure_startup_phases(
+    velo_cmd: list[str], env_vars: dict[str, str], cwd: str | None = None
+) -> tuple[float | None, float]:
     start = time.perf_counter()
     proc = subprocess.Popen(
         velo_cmd,
@@ -26,6 +28,8 @@ def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> t
     total_latency = None
 
     try:
+        if proc.stdout is None:
+            return (None, 99999.0)
         while True:
             line = proc.stdout.readline()
             if not line:

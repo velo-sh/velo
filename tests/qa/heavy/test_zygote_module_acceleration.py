@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,9 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, env: dict = None):
+def run_velo(
+    args: list[str], cwd: Path, velo_binary: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     current_env = os.environ.copy()
     if env:
@@ -36,7 +39,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, env: dict = None):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
@@ -47,7 +50,7 @@ class TestZygoteModuleAcceleration:
     Verifies RFC-0030 alignment for Zygote-accelerated module execution.
     """
 
-    def test_module_acceleration_basic(self, velo_binary, tmp_path):
+    def test_module_acceleration_basic(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         Verify that --zygote works for -m module execution.
         """
@@ -103,7 +106,7 @@ print(f"VELO_IS_ZYGOTE: {os.environ.get('VELO_IS_ZYGOTE')}")
         finally:
             stop_zygote(velo_binary, tmp_path)
 
-    def test_module_acceleration_complex_args(self, velo_binary, tmp_path):
+    def test_module_acceleration_complex_args(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         Verify that complex arguments are passed correctly to the module.
         """

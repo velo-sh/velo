@@ -17,6 +17,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -34,7 +35,7 @@ pytestmark = [
 class TestReleaseBlockers:
     """Release Blocker tests from 0011-qa-review.md."""
 
-    def test_BLOCKER_1_zombie_worker_cleanup(self, velo_serve_fixture):
+    def test_BLOCKER_1_zombie_worker_cleanup(self, velo_serve_fixture: Any) -> None:
         """BLOCKER-1: Zombie Workers - No orphan workers after Velo exits.
 
         Source: 0011-qa-review.md Release Blockers
@@ -81,7 +82,7 @@ class TestReleaseBlockers:
             except psutil.NoSuchProcess:
                 pass  # Expected - worker is properly cleaned up
 
-    def test_BLOCKER_2_no_orphan_after_sigkill(self, velo_serve_fixture):
+    def test_BLOCKER_2_no_orphan_after_sigkill(self, velo_serve_fixture: Any) -> None:
         """BLOCKER-1b: Zombie Workers - Handle SIGKILL edge case.
 
         Even if supervisor is SIGKILL'd, workers should eventually exit.
@@ -118,7 +119,7 @@ class TestReleaseBlockers:
                     pass
             pytest.fail(f"Orphan workers detected after SIGKILL: {orphans}")
 
-    def test_BLOCKER_3_log_request_id_correlation(self, velo_serve_fixture):
+    def test_BLOCKER_3_log_request_id_correlation(self, velo_serve_fixture: Any) -> None:
         """BLOCKER-2: Log Mismatch - Rust 500 must have Python Request ID.
 
         Source: 0011-qa-review.md Release Blockers
@@ -155,7 +156,7 @@ class TestReleaseBlockers:
         # Note: Full implementation would verify logs contain matching IDs
         # This requires access to stdout/stderr of the process
 
-    def test_BLOCKER_4_rust_error_has_context(self, velo_serve_fixture):
+    def test_BLOCKER_4_rust_error_has_context(self, velo_serve_fixture: Any) -> None:
         """BLOCKER-2b: Rust 500 errors should have traceable context.
 
         When Rust proxy returns 500, it should include enough context
@@ -180,7 +181,7 @@ class TestReleaseBlockers:
         response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=T_SHORT)
         assert response.status_code == 200, "Server unhealthy after error"
 
-    def test_BLOCKER_5_macos_linux_parity(self, velo_serve_fixture):
+    def test_BLOCKER_5_macos_linux_parity(self, velo_serve_fixture: Any) -> None:
         """BLOCKER-3: Mac/Linux Divergence - dev environment parity.
 
         Source: 0011-qa-review.md Release Blockers
@@ -223,7 +224,7 @@ class TestReleaseBlockers:
         # Make concurrent requests
         import concurrent.futures
 
-        def make_request():
+        def make_request() -> int:
             r = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
             return r.status_code
 

@@ -11,6 +11,7 @@ import ctypes
 import ctypes.util
 import os
 import platform
+from typing import Any
 
 
 def get_memfd_create_syscall_number() -> int:
@@ -41,7 +42,7 @@ def get_memfd_create_syscall_number() -> int:
     return syscall_map.get(machine, -1)
 
 
-def get_libc():
+def get_libc() -> Any:
     """Load libc with errno support."""
     return ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 
@@ -78,10 +79,10 @@ def memfd_create(name: bytes, flags: int) -> int:
     if syscall_nr < 0:
         return -1
 
-    return libc.syscall(syscall_nr, name, flags)
+    return int(libc.syscall(syscall_nr, name, flags))
 
 
-def check_writable_vmas_robust(fd: int) -> tuple:
+def check_writable_vmas_robust(fd: int) -> tuple[bool | None, str]:
     """
     Check /proc/self/maps for writable VMAs pointing to a file.
 

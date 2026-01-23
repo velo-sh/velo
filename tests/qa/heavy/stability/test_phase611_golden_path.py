@@ -13,7 +13,9 @@ import socket
 import struct
 import sys
 import time
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -30,7 +32,7 @@ pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required]
 class TestGoldenPathE2E:
     """E2E tests covering the complete Zygote critical path."""
 
-    def test_GOLD_001_complete_ping_pong_lifecycle(self, velo_serve_fixture):
+    def test_GOLD_001_complete_ping_pong_lifecycle(self, velo_serve_fixture: Any) -> None:
         """GOLD-001: Complete ping-pong request through entire stack.
 
         Critical Path:
@@ -82,7 +84,7 @@ class TestGoldenPathE2E:
 
         # Phase 5: Graceful shutdown verification is handled by fixture
 
-    def test_GOLD_002_load_balancer_round_robin(self, velo_serve_fixture):
+    def test_GOLD_002_load_balancer_round_robin(self, velo_serve_fixture: Any) -> None:
         """GOLD-002: Verify load balancer distributes to multiple workers.
 
         Critical Path:
@@ -122,7 +124,7 @@ class TestGoldenPathE2E:
             f"Expected >= 2 for proper distribution!"
         )
 
-    def test_GOLD_003_header_injection_flow(self, velo_serve_fixture):
+    def test_GOLD_003_header_injection_flow(self, velo_serve_fixture: Any) -> None:
         """GOLD-003: Verify headers flow correctly through proxy.
 
         Critical Path:
@@ -180,7 +182,7 @@ class TestGoldenPathE2E:
         except Exception as e:
             pytest.fail(f"Failed to parse headers response: {e}")
 
-    def test_GOLD_004_graceful_shutdown_no_orphans(self, velo_serve_fixture):
+    def test_GOLD_004_graceful_shutdown_no_orphans(self, velo_serve_fixture: Any) -> None:
         """GOLD-004: Graceful shutdown leaves no orphaned processes.
 
         Critical Path:
@@ -234,7 +236,7 @@ class TestGoldenPathE2E:
 
         assert len(survivors) == 0, f"Orphaned processes after SIGTERM: {survivors}"
 
-    def test_GOLD_005_ipc_protocol_integrity(self, velo_serve_fixture):
+    def test_GOLD_005_ipc_protocol_integrity(self, velo_serve_fixture: Any) -> None:
         """GOLD-005: Verify IPC protocol works correctly.
 
         Critical Path:
@@ -284,7 +286,7 @@ class TestGoldenPathE2E:
             # Verify Ready greeting
             assert msg.get("type") == "Ready", f"Expected Ready, got {msg}"
 
-    def test_GOLD_006_worker_crash_recovery(self, velo_serve_fixture):
+    def test_GOLD_006_worker_crash_recovery(self, velo_serve_fixture: Any) -> None:
         """GOLD-006: Verify worker self-healing after crash.
 
         Critical Path:
@@ -333,7 +335,7 @@ class TestGoldenPathE2E:
         # New workers should exist (may or may not include dead one)
         assert len(new_workers) >= 1, "No workers after recovery"
 
-    def test_GOLD_007_concurrent_request_storm(self, velo_serve_fixture):
+    def test_GOLD_007_concurrent_request_storm(self, velo_serve_fixture: Any) -> None:
         """GOLD-007: Verify stability under concurrent load.
 
         Critical Path:
@@ -369,7 +371,7 @@ class TestGoldenPathE2E:
 
         assert success_rate >= min_threshold, f"Success rate {success_rate:.1f}% below {min_threshold}% threshold"
 
-    def test_GOLD_008_zygote_mode_verification_via_whoami(self, velo_serve_fixture):
+    def test_GOLD_008_zygote_mode_verification_via_whoami(self, velo_serve_fixture: Any) -> None:
         """GOLD-008: Verify we're ACTUALLY running in Zygote mode, not fallback.
 
         Critical Path:
@@ -406,7 +408,7 @@ class TestGoldenPathE2E:
             f"This proves we're in FALLBACK MODE, not Zygote mode!"
         )
 
-    def test_GOLD_009_hello_fastapi_complete_response(self, velo_serve_fixture):
+    def test_GOLD_009_hello_fastapi_complete_response(self, velo_serve_fixture: Any) -> None:
         """GOLD-009: Verify complete FastAPI response through entire stack.
 
         Critical Path:
@@ -444,7 +446,7 @@ class TestGoldenPathE2E:
 
         print("✅ All FastAPI endpoints working correctly!")
 
-    def test_GOLD_010_zygote_socket_existence(self, velo_serve_fixture):
+    def test_GOLD_010_zygote_socket_existence(self, velo_serve_fixture: Any) -> None:
         """GOLD-010: Verify Zygote UDS socket exists and is accessible.
 
         This proves the IPC channel between Rust supervisor and Python Zygote
@@ -478,7 +480,7 @@ class TestGoldenPathE2E:
 
         print(f"✅ Zygote socket exists at: {socket_path}")
 
-    def test_GOLD_011_zygote_vs_fallback_detection(self, velo_serve_fixture):
+    def test_GOLD_011_zygote_vs_fallback_detection(self, velo_serve_fixture: Any) -> None:
         """GOLD-011: Comprehensive Zygote vs Fallback mode detection.
 
         If ANY of these conditions is false, we're in fallback mode:
@@ -550,7 +552,7 @@ class TestGoldenPathE2E:
 class TestGoldenPathDemonCatching:
     """E2E tests designed to catch hidden bugs ("demons") in the request path."""
 
-    def test_GOLD_012_post_body_through_proxy(self, velo_serve_fixture):
+    def test_GOLD_012_post_body_through_proxy(self, velo_serve_fixture: Any) -> None:
         """GOLD-012: POST request body flows correctly through L7 Proxy.
 
         Demon: Request body corruption or loss through proxy.
@@ -571,7 +573,7 @@ class TestGoldenPathDemonCatching:
         print(f"✅ POST body correctly echoed by worker {data.get('worker_pid')}")
 
     @pytest.mark.parametrize("rsgi_mode", [True, False])
-    def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture, rsgi_mode):
+    def test_GOLD_013_asgi_scope_client_ip(self, velo_serve_fixture: Any, rsgi_mode: bool) -> None:
         """GOLD-013: ASGI scope["client"] is correctly populated.
 
         Demon: Proxy strips client IP, leaving scope["client"] as None or wrong.
@@ -603,7 +605,7 @@ class TestGoldenPathDemonCatching:
         # client_host should have something (either 127.0.0.1 or from X-Forwarded-For)
         assert client_info.get("client_host"), "request.client.host is empty - client IP lost through proxy!"
 
-    def test_GOLD_014_async_concurrent_handling(self, velo_serve_fixture):
+    def test_GOLD_014_async_concurrent_handling(self, velo_serve_fixture: Any) -> None:
         """GOLD-014: Async requests are handled concurrently, not sequentially.
 
         Demon: Event loop blocking causes sequential request handling.
@@ -640,7 +642,7 @@ class TestGoldenPathDemonCatching:
         # Total time should be much less than 10 * 0.1s = 1.0s
         assert elapsed < 0.8, f"Took {elapsed:.2f}s for 10 concurrent requests - possible sequential processing!"
 
-    def test_GOLD_015_error_response_flow(self, velo_serve_fixture):
+    def test_GOLD_015_error_response_flow(self, velo_serve_fixture: Any) -> None:
         """GOLD-015: Error responses flow correctly through proxy.
 
         Demon: Proxy swallows error details or returns wrong status codes.
@@ -664,7 +666,7 @@ class TestGoldenPathDemonCatching:
 
         print("✅ All error codes correctly flow through proxy")
 
-    def test_GOLD_016_large_response_buffering(self, velo_serve_fixture):
+    def test_GOLD_016_large_response_buffering(self, velo_serve_fixture: Any) -> None:
         """GOLD-016: Large responses are buffered correctly.
 
         Demon: Proxy corrupts or truncates large responses.
@@ -691,7 +693,7 @@ class TestGoldenPathDemonCatching:
             f"Response truncated or corrupted: {received_size} vs {expected_size}"
         )
 
-    def test_GOLD_017_timeout_enforcement(self, velo_serve_fixture):
+    def test_GOLD_017_timeout_enforcement(self, velo_serve_fixture: Any) -> None:
         """GOLD-017: Proxy enforces timeouts on slow workers.
 
         Demon: Slow requests hang forever (DoS risk).
@@ -708,7 +710,7 @@ class TestGoldenPathDemonCatching:
 
         print(f"✅ Slow request handled correctly in {duration:.2f}s")
 
-    def test_GOLD_018_chunked_request_handling(self, velo_serve_fixture):
+    def test_GOLD_018_chunked_request_handling(self, velo_serve_fixture: Any) -> None:
         """GOLD-018: Proxy handles chunked transfer encoding correctly.
 
         Demon: Proxy fails to handle streaming/chunked uploads.
@@ -716,7 +718,7 @@ class TestGoldenPathDemonCatching:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        def generate_chunks():
+        def generate_chunks() -> Generator[bytes, None, None]:
             # Send valid JSON split across chunks
             yield b'{"message": '
             yield b'"chunked_world", '
@@ -742,7 +744,7 @@ class TestGoldenPathDemonCatching:
 class TestGoldenPathSecurity:
     """Security-focused E2E tests."""
 
-    def test_GOLD_SEC_001_socket_permissions(self, velo_serve_fixture):
+    def test_GOLD_SEC_001_socket_permissions(self, velo_serve_fixture: Any) -> None:
         """GOLD-SEC-001: UDS socket has restrictive permissions.
 
         Validates:
@@ -766,7 +768,7 @@ class TestGoldenPathSecurity:
         # Should be 0700 (owner rwx only)
         assert (dir_mode & 0o077) == 0, f"Socket dir {sock_dir} permissions {oct(dir_mode)} allow group/world access"
 
-    def test_GOLD_SEC_002_no_fd_leak(self, velo_serve_fixture):
+    def test_GOLD_SEC_002_no_fd_leak(self, velo_serve_fixture: Any) -> None:
         """GOLD-SEC-002: Workers don't leak file descriptors.
 
         Validates:

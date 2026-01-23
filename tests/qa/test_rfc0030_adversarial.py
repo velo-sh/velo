@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     project_root = Path(__file__).parent.parent.parent
     for build in ["debug", "release"]:
         binary = project_root / "target" / build / "velo"
@@ -76,6 +76,7 @@ class TestRFC0030Adversarial:
 
         # Wait for "STARTED"
         start_time = time.time()
+        assert proc.stdout is not None
         while "STARTED" not in proc.stdout.readline():
             if time.time() - start_time > 5:
                 proc.kill()

@@ -24,7 +24,7 @@ class TestCoreFunctionality:
 
     @pytest.mark.tier0
     @pytest.mark.shm
-    def test_L0_SHM_01_rss_footprint_verification(self, shm_test_env: VeloTestEnv):
+    def test_L0_SHM_01_rss_footprint_verification(self, shm_test_env: VeloTestEnv) -> None:
         """
         L0-SHM-01: Verify RSS footprint of N workers is NOT N × Model_Size.
 
@@ -134,7 +134,7 @@ if __name__ == "__main__":
 
     @pytest.mark.tier1
     @pytest.mark.shm
-    def test_L1_SHM_02_cold_start_benchmark(self, shm_test_env: VeloTestEnv):
+    def test_L1_SHM_02_cold_start_benchmark(self, shm_test_env: VeloTestEnv) -> None:
         """
         L1-SHM-02: Verify cold-start time is sub-50ms for SHM attachment.
 
@@ -223,7 +223,7 @@ class TestCoreValidation:
 
     @pytest.mark.tier0
     @pytest.mark.shm
-    def test_L0_offset_validation_bounds_check(self, shm_test_env: VeloTestEnv):
+    def test_L0_offset_validation_bounds_check(self, shm_test_env: VeloTestEnv) -> None:
         """
         Verify that offset validation prevents out-of-bounds access.
 
@@ -315,7 +315,7 @@ class TestIntegration:
 
     @pytest.mark.integration
     @pytest.mark.shm
-    def test_velo_analyze_shm_flag(self, shm_test_env: VeloTestEnv):
+    def test_velo_analyze_shm_flag(self, shm_test_env: VeloTestEnv) -> None:
         """
         Integration test: Verify velo analyze --shm command works.
 

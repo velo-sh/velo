@@ -30,7 +30,20 @@ def find_free_port() -> int:
     """Find a free port for testing."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
+
+
+def wait_for_port(port: int, timeout: float = 10.0) -> int:
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.connect(("127.0.0.1", port))
+                return 0
+        except (TimeoutError, ConnectionError):
+            time.sleep(0.5)
+    return -1
 
 
 class TestE2EServe(unittest.TestCase):
@@ -68,7 +81,7 @@ class TestE2EServe(unittest.TestCase):
                     proc.kill()
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def _create_fastapi_app(self):
+    async def _create_fastapi_app(self) -> Path:
         """Create a minimal FastAPI app for testing."""
         app_dir = Path(self.test_dir)
         main_py = app_dir / "main.py"

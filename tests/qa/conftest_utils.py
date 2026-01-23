@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +105,7 @@ def get_process_rss_kb(pid: int) -> int:
     return 0
 
 
-def get_cow_stats(pid: int) -> dict:
+def get_cow_stats(pid: int) -> dict[str, Any]:
     """Get COW (Copy-on-Write) memory stats for a process.
 
     On Linux: Uses PSS from /proc/[pid]/smaps
@@ -142,7 +143,7 @@ def get_cow_stats(pid: int) -> dict:
                         parts = line.split()
 
                         # Parse size values (e.g., "87.0M", "1456K")
-                        def parse_size(s):
+                        def parse_size(s: str) -> int:
                             s = s.strip()
                             if s.endswith("G"):
                                 return int(float(s[:-1]) * 1024 * 1024)
@@ -316,6 +317,16 @@ def get_repo_root() -> Path:
 
 
 class VeloTestEnv:
+    root: Path
+    tmp: Path
+    home: Path
+    xdg: Path
+    venv: Path
+    bin_dir: Path
+    velo: str
+    env: dict[str, str]
+    path: Path
+
     def __init__(self, root: Path, source_binary: str):
         self.root = root
         self.tmp = root / "tmp"
@@ -374,7 +385,7 @@ class VeloTestEnv:
         self.path = self.root
 
     @contextlib.contextmanager
-    def env_vars(self, vars: dict):
+    def env_vars(self, vars: dict[str, str]) -> Generator["VeloTestEnv", None, None]:
         """Temporarily update environment variables."""
         old_env = self.env.copy()
         self.env.update(vars)
@@ -383,7 +394,7 @@ class VeloTestEnv:
         finally:
             self.env = old_env
 
-    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+    def run_velo(self, *args: str, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
@@ -403,7 +414,7 @@ class VeloTestEnv:
             **kwargs,
         )
 
-    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
+    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen[str]:
         env = self.env.copy()
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
@@ -411,7 +422,7 @@ class VeloTestEnv:
             kwargs["text"] = True
         return subprocess.Popen([self.velo, *args], env=env, cwd=kwargs.pop("cwd", self.root), **kwargs)
 
-    def install(self, *packages: str):
+    def install(self, *packages: str) -> subprocess.CompletedProcess[bytes]:
         """Install packages into the isolated environment."""
         # RFC-0012: Ensure we use the isolated venv's pip or just pip in the current env
         # Since we set PATH to include current_venv/bin, 'pip' should be correct.
@@ -431,4 +442,5 @@ class VeloTestEnv:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
-            return s.getsockname()[1]
+            port = s.getsockname()[1]
+            return int(port)

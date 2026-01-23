@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -63,7 +64,7 @@ class RealProject:
         self.velo = get_velo_binary()
         self._setup_done = False
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "RealProject":
         """Create pyproject.toml with real dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -77,12 +78,12 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "RealProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         return self
 
-    def setup(self, timeout: float = 120):
+    def setup(self, timeout: float = 120) -> "RealProject":
         """Run uv sync to install REAL dependencies (slow!)."""
         if self._setup_done:
             return self
@@ -99,7 +100,7 @@ dev-dependencies = []
         self._setup_done = True
         return self
 
-    def analyze(self, *args, timeout: float = 60) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
         """Run velo analyze."""
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
@@ -109,14 +110,14 @@ dev-dependencies = []
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "RealProject":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

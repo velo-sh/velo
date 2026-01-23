@@ -223,7 +223,7 @@ class TestReleaseBlockers:
         # Make concurrent requests
         import concurrent.futures
 
-        def make_request():
+        def make_request() -> int:
             r = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
             return r.status_code
 

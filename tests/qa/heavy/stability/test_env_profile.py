@@ -143,7 +143,7 @@ class TestEnvProfilePriority:
     Each test spawns a Python subprocess with specific env vars.
     """
 
-    def _run_detect(self, env_vars: dict) -> str:
+    def _run_detect(self, env_vars: dict[str, str]) -> str:
         """Run EnvProfile.detect() in subprocess and return run_context name."""
         import subprocess
         import sys

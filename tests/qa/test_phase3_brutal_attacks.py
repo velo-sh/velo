@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,7 +24,7 @@ import pytest
 from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
@@ -34,16 +35,18 @@ def get_velo_binary():
 class AttackEnv:
     """Environment for attack testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="attack_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> AttackEnv:
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def run(self, args, timeout=None, env=None):
+    def run(
+        self, args: list[str], timeout: float | None = None, env: dict[str, str] | None = None
+    ) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
 
@@ -66,10 +69,10 @@ class AttackEnv:
         except subprocess.TimeoutExpired:
             return -1, "", "TIMEOUT"
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         # Kill any leftover Velo processes safely (Exact match only)
         subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
@@ -77,10 +80,10 @@ class AttackEnv:
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> AttackEnv:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

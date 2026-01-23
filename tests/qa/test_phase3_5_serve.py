@@ -9,11 +9,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -79,11 +80,11 @@ class TestServeHelpAndValidation:
 class FastAPITestEnv:
     """Test environment with FastAPI app."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_serve_test_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "FastAPITestEnv":
         # Create virtual environment
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
         # Install fastapi and uvicorn
@@ -115,7 +116,7 @@ def health():
         )
         return self
 
-    def run_serve(self, args: list, timeout: float = 5) -> tuple:
+    def run_serve(self, args: list[str], timeout: float = 5) -> subprocess.Popen[str]:
         """Start velo serve and return process."""
         proc = subprocess.Popen(
             [self.velo, "serve"] + args,
@@ -126,16 +127,16 @@ def health():
         )
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "FastAPITestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

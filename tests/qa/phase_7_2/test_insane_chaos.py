@@ -45,10 +45,10 @@ class ChaosTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"chaos_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "ChaosTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -61,15 +61,17 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "ChaosTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "ChaosTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, workers: int = 2, extra_args: list = None):
+    def start_server(
+        self, app_module: str, workers: int = 2, extra_args: list[str] | None = None
+    ) -> "ChaosTestProject":
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -104,13 +106,17 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
     @property
     def pid(self) -> int:
-        return self._proc.pid if self._proc else None
+        if self._proc is None or self._proc.pid is None:
+            raise ValueError("Server not started")
+        return self._proc.pid
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -453,7 +459,7 @@ class TestConcurrencyChaos:
 
             payload = "A" * 65536
 
-            def make_req():
+            def make_req() -> int:
                 try:
                     r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10)
                     return r.status_code
@@ -573,7 +579,7 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             p.install_deps().start_server("main:app", workers=32)
 
-            def req():
+            def req() -> int:
                 try:
                     return requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code
                 except:

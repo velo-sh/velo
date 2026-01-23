@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,7 +21,7 @@ import pytest
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -264,15 +265,15 @@ class EdgeTestEnv:
         self.path = Path(tempfile.mkdtemp(prefix="velo_edge_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "EdgeTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
         result = subprocess.run(
@@ -284,16 +285,16 @@ class EdgeTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "EdgeTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

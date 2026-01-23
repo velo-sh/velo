@@ -15,19 +15,19 @@ from conftest_utils import T_LONG, get_velo_binary
 class RealUserEnv:
     """Simulates a REAL user project directory."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="user_project_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "RealUserEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 30) -> tuple[int, str, str]:
         result = subprocess.run(
             [self.velo] + args,
             cwd=self.path,
@@ -37,13 +37,13 @@ class RealUserEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "RealUserEnv":
         return self.setup()
 
     def __exit__(self, *args):

@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -70,7 +71,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -87,7 +88,7 @@ def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     output_path = cache_dir / "bundle.veloc"
-    return build_from_project(project_dir, output_path)
+    return build_from_project(project_dir, output_path)  # type: ignore[no-any-return]
 
 
 # === L0 Smoke Tests ===
@@ -102,7 +103,7 @@ class TestL0Smoke:
     """
 
     @pytest.mark.smoke
-    def test_smoke_001_bundle_creation(self, simple_project):
+    def test_smoke_001_bundle_creation(self, simple_project: Any) -> None:
         """
         SMOKE-001: Bundle creation works
 
@@ -120,10 +121,10 @@ class TestL0Smoke:
         # Check magic bytes
         with open(bundle_path, "rb") as f:
             magic = f.read(4)
-        assert magic == b"VELO", f"Invalid magic: {magic}"
+        assert magic == b"VELO", f"Invalid magic: {magic!r}"
 
     @pytest.mark.smoke
-    def test_smoke_002_velo_run_fast_boots(self, simple_project, velo_binary):
+    def test_smoke_002_velo_run_fast_boots(self, simple_project: Any, velo_binary: str) -> None:
         """
         SMOKE-002: velo run --fast boots
 
@@ -142,7 +143,7 @@ class TestL0Smoke:
         assert "Hello from Fast Loader!" in result.stdout, "Expected output not found"
 
     @pytest.mark.smoke
-    def test_smoke_003_basic_import_works(self, simple_project, velo_binary):
+    def test_smoke_003_basic_import_works(self, simple_project: Any, velo_binary: str) -> None:
         """
         SMOKE-003: Basic import works
 
@@ -171,7 +172,7 @@ class TestL0PerformanceBaseline:
     """
 
     @pytest.mark.smoke
-    def test_no_performance_regression(self, simple_project, velo_binary):
+    def test_no_performance_regression(self, simple_project: Any, velo_binary: str) -> None:
         """
         Verify --fast is not slower than regular run.
 

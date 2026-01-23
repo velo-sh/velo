@@ -22,7 +22,7 @@ from conftest_utils import VeloTestEnv
 # SCENARIO 1: Split-Brain Syndrome
 # =============================================================================
 @pytest.mark.tier3
-def test_CHAOS_split_brain_resource_collision(isolated_env: VeloTestEnv):
+def test_CHAOS_split_brain_resource_collision(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Two Vibe instances competing for the same resources.
     If two terminals run `vibe` on the same project, do they clash?
@@ -39,7 +39,7 @@ def test_CHAOS_split_brain_resource_collision(isolated_env: VeloTestEnv):
     process2 = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port2)})
     time.sleep(2)
 
-    async def check_split_brain():
+    async def check_split_brain() -> None:
         # Both should be listening
         uri1 = f"ws://127.0.0.1:{port1}"
         uri2 = f"ws://127.0.0.1:{port2}"
@@ -74,7 +74,7 @@ def test_CHAOS_split_brain_resource_collision(isolated_env: VeloTestEnv):
 # SCENARIO 2: Time-Traveler's Paradox
 # =============================================================================
 @pytest.mark.tier3
-def test_CHAOS_time_traveler_monotonicity(isolated_env: VeloTestEnv):
+def test_CHAOS_time_traveler_monotonicity(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Are timestamps monotonically increasing across rapid forks?
     If forks happen too fast, `time.time()` might return identical values.
@@ -89,7 +89,7 @@ print(f"TIMESTAMP={time.time_ns()}")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_monotonicity():
+    async def check_monotonicity() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             timestamps = []
@@ -126,7 +126,7 @@ print(f"TIMESTAMP={time.time_ns()}")
 # SCENARIO 3: Death Spiral
 # =============================================================================
 @pytest.mark.tier3
-def test_CHAOS_death_spiral_blocking_code(isolated_env: VeloTestEnv):
+def test_CHAOS_death_spiral_blocking_code(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Code with blocking `input()` or infinite loop.
     Vibe must be able to kill the old worker and spawn a new one.
@@ -139,7 +139,7 @@ def test_CHAOS_death_spiral_blocking_code(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_death_spiral():
+    async def check_death_spiral() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # The first execution will block on input()
@@ -171,7 +171,7 @@ def test_CHAOS_death_spiral_blocking_code(isolated_env: VeloTestEnv):
 # SCENARIO 4: Shared State Corruption (SQLite)
 # =============================================================================
 @pytest.mark.tier3
-def test_CHAOS_shared_state_sqlite_corruption(isolated_env: VeloTestEnv):
+def test_CHAOS_shared_state_sqlite_corruption(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: SQLite database integrity across rapid forks.
     Does Vibe handle database connections correctly after fork?
@@ -198,7 +198,7 @@ print("Inserted")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_sqlite():
+    async def check_sqlite() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Trigger 3 saves
@@ -233,7 +233,7 @@ print("Inserted")
 # SCENARIO 5: Cryptographic Staleness
 # =============================================================================
 @pytest.mark.tier3
-def test_CHAOS_crypto_staleness_rng_divergence(isolated_env: VeloTestEnv):
+def test_CHAOS_crypto_staleness_rng_divergence(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: RNG state after fork.
     Each forked process should have independent random state.
@@ -248,7 +248,7 @@ print(f"TOKEN={secrets.token_hex(16)}")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_rng():
+    async def check_rng() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             tokens = []
@@ -283,7 +283,7 @@ print(f"TOKEN={secrets.token_hex(16)}")
 # =============================================================================
 @pytest.mark.tier3
 @pytest.mark.skip(reason="Requires CUDA hardware. Run manually on GPU machines.")
-def test_CHAOS_gpu_context_orphaning(isolated_env: VeloTestEnv):
+def test_CHAOS_gpu_context_orphaning(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: GPU CUDA context after fork.
     This test is skipped by default as it requires GPU hardware.
@@ -300,7 +300,7 @@ print(f"GPU Tensor: {x}")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_gpu():
+    async def check_gpu() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=10.0)

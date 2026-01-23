@@ -3,6 +3,7 @@
 # This is the CORRECTNESS gate - performance is secondary.
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -89,7 +90,7 @@ FRAMEWORK_PROJECTS = {
 class TestE2EGoldenPath:
     """E2E Correctness Suite: Verify complete user workflow for Big Three frameworks."""
 
-    def setup_project(self, env, project_config):
+    def setup_project(self, env: Any, project_config: dict[str, Any]) -> None:
         """Setup a real project structure with dependencies."""
         env.install(*project_config["deps"])
         for filename, content in project_config["files"].items():
@@ -100,7 +101,7 @@ class TestE2EGoldenPath:
             env.create_app(filename, content)
 
     @pytest.mark.parametrize("framework", ["fastapi", "flask", "django"])
-    def test_GOLD_001_triad_full_cycle(self, isolated_env, framework):
+    def test_GOLD_001_triad_full_cycle(self, isolated_env: Any, framework: str) -> None:
         """GOLD-001: Full E2E cycle for each framework."""
         env = isolated_env
         project = FRAMEWORK_PROJECTS[framework]
@@ -130,7 +131,7 @@ class TestE2EGoldenPath:
         assert run_result.returncode == 0, f"Non-zero exit for {framework}: {run_result.returncode}"
 
     @pytest.mark.parametrize("framework", ["fastapi", "flask", "django"])
-    def test_GOLD_002_rebuild_idempotency(self, isolated_env, framework):
+    def test_GOLD_002_rebuild_idempotency(self, isolated_env: Any, framework: str) -> None:
         """GOLD-002: Rebuilding produces identical behavior."""
         env = isolated_env
         project = FRAMEWORK_PROJECTS[framework]
@@ -149,7 +150,7 @@ class TestE2EGoldenPath:
         )
 
     @pytest.mark.parametrize("framework", ["fastapi", "flask", "django"])
-    def test_GOLD_003_no_bundle_fallback(self, isolated_env, framework):
+    def test_GOLD_003_no_bundle_fallback(self, isolated_env: Any, framework: str) -> None:
         """GOLD-003: Without bundle, velo run still works (fallback to CPython)."""
         env = isolated_env
         project = FRAMEWORK_PROJECTS[framework]

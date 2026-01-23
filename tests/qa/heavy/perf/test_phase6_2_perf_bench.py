@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 
 
-def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> tuple[float, float]:
+def measure_startup_phases(
+    velo_cmd: list[str], env_vars: dict[str, str], cwd: str | None = None
+) -> tuple[float | None, float]:
     start = time.perf_counter()
     proc = subprocess.Popen(
         velo_cmd,
@@ -38,7 +40,10 @@ def measure_startup_phases(velo_cmd: list, env_vars: dict, cwd: str = None) -> t
                     raise TimeoutError("Server failed to start (total timeout)")
                 continue
 
-            line = proc.stdout.readline()
+            if pid_output := proc.stdout:
+                line = pid_output.readline()
+            else:
+                break
             if not line:
                 break
 

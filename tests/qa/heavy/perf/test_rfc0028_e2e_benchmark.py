@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 
-def create_heavy_test_suite(directory: Path, count: int):
+def create_heavy_test_suite(directory: Path, count: int) -> None:
     """Create test files that 'import' a heavy module."""
     directory.mkdir(parents=True, exist_ok=True)
     for i in range(count):

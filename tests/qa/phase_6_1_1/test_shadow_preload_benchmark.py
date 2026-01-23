@@ -14,13 +14,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def find_socket_path():
+def find_socket_path() -> str:
     """Find the Zygote socket path."""
     import hashlib
 
@@ -46,7 +47,7 @@ def wait_for_socket(socket_path: str, timeout: float = 10.0) -> float:
     raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s")
 
 
-def send_handshake(socket_path: str) -> dict:
+def send_handshake(socket_path: str) -> dict[str, Any]:
     """Send handshake and return response with preload state."""
     import msgpack
 
@@ -71,7 +72,7 @@ def send_handshake(socket_path: str) -> dict:
         data = s.recv(length)
         response = msgpack.unpackb(data, raw=False)
 
-        return response
+        return dict(response)
 
 
 def wait_for_preload_ready(socket_path: str, timeout: float = 30.0) -> float:
@@ -90,7 +91,7 @@ def wait_for_preload_ready(socket_path: str, timeout: float = 30.0) -> float:
     raise TimeoutError(f"Preload not ready after {timeout}s")
 
 
-def measure_preload_time(modules):
+def measure_preload_time(modules: list[str]) -> float:
     """Measure actual preload time for comparison."""
     import importlib
 
@@ -103,7 +104,7 @@ def measure_preload_time(modules):
     return time.perf_counter() - start
 
 
-def run_benchmark():
+def run_benchmark() -> None:
     """Run the Shadow Preloading benchmark."""
     print("=" * 60)
     print("Shadow Preloading Performance Benchmark")

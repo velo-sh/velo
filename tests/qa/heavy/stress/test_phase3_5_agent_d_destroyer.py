@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -39,7 +40,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -54,22 +55,22 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
 class DestroyerTestEnv:
     """Test environment for destroyer tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_destroy_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
 
-    def setup(self):
+    def setup(self) -> DestroyerTestEnv:
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> Path:
         script_path = self.path / name
         script_path.write_text(content)
         return script_path
 
-    def start_serve(self, app: str, port: int, **kwargs) -> subprocess.Popen:
+    def start_serve(self, app: str, port: int, **kwargs: Any) -> subprocess.Popen[str]:
         """Start serve and track the process."""
         cmd = [self.velo, "serve", app, "--port", str(port)]
         for k, v in kwargs.items():
@@ -85,7 +86,7 @@ class DestroyerTestEnv:
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
@@ -97,10 +98,10 @@ class DestroyerTestEnv:
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> DestroyerTestEnv:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.cleanup()
 
 
@@ -112,7 +113,7 @@ class DestroyerTestEnv:
 class TestActualFunctionality:
     """FUNC-xxx: Does the serve command ACTUALLY work?"""
 
-    def test_func_001_serve_actually_starts_server(self):
+    def test_func_001_serve_actually_starts_server(self) -> None:
         """FUNC-001: Does serve actually start a server?
 
         This is THE fundamental test. If this fails, nothing else matters.
@@ -164,7 +165,7 @@ def health():
             except requests.exceptions.RequestException as e:
                 pytest.fail(f"Could not connect to server: {e}")
 
-    def test_func_002_serve_respects_port_option(self):
+    def test_func_002_serve_respects_port_option(self) -> None:
         """FUNC-002: Does --port actually change the port?"""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -202,7 +203,7 @@ def root():
                 else:
                     pytest.skip("velo serve not fully implemented yet")
 
-    def test_func_003_serve_workers_option(self):
+    def test_func_003_serve_workers_option(self) -> None:
         """FUNC-003: Does --workers actually spawn multiple workers?"""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -254,7 +255,7 @@ def get_pid():
 class TestErrorRecovery:
     """ERR-REC-xxx: Does error recovery actually work?"""
 
-    def test_err_rec_001_invalid_module_clear_error(self):
+    def test_err_rec_001_invalid_module_clear_error(self) -> None:
         """ERR-REC-001: Invalid module gives clear, actionable error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -275,7 +276,7 @@ class TestErrorRecovery:
         # Should mention what was wrong
         assert "module" in error or "app" in error or "nonexistent" in error
 
-    def test_err_rec_002_app_crash_on_startup(self):
+    def test_err_rec_002_app_crash_on_startup(self) -> None:
         """ERR-REC-002: App that crashes on import should give clear error."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -294,7 +295,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
                 proc.terminate()
                 pytest.fail("Process should have exited after import crash")
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention the crash, or uvicorn dependency
             assert (
                 "INTENTIONAL CRASH" in stderr
@@ -303,7 +304,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
                 or "uvicorn" in stderr.lower()
             )
 
-    def test_err_rec_003_missing_app_attribute(self):
+    def test_err_rec_003_missing_app_attribute(self) -> None:
         """ERR-REC-003: Module exists but 'app' doesn't - clear error."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -321,7 +322,7 @@ y = 2
             if proc.poll() is None:
                 proc.terminate()
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention that 'app' was not found
             assert "app" in stderr.lower() or "attribute" in stderr.lower() or "error" in stderr.lower()
 
@@ -329,7 +330,7 @@ y = 2
 class TestPromisedFeatures:
     """PROMISE-xxx: Test features promised in --help."""
 
-    def test_promise_001_help_mentions_port(self):
+    def test_promise_001_help_mentions_port(self) -> None:
         """PROMISE-001: --help should mention --port option."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_SHORT)
@@ -337,7 +338,7 @@ class TestPromisedFeatures:
         # PORT should be documented
         assert "port" in result.stdout.lower() or "PORT" in result.stdout
 
-    def test_promise_002_help_mentions_workers(self):
+    def test_promise_002_help_mentions_workers(self) -> None:
         """PROMISE-002: --help should mention --workers option."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_SHORT)
@@ -345,7 +346,7 @@ class TestPromisedFeatures:
         # WORKERS should be documented
         assert "worker" in result.stdout.lower()
 
-    def test_promise_003_serve_help_works(self):
+    def test_promise_003_serve_help_works(self) -> None:
         """PROMISE-003: velo serve --help should work.
 
         BUG DEF-3.5-001: Currently fails!
@@ -371,7 +372,7 @@ class TestPromisedFeatures:
 class TestSignalHandling:
     """SIG-REAL-xxx: Does signal handling ACTUALLY work?"""
 
-    def test_sig_real_001_sigterm_graceful_shutdown(self):
+    def test_sig_real_001_sigterm_graceful_shutdown(self) -> None:
         """SIG-REAL-001: SIGTERM should cause graceful shutdown."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -420,7 +421,7 @@ def cleanup():
             if shutdown_file.exists():
                 assert shutdown_file.read_text() == "shutdown was graceful"
 
-    def test_sig_real_002_sigint_shutdown(self):
+    def test_sig_real_002_sigint_shutdown(self) -> None:
         """SIG-REAL-002: SIGINT (Ctrl+C) should shut down cleanly."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -460,7 +461,7 @@ def root():
 class TestZygoteIntegration:
     """ZYGOTE-xxx: Is Zygote actually being used?"""
 
-    def test_zygote_001_warm_start_faster(self):
+    def test_zygote_001_warm_start_faster(self) -> None:
         """ZYGOTE-001: Second request should be faster than first (Zygote benefit)."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -516,7 +517,7 @@ def timing():
 class TestFrameworkDetection:
     """FW-DET-xxx: Framework detection functional tests."""
 
-    def test_fw_det_001_fastapi_detected(self):
+    def test_fw_det_001_fastapi_detected(self) -> None:
         """FW-DET-001: FastAPI should be auto-detected."""
         with DestroyerTestEnv() as env:
             env.create_script(
@@ -551,7 +552,7 @@ def framework():
                 if "not implemented" in stderr.lower():
                     pytest.skip("Framework detection not implemented yet")
 
-    def test_fw_det_002_flask_detected(self):
+    def test_fw_det_002_flask_detected(self) -> None:
         """FW-DET-002: Flask should be auto-detected."""
         with DestroyerTestEnv() as env:
             env.create_script(

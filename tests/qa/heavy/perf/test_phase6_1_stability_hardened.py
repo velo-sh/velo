@@ -3,6 +3,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import IO, Any
 
 import psutil
 import pytest
@@ -22,7 +23,7 @@ def scaled_timeout(base: float) -> float:
 
 @pytest.mark.tier1
 class TestPhase61StabilityHardened:
-    def test_stab_rs_003_raii_cleanup(self, isolated_env):
+    def test_stab_rs_003_raii_cleanup(self, isolated_env: Any) -> None:
         """
         RS-P0-003: RAII Child Cleanup (Drop)
         Goal: Verify child process is killed when parent exits/panics.
@@ -80,7 +81,7 @@ class TestPhase61StabilityHardened:
         time.sleep(2)
         assert not psutil.pid_exists(child_pid)
 
-    def _read_with_timeout(self, stream, timeout=5):
+    def _read_with_timeout(self, stream: IO[str], timeout: float = 5) -> str | None:
         import select
 
         start_time = time.time()
@@ -92,7 +93,7 @@ class TestPhase61StabilityHardened:
                     return line
         return None
 
-    def _read_until(self, stream, pattern, timeout=15) -> str:
+    def _read_until(self, stream: IO[str], pattern: str, timeout: float = 15) -> str:
         import select
 
         output = ""
@@ -108,7 +109,7 @@ class TestPhase61StabilityHardened:
                     return output
         return output
 
-    def test_stab_rs_002_watcher_debounce(self, isolated_env):
+    def test_stab_rs_002_watcher_debounce(self, isolated_env: Any) -> None:
         """
         ENG-P0-002: 300ms Watcher Debounce
         Goal: Rapid file events should trigger only one restart.
@@ -159,7 +160,7 @@ class TestPhase61StabilityHardened:
         os.environ.get("GITHUB_ACTIONS") == "true",
         reason="File watcher on CI may use poll mode without inotify support",
     )
-    def test_stab_rs_002_starvation_vulnerability(self, isolated_env):
+    def test_stab_rs_002_starvation_vulnerability(self, isolated_env: Any) -> None:
         """
         A-EDGE-6.1-001: Debouncer Starvation (Agent A Finding)
         Requirement: Debouncer MUST have a hard-cap (e.g. 2s) to prevent starvation.
@@ -216,7 +217,7 @@ class TestPhase61StabilityHardened:
             f"Vulnerability Detected: Debouncer Starvation (restart never triggered during continuous events).\nFull Trace: {prefix}\nNew Logs: {output}"
         )
 
-    def test_stab_deadlock_pipe_saturation(self, isolated_env):
+    def test_stab_deadlock_pipe_saturation(self, isolated_env: Any) -> None:
         """
         B-STAB-6.1-001: Subprocess Pipe Deadlock
         Goal: Parent MUST NOT deadlock when child produces massive output.
@@ -239,7 +240,7 @@ class TestPhase61StabilityHardened:
         or (Path("/proc/1/cgroup").exists() and "docker" in Path("/proc/1/cgroup").read_text()),
         reason="Signal forwarding timing is unreliable in containerized environments",
     )
-    def test_stab_cn_002_sigterm_forwarding(self, isolated_env):
+    def test_stab_cn_002_sigterm_forwarding(self, isolated_env: Any) -> None:
         """
         CN-P0-002: SIGTERM Forwarding
         Goal: Velo forwards SIGTERM to child and waits for graceful exit.
@@ -297,7 +298,7 @@ time.sleep(60)
         assert "CHILD_RECEIVED_SIGTERM" in output, f"SIGTERM not forwarded. Output: {output[:500]}"
         proc.wait(timeout=scaled_timeout(15))
 
-    def test_stab_zombie_orphan_leak(self, isolated_env):
+    def test_stab_zombie_orphan_leak(self, isolated_env: Any) -> None:
         """
         D-CHAO-6.1-002: Zombie/Orphan Leak (Agent D Finding)
         Goal: Verify no orphan/zombie processes after graceful shutdown (SIGTERM).
@@ -360,7 +361,7 @@ time.sleep(60)
         or (Path("/proc/1/cgroup").exists() and "docker" in Path("/proc/1/cgroup").read_text()),
         reason="File watcher race test is environment-sensitive (poll mode in containers, timing variance in CI)",
     )
-    def test_stab_large_file_write_race(self, isolated_env):
+    def test_stab_large_file_write_race(self, isolated_env: Any) -> None:
         """
         D-CHAO-6.1-003: Large File Write Race (Agent D Finding)
         Goal: Watcher should NOT trigger restart until file write is complete/stable.
@@ -428,7 +429,7 @@ time.sleep(60)
         os.environ.get("GITHUB_ACTIONS") == "true",
         reason="File watcher on CI uses poll mode without inotify support; starvation behavior differs",
     )
-    def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
+    def test_stab_rs_002_starvation_hard_cap(self, isolated_env: Any) -> None:
         """
         STB-RS-002 (Hard-Cap): Continuous events MUST trigger a restart after hard-cap (max 5s).
         Proves: Watcher does not reset debouncer indefinitely (Starvation).
@@ -501,7 +502,7 @@ class TestRegressionBugFixes:
     These tests ensure the bugs don't resurface.
     """
 
-    def test_reg_001_exit_on_child_failure_without_reload(self, isolated_env):
+    def test_reg_001_exit_on_child_failure_without_reload(self, isolated_env: Any) -> None:
         """
         BUG-6.1-001: velo serve hangs on child failure when --reload is not enabled.
 
@@ -540,7 +541,7 @@ class TestRegressionBugFixes:
             or "not found" in combined  # New early module validation (SEC-P0-006)
         )
 
-    def test_reg_002_process_group_cleanup_kills_workers(self, isolated_env):
+    def test_reg_002_process_group_cleanup_kills_workers(self, isolated_env: Any) -> None:
         """
         BUG-6.1-002: Drop only killed direct child, not process group.
 
@@ -600,7 +601,7 @@ class TestRegressionBugFixes:
                 f"Leak Detected: Child {child_pid} survived graceful shutdown (process group not killed)"
             )
 
-    def test_reg_003_partial_import_capture_on_crash(self, isolated_env):
+    def test_reg_003_partial_import_capture_on_crash(self, isolated_env: Any) -> None:
         """
         BUG-6.1-003: velo analyze returns empty table when script crashes on import.
 

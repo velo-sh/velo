@@ -29,7 +29,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -41,13 +41,13 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
 
 
-def measure_zygote_startup(velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3):
+def measure_zygote_startup(velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3) -> float | None:
     """Measure Zygote startup time (best of N runs)."""
     times = []
     for _ in range(runs):

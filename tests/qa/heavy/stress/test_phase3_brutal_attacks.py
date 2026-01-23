@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,7 @@ from conftest_utils import T_LONG, T_MEDIUM, T_SHORT, get_velo_binary
 class AttackEnv:
     """Environment for attack testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="attack_"))
         self.velo = get_velo_binary()
         # Create isolated socket directory
@@ -37,12 +38,14 @@ class AttackEnv:
             "VELO_ZYGOTE_SOCKET": str(self.socket_dir / "velo-zygote.sock"),
         }
 
-    def setup(self):
+    def setup(self) -> AttackEnv:
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def run(self, args, timeout=None, env=None):
+    def run(
+        self, args: list[str], timeout: float | None = None, env: dict[str, str] | None = None
+    ) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
 
@@ -66,10 +69,10 @@ class AttackEnv:
         except subprocess.TimeoutExpired:
             return -1, "", "TIMEOUT"
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         # Stop Zygote gracefully via isolated socket
         try:
             self.run(["zygote", "stop"], timeout=5)
@@ -81,10 +84,10 @@ class AttackEnv:
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> AttackEnv:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.cleanup()
 
 
@@ -96,7 +99,7 @@ class AttackEnv:
 class TestResourceExhaustion:
     """Try to exhaust system resources."""
 
-    def test_attack_memory_bomb(self):
+    def test_attack_memory_bomb(self) -> None:
         """Allocate huge memory in script."""
         with AttackEnv() as env:
             env.create_script(
@@ -118,7 +121,7 @@ except MemoryError:
             assert code != -1, "Should not hang on memory bomb (returned -1 = timeout)"
             print(f"  Memory bomb: code={code}, stdout_len={len(stdout)}")
 
-    def test_attack_fork_bomb_attempt(self):
+    def test_attack_fork_bomb_attempt(self) -> None:
         """Try to fork bomb (should be prevented)."""
         with AttackEnv() as env:
             env.create_script(
@@ -143,7 +146,7 @@ print("fork_bomb_done")
             # Should not hang
             assert "TIMEOUT" not in stderr
 
-    def test_attack_file_descriptor_leak(self):
+    def test_attack_file_descriptor_leak(self) -> None:
         """Open many file descriptors and don't close them."""
         with AttackEnv() as env:
             env.create_script(
@@ -169,7 +172,7 @@ finally:
 
             assert "TIMEOUT" not in stderr
 
-    def test_attack_tmp_space_fill(self):
+    def test_attack_tmp_space_fill(self) -> None:
         """Try to fill /tmp with data."""
         with AttackEnv() as env:
             env.create_script(
@@ -210,7 +213,7 @@ finally:
 class TestOutputExtremes:
     """Attack stdout/stderr handling."""
 
-    def test_attack_huge_stdout(self):
+    def test_attack_huge_stdout(self) -> None:
         """Print 100MB to stdout."""
         with AttackEnv() as env:
             env.create_script(
@@ -230,7 +233,7 @@ print("DONE")
             if code == 0:
                 print(f"  stdout size: {len(stdout)} bytes")
 
-    def test_attack_binary_stdout(self):
+    def test_attack_binary_stdout(self) -> None:
         """Print binary data to stdout."""
         with AttackEnv() as env:
             env.create_script(
@@ -248,7 +251,7 @@ sys.stdout.buffer.flush()
             # Should not crash
             assert "TIMEOUT" not in stderr
 
-    def test_attack_mixed_stdout_stderr(self):
+    def test_attack_mixed_stdout_stderr(self) -> None:
         """Interleave stdout and stderr rapidly."""
         with AttackEnv() as env:
             env.create_script(
@@ -265,7 +268,7 @@ print("MIXED_DONE")
 
             assert "TIMEOUT" not in stderr
 
-    def test_attack_no_newline_flood(self):
+    def test_attack_no_newline_flood(self) -> None:
         """Print without newlines (buffer flush attack)."""
         with AttackEnv() as env:
             env.create_script(
@@ -292,7 +295,7 @@ print("DONE")
 class TestTimeAttacks:
     """Attack timeout and blocking behavior."""
 
-    def test_attack_infinite_loop(self):
+    def test_attack_infinite_loop(self) -> None:
         """Script with infinite loop (should be killed by timeout)."""
         with AttackEnv() as env:
             env.create_script(
@@ -307,7 +310,7 @@ while True:
             # Should timeout, not hang forever
             assert "TIMEOUT" in stderr or code != 0
 
-    def test_attack_sleep_forever(self):
+    def test_attack_sleep_forever(self) -> None:
         """Script that sleeps forever."""
         with AttackEnv() as env:
             env.create_script(
@@ -322,7 +325,7 @@ time.sleep(99999)
             # Should timeout
             assert "TIMEOUT" in stderr or code != 0
 
-    def test_attack_blocking_stdin(self):
+    def test_attack_blocking_stdin(self) -> None:
         """Script that blocks reading stdin."""
         with AttackEnv() as env:
             env.create_script(
@@ -348,7 +351,7 @@ print(f"got: {data}")
 class TestSignalAttacks:
     """Attack signal handling."""
 
-    def test_attack_ignore_sigterm(self):
+    def test_attack_ignore_sigterm(self) -> None:
         """Script ignores SIGTERM."""
         with AttackEnv() as env:
             env.create_script(
@@ -383,7 +386,7 @@ print("DONE")
                 proc.kill()
                 pytest.fail("Process ignored SIGTERM and couldn't be killed gracefully")
 
-    def test_attack_raise_sigsegv(self):
+    def test_attack_raise_sigsegv(self) -> None:
         """Script raises SIGSEGV."""
         with AttackEnv() as env:
             env.create_script(
@@ -400,7 +403,7 @@ os.kill(os.getpid(), signal.SIGSEGV)
             # Should handle the signal, not crash Zygote itself
             print(f"  SIGSEGV result: code={code}")
 
-    def test_attack_sigstop_self(self):
+    def test_attack_sigstop_self(self) -> None:
         """Script sends SIGSTOP to itself."""
         with AttackEnv() as env:
             env.create_script(
@@ -427,7 +430,7 @@ print("AFTER_STOP")
 class TestIPCAttacks:
     """Attack the Zygote IPC mechanism."""
 
-    def test_attack_connect_spam(self):
+    def test_attack_connect_spam(self) -> None:
         """Spam connections to Zygote socket."""
         with AttackEnv() as env:
             # Start Zygote
@@ -459,7 +462,7 @@ class TestIPCAttacks:
                 code, stdout, stderr = env.run(["zygote", "status"], timeout=T_SHORT)
                 # Should not crash
 
-    def test_attack_garbage_to_socket(self):
+    def test_attack_garbage_to_socket(self) -> None:
         """Send garbage data to Zygote socket."""
         with AttackEnv() as env:
             env.run(["zygote", "start"], timeout=T_SHORT)
@@ -496,7 +499,7 @@ class TestIPCAttacks:
                 code, _, _ = env.run(["zygote", "status"], timeout=T_SHORT)
                 print(f"  After garbage: status code={code}")
 
-    def test_attack_half_close(self):
+    def test_attack_half_close(self) -> None:
         """Half-close socket connection."""
         with AttackEnv() as env:
             env.run(["zygote", "start"], timeout=T_SHORT)
@@ -529,7 +532,7 @@ class TestIPCAttacks:
 class TestConcurrentAttacks:
     """Attack with concurrency."""
 
-    def test_attack_100_concurrent_runs(self):
+    def test_attack_100_concurrent_runs(self) -> None:
         """100 concurrent velo run commands."""
         with AttackEnv() as env:
             env.create_script("quick.py", 'print("ok")')
@@ -554,10 +557,10 @@ class TestConcurrentAttacks:
             success = sum(1 for r in results if r == 0)
             print(f"  100 concurrent: {success} succeeded, {len(errors)} errors")
 
-    def test_attack_start_stop_race(self):
+    def test_attack_start_stop_race(self) -> None:
         """Race condition: start and stop at same time."""
         with AttackEnv() as env:
-            errors = []
+            errors: list[str] = []
 
             def start_loop():
                 for _ in range(20):
@@ -595,14 +598,14 @@ class TestConcurrentAttacks:
 class TestExitCodeAttacks:
     """Attack exit code handling."""
 
-    def test_attack_exit_255(self):
+    def test_attack_exit_255(self) -> None:
         """Exit with code 255."""
         with AttackEnv() as env:
             env.create_script("exit255.py", "import sys; sys.exit(255)")
             code, _, _ = env.run(["run", "--zygote", "exit255.py"])
             assert code == 255 or code != 0
 
-    def test_attack_exit_negative(self):
+    def test_attack_exit_negative(self) -> None:
         """Try to exit with negative code."""
         with AttackEnv() as env:
             env.create_script("exit_neg.py", "import sys; sys.exit(-1)")
@@ -610,7 +613,7 @@ class TestExitCodeAttacks:
             # Python converts -1 to 255
             assert code != 0
 
-    def test_attack_os_exit(self):
+    def test_attack_os_exit(self) -> None:
         """Use os._exit() to bypass cleanup."""
         with AttackEnv() as env:
             env.create_script("os_exit.py", "import os; os._exit(42)")

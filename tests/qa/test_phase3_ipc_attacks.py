@@ -182,7 +182,7 @@ class TestIPCAttacks:
             start_result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
             if start_result.success and env.socket_path.exists():
-                results = []
+                results: list[tuple[str, bytes | str]] = []
 
                 def connect_and_send():
                     try:

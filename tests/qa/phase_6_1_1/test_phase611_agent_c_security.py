@@ -148,7 +148,9 @@ class TestL4Security:
             # 2. Accept and handle safely (200)
             # 3. Safe connection closure (b"")
             # Should NOT allow request smuggling
-            assert b"400" in response or b"200" in response or response == b"", f"Unexpected response: {response[:100]}"
+            assert b"400" in response or b"200" in response or response == b"", (
+                f"Unexpected response: {response[:100].hex()}"
+            )
 
         finally:
             s.close()
@@ -201,18 +203,6 @@ class TestL4Security:
             "connection" not in header_keys
             or received_headers.get("connection", "").lower() != "keep-alive, transfer-encoding"
         ), f"Hop-by-hop headers leaked: {leaked}"
-
-    def test_SEC_605_uds_permission(self, velo_serve_fixture):
-        """SEC-605: UDS socket permission verification.
-
-        Requirement: SEC-004, H-14
-        Priority: P1
-
-        Steps:
-        1. Start server
-        2. Check socket directory permissions (0700)
-        3. Check socket file permissions (no world access)
-        """
 
     def test_SEC_605_uds_permission(self, isolated_env, velo_binary):
         """SEC-605: Verify UDS socket directory permissions (0700).

@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 # === Pytest Markers ===
 
 
-def pytest_configure(config):
+def pytest_configure(config: Any) -> None:
     """Register custom markers."""
     config.addinivalue_line("markers", "smoke: L0 Smoke tests (always run)")
     config.addinivalue_line("markers", "happy_path: L1 Happy Path tests")
@@ -127,7 +128,9 @@ def run_velo(velo_binary):
             assert result.returncode == 0
     """
 
-    def _run(args: list, cwd: Path, timeout: int = 60, env=None):
+    def _run(
+        args: list[str], cwd: Path, timeout: int = 60, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         run_env = os.environ.copy()
         if env:
             run_env.update(env)
@@ -157,7 +160,7 @@ def build_bundle():
     """
     from bundle_builder import build_from_project
 
-    def _build(project_dir: Path, output_path: Path = None) -> Path:
+    def _build(project_dir: Path, output_path: Path | None = None) -> Path:
         if output_path is None:
             cache_dir = project_dir / ".velo" / "cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +168,7 @@ def build_bundle():
         else:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        return build_from_project(project_dir, output_path)
+        return Path(build_from_project(project_dir, output_path))
 
     return _build
 

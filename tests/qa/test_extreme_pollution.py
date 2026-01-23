@@ -7,7 +7,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_EXTREME_SINCERITY_side_effect_pollution(isolated_env: VeloTestEnv):
+def test_EXTREME_SINCERITY_side_effect_pollution(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Side-Effect Pollution.
     If 5 files change, Vibe triggers 5-6 forks.
@@ -26,7 +26,7 @@ print('Logged')
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_pollution():
+    async def check_pollution() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Step 1: Initial Log

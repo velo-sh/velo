@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parents[4] / "python"))
 from bundle_builder import build_from_project
@@ -8,7 +9,7 @@ from bundle_builder import build_from_project
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return build_from_project(project_dir, cache_dir / "bundle.veloc")  # type: ignore[no-any-return]
 
 
 """
@@ -54,7 +55,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -74,7 +75,7 @@ class TestL3Config:
     """
 
     @pytest.mark.config
-    def test_config_001_rebuild_flag(self, simple_project, velo_binary):
+    def test_config_001_rebuild_flag(self, simple_project: Any, velo_binary: str) -> None:
         """
         CONFIG-001: --rebuild forces bundle rebuild
 
@@ -103,7 +104,7 @@ class TestL3Config:
             assert bundle_path.exists()
 
     @pytest.mark.config
-    def test_config_004_output_custom_path(self, simple_project, velo_binary):
+    def test_config_004_output_custom_path(self, simple_project: Any, velo_binary: str) -> None:
         """
         CONFIG-004: --output custom path works
 
@@ -119,7 +120,7 @@ class TestL3Config:
 
     @pytest.mark.config
     @pytest.mark.skip(reason="velo build --help not implemented - uses Python builder")
-    def test_config_005_help_shows_options(self, simple_project, velo_binary):
+    def test_config_005_help_shows_options(self, simple_project: Any, velo_binary: str) -> None:
         """
         CONFIG-005: --help shows all options
 
@@ -129,7 +130,7 @@ class TestL3Config:
         pass
 
     @pytest.mark.config
-    def test_config_002_no_deps_flag(self, simple_project, velo_binary):
+    def test_config_002_no_deps_flag(self, simple_project: Any, velo_binary: str) -> None:
         """
         CONFIG-002: --no-deps excludes dependencies
 
@@ -160,7 +161,7 @@ print(mymodule.VALUE)
             )
 
     @pytest.mark.config
-    def test_config_003_exclude_pattern(self, simple_project, velo_binary):
+    def test_config_003_exclude_pattern(self, simple_project: Any, velo_binary: str) -> None:
         """
         CONFIG-003: --exclude excludes modules
 
@@ -187,7 +188,7 @@ print(mymodule.VALUE)
 
     @pytest.mark.config
     @pytest.mark.heavy
-    def test_run_fast_flag(self, simple_project, velo_binary):
+    def test_run_fast_flag(self, simple_project: Any, velo_binary: str) -> None:
         """
         --fast flag enables bundle loader
         """

@@ -1,5 +1,6 @@
 import subprocess
 import time
+from typing import IO, Any
 
 import psutil
 import pytest
@@ -10,7 +11,7 @@ import pytest
 
 @pytest.mark.perf
 class TestPhase61PerformanceHardened:
-    def _read_with_timeout(self, stream, timeout=5):
+    def _read_with_timeout(self, stream: IO[str], timeout: float = 5) -> str | None:
         import select
         import time
 
@@ -23,7 +24,7 @@ class TestPhase61PerformanceHardened:
                     return line
         return None
 
-    def test_perf_01_instant_restart_latency(self, isolated_env):
+    def test_perf_01_instant_restart_latency(self, isolated_env: Any) -> None:
         """
         PERF-01: Instant Restart Latency
         Goal: Verify restart latency is < 50ms (P50).
@@ -100,7 +101,7 @@ class TestPhase61PerformanceHardened:
         finally:
             proc.kill()
 
-    def test_perf_02_memory_overhead(self, isolated_env):
+    def test_perf_02_memory_overhead(self, isolated_env: Any) -> None:
         """
         PERF-02: Memory Overhead
         Goal: Verify Velo binary + worker overhead is < 50MB.
@@ -136,7 +137,7 @@ class TestPhase61PerformanceHardened:
         finally:
             proc.kill()
 
-    def test_perf_large_init_scanning(self, isolated_env):
+    def test_perf_large_init_scanning(self, isolated_env: Any) -> None:
         """
         A-EDGE-6.1-002: AST Detection Scalability (Agent A Finding)
         Goal: Verify that scanning a project with a huge __init__.py (1MB+) is fast.
@@ -159,7 +160,7 @@ class TestPhase61PerformanceHardened:
         # even with high line count but low complexity
         assert duration < 2.0, f"Performance Regression: Scanning huge __init__.py took {duration:.2f}s"
 
-    def test_perf_03_fd_stability(self, isolated_env):
+    def test_perf_03_fd_stability(self, isolated_env: Any) -> None:
         """
         PERF-03: FD Count Stability (D-CHAO-6.1-001)
         Goal: Verify FD count doesn't leak across 10 reloads.
@@ -172,6 +173,8 @@ class TestPhase61PerformanceHardened:
             cwd=env.path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
 
         try:

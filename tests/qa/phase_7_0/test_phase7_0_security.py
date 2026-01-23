@@ -51,8 +51,8 @@ class TestSecurityInvariants:
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_06_mprotect_bypass_after_sealing(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_06_mprotect_bypass_after_sealing(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-06: Verify sealed SHM cannot be made writable via mprotect.
 
@@ -191,8 +191,8 @@ if __name__ == "__main__":
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_09_seal_ordering_verification(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_09_seal_ordering_verification(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-09: Verify exact 8-step seal sequence is followed (H-23).
 
@@ -358,8 +358,8 @@ if __name__ == "__main__":
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_10_malicious_worker_simulation(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_10_malicious_worker_simulation(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-10: Malicious worker attack simulation (H-27).
 

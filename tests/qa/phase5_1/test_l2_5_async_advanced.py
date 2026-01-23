@@ -9,6 +9,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -34,7 +35,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
@@ -46,7 +47,7 @@ class TestZygoteAsyncAdvanced:
     """
 
     @pytest.mark.stability
-    def test_stab_51_001_orphan_cleanup(self, velo_binary, tmp_path):
+    def test_stab_51_001_orphan_cleanup(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         STAB-51-001: Verify orphans are reaped when TTL expires or parent dies.
         """
@@ -72,7 +73,7 @@ class TestZygoteAsyncAdvanced:
         worker_pid = int(match.group(1))
 
         # Verify worker is running
-        assert os.kill(worker_pid, 0) is None
+        os.kill(worker_pid, 0)
 
         # Stop Zygote (the "parent" of the worker)
         stop_zygote(velo_binary, tmp_path)
@@ -85,7 +86,7 @@ class TestZygoteAsyncAdvanced:
             os.kill(worker_pid, 0)
 
     @pytest.mark.security
-    def test_sec_51_001_log_file_path_security(self, velo_binary, tmp_path):
+    def test_sec_51_001_log_file_path_security(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         SEC-51-001: Prevent path traversal in background logging.
         Currently, --stdout-file is handled by the CLI passing a path to Zygote.
@@ -95,7 +96,7 @@ class TestZygoteAsyncAdvanced:
         pytest.skip("CLI flag --stdout-file not yet implemented in run.rs")
 
     @pytest.mark.stability
-    def test_stab_51_002_rapid_spawn(self, velo_binary, tmp_path):
+    def test_stab_51_002_rapid_spawn(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         Burst test: Spawn 20 async workers as fast as possible.
         """

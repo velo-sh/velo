@@ -3,6 +3,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import psutil
 import pytest
@@ -80,7 +81,7 @@ class TestPhase61StabilityHardened:
         time.sleep(2)
         assert not psutil.pid_exists(child_pid)
 
-    def _read_with_timeout(self, stream, timeout=5):
+    def _read_with_timeout(self, stream: Any, timeout: float = 5.0) -> str | None:
         import select
 
         start_time = time.time()
@@ -89,10 +90,10 @@ class TestPhase61StabilityHardened:
             if r:
                 line = stream.readline()
                 if line:
-                    return line
+                    return cast(str, line)
         return None
 
-    def _read_until(self, stream, pattern, timeout=15) -> str:
+    def _read_until(self, stream: Any, pattern: str, timeout: float = 15.0) -> str:
         import select
 
         output = ""
@@ -105,8 +106,8 @@ class TestPhase61StabilityHardened:
                     break
                 output += line
                 if pattern in line:
-                    return output
-        return output
+                    return cast(str, output)  # type: ignore[redundant-cast]
+        return cast(str, output)  # type: ignore[redundant-cast]
 
     def test_stab_rs_002_watcher_debounce(self, isolated_env):
         """

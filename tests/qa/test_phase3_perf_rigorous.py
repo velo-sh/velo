@@ -16,11 +16,12 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
@@ -31,16 +32,16 @@ def get_velo_binary():
 class PerfEnv:
     """Environment for performance testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="perf_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "PerfEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def run_timed(self, args, timeout=30) -> tuple:
+    def run_timed(self, args: list[str], timeout: float = 30) -> tuple[int, float, str]:
         """Run and return (code, duration_ms)."""
         start = time.perf_counter()
         result = subprocess.run(
@@ -53,29 +54,29 @@ class PerfEnv:
         duration = (time.perf_counter() - start) * 1000
         return result.returncode, duration, result.stderr
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def warmup(self, script, count=10):
+    def warmup(self, script: str, count: int = 10) -> None:
         """Warm up Zygote before measurements."""
         for _ in range(count):
             self.run_timed(["run", "--zygote", script], timeout=10)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
             shutil.rmtree(self.path)
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "PerfEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
-def percentile(data, p):
+def percentile(data: list[float], p: float) -> float:
     """Calculate percentile."""
     sorted_data = sorted(data)
     k = (len(sorted_data) - 1) * p / 100
@@ -84,7 +85,7 @@ def percentile(data, p):
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
 
-def print_stats(times, label=""):
+def print_stats(times: list[float], label: str = "") -> None:
     """Print statistical summary."""
     if not times:
         print(f"  {label}: No data")

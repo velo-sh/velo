@@ -20,7 +20,7 @@ import pytest
 
 
 # Get the velo binary path
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Find the velo binary."""
     # Try target/debug first
     project_root = Path(__file__).parent.parent.parent

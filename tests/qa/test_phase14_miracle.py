@@ -13,16 +13,16 @@ def test_p1_miracle_gateway_hijack(tmp_path):
     project_root = Path(__file__).resolve().parents[2]
 
     # Binary discovery: try debug first, then release
-    velo_bin = project_root / "target" / "debug" / "velo"
-    if not velo_bin.exists():
-        velo_bin = project_root / "target" / "release" / "velo"
-    if not velo_bin.exists():
+    velo_bin_found: Path | str | None = project_root / "target" / "debug" / "velo"
+    if not isinstance(velo_bin_found, Path) or not velo_bin_found.exists():
+        velo_bin_found = project_root / "target" / "release" / "velo"
+    if not isinstance(velo_bin_found, Path) or not velo_bin_found.exists():
         import shutil
 
-        velo_bin = shutil.which("velo")
-        if not velo_bin:
+        velo_bin_found = shutil.which("velo")
+        if not velo_bin_found:
             raise RuntimeError("Could not find velo binary")
-    velo_bin = str(velo_bin)
+    velo_bin = str(velo_bin_found)
 
     # 1. Start Zygote manually to ensure it's fresh
     subprocess.run([velo_bin, "zygote", "stop"], capture_output=True)
