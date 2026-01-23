@@ -12,6 +12,7 @@ Tiers:
 - L5: Performance Tests (MUST PASS)
 """
 
+import json
 import os
 import re
 import subprocess
@@ -562,3 +563,98 @@ class TestQualityGates:
         assert primary_in_summary == first_in_analysis, (
             f"Mismatch: Summary says '{primary_in_summary}', but first entry is '{first_in_analysis}'"
         )
+
+
+# =============================================================================
+# JSON OUTPUT TESTS (e6f2428 - --prof-json)
+# =============================================================================
+
+
+@pytest.mark.tier1
+class TestJSONOutput:
+    """Tests for --prof-json output format."""
+
+    def test_JSON_001_flag_exists(self, velo_binary):
+        """JSON_001: --prof-json flag should be visible in help."""
+        result = subprocess.run(
+            [velo_binary, "run", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0
+        assert "--prof-json" in result.stdout, "Flag --prof-json not found in help output"
+
+    def test_JSON_002_creates_valid_json(self, velo_binary, heavy_import_script, tmp_path):
+        """JSON_002: --prof-json should create valid JSON file."""
+        report_path = tmp_path / "report.json"
+
+        result = subprocess.run(
+            [velo_binary, "run", f"--prof-json={report_path}", str(heavy_import_script)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        assert report_path.exists(), f"JSON report not created. stderr: {result.stderr}"
+        content = report_path.read_text()
+
+        # Must be valid JSON
+        data = json.loads(content)
+        assert isinstance(data, dict), "JSON root must be an object"
+
+    def test_JSON_003_has_required_fields(self, velo_binary, heavy_import_script, tmp_path):
+        """JSON_003: JSON output must have required fields."""
+        report_path = tmp_path / "report.json"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-json={report_path}", str(heavy_import_script)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        data = json.loads(report_path.read_text())
+
+        # Check required top-level fields
+        assert "bottlenecks" in data, "Missing 'bottlenecks' field"
+        assert "environment" in data, "Missing 'environment' field"
+        assert isinstance(data["bottlenecks"], list), "'bottlenecks' must be a list"
+
+    def test_JSON_004_environment_has_platform(self, velo_binary, test_script, tmp_path):
+        """JSON_004: Environment must include PLATFORM field."""
+        report_path = tmp_path / "report.json"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-json={report_path}", str(test_script)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        data = json.loads(report_path.read_text())
+        env = data.get("environment", {})
+
+        assert "PLATFORM" in env, "Missing PLATFORM in environment"
+        assert "PYTHON_GIL" in env, "Missing PYTHON_GIL in environment"
+
+    def test_JSON_005_secrets_redacted(self, velo_binary, test_script, tmp_path):
+        """JSON_005: Sensitive env vars must be redacted in JSON output."""
+        report_path = tmp_path / "report.json"
+        env = os.environ.copy()
+        env["TEST_API_KEY"] = "super_secret_json_123"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-json={report_path}", str(test_script)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=tmp_path,
+            env=env,
+        )
+
+        content = report_path.read_text()
+        assert "super_secret_json_123" not in content, "API_KEY value not redacted in JSON!"
