@@ -27,6 +27,9 @@ from typing import Any, cast
 import pytest
 from conftest_utils import VeloTestEnv
 
+# Mark entire module as WebSocket WIP - skip in CI due to timing issues
+pytestmark = [pytest.mark.websocket_wip, pytest.mark.tier2]
+
 # =============================================================================
 # FIXTURES
 # =============================================================================

@@ -508,7 +508,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
@@ -726,7 +726,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
