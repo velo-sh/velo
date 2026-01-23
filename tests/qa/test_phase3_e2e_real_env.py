@@ -110,6 +110,7 @@ class TestZygoteInRealUserEnv:
             # Should actually work
             assert "hello" in stdout or code == 0
 
+    @pytest.mark.zygote_flaky
     def test_e2e_002_zygote_daemon_persists(self):
         """
         E2E-002: Zygote daemon should persist between runs.
@@ -136,6 +137,7 @@ class TestZygoteInRealUserEnv:
             # Second run should be fast
             assert time2 < 100, f"Second run too slow ({time2:.1f}ms) - Zygote not persisting"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_003_zygote_preload_works(self):
         """
         E2E-003: Preloaded modules should be instant on second run.
@@ -217,6 +219,7 @@ print("imported")
             # Should not error
             assert code == 0 or "not running" in stdout.lower() or "running" in stdout.lower()
 
+    @pytest.mark.zygote_flaky
     def test_e2e_006_fallback_when_zygote_fails(self):
         """
         E2E-006: Should gracefully fallback if Zygote fails mid-run.
