@@ -4,10 +4,15 @@
 //! agent-friendly diagnostic reports.
 
 use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+
+/// BUG-006 FIX: Pre-compiled regex for ANSI stripping
+static ANSI_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").expect("Invalid ANSI regex"));
 
 /// Agent Hint Taxonomy (Appendix A of RFC-0038)
 pub const HINT_LOOP_HOT: &str = "[loop-hot]";
@@ -51,16 +56,18 @@ impl MarkdownFormatter {
             .map(|b| format!("`{}`", b.name))
             .unwrap_or_else(|| "N/A".to_string());
         md.push_str(&format!("| **Slowest Import** | {} |\n", primary));
+        // BUG-001 FIX: Memory Delta合并为2列 (GFM规范要求列数一致)
+        let mem_status = if memory_delta_mb < 50.0 {
+            "✅ COW Efficient"
+        } else {
+            "⚠️ Heavy Allocation"
+        };
         md.push_str(&format!(
-            "| **Memory Delta** | {:+.1}MB | {} |\n",
-            memory_delta_mb,
-            if memory_delta_mb < 50.0 {
-                "✅ COW Efficient"
-            } else {
-                "⚠️ Heavy Allocation"
-            }
+            "| **Memory Delta** | {:+.1}MB {} |\n",
+            memory_delta_mb, mem_status
         ));
-        md.push_str("| **Optimization Budget**| CPU-bound |\n");
+        // BUG-011 FIX: 添加缺失的空格
+        md.push_str("| **Optimization Budget** | CPU-bound |\n");
         md.push_str("| **Status** | 🟢 Within Budget |\n\n");
 
         // System Environment
@@ -161,10 +168,23 @@ impl MarkdownFormatter {
     }
 
     /// Atomic write to file
+    /// BUG-007 FIX: 使用带PID的唯一临时文件名避免竞态条件
     pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
         let stripped = Self::strip_ansi(content);
-        let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, stripped).with_context(|| {
+        // 使用 PID + 时间戳确保唯一性
+        let temp_name = format!(
+            "{}.tmp.{}.{}",
+            path.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("report"),
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let temp_path = path.with_file_name(temp_name);
+        fs::write(&temp_path, &stripped).with_context(|| {
             format!("Failed to write temporary diagnostic file: {:?}", temp_path)
         })?;
         fs::rename(&temp_path, path)
@@ -230,9 +250,9 @@ impl MarkdownFormatter {
     }
 
     /// Strip ANSI escape codes to ensure "Purity" (Council P0)
-    fn strip_ansi(text: &str) -> String {
-        let re = Regex::new(r"\x1B\[[0-9;]*[a-zA-Z]").unwrap();
-        re.replace_all(text, "").to_string()
+    /// BUG-006 FIX: 使用预编译的正则表达式
+    pub fn strip_ansi(text: &str) -> String {
+        ANSI_REGEX.replace_all(text, "").to_string()
     }
 }
 

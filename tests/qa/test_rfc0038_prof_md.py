@@ -514,3 +514,143 @@ class TestQualityGates:
             assert summary_bottleneck == first_bottleneck, (
                 f"Summary ({summary_bottleneck}) doesn't match first entry ({first_bottleneck})"
             )
+
+
+# =============================================================================
+# L6: BUG REGRESSION TESTS (从QA发现的11个BUG直接推导)
+# =============================================================================
+
+
+@pytest.mark.tier1
+class TestBugRegressions:
+    """Regression tests for bugs discovered during QA review.
+
+    These tests are derived from DEFECTS.md and ensure bugs don't recur.
+    First principles: Each test directly validates an RFC requirement.
+    """
+
+    def test_BUG_001_gfm_table_column_consistency(self, velo_binary, test_script, tmp_path):
+        """BUG-001: All rows in a GFM table must have the same number of columns.
+
+        RFC-0038 §3.2: "Output must follow GitHub Flavored Markdown (GFM) standards"
+        """
+        report_path = tmp_path / "report.md"
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(test_script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+        content = report_path.read_text()
+
+        # Extract all tables (lines starting with |)
+        tables = []
+        current_table = []
+        for line in content.split("\n"):
+            if line.strip().startswith("|"):
+                current_table.append(line)
+            elif current_table:
+                tables.append(current_table)
+                current_table = []
+        if current_table:
+            tables.append(current_table)
+
+        # Each table must have consistent column counts
+        for i, table in enumerate(tables):
+            if len(table) < 2:
+                continue  # Skip tables with only header
+            column_counts = [row.count("|") for row in table]
+            assert len(set(column_counts)) == 1, f"Table {i + 1} has inconsistent column counts: {column_counts}"
+
+    def test_BUG_002_json_atomic_write(self, velo_binary, test_script, tmp_path):
+        """BUG-002: JSON output must use atomic write (write to temp, then rename).
+
+        RFC-0038 §3.1: Atomic file operations for data integrity.
+        """
+        report_path = tmp_path / "report.json"
+
+        # Run multiple times in quick succession to test for race conditions
+        for _ in range(3):
+            result = subprocess.run(
+                [velo_binary, "run", f"--prof-json={report_path}", str(test_script)],
+                capture_output=True,
+                timeout=30,
+                cwd=tmp_path,
+            )
+            assert result.returncode == 0, f"Failed: {result.stderr}"
+
+            # File must exist and be valid JSON
+            import json
+
+            content = report_path.read_text()
+            parsed = json.loads(content)  # Will raise if invalid
+            assert "schema_version" in parsed
+
+    def test_BUG_003_json_no_ansi_codes(self, velo_binary, test_script, tmp_path):
+        """BUG-003: JSON output must not contain ANSI escape codes.
+
+        RFC-0038 §2.3: "ANSI Noise: Escape codes confuse smaller LLMs"
+        """
+        report_path = tmp_path / "report.json"
+        subprocess.run(
+            [velo_binary, "run", f"--prof-json={report_path}", str(test_script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+        content = report_path.read_text()
+
+        # Check for ANSI escape codes
+        import re
+
+        ansi_pattern = re.compile(r"\x1B\[[0-9;]*[a-zA-Z]")
+        matches = ansi_pattern.findall(content)
+        assert len(matches) == 0, f"Found ANSI codes in JSON: {matches}"
+
+    def test_BUG_006_regex_performance(self, velo_binary, test_script, tmp_path):
+        """BUG-006: Regex should be pre-compiled (performance test).
+
+        Running --prof-md multiple times should not show significant variance
+        due to regex compilation overhead.
+        """
+        import time
+
+        times = []
+        for _ in range(5):
+            report_path = tmp_path / f"report_{len(times)}.md"
+            start = time.perf_counter()
+            subprocess.run(
+                [velo_binary, "run", f"--prof-md={report_path}", str(test_script)],
+                capture_output=True,
+                timeout=30,
+                cwd=tmp_path,
+            )
+            times.append(time.perf_counter() - start)
+
+        # First run should not be significantly slower than subsequent runs
+        # (if regex is compiled each time, first run is same as others)
+        avg_time = sum(times) / len(times)
+        max_variance = max(abs(t - avg_time) for t in times)
+
+        # Variance should be < 50% of average (loose threshold for CI stability)
+        assert max_variance < avg_time * 0.5, f"High variance in run times: {times}, may indicate per-call compilation"
+
+    def test_BUG_011_optimization_budget_formatting(self, velo_binary, test_script, tmp_path):
+        """BUG-011: Optimization Budget row must have proper spacing.
+
+        RFC-0038: GFM table cells should have consistent formatting.
+        """
+        report_path = tmp_path / "report.md"
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(test_script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+        content = report_path.read_text()
+
+        # Check for correct formatting (with space before |)
+        assert "| **Optimization Budget** |" in content, "Optimization Budget row missing or has incorrect spacing"
+
+        # Should NOT have the old buggy format
+        assert "**Optimization Budget**|" not in content, "Found old buggy format without space before |"

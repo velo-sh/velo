@@ -413,7 +413,8 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
             bottlenecks,
             timeline,
         );
-        std::fs::write(prof_json_path, &report)?;
+        // BUG-002 & BUG-003 FIX: JSON也使用原子写入(包含ANSI stripping)
+        MarkdownFormatter::write_atomic(prof_json_path, &report)?;
 
         eprintln!(
             "📝 JSON diagnostic report written to {}",
