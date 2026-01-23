@@ -1,7 +1,7 @@
 # RFC-0038: AI-Native Diagnostics & LLM-Friendly Profiling Protocol
 
 **Type**: Protocol RFC
-**Status**: Draft
+**Status**: Approved (Council Review 2026-01-23)
 **Created**: 2026-01-22
 **Author**: Antigravity (Arch)
 **Target**: v0.9.5+
@@ -74,6 +74,8 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 
 > [!CAUTION]
 > **Secrets Sanitizer**: The environment dumper MUST apply a `sensitive_key_filter`. Any variable name containing `KEY`, `SECRET`, `TOKEN`, or `PASSWORD` (case-insensitive) MUST have its value redacted to `***` before output.
+>
+> **Note**: This is a best-effort keyword filter. Production deployments handling sensitive data should use dedicated secret management systems.
 
 ## 🔍 Top Bottleneck Analysis
 
@@ -99,6 +101,11 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 - `[12ms]` Application Entry
 - `[462ms]` First Heavy Import (`torch`) **(Preloaded via RFC-0035, COW-shared)**
 
+### 3.3 Agent-Friendly Markers
+- Use `**` for emphasis on bottlenecks.
+- Use `##` for clear sectioning.
+- Include a `# Summary` at the top for quick context.
+
 ### 3.4 Mermaid Integration (Visual Dependency Graph)
 The report MAY include a Mermaid Gantt chart for the startup timeline. This provides dual utility: a visual timeline for human users in GitHub/VS Code previews, and a precise temporal dependency graph for Agents.
 
@@ -115,10 +122,6 @@ gantt
     Torch Import : crit, 462, 890
 ```
 
-### 3.3 Agent-Friendly Markers
-- Use `**` for emphasis on bottlenecks.
-- Use `##` for clear sectioning.
-- Include a `# Summary` at the top for quick context.
 
 ---
 
@@ -191,6 +194,7 @@ Velo targets a future `velo diff baseline.md current.md` command. This will gene
 
 - **Gate A**: Output passes standard Markdown linting (`mdl`).
 - **Gate B**: AI-generated "Top 3 bottlenecks" from the report match actual data with 100% accuracy.
+- **Gate C**: `--prof-md` profiling overhead MUST be less than **5%** of total execution time.
 
 ---
 
