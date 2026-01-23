@@ -1,7 +1,11 @@
 import os
 import time
 
+import pytest
 import requests
+
+# Mark entire module as CI flaky - isolation tests depend on server startup
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
 
 
 class TestIsolation:

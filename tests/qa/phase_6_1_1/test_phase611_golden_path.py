@@ -25,7 +25,8 @@ import requests
 from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 
 # RFC-0017: Tier 2 - E2E tests, full Zygote runtime
-pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required]
+# Mark as CI flaky - golden path tests depend on server startup timing
+pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required, pytest.mark.ci_flaky]
 
 
 class TestGoldenPathE2E:

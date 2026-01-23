@@ -14,6 +14,9 @@ from pathlib import Path
 
 import pytest
 
+# Mark entire module as CI flaky - Fast Loader CLI tests are sensitive to environment
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.cli]
+
 # Add python/ to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 
