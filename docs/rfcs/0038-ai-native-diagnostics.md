@@ -212,3 +212,14 @@ The following Agent Hints are reserved for structured routing. New hints require
 | `[memory-leak]` | Memory growth without release | Audit object lifecycle |
 | `[gil-contention]` | GIL blocking multi-threaded work | Suggest multiprocessing |
 | `[preload-miss]` | Library not in RFC-0035 preload cache | Add to `[tool.velo.native_preload]` |
+
+---
+
+## Appendix B: Extension Documents
+
+The following extension documents provide detailed architecture for planned enhancements:
+
+| Extension | Status | Description |
+| :--- | :--- | :--- |
+| [RFC-0038-ext: Code Snippets](./0038-ext-code-snippets.md) | **Proposed** (v1.0 Target) | Source code context in diagnostic reports |
+
