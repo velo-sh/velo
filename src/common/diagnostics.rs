@@ -32,7 +32,7 @@ impl MarkdownFormatter {
         total_runtime: std::time::Duration,
         memory_delta_mb: f64,
         environment: &HashMap<String, String>,
-        bottlenecks: Vec<BottleneckInfo>,
+        slow_imports: Vec<SlowImportInfo>,
         timeline: StartupTimeline,
     ) -> String {
         let mut md = String::new();
@@ -46,11 +46,11 @@ impl MarkdownFormatter {
         md.push_str("| :--- | :--- |\n");
         md.push_str(&format!("| **Total Runtime** | {:.2?} |\n", total_runtime));
 
-        let primary = bottlenecks
+        let primary = slow_imports
             .first()
             .map(|b| format!("`{}`", b.name))
             .unwrap_or_else(|| "N/A".to_string());
-        md.push_str(&format!("| **Primary Bottleneck** | {} |\n", primary));
+        md.push_str(&format!("| **Slowest Import** | {} |\n", primary));
         md.push_str(&format!(
             "| **Memory Delta** | {:+.1}MB | {} |\n",
             memory_delta_mb,
@@ -114,11 +114,11 @@ impl MarkdownFormatter {
         ));
         md.push_str("```\n\n");
 
-        // Bottleneck Analysis
-        md.push_str("## 🔍 Top Bottleneck Analysis\n\n");
-        for (i, b) in bottlenecks.iter().take(20).enumerate() {
+        // Slow Imports Analysis
+        md.push_str("## 🐢 Slow Imports (Critical Path)\n\n");
+        for (i, b) in slow_imports.iter().take(20).enumerate() {
             md.push_str(&format!(
-                "### {}. {} ({:.1}ms)\n",
+                "### {}. `{}` ({:.1}ms)\n",
                 i + 1,
                 b.name,
                 b.duration_ms
@@ -135,10 +135,10 @@ impl MarkdownFormatter {
             md.push('\n');
         }
 
-        if bottlenecks.len() > 20 {
+        if slow_imports.len() > 20 {
             md.push_str(&format!(
-                "...and {} other bottlenecks truncated for token efficiency.\n",
-                bottlenecks.len() - 20
+                "...and {} other slow imports truncated for token efficiency.\n",
+                slow_imports.len() - 20
             ));
         }
 
@@ -178,7 +178,7 @@ impl MarkdownFormatter {
         total_runtime: std::time::Duration,
         memory_delta_mb: f64,
         environment: &HashMap<String, String>,
-        bottlenecks: Vec<BottleneckInfo>,
+        slow_imports: Vec<SlowImportInfo>,
         timeline: StartupTimeline,
     ) -> String {
         use serde_json::json;
@@ -189,7 +189,7 @@ impl MarkdownFormatter {
 
         let platform = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
 
-        let bottleneck_json: Vec<serde_json::Value> = bottlenecks
+        let slow_imports_json: Vec<serde_json::Value> = slow_imports
             .iter()
             .map(|b| {
                 json!({
@@ -208,7 +208,7 @@ impl MarkdownFormatter {
             "schema_version": self.version,
             "summary": {
                 "total_runtime_ms": total_runtime.as_millis(),
-                "primary_bottleneck": bottlenecks.first().map(|b| &b.name),
+                "slowest_import": slow_imports.first().map(|b| &b.name),
                 "memory_delta_mb": memory_delta_mb,
                 "optimization_budget": "CPU-bound",
                 "status": "Within Budget"
@@ -223,7 +223,7 @@ impl MarkdownFormatter {
                 "app_entry_ms": timeline.app_entry_ms,
                 "total_ms": timeline.total_ms
             },
-            "bottlenecks": bottleneck_json
+            "slow_imports": slow_imports_json
         });
 
         serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
@@ -236,7 +236,7 @@ impl MarkdownFormatter {
     }
 }
 
-pub struct BottleneckInfo {
+pub struct SlowImportInfo {
     pub name: String,
     pub duration_ms: f64,
     pub location: Option<String>,

@@ -96,15 +96,15 @@ impl ProfileData {
         imports
     }
 
-    /// Get the top N slowest imports as BottleneckInfo.
-    pub fn to_bottlenecks(&self, n: usize) -> Vec<crate::common::diagnostics::BottleneckInfo> {
+    /// Get the top N slowest imports as SlowImportInfo.
+    pub fn to_slow_imports(&self, n: usize) -> Vec<crate::common::diagnostics::SlowImportInfo> {
         let mut imports: Vec<(&String, &f64)> = self.import_times.iter().collect();
         imports.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         imports
             .iter()
             .take(n)
-            .map(|(name, time)| crate::common::diagnostics::BottleneckInfo {
+            .map(|(name, time)| crate::common::diagnostics::SlowImportInfo {
                 name: name.to_string(),
                 duration_ms: **time,
                 location: get_module_location(name),

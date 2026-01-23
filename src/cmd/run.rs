@@ -357,7 +357,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
 
         let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
-            (pd.to_bottlenecks(20), pd.memory_delta_mb)
+            (pd.to_slow_imports(20), pd.memory_delta_mb)
         } else {
             (Vec::new(), 0.0)
         };
@@ -401,7 +401,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
 
         let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
-            (pd.to_bottlenecks(20), pd.memory_delta_mb)
+            (pd.to_slow_imports(20), pd.memory_delta_mb)
         } else {
             (Vec::new(), 0.0)
         };
@@ -539,7 +539,7 @@ fn run_module_impl(cmd: &RunCmd) -> Result<()> {
         let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
 
         let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
-            (pd.to_bottlenecks(20), pd.memory_delta_mb)
+            (pd.to_slow_imports(20), pd.memory_delta_mb)
         } else {
             (Vec::new(), 0.0)
         };
