@@ -298,6 +298,7 @@ print("error_output", file=sys.stderr)
             assert code == 0 or "error" in stderr.lower()
 
 
+@pytest.mark.zygote_flaky
 class TestZygotePerformanceRequirements:
     """Tests that verify RFC-0002 performance claims."""
 
