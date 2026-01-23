@@ -53,3 +53,11 @@ collection.txt
 .venv_docker
 quick_ci_run.log
 docker_ci_run.log
+
+# CI debug logs (temporary files, should not be committed)
+*_failed_logs.txt
+all_failed_logs.txt
+all_ci_failures.txt
+log_*.txt
+ci_run_*.txt
+.test_projects/
