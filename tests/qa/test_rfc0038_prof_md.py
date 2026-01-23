@@ -184,7 +184,7 @@ class TestL1Feature:
         )
 
     def test_L1_003_bottleneck_section_exists(self, velo_binary, heavy_import_script, tmp_path):
-        """L1_003: Top Bottleneck Analysis section exists."""
+        """L1_003: Slow Imports section must exist."""
         report_path = tmp_path / "report.md"
 
         subprocess.run(
@@ -195,7 +195,7 @@ class TestL1Feature:
         )
 
         content = report_path.read_text()
-        assert "## 🔍 Top Bottleneck Analysis" in content, "Bottleneck Analysis section not found"
+        assert "## 🐢 Slow Imports (Critical Path)" in content, "Slow Imports section missing"
 
     def test_L1_004_max_20_bottlenecks(self, velo_binary, heavy_import_script, tmp_path):
         """L1_004: Max 20 bottleneck entries."""
