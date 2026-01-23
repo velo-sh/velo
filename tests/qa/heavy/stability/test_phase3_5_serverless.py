@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -97,22 +98,22 @@ class ClientProject:
 
     _port_counter = 20000 + (os.getpid() % 10000)  # Random base per process
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_client_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
         self.port = self.next_port()  # Reserve port at init
         self.stdout_log = self.path / "stdout.log"
         self.stderr_log = self.path / "stderr.log"
-        self.stdout_f = None
-        self.stderr_f = None
+        self.stdout_f: Any = None
+        self.stderr_f: Any = None
 
     @classmethod
     def next_port(cls) -> int:
         cls._port_counter += 1
         return cls._port_counter
 
-    def set_pyproject(self, name: str = "test-app", dependencies: list = None):
+    def set_pyproject(self, name: str = "test-app", dependencies: list[str] | None = None) -> ClientProject:
         """Set pyproject.toml like a client would have."""
         deps = dependencies or []
         content = f"""[project]
@@ -127,7 +128,7 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_uv_lock(self, packages: dict = None):
+    def set_uv_lock(self, packages: dict[str, str] | None = None) -> ClientProject:
         """
         Set uv.lock like a client would have.
 
@@ -169,12 +170,12 @@ dependencies = [
         (self.path / "uv.lock").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> ClientProject:
         """Set application code."""
         (self.path / filename).write_text(code)
         return self
 
-    def uv_add(self, *packages):
+    def uv_add(self, *packages: str) -> ClientProject:
         """
         Use uv add to add dependencies (generates proper uv.lock).
         This is what a real client would do.
@@ -186,12 +187,14 @@ dependencies = [
         )
         return self
 
-    def sync(self):
+    def sync(self) -> ClientProject:
         """Run uv sync to install dependencies (like client would do before deploy)."""
         subprocess.run(["uv", "sync", "--quiet"], cwd=self.path, capture_output=True)
         return self
 
-    def serve(self, app: str, port: int = None, wait: bool = True, **opts) -> subprocess.Popen:
+    def serve(
+        self, app: str, port: int | None = None, wait: bool = True, **opts: Any
+    ) -> tuple[subprocess.Popen[str], int]:
         """Run velo serve."""
         if port is None:
             port = self.next_port()
@@ -234,7 +237,7 @@ dependencies = [
 
         return proc, port
 
-    def serve_sync(self, app: str, timeout: float = 10) -> subprocess.CompletedProcess:
+    def serve_sync(self, app: str, timeout: float = 10) -> subprocess.CompletedProcess[str]:
         """Run velo serve and wait for completion (for error cases)."""
         return subprocess.run(
             [self.velo, "serve", app],
@@ -244,7 +247,7 @@ dependencies = [
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Clean up processes and temp directory."""
         for proc in self.procs:
             try:
@@ -281,7 +284,7 @@ dependencies = [
 class TestNoDependencies:
     """Client project without uvicorn in uv.lock."""
 
-    def test_no_uvicorn_behavior(self):
+    def test_no_uvicorn_behavior(self) -> None:
         """
         When uvicorn missing from uv.lock, velo should either:
         1. Show clear installation hint, OR
@@ -308,7 +311,7 @@ class TestNoDependencies:
                 proc.terminate()
                 assert True
 
-    def test_with_fastapi_only(self):
+    def test_with_fastapi_only(self) -> None:
         """
         With fastapi but no uvicorn explicitly - velo should handle it.
         """
@@ -351,7 +354,7 @@ def root():
 class TestDefectRegression:
     """Regression tests for fixed defects - ensure they don't return."""
 
-    def test_def_3_5_003_crash_error_displayed(self):
+    def test_def_3_5_003_crash_error_displayed(self) -> None:
         """
         DEF-3.5-003: App crash errors were swallowed.
         FIX: Crash traceback should now be displayed.
@@ -381,7 +384,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
                 f"DEF-3.5-003 regression: crash error not displayed! stderr: {stderr[:500]}"
             )
 
-    def test_def_3_5_004_framework_detection(self):
+    def test_def_3_5_004_framework_detection(self) -> None:
         """
         DEF-3.5-004: Framework showed 'Unknown' for FastAPI.
         FIX: Should show 'Detected: FastAPI'.
@@ -428,7 +431,7 @@ class TestWithDependencies:
     """Client project with proper dependencies - should work."""
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
-    def test_server_starts_with_uvicorn(self):
+    def test_server_starts_with_uvicorn(self) -> None:
         """With uvicorn, server should start and respond to HTTP."""
         with ClientProject() as project:
             # Client setup: init project and add dependencies
@@ -467,7 +470,7 @@ def health():
             assert response.json()["status"] == "ok"
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
-    def test_health_endpoint_works(self):
+    def test_health_endpoint_works(self) -> None:
         """Basic health check endpoint works."""
         with ClientProject() as project:
             project.set_pyproject()
@@ -496,7 +499,7 @@ def health():
             assert response.json()["healthy"] == True
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
-    def test_multiple_requests(self):
+    def test_multiple_requests(self) -> None:
         """Server handles multiple sequential requests."""
         with ClientProject() as project:
             project.set_pyproject()
@@ -537,7 +540,7 @@ class TestGracefulShutdown:
     """Server shuts down gracefully on signals."""
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
-    def test_sigterm_graceful_exit(self):
+    def test_sigterm_graceful_exit(self) -> None:
         """SIGTERM causes graceful shutdown."""
 
         with ClientProject() as project:

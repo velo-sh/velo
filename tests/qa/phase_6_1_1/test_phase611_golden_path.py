@@ -13,6 +13,7 @@ import socket
 import struct
 import sys
 import time
+import typing
 from pathlib import Path
 
 import psutil
@@ -716,7 +717,7 @@ class TestGoldenPathDemonCatching:
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
 
-        def generate_chunks():
+        def generate_chunks() -> typing.Iterator[bytes]:
             # Send valid JSON split across chunks
             yield b'{"message": '
             yield b'"chunked_world", '

@@ -295,20 +295,30 @@ impl PythonEnv {
             cmd.env("VIRTUAL_ENV", venv);
         }
 
-        // PYTHONPATH: Inject site-packages (SPEC-0005/06)
+        // PYTHONPATH: Include stdlib + dynload + site-packages (SPEC-0005/06)
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let mut entries: Vec<String> = Vec::new();
+
+        entries.push(self.lib_dir.to_string_lossy().to_string());
+        if self.lib_dynload.exists() {
+            entries.push(self.lib_dynload.to_string_lossy().to_string());
+        }
         if let Some(ref sp) = self.site_packages {
-            let sp_str = sp.to_string_lossy();
-            let new_path = if let Ok(current) = std::env::var("PYTHONPATH") {
-                if current.is_empty() {
-                    sp_str.into_owned()
-                } else {
-                    format!("{}:{}", sp_str, current)
-                }
-            } else {
-                sp_str.into_owned()
-            };
-            cmd.env("PYTHONPATH", new_path);
+            entries.push(sp.to_string_lossy().to_string());
             cmd.env("VELO_PYTHON_SITE_PACKAGES", sp);
+        }
+
+        if let Ok(current) = std::env::var("PYTHONPATH")
+            && !current.is_empty()
+        {
+            entries.extend(current.split(sep).map(|s| s.to_string()));
+        }
+
+        // Deduplicate while preserving order
+        let mut seen = std::collections::HashSet::new();
+        entries.retain(|item| seen.insert(item.clone()));
+        if !entries.is_empty() {
+            cmd.env("PYTHONPATH", entries.join(sep));
         }
     }
 

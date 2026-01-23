@@ -25,9 +25,15 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import requests
+
+if TYPE_CHECKING:
+    from _subprocess import Popen
+else:
+    from subprocess import Popen
 
 
 def get_velo_binary() -> str:
@@ -35,7 +41,9 @@ def get_velo_binary() -> str:
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
         return str(release)
-    pytest.skip("velo binary not found")
+    if "pytest" in globals():
+        pytest.skip("velo binary not found")
+    return ""
 
 
 class ChaosTestProject:
@@ -45,10 +53,10 @@ class ChaosTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"chaos_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int = 0
+        self._proc: Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[Any]) -> "ChaosTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -61,15 +69,17 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "ChaosTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "ChaosTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, workers: int = 2, extra_args: list = None):
+    def start_server(
+        self, app_module: str, workers: int = 2, extra_args: list[Any] | None = None
+    ) -> "ChaosTestProject":
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -108,9 +118,9 @@ dev-dependencies = []
 
     @property
     def pid(self) -> int:
-        return self._proc.pid if self._proc else None
+        return int(getattr(self._proc, "pid", 0) or 0)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -133,7 +143,7 @@ class TestHeaderChaos:
 
     @pytest.mark.tier5
     @pytest.mark.slow
-    def test_giant_header_block(self):
+    def test_giant_header_block(self) -> None:
         """[CHAOS-HDR-01] Request with 32KB of headers."""
         with ChaosTestProject("hd-giant") as p:
             p.set_pyproject(deps=[])
@@ -453,10 +463,10 @@ class TestConcurrencyChaos:
 
             payload = "A" * 65536
 
-            def make_req():
+            def make_req() -> int:
                 try:
                     r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10)
-                    return r.status_code
+                    return int(r.status_code)
                 except:
                     return 0
 
@@ -573,9 +583,9 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             p.install_deps().start_server("main:app", workers=32)
 
-            def req():
+            def req() -> int:
                 try:
-                    return requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code
+                    return int(requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code)
                 except:
                     return 0
 

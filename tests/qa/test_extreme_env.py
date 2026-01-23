@@ -8,7 +8,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_EXTREME_SINCERITY_env_drift(isolated_env: VeloTestEnv):
+def test_EXTREME_SINCERITY_env_drift(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Environment Drift.
     If I modify a .env file, do new forks pick up the new values?
@@ -27,7 +27,7 @@ print(f"VIBE_VAR={os.getenv('VIBE_VAR', 'NONE')}")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_drift():
+    async def check_drift() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Step 1: Verify initial

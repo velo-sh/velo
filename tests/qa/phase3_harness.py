@@ -17,7 +17,7 @@ from qa_harness import VeloTestEnv, run_velo
 
 
 @dataclass
-class ZygoteTestEnv(VeloTestEnv):
+class ZygoteTestEnv(VeloTestEnv):  # type: ignore[misc]
     """Extended environment for Zygote testing with daemon control."""
 
     zygote_pid: int | None = None
@@ -26,7 +26,7 @@ class ZygoteTestEnv(VeloTestEnv):
     @property
     def socket_path(self) -> Path:
         """Return the Zygote socket path."""
-        return self.path / ".velo_cache" / self.socket_name
+        return Path(self.path / ".velo_cache" / self.socket_name)
 
     def start_zygote(self, timeout: float = 5.0) -> int | None:
         """
@@ -87,7 +87,7 @@ class ZygoteTestEnv(VeloTestEnv):
         )
         if result.success:
             self.zygote_pid = None
-        return result.success
+        return bool(result.success)
 
     def is_zygote_running(self) -> bool:
         """Check if Zygote daemon is running."""
@@ -128,18 +128,34 @@ class ZygoteTestEnv(VeloTestEnv):
         except Exception:
             return None
 
-    def create_velo_config(self, preload: list[str]) -> None:
+    def create_velo_config(self, config_or_preload: str | list[str]) -> None:
         """Add [tool.velo] configuration to pyproject.toml."""
         pyproject_path = self.path / "pyproject.toml"
-        if pyproject_path.exists():
-            content = pyproject_path.read_text()
-            if "[tool.velo]" not in content:
-                preload_str = ", ".join(f'"{m}"' for m in preload)
-                content += f"\n[tool.velo]\npreload = [{preload_str}]\n"
-                pyproject_path.write_text(content)
+        if isinstance(config_or_preload, str):
+            content = config_or_preload
+            if pyproject_path.exists():
+                existing = pyproject_path.read_text()
+                if "[tool.velo]" in content:
+                    # Replace or append
+                    if "[tool.velo]" in existing:
+                        # Simple append for now
+                        content = existing + "\n" + content
+                    else:
+                        content = existing + "\n" + content
+                else:
+                    content = existing + "\n[tool.velo]\n" + content
+            pyproject_path.write_text(content)
         else:
-            preload_str = ", ".join(f'"{m}"' for m in preload)
-            pyproject_path.write_text(f"[tool.velo]\npreload = [{preload_str}]\n")
+            preload = config_or_preload
+            if pyproject_path.exists():
+                content = pyproject_path.read_text()
+                if "[tool.velo]" not in content:
+                    preload_str = ", ".join(f'"{m}"' for m in preload)
+                    content += f"\n[tool.velo]\npreload = [{preload_str}]\n"
+                    pyproject_path.write_text(content)
+            else:
+                preload_str = ", ".join(f'"{m}"' for m in preload)
+                pyproject_path.write_text(f"[tool.velo]\npreload = [{preload_str}]\n")
 
     def cleanup(self) -> None:
         """Extended cleanup that stops Zygote."""

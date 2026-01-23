@@ -3,6 +3,7 @@
 # This is the CORRECTNESS gate - performance is secondary.
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -89,7 +90,7 @@ FRAMEWORK_PROJECTS = {
 class TestE2EGoldenPath:
     """E2E Correctness Suite: Verify complete user workflow for Big Three frameworks."""
 
-    def setup_project(self, env, project_config):
+    def setup_project(self, env: Any, project_config: dict[str, Any]) -> None:
         """Setup a real project structure with dependencies."""
         env.install(*project_config["deps"])
         for filename, content in project_config["files"].items():

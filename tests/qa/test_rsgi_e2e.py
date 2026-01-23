@@ -14,6 +14,7 @@ import os
 import struct
 import sys
 import tempfile
+from typing import Any
 
 import msgpack
 import pytest
@@ -65,7 +66,7 @@ class MockASGIApp:
         )
 
 
-async def send_msg(writer, msg):
+async def send_msg(writer: Any, msg: Any) -> None:
     """Send a MessagePack message with length prefix."""
     payload = msgpack.packb(msg)
     writer.write(struct.pack(">I", len(payload)))
@@ -73,7 +74,7 @@ async def send_msg(writer, msg):
     await writer.drain()
 
 
-async def recv_msg(reader):
+async def recv_msg(reader: Any) -> Any:
     """Receive a MessagePack message with length prefix."""
     len_data = await reader.readexactly(4)
     length = struct.unpack(">I", len_data)[0]

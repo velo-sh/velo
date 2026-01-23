@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -48,11 +49,13 @@ def check_analyze_available():
 class StableProject:
     """Isolated project for stability testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_stable_"))
         self.velo = get_velo_binary()
 
-    def set_pyproject(self, deps=None, velo_config=None):
+    def set_pyproject(
+        self, deps: list[str] | None = None, velo_config: dict[str, Any] | None = None
+    ) -> "StableProject":
         content = f"""[project]
 name = "stable-test"
 version = "0.1.0"
@@ -66,15 +69,15 @@ dependencies = {json.dumps(deps or [])}
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_file(self, name: str, content: str):
+    def set_file(self, name: str, content: str) -> "StableProject":
         (self.path / name).write_text(content)
         return self
 
-    def sync(self):
+    def sync(self) -> "StableProject":
         subprocess.run(["uv", "sync", "--quiet"], cwd=self.path, capture_output=True)
         return self
 
-    def uv_add(self, *packages):
+    def uv_add(self, *packages: str) -> "StableProject":
         subprocess.run(
             ["uv", "add", "--quiet"] + list(packages),
             cwd=self.path,
@@ -82,7 +85,7 @@ dependencies = {json.dumps(deps or [])}
         )
         return self
 
-    def analyze(self, *args, timeout: float = 60) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
             cwd=self.path,
@@ -94,13 +97,13 @@ dependencies = {json.dumps(deps or [])}
     def read_pyproject(self) -> str:
         return (self.path / "pyproject.toml").read_text()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "StableProject":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

@@ -8,7 +8,7 @@ import pytest
 # Defer import to avoid collection-time failure when VELO_ENV is not set
 # This is a "hostile" test that requires the full Velo environment
 try:
-    from velo_zygote import shield
+    from velo_zygote import shield  # type: ignore[attr-defined]
 
     SHIELD_AVAILABLE = True
 except (ValueError, ModuleNotFoundError, ImportError):

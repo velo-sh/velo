@@ -146,6 +146,7 @@ impl ServeCmd {
         args.timeout = self.timeout;
         args.health_bind = self.health_bind.clone();
         args.pid_file = self.pid_file.clone();
+        args.reload = self.reload;
         // Gate 7.2: Zygote is enabled by default unless --no-zygote is specified.
         // Support --use-zygote (explicitly enabled) as well.
         args.use_zygote = !self.no_zygote || self.zygote;
@@ -343,6 +344,11 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
         // On reload, we loop and call run_server again.
         // run_server will spawn a fresh uvicorn/zygote.
         eprintln!("🔄 Restarting server...");
+    }
+
+    #[cfg(unix)]
+    if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+        serve::runner::cleanup_test_processes(&project_dir, &serve_args.app);
     }
 
     Ok(())

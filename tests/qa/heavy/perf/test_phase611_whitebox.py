@@ -19,6 +19,7 @@ import socket
 import struct
 import threading
 import time
+from typing import Any
 
 import psutil
 import pytest
@@ -34,7 +35,7 @@ FORK_BOMB_COUNT = 20  # Number of rapid Fork requests
 class TestWhiteBoxPythonStress:
     """White-box STRESS tests for Python Zygote internals."""
 
-    def test_WB_002_STRESS_zombie_accumulation(self, velo_serve_fixture):
+    def test_WB_002_STRESS_zombie_accumulation(self, velo_serve_fixture: Any) -> None:
         """WB-002 STRESS: Rapid worker kills to trigger zombie accumulation.
 
         Target: velo_zygote/main.py:398-402
@@ -78,7 +79,7 @@ class TestWhiteBoxPythonStress:
             f"WB-002 STRESS: Zombie accumulation detected {zombies_detected} times in {STRESS_ITERATIONS} iterations"
         )
 
-    def test_WB_003_STRESS_eintr_signal_storm(self, velo_serve_fixture):
+    def test_WB_003_STRESS_eintr_signal_storm(self, velo_serve_fixture: Any) -> None:
         """WB-003 STRESS: Signal storm during waitpid to trigger EINTR handling.
 
         Target: velo_zygote/main.py:679-680
@@ -132,7 +133,7 @@ class TestWhiteBoxPythonStress:
 
         assert len(zombies) == 0, f"WB-003 STRESS: {len(zombies)} zombies survived signal storm: {zombies}"
 
-    def test_WB_004_cross_app_affinity(self, velo_serve_fixture):
+    def test_WB_004_cross_app_affinity(self, velo_serve_fixture: Any) -> None:
         """WB-004: Handshake should verify app affinity to prevent cross-talk.
 
         Target: velo_zygote/main.py:748-756
@@ -179,7 +180,7 @@ class TestWhiteBoxPythonStress:
             if not has_affinity:
                 pytest.fail("WB-004: Handshake lacks app affinity - cross-app vulnerability exists")
 
-    def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture):
+    def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture: Any) -> None:
         """WB-005 STRESS (NEW): Rapid Fork requests to test throttling.
 
         Target: velo_zygote/main.py (ForkHandler + ForkRateLimiter)
@@ -268,7 +269,7 @@ class TestWhiteBoxPythonStress:
 class TestWhiteBoxRustStress:
     """White-box STRESS tests for Rust Supervisor internals."""
 
-    def test_WB_006_STRESS_worker_respawn_race(self, velo_serve_fixture):
+    def test_WB_006_STRESS_worker_respawn_race(self, velo_serve_fixture: Any) -> None:
         """WB-006 STRESS (NEW): Rapid worker kills to race respawn logic.
 
         Target: src/serve/runner.rs (Worker respawning - or lack thereof)
@@ -301,7 +302,7 @@ class TestWhiteBoxRustStress:
             f"WB-006 STRESS: Workers not respawned after kill. Had {len(initial_workers)}, now have {len(new_workers)}"
         )
 
-    def test_WB_007_orphaned_existing_zygote(self, velo_serve_fixture):
+    def test_WB_007_orphaned_existing_zygote(self, velo_serve_fixture: Any) -> None:
         """WB-007: Existing Zygote should be shut down when velo serve exits.
 
         Target: src/serve/runner.rs:630
@@ -342,7 +343,7 @@ class TestWhiteBoxRustStress:
 
         assert not still_alive, f"WB-007: Orphaned Zygote detected (PIDs: {zygote1_pid}, {zygote2_pid})"
 
-    def test_WB_008_STRESS_connection_flood(self, velo_serve_fixture):
+    def test_WB_008_STRESS_connection_flood(self, velo_serve_fixture: Any) -> None:
         """WB-008 STRESS: Flood connections to stress accept loop.
 
         Target: src/serve/runner.rs:747-749
@@ -387,7 +388,7 @@ class TestWhiteBoxRustStress:
 class TestWhiteBoxProtocolCompliance:
     """White-box tests for IPC protocol compliance."""
 
-    def test_WB_009_endianness_consistency(self, velo_serve_fixture):
+    def test_WB_009_endianness_consistency(self, velo_serve_fixture: Any) -> None:
         """WB-009: Verify IPC protocol uses little-endian length prefix.
 
         Target: velo_zygote/main.py:264,285 and src/zygote/ipc.rs:397
@@ -401,8 +402,11 @@ class TestWhiteBoxProtocolCompliance:
         try:
             import msgpack
 
-            packer = lambda msg: msgpack.packb(msg, use_bin_type=True)
-            unpacker = lambda data: msgpack.unpackb(data, raw=False)
+            def packer(msg: Any) -> bytes:
+                return msgpack.packb(msg, use_bin_type=True)  # type: ignore[no-any-return]
+
+            def unpacker(data: bytes) -> Any:
+                return msgpack.unpackb(data, raw=False)
         except ImportError:
             pytest.skip("WB-009: msgpack not available")
 
@@ -445,7 +449,7 @@ class TestWhiteBoxProtocolCompliance:
 
                 # Read rest of message using correct little-endian length
                 version = s.recv(1)
-                assert version and version[0] == 0x01, f"WB-009: Wrong protocol version {version}"
+                assert version and version[0] == 0x01, f"WB-009: Wrong protocol version {version!r}"
 
                 payload = s.recv(total_len_le - 1)
                 msg = unpacker(payload)
@@ -505,7 +509,7 @@ class TestWhiteBoxProtocolCompliance:
 # ============================================================================
 
 
-def send_msg(sock: socket.socket, msg: dict):
+def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     """Send length-prefixed MessagePack message."""
     import msgpack
 
@@ -515,7 +519,7 @@ def send_msg(sock: socket.socket, msg: dict):
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock: socket.socket) -> dict:
+def recv_msg(sock: socket.socket) -> dict[str, Any]:
     """Receive length-prefixed MessagePack message."""
     import msgpack
 
@@ -527,4 +531,4 @@ def recv_msg(sock: socket.socket) -> dict:
     if not version or version[0] != 0x01:
         return {}
     payload = sock.recv(total_len - 1)
-    return msgpack.unpackb(payload, raw=False)
+    return msgpack.unpackb(payload, raw=False)  # type: ignore[no-any-return]

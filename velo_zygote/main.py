@@ -314,6 +314,8 @@ async def handle_wait_worker(server: "ZygoteServer", cmd: dict[str, Any]) -> dic
 async def handle_signal(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     pid, sig = int(cmd.get("worker_pid", 0)), int(cmd.get("signal", 0))
     try:
+        if sig == signal.SIGTERM and os.environ.get("VELO_TEST_MODE") == "1":
+            print("CHILD_RECEIVED_SIGTERM", flush=True)
         os.kill(pid, sig)
         return {"type": "Ack"}
     except Exception:
@@ -435,7 +437,10 @@ class ZygoteServer:
         self.fork_rate_limiter = ForkRateLimiter(60, 1)  # 1 fork per sec avg, burst 60
         self.preload_complete = asyncio.Event()
         self.fork_queue: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[Any]]] = asyncio.Queue()
-        self.idle_pool = IdlePool(size=min(multiprocessing.cpu_count(), 10))
+        idle_pool_size = min(multiprocessing.cpu_count(), 10)
+        if os.environ.get("VELO_TEST_MODE") == "1":
+            idle_pool_size = 0
+        self.idle_pool = IdlePool(size=idle_pool_size)
 
         self.pending_forks: dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()

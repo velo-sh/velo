@@ -12,11 +12,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -28,11 +29,11 @@ def get_velo_binary():
 class WeirdEnv:
     """Base class for weird environment testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="weird_env_"))
         self.velo = get_velo_binary()
 
-    def run_velo(self, args: list, timeout: float = 30, env: dict = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 30, env: dict[str, str] | None = None) -> tuple[int, str, str]:
         """Run velo and return (returncode, stdout, stderr)."""
         full_env = os.environ.copy()
         if env:
@@ -48,24 +49,24 @@ class WeirdEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def setup_basic(self):
+    def setup_basic(self) -> None:
         """Minimal setup."""
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
         (self.path / "uv.lock").write_text("{}")
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "WeirdEnv":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

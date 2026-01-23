@@ -71,7 +71,7 @@ class VeloTestResult:
 class VeloTestEnv:
     """Isolated test environment with project structure."""
 
-    temp_dir: tempfile.TemporaryDirectory = field(default_factory=lambda: tempfile.TemporaryDirectory())
+    temp_dir: tempfile.TemporaryDirectory[str] = field(default_factory=lambda: tempfile.TemporaryDirectory())
 
     @property
     def path(self) -> Path:
@@ -138,7 +138,7 @@ class VeloTestEnv:
 def run_velo(
     args: list[str],
     cwd: Path | None = None,
-    env: dict | None = None,
+    env: dict[str, str] | None = None,
     timeout: float = 30.0,
 ) -> VeloTestResult:
     """

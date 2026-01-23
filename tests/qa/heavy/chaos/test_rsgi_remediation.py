@@ -6,6 +6,7 @@ import time
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -284,7 +285,7 @@ async def app(scope, receive, send):
             # Actually with --rsgi, it's Host (Rust) -> Zygote -> Workers
 
             # Re-read debug log to find worker PIDs if possible, or use psutil
-            worker_info = []
+            worker_info: list[dict[str, Any]] = []
             for c in parent.children(recursive=True):
                 try:
                     worker_info.append(
@@ -293,8 +294,8 @@ async def app(scope, receive, send):
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
             print(f"Detected Process Tree: {worker_info}")
-            target_pids = {w["pid"]: w["create_time"] for w in worker_info}
-            worker_pids = [w["pid"] for w in worker_info]
+            target_pids: dict[int, float] = {int(w["pid"]): float(w["create_time"]) for w in worker_info}
+            worker_pids = [int(w["pid"]) for w in worker_info]
             assert len(worker_pids) >= 3, (
                 f"Expected at least 3 child processes (Zygote + 2 workers), found {len(worker_pids)}"
             )
@@ -313,7 +314,7 @@ async def app(scope, receive, send):
 
             # PROSECUTOR: Check if any worker PIDs still exist AND are the SAME processes
             failed = False
-            survivors = []
+            survivors: list[dict[str, Any]] = []
             for pid, ct in target_pids.items():
                 if psutil.pid_exists(pid):
                     try:

@@ -6,7 +6,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_ADVERSARIAL_RESOURCE_CAP(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_RESOURCE_CAP(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: 5.4.7 Resource Caps.
     If a worker runs an infinite loop, it should be capped or manageable.

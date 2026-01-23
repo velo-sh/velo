@@ -27,7 +27,7 @@ class TestScalability:
 
     @pytest.mark.tier2
     @pytest.mark.shm
-    def test_L2_SHM_03_multi_model_scalability(self, shm_test_env: VeloTestEnv):
+    def test_L2_SHM_03_multi_model_scalability(self, shm_test_env: VeloTestEnv) -> None:
         """
         L2-SHM-03: Verify 10 workers × 3 models scale correctly.
 
@@ -149,7 +149,7 @@ if __name__ == "__main__":
 
     @pytest.mark.tier2
     @pytest.mark.shm
-    def test_L2_SHM_04_attach_detach_storm(self, shm_test_env: VeloTestEnv):
+    def test_L2_SHM_04_attach_detach_storm(self, shm_test_env: VeloTestEnv) -> None:
         """
         L2-SHM-04: High-frequency attach/detach stability test (H-21).
 
@@ -250,8 +250,8 @@ if __name__ == "__main__":
 
     @pytest.mark.tier2
     @pytest.mark.shm
-    @skip_on_macos_hugepages
-    def test_L2_SHM_05_hugepage_tlb_profiling(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_hugepages  # type: ignore[untyped-decorator]
+    def test_L2_SHM_05_hugepage_tlb_profiling(self, shm_test_env: VeloTestEnv) -> None:
         """
         L2-SHM-05: TLB miss profiling with/without HugePages (H-20, H-25, H-28).
 
@@ -359,7 +359,7 @@ class TestLifecycle:
 
     @pytest.mark.tier2
     @pytest.mark.shm
-    def test_L2_SHM_07_worker_crash_recovery(self, shm_test_env: VeloTestEnv):
+    def test_L2_SHM_07_worker_crash_recovery(self, shm_test_env: VeloTestEnv) -> None:
         """
         L2-SHM-07: Worker crash recovery test (H-24).
 
@@ -473,8 +473,8 @@ if __name__ == "__main__":
 
     @pytest.mark.tier2
     @pytest.mark.shm
-    @skip_unless_linux
-    def test_L2_SHM_08_host_restart_survivability(self, shm_test_env: VeloTestEnv):
+    @skip_unless_linux  # type: ignore[untyped-decorator]
+    def test_L2_SHM_08_host_restart_survivability(self, shm_test_env: VeloTestEnv) -> None:
         """
         L2-SHM-08: Host Restart Survivability (H-26).
 

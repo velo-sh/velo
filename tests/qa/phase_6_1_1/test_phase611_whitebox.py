@@ -19,6 +19,7 @@ import socket
 import struct
 import threading
 import time
+from typing import Any, cast
 
 import psutil
 import pytest
@@ -401,8 +402,11 @@ class TestWhiteBoxProtocolCompliance:
         try:
             import msgpack
 
-            packer = lambda msg: msgpack.packb(msg, use_bin_type=True)
-            unpacker = lambda data: msgpack.unpackb(data, raw=False)
+            def packer(msg: Any) -> bytes:
+                return cast(bytes, msgpack.packb(msg, use_bin_type=True))
+
+            def unpacker(data: bytes) -> Any:
+                return msgpack.unpackb(data, raw=False)
         except ImportError:
             pytest.skip("WB-009: msgpack not available")
 
@@ -445,7 +449,7 @@ class TestWhiteBoxProtocolCompliance:
 
                 # Read rest of message using correct little-endian length
                 version = s.recv(1)
-                assert version and version[0] == 0x01, f"WB-009: Wrong protocol version {version}"
+                assert version and version[0] == 0x01, f"WB-009: Wrong protocol version {version.hex()}"
 
                 payload = s.recv(total_len_le - 1)
                 msg = unpacker(payload)
@@ -505,7 +509,7 @@ class TestWhiteBoxProtocolCompliance:
 # ============================================================================
 
 
-def send_msg(sock: socket.socket, msg: dict):
+def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     """Send length-prefixed MessagePack message."""
     import msgpack
 
@@ -515,7 +519,7 @@ def send_msg(sock: socket.socket, msg: dict):
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock: socket.socket) -> dict:
+def recv_msg(sock: socket.socket) -> dict[str, Any]:
     """Receive length-prefixed MessagePack message."""
     import msgpack
 
@@ -527,4 +531,5 @@ def recv_msg(sock: socket.socket) -> dict:
     if not version or version[0] != 0x01:
         return {}
     payload = sock.recv(total_len - 1)
-    return msgpack.unpackb(payload, raw=False)
+    res: dict[str, Any] = msgpack.unpackb(payload, raw=False)
+    return res

@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -182,7 +183,9 @@ async def app(scope, proto):
         try:
             # Wait for startup or error
             exit_code = proc.wait(timeout=10)
-            stderr = proc.stderr.read()
+            stderr = ""
+            if proc.stderr:
+                stderr = proc.stderr.read()
 
             # RFC-0026 Phase 8.x: TLS not yet implemented
             # Expected: Either exit with error OR ignore the flags
@@ -533,7 +536,7 @@ async def app(scope, proto):
 
             time.sleep(8)
 
-            samples = {}
+            samples: dict[int, list[dict[str, Any]]] = {}
             for _ in range(20):
                 resp = requests.get(f"http://127.0.0.1:{port}/")
                 data = resp.json()

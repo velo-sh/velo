@@ -17,7 +17,7 @@ from conftest_utils import get_velo_binary
 class TestServeHelpAndValidation:
     """Tests for velo serve command help and argument validation."""
 
-    def test_serve_in_help_output(self):
+    def test_serve_in_help_output(self) -> None:
         """Verify serve command appears in help."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=30)
@@ -25,7 +25,7 @@ class TestServeHelpAndValidation:
         assert "serve" in result.stdout
         assert "ASGI/WSGI" in result.stdout
 
-    def test_serve_missing_app_error(self):
+    def test_serve_missing_app_error(self) -> None:
         """Verify error when app argument is missing."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve"], capture_output=True, text=True, timeout=30)
@@ -34,7 +34,7 @@ class TestServeHelpAndValidation:
         stderr_lower = result.stderr.lower()
         assert "required" in stderr_lower or "missing" in stderr_lower or "app" in stderr_lower
 
-    def test_serve_invalid_app_format(self):
+    def test_serve_invalid_app_format(self) -> None:
         """Verify error for invalid app format (no colon)."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -48,7 +48,7 @@ class TestServeHelpAndValidation:
         stderr_lower = result.stderr.lower()
         assert "invalid" in stderr_lower and ("app" in stderr_lower or "format" in stderr_lower)
 
-    def test_serve_unknown_option_error(self):
+    def test_serve_unknown_option_error(self) -> None:
         """Verify error for unknown options."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -66,11 +66,11 @@ class TestServeHelpAndValidation:
 class FastAPITestEnv:
     """Test environment with FastAPI app."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_serve_test_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "FastAPITestEnv":
         # Create virtual environment
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
         # Install fastapi and uvicorn
@@ -102,7 +102,7 @@ def health():
         )
         return self
 
-    def run_serve(self, args: list, timeout: float = 5) -> tuple:
+    def run_serve(self, args: list[str], timeout: float = 5) -> subprocess.Popen[str]:
         """Start velo serve and return process."""
         proc = subprocess.Popen(
             [self.velo, "serve"] + args,
@@ -113,7 +113,7 @@ def health():
         )
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
@@ -130,7 +130,7 @@ class TestServeStartup:
     """Tests for velo serve startup behavior."""
 
     @pytest.mark.slow
-    def test_serve_starts_fastapi(self):
+    def test_serve_starts_fastapi(self) -> None:
         """Verify velo serve can start a FastAPI app."""
         with FastAPITestEnv() as env:
             proc = env.run_serve(["main:app", "--port", "19876"])
@@ -159,7 +159,7 @@ class TestServeStartup:
                 proc.terminate()
                 proc.wait(timeout=5)
 
-    def test_serve_shows_startup_info(self):
+    def test_serve_shows_startup_info(self) -> None:
         """Verify velo serve shows framework and binding info."""
         with FastAPITestEnv() as env:
             proc = env.run_serve(["main:app", "--port", "19877"])
@@ -178,7 +178,7 @@ class TestServeStartup:
 class TestServeOptions:
     """Tests for velo serve command options."""
 
-    def test_port_option_parsing(self):
+    def test_port_option_parsing(self) -> None:
         """Verify --port option is parsed correctly."""
         velo = get_velo_binary()
         # This will fail to start (no app) but tests argument parsing
@@ -193,7 +193,7 @@ class TestServeOptions:
         stderr_lower = result.stderr.lower()
         assert "invalid" in stderr_lower
 
-    def test_workers_option_parsing(self):
+    def test_workers_option_parsing(self) -> None:
         """Verify --workers option is parsed correctly."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -211,7 +211,7 @@ class TestServeOptions:
 class TestZygoteIntegration:
     """Tests for Zygote integration with velo serve."""
 
-    def test_zygote_prewarm_message(self):
+    def test_zygote_prewarm_message(self) -> None:
         """Verify Zygote pre-warming message is displayed."""
         with FastAPITestEnv() as env:
             # Kill any existing Zygote first
@@ -232,7 +232,7 @@ class TestZygoteIntegration:
             finally:
                 subprocess.run(["pkill", "-9", "-f", "velo_zygote"], capture_output=True)
 
-    def test_no_zygote_flag(self):
+    def test_no_zygote_flag(self) -> None:
         """Verify --no-zygote flag disables Zygote."""
         with FastAPITestEnv() as env:
             proc = env.run_serve(["main:app", "--port", "19879", "--no-zygote"])
@@ -251,7 +251,7 @@ class TestZygoteIntegration:
 class TestFrameworkDetection:
     """Tests for framework auto-detection."""
 
-    def test_fastapi_detected(self):
+    def test_fastapi_detected(self) -> None:
         """Verify FastAPI is detected from pyproject.toml."""
         with FastAPITestEnv() as env:
             proc = env.run_serve(["main:app", "--port", "19880"])
@@ -266,7 +266,7 @@ class TestFrameworkDetection:
                 proc.kill()
                 raise
 
-    def test_django_module_pattern(self):
+    def test_django_module_pattern(self) -> None:
         """Verify Django is inferred from module pattern."""
         velo = get_velo_binary()
         # Test with Django-style module pattern
@@ -286,7 +286,7 @@ class TestServePerformance:
     """Performance tests for velo serve startup."""
 
     @pytest.mark.slow
-    def test_startup_time_reasonable(self):
+    def test_startup_time_reasonable(self) -> None:
         """Verify serve startup completes within timeout."""
         with FastAPITestEnv() as env:
             start = time.time()

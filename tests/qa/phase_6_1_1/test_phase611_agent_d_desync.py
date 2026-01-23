@@ -16,6 +16,7 @@ import struct
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -32,7 +33,7 @@ except ImportError:
     umsgpack = None
 
 
-def send_msg(sock, msg):
+def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     payload = umsgpack.packb(msg)
     total_len = 1 + len(payload)
     header = struct.pack("<I", total_len)
@@ -40,7 +41,7 @@ def send_msg(sock, msg):
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock, timeout=2.0):
+def recv_msg(sock: socket.socket, timeout: float = 2.0) -> Any:
     sock.settimeout(timeout)
     header = b""
     while len(header) < 4:
@@ -63,7 +64,7 @@ def recv_msg(sock, timeout=2.0):
     return umsgpack.unpackb(payload)
 
 
-def auth_zygote(sock, secret):
+def auth_zygote(sock: socket.socket, secret: str) -> None:
     """Perform SEC-005 Forensic Auth handshake."""
     send_msg(sock, {"type": "Auth", "secret": secret})
     resp = recv_msg(sock)
@@ -75,7 +76,7 @@ def auth_zygote(sock, secret):
 class TestAgentDDesync:
     """Agent D: Lifecycle and Protocol Desync Testing."""
 
-    def test_DESYNC_005_fork_bomb_throttling(self, velo_serve_fixture, tmp_path):
+    def test_DESYNC_005_fork_bomb_throttling(self, velo_serve_fixture: Any, tmp_path: Path) -> None:
         """DESYNC-005: The Fork Bomb (Throttling Check).
 
         Scenario:
@@ -134,7 +135,7 @@ class TestAgentDDesync:
         except OSError:
             pytest.fail("Zygote died during Fork Bomb attack")
 
-    def test_DESYNC_006_dead_hand_wait(self, velo_serve_fixture, tmp_path):
+    def test_DESYNC_006_dead_hand_wait(self, velo_serve_fixture: Any, tmp_path: Path) -> None:
         """DESYNC-006: Dead Hand Wait.
 
         Scenario:
@@ -183,7 +184,7 @@ class TestAgentDDesync:
             assert resp["type"] == "WorkerExited"
             assert resp["worker_pid"] == pid
 
-    def test_DESYNC_007_shadow_handshake(self, velo_serve_fixture):
+    def test_DESYNC_007_shadow_handshake(self, velo_serve_fixture: Any) -> None:
         """DESYNC-007: Shadow Handshake (OutOfOrder).
 
         Scenario:

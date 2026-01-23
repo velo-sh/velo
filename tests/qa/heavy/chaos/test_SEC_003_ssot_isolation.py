@@ -3,7 +3,7 @@ import sys
 try:
     import tomllib
 except ImportError:
-    import toml as tomllib  # Fallback if someone installs it, but 3.11 has tomllib
+    import toml as tomllib  # type: ignore
 import unittest
 from pathlib import Path
 
@@ -24,11 +24,11 @@ class TestSSOTParity(unittest.TestCase):
         # [RITUAL 11.2] Handle TOML parity (Python 3.11+ tomllib vs fallback)
         try:
             with open(self.toml_path, "rb") as f:
-                self.toml_data = tomllib.load(f)
+                self.toml_data = tomllib.load(f)  # type: ignore
         except (TypeError, AttributeError):
             # Fallback for toml library which expects str
             with open(self.toml_path) as f:
-                self.toml_data = tomllib.load(f)
+                self.toml_data = tomllib.load(f)  # type: ignore
 
     def tearDown(self):
         # [RITUAL 11.2] Restoration Checklist

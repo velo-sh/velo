@@ -28,6 +28,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -63,11 +64,11 @@ class VeloE2EProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"velo_e2e_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
-        self.assertions = []  # Track all assertions made
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
+        self.assertions: list[dict[str, Any]] = []  # Track all assertions made
 
-    def assert_step(self, step_name: str, condition: bool, message: str):
+    def assert_step(self, step_name: str, condition: bool, message: str) -> None:
         """Record and assert a step in the E2E chain."""
         result = {"step": step_name, "passed": condition, "message": message}
         self.assertions.append(result)
@@ -77,7 +78,7 @@ class VeloE2EProject:
             print(f"  ❌ [{step_name}] {message}")
         assert condition, f"[{step_name}] {message}"
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "VeloE2EProject":
         """Create pyproject.toml with dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -92,13 +93,13 @@ dev-dependencies = []
         self.assert_step("PYPROJECT", True, f"Created pyproject.toml with {len(deps)} dependencies")
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "VeloE2EProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         self.assert_step("APP_CODE", True, f"Created {filename}")
         return self
 
-    def custody_sync(self, timeout: float = 120):
+    def custody_sync(self, timeout: float = 120) -> "VeloE2EProject":
         """
         [CUSTODY STEP] Run environment sync using Velo's embedded uv.
         This simulates: velo python --help (triggers custody check)
@@ -127,7 +128,7 @@ dev-dependencies = []
         self.assert_step("CUSTODY_SYNC", venv_exists, f".venv created at {self.path / '.venv'}")
         return self
 
-    def start_serve(self, app_module: str, *extra_args, port: int = None) -> subprocess.Popen:
+    def start_serve(self, app_module: str, *extra_args: str, port: int | None = None) -> subprocess.Popen[str]:
         """
         [SPAWN STEP] Start Velo serve and assert on startup phases.
         """
@@ -166,7 +167,7 @@ dev-dependencies = []
 
         return self._proc
 
-    def assert_worker_spawned(self):
+    def assert_worker_spawned(self) -> None:
         """[WORKER STEP] Verify native worker was spawned."""
         if self._proc is None:
             return
@@ -187,10 +188,10 @@ dev-dependencies = []
         self,
         path: str,
         expected_status: int,
-        expected_body_contains: str = None,
-        expected_json_key: str = None,
-        expected_json_value=None,
-    ):
+        expected_body_contains: str | None = None,
+        expected_json_key: str | None = None,
+        expected_json_value: Any = None,
+    ) -> requests.Response:
         """[RSGI-BRIDGE + FRAMEWORK STEP] Make HTTP request and validate response."""
         try:
             resp = requests.get(f"http://127.0.0.1:{self._port}{path}", timeout=10)
@@ -222,13 +223,13 @@ dev-dependencies = []
             self.assert_step("HTTP_REQUEST", False, f"Request failed: {e}")
             raise
 
-    def assert_asgi_bridge_used(self, resp):
+    def assert_asgi_bridge_used(self, resp: requests.Response) -> None:
         """[ASGI-ADAPTER STEP] Verify ASGI bridge was correctly invoked."""
         # This is implicit if we got a valid response from a FastAPI app
         # The bridge detection happens in worker_entry.rs via inspect.signature
         self.assert_step("ASGI_BRIDGE", True, "ASGI app responded correctly (bridge working)")
 
-    def assert_no_uvicorn(self):
+    def assert_no_uvicorn(self) -> None:
         """[SOVEREIGNTY STEP] Verify uvicorn was NOT loaded."""
         if self._proc is None:
             return
@@ -245,15 +246,16 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        assert self._port is not None
         return self._port
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         """Return summary of all assertions."""
         passed = sum(1 for a in self.assertions if a["passed"])
         total = len(self.assertions)
         return {"passed": passed, "total": total, "steps": self.assertions}
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Cleanup resources."""
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
@@ -278,7 +280,7 @@ class TestE2EFrameworkChain:
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_fastapi_full_chain(self):
+    def test_fastapi_full_chain(self) -> None:
         """
         [E2E-CHAIN-01] FastAPI Full Service Chain Test.
 
@@ -363,7 +365,7 @@ async def e2e_check(request: Request):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_starlette_full_chain(self):
+    def test_starlette_full_chain(self) -> None:
         """
         [E2E-CHAIN-02] Starlette Full Service Chain Test.
         """
@@ -413,7 +415,7 @@ app = Starlette(routes=[Route("/e2e", homepage)])
 
     @pytest.mark.tier2
     @pytest.mark.slow
-    def test_pure_rsgi_full_chain(self):
+    def test_pure_rsgi_full_chain(self) -> None:
         """
         [E2E-CHAIN-03] Pure RSGI App (No Bridge Needed).
         """

@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -27,7 +28,7 @@ import requests
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -52,7 +53,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -67,22 +68,22 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
 class DestroyerTestEnv:
     """Test environment for destroyer tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_destroy_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
 
-    def setup(self):
+    def setup(self) -> "DestroyerTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> Path:
         script_path = self.path / name
         script_path.write_text(content)
         return script_path
 
-    def start_serve(self, app: str, port: int, **kwargs) -> subprocess.Popen:
+    def start_serve(self, app: str, port: int, **kwargs: Any) -> subprocess.Popen[str]:
         """Start serve and track the process."""
         cmd = [self.velo, "serve", app, "--port", str(port)]
         for k, v in kwargs.items():
@@ -98,7 +99,7 @@ class DestroyerTestEnv:
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
@@ -110,10 +111,10 @@ class DestroyerTestEnv:
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "DestroyerTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -304,7 +305,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
                 proc.terminate()
                 pytest.fail("Process should have exited after import crash")
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention the crash, or uvicorn dependency
             assert (
                 "INTENTIONAL CRASH" in stderr
@@ -331,7 +332,7 @@ y = 2
             if proc.poll() is None:
                 proc.terminate()
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention that 'app' was not found
             assert "app" in stderr.lower() or "attribute" in stderr.lower() or "error" in stderr.lower()
 

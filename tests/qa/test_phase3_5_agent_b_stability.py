@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -37,7 +38,7 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -62,7 +63,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -77,18 +78,18 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
 class StabilityTestEnv:
     """Test environment with real app setup."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_stability_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
 
-    def setup(self):
+    def setup(self) -> "StabilityTestEnv":
         # Create venv
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def install_deps(self, *packages):
+    def install_deps(self, *packages: str) -> None:
         """Install Python packages."""
         subprocess.run(
             ["uv", "pip", "install", "--quiet"] + list(packages),
@@ -96,11 +97,11 @@ class StabilityTestEnv:
             capture_output=True,
         )
 
-    def create_app(self, name: str, content: str):
+    def create_app(self, name: str, content: str) -> None:
         """Create a Python app file."""
         (self.path / name).write_text(content)
 
-    def start_serve(self, app: str, port: int) -> subprocess.Popen:
+    def start_serve(self, app: str, port: int) -> subprocess.Popen[str]:
         """Start velo serve."""
         proc = subprocess.Popen(
             [self.velo, "serve", app, "--port", str(port)],
@@ -112,7 +113,7 @@ class StabilityTestEnv:
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
@@ -127,10 +128,10 @@ class StabilityTestEnv:
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "StabilityTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -166,7 +167,7 @@ class TestLevel0Smoke:
             proc.terminate()
             proc.wait(timeout=T_SHORT)
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should show SOMETHING about starting
             assert "Starting" in stderr or "serve" in stderr.lower() or "app" in stderr.lower(), (
                 f"No startup message. stderr: {stderr}"

@@ -40,14 +40,14 @@ def get_velo_binary() -> str:
 class DropInTestProject:
     """Test project for drop-in compatibility."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"dropin_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "DropInTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -60,15 +60,15 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "DropInTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "DropInTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, port: int = None):
+    def start_server(self, app_module: str, port: int | None = None) -> "DropInTestProject":
         if port is None:
             import socket
 
@@ -100,13 +100,14 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        assert self._port is not None
         return self._port
 
     @property
     def alive(self) -> bool:
-        return self._proc and self._proc.poll() is None
+        return self._proc is not None and self._proc.poll() is None
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -130,7 +131,7 @@ class TestFastapiDropIn:
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_path_params(self):
+    def test_fastapi_path_params(self) -> None:
         """[DROPIN-FA-01] FastAPI path parameters."""
         with DropInTestProject("fa-path") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -165,7 +166,7 @@ async def get_item(item_name: str):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_query_params(self):
+    def test_fastapi_query_params(self) -> None:
         """[DROPIN-FA-02] FastAPI query parameters."""
         with DropInTestProject("fa-query") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -195,7 +196,7 @@ async def search(q: str, limit: int = 10, offset: Optional[int] = None):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_request_body_json(self):
+    def test_fastapi_request_body_json(self) -> None:
         """[DROPIN-FA-03] FastAPI JSON request body."""
         with DropInTestProject("fa-json") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "pydantic>=2.0"])
@@ -230,7 +231,7 @@ async def create_item(item: Item):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_response_model(self):
+    def test_fastapi_response_model(self) -> None:
         """[DROPIN-FA-04] FastAPI response model."""
         with DropInTestProject("fa-response") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0", "pydantic>=2.0"])
@@ -264,7 +265,7 @@ async def get_user():
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_http_exception(self):
+    def test_fastapi_http_exception(self) -> None:
         """[DROPIN-FA-05] FastAPI HTTPException."""
         with DropInTestProject("fa-exception") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -295,7 +296,7 @@ async def get_item(item_id: int):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_router(self):
+    def test_fastapi_router(self) -> None:
         """[DROPIN-FA-06] FastAPI APIRouter."""
         with DropInTestProject("fa-router") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -334,7 +335,7 @@ app.include_router(items_router)
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_lifespan(self):
+    def test_fastapi_lifespan(self) -> None:
         """[DROPIN-FA-07] FastAPI lifespan context manager."""
         with DropInTestProject("fa-lifespan") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -370,7 +371,7 @@ async def status():
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="FastAPI drop-in compatibility")
-    def test_fastapi_openapi(self):
+    def test_fastapi_openapi(self) -> None:
         """[DROPIN-FA-08] FastAPI OpenAPI schema."""
         with DropInTestProject("fa-openapi") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -407,7 +408,7 @@ class TestStarletteDropIn:
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Starlette drop-in compatibility")
-    def test_starlette_routing(self):
+    def test_starlette_routing(self) -> None:
         """[DROPIN-ST-01] Starlette routing."""
         with DropInTestProject("st-routing") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
@@ -443,7 +444,7 @@ app = Starlette(routes=[
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Starlette drop-in compatibility")
-    def test_starlette_path_params(self):
+    def test_starlette_path_params(self) -> None:
         """[DROPIN-ST-02] Starlette path parameters."""
         with DropInTestProject("st-path") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
@@ -474,7 +475,7 @@ app = Starlette(routes=[
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Starlette drop-in compatibility")
-    def test_starlette_request_body(self):
+    def test_starlette_request_body(self) -> None:
         """[DROPIN-ST-03] Starlette request body."""
         with DropInTestProject("st-body") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
@@ -505,7 +506,7 @@ app = Starlette(routes=[
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Starlette drop-in compatibility")
-    def test_starlette_html_response(self):
+    def test_starlette_html_response(self) -> None:
         """[DROPIN-ST-04] Starlette HTML response."""
         with DropInTestProject("st-html") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
@@ -536,7 +537,7 @@ app = Starlette(routes=[
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Starlette drop-in compatibility")
-    def test_starlette_redirect(self):
+    def test_starlette_redirect(self) -> None:
         """[DROPIN-ST-05] Starlette redirect response."""
         with DropInTestProject("st-redirect") as p:
             p.set_pyproject(deps=["starlette>=0.38.0"])
@@ -577,7 +578,7 @@ class TestCommonAsgiPatterns:
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_pure_asgi_hello(self):
+    def test_pure_asgi_hello(self) -> None:
         """[DROPIN-ASGI-01] Pure ASGI hello world."""
         with DropInTestProject("asgi-hello") as p:
             p.set_pyproject(deps=[])
@@ -607,7 +608,7 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_asgi_json_response(self):
+    def test_asgi_json_response(self) -> None:
         """[DROPIN-ASGI-02] Pure ASGI JSON response."""
         with DropInTestProject("asgi-json") as p:
             p.set_pyproject(deps=[])
@@ -639,7 +640,7 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_asgi_read_body(self):
+    def test_asgi_read_body(self) -> None:
         """[DROPIN-ASGI-03] Pure ASGI read request body."""
         with DropInTestProject("asgi-body") as p:
             p.set_pyproject(deps=[])
@@ -680,7 +681,7 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_asgi_headers(self):
+    def test_asgi_headers(self) -> None:
         """[DROPIN-ASGI-04] Pure ASGI read and write headers."""
         with DropInTestProject("asgi-headers") as p:
             p.set_pyproject(deps=[])
@@ -717,7 +718,7 @@ async def app(scope, receive, send):
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_asgi_path_routing(self):
+    def test_asgi_path_routing(self) -> None:
         """[DROPIN-ASGI-05] Pure ASGI path-based routing."""
         with DropInTestProject("asgi-routing") as p:
             p.set_pyproject(deps=[])
@@ -769,7 +770,7 @@ class TestHttpMethods:
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="HTTP method compatibility")
-    def test_http_get(self):
+    def test_http_get(self) -> None:
         """[DROPIN-HTTP-01] HTTP GET method."""
         with DropInTestProject("http-get") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -795,7 +796,7 @@ async def get_resource():
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="HTTP method compatibility")
-    def test_http_post(self):
+    def test_http_post(self) -> None:
         """[DROPIN-HTTP-02] HTTP POST method."""
         with DropInTestProject("http-post") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -821,7 +822,7 @@ async def create_resource(data: dict):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="HTTP method compatibility")
-    def test_http_put(self):
+    def test_http_put(self) -> None:
         """[DROPIN-HTTP-03] HTTP PUT method."""
         with DropInTestProject("http-put") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -847,7 +848,7 @@ async def update_resource(id: int, data: dict):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="HTTP method compatibility")
-    def test_http_patch(self):
+    def test_http_patch(self) -> None:
         """[DROPIN-HTTP-04] HTTP PATCH method."""
         with DropInTestProject("http-patch") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -873,7 +874,7 @@ async def patch_resource(id: int, data: dict):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="HTTP method compatibility")
-    def test_http_delete(self):
+    def test_http_delete(self) -> None:
         """[DROPIN-HTTP-05] HTTP DELETE method."""
         with DropInTestProject("http-delete") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -908,7 +909,7 @@ class TestRequestResponsePatterns:
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Request object compatibility")
-    def test_request_url_info(self):
+    def test_request_url_info(self) -> None:
         """[DROPIN-REQ-01] Request URL information."""
         with DropInTestProject("req-url") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -940,7 +941,7 @@ async def url_info(request: Request):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Request headers compatibility")
-    def test_request_headers_access(self):
+    def test_request_headers_access(self) -> None:
         """[DROPIN-REQ-02] Request headers access."""
         with DropInTestProject("req-headers") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -970,7 +971,7 @@ async def get_headers(request: Request):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Response with status code")
-    def test_response_status_codes(self):
+    def test_response_status_codes(self) -> None:
         """[DROPIN-REQ-03] Response with various status codes."""
         with DropInTestProject("resp-status") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -1003,7 +1004,7 @@ async def accepted():
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Query string parsing")
-    def test_query_string_parsing(self):
+    def test_query_string_parsing(self) -> None:
         """[DROPIN-REQ-04] Query string parsing."""
         with DropInTestProject("query-parse") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])
@@ -1038,7 +1039,7 @@ async def filter_items(
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.xfail(reason="Content type negotiation")
-    def test_content_type_negotiation(self):
+    def test_content_type_negotiation(self) -> None:
         """[DROPIN-REQ-05] Content type in response."""
         with DropInTestProject("content-type") as p:
             p.set_pyproject(deps=["fastapi>=0.115.0"])

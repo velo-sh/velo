@@ -28,7 +28,7 @@ class TestHFTPerformance:
 
     @pytest.mark.tier4
     @pytest.mark.shm
-    def test_L4_SHM_11_alignment_verification(self, shm_test_env: VeloTestEnv):
+    def test_L4_SHM_11_alignment_verification(self, shm_test_env: VeloTestEnv) -> None:
         """
         L4-SHM-11: Verify all tensor offsets are 64-byte aligned (H-29).
 
@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     @pytest.mark.tier4
     @pytest.mark.shm
-    def test_L4_SHM_11_alignment_with_real_safetensors(self, shm_test_env: VeloTestEnv):
+    def test_L4_SHM_11_alignment_with_real_safetensors(self, shm_test_env: VeloTestEnv) -> None:
         """
         L4-SHM-11 (Extended): Test alignment with actual safetensors file format.
 
@@ -280,8 +280,8 @@ if __name__ == "__main__":
 
     @pytest.mark.tier4
     @pytest.mark.shm
-    @skip_on_macos_numa
-    def test_L4_SHM_12_numa_locality(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_numa  # type: ignore[untyped-decorator]
+    def test_L4_SHM_12_numa_locality(self, shm_test_env: VeloTestEnv) -> None:
         """
         L4-SHM-12: NUMA locality test (H-30).
 
@@ -435,7 +435,7 @@ class TestPerformanceBaseline:
 
     @pytest.mark.tier4
     @pytest.mark.shm
-    def test_mmap_vs_file_read_baseline(self, shm_test_env: VeloTestEnv):
+    def test_mmap_vs_file_read_baseline(self, shm_test_env: VeloTestEnv) -> None:
         """
         Baseline performance comparison: mmap vs traditional file read.
 

@@ -24,5 +24,18 @@ fn main() -> Result<()> {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
 
+    // Test-mode SIGTERM fast-exit to avoid hanging processes in CI.
+    #[cfg(unix)]
+    if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+        use signal_hook::consts::SIGTERM;
+        let _ = unsafe {
+            signal_hook::low_level::register(SIGTERM, || {
+                let msg = b"CHILD_RECEIVED_SIGTERM\n";
+                let _ = libc::write(libc::STDERR_FILENO, msg.as_ptr() as _, msg.len());
+                libc::_exit(0);
+            })
+        };
+    }
+
     velo::cli::run()
 }

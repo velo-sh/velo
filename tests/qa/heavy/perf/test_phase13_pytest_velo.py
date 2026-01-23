@@ -123,15 +123,14 @@ class TestXdistCompatibility:
 
         # Mock config object
         class MockConfig:
-            def __init__(self, velo=False, numprocesses=0):
-                self.option = type(
-                    "Option",
-                    (),
-                    {
-                        "velo": velo,
-                        "numprocesses": numprocesses,
-                    },
-                )()
+            class Option:
+                velo: bool = False
+                numprocesses: int = 0
+
+            def __init__(self, velo: bool = False, numprocesses: int = 0):
+                self.option = self.Option()
+                self.option.velo = velo
+                self.option.numprocesses = numprocesses
 
         # Both enabled: should NOT raise (Phase 14 change)
         validate_xdist_compatibility(MockConfig(velo=True, numprocesses=4))

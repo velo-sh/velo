@@ -224,14 +224,14 @@ def build_from_project(
 
     # Find all .py files
     for py_file in project_dir.rglob("*.py"):
-        # Skip __pycache__ and hidden directories
-        if "__pycache__" in str(py_file) or any(
-            p.startswith(".") for p in py_file.parts
+        # Skip __pycache__ and hidden directories/files within project
+        rel_path = py_file.relative_to(project_dir)
+        if "__pycache__" in str(rel_path) or any(
+            p.startswith(".") for p in rel_path.parts
         ):
             continue
 
         # Convert path to module name
-        rel_path = py_file.relative_to(project_dir)
         parts = list(rel_path.parts)
 
         if parts[-1] == "__init__.py":

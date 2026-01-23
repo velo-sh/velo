@@ -32,7 +32,10 @@ except ImportError:
     umsgpack = None
 
 
-def send_msg(sock, msg):
+from typing import Any
+
+
+def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     payload = umsgpack.packb(msg)
     total_len = 1 + len(payload)
     header = struct.pack("<I", total_len)
@@ -40,7 +43,7 @@ def send_msg(sock, msg):
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock, timeout=2.0):
+def recv_msg(sock: socket.socket, timeout: float = 2.0) -> Any:
     sock.settimeout(timeout)
     header = b""
     while len(header) < 4:
@@ -63,7 +66,7 @@ def recv_msg(sock, timeout=2.0):
     return umsgpack.unpackb(payload)
 
 
-def auth_zygote(sock, secret):
+def auth_zygote(sock: socket.socket, secret: str) -> None:
     """Perform SEC-005 Forensic Auth handshake."""
     send_msg(sock, {"type": "Auth", "secret": secret})
     resp = recv_msg(sock)

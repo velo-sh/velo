@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,7 +17,7 @@ except ImportError:
 
 @pytest.mark.tier3
 class TestSecH17ShmReadonly:
-    def _read_with_timeout(self, stream, timeout=5):
+    def _read_with_timeout(self, stream: Any, timeout: float = 5.0) -> str | None:
         import select
         import time
 
@@ -26,7 +27,7 @@ class TestSecH17ShmReadonly:
             if r:
                 line = stream.readline()
                 if line:
-                    return line
+                    return str(line)
         return None
 
     """

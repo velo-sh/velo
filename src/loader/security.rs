@@ -1,13 +1,13 @@
 //! Security validation for bundle loading
 //!
-//! RFC-0006 Handover Section 2: 安全红线
+//! RFC-0006 Handover Section 2: Security red lines
 
 use crate::loader::error::{LoaderError, Result};
 use std::path::Path;
 
 /// Default maximum bundle size: 256MB (DoS prevention)
 ///
-/// Handover Section 2.2: 内存限制
+/// Handover Section 2.2: Memory limits
 pub const DEFAULT_MAX_BUNDLE_SIZE: u64 = 256 * 1024 * 1024;
 
 /// Validate bundle file size before reading

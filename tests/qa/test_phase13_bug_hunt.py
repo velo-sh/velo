@@ -137,9 +137,9 @@ class TestEdgeCase_ForkWithOpenFiles:
         """Forking with open files should not corrupt them"""
         from pytest_velo.plugin import run_in_zygote_fork
 
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write("before fork\n")
-            temp_path = f.name
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
+            tf.write("before fork\n")
+            temp_path = tf.name
 
         class MockItem:
             def runtest(self):

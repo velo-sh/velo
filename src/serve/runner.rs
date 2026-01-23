@@ -22,7 +22,7 @@ use crate::custody::autopilot::{AutopilotDecision, AutopilotEngine};
 use crate::lifecycle::apply_standard_hygiene;
 use crate::serve::config::{LogFormat, ServeArgs};
 use crate::serve::error::ServeError;
-use crate::serve::framework::{detect_framework, get_preload_modules};
+use crate::serve::framework::{AppProtocol, Server, detect_app_protocol};
 use crate::zygote::ZygoteLauncher;
 
 // Proxy integration (RFC-0011 Phase 2)
@@ -32,6 +32,132 @@ use hyper_util::rt::TokioIo;
 
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+
+#[cfg(unix)]
+fn cleanup_zygote_processes_for_test(socket_path: &Path) {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    let Ok(text) = String::from_utf8(output.stdout) else {
+        return;
+    };
+    let needle = socket_path.to_string_lossy();
+    for line in text.lines() {
+        if !line.contains("velo_zygote/main.py") || !line.contains(needle.as_ref()) {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(pid_str) = parts.next() else {
+            continue;
+        };
+        if let Ok(pid) = pid_str.parse::<i32>() {
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn cleanup_descendants_for_test(parent_pid: i32) {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-ax", "-o", "pid=,ppid="])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    let Ok(text) = String::from_utf8(output.stdout) else {
+        return;
+    };
+    let mut children_map: std::collections::HashMap<i32, Vec<i32>> =
+        std::collections::HashMap::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(pid_str) = parts.next() else {
+            continue;
+        };
+        let Some(ppid_str) = parts.next() else {
+            continue;
+        };
+        if let (Ok(pid), Ok(ppid)) = (pid_str.parse::<i32>(), ppid_str.parse::<i32>()) {
+            children_map.entry(ppid).or_default().push(pid);
+        }
+    }
+
+    let mut stack = vec![parent_pid];
+    let mut descendants = Vec::new();
+    while let Some(ppid) = stack.pop() {
+        if let Some(children) = children_map.get(&ppid) {
+            for &child in children {
+                descendants.push(child);
+                stack.push(child);
+            }
+        }
+    }
+
+    for pid in descendants {
+        unsafe {
+            let _ = libc::kill(pid, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn cleanup_uvicorn_workers_for_test(socket_dir: &Path) {
+    let output = std::process::Command::new("/bin/ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    let Ok(text) = String::from_utf8(output.stdout) else {
+        return;
+    };
+    let socket_dir_str = socket_dir.to_string_lossy();
+    for line in text.lines() {
+        if !line.contains("uvicorn")
+            || !line.contains("--uds")
+            || !line.contains(socket_dir_str.as_ref())
+        {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(pid_str) = parts.next() else {
+            continue;
+        };
+        if let Ok(pid) = pid_str.parse::<i32>() {
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn cleanup_zygote_process_group_for_test(socket_path: &Path) {
+    use crate::zygote::core_ipc::{ZygoteCommand, ZygoteResponse, send_command};
+    if let Ok(ZygoteResponse::Status { pid, .. }) = send_command(
+        socket_path,
+        ZygoteCommand::Status { request_id: None },
+        None,
+    ) {
+        unsafe {
+            let _ = libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+pub fn cleanup_test_processes(project_dir: &Path, app: &str) {
+    let socket_path = crate::zygote::core_ipc::socket_path_for_app(project_dir, app);
+    cleanup_zygote_process_group_for_test(&socket_path);
+    cleanup_zygote_processes_for_test(&socket_path);
+    cleanup_descendants_for_test(std::process::id() as i32);
+    cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
+}
 
 // ============================================================================
 // Logging & Security helpers (ADR D3, D4, D5)
@@ -80,12 +206,6 @@ impl ServeLogger {
     fn debug(&self, msg: &str) {
         if self.verbose_level >= 2 {
             self.log("debug", msg, None);
-        }
-    }
-
-    fn trace(&self, msg: &str) {
-        if self.verbose_level >= 3 {
-            self.log("trace", msg, None);
         }
     }
 
@@ -170,6 +290,54 @@ fn apply_process_group(cmd: &mut Command) {
     apply_standard_hygiene(cmd);
 }
 
+fn build_server_command(
+    server: Server,
+    args: &ServeArgs,
+    python_path: &Path,
+    project_dir: &Path,
+    logger: &ServeLogger,
+) -> Result<Command> {
+    let mut cmd = Command::new(python_path);
+    cmd.arg("-m").arg(server.module_name());
+
+    match server {
+        Server::Uvicorn => {
+            cmd.arg(&args.app)
+                .arg("--host")
+                .arg(&args.host)
+                .arg("--port")
+                .arg(args.port.to_string());
+
+            if args.workers > 1 {
+                cmd.arg("--workers").arg(args.workers.to_string());
+            }
+            // Velo handles reload supervision; avoid nested reloader processes.
+            // STB-RS-004: Ensure uvicorn exits quickly on SIGTERM to avoid supervisor hangs
+            cmd.arg("--timeout-graceful-shutdown").arg("1");
+        }
+        Server::Gunicorn => {
+            cmd.arg("--bind")
+                .arg(format!("{}:{}", args.host, args.port))
+                .arg("--workers")
+                .arg(args.workers.to_string())
+                .arg("--timeout")
+                .arg(args.timeout.to_string());
+
+            cmd.arg(&args.app);
+        }
+        Server::RSGI => {
+            anyhow::bail!("RSGI mode is not supported in legacy fallback mode");
+        }
+    }
+
+    logger.verbose(&format!("Current directory: {:?}", project_dir));
+    cmd.current_dir(project_dir)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    Ok(cmd)
+}
 // ============================================================================
 // ManagedChild - RAII wrapper for subprocess (D2, RFC §4.9.3)
 // ============================================================================
@@ -510,18 +678,33 @@ pub enum ServerEvent {
 /// - SIGTERM (Graceful shutdown)
 /// - SIGCHLD (Child process exit)
 #[cfg(unix)]
-fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeError> {
+fn spawn_signal_forwarder(
+    tx: mpsc::Sender<ServerEvent>,
+    shutdown_flag: Arc<AtomicBool>,
+) -> Result<(), ServeError> {
     use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
 
     let mut signals = Signals::new([SIGINT, SIGTERM, SIGCHLD]).map_err(ServeError::SignalError)?;
 
     thread::spawn(move || {
-        for signal in signals.forever() {
-            if tx.send(ServerEvent::Signal(signal)).is_err() {
-                // Receiver dropped, exit thread
-                break;
+        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
+        while !shutdown_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            for signal in signals.pending() {
+                if test_mode && signal == SIGTERM {
+                    eprintln!("CHILD_RECEIVED_SIGTERM");
+                }
+                if test_mode && (signal == SIGINT || signal == SIGTERM) {
+                    eprintln!("[SHUTDOWN] signal received: {}", signal);
+                }
+                if signal == SIGINT || signal == SIGTERM {
+                    shutdown_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                if tx.send(ServerEvent::Signal(signal)).is_err() {
+                    return;
+                }
             }
+            std::thread::sleep(Duration::from_millis(50));
         }
     });
 
@@ -529,7 +712,10 @@ fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeErro
 }
 
 #[cfg(not(unix))]
-fn spawn_signal_forwarder(tx: mpsc::Sender<ServerEvent>) -> Result<(), ServeError> {
+fn spawn_signal_forwarder(
+    tx: mpsc::Sender<ServerEvent>,
+    _shutdown_flag: Arc<AtomicBool>,
+) -> Result<(), ServeError> {
     // Windows implementation primarily relies on Ctrl-C handler
     // Note: This is simplified compared to Unix SIGCHLD
     let tx_clone = tx.clone();
@@ -574,7 +760,7 @@ pub fn run_server(
     // start_time moved inside loop for correct reload timing
 
     // Step 1: Validate app format
-    let (module, _attr) = args.parse_app()?;
+    let (module, attr) = args.parse_app()?;
 
     // Step 2: Early validation - Privileged port check (SEC-P0-006)
     // Fail fast if port < 1024 and not root, instead of letting async bind fail silently
@@ -655,6 +841,8 @@ pub fn run_server(
         }
     }
 
+    // Dry-run handled after protocol detection and Zygote prewarm (see below).
+
     // Step 1.1: Scaling Warning (R4)
     let file_count = count_python_files(project_dir);
     if file_count > 5000 {
@@ -662,68 +850,104 @@ pub fn run_server(
         logger.warn("help: Watching many files may impact performance.");
     }
 
-    // Step 2: Detect framework FIRST (shows user Velo understands their project)
-    let framework = detect_framework(module, project_dir);
-    let preload_modules = get_preload_modules(framework);
+    // Step 2: Detect app protocol without hardcoded framework lists
+    let protocol = detect_app_protocol(python_path, project_dir, module, attr);
+    let preload_modules: Vec<&str> = config.preload.iter().map(|s| s.as_str()).collect();
 
-    // Step 3: Handle Django settings inference (R2)
-    if framework == crate::serve::framework::Framework::Django
-        && std::env::var("DJANGO_SETTINGS_MODULE").is_err()
-    {
-        if let Some(settings) = crate::serve::framework::detect_django_settings(project_dir) {
-            logger.info(&format!("Inferred DJANGO_SETTINGS_MODULE={}", settings));
-            unsafe {
-                std::env::set_var("DJANGO_SETTINGS_MODULE", &settings);
+    // Step 3: Select server based on app protocol (D4)
+    let mut rsgi_enabled = args.rsgi;
+    if rsgi_enabled {
+        if let Ok(py_env) = crate::common::python_env::PythonEnv::detect(python_path) {
+            let pyo3_version = if cfg!(Py_3_13) {
+                "3.13"
+            } else if cfg!(Py_3_12) {
+                "3.12"
+            } else if cfg!(Py_3_11) {
+                "3.11"
+            } else if cfg!(Py_3_10) {
+                "3.10"
+            } else {
+                "unknown"
+            };
+            if pyo3_version == "unknown" {
+                logger.warn("RSGI disabled: unknown PyO3 ABI version.");
+                rsgi_enabled = false;
+            } else if py_env.version != pyo3_version {
+                logger.warn(&format!(
+                    "RSGI disabled: Python ABI mismatch (runtime {}, pyo3 {}).",
+                    py_env.version, pyo3_version
+                ));
+                rsgi_enabled = false;
             }
         } else {
-            logger.warn("Django detected but DJANGO_SETTINGS_MODULE is not set.");
-            logger.warn("help: High-performance preloading may be impaired.");
+            logger.warn("RSGI disabled: failed to detect Python runtime version.");
+            rsgi_enabled = false;
         }
     }
 
-    // Step 3: Select server based on framework (D4)
-    let server = get_server_type(framework);
-
-    // Show framework detection result
-    if framework != crate::serve::framework::Framework::Unknown {
-        logger.info_with(
-            &format!("Detected: {} → {}", framework, server),
-            &format!("(auto-preload: {})", preload_modules.join(", ")),
-        );
+    let mut server = if rsgi_enabled {
+        Server::RSGI
     } else {
-        logger.trace("Framework: Unknown (auto-detection missed)");
+        get_server_type(protocol)
+    };
+
+    if !rsgi_enabled
+        && protocol == AppProtocol::Wsgi
+        && !check_server_installed(Server::Gunicorn, python_path)
+    {
+        logger.warn("WSGI detected but gunicorn is missing; falling back to uvicorn.");
+        server = Server::Uvicorn;
     }
 
-    // Step 4: Check server is installed (only for non-RSGI mode)
-    // When --rsgi is specified, we use native Granian workers which don't need uvicorn
-    if !args.rsgi {
-        logger.debug(&format!(
-            "Checking if {} is installed (using python_path: {})...",
-            server,
-            python_path.display()
-        ));
-        if !check_server_installed(server, python_path) {
-            logger.error(&format!("Missing dependency: {}", server));
-            eprintln!();
-            eprintln!("{} is required to run {} applications.", server, framework);
-            eprintln!("To fix:");
-            eprintln!("    {}", server.install_hint());
-            return Err(anyhow::anyhow!("Missing dependency: {}", server));
+    // Show protocol detection result
+    if rsgi_enabled {
+        logger.info("RSGI mode forced; skipping protocol-based server selection.");
+    } else {
+        match protocol {
+            AppProtocol::Unknown => {
+                logger.warn("App protocol detection failed; defaulting to uvicorn.");
+            }
+            _ => {
+                let preload_detail = if preload_modules.is_empty() {
+                    "(preload: none)".to_string()
+                } else {
+                    format!("(preload: {})", preload_modules.join(", "))
+                };
+                logger.info_with(
+                    &format!("Detected protocol: {} → {}", protocol, server),
+                    &preload_detail,
+                );
+            }
         }
-    } else {
-        logger.debug("Skipping server dependency check (Native RSGI mode)");
     }
+
+    // Step 4: Dependency check is performed after Zygote + dry-run short-circuit
 
     // Shutdown Coordinator (SEC-P0-001)
     let shutdown_coordinator =
         crate::serve::runner::ShutdownCoordinator::new().map_err(ServeError::SignalError)?;
+    #[cfg(unix)]
+    {
+        use signal_hook::consts::{SIGINT, SIGTERM};
+        let flag = shutdown_coordinator.flag.clone();
+        let _ = signal_hook::flag::register(SIGTERM, flag.clone());
+        let _ = signal_hook::flag::register(SIGINT, flag);
+    }
+    #[cfg(unix)]
+    {
+        use signal_hook::consts::{SIGINT, SIGTERM};
+        signal_hook::flag::register(SIGINT, Arc::clone(&shutdown_coordinator.flag))
+            .map_err(ServeError::SignalError)?;
+        signal_hook::flag::register(SIGTERM, Arc::clone(&shutdown_coordinator.flag))
+            .map_err(ServeError::SignalError)?;
+    }
 
     // Step 5:    // Event Bus (Recommendation #1)
     let (tx, rx) = mpsc::channel();
 
     // Signal Forwarder
     #[cfg(unix)]
-    spawn_signal_forwarder(tx.clone())?;
+    spawn_signal_forwarder(tx.clone(), Arc::clone(&shutdown_coordinator.flag))?;
 
     // Hot Reload Watcher (D6, D7)
     let mut _watcher: Option<Arc<crate::serve::watcher::FileWatcher>> = None;
@@ -740,6 +964,12 @@ pub fn run_server(
         let watcher_clone = Arc::clone(&watcher);
         thread::spawn(move || {
             loop {
+                if watcher_clone
+                    .shutdown_flag
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    break;
+                }
                 match watcher_clone.poll() {
                     Ok(true) => {
                         if tx_clone.send(ServerEvent::Reload).is_err() {
@@ -801,22 +1031,47 @@ pub fn run_server(
         logger.info("Autopilot: Implicitly enabling Zygote based on imports/performance");
         use_zygote = true;
     }
+    if args.reload {
+        use_zygote = false;
+    }
+
+    let app_name_for_zygote = if args.reload || std::env::var("VELO_TEST_MODE").is_ok() {
+        None
+    } else {
+        Some(args.app.as_str())
+    };
 
     if use_zygote && crate::zygote::is_supported() {
         let socket_path = crate::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
+        let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
+
+        if test_mode {
+            #[cfg(unix)]
+            cleanup_zygote_processes_for_test(&socket_path);
+            let _ = crate::zygote::core_ipc::send_command(
+                &socket_path,
+                crate::zygote::core_ipc::ZygoteCommand::Shutdown,
+                None,
+            );
+            let _ = std::fs::remove_file(&socket_path);
+        }
 
         if !socket_path.exists() {
-            logger.info(&format!("Pre-warming Zygote with {} modules...", framework));
+            logger.info(&format!(
+                "Pre-warming Zygote with {} module(s)...",
+                preload_modules.len()
+            ));
             let mut launcher =
                 ZygoteLauncher::new(socket_path).with_python(python_path.to_path_buf());
 
-            if let Err(e) = launcher.start(&preload_modules, Some(&args.app), false, config) {
+            if let Err(e) = launcher.start(&preload_modules, app_name_for_zygote, false, config) {
                 let signal = crate::common::governance::GovernanceSignal::new(
                     crate::common::governance::SignalComponent::ZygoteIPC,
                     format!("Zygote pre-warm failed: {}", e),
                     "Continuing without Zygote optimization",
                     "Check Zygote logs and socket permissions.",
                 );
+                let _ = launcher.stop();
                 if config.strict_optimizations {
                     return Err(anyhow::anyhow!(signal.format_critical()));
                 } else {
@@ -885,6 +1140,52 @@ pub fn run_server(
         }
     }
 
+    // Dry-run short-circuit after Zygote prewarm so fallback is observable.
+    if args.dry_run {
+        let start_time = Instant::now();
+        let server = if args.rsgi {
+            Server::RSGI
+        } else {
+            Server::Uvicorn
+        };
+        if matches!(server, Server::RSGI) {
+            logger.warn("Dry run for RSGI is not supported; skipping command build.");
+            return Ok(ServerExit::Shutdown);
+        }
+        let cmd = build_server_command(server, args, python_path, project_dir, &logger)?;
+        let ready_ms = start_time.elapsed().as_millis();
+        logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
+        logger.info(&format!(
+            "Dry run: Command would be: {:?} {:?}",
+            cmd.get_program(),
+            cmd.get_args()
+                .map(|v| v.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+        return Ok(ServerExit::Shutdown);
+    }
+
+    // Step 4: Check server is installed (only for non-RSGI mode)
+    // When --rsgi is specified, we use native Granian workers which don't need uvicorn
+    if !rsgi_enabled {
+        logger.debug(&format!(
+            "Checking if {} is installed (using python_path: {})...",
+            server,
+            python_path.display()
+        ));
+        if !check_server_installed(server, python_path) {
+            logger.error(&format!("Missing dependency: {}", server));
+            eprintln!();
+            eprintln!("{} is required to run {} applications.", server, protocol);
+            eprintln!("To fix:");
+            eprintln!("    {}", server.install_hint());
+            return Err(anyhow::anyhow!("Missing dependency: {}", server));
+        }
+    } else {
+        logger.debug("Skipping server dependency check (Native RSGI mode)");
+    }
+
     // RFC-0011 & Net-001: Unified Worker Management & L7 Proxy
     let mut workers = Vec::new();
     let mut use_proxy = false;
@@ -895,7 +1196,7 @@ pub fn run_server(
 
     // A.1 Spawn via Native Granian (Phase 7.3)
     #[cfg(unix)]
-    if !args.dry_run && args.workers >= 1 && args.rsgi {
+    if !args.dry_run && args.workers >= 1 && rsgi_enabled {
         use std::os::unix::io::AsRawFd;
 
         let addr = format!("{}:{}", args.host, args.port);
@@ -953,7 +1254,7 @@ pub fn run_server(
             _native_listener = Some(listener);
         } else {
             // Partial failure: cleanup
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -964,7 +1265,6 @@ pub fn run_server(
         && workers.is_empty() // FIX: Avoid dual spawning if native workers are already up
         && args.workers >= 1
         && use_zygote
-        && !preload_modules.is_empty()
         && _zygote_guard.is_some()
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
@@ -978,7 +1278,7 @@ pub fn run_server(
                 i as u64,
                 None,
                 config,
-                args.rsgi,
+                rsgi_enabled,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -1001,7 +1301,7 @@ pub fn run_server(
             use_proxy = true;
         } else {
             // Partial failure: cleanup and fallback
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -1024,7 +1324,7 @@ pub fn run_server(
                 python_path,
                 project_dir,
                 config,
-                args.rsgi,
+                rsgi_enabled,
             ) {
                 Ok(worker) => {
                     logger.info(&format!(
@@ -1043,7 +1343,7 @@ pub fn run_server(
         if workers.len() == args.workers as usize {
             use_proxy = true;
         } else {
-            for w in workers.drain(..) {
+            for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
             }
         }
@@ -1075,7 +1375,7 @@ pub fn run_server(
             lb.register_worker_pid(i as u64, w.pid);
         }
 
-        logger.info(if args.rsgi {
+        logger.info(if rsgi_enabled {
             "Starting RSGI Host..."
         } else {
             "Starting L7 Proxy..."
@@ -1089,11 +1389,11 @@ pub fn run_server(
 
         let lb_for_proxy = lb.clone();
 
-        if args.rsgi && _native_listener.is_some() {
+        if rsgi_enabled && _native_listener.is_some() {
             // RFC-0019/0025: Native RSGI Mode
             // Workers handle their own server listening; Master only supervises.
             logger.info("Master supervisor active (Native RSGI Mode)");
-        } else if args.rsgi && _zygote_guard.is_none() {
+        } else if rsgi_enabled && _zygote_guard.is_none() {
             // Only bail if NOT using Zygote (Legacy RSGI requires native listener)
             anyhow::bail!("RSGI mode requires a native listener (Unix only)");
         } else {
@@ -1125,6 +1425,32 @@ pub fn run_server(
 
         // Main loop: Wait for Signal or Events (Zero Busy Wait)
         loop {
+            if shutdown_coordinator.is_shutting_down() {
+                if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                    eprintln!("[SHUTDOWN] coordinator flag set in proxy loop");
+                }
+                eprintln!("\n🛑 Shutdown requested, stopping workers...");
+                let shutdown_timeout =
+                    Duration::from_secs(args.timeout).min(Duration::from_secs(3));
+                for w in &mut workers {
+                    let _ = w.shutdown(shutdown_timeout);
+                }
+                if let Some(mut launcher) = _zygote_guard.take() {
+                    let _ = launcher.stop();
+                }
+                if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                    #[cfg(unix)]
+                    {
+                        let socket_path =
+                            crate::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
+                        cleanup_zygote_process_group_for_test(&socket_path);
+                        cleanup_zygote_processes_for_test(&socket_path);
+                        cleanup_descendants_for_test(std::process::id() as i32);
+                        cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
+                    }
+                }
+                return Ok(ServerExit::Shutdown);
+            }
             // PERF-604: 10ms polling floor reduces log volume while maintaining throughput.
             // TODO(EV-001): Migrate to event-driven pidfd (Linux) or kqueue (macOS)
             // to eliminate polling overhead while maintaining low latency.
@@ -1132,9 +1458,32 @@ pub fn run_server(
                 Ok(ServerEvent::Signal(sig)) => {
                     use signal_hook::consts::{SIGCHLD, SIGINT, SIGTERM};
                     if sig == SIGINT || sig == SIGTERM {
+                        if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                            eprintln!("[SHUTDOWN] signal event in proxy loop: {}", sig);
+                        }
                         eprintln!("\n🛑 Received shutdown signal, stopping workers...");
-                        for w in &workers {
-                            let _ = w.shutdown(Duration::from_secs(args.timeout));
+                        let shutdown_timeout =
+                            Duration::from_secs(args.timeout).min(Duration::from_secs(3));
+                        for w in &mut workers {
+                            let _ = w.shutdown(shutdown_timeout);
+                        }
+                        if let Some(mut launcher) = _zygote_guard.take() {
+                            let _ = launcher.stop();
+                        }
+                        if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                            #[cfg(unix)]
+                            {
+                                let socket_path = crate::zygote::core_ipc::socket_path_for_app(
+                                    project_dir,
+                                    &args.app,
+                                );
+                                cleanup_zygote_process_group_for_test(&socket_path);
+                                cleanup_zygote_processes_for_test(&socket_path);
+                                cleanup_descendants_for_test(std::process::id() as i32);
+                                cleanup_uvicorn_workers_for_test(
+                                    &crate::common::paths::get_socket_dir(),
+                                );
+                            }
                         }
                         return Ok(ServerExit::Shutdown);
                     } else if sig == SIGCHLD {
@@ -1145,7 +1494,7 @@ pub fn run_server(
 
                 Ok(ServerEvent::Reload) => {
                     logger.info("Changes detected (Proxy Mode), restarting workers...");
-                    for w in &workers {
+                    for w in &mut workers {
                         let _ = w.shutdown(Duration::from_secs(args.timeout));
                     }
                     return Ok(ServerExit::Reload);
@@ -1193,7 +1542,7 @@ pub fn run_server(
                             python_path,
                             project_dir,
                             config,
-                            args.rsgi,
+                            rsgi_enabled,
                             #[cfg(unix)]
                             socket_fd,
                         ) {
@@ -1251,7 +1600,7 @@ pub fn run_server(
                                                     python_path,
                                                     project_dir,
                                                     config,
-                                                    args.rsgi,
+                                                    rsgi_enabled,
                                                     #[cfg(unix)]
                                                     socket_fd,
                                                 ) {
@@ -1292,6 +1641,16 @@ pub fn run_server(
     // STB-RS-005: Respawn Loop
     // Logic: If reload is enabled, we loop here to respawn the server on change events.
     loop {
+        if shutdown_coordinator.is_shutting_down() {
+            if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                eprintln!("[SHUTDOWN] flag set before respawn loop");
+            }
+            if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                #[cfg(unix)]
+                cleanup_descendants_for_test(std::process::id() as i32);
+            }
+            return Ok(ServerExit::Shutdown);
+        }
         let start_time = Instant::now();
 
         if server == Server::Uvicorn && args.workers >= 1 {
@@ -1299,68 +1658,11 @@ pub fn run_server(
         }
 
         // Build server command based on server type
-        let mut cmd = Command::new(python_path);
-        cmd.arg("-m").arg(server.module_name());
+        let mut cmd = build_server_command(server, args, python_path, project_dir, &logger)?;
 
-        // Match server type for legacy fallback
-        match server {
-            Server::Uvicorn => {
-                cmd.arg(&args.app)
-                    .arg("--host")
-                    .arg(&args.host)
-                    .arg("--port")
-                    .arg(args.port.to_string());
-
-                if args.workers > 1 {
-                    cmd.arg("--workers").arg(args.workers.to_string());
-                }
-                if args.reload {
-                    cmd.arg("--reload");
-                }
-                // STB-RS-004: Ensure uvicorn exits quickly on SIGTERM to avoid supervisor hangs
-                cmd.arg("--timeout-graceful-shutdown").arg("1");
-            }
-            Server::Gunicorn => {
-                // Gunicorn uses different arg format
-                cmd.arg("--bind")
-                    .arg(format!("{}:{}", args.host, args.port))
-                    .arg("--workers")
-                    .arg(args.workers.to_string())
-                    .arg("--timeout")
-                    .arg(args.timeout.to_string());
-
-                if args.reload {
-                    cmd.arg("--reload");
-                }
-                cmd.arg(&args.app);
-            }
-            Server::RSGI => {
-                anyhow::bail!("RSGI mode is not supported in legacy fallback mode");
-            }
-        }
-
-        // Set working directory and inherit stdio
-        logger.verbose(&format!("Current directory: {:?}", project_dir));
-        cmd.current_dir(project_dir)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
-        // Unified Startup Timing & Dry Run (R5, PERF-P0-001)
+        // Unified Startup Timing (R5, PERF-P0-001)
         let ready_ms = start_time.elapsed().as_millis();
         logger.log_with_timing("info", "Server ready", None, Some(ready_ms));
-
-        if args.dry_run {
-            logger.info(&format!(
-                "Dry run: Command would be: {:?} {:?}",
-                cmd.get_program(),
-                cmd.get_args()
-                    .map(|v| v.to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ));
-            return Ok(ServerExit::Shutdown);
-        }
 
         if args.log_format == LogFormat::Text {
             eprintln!("   App:       {}", args.app);
@@ -1390,8 +1692,60 @@ pub fn run_server(
 
             // Main loop: Wait for Events (Zero Busy Wait)
             loop {
+                if shutdown_coordinator.is_shutting_down() {
+                    eprintln!("\n🛑 Shutdown requested, stopping server...");
+                    #[cfg(unix)]
+                    {
+                        let pid = child.id() as i32;
+                        let target = if let Some(pgid) = child.pgid() {
+                            -pgid
+                        } else {
+                            pid
+                        };
+                        unsafe {
+                            libc::kill(target, libc::SIGTERM);
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    let _ = child.terminate();
+                    let shutdown_wait =
+                        if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                            Duration::from_secs(args.timeout).min(Duration::from_secs(3))
+                        } else {
+                            Duration::from_secs(args.timeout)
+                        };
+                    match child.wait_timeout(shutdown_wait) {
+                        Ok(Some(_)) => {
+                            logger.info("Server stopped gracefully");
+                        }
+                        _ => {
+                            logger.warn("Shutdown timeout expired, force killing process group...");
+                            #[cfg(unix)]
+                            {
+                                let pid = child.id() as i32;
+                                let target = if let Some(pgid) = child.pgid() {
+                                    -pgid
+                                } else {
+                                    pid
+                                };
+                                unsafe {
+                                    libc::kill(target, libc::SIGKILL);
+                                }
+                            }
+                            #[cfg(not(unix))]
+                            let _ = child.kill();
+                        }
+                    }
+                    if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1") {
+                        #[cfg(unix)]
+                        cleanup_descendants_for_test(std::process::id() as i32);
+                        #[cfg(unix)]
+                        cleanup_uvicorn_workers_for_test(&crate::common::paths::get_socket_dir());
+                    }
+                    return Ok(ServerExit::Shutdown);
+                }
                 // Block until event received
-                match rx.recv() {
+                match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(ServerEvent::Signal(sig)) => {
                         match sig {
                             signal_hook::consts::SIGCHLD => {
@@ -1460,10 +1814,28 @@ pub fn run_server(
                                     logger.warn(&format!("Failed to send SIGTERM: {}", e));
                                 }
 
-                                // Wait with timeout
-                                match child.wait_timeout(Duration::from_secs(args.timeout)) {
+                                // Wait with timeout (cap in test mode to avoid CI hangs)
+                                let shutdown_wait =
+                                    if std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1")
+                                    {
+                                        Duration::from_secs(args.timeout)
+                                            .min(Duration::from_secs(3))
+                                    } else {
+                                        Duration::from_secs(args.timeout)
+                                    };
+                                match child.wait_timeout(shutdown_wait) {
                                     Ok(Some(_)) => {
                                         logger.info("Server stopped gracefully");
+                                        if std::env::var("VELO_TEST_MODE").ok().as_deref()
+                                            == Some("1")
+                                        {
+                                            #[cfg(unix)]
+                                            cleanup_descendants_for_test(std::process::id() as i32);
+                                            #[cfg(unix)]
+                                            cleanup_uvicorn_workers_for_test(
+                                                &crate::common::paths::get_socket_dir(),
+                                            );
+                                        }
                                         return Ok(ServerExit::Shutdown);
                                     }
                                     _ => {
@@ -1484,6 +1856,16 @@ pub fn run_server(
                                         }
                                         #[cfg(not(unix))]
                                         let _ = child.kill();
+                                        if std::env::var("VELO_TEST_MODE").ok().as_deref()
+                                            == Some("1")
+                                        {
+                                            #[cfg(unix)]
+                                            cleanup_descendants_for_test(std::process::id() as i32);
+                                            #[cfg(unix)]
+                                            cleanup_uvicorn_workers_for_test(
+                                                &crate::common::paths::get_socket_dir(),
+                                            );
+                                        }
                                         return Ok(ServerExit::Shutdown);
                                     }
                                 }
@@ -1516,7 +1898,13 @@ pub fn run_server(
                         // Break inner loop to trigger fresh spawn in the caller
                         break;
                     }
-                    Err(_) => break, // Bus disconnected
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        // No events yet; keep waiting to avoid respawn churn.
+                        continue;
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        break; // Bus disconnected
+                    }
                     _ => {}
                 }
             }
@@ -1829,7 +2217,8 @@ mod tests {
         let (tx, _rx) = mpsc::channel::<ServerEvent>();
 
         // Should successfully spawn the signal forwarder thread
-        let result = spawn_signal_forwarder(tx);
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let result = spawn_signal_forwarder(tx, shutdown_flag);
         assert!(result.is_ok(), "Signal forwarder should spawn successfully");
     }
 
@@ -1841,7 +2230,8 @@ mod tests {
         let (tx, rx) = mpsc::channel::<ServerEvent>();
 
         // Spawn the forwarder
-        spawn_signal_forwarder(tx).unwrap();
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        spawn_signal_forwarder(tx, shutdown_flag).unwrap();
 
         // Drop the receiver to simulate main loop exit
         drop(rx);

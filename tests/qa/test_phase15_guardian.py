@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 
-def get_zygote_status():
+def get_zygote_status() -> str:
     """Helper to get zygote status via 'velo zygote status'."""
     res = subprocess.run(["./target/debug/velo", "zygote", "status"], capture_output=True, text=True)
     return res.stdout
 
 
-def get_zygote_pid():
+def get_zygote_pid() -> int | None:
     """Extract PID from status output."""
     status = get_zygote_status()
     for line in status.splitlines():

@@ -5,11 +5,12 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def send_msgpack(conn, data):
+def send_msgpack(conn: socket.socket, data: Any) -> None:
     import msgpack
 
     payload = msgpack.packb(data, use_bin_type=True)
@@ -20,13 +21,13 @@ def send_msgpack(conn, data):
 
 
 class SlowZygote:
-    def __init__(self, socket_path, connect_delay=0, ready_delay=0):
+    def __init__(self, socket_path: Path, connect_delay: float = 0, ready_delay: float = 0) -> None:
         self.socket_path = socket_path
         self.connect_delay = connect_delay
         self.ready_delay = ready_delay
         self.stop_event = threading.Event()
 
-    def start(self):
+    def start(self) -> None:
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -35,7 +36,7 @@ class SlowZygote:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
-    def _run(self):
+    def _run(self) -> None:
         try:
             while not self.stop_event.is_set():
                 self.server.settimeout(0.5)
@@ -57,13 +58,13 @@ class SlowZygote:
         finally:
             self.server.close()
 
-    def stop(self):
+    def stop(self) -> None:
         self.stop_event.set()
         self.thread.join()
 
 
 @pytest.mark.tier1
-def test_STAB_621_cumulative_timeout(isolated_env):
+def test_STAB_621_cumulative_timeout(isolated_env: Any) -> None:
     """STAB-621: Verify 10ms budget covers the ENTIRE sequence.
     RFC-0013 §3.1 / H-11 10ms Handshake Budget.
     """
@@ -99,7 +100,7 @@ def test_STAB_621_cumulative_timeout(isolated_env):
 
 
 @pytest.mark.tier2
-def test_STAB_622_high_concurrency_pressure(isolated_env):
+def test_STAB_622_high_concurrency_pressure(isolated_env: Any) -> None:
     """STAB-622: Stress Zygote with many concurrent fork requests.
     Verifies that the fork queue and internal state remain consistent.
     """
@@ -141,7 +142,7 @@ def test_STAB_622_high_concurrency_pressure(isolated_env):
 
 
 @pytest.mark.tier2
-def test_STAB_623_zygote_sigkill_durability(isolated_env):
+def test_STAB_623_zygote_sigkill_durability(isolated_env: Any) -> None:
     """STAB-623: Kill Zygote while workers are running.
     Verifies that the CLI detects the loss and fallbacks gracefully for new requests.
     """

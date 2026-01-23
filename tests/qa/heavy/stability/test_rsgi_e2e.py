@@ -14,6 +14,7 @@ import os
 import struct
 import sys
 import tempfile
+from typing import Any
 
 import msgpack
 import pytest
@@ -38,7 +39,7 @@ from velo_zygote.v_rsgi import (
 class MockASGIApp:
     """Simple ASGI app for testing RSGI bridge."""
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             return
 
@@ -65,7 +66,7 @@ class MockASGIApp:
         )
 
 
-async def send_msg(writer, msg):
+async def send_msg(writer: asyncio.StreamWriter, msg: Any) -> None:
     """Send a MessagePack message with length prefix."""
     payload = msgpack.packb(msg)
     writer.write(struct.pack(">I", len(payload)))
@@ -73,7 +74,7 @@ async def send_msg(writer, msg):
     await writer.drain()
 
 
-async def recv_msg(reader):
+async def recv_msg(reader: asyncio.StreamReader) -> Any:
     """Receive a MessagePack message with length prefix."""
     len_data = await reader.readexactly(4)
     length = struct.unpack(">I", len_data)[0]
@@ -82,7 +83,7 @@ async def recv_msg(reader):
 
 
 @pytest.mark.asyncio
-async def test_rsgi_handshake_protocol():
+async def test_rsgi_handshake_protocol() -> None:
     """Test the RSGI handshake between Host and Worker."""
     with tempfile.TemporaryDirectory() as tmpdir:
         socket_path = os.path.join(tmpdir, "rsgi_test.sock")
@@ -158,7 +159,7 @@ async def test_rsgi_handshake_protocol():
 
 
 @pytest.mark.asyncio
-async def test_rsgi_request_body_streaming():
+async def test_rsgi_request_body_streaming() -> None:
     """Test request body streaming through RSGI protocol."""
     with tempfile.TemporaryDirectory() as tmpdir:
         socket_path = os.path.join(tmpdir, "rsgi_body_test.sock")
@@ -167,7 +168,7 @@ async def test_rsgi_request_body_streaming():
         received_body = []
 
         class BodyCapturingApp:
-            async def __call__(self, scope, receive, send):
+            async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
                 req = await receive()
                 received_body.append(req.get("body", b""))
 

@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ import pytest
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
@@ -39,17 +40,17 @@ def get_velo_binary():
 class SecurityEnv:
     """Environment for security testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="security_"))
         self.velo = get_velo_binary()
-        self.socket_path = None
+        self.socket_path: Path | None = None
 
-    def setup(self):
+    def setup(self) -> "SecurityEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def start_zygote(self, timeout=None):
+    def start_zygote(self, timeout: float | None = None) -> str | None:
         """Start Zygote and return socket path."""
         if timeout is None:
             timeout = T_MEDIUM  # CI-aware timeout
@@ -78,7 +79,7 @@ class SecurityEnv:
 
         return None
 
-    def stop_zygote(self):
+    def stop_zygote(self) -> None:
         subprocess.run(
             [self.velo, "zygote", "stop"],
             cwd=self.path,
@@ -106,7 +107,7 @@ class SecurityEnv:
         except Exception as e:
             return str(e).encode()
 
-    def send_command(self, cmd: dict) -> dict:
+    def send_command(self, cmd: dict[str, Any]) -> dict[str, Any]:
         """Send JSON command and get response."""
         data = (json.dumps(cmd) + "\n").encode()
         response = self.send_raw(data)
@@ -116,20 +117,20 @@ class SecurityEnv:
         except:
             return {"raw": response.decode()}
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
         try:
             shutil.rmtree(self.path)
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "SecurityEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -349,7 +350,7 @@ class TestMaliciousPayloads:
             env.start_zygote()
 
             # Create deeply nested JSON
-            bomb = {"a": None}
+            bomb: dict[str, Any] = {"a": None}
             current = bomb
             for _ in range(1000):
                 current["a"] = {"a": None}
@@ -584,7 +585,7 @@ class TestDoS:
                 s.sendall(b'k", "script": "x"}\n')
 
                 response = s.recv(1024)
-                print(f"  Slowloris response: {response[:50]}")
+                print(f"  Slowloris response: {response[:50]!r}")
                 s.close()
             except TimeoutError:
                 print("  Server timed out slow connection (good!)")

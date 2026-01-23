@@ -3,7 +3,7 @@
 //! This module handles running Python scripts with optional profiling.
 
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
@@ -101,16 +101,20 @@ pub fn run_script_with_profile(
         }
 
         // Create temp directory for sitecustomize.py and profile output
-        let temp_dir = std::env::temp_dir().join("velo_profile");
-        fs::create_dir_all(&temp_dir)?;
+        // Avoid system temp directories to comply with secure path policies.
+        let temp_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let temp_dir = tempfile::Builder::new()
+            .prefix("velo_profile_")
+            .tempdir_in(&temp_root)?;
+        let temp_dir_path = temp_dir.path();
 
         // Write sitecustomize.py
-        let sitecustomize_path = temp_dir.join("sitecustomize.py");
+        let sitecustomize_path = temp_dir_path.join("sitecustomize.py");
         let mut file = fs::File::create(&sitecustomize_path)?;
         file.write_all(profile::SITECUSTOMIZE_PY.as_bytes())?;
 
         // Profile output path
-        let profile_output = temp_dir.join("profile.json");
+        let profile_output = temp_dir_path.join("profile.json");
 
         // Get script directory for relative imports
         let script_dir = path
@@ -119,7 +123,7 @@ pub fn run_script_with_profile(
             .unwrap_or_else(|| ".".to_string());
 
         // Build PYTHONPATH with temp dir first (for sitecustomize.py)
-        let temp_dir_str = temp_dir.to_string_lossy().to_string();
+        let temp_dir_str = temp_dir_path.to_string_lossy().to_string();
         let final_pythonpath = match pythonpath {
             Some(pp) => format!("{}:{}:{}", temp_dir_str, script_dir, pp),
             None => format!("{}:{}", temp_dir_str, script_dir),
@@ -197,9 +201,7 @@ pub fn run_script_with_profile(
 
         println!("Total execution time: {:.2}s", total_time.as_secs_f64());
 
-        // Cleanup temp files
-        let _ = fs::remove_file(&sitecustomize_path);
-        let _ = fs::remove_file(&profile_output);
+        // Temp dir is removed when dropped
 
         if !status.success() {
             std::process::exit(status.code().unwrap_or(1));

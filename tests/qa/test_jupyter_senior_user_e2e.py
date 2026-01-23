@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     project_root = Path(__file__).parent.parent.parent
     for build in ["debug", "release"]:
         binary = project_root / "target" / build / "velo"
@@ -123,6 +123,8 @@ class TestJupyterSeniorUserExperience:
         start_wait = time.time()
         ready = False
         while time.time() - start_wait < 5:
+            if proc.stdout is None:
+                break
             line = proc.stdout.readline()
             if "READY" in line:
                 ready = True

@@ -3,6 +3,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -60,11 +61,13 @@ skip_on_macos_pid_namespace = pytest.mark.skipif(IS_MACOS, reason="macOS has no 
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
 
-    def __init__(self, proc: subprocess.Popen, port: int, socket_path: str = None, forensic_secret: str = None):
+    def __init__(
+        self, proc: subprocess.Popen[str], port: int, socket_path: str | None = None, forensic_secret: str | None = None
+    ):
         self.proc = proc
         self.port = port
         self.pid = proc.pid
-        self.zygote_pid = None
+        self.zygote_pid: int | None = None
         self.socket_path = socket_path
         self.forensic_secret = forensic_secret
         self._worker_pids: list[int] = []
@@ -77,7 +80,7 @@ class VeloServeProcess:
         """Return the Zygote socket path."""
         return self.socket_path
 
-    def wait_ready(self, timeout: float = None) -> None:
+    def wait_ready(self, timeout: float | None = None) -> None:
         """Wait for server to be ready to accept requests."""
         if timeout is None:
             timeout = T_MEDIUM + T_SHORT
@@ -121,10 +124,10 @@ class VeloServeProcess:
                     if "velo_zygote/main.py" in cmdline_str:
                         if self.socket_path:
                             if any(self.socket_path in arg for arg in cmdline):
-                                self.zygote_pid = child.pid
+                                self.zygote_pid = int(child.pid)
                                 return
                         else:
-                            self.zygote_pid = child.pid
+                            self.zygote_pid = int(child.pid)
                             return
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
@@ -165,7 +168,7 @@ class VeloServeProcess:
 
         return []
 
-    def stop(self, timeout: float = None) -> None:
+    def stop(self, timeout: float | None = None) -> None:
         """Stop the server gracefully."""
         if timeout is None:
             timeout = T_SHORT
@@ -181,7 +184,7 @@ class VeloServeProcess:
 class VeloServeFactory:
     """Factory for creating VeloServeProcess instances."""
 
-    def __init__(self, test_env, velo_binary: str):
+    def __init__(self, test_env: Any, velo_binary: str):
         self.test_env = test_env
         self.velo_binary = velo_binary
         self.processes: list[VeloServeProcess] = []
@@ -189,7 +192,7 @@ class VeloServeFactory:
     @property
     def tmp_path(self) -> Path:
         """Return the test environment root path for creating test files."""
-        return self.test_env.root
+        return Path(self.test_env.root)
 
     def start(
         self,
@@ -233,7 +236,7 @@ class VeloServeFactory:
 
         env["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
 
-        proc = subprocess.Popen(cmd, cwd=self.test_env.root, env=env, stdout=None, stderr=None)
+        proc = subprocess.Popen(cmd, cwd=self.test_env.root, env=env, stdout=None, stderr=None, text=True)
         wrapper = VeloServeProcess(proc, port, str(socket_path), env["VELO_ZYGOTE_AUTH"])
         self.processes.append(wrapper)
         return wrapper
@@ -247,7 +250,7 @@ class VeloServeFactory:
 
 
 @pytest.fixture
-def velo_serve_fixture(velo_test_env, velo_binary: str):
+def velo_serve_fixture(velo_test_env: Any, velo_binary: str) -> Any:
     """Fixture for starting velo serve processes."""
     app_file = velo_test_env.root / "main.py"
     app_file.write_text(SAMPLE_APP_CODE)
@@ -260,7 +263,7 @@ def velo_serve_fixture(velo_test_env, velo_binary: str):
 
 
 @pytest.fixture
-def shm_test_env(isolated_env: VeloTestEnv):
+def shm_test_env(isolated_env: VeloTestEnv) -> Any:
     """
     Extended environment for SHM-specific tests.
     """

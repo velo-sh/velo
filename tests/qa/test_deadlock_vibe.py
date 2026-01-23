@@ -9,7 +9,7 @@ from conftest_utils import VeloTestEnv
 
 @pytest.mark.tier2
 @pytest.mark.adversarial
-def test_ADVERSARIAL_PIPE_DEADLOCK(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_PIPE_DEADLOCK(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Pipe capacity.
     Standard pipes are 64KB. If worker writes 1MB, it should NOT hang.
@@ -23,7 +23,7 @@ def test_ADVERSARIAL_PIPE_DEADLOCK(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_deadlock():
+    async def check_deadlock() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Re-trigger save

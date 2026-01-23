@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -18,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
 # === Pytest Markers ===
 
 
-def pytest_configure(config):
+def pytest_configure(config: Any) -> None:
     """Register custom markers."""
     config.addinivalue_line("markers", "smoke: L0 Smoke tests (always run)")
     config.addinivalue_line("markers", "happy_path: L1 Happy Path tests")
@@ -65,16 +66,31 @@ def velo_binary():
 
 
 @pytest.fixture
-def simple_project(tmp_path):
+def simple_project():
     """
     Create minimal Python project for testing.
 
     Structure:
-        tmp_path/
+        project_dir/
         ├── main.py          (prints "Hello from Fast Loader!")
         └── pyproject.toml
+
+    Note: Uses workspace-local directory instead of /tmp to avoid
+    Velo's InsecureLocation security check (bundle caching rejects
+    shared directories like /tmp).
     """
-    main_py = tmp_path / "main.py"
+    import shutil
+    import uuid
+
+    # Use workspace-local test directory to avoid InsecureLocation errors
+    workspace_root = Path(__file__).parent.parent.parent.parent
+    local_test_dir = workspace_root / ".test_projects"
+    local_test_dir.mkdir(exist_ok=True)
+
+    project_dir = local_test_dir / f"proj_{uuid.uuid4().hex}"
+    project_dir.mkdir()
+
+    main_py = project_dir / "main.py"
     main_py.write_text(
         """
 import json
@@ -84,7 +100,7 @@ print(data)
 """
     )
 
-    pyproject = tmp_path / "pyproject.toml"
+    pyproject = project_dir / "pyproject.toml"
     pyproject.write_text(
         """
 [project]
@@ -94,7 +110,11 @@ requires-python = ">=3.11"
 """
     )
 
-    return tmp_path
+    yield project_dir
+
+    # Cleanup
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
 
 
 @pytest.fixture
@@ -108,7 +128,9 @@ def run_velo(velo_binary):
             assert result.returncode == 0
     """
 
-    def _run(args: list, cwd: Path, timeout: int = 60, env=None):
+    def _run(
+        args: list[str], cwd: Path, timeout: int = 60, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         run_env = os.environ.copy()
         if env:
             run_env.update(env)
@@ -138,7 +160,7 @@ def build_bundle():
     """
     from bundle_builder import build_from_project
 
-    def _build(project_dir: Path, output_path: Path = None) -> Path:
+    def _build(project_dir: Path, output_path: Path | None = None) -> Path:
         if output_path is None:
             cache_dir = project_dir / ".velo" / "cache"
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -146,7 +168,7 @@ def build_bundle():
         else:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        return build_from_project(project_dir, output_path)
+        return Path(build_from_project(project_dir, output_path))
 
     return _build
 

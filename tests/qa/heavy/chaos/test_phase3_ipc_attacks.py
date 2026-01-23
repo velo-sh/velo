@@ -206,7 +206,7 @@ class TestIPCAttacks:
             )
 
             if start_result.success and env.socket_path.exists():
-                results = []
+                results: list[tuple[str, bytes | str]] = []
 
                 def connect_and_send():
                     try:

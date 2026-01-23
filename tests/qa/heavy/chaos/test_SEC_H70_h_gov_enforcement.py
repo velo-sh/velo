@@ -33,7 +33,7 @@ class TestHGovEnforcement(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir)
 
-    def run_velo(self, env_vars, args):
+    def run_velo(self, env_vars: dict[str, str], args: list[str]) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(env_vars)
         # Ensure we don't pick up local dev config unless intended
@@ -44,7 +44,7 @@ class TestHGovEnforcement(unittest.TestCase):
 
         return subprocess.run([VELO_BIN] + args, env=env, cwd=self.tmp_dir, capture_output=True, text=True)
 
-    def test_SEC_H70_ritual_70_1_signal_format(self):
+    def test_SEC_H70_ritual_70_1_signal_format(self) -> None:
         """Verify Ritual 70.1: Audit Signal Structure and ANSI Colors"""
         res = self.run_velo(
             {

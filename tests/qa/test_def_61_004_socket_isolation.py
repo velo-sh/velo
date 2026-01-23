@@ -69,7 +69,7 @@ def create_stale_socket(temp_socket_dir):
     def _create(version: int = 0) -> Path:
         socket_path = temp_socket_dir / f"velo-zygote-v{version:02x}.sock"
         socket_path.touch()
-        return socket_path
+        return Path(socket_path)
 
     return _create
 

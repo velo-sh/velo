@@ -11,6 +11,7 @@ RFC-0007 Acceptance Criteria:
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -27,7 +28,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -45,7 +46,7 @@ class TestBenchCommand:
     """
 
     @pytest.mark.smoke
-    def test_bench_001_command_exists(self, velo_binary, tmp_path):
+    def test_bench_001_command_exists(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         LOCAL-001: velo bench command runs
 
@@ -60,7 +61,7 @@ class TestBenchCommand:
         assert "blake3_4mb" in result.stdout or "module_lookup" in result.stdout
 
     @pytest.mark.smoke
-    def test_bench_002_outputs_metrics(self, velo_binary, tmp_path):
+    def test_bench_002_outputs_metrics(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         LOCAL-001: velo bench outputs performance metrics
 
@@ -76,7 +77,7 @@ class TestBenchCommand:
         assert has_timing, f"No timing in output: {output}"
 
     @pytest.mark.happy_path
-    def test_bench_003_save_creates_jsonl(self, velo_binary, tmp_path):
+    def test_bench_003_save_creates_jsonl(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         LOCAL-002: velo bench --save creates JSONL entry
 
@@ -114,7 +115,7 @@ class TestBenchCommand:
                 assert "value_ns" in entry
 
     @pytest.mark.happy_path
-    def test_bench_004_compare_command(self, velo_binary, tmp_path):
+    def test_bench_004_compare_command(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         LOCAL-003: velo bench compare shows diff correctly
 
@@ -156,7 +157,7 @@ class TestBenchCommand:
             assert "Comparing" in result.stdout or "Current" in result.stdout
 
     @pytest.mark.happy_path
-    def test_bench_005_history_command(self, velo_binary, tmp_path):
+    def test_bench_005_history_command(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         RFC-0007 §3.1: velo bench history shows trends
         """
@@ -190,7 +191,7 @@ class TestBenchConsistency:
 
     @pytest.mark.edge
     @pytest.mark.slow
-    def test_bench_006_consistency(self, velo_binary, tmp_path):
+    def test_bench_006_consistency(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         RFC-0007 §7: Same machine < 5% variance
 

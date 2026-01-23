@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 # QA: This test validates the interface defined in RFC-0010 §5.2.2
 # It acts as a Compliance Suite. If the Dev hasn't implemented it, it fails/skips.
@@ -21,13 +22,13 @@ class TestDetectApp(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    def create_file(self, filename, content):
+    def create_file(self, filename: str, content: str) -> Path:
         path = self.test_dir_path / filename
         with open(path, "w") as f:
             f.write(content)
         return path
 
-    def run_detection(self, file_path):
+    def run_detection(self, file_path: Path) -> dict[str, Any] | None:
         """Helper to run the detection script via subprocess (Blackbox testing)"""
         script_path = Path(os.getcwd()) / TARGET_MODULE
         if not script_path.exists():
@@ -58,7 +59,7 @@ app = Flask(__name__)
 """,
         )
         result = self.run_detection(self.test_dir_path / "main.py")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["app"], "app")
         self.assertEqual(result["type"], "Flask")
         # Check POSIX path
@@ -75,7 +76,7 @@ application = get_wsgi_application()
 """,
         )
         result = self.run_detection(self.test_dir_path / "wsgi.py")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["app"], "application")
         self.assertEqual(result["type"], "Django")
 
@@ -90,13 +91,14 @@ def create_app():
 """,
         )
         result = self.run_detection(self.test_dir_path / "main.py")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["app"], "create_app()")
         self.assertEqual(result["type"], "FastAPI")
         self.assertEqual(result["factory"], True)
 
         # Priority logic test
         res = self.run_detection(self.test_dir_path / "main.py")
+        assert res is not None
         # Expect main.py to be picked if passing directory
         # The script should return the ONE best match
         self.assertEqual(res["app"], "create_app()")
@@ -110,6 +112,7 @@ def create_app():
     def test_syntax_error_resilience(self):
         self.create_file("broken.py", "def foo( This is syntax error")
         result = self.run_detection(self.test_dir_path / "broken.py")
+        assert result is not None
         self.assertEqual(result, {})  # Should handle gracefully
 
 

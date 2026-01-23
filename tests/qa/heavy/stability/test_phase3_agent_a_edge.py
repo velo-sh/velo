@@ -18,7 +18,7 @@ from qa_harness import assert_no_crash, run_velo
 class TestEdgeCasesLifecycle:
     """EDGE-ZYG-xxx: Lifecycle edge cases."""
 
-    def test_edge_zyg_001_start_during_shutdown(self):
+    def test_edge_zyg_001_start_during_shutdown(self) -> None:
         """
         EDGE-ZYG-001: Start Zygote while another is shutting down.
 
@@ -35,11 +35,11 @@ class TestEdgeCasesLifecycle:
 
             results = []
 
-            def start_cmd():
+            def start_cmd() -> None:
                 r = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
                 results.append(("start", r))
 
-            def stop_cmd():
+            def stop_cmd() -> None:
                 r = run_velo(["zygote", "stop"], cwd=env.path, timeout=10)
                 results.append(("stop", r))
 
@@ -58,7 +58,7 @@ class TestEdgeCasesLifecycle:
         finally:
             env.cleanup()
 
-    def test_edge_zyg_004_zero_workers_limit(self):
+    def test_edge_zyg_004_zero_workers_limit(self) -> None:
         """
         EDGE-ZYG-004: Configure max_workers = 0.
 
@@ -86,7 +86,7 @@ max_workers = 0
 class TestEdgeCasesFork:
     """EDGE-FORK-xxx: Fork edge cases."""
 
-    def test_edge_fork_002_thread_plus_fork(self):
+    def test_edge_fork_002_thread_plus_fork(self) -> None:
         """
         EDGE-FORK-002: Multi-threaded script with fork.
 
@@ -131,7 +131,7 @@ print("done")
         finally:
             env.cleanup()
 
-    def test_edge_fork_005_oom_during_fork(self):
+    def test_edge_fork_005_oom_during_fork(self) -> None:
         """
         EDGE-FORK-005: Simulate OOM condition.
 
@@ -169,7 +169,7 @@ print("allocated")
 class TestEdgeCasesIPC:
     """EDGE-IPC-xxx: IPC edge cases."""
 
-    def test_edge_ipc_001_socket_eof(self):
+    def test_edge_ipc_001_socket_eof(self) -> None:
         """
         EDGE-IPC-001: Connect, send, close immediately.
 
@@ -202,7 +202,7 @@ class TestEdgeCasesIPC:
         finally:
             env.cleanup()
 
-    def test_edge_ipc_002_half_open_connection(self):
+    def test_edge_ipc_002_half_open_connection(self) -> None:
         """
         EDGE-IPC-002: Connect but never send.
 
@@ -242,7 +242,7 @@ class TestEdgeCasesIPC:
         finally:
             env.cleanup()
 
-    def test_edge_ipc_003_unicode_path(self):
+    def test_edge_ipc_003_unicode_path(self) -> None:
         """
         EDGE-IPC-003: Socket path with unicode/emoji.
 
@@ -253,7 +253,7 @@ class TestEdgeCasesIPC:
         # Placeholder for when feature is available
         pass
 
-    def test_edge_ipc_005_symlink_socket(self):
+    def test_edge_ipc_005_symlink_socket(self) -> None:
         """
         EDGE-IPC-005: Socket path is a symlink.
 
@@ -289,7 +289,7 @@ class TestEdgeCasesIPC:
 class TestEdgeCaseStability:
     """Agent B review: Stability after edge case handling."""
 
-    def test_edge_stable_001_recovery_after_edge(self):
+    def test_edge_stable_001_recovery_after_edge(self) -> None:
         """
         Agent B: System should recover after hitting edge case.
 
@@ -316,7 +316,7 @@ class TestEdgeCaseStability:
         finally:
             env.cleanup()
 
-    def test_edge_stable_002_no_state_corruption(self):
+    def test_edge_stable_002_no_state_corruption(self) -> None:
         """
         Agent B: Edge cases should not corrupt internal state.
 
@@ -354,7 +354,7 @@ class TestEdgeCaseStability:
 class TestEdgeCaseSecurity:
     """Agent C review: Security implications of edge cases."""
 
-    def test_edge_sec_001_edge_no_extra_permissions(self):
+    def test_edge_sec_001_edge_no_extra_permissions(self) -> None:
         """
         Agent C: Edge case handling should not grant extra permissions.
 
@@ -384,7 +384,7 @@ class TestEdgeCaseSecurity:
         finally:
             env.cleanup()
 
-    def test_edge_sec_002_edge_no_info_leak(self):
+    def test_edge_sec_002_edge_no_info_leak(self) -> None:
         """
         Agent C: Edge cases should not leak system information.
 
@@ -414,7 +414,7 @@ class TestEdgeCaseSecurity:
         finally:
             env.cleanup()
 
-    def test_edge_sec_003_edge_no_resource_escalation(self):
+    def test_edge_sec_003_edge_no_resource_escalation(self) -> None:
         """
         Agent C: Edge cases should not allow resource escalation.
 

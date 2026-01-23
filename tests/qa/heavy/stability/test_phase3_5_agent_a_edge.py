@@ -23,7 +23,7 @@ from conftest_utils import T_MEDIUM, T_SHORT, get_velo_binary
 class TestServeCliEdgeCases:
     """EDGE-SERVE-xxx: Serve CLI edge cases."""
 
-    def test_edge_serve_001_very_long_app_path(self):
+    def test_edge_serve_001_very_long_app_path(self) -> None:
         """EDGE-SERVE-001: Very long app path should error gracefully."""
         velo = get_velo_binary()
         long_module = "a" * 4096
@@ -38,14 +38,14 @@ class TestServeCliEdgeCases:
         # Should have some error message, not segfault
         assert result.stderr or result.stdout
 
-    def test_edge_serve_002_unicode_in_app_name(self):
+    def test_edge_serve_002_unicode_in_app_name(self) -> None:
         """EDGE-SERVE-002: Unicode in app name should be handled."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve", "中文模块:应用"], capture_output=True, text=True, timeout=T_MEDIUM)
         # Should handle gracefully (error is OK, crash is not)
         assert result.returncode != 0 or "error" in result.stderr.lower()
 
-    def test_edge_serve_003_multiple_colons(self):
+    def test_edge_serve_003_multiple_colons(self) -> None:
         """EDGE-SERVE-003: Multiple colons in app spec."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -57,19 +57,19 @@ class TestServeCliEdgeCases:
         assert result.returncode != 0
         assert "invalid" in result.stderr.lower() or "format" in result.stderr.lower()
 
-    def test_edge_serve_004_empty_module(self):
+    def test_edge_serve_004_empty_module(self) -> None:
         """EDGE-SERVE-004: Empty module part."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve", ":app"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode != 0
 
-    def test_edge_serve_005_empty_app(self):
+    def test_edge_serve_005_empty_app(self) -> None:
         """EDGE-SERVE-005: Empty app part."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve", "main:"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode != 0
 
-    def test_edge_serve_006_shell_injection_attempt(self):
+    def test_edge_serve_006_shell_injection_attempt(self) -> None:
         """EDGE-SERVE-006: Shell injection in app name should be safe."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -86,7 +86,7 @@ class TestServeCliEdgeCases:
 class TestWorkerPoolEdgeCases:
     """EDGE-POOL-xxx: WorkerPool edge cases."""
 
-    def test_edge_pool_001_negative_workers(self):
+    def test_edge_pool_001_negative_workers(self) -> None:
         """EDGE-POOL-001: Negative worker count should error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -100,7 +100,7 @@ class TestWorkerPoolEdgeCases:
         stderr_lower = result.stderr.lower()
         assert any(x in stderr_lower for x in ["invalid", "worker", "unexpected argument"])
 
-    def test_edge_pool_002_zero_workers(self):
+    def test_edge_pool_002_zero_workers(self) -> None:
         """EDGE-POOL-002: Zero workers should error or default to 1."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -112,7 +112,7 @@ class TestWorkerPoolEdgeCases:
         # Either error or handled gracefully
         assert result.returncode != 0 or "worker" in result.stderr.lower()
 
-    def test_edge_pool_003_huge_worker_count(self):
+    def test_edge_pool_003_huge_worker_count(self) -> None:
         """EDGE-POOL-003: Huge worker count should be capped or error."""
         velo = get_velo_binary()
         try:
@@ -129,7 +129,7 @@ class TestWorkerPoolEdgeCases:
             # Timeout is acceptable for huge worker spawn - system resources limit
             pass
 
-    def test_edge_pool_004_float_workers(self):
+    def test_edge_pool_004_float_workers(self) -> None:
         """EDGE-POOL-004: Float worker count should error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -144,7 +144,7 @@ class TestWorkerPoolEdgeCases:
 class TestSignalEdgeCases:
     """EDGE-SIG-xxx: Signal handling edge cases."""
 
-    def test_edge_sig_001_rapid_sigterm(self):
+    def test_edge_sig_001_rapid_sigterm(self) -> None:
         """EDGE-SIG-001: Rapid SIGTERM should not cause corruption."""
         # This test validates that signal handling is robust
         # Even if serve command isn't implemented, the principle applies
@@ -188,7 +188,7 @@ class TestSignalEdgeCases:
 class TestPortEdgeCases:
     """EDGE-PORT-xxx: Port handling edge cases."""
 
-    def test_edge_port_001_port_zero(self):
+    def test_edge_port_001_port_zero(self) -> None:
         """EDGE-PORT-001: Port 0 should auto-assign or error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -201,7 +201,7 @@ class TestPortEdgeCases:
         stderr_lower = result.stderr.lower()
         assert result.returncode == 0 or any(x in stderr_lower for x in ["port", "missing", "dependency"])
 
-    def test_edge_port_002_port_max(self):
+    def test_edge_port_002_port_max(self) -> None:
         """EDGE-PORT-002: Max port 65535."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -214,7 +214,7 @@ class TestPortEdgeCases:
         # May fail for other reasons (module not found)
         assert "invalid port" not in result.stderr.lower()
 
-    def test_edge_port_003_port_overflow(self):
+    def test_edge_port_003_port_overflow(self) -> None:
         """EDGE-PORT-003: Port > 65535 should error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -226,7 +226,7 @@ class TestPortEdgeCases:
         assert result.returncode != 0
         assert "port" in result.stderr.lower() or "invalid" in result.stderr.lower()
 
-    def test_edge_port_004_port_negative(self):
+    def test_edge_port_004_port_negative(self) -> None:
         """EDGE-PORT-004: Negative port should error."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -246,19 +246,19 @@ class TestPortEdgeCases:
 class EdgeTestEnv:
     """Test environment for edge case tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_edge_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "EdgeTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
         result = subprocess.run(
@@ -270,7 +270,7 @@ class EdgeTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
@@ -286,7 +286,7 @@ class EdgeTestEnv:
 class TestEdgeCaseStability:
     """Cross-review by Agent B: Stability after edge case handling."""
 
-    def test_xr_edge_stab_001_recovery_after_long_path(self):
+    def test_xr_edge_stab_001_recovery_after_long_path(self) -> None:
         """XR-EDGE-STAB-001: System recovers after long path error."""
         velo = get_velo_binary()
 
@@ -303,7 +303,7 @@ class TestEdgeCaseStability:
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode == 0
 
-    def test_xr_edge_stab_002_recovery_after_unicode(self):
+    def test_xr_edge_stab_002_recovery_after_unicode(self) -> None:
         """XR-EDGE-STAB-002: System recovers after unicode error."""
         velo = get_velo_binary()
 
@@ -314,7 +314,7 @@ class TestEdgeCaseStability:
         result = subprocess.run([velo, "--version"], capture_output=True, text=True, timeout=T_MEDIUM)
         assert result.returncode == 0
 
-    def test_xr_edge_stab_003_consistent_edge_behavior(self):
+    def test_xr_edge_stab_003_consistent_edge_behavior(self) -> None:
         """XR-EDGE-STAB-003: Same edge case gives same error."""
         velo = get_velo_binary()
 
@@ -330,7 +330,7 @@ class TestEdgeCaseStability:
 class TestEdgeCaseSecurity:
     """Cross-review by Agent C: Security implications of edge cases."""
 
-    def test_xr_edge_sec_001_long_path_no_buffer_overflow(self):
+    def test_xr_edge_sec_001_long_path_no_buffer_overflow(self) -> None:
         """XR-EDGE-SEC-001: Long path should not cause buffer overflow."""
         velo = get_velo_binary()
 
@@ -346,7 +346,7 @@ class TestEdgeCaseSecurity:
             # Should not crash with SIGSEGV
             assert result.returncode != -11  # SIGSEGV
 
-    def test_xr_edge_sec_002_unicode_no_injection(self):
+    def test_xr_edge_sec_002_unicode_no_injection(self) -> None:
         """XR-EDGE-SEC-002: Unicode should not enable injection."""
         velo = get_velo_binary()
 
@@ -366,7 +366,7 @@ class TestEdgeCaseSecurity:
                 # Some control chars rejected by subprocess - that's OK
                 pass
 
-    def test_xr_edge_sec_003_port_no_privilege_escalation(self):
+    def test_xr_edge_sec_003_port_no_privilege_escalation(self) -> None:
         """XR-EDGE-SEC-003: Port edge cases should not escalate privileges."""
         velo = get_velo_binary()
 

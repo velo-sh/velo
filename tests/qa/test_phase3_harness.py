@@ -12,12 +12,13 @@ import socket
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from test_harness import VeloTestEnv, run_velo
 
 
 @dataclass
-class ZygoteTestEnv(VeloTestEnv):
+class ZygoteTestEnv(VeloTestEnv):  # type: ignore[misc]
     """Extended environment for Zygote testing with daemon control."""
 
     zygote_pid: int | None = None
@@ -26,7 +27,8 @@ class ZygoteTestEnv(VeloTestEnv):
     @property
     def socket_path(self) -> Path:
         """Return the Zygote socket path."""
-        return self.path / ".velo_cache" / self.socket_name
+        res: Any = self.path / ".velo_cache" / self.socket_name
+        return Path(res)
 
     def start_zygote(self, timeout: float = 5.0) -> int | None:
         """
@@ -72,7 +74,7 @@ class ZygoteTestEnv(VeloTestEnv):
         result = run_velo(["zygote", "stop"], cwd=self.path, timeout=5)
         if result.success:
             self.zygote_pid = None
-        return result.success
+        return bool(result.success)
 
     def is_zygote_running(self) -> bool:
         """Check if Zygote daemon is running."""
