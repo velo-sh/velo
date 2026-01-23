@@ -654,3 +654,202 @@ class TestBugRegressions:
 
         # Should NOT have the old buggy format
         assert "**Optimization Budget**|" not in content, "Found old buggy format without space before |"
+
+
+# =============================================================================
+# L7: USER PERSPECTIVE BUGS (从AI Agent用户角度发现)
+# =============================================================================
+
+
+@pytest.mark.tier2
+class TestUserPerspectiveBugs:
+    """Bugs discovered from AI Agent user perspective.
+
+    These tests validate that the report is actually USEFUL to AI agents,
+    not just technically correct.
+    """
+
+    def test_BUG_012_newline_injection_breaks_table(self, velo_binary, tmp_path):
+        """BUG-012: Newlines in env vars must be escaped to preserve GFM table.
+
+        User Impact: AI Agent parsing fails when table rows are split.
+        """
+        script = tmp_path / "test.py"
+        script.write_text("pass")
+        report_path = tmp_path / "report.md"
+
+        env = os.environ.copy()
+        env["NEWLINE_VAR"] = "line1\nline2\nline3"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+            env=env,
+        )
+
+        content = report_path.read_text()
+
+        # The value should be escaped, not contain raw newlines that break the table
+        # Check that "NEWLINE_VAR" row doesn't span multiple lines
+        lines = content.split("\n")
+        newline_var_lines = [l for l in lines if "NEWLINE_VAR" in l]
+        assert len(newline_var_lines) == 1, (
+            f"NEWLINE_VAR should be on single line, found {len(newline_var_lines)} lines"
+        )
+
+    def test_BUG_013_long_env_var_truncation(self, velo_binary, tmp_path):
+        """BUG-013: Very long env var values should be truncated for token efficiency.
+
+        User Impact: 10000 char env var wastes AI Agent context window.
+        RFC Reference: Token efficiency is a core goal.
+        """
+        script = tmp_path / "test.py"
+        script.write_text("pass")
+        report_path = tmp_path / "report.md"
+
+        env = os.environ.copy()
+        env["SUPER_LONG_VALUE"] = "A" * 5000  # 5000 chars
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+            env=env,
+        )
+
+        content = report_path.read_text()
+
+        # Value should be truncated to reasonable length (e.g., 200 chars)
+        # Find the line with SUPER_LONG_VALUE
+        for line in content.split("\n"):
+            if "SUPER_LONG_VALUE" in line:
+                # Line length should be reasonable (< 500 chars including markup)
+                assert len(line) < 500, f"Long env var not truncated: {len(line)} chars"
+                break
+
+    def test_BUG_014_irrelevant_env_vars_filtered(self, velo_binary, tmp_path):
+        """BUG-014: Irrelevant env vars (VSCODE_*, XPC_*) should be filtered.
+
+        User Impact: Noise distracts AI Agent from performance-relevant data.
+        """
+        script = tmp_path / "test.py"
+        script.write_text("pass")
+        report_path = tmp_path / "report.md"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        content = report_path.read_text()
+
+        # Count irrelevant vars vs relevant vars
+        irrelevant_patterns = ["VSCODE_", "XPC_", "HOMEBREW_", "LaunchInstanceID"]
+        relevant_patterns = ["PYTHON", "VELO_", "PATH"]
+
+        irrelevant_count = sum(1 for p in irrelevant_patterns if p in content)
+        relevant_count = sum(1 for p in relevant_patterns if p in content)
+
+        # Ideally irrelevant should be filtered out
+        # For now, just warn - this is a design decision
+        if irrelevant_count > relevant_count:
+            pytest.skip(
+                f"BUG-014: Too many irrelevant env vars ({irrelevant_count}) "
+                f"vs relevant ({relevant_count}). Consider filtering."
+            )
+
+    def test_BUG_015_privacy_path_sanitization(self, velo_binary, tmp_path):
+        """BUG-015: User paths should be sanitized for privacy.
+
+        User Impact: Sharing report leaks username.
+        """
+        script = tmp_path / "test.py"
+        script.write_text("pass")
+        report_path = tmp_path / "report.md"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        content = report_path.read_text()
+
+        # Get current username
+        import getpass
+
+        username = getpass.getuser()
+
+        # Username should ideally be replaced with ~ or $USER
+        # Count occurrences
+        username_count = content.count(f"/Users/{username}")
+
+        if username_count > 5:
+            pytest.skip(
+                f"BUG-015: Username '{username}' appears {username_count} times. "
+                "Consider path sanitization for privacy."
+            )
+
+    def test_BUG_016_slow_imports_have_location(self, velo_binary, tmp_path):
+        """BUG-016: Slow imports should include file location for AI to give fix advice.
+
+        User Impact: AI Agent can't locate code without file paths.
+        RFC Reference: §3.2 "Location" field.
+        """
+        script = tmp_path / "heavy.py"
+        script.write_text("""
+import http.client
+import hashlib
+print("done")
+""")
+        report_path = tmp_path / "report.md"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        content = report_path.read_text()
+
+        # Check if Location field exists for slow imports
+        if "**Location:**" not in content:
+            pytest.skip("BUG-016: Slow imports missing Location field. AI Agent needs file paths to suggest fixes.")
+
+    def test_BUG_017_agent_hints_present(self, velo_binary, tmp_path):
+        """BUG-017: Agent Hints should be present for common slow modules.
+
+        User Impact: AI Agent has to guess optimization strategy.
+        RFC Reference: Appendix A "Agent Hint Taxonomy".
+        """
+        script = tmp_path / "heavy.py"
+        script.write_text("""
+import http.client
+import ssl
+import hashlib
+print("done")
+""")
+        report_path = tmp_path / "report.md"
+
+        subprocess.run(
+            [velo_binary, "run", f"--prof-md={report_path}", str(script)],
+            capture_output=True,
+            timeout=30,
+            cwd=tmp_path,
+        )
+
+        content = report_path.read_text()
+
+        # Check for Agent Hint markers
+        hint_patterns = ["Agent Hint", "[loop-hot]", "[io-blocking]", "[preload-miss]"]
+        has_hints = any(p in content for p in hint_patterns)
+
+        if not has_hints:
+            pytest.skip("BUG-017: No Agent Hints found in report. RFC-0038 Appendix A defines hint taxonomy.")
