@@ -146,5 +146,6 @@ dev = [
     "jsonschema>=4.23.0",
     "pytest-xdist>=3.8.0",
     "pytest-timeout>=2.3.1",
+    "pytest-shard>=0.1.2",  # For CI test sharding
 ]
 
