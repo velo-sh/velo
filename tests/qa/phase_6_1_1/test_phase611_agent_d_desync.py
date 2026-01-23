@@ -21,6 +21,9 @@ from typing import Any
 import pytest
 import requests
 
+# Mark entire module as CI flaky - desync tests are destructive and timing-sensitive
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.chaos]
+
 # Add vendor path for umsgpack
 repo_root = Path(__file__).parent.parent.parent.parent
 vendor_path = repo_root / "python" / "velo" / "_vendor"

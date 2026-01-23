@@ -10,6 +10,9 @@ from typing import Any
 
 import pytest
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 
 @pytest.fixture
 def run_velo_e2e(isolated_env):

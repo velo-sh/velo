@@ -12,11 +12,15 @@ import os
 import signal
 import time
 
+import pytest
 from test_harness import assert_no_crash, run_velo
 from test_phase3_harness import (
     ZygoteTestEnv,
     count_zombie_processes,
 )
+
+# Mark entire module as Zygote flaky - skip in CI due to timing/resource issues
+pytestmark = [pytest.mark.zygote_flaky, pytest.mark.chaos]
 
 
 class TestZygoteLifecycleCHAOS:

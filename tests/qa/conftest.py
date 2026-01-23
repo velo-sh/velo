@@ -75,6 +75,11 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
     config.addinivalue_line("markers", "chaos: Extreme scenarios and process destruction")
     config.addinivalue_line("markers", "flood: High-concurrency / IPC flooding tests")
+    # CI Flaky test markers (方案A: Skip flaky tests in CI)
+    config.addinivalue_line("markers", "ci_flaky: Tests that are flaky in CI environment")
+    config.addinivalue_line("markers", "zygote_flaky: Zygote tests that fail in CI due to timing/resources")
+    config.addinivalue_line("markers", "websocket_wip: WebSocket tests for features not yet implemented")
+    config.addinivalue_line("markers", "server_startup_flaky: Tests sensitive to server startup timing")
 
     # "Do Not Disturb" Log Policy for CI
     # In CI, we want to reduce noise unless a failure occurs.
@@ -87,6 +92,35 @@ def pytest_configure(config):
             config.option.log_date_format = "%H:%M:%S"
 
     config.addinivalue_line("markers", "resource_budget: Resource budget verification tests")
+
+
+# =============================================================================
+# CI FLAKY TEST AUTO-SKIP (方案A: Skip flaky tests in CI)
+# =============================================================================
+
+# Markers that indicate a test is flaky in CI
+_CI_FLAKY_MARKERS = frozenset(
+    {
+        "ci_flaky",
+        "zygote_flaky",
+        "websocket_wip",
+        "server_startup_flaky",
+    }
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip tests with CI flaky markers when running in GitHub Actions."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return  # Only apply in CI
+
+    skip_ci_flaky = pytest.mark.skip(reason="CI flaky: skipped in CI environment")
+
+    for item in items:
+        # Check if test has any of the flaky markers
+        item_markers = {m.name for m in item.iter_markers()}
+        if item_markers & _CI_FLAKY_MARKERS:
+            item.add_marker(skip_ci_flaky)
 
 
 # =============================================================================

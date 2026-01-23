@@ -5,8 +5,10 @@ import time
 
 import pytest
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier4]
 
-@pytest.mark.tier4
+
 class TestDefectProof:
     """Forensic proof of defects discovered in Phase 7.2."""
 

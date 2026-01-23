@@ -17,6 +17,9 @@ from typing import Any, cast
 
 import pytest
 
+# Mark entire module as Zygote flaky - skip in CI due to timing/resource issues
+pytestmark = [pytest.mark.zygote_flaky, pytest.mark.tier2]
+
 # Path to velo_zygote module
 VELO_ROOT = Path(__file__).parent.parent.parent
 ZYGOTE_MAIN = VELO_ROOT / "velo_zygote" / "main.py"

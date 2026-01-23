@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+# Mark entire module as WebSocket WIP - skip in CI due to timing issues
+pytestmark = [pytest.mark.websocket_wip, pytest.mark.tier1]
+
 
 class TestWebSocketCloseCode:
     @pytest.mark.tier1

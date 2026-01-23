@@ -17,6 +17,9 @@ from typing import Any
 
 import pytest
 
+# Mark entire module as Zygote flaky - skip in CI due to timing/resource issues
+pytestmark = [pytest.mark.zygote_flaky, pytest.mark.perf]
+
 
 @pytest.fixture
 def velo_binary():

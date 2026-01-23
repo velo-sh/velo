@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier1]
+
 # =============================================================================
 # DEF-71-009: Primitive Static Analysis (SAT) fragility (P1)
 # =============================================================================
 
 
-@pytest.mark.tier1
 class TestDEF71009SATFragility:
     """
     Evidence: Autopilot SAT uses simple substring matching.

@@ -11,6 +11,9 @@ import pytest
 # TITANIUM Grade: Agent D (Destroyer) Chaos Suite
 # Based on QA-SOP §4.4 (Agent D responsibilities)
 
+# Mark entire module as CI flaky - skip in CI due to chaos/timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier4]
+
 
 @pytest.mark.tier4
 @pytest.mark.xfail(

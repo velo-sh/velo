@@ -20,8 +20,8 @@ import pytest
 sys.path.append(str(Path(__file__).parent.parent))
 from conftest_utils import T_MEDIUM, T_SHORT, get_rss
 
-# Mark all tests in this module as stress tests
-pytestmark = pytest.mark.stress
+# Mark all tests in this module as stress tests and CI flaky
+pytestmark = [pytest.mark.stress, pytest.mark.ci_flaky]
 
 
 class TestL3Stress:

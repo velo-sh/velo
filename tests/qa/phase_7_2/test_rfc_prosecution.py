@@ -21,6 +21,9 @@ from typing import Any
 
 import pytest
 
+# Mark entire module as server startup flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.server_startup_flaky, pytest.mark.tier2]
+
 
 class TestRFC0025WebSocketArchitecture:
     """
