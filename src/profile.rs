@@ -93,6 +93,28 @@ impl ProfileData {
         imports
     }
 
+    /// Get the top N slowest imports as BottleneckInfo.
+    pub fn to_bottlenecks(&self, n: usize) -> Vec<crate::common::diagnostics::BottleneckInfo> {
+        let mut imports: Vec<(&String, &f64)> = self.import_times.iter().collect();
+        imports.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        imports
+            .iter()
+            .take(n)
+            .map(|(name, time)| crate::common::diagnostics::BottleneckInfo {
+                name: name.to_string(),
+                duration_ms: **time,
+                location: None,
+                agent_hint: get_optimization_suggestions(name).map(|msg| {
+                    crate::common::diagnostics::AgentHint {
+                        tag: crate::common::diagnostics::HINT_PRELOAD_MISS.to_string(),
+                        message: msg.to_string(),
+                    }
+                }),
+            })
+            .collect()
+    }
+
     /// Format profile as a table for display.
     pub fn format_table(&self, max_imports: usize) -> String {
         let mut output = String::new();

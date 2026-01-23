@@ -46,6 +46,7 @@ RUN OPTIONS:
     --live     Alias for --vibe
     --port <PORT>  Vibe gateway port (default: 8080)
     --profile  Show detailed startup timing breakdown
+    --prof-md [FILE] Output AI-Native diagnostic report (RFC-0038)
     --shm <PATH>  Map .safetensors into shared memory (Memory Gravity)
 
 SERVE OPTIONS:

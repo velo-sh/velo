@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod governance;
 pub mod paths;
 pub mod python_env;
