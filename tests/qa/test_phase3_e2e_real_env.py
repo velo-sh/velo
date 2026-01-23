@@ -178,6 +178,7 @@ print("imported")
             # Preload should make import nearly free (allow 3x margin for CI variance)
             assert ratio < 3.0, f"Preload not working: {ratio:.2f}x slower with imports"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_004_consecutive_runs_speedup(self):
         """
         E2E-004: Measure actual speedup from cold to warm.
@@ -276,6 +277,7 @@ print("line3")
             assert "line2" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
             assert "line3" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_008_stderr_captured_correctly(self):
         """
         E2E-008: Script stderr should be captured correctly.
