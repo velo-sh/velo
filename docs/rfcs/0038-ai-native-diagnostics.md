@@ -38,6 +38,7 @@ In the upcoming AI Era, the primary "users" of infrastructure are no longer huma
 
 ### 3.1 Output Dest & Truncation
 - **Default**: Diagnostics MUST be written to `stderr` or a specified file (`--prof-md=report.md`).
+- **Alternative Format**: For programmatic CI Agents, `--prof-json=report.json` MAY be supported as a v1.1 extension.
 - **Truncation**: Large tables (Hot Functions) MUST be truncated to the **Top 20** entries to prevent token overflow. A summary footer (e.g., "...and 45 other calls") must be included.
 
 ### 3.2 Standard Output Schema (GFM)
@@ -96,7 +97,7 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 - `[0ms]` Zygote Spawn
 - `[4ms]` Environment Shield Active
 - `[12ms]` Application Entry
-- `[462ms]` First Heavy Import (`torch`)
+- `[462ms]` First Heavy Import (`torch`) **(Preloaded via RFC-0035, COW-shared)**
 
 ### 3.4 Mermaid Integration (Visual Dependency Graph)
 The report MAY include a Mermaid Gantt chart for the startup timeline. This provides dual utility: a visual timeline for human users in GitHub/VS Code previews, and a precise temporal dependency graph for Agents.
@@ -136,8 +137,8 @@ Implement a `MarkdownFormatter` in `src/common/diagnostics.rs`.
 The Markdown report MUST be written **atomically** at the end of the process execution. This prevents AI agents from reading partial or corrupted MD files during a crash. 
 
 ### 4.4 Extension Points
-- **Agent Hints**: Reserved tag format `[tag-name]` for future routing hints (e.g., `[memory-leak]`, `[io-blocking]`). 
-    - **Constraint**: Agent Hints MUST be derived from empirical telemetry, not generative inference.
+- **Agent Hints**: Reserved tag format `[tag-name]` for future routing hints. See **Appendix A: Agent Hint Taxonomy** for the canonical list.
+    - **Constraint**: Agent Hints MUST be derived from empirical telemetry, not LLM speculation.
 - **AI Suggestions**: Future releases may include a `## 🤖 AI Suggestions (Experimental)` section, which MUST be explicitly labeled to distinguish from empirical telemetry.
 
 ### 4.5 Protocol Versioning Strategy (SemVer)
@@ -190,3 +191,17 @@ Velo targets a future `velo diff baseline.md current.md` command. This will gene
 
 - **Gate A**: Output passes standard Markdown linting (`mdl`).
 - **Gate B**: AI-generated "Top 3 bottlenecks" from the report match actual data with 100% accuracy.
+
+---
+
+## Appendix A: Agent Hint Taxonomy
+
+The following Agent Hints are reserved for structured routing. New hints require RFC amendment.
+
+| Tag | Meaning | Typical Action |
+| :--- | :--- | :--- |
+| `[loop-hot]` | High self-time inside a loop | Check nested iterations, vectorize |
+| `[io-blocking]` | Synchronous I/O blocking event loop | Suggest async/await refactor |
+| `[memory-leak]` | Memory growth without release | Audit object lifecycle |
+| `[gil-contention]` | GIL blocking multi-threaded work | Suggest multiprocessing |
+| `[preload-miss]` | Library not in RFC-0035 preload cache | Add to `[tool.velo.native_preload]` |
