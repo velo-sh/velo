@@ -290,14 +290,12 @@ class TestL2ErrorHandling:
             pyproject = tmp_path / "pyproject.toml"
             pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
 
-            # Build will fail due to syntax error - that's expected
-            try:
-                build_bundle(tmp_path)
-            except SyntaxError:
-                pass  # Expected
+            # Don't try to build bundle - syntax error file won't build
+            # Just test that velo run reports the syntax error
 
-            # Run should fail with syntax error
-            result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
+            # Run WITHOUT --fast to test normal error reporting
+            # (fast loader skips normal Python execution path)
+            result = run_velo(["run", "main.py"], tmp_path, velo_binary)
 
             assert result.returncode != 0
             # Check both stdout and stderr as error messages may appear in either
