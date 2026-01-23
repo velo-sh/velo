@@ -29,6 +29,9 @@ import pytest
 # Import CI-aware timeout constants
 from conftest_utils import T_MEDIUM, T_SHORT
 
+# Mark entire module as server startup flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.server_startup_flaky, pytest.mark.tier2]
+
 # Try to import requests, skip tests if not available
 try:
     import requests

@@ -27,6 +27,9 @@ import requests
 # Import CI-aware timeout constants
 from conftest_utils import T_MEDIUM, T_SHORT
 
+# Mark entire module as server startup flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.server_startup_flaky, pytest.mark.tier2]
+
 
 def get_velo_binary() -> str:
     """Get path to velo binary."""

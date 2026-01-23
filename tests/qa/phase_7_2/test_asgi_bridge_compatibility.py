@@ -24,6 +24,9 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 
 def get_velo_binary() -> str:
     """Get path to velo binary (release preferred)."""

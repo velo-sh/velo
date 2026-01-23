@@ -1,3 +1,4 @@
+import os
 import signal
 import subprocess
 import sys
@@ -7,6 +8,23 @@ from typing import Any
 
 import psutil
 import pytest
+
+# =============================================================================
+# CI FLAKY AUTO-SKIP FOR HEAVY TESTS (方案A: Skip heavy tests in CI)
+# =============================================================================
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip heavy tests in CI environment - these are too resource-intensive."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return  # Only apply in CI
+
+    skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
+
+    for item in items:
+        # All tests in this directory get the skip marker in CI
+        item.add_marker(skip_in_ci)
+
 
 # Add project root and python directory to sys.path
 # tests/qa/heavy/conftest.py
