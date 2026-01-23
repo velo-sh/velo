@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
-from bundle_builder import build_from_project # type: ignore
+from bundle_builder import build_from_project  # type: ignore
 
 
 def build_bundle(project_dir: Path) -> Path:
