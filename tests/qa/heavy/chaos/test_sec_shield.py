@@ -1,8 +1,11 @@
 # RFC-0011 QA: SandboxShield Verification Suite (Executioners)
 # tests/qa/phase_6_1_1/test_sec_shield.py
 
+import os
 import subprocess
 import time
+from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -10,7 +13,7 @@ import requests
 class TestSandboxShield:
     """Security tests focused on SandboxShield (Full Armor) integrity."""
 
-    def test_SEC_SHIELD_001_env_inheritance(self, velo_serve_fixture):
+    def test_SEC_SHIELD_001_env_inheritance(self, velo_serve_fixture: Any) -> None:
         """Verify that workers inherit critical environment variables.
 
         Detection for: Sin 1 (Environment Starvation)
@@ -25,7 +28,7 @@ class TestSandboxShield:
         response = requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=10)
         assert response.status_code == 200, "Worker died/starved due to missing environment"
 
-    def test_SEC_SHIELD_002_filesystem_jail(self, velo_serve_fixture):
+    def test_SEC_SHIELD_002_filesystem_jail(self, velo_serve_fixture: Any) -> None:
         """Verify that workers are correctly jailed in the filesystem.
 
         Detection for: Sin 2 (Seatbelt Over-restriction vs Correct Jail)
@@ -38,7 +41,7 @@ class TestSandboxShield:
         # Since we use SAMPLE_APP_CODE from conftest, we'd need to extend it.
         pass  # Placeholder for actual write-probe implementation
 
-    def test_SEC_SHIELD_003_workspace_isolation(self, tmp_path, velo_binary):
+    def test_SEC_SHIELD_003_workspace_isolation(self, tmp_path: Path, velo_binary: str) -> None:
         """Verify that Zygotes from different workspaces do NOT collide.
 
         Detection for: Sin 3 (Cross-Workspace Collision)
@@ -50,7 +53,7 @@ class TestSandboxShield:
         ws2.mkdir()
 
         # Helper to start velo in a workspace
-        def start_velo_in(ws):
+        def start_velo_in(ws: Path) -> subprocess.Popen[str]:
             (ws / "main.py").write_text(
                 'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/id")\ndef get_id(): return {"ws": "'
                 + ws.name

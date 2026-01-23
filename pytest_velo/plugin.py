@@ -290,13 +290,13 @@ def hijack_execnet() -> None:
 
             return original_makegateway(self, spec)
 
-        execnet.multi.Group.makegateway = velo_makegateway
-        execnet.multi.Group._velo_hijacked = True
+        execnet.multi.Group.makegateway = velo_makegateway  # type: ignore
+        execnet.multi.Group._velo_hijacked = True  # type: ignore
 
         # Also patch the global makegateway for any direct calls
         import execnet
 
-        execnet.makegateway = velo_makegateway
+        execnet.makegateway = velo_makegateway  # type: ignore
 
     except ImportError:
         pass  # xdist/execnet not installed

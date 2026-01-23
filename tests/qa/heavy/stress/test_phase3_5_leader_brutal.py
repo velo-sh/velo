@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest_utils import T_LONG, get_velo_binary
@@ -29,19 +30,19 @@ from conftest_utils import T_LONG, get_velo_binary
 class BrutalTestEnv:
     """Hardened test environment for brutal tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_brutal_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> BrutalTestEnv:
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 60, env: dict = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 60, env: dict[str, str] | None = None) -> tuple[int, str, str]:
         run_env = os.environ.copy()
         if env:
             run_env.update(env)
@@ -55,16 +56,16 @@ class BrutalTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> BrutalTestEnv:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.cleanup()
 
 
@@ -76,7 +77,7 @@ class BrutalTestEnv:
 class TestChaosResourceExhaustion:
     """CHAOS-RES-xxx: Try to exhaust system resources."""
 
-    def test_chaos_res_001_fd_exhaustion(self):
+    def test_chaos_res_001_fd_exhaustion(self) -> None:
         """CHAOS-RES-001: Try to exhaust file descriptors."""
         with BrutalTestEnv() as env:
             env.create_script(
@@ -99,7 +100,7 @@ for fd in fds:
             # Should not crash the parent process
             assert "opened:" in stdout or code != 0 or "Falling back" in stderr
 
-    def test_chaos_res_002_memory_bomb(self):
+    def test_chaos_res_002_memory_bomb(self) -> None:
         """CHAOS-RES-002: Try to allocate massive memory."""
         with BrutalTestEnv() as env:
             env.create_script(
@@ -121,7 +122,7 @@ print('MEM:survived')
             # Process may be killed by OS, that's OK
             assert True  # If we get here, parent survived
 
-    def test_chaos_res_003_fork_bomb_attempt(self):
+    def test_chaos_res_003_fork_bomb_attempt(self) -> None:
         """CHAOS-RES-003: Try a fork bomb (should be contained)."""
         with BrutalTestEnv() as env:
             env.create_script(
@@ -148,7 +149,7 @@ print(f'FORKS:{count}')
             # Should complete without hanging or crashing parent
             assert True
 
-    def test_chaos_res_004_thread_bomb(self):
+    def test_chaos_res_004_thread_bomb(self) -> None:
         """CHAOS-RES-004: Try to create thousands of threads."""
         with BrutalTestEnv() as env:
             env.create_script(
@@ -176,7 +177,7 @@ for t in threads:
 class TestChaosTiming:
     """CHAOS-TIME-xxx: Timing and race condition attacks."""
 
-    def test_chaos_time_001_rapid_start_stop(self):
+    def test_chaos_time_001_rapid_start_stop(self) -> None:
         """CHAOS-TIME-001: Rapidly start/stop serve commands."""
         velo = get_velo_binary()
 
@@ -197,7 +198,7 @@ class TestChaosTiming:
         # Should not leave zombie processes or leaked resources
         assert True
 
-    def test_chaos_time_002_concurrent_same_port(self):
+    def test_chaos_time_002_concurrent_same_port(self) -> None:
         """CHAOS-TIME-002: Multiple processes try same port."""
         velo = get_velo_binary()
         procs = []
@@ -231,7 +232,7 @@ class TestChaosTiming:
 class TestInjectionAttacks:
     """INJECT-xxx: All injection attack vectors."""
 
-    def test_inject_001_shell_metacharacters(self):
+    def test_inject_001_shell_metacharacters(self) -> None:
         """INJECT-001: Shell metacharacters in all inputs."""
         velo = get_velo_binary()
 
@@ -261,7 +262,7 @@ class TestInjectionAttacks:
             assert "root:" not in result.stdout
             assert "/bin/" not in result.stdout
 
-    def test_inject_002_python_code_injection(self):
+    def test_inject_002_python_code_injection(self) -> None:
         """INJECT-002: Python code in module name."""
         velo = get_velo_binary()
 
@@ -282,7 +283,7 @@ class TestInjectionAttacks:
             # Should never execute
             assert "uid=" not in result.stdout
 
-    def test_inject_003_sql_injection_style(self):
+    def test_inject_003_sql_injection_style(self) -> None:
         """INJECT-003: SQL injection patterns (shouldn't apply but test)."""
         velo = get_velo_binary()
 
@@ -302,7 +303,7 @@ class TestInjectionAttacks:
             # Should just fail gracefully
             assert result.returncode != 0
 
-    def test_inject_004_path_traversal_variants(self):
+    def test_inject_004_path_traversal_variants(self) -> None:
         """INJECT-004: All path traversal variants."""
         velo = get_velo_binary()
 
@@ -337,7 +338,7 @@ class TestInjectionAttacks:
 class TestCrashAttempts:
     """CRASH-xxx: Inputs designed to crash the process."""
 
-    def test_crash_001_null_bytes_everywhere(self):
+    def test_crash_001_null_bytes_everywhere(self) -> None:
         """CRASH-001: Null bytes in all string positions.
 
         NOTE: Python subprocess cannot pass null bytes - they're rejected
@@ -360,7 +361,7 @@ class TestCrashAttempts:
                 # OS rejects - that's the protection working
                 pass
 
-    def test_crash_002_format_strings(self):
+    def test_crash_002_format_strings(self) -> None:
         """CRASH-002: Format string attack vectors."""
         velo = get_velo_binary()
 
@@ -383,7 +384,7 @@ class TestCrashAttempts:
             # Should not crash
             assert result.returncode != -11
 
-    def test_crash_003_unicode_bombs(self):
+    def test_crash_003_unicode_bombs(self) -> None:
         """CRASH-003: Unicode edge cases.
 
         NOTE: Some unicode chars (like null) cannot be passed via subprocess.
@@ -410,7 +411,7 @@ class TestCrashAttempts:
             except (UnicodeEncodeError, ValueError):
                 pass  # OS/shell rejects - that's fine
 
-    def test_crash_004_extremely_long_inputs(self):
+    def test_crash_004_extremely_long_inputs(self) -> None:
         """CRASH-004: Extremely long inputs for buffer overflow."""
         velo = get_velo_binary()
 
@@ -437,7 +438,7 @@ class TestCrashAttempts:
 class TestHangAttempts:
     """HANG-xxx: Inputs designed to cause infinite loops or deadlocks."""
 
-    def test_hang_001_infinite_redirect_symlink(self):
+    def test_hang_001_infinite_redirect_symlink(self) -> None:
         """HANG-001: Infinite symlink redirect."""
         with BrutalTestEnv() as env:
             try:
@@ -452,7 +453,7 @@ class TestHangAttempts:
             except subprocess.TimeoutExpired:
                 pytest.fail("Process hung on symlink loop")
 
-    def test_hang_002_regex_catastrophic_backtracking(self):
+    def test_hang_002_regex_catastrophic_backtracking(self) -> None:
         """HANG-002: Input that might cause regex backtracking."""
         velo = get_velo_binary()
 
@@ -469,7 +470,7 @@ class TestHangAttempts:
         except subprocess.TimeoutExpired:
             pytest.fail("Possible ReDoS vulnerability")
 
-    def test_hang_003_deeply_nested_path(self):
+    def test_hang_003_deeply_nested_path(self) -> None:
         """HANG-003: Deeply nested directory path."""
         velo = get_velo_binary()
 
@@ -495,7 +496,7 @@ class TestHangAttempts:
 class TestInformationLeak:
     """LEAK-xxx: Try to leak sensitive information."""
 
-    def test_leak_001_error_message_info(self):
+    def test_leak_001_error_message_info(self) -> None:
         """LEAK-001: Error messages should not leak internal paths."""
         velo = get_velo_binary()
 
@@ -529,7 +530,7 @@ class TestInformationLeak:
         # Note: home directories like /home/ or /Users/ are OK if they're
         # part of the project path (e.g., /home/runner/work/velo/velo)
 
-    def test_leak_002_env_var_exposure(self):
+    def test_leak_002_env_var_exposure(self) -> None:
         """LEAK-002: Error should not expose env vars."""
         velo = get_velo_binary()
 
@@ -550,7 +551,7 @@ class TestInformationLeak:
         assert "super_secret_12345" not in output
         assert "db_pass_67890" not in output
 
-    def test_leak_003_stack_trace_exposure(self):
+    def test_leak_003_stack_trace_exposure(self) -> None:
         """LEAK-003: Internal stack traces should not be exposed."""
         velo = get_velo_binary()
 
@@ -578,7 +579,7 @@ class TestInformationLeak:
 class TestMegaAttack:
     """MEGA-xxx: Combined simultaneous attacks."""
 
-    def test_mega_001_everything_at_once(self):
+    def test_mega_001_everything_at_once(self) -> None:
         """MEGA-001: Multiple attack vectors simultaneously."""
         import concurrent.futures
 
@@ -612,7 +613,7 @@ class TestMegaAttack:
             if isinstance(r, int):
                 assert r != -11
 
-    def test_mega_002_stress_under_resource_pressure(self):
+    def test_mega_002_stress_under_resource_pressure(self) -> None:
         """MEGA-002: Attacks while system is under resource pressure."""
         velo = get_velo_binary()
 

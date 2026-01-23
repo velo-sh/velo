@@ -7,7 +7,7 @@ from pathlib import Path
 from conftest_utils import get_velo_binary
 
 
-def setup_test_project(tmp_path):
+def setup_test_project(tmp_path: Path) -> None:
     repo_root = Path(__file__).parents[4]
     python_src = repo_root / "python"
     python_dst = tmp_path / "python"

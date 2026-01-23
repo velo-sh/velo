@@ -10,6 +10,7 @@ Tests edge cases in MessagePack IPC protocol:
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 # Add vendor path
 vendor_path = Path(__file__).parent.parent.parent.parent / "python" / "velo" / "_vendor"
@@ -83,7 +84,7 @@ class TestMsgpackEdge(unittest.TestCase):
         self.assertEqual(unpacked["args"], [], "Empty args preserved")
 
         # Empty dict
-        empty_dict = {}
+        empty_dict: dict[Any, Any] = {}
         packed = umsgpack.packb(empty_dict)
         unpacked = umsgpack.unpackb(packed)
         self.assertEqual(unpacked, {}, "Empty dict preserved")
@@ -112,7 +113,7 @@ class TestMsgpackEdge(unittest.TestCase):
         import umsgpack
 
         # Create nested structure (50 levels)
-        nested = {"value": "deepest"}
+        nested: dict[str, Any] = {"value": "deepest"}
         for i in range(50):
             nested = {"level": i, "child": nested}
 

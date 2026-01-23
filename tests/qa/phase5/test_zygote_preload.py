@@ -13,6 +13,7 @@ Tests:
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -29,7 +30,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -41,13 +42,13 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
 
 
-def measure_zygote_startup(velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3):
+def measure_zygote_startup(velo_binary: str, cwd: Path, script: str = "bench.py", runs: int = 3) -> float | None:
     """Measure Zygote startup time (best of N runs)."""
     times = []
     for _ in range(runs):
@@ -71,7 +72,7 @@ class TestZygotePreload:
         not Path("../velo-benchmarks/bench_fastapi").exists(),
         reason="Benchmark project not available",
     )
-    def test_perf_preload_001_manual_preload(self, velo_binary, tmp_path):
+    def test_perf_preload_001_manual_preload(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         PERF-PRELOAD-001: Manual --preload achieves < 300ms
 
@@ -126,7 +127,7 @@ print(f"Import time: {elapsed*1000:.1f}ms")
             stop_zygote(velo_binary, tmp_path)
 
     @pytest.mark.happy_path
-    def test_perf_preload_002_pyproject_toml(self, velo_binary, tmp_path):
+    def test_perf_preload_002_pyproject_toml(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         PERF-PRELOAD-002: pyproject.toml preload achieves < 300ms
 
@@ -179,7 +180,7 @@ preload = ["fastapi", "pydantic", "uvicorn", "starlette"]
             stop_zygote(velo_binary, tmp_path)
 
     @pytest.mark.happy_path
-    def test_reg_001_no_preload_baseline(self, velo_binary, tmp_path):
+    def test_reg_001_no_preload_baseline(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         REG-001: No preload baseline ~450-500ms
 
@@ -231,7 +232,7 @@ class TestZygotePreloadConfig:
 
     @pytest.mark.config
     @pytest.mark.xfail(reason="DEV-FIX-001: src/config.rs not yet implemented")
-    def test_config_parse_preload(self, tmp_path):
+    def test_config_parse_preload(self, tmp_path: Path) -> None:
         """
         REQ-1: velo run --zygote reads pyproject.toml preload config
         """
@@ -267,7 +268,7 @@ class TestZygotePreloadMerge:
     """
 
     @pytest.mark.happy_path
-    def test_merge_001_cli_and_pyproject_dedupe(self, velo_binary, tmp_path):
+    def test_merge_001_cli_and_pyproject_dedupe(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         MERGE-001: CLI preload + pyproject.toml preload should merge and dedupe
 

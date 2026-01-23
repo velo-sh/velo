@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get the velo binary from the current project."""
     repo_root = Path(__file__).parent.parent.parent
     for path in [

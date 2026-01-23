@@ -5,15 +5,16 @@ import textwrap
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
 @pytest.fixture
-def run_velo_e2e(isolated_env):
+def run_velo_e2e(isolated_env: Any) -> Any:
     """Start a real velo process with a real python worker."""
 
-    def _run(app_path, env=None, extra_args=None):
+    def _run(app_path: Path, env: dict[str, str] | None = None, extra_args: list[str] | None = None) -> Any:
         env_vars = os.environ.copy()
         env_vars["PYTHONPATH"] = f"{os.getcwd()}:{env_vars.get('PYTHONPATH', '')}"
         env_vars["VELO_TEST_MODE"] = "1"
@@ -52,7 +53,7 @@ def run_velo_e2e(isolated_env):
 
 
 @pytest.mark.tier1
-def test_sse_streaming_realtime(isolated_env, run_velo_e2e):
+def test_sse_streaming_realtime(isolated_env: Any, run_velo_e2e: Any) -> None:
     """[DEF-72-C05] Verify SSE streaming chunks are received in real-time."""
     app_code = """
     import asyncio
@@ -89,7 +90,7 @@ def test_sse_streaming_realtime(isolated_env, run_velo_e2e):
         s.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
 
         start_time = time.time()
-        received_chunks = []
+        received_chunks: list[float] = []
 
         # Read headers
         # Read body chunks with raw recv to avoid any buffering logic
@@ -100,7 +101,7 @@ def test_sse_streaming_realtime(isolated_env, run_velo_e2e):
             # Only count chunks that contain "data:"
             if b"data:" in data:
                 elapsed = time.time() - start_time
-                print(f"Received data at {elapsed:.2f}s: {data}")
+                print(f"Received data at {elapsed:.2f}s: {data.decode('utf-8', errors='replace')}")
                 received_chunks.append(elapsed)
 
         assert len(received_chunks) == 5

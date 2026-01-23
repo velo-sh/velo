@@ -8,7 +8,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Master Memory Protection.
     If worker produces 200MB of output, Master should not potentially OOM.
@@ -28,7 +28,7 @@ def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv):
     rss_before = master_proc.memory_info().rss / (1024 * 1024)
     print(f"Master RSS before: {rss_before:.2f} MB")
 
-    async def check_bomb():
+    async def check_bomb() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             isolated_env.create_app("app.py", code)

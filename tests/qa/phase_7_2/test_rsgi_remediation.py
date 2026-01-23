@@ -6,6 +6,7 @@ import time
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -284,7 +285,7 @@ async def app(scope, receive, send):
             # Actually with --rsgi, it's Host (Rust) -> Zygote -> Workers
 
             # Re-read debug log to find worker PIDs if possible, or use psutil
-            worker_info = []
+            worker_info: list[dict[str, Any]] = []
             for c in parent.children(recursive=True):
                 try:
                     worker_info.append(
@@ -313,7 +314,7 @@ async def app(scope, receive, send):
 
             # PROSECUTOR: Check if any worker PIDs still exist AND are the SAME processes
             failed = False
-            survivors = []
+            survivors: list[dict[str, Any]] = []
             for pid, ct in target_pids.items():
                 if psutil.pid_exists(pid):
                     try:
@@ -346,8 +347,8 @@ async def app(scope, receive, send):
                         print(f"Adversarial Prosecution: Attempting SIGKILL to {pid}...")
                         os.kill(pid, signal.SIGKILL)
                         time.sleep(1)
-                        p = psutil.Process(pid)
-                        if p.is_running():
+                        p_reproc = psutil.Process(pid)
+                        if p_reproc.is_running():
                             print(f"WARNING: PID {pid} survived adversarial SIGKILL!")
                         else:
                             print(f"INFO: PID {pid} died after adversarial SIGKILL.")

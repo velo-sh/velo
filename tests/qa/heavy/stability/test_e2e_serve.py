@@ -30,7 +30,7 @@ def find_free_port() -> int:
     """Find a free port for testing."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 class TestE2EServe(unittest.TestCase):
@@ -39,7 +39,7 @@ class TestE2EServe(unittest.TestCase):
     VELO_BINARY = None
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         # Find velo binary
         project_root = Path(__file__).parents[4]
         release_binary = project_root / "target" / "release" / "velo"
@@ -52,12 +52,12 @@ class TestE2EServe(unittest.TestCase):
         elif shutil.which("velo"):
             cls.VELO_BINARY = "velo"
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_dir = tempfile.mkdtemp()
         self.port = find_free_port()
-        self.processes = []
+        self.processes: list[subprocess.Popen[str]] = []
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         # Kill any processes we started
         for proc in self.processes:
             if proc.poll() is None:
@@ -68,7 +68,7 @@ class TestE2EServe(unittest.TestCase):
                     proc.kill()
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    def _create_fastapi_app(self):
+    def _create_fastapi_app(self) -> Path:
         """Create a minimal FastAPI app for testing."""
         app_dir = Path(self.test_dir)
         main_py = app_dir / "main.py"
@@ -99,7 +99,7 @@ dependencies = ["fastapi", "uvicorn"]
     # E2E-001: Basic Startup & Help
     # ==========================================================================
 
-    def test_e2e_001_serve_help(self):
+    def test_e2e_001_serve_help(self) -> None:
         """E2E-001: velo serve --help displays usage."""
         if not self.VELO_BINARY:
             self.skipTest("Velo binary not found")
@@ -122,7 +122,7 @@ dependencies = ["fastapi", "uvicorn"]
     # E2E-002: SEC-P0-001 Command Injection Prevention
     # ==========================================================================
 
-    def test_e2e_002_rejects_shell_injection(self):
+    def test_e2e_002_rejects_shell_injection(self) -> None:
         """E2E-002 (SEC-P0-001): Rejects app targets with shell metacharacters."""
         if not self.VELO_BINARY:
             self.skipTest("Velo binary not found")
@@ -147,7 +147,7 @@ dependencies = ["fastapi", "uvicorn"]
     # E2E-003: Invalid App Format
     # ==========================================================================
 
-    def test_e2e_003_rejects_invalid_app_format(self):
+    def test_e2e_003_rejects_invalid_app_format(self) -> None:
         """E2E-003: Rejects invalid app format (missing colon)."""
         if not self.VELO_BINARY:
             self.skipTest("Velo binary not found")
@@ -167,7 +167,7 @@ dependencies = ["fastapi", "uvicorn"]
     # E2E-004: Graceful Shutdown (SIGTERM)
     # ==========================================================================
 
-    def test_e2e_004_graceful_shutdown(self):
+    def test_e2e_004_graceful_shutdown(self) -> None:
         """E2E-004: velo serve handles SIGTERM gracefully."""
         if not self.VELO_BINARY:
             self.skipTest("Velo binary not found")
@@ -176,18 +176,11 @@ dependencies = ["fastapi", "uvicorn"]
 
         # Start velo serve
         proc = subprocess.Popen(
-            [
-                self.VELO_BINARY,
-                "serve",
-                "main:app",
-                "--port",
-                str(self.port),
-                "--timeout",
-                "2",
-            ],
+            [self.VELO_BINARY, "serve", "main:app", "--port", str(self.port), "--timeout", "2"],
             cwd=str(app_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=True,
         )
         self.processes.append(proc)
 

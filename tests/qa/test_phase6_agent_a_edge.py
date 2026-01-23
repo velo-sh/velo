@@ -1,6 +1,7 @@
 # Agent A (Edge) Test Suite: RFC-0009 Static Graph
 
 import os
+from typing import Any
 
 import pytest
 
@@ -11,7 +12,7 @@ class TestAgentAEdge:
 
     @pytest.mark.skip(reason="P2: Deep dependency chains require loader optimization - tracked as DEF-60-008")
     @pytest.mark.parametrize("depth", [10, 50, 100])
-    def test_EDGE_601_deep_dependency_dag(self, isolated_env, depth):
+    def test_EDGE_601_deep_dependency_dag(self, isolated_env: Any, depth: int) -> None:
         """EDGE-601: Verify bundle handling of deep dependency chains (N levels)."""
         env = isolated_env
 
@@ -32,7 +33,7 @@ class TestAgentAEdge:
         assert result.returncode == 0, f"Deep DAG ({depth}) failed: {result.stderr}"
         assert f"CHAIN_DEPTH_{depth}" in result.stdout, f"Output mismatch: {result.stdout}"
 
-    def test_L0_1_ast_dependency_classification(self, isolated_env):
+    def test_L0_1_ast_dependency_classification(self, isolated_env: Any) -> None:
         """L0-1: Verify dependency classification (Hard vs Soft)."""
         env = isolated_env
         env.create_app(
@@ -60,7 +61,7 @@ def f(): import soft_fn  # Soft
         result = env.run_velo("run", "--fast", "main.py")
         assert result.returncode == 0
 
-    def test_L0_2_scc_cyclic_handle(self, isolated_env):
+    def test_L0_2_scc_cyclic_handle(self, isolated_env: Any) -> None:
         """L0-2: Verify Tarjan's SCC handling for circular imports (a -> b -> c -> a)."""
         env = isolated_env
         env.create_app("a.py", "import b")
@@ -77,7 +78,7 @@ def f(): import soft_fn  # Soft
         assert "CYCLE_OK" in result.stdout
 
     @pytest.mark.parametrize("depth", [10, 50, 100])
-    def test_EDGE_601_deep_dependency_dag(self, isolated_env, depth):
+    def test_EDGE_601_linear_depth_resilience(self, isolated_env: Any, depth: int) -> None:
         """EDGE-601: Verify resolution of deep dependency chains without stack overflow."""
         env = isolated_env
 
@@ -98,7 +99,7 @@ def f(): import soft_fn  # Soft
         assert result.returncode == 0
         assert "tail" in result.stdout
 
-    def test_EDGE_602_string_interning_scale(self, isolated_env):
+    def test_EDGE_602_string_interning_scale(self, isolated_env: Any) -> None:
         """EDGE-602: Verify interning of module name prefixes for large projects (500 modules)."""
         env = isolated_env
         module_count = 500

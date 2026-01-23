@@ -10,7 +10,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier0
-def test_L0_002_cli_alias_vibe(isolated_env: VeloTestEnv):
+def test_L0_002_cli_alias_vibe(isolated_env: VeloTestEnv) -> None:
     """Verify that 'vibe' command exists and responds to --help."""
     # VeloTestEnv copies the binary to self.velo
     # We call it with 'vibe' as the first argument to test the command structure
@@ -21,7 +21,7 @@ def test_L0_002_cli_alias_vibe(isolated_env: VeloTestEnv):
 
 
 @pytest.mark.tier1
-def test_L1_003_ws_json_egress(isolated_env: VeloTestEnv):
+def test_L1_003_ws_json_egress(isolated_env: VeloTestEnv) -> None:
     """Verify that Vibe Gateway broadcasts valid JSON over WebSocket."""
     app_py = isolated_env.create_app("app.py", "print('hello vibe')")
 
@@ -33,7 +33,7 @@ def test_L1_003_ws_json_egress(isolated_env: VeloTestEnv):
     # Give it time to start
     time.sleep(2)
 
-    async def check_ws():
+    async def check_ws() -> bool:
         uri = f"ws://127.0.0.1:{port}"
         try:
             async with websockets.connect(uri) as websocket:
@@ -60,7 +60,7 @@ def test_L1_003_ws_json_egress(isolated_env: VeloTestEnv):
 
 @pytest.mark.tier2
 @pytest.mark.chaos
-def test_STABILITY_101_zombie_storm(isolated_env: VeloTestEnv):
+def test_STABILITY_101_zombie_storm(isolated_env: VeloTestEnv) -> None:
     """Run 100 saves in 10 seconds; verify 0 zombie processes remain (Pillar 1)."""
     app_py = isolated_env.create_app("app.py", "print('storm')")
     port = isolated_env.next_port()
@@ -91,7 +91,7 @@ def test_STABILITY_101_zombie_storm(isolated_env: VeloTestEnv):
 
 
 @pytest.mark.tier2
-def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv):
+def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv) -> None:
     """Verify the vibe monitor survives SyntaxError and recovers on fix (Pillar 2)."""
     app_py = isolated_env.create_app("app.py", "print('start')")
     port = isolated_env.next_port()
@@ -104,7 +104,7 @@ def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv):
     time.sleep(1)  # Wait for execution
 
     # 2. Verify we can still get a response after fixing
-    async def check_recovery():
+    async def check_recovery() -> bool:
         uri = f"ws://127.0.0.1:{port}"
         try:
             async with websockets.connect(uri) as websocket:
@@ -138,7 +138,7 @@ def test_STABILITY_102_watcher_resilience(isolated_env: VeloTestEnv):
 
 @pytest.mark.tier2
 @pytest.mark.chaos
-def test_SEC_202_orphan_protection(isolated_env: VeloTestEnv):
+def test_SEC_202_orphan_protection(isolated_env: VeloTestEnv) -> None:
     """Kill Master (SIGKILL); verify child forks are reaped (Pillar 5)."""
     app_py = isolated_env.create_app("app.py", "import time\ntime.sleep(60)")
     port = isolated_env.next_port()

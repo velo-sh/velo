@@ -25,7 +25,7 @@ from conftest_utils import VeloTestEnv
 # SCENARIO 1: UV Pip Install During Vibe Session
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_pip_install_during_vibe(isolated_env: VeloTestEnv):
+def test_UV_pip_install_during_vibe(isolated_env: VeloTestEnv) -> None:
     """
     CRITICAL: Can Vibe detect a `uv pip install` during a live session?
 
@@ -43,7 +43,7 @@ def test_UV_pip_install_during_vibe(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_uv_install():
+    async def check_uv_install() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Step 1: Verify it works
@@ -93,7 +93,7 @@ def test_UV_pip_install_during_vibe(isolated_env: VeloTestEnv):
 # SCENARIO 2: UV Venv Detection (DEF-08-015)
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_venv_detection(isolated_env: VeloTestEnv):
+def test_UV_venv_detection(isolated_env: VeloTestEnv) -> None:
     """
     Verify Vibe correctly detects and respects UV-created virtualenv.
 
@@ -139,7 +139,7 @@ print(f"HAS_VENV_IN_PATH={any('.venv' in p for p in sys.path)}")
     )
     time.sleep(2)
 
-    async def check_venv():
+    async def check_venv() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -165,7 +165,7 @@ print(f"HAS_VENV_IN_PATH={any('.venv' in p for p in sys.path)}")
 # SCENARIO 3: UV Lockfile Changes
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_lockfile_change_detection(isolated_env: VeloTestEnv):
+def test_UV_lockfile_change_detection(isolated_env: VeloTestEnv) -> None:
     """
     If uv.lock changes (e.g., after `uv sync`), does Vibe re-evaluate?
     """
@@ -185,7 +185,7 @@ dependencies = []
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_lockfile():
+    async def check_lockfile() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             await websocket.recv()  # Initial
@@ -216,7 +216,7 @@ dependencies = []
 # SCENARIO 4: UV Run Context
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_run_context(isolated_env: VeloTestEnv):
+def test_UV_run_context(isolated_env: VeloTestEnv) -> None:
     """
     Verify that Vibe respects UV's execution context.
     When running via `uv run velo vibe`, check env propagation.
@@ -239,7 +239,7 @@ print(f"UV_PROJECT_ENVIRONMENT={os.getenv('UV_PROJECT_ENVIRONMENT', 'NOT_SET')}"
     process = isolated_env.spawn_velo("vibe", str(app_py), env=uv_env)
     time.sleep(2)
 
-    async def check_uv_context():
+    async def check_uv_context() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -264,7 +264,7 @@ print(f"UV_PROJECT_ENVIRONMENT={os.getenv('UV_PROJECT_ENVIRONMENT', 'NOT_SET')}"
 # =============================================================================
 @pytest.mark.tier2
 @pytest.mark.skip(reason="Requires `uv add` support - future feature test")
-def test_UV_add_during_session(isolated_env: VeloTestEnv):
+def test_UV_add_during_session(isolated_env: VeloTestEnv) -> None:
     """
     Future: Test `uv add requests` during a live Vibe session.
     This modifies pyproject.toml AND installs the package.
@@ -276,7 +276,7 @@ def test_UV_add_during_session(isolated_env: VeloTestEnv):
 # SCENARIO 6: pyproject.toml Dependency Change (SINC-001/DEF-08-016 Verification)
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_pyproject_dependency_change(isolated_env: VeloTestEnv):
+def test_UV_pyproject_dependency_change(isolated_env: VeloTestEnv) -> None:
     """
     CRITICAL: Does Vibe detect when pyproject.toml dependencies change?
 
@@ -317,7 +317,7 @@ except ImportError:
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_pyproject_change():
+    async def check_pyproject_change() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Step 1: Initial state - cowsay not available
@@ -374,7 +374,7 @@ dependencies = ["cowsay"]
 # SCENARIO 7: pyproject.toml [tool.velo] Configuration Change
 # =============================================================================
 @pytest.mark.tier2
-def test_UV_pyproject_velo_config_change(isolated_env: VeloTestEnv):
+def test_UV_pyproject_velo_config_change(isolated_env: VeloTestEnv) -> None:
     """
     Does Vibe detect changes to its own [tool.velo] configuration?
     """
@@ -395,7 +395,7 @@ preload = []
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_velo_config():
+    async def check_velo_config() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             await websocket.recv()  # Initial

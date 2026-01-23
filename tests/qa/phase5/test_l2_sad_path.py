@@ -16,21 +16,22 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "python"))
-from bundle_builder import build_from_project
+from bundle_builder import build_from_project # type: ignore
 
 
 def build_bundle(project_dir: Path) -> Path:
     cache_dir = project_dir / ".velo" / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return build_from_project(project_dir, cache_dir / "bundle.veloc")
+    return Path(build_from_project(project_dir, cache_dir / "bundle.veloc"))
 
 
 @pytest.fixture
-def simple_project():
+def simple_project() -> Any:
     """Create minimal Python project.
 
     Note: Uses workspace-local directory instead of /tmp to avoid
@@ -82,7 +83,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 30):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -105,7 +106,7 @@ class TestL2SadPath:
     """
 
     @pytest.mark.sad_path
-    def test_fall_001_corrupted_bundle_fallback(self, simple_project, velo_binary):
+    def test_fall_001_corrupted_bundle_fallback(self, simple_project: Any, velo_binary: Any) -> None:
         """
         FALL-001: Corrupted bundle falls back to standard import
 
@@ -134,7 +135,7 @@ class TestL2SadPath:
             assert "Hello from Fast Loader!" in result.stdout
 
     @pytest.mark.sad_path
-    def test_fall_002_missing_module_graceful(self, simple_project, velo_binary):
+    def test_fall_002_missing_module_graceful(self, simple_project: Any, velo_binary: Any) -> None:
         """
         FALL-002: Missing module falls back gracefully
 
@@ -171,7 +172,7 @@ print(f"new_module works: {new_module.NEW_VALUE}")
         assert "new_module works: 42" in result.stdout
 
     @pytest.mark.sad_path
-    def test_rebuild_001_source_changed(self, simple_project, velo_binary):
+    def test_rebuild_001_source_changed(self, simple_project: Any, velo_binary: Any) -> None:
         """
         REBUILD-001: Source changed triggers auto-rebuild
 
@@ -209,7 +210,7 @@ print(json.dumps({"version": 2}))
         assert "MODIFIED VERSION!" in result.stdout
 
     @pytest.mark.sad_path
-    def test_missing_bundle_creates_new(self, simple_project, velo_binary):
+    def test_missing_bundle_creates_new(self, simple_project: Any, velo_binary: Any) -> None:
         """
         Missing bundle should trigger build on first --fast run.
         """
@@ -233,7 +234,7 @@ class TestL2DiskExhausted:
 
     @pytest.mark.sad_path
     @pytest.mark.skip(reason="Python builder doesn't use velo CLI, test needs redesign")
-    def test_disk_space_exhausted_graceful(self, tmp_path, velo_binary):
+    def test_disk_space_exhausted_graceful(self, tmp_path: Path, velo_binary: Any) -> None:
         """
         L2-04: Disk space exhausted during build
 
@@ -250,7 +251,7 @@ class TestL2ErrorHandling:
     """
 
     @pytest.mark.sad_path
-    def test_nonexistent_file_error(self, tmp_path, velo_binary):
+    def test_nonexistent_file_error(self, tmp_path: Path, velo_binary: Any) -> None:
         """Running nonexistent file should give clear error."""
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text('[project]\nname = "test"\nversion = "0.1.0"')
@@ -261,7 +262,7 @@ class TestL2ErrorHandling:
         assert "not found" in result.stderr.lower() or "no such file" in result.stderr.lower()
 
     @pytest.mark.sad_path
-    def test_syntax_error_reported(self, tmp_path, velo_binary):
+    def test_syntax_error_reported(self, tmp_path: Path, velo_binary: Any) -> None:
         """Syntax errors in Python code should be reported."""
         main_py = tmp_path / "main.py"
         main_py.write_text("def broken(\n")  # Syntax error

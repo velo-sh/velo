@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     debug = repo_root / "target" / "debug" / "velo"
     release = repo_root / "target" / "release" / "velo"
@@ -18,7 +18,7 @@ def get_velo_binary():
     pytest.skip("velo binary not found")
 
 
-def setup_test_project(tmp_path):
+def setup_test_project(tmp_path: Path) -> None:
     repo_root = Path(__file__).parent.parent.parent
     python_src = repo_root / "python"
     python_dst = tmp_path / "python"

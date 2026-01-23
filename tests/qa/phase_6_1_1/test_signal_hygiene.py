@@ -2,6 +2,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 
 def test_H12_signal_hygiene_direct_fork(velo_serve_fixture):
@@ -80,7 +81,7 @@ if __name__ == \"__main__\":
         raise
     from velo_zygote.constants import PROTOCOL_VERSION
 
-    async def run_hygiene_test():
+    async def run_hygiene_test() -> Any:
         async with ZygoteClient(str(socket_path)) as client:
             # 1. Handshake
             handshake = {

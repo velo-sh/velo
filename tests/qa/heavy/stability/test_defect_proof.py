@@ -4,13 +4,14 @@ import subprocess
 import time
 
 import pytest
+from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier4
 class TestDefectProof:
     """Forensic proof of defects discovered in Phase 7.2."""
 
-    def test_DEF_72_SEC_001_fd_leak_native(self, isolated_env):
+    def test_DEF_72_SEC_001_fd_leak_native(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72-SEC-001] Prove FD leak in Native Workers."""
         # Process needs to be Linux for /proc/self/fd, or macOS with lsof
         # But we can also check if we can write to an FD we shouldn't have
@@ -71,7 +72,7 @@ def app(scope, receive, send):
             proc.wait()
             f.close()
 
-    def test_DEF_72_SEC_002_pythonpath_bypass(self, isolated_env):
+    def test_DEF_72_SEC_002_pythonpath_bypass(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72_SEC_002] Prove PYTHONPATH bypass in worker.rs."""
         # 1. Create a malicious module that should be blocked by EnvironmentShield
         malicious_dir = isolated_env.root / "malicious"
@@ -147,7 +148,7 @@ async def app(scope, receive, send):
             proc.terminate()
             proc.wait()
 
-    def test_DEF_72_ARCH_001_orphan_storm(self, isolated_env):
+    def test_DEF_72_ARCH_001_orphan_storm(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72-ARCH-001] Prove orphan process leak on Supervisor SIGKILL."""
         isolated_env.create_app("main.py", "app = lambda x: x")
         port = isolated_env.next_port()
@@ -181,7 +182,7 @@ async def app(scope, receive, send):
             # Good: worker died with parent
             pass
 
-    def test_DEF_72_SEC_003_symlink_permission_manip(self, isolated_env):
+    def test_DEF_72_SEC_003_symlink_permission_manip(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72-SEC-003] Prove symlink permission manipulation vulnerability."""
         # 1. Target: A file that the user owns but shouldn't be touched by Velo
         target_file = isolated_env.root / "do_not_touch.txt"
@@ -216,7 +217,7 @@ async def app(scope, receive, send):
             proc.terminate()
             proc.wait()
 
-    def test_DEF_72_SEC_004_socket_path_truncation(self, isolated_env):
+    def test_DEF_72_SEC_004_socket_path_truncation(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72-SEC-004] Prove socket path truncation/length issues."""
         # 108 bytes is the limit for sockaddr_un path
         long_dir_name = "a" * 120
@@ -242,7 +243,7 @@ async def app(scope, receive, send):
             proc.terminate()
             proc.wait()
 
-    def test_DEF_72_SEC_005_ipc_spoofing(self, isolated_env):
+    def test_DEF_72_SEC_005_ipc_spoofing(self, isolated_env: VeloTestEnv) -> None:
         """[DEF-72-SEC-005] Prove IPC Spoofing due to lack of Peer Verification."""
         # 1. Start Zygote
         isolated_env.create_app("main.py", "app = lambda x: x")

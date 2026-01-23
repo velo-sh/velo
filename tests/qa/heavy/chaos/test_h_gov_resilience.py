@@ -17,7 +17,7 @@ TEST_ST = str(Path(__file__).parent / "test.safetensors")
 SIMPLE_PY = str(Path(__file__).parent / "simple.py")
 
 
-def run_velo(env, args, timeout=T_LONG):
+def run_velo(env: dict[str, str], args: list[str], timeout: float = T_LONG) -> subprocess.CompletedProcess[str]:
     """Run Velo with specific environment and arguments."""
     full_env = os.environ.copy()
     full_env.update(env)
@@ -30,7 +30,7 @@ def run_velo(env, args, timeout=T_LONG):
     return result
 
 
-def test_h_gov_resilience():
+def test_h_gov_resilience() -> None:
     print("🚀 Starting H-Gov Chaos Verification Ritual...")
 
     # 1. CI/Dev Mode: Strict Optimization (Zygote Failure)

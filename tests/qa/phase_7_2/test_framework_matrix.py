@@ -36,6 +36,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -71,9 +72,9 @@ class RealFrameworkProject:
         self.framework = framework
         self.path = Path(tempfile.mkdtemp(prefix=f"velo_fw_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
-        self.results = {
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
+        self.results: dict[str, Any] = {
             "framework": framework,
             "deps_installed": False,
             "server_started": False,
@@ -82,7 +83,7 @@ class RealFrameworkProject:
             "error": None,
         }
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "RealFrameworkProject":
         """Create pyproject.toml with real dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -96,12 +97,12 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "RealFrameworkProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "RealFrameworkProject":
         """Install real dependencies via uv sync."""
         try:
             result = subprocess.run(
@@ -118,7 +119,7 @@ dev-dependencies = []
             self.results["error"] = f"Install failed: {e}"
         return self
 
-    def start_server(self, app_module: str, port: int = None):
+    def start_server(self, app_module: str, port: int | None = None) -> "RealFrameworkProject":
         """Start Velo serve with the framework."""
         if port is None:
             import socket
@@ -173,7 +174,9 @@ dev-dependencies = []
 
         return self
 
-    def test_endpoint(self, path: str, expected_key: str = None, expected_value=None):
+    def test_endpoint(
+        self, path: str, expected_key: str | None = None, expected_value: Any = None
+    ) -> "RealFrameworkProject":
         """Test an HTTP endpoint."""
         try:
             resp = requests.get(f"http://127.0.0.1:{self._port}{path}", timeout=10)
@@ -198,9 +201,11 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Cleanup resources."""
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
@@ -216,7 +221,7 @@ dev-dependencies = []
     def __exit__(self, *args):
         self.cleanup()
 
-    def report(self) -> dict:
+    def report(self) -> dict[str, Any]:
         """Return test results."""
         return self.results
 

@@ -29,7 +29,7 @@ class TestHGovEnforcement(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir)
 
-    def run_velo(self, env_vars, args):
+    def run_velo(self, env_vars: dict[str, str], args: list[str]) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(env_vars)
         # Ensure we don't pick up local dev config unless intended
@@ -40,7 +40,7 @@ class TestHGovEnforcement(unittest.TestCase):
 
         return subprocess.run([VELO_BIN] + args, env=env, cwd=self.tmp_dir, capture_output=True, text=True)
 
-    def test_SEC_H70_ritual_70_1_signal_format(self):
+    def test_SEC_H70_ritual_70_1_signal_format(self) -> None:
         """Verify Ritual 70.1: Audit Signal Structure and ANSI Colors"""
         res = self.run_velo(
             {
@@ -75,7 +75,7 @@ class TestHGovEnforcement(unittest.TestCase):
 
         print("\n[HOSTILE] Ritual 70.1 PASSED: Audit signals are compliant.")
 
-    def test_SEC_H70_ritual_70_2_zygote_fallback(self):
+    def test_SEC_H70_ritual_70_2_zygote_fallback(self) -> None:
         """Verify Ritual 70.2: Zygote Fallback Boundary (Dev vs Prod)"""
 
         # 1. Dev Mode (Strict)
@@ -107,7 +107,7 @@ class TestHGovEnforcement(unittest.TestCase):
 
         print("\n[HOSTILE] Ritual 70.2 PASSED: Zygote fallback honors boundaries.")
 
-    def test_SEC_H70_ritual_70_3_shm_fallback(self):
+    def test_SEC_H70_ritual_70_3_shm_fallback(self) -> None:
         """Verify Ritual 70.3: SHM Fallback (Mangled Header Probe)"""
 
         shm_file = self.work_dir / "mangled.safetensors"
@@ -130,7 +130,7 @@ class TestHGovEnforcement(unittest.TestCase):
         self.assertIn("H-GOV AUDIT", res_prod.stderr)
         print("\n[HOSTILE] Ritual 70.3 PASSED: SHM fallback gracefully degrades in Prod.")
 
-    def test_SEC_H70_ritual_70_4_fast_loader_fallback(self):
+    def test_SEC_H70_ritual_70_4_fast_loader_fallback(self) -> None:
         """Verify Ritual 70.4: Fast Loader Fallback (Corrupted Bundle)"""
 
         # Create a corrupted bundle.veloc
@@ -149,7 +149,7 @@ class TestHGovEnforcement(unittest.TestCase):
         self.assertIn("HEARTBEAT_ACK", res.stdout)
         print("\n[HOSTILE] Ritual 70.4 PASSED: Fast Loader fallback is functional.")
 
-    def test_SEC_H70_ritual_70_5_invalid_shm_path(self):
+    def test_SEC_H70_ritual_70_5_invalid_shm_path(self) -> None:
         """Verify Ritual 70.5: Validation Boundary (Non-existent SHM)"""
 
         # 1. Dev Mode (Strict) - Should crash early

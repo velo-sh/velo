@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 
-def setup_project():
+def setup_project() -> tuple[Path, Path]:
     project_dir = Path("test_large_bundle")
     project_dir.mkdir(exist_ok=True)
 
@@ -23,7 +23,7 @@ def setup_project():
     return project_dir, script_path
 
 
-def build_bundle(project_dir):
+def build_bundle(project_dir: Path) -> Path:
     # Use bundle_builder.py to create bundle
     subprocess.run(["python3", "python/bundle_builder.py", str(project_dir)], check=True)
     bundle_path = project_dir / "bundle.veloc"
@@ -40,7 +40,9 @@ def build_bundle(project_dir):
     return bundle_path
 
 
-def run_velo_fast(project_dir, script_path, env=None):
+def run_velo_fast(
+    project_dir: Path, script_path: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         ["./target/release/velo", "run", "--fast", str(script_path)],
         capture_output=True,
@@ -98,5 +100,48 @@ def main():
         pass
 
 
+def main_logic() -> None:
+    project_dir, script_path = setup_project()
+    try:
+        # 1. Build bundle
+        bundle_path = build_bundle(project_dir)
+
+        # 2. Try without config (default limit applies)
+        config_path = project_dir / "pyproject.toml"
+        with open(config_path, "w") as f:
+            f.write("[project]\nname = 'test-bundle'\n")
+
+        print("\nStep 2: Testing with default limit (256MB)...")
+        res = run_velo_fast(project_dir, script_path)
+        print(f"Exit code: {res.returncode}")
+        print(f"Stdout: {res.stdout}")
+        print(f"Stderr: {res.stderr}")
+
+        # In this world, fast loader fails but falls back, so exit code is 0
+        if "Bundle too large" in res.stdout and "268435456" in res.stdout:
+            print("✅ Successfully rejected oversized bundle with default limit.")
+        else:
+            print("❌ Failed to reject oversized bundle with default limit.")
+
+        # 3. Add override config (400MB)
+        print("\nStep 3: Testing with max_bundle_size = 400 override...")
+        with open(config_path, "w") as f:
+            f.write("[tool.velo]\n")
+            f.write("max_bundle_size = 400\n")
+
+        res = run_velo_fast(project_dir, script_path)
+        print(f"Exit code: {res.returncode}")
+        print(f"Stdout: {res.stdout}")
+        print(f"Stderr: {res.stderr}")
+
+        if res.returncode == 0 and "Hello from large script" in res.stdout:
+            print("✅ Successfully ran with custom bundle size limit.")
+        else:
+            print("❌ Failed to run even with custom bundle size limit.")
+
+    finally:
+        pass
+
+
 if __name__ == "__main__":
-    main()
+    main_logic()

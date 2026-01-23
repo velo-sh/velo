@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     project_root = Path(__file__).parent.parent.parent
     debug_binary = project_root / "target" / "debug" / "velo"
     return str(debug_binary) if debug_binary.exists() else "velo"

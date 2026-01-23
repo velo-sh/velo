@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -28,7 +29,7 @@ def velo_binary():
     return "velo"
 
 
-def get_total_rss(pids):
+def get_total_rss(pids: list[int]) -> int:
     """Calculate total RSS for a list of PIDs."""
     total = 0
     for pid in pids:
@@ -40,7 +41,7 @@ def get_total_rss(pids):
     return total
 
 
-def test_jupyter_density_100_kernels(velo_binary, tmp_path):
+def test_jupyter_density_100_kernels(velo_binary: Any, tmp_path: Path) -> None:
     """
     Gate C: 100 kernels in <5GB RSS.
     """
@@ -95,16 +96,6 @@ while True:
 
     processes = []
 
-    def spawn_kernel(i):
-        p = subprocess.Popen(
-            [velo_binary, "run", "--zygote", "-m", "ipykernel_launcher"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
-        return p
-
     print("🔋 Spawning 100 kernels concurrently (Thundering Herd)...")
     start_spawn = time.time()
     all_pids = []
@@ -120,6 +111,7 @@ while True:
         # Read lines until we find the PID marker
         pid = None
         while True:
+            assert p.stdout is not None
             line = p.stdout.readline()
             if not line:
                 break

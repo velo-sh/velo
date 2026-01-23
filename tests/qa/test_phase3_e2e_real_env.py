@@ -14,11 +14,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     # Try release first, then debug
     repo_root = Path(__file__).parent.parent.parent
@@ -36,11 +37,11 @@ def get_velo_binary():
 class RealUserEnv:
     """Simulates a REAL user project directory (no velo source files)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="user_project_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> RealUserEnv:
         """Create minimal Python project."""
         # Virtual env
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
@@ -50,11 +51,11 @@ class RealUserEnv:
 
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         """Create a Python script."""
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 30) -> tuple[int, str, str, float]:
         """Run velo and return (returncode, stdout, stderr, duration)."""
         start = time.perf_counter()
         result = subprocess.run(
@@ -67,20 +68,20 @@ class RealUserEnv:
         duration = (time.perf_counter() - start) * 1000  # ms
         return result.returncode, result.stdout, result.stderr, duration
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> RealUserEnv:
         # Stop any stale Zygote from previous tests to prevent interference
         subprocess.run([self.velo, "zygote", "stop"], capture_output=True, timeout=5)
         time.sleep(0.2)  # Give time for cleanup
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         # Stop Zygote to prevent pollution to next test
         subprocess.run([self.velo, "zygote", "stop"], capture_output=True, timeout=5)
         self.cleanup()

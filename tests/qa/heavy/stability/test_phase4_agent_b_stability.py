@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -40,7 +41,7 @@ def velo_analyze_available() -> bool:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def check_analyze_available():
+def check_analyze_available() -> None:
     if not velo_analyze_available():
         pytest.skip("velo analyze not implemented yet")
 
@@ -48,11 +49,13 @@ def check_analyze_available():
 class StableProject:
     """Isolated project for stability testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_stable_"))
         self.velo = get_velo_binary()
 
-    def set_pyproject(self, deps=None, velo_config=None):
+    def set_pyproject(
+        self, deps: list[str] | None = None, velo_config: dict[str, Any] | None = None
+    ) -> "StableProject":
         content = f"""[project]
 name = "stable-test"
 version = "0.1.0"
@@ -66,15 +69,15 @@ dependencies = {json.dumps(deps or [])}
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_file(self, name: str, content: str):
+    def set_file(self, name: str, content: str) -> "StableProject":
         (self.path / name).write_text(content)
         return self
 
-    def sync(self):
+    def sync(self) -> "StableProject":
         subprocess.run(["uv", "sync", "--quiet"], cwd=self.path, capture_output=True)
         return self
 
-    def uv_add(self, *packages):
+    def uv_add(self, *packages: str) -> "StableProject":
         subprocess.run(
             ["uv", "add", "--quiet"] + list(packages),
             cwd=self.path,
@@ -82,7 +85,7 @@ dependencies = {json.dumps(deps or [])}
         )
         return self
 
-    def analyze(self, *args, timeout: float = 60) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
             cwd=self.path,
@@ -94,7 +97,7 @@ dependencies = {json.dumps(deps or [])}
     def read_pyproject(self) -> str:
         return (self.path / "pyproject.toml").read_text()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
 
     def __enter__(self):
@@ -113,7 +116,7 @@ dependencies = {json.dumps(deps or [])}
 class TestHappyPath:
     """B1: Core happy path tests."""
 
-    def test_b1_1_fastapi_project(self):
+    def test_b1_1_fastapi_project(self) -> None:
         """B1-1: FastAPI project analyze works."""
         with StableProject() as p:
             p.set_pyproject(deps=["fastapi"])
@@ -125,7 +128,7 @@ class TestHappyPath:
             assert result.returncode == 0, f"Failed: {result.stderr}"
             assert result.stdout.strip() != "", "Expected output"
 
-    def test_b1_2_django_project(self):
+    def test_b1_2_django_project(self) -> None:
         """B1-2: Django project analyze works."""
         with StableProject() as p:
             p.set_pyproject(deps=["django"])
@@ -136,7 +139,7 @@ class TestHappyPath:
 
             assert result.returncode == 0, f"Failed: {result.stderr}"
 
-    def test_b1_3_datascience_project(self):
+    def test_b1_3_datascience_project(self) -> None:
         """B1-3: DataScience project marks slow imports."""
         with StableProject() as p:
             p.set_pyproject(deps=["pandas", "numpy"])
@@ -150,7 +153,7 @@ class TestHappyPath:
             # Should identify at least one of these as slow
             assert "pandas" in output_lower or "numpy" in output_lower
 
-    def test_b1_4_minimal_project(self):
+    def test_b1_4_minimal_project(self) -> None:
         """B1-4: Minimal project with no deps."""
         with StableProject() as p:
             p.set_pyproject()
@@ -171,7 +174,7 @@ class TestHappyPath:
 class TestOutputFormat:
     """B2: Output format verification."""
 
-    def test_b2_1_bar_chart_visible(self):
+    def test_b2_1_bar_chart_visible(self) -> None:
         """B2-1: Bar chart renders with visual bars."""
         with StableProject() as p:
             p.set_pyproject(deps=["requests"])
@@ -185,7 +188,7 @@ class TestOutputFormat:
             output = result.stdout
             assert "%" in output or "ms" in output.lower(), "Expected timing info"
 
-    def test_b2_2_sorted_by_duration(self):
+    def test_b2_2_sorted_by_duration(self) -> None:
         """B2-2: Imports sorted by duration (slowest first)."""
         with StableProject() as p:
             p.set_pyproject(deps=["pandas", "requests"])
@@ -197,7 +200,7 @@ class TestOutputFormat:
             # Implementation should sort by duration
             assert result.returncode == 0
 
-    def test_b2_3_percentages_valid(self):
+    def test_b2_3_percentages_valid(self) -> None:
         """B2-3: Percentages are reasonable."""
         with StableProject() as p:
             p.set_pyproject(deps=["requests"])
@@ -218,7 +221,7 @@ class TestOutputFormat:
 class TestCLIParameters:
     """B3: CLI parameter tests."""
 
-    def test_b3_1_specific_file(self):
+    def test_b3_1_specific_file(self) -> None:
         """B3-1: Analyze specific file."""
         with StableProject() as p:
             p.set_pyproject()
@@ -230,7 +233,7 @@ class TestCLIParameters:
 
             assert result.returncode == 0
 
-    def test_b3_2_threshold_50(self):
+    def test_b3_2_threshold_50(self) -> None:
         """B3-2: --slow-threshold-ms=50 flags more imports."""
         with StableProject() as p:
             p.set_pyproject(deps=["requests"])
@@ -241,7 +244,7 @@ class TestCLIParameters:
 
             assert result.returncode == 0
 
-    def test_b3_3_threshold_500(self):
+    def test_b3_3_threshold_500(self) -> None:
         """B3-3: --slow-threshold-ms=500 flags fewer."""
         with StableProject() as p:
             p.set_pyproject(deps=["requests"])
@@ -252,7 +255,7 @@ class TestCLIParameters:
 
             assert result.returncode == 0
 
-    def test_b3_4_output_json(self):
+    def test_b3_4_output_json(self) -> None:
         """B3-4: --output writes valid JSON."""
         with StableProject() as p:
             p.set_pyproject()
@@ -267,7 +270,7 @@ class TestCLIParameters:
                 content = output_file.read_text()
                 json.loads(content)  # Should be valid JSON
 
-    def test_b3_5_fix_updates_pyproject(self):
+    def test_b3_5_fix_updates_pyproject(self) -> None:
         """B3-5: --fix adds [tool.velo] section."""
         with StableProject() as p:
             p.set_pyproject(deps=["pandas"])
@@ -283,7 +286,7 @@ class TestCLIParameters:
             after = p.read_pyproject()
             assert "[tool.velo]" in after
 
-    def test_b3_6_help_shows_usage(self):
+    def test_b3_6_help_shows_usage(self) -> None:
         """B3-6: --help shows usage."""
         with StableProject() as p:
             result = subprocess.run([p.velo, "analyze", "--help"], capture_output=True, text=True)
@@ -301,7 +304,7 @@ class TestCLIParameters:
 class TestRegression:
     """B4: Regression tests from previous phases."""
 
-    def test_b4_1_profile_format_compatible(self):
+    def test_b4_1_profile_format_compatible(self) -> None:
         """B4-1: Profile data format unchanged from Phase 1.5."""
         # analyze should be able to parse --profile output
         with StableProject() as p:
@@ -313,7 +316,7 @@ class TestRegression:
 
             assert result.returncode == 0
 
-    def test_b4_2_existing_velo_config_preserved(self):
+    def test_b4_2_existing_velo_config_preserved(self) -> None:
         """B4-2: Existing [tool.velo] preserved by --fix."""
         with StableProject() as p:
             p.set_pyproject(deps=["requests"], velo_config={"custom_setting": "keep_me"})
@@ -326,7 +329,7 @@ class TestRegression:
             # Original config should still be there
             assert "custom_setting" in after or "keep_me" in after
 
-    def test_b4_3_virtualenv_priority_regression(self):
+    def test_b4_3_virtualenv_priority_regression(self) -> None:
         """B4-3: Project .venv used even when VIRTUAL_ENV env var is set.
 
         Regression test for CI failure where VIRTUAL_ENV points to runner's

@@ -9,7 +9,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_EXTREME_SINCERITY_genotype_aging(isolated_env: VeloTestEnv):
+def test_EXTREME_SINCERITY_genotype_aging(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: The "Toy" Test (Genotype Aging).
     If I pip install 'cowsay' while Vibe is running, can I use it?
@@ -23,7 +23,7 @@ def test_EXTREME_SINCERITY_genotype_aging(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_aging():
+    async def check_aging() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Step 1: Verify it works

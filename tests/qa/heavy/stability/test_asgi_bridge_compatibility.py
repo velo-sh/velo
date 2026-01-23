@@ -55,13 +55,13 @@ class IsolatedUserProject:
     WARNING: These tests are SLOW because they install real packages.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"velo_{name}_"))
         self.velo = get_velo_binary()
         self._setup_done = False
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "IsolatedUserProject":
         """Create pyproject.toml with real dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -75,12 +75,12 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "IsolatedUserProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         return self
 
-    def setup(self, timeout: float = 120):
+    def setup(self, timeout: float = 120) -> "IsolatedUserProject":
         """Run uv sync to install REAL dependencies (slow!)."""
         if self._setup_done:
             return self
@@ -97,7 +97,9 @@ dev-dependencies = []
         self._setup_done = True
         return self
 
-    def serve(self, app_module: str, *extra_args, port: int = None, env: dict = None) -> subprocess.Popen:
+    def serve(
+        self, app_module: str, *extra_args: str, port: int | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.Popen[str]:
         """Start Velo serve with the isolated project environment."""
         if port is None:
             import socket
@@ -137,7 +139,7 @@ dev-dependencies = []
     def port(self) -> int:
         return self._port
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         shutil.rmtree(self.path, ignore_errors=True)
 
@@ -159,7 +161,7 @@ class TestFrameworkCompatibilityIsolated:
     @pytest.mark.tier3
     @pytest.mark.slow
     # INDICTMENT-03 RESOLVED: ASGI Bridge now converts (scope, receive, send) to native RSGI
-    def test_fastapi_isolated_compatibility(self):
+    def test_fastapi_isolated_compatibility(self) -> None:
         """
         [COMPAT-ISOLATED-01] FastAPI in uv-isolated environment.
 
@@ -206,7 +208,7 @@ async def health(request: Request):
     @pytest.mark.tier3
     @pytest.mark.slow
     # INDICTMENT-03 RESOLVED: ASGI Bridge now converts (scope, receive, send) to native RSGI
-    def test_starlette_isolated_compatibility(self):
+    def test_starlette_isolated_compatibility(self) -> None:
         """
         [COMPAT-ISOLATED-02] Starlette in uv-isolated environment.
 
@@ -251,7 +253,7 @@ app = Starlette(routes=[Route("/health", homepage)])
 
     @pytest.mark.tier3
     @pytest.mark.slow
-    def test_pure_rsgi_isolated_compatibility(self):
+    def test_pure_rsgi_isolated_compatibility(self) -> None:
         """
         [COMPAT-ISOLATED-03] Pure RSGI App in isolated environment.
 
@@ -285,7 +287,7 @@ async def app(scope, proto):
     @pytest.mark.tier3
     @pytest.mark.slow
     @pytest.mark.skip(reason="Flask WSGI requires a2wsgi bridge - out of scope for Phase 7.2")
-    def test_flask_isolated_compatibility(self):
+    def test_flask_isolated_compatibility(self) -> None:
         """
         [COMPAT-ISOLATED-04] Flask (WSGI) in uv-isolated environment.
 
@@ -337,7 +339,7 @@ class TestASGISignatureEvidenceIsolated:
     @pytest.mark.tier2
     @pytest.mark.slow
     @pytest.mark.skip(reason="INDICTMENT-03 RESOLVED: ASGI signature mismatch fixed in Phase 7.3")
-    def test_asgi_signature_mismatch_evidence(self):
+    def test_asgi_signature_mismatch_evidence(self) -> None:
         """
         [EVIDENCE-ISOLATED-01] Direct evidence of signature mismatch.
 

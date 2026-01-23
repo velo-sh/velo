@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     debug = repo_root / "target" / "debug" / "velo"
     release = repo_root / "target" / "release" / "velo"

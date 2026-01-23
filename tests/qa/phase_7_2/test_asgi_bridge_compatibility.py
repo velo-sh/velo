@@ -60,8 +60,9 @@ class IsolatedUserProject:
         self.path = Path(tempfile.mkdtemp(prefix=f"velo_{name}_"))
         self.velo = get_velo_binary()
         self._setup_done = False
+        self._port: int | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "IsolatedUserProject":
         """Create pyproject.toml with real dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -75,12 +76,12 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "IsolatedUserProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         return self
 
-    def setup(self, timeout: float = 120):
+    def setup(self, timeout: float = 120) -> "IsolatedUserProject":
         """Run uv sync to install REAL dependencies (slow!)."""
         if self._setup_done:
             return self
@@ -97,7 +98,9 @@ dev-dependencies = []
         self._setup_done = True
         return self
 
-    def serve(self, app_module: str, *extra_args, port: int = None, env: dict = None) -> subprocess.Popen:
+    def serve(
+        self, app_module: str, *extra_args: str, port: int | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.Popen[str]:
         """Start Velo serve with the isolated project environment."""
         if port is None:
             import socket
@@ -135,9 +138,11 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         shutil.rmtree(self.path, ignore_errors=True)
 

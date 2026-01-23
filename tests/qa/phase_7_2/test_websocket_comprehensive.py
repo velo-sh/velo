@@ -20,9 +20,12 @@ import signal
 import subprocess
 import textwrap
 import time
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from conftest_utils import VeloTestEnv
 
 # =============================================================================
 # FIXTURES
@@ -30,25 +33,25 @@ import pytest
 
 
 @pytest.fixture
-def ws_test_env(isolated_env):
+def ws_test_env(isolated_env: VeloTestEnv) -> Generator[Any, None, None]:
     """Enhanced environment for WebSocket testing."""
 
     class WSTestEnv:
-        def __init__(self, env):
+        def __init__(self, env: VeloTestEnv):
             self.env = env
-            self.processes: list[subprocess.Popen] = []
+            self.processes: list[subprocess.Popen[str]] = []
             self.temp_files: list[Path] = []
 
         @property
-        def velo(self):
-            return self.env.velo
+        def velo(self) -> str:
+            return cast(str, self.env.velo)
 
         @property
-        def home(self):
-            return self.env.home
+        def home(self) -> Path:
+            return cast(Path, self.env.home)
 
-        def next_port(self):
-            return self.env.next_port()
+        def next_port(self) -> int:
+            return cast(int, self.env.next_port())
 
         def create_ws_app(self, name: str, code: str) -> Path:
             """Create a WebSocket-capable ASGI app."""
@@ -58,8 +61,8 @@ def ws_test_env(isolated_env):
             return app_path
 
         def spawn_velo_rsgi(
-            self, app_module: str, port: int, extra_args: list[str] | None = None, env: dict | None = None
-        ) -> subprocess.Popen:
+            self, app_module: str, port: int, extra_args: list[str] | None = None, env: dict[str, str] | None = None
+        ) -> subprocess.Popen[str]:
             """Spawn Velo in RSGI mode with WebSocket capability."""
             cmd = [self.velo, "serve", app_module, "--rsgi", "--no-zygote", "--port", str(port)]
             if extra_args:
@@ -84,7 +87,7 @@ def ws_test_env(isolated_env):
             self.processes.append(proc)
             return proc
 
-        def cleanup(self):
+        def cleanup(self) -> None:
             """Cleanup all spawned processes and temp files."""
             for proc in self.processes:
                 try:
@@ -102,7 +105,7 @@ def ws_test_env(isolated_env):
                 except:
                     pass
 
-    ws_env = WSTestEnv(isolated_env)
+    ws_env: WSTestEnv = WSTestEnv(isolated_env)
     yield ws_env
     ws_env.cleanup()
 

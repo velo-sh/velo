@@ -7,7 +7,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_ADVERSARIAL_H1_quiescence_failure(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_H1_quiescence_failure(isolated_env: VeloTestEnv) -> None:
     """
     Challenge H1: Stable-State Debounce.
     If 5 files change simultaneously, we should only get 1 execution (the last one).
@@ -21,7 +21,7 @@ def test_ADVERSARIAL_H1_quiescence_failure(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_quiescence():
+    async def check_quiescence() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # TRIGGER 5 CHANGES RAPIDLY

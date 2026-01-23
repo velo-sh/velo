@@ -115,6 +115,7 @@ class TestVibeEngineActivation:
             # Wait for startup message (max 5 seconds)
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -148,6 +149,7 @@ async def app(scope, receive, send):
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -183,6 +185,7 @@ def test_example():
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -219,6 +222,7 @@ class TestLiveAlias:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -259,6 +263,7 @@ class TestVibeErrorHandling:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -290,6 +295,7 @@ class TestVibeErrorHandling:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -368,6 +374,7 @@ class TestVibeCustomPort:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -401,6 +408,7 @@ async def app(scope, receive, send):
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -440,6 +448,7 @@ class TestFirstTimeUserExperience:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
                 line = proc.stdout.readline()
                 if not line:
@@ -472,7 +481,10 @@ class TestFirstTimeUserExperience:
         try:
             output = ""
             start = time.time()
+            assert proc.stdout is not None
             while time.time() - start < 5:
+                if proc.stdout is None:
+                    break
                 line = proc.stdout.readline()
                 if not line:
                     break

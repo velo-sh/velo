@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,7 +24,7 @@ import pytest
 from conftest_utils import T_MEDIUM
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
@@ -34,13 +35,13 @@ def get_velo_binary():
 class DeployEnv:
     """Simulate a deployed/installed environment."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="deploy_"))
         self.velo = get_velo_binary()
         self.bin_dir = self.path / "bin"
         self.lib_dir = self.path / "lib"
 
-    def setup(self):
+    def setup(self) -> DeployEnv:
         # Create typical install structure
         self.bin_dir.mkdir()
         self.lib_dir.mkdir()
@@ -53,17 +54,17 @@ class DeployEnv:
 
         return self
 
-    def copy_velo_to_bin(self):
+    def copy_velo_to_bin(self) -> str:
         """Simulate `cargo install` - velo binary is in isolated bin/."""
         dest = self.bin_dir / "velo"
         shutil.copy(self.velo, dest)
         os.chmod(dest, 0o755)
         return str(dest)
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.project_dir / name).write_text(content)
 
-    def run(self, velo_path, args, timeout=None):
+    def run(self, velo_path: str, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM  # CI-aware timeout
         result = subprocess.run(
@@ -75,17 +76,17 @@ class DeployEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
         try:
             shutil.rmtree(self.path)
         except:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> DeployEnv:
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 

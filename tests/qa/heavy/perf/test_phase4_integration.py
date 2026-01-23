@@ -63,7 +63,7 @@ class RealProject:
         self.velo = get_velo_binary()
         self._setup_done = False
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "RealProject":
         """Create pyproject.toml with real dependencies."""
         content = f"""[project]
 name = "{self.name}-test"
@@ -77,12 +77,12 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "RealProject":
         """Create application file."""
         (self.path / filename).write_text(code)
         return self
 
-    def setup(self, timeout: float = 120):
+    def setup(self, timeout: float = 120) -> "RealProject":
         """Run uv sync to install REAL dependencies (slow!)."""
         if self._setup_done:
             return self
@@ -99,7 +99,7 @@ dev-dependencies = []
         self._setup_done = True
         return self
 
-    def analyze(self, *args, timeout: float = 60) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
         """Run velo analyze."""
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
@@ -109,7 +109,7 @@ dev-dependencies = []
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         shutil.rmtree(self.path, ignore_errors=True)
 
@@ -130,7 +130,7 @@ dev-dependencies = []
 class TestRealFastAPI:
     """Integration tests with REAL FastAPI installation."""
 
-    def test_fastapi_analyze(self):
+    def test_fastapi_analyze(self) -> None:
         """Analyze real FastAPI project with all dependencies."""
         with RealProject("fastapi") as p:
             p.set_pyproject(
@@ -181,7 +181,7 @@ def create_item(item: Item):
 class TestRealDjango:
     """Integration tests with REAL Django installation."""
 
-    def test_django_analyze(self):
+    def test_django_analyze(self) -> None:
         """Analyze real Django project."""
         with RealProject("django") as p:
             p.set_pyproject(
@@ -241,7 +241,7 @@ print("Django OK")
 class TestRealDataScience:
     """Integration tests with REAL data science stack."""
 
-    def test_datascience_analyze(self):
+    def test_datascience_analyze(self) -> None:
         """Analyze real data science project with slow imports."""
         with RealProject("datascience") as p:
             p.set_pyproject(
@@ -289,7 +289,7 @@ print("DataScience OK")
             # Should identify slow imports (pandas, numpy, sklearn are heavy)
             assert any(pkg in output for pkg in ["pandas", "numpy", "sklearn", "slow", "ms"])
 
-    def test_datascience_fix_mode(self):
+    def test_datascience_fix_mode(self) -> None:
         """Test --fix on data science project generates preload config."""
         with RealProject("datascience-fix") as p:
             p.set_pyproject(
@@ -331,7 +331,7 @@ print("OK")
 class TestRealThreshold:
     """Test --slow-threshold-ms on real projects."""
 
-    def test_threshold_affects_output(self):
+    def test_threshold_affects_output(self) -> None:
         """Different thresholds should affect what's flagged as slow."""
         with RealProject("threshold-test") as p:
             p.set_pyproject(deps=["requests"])
@@ -363,7 +363,7 @@ class TestPerformanceBenchmark:
     and provide accurate preload suggestions.
     """
 
-    def test_analyze_completes_under_5_seconds(self):
+    def test_analyze_completes_under_5_seconds(self) -> None:
         """PERF-001: velo analyze should complete in < 5 seconds."""
         with RealProject("perf-test") as p:
             p.set_pyproject(deps=["fastapi", "requests"])
@@ -387,7 +387,7 @@ app = FastAPI()
             assert elapsed < 5.0, f"analyze took {elapsed:.2f}s, expected < 5s"
             print(f"\n📊 velo analyze completed in {elapsed:.2f}s")
 
-    def test_preload_suggestion_accuracy(self):
+    def test_preload_suggestion_accuracy(self) -> None:
         """PERF-002: Preload suggestions should be accurate (>80%)."""
         with RealProject("preload-accuracy") as p:
             # Project with known slow imports
@@ -418,7 +418,7 @@ print("OK")
             heavy_suggested = any(pkg in preload_section.lower() for pkg in ["pandas", "numpy"])
             assert heavy_suggested, f"Expected heavy imports in preload: {preload_section}"
 
-    def test_datascience_preload_improvement(self):
+    def test_datascience_preload_improvement(self) -> None:
         """PERF-003: DataScience project should show significant improvement potential."""
         with RealProject("ds-improvement") as p:
             p.set_pyproject(deps=["pandas", "numpy", "scikit-learn"])
@@ -449,7 +449,7 @@ print("OK")
             assert has_timing or has_slow_marker, f"Expected timing/slow markers: {output}"
 
     @pytest.mark.xfail(reason="Expected: --fix only writes if slow imports found")
-    def test_compare_before_after_preload(self):
+    def test_compare_before_after_preload(self) -> None:
         """PERF-004: Compare startup time before and after applying preload."""
         with RealProject("before-after") as p:
             p.set_pyproject(deps=["pandas"])

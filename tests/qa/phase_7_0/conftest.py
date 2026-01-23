@@ -15,6 +15,7 @@ import sys
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -58,7 +59,7 @@ class VeloTestEnv:
     path: Path
     velo_binary: Path | None
     python_path: Path
-    env: dict = None
+    env: dict[str, str] | None = None
 
     def __post_init__(self):
         if self.env is None:
@@ -81,7 +82,7 @@ class VeloTestEnv:
         self.env["VELO_STRICT_OPTIMIZATIONS"] = "false"
         self.env["VELO_TEST_MODE"] = "1"
 
-    def run_velo(self, *args, timeout: float = None, **kwargs) -> subprocess.CompletedProcess:
+    def run_velo(self, *args: str, timeout: float | None = None, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         """Run velo command in the test environment.
 
         Uses T_MEDIUM (15s local, 45s CI) as default timeout.
@@ -103,7 +104,7 @@ class VeloTestEnv:
             **kwargs,
         )
 
-    def run_python(self, script: str, timeout: float = None) -> subprocess.CompletedProcess:
+    def run_python(self, script: str, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
         """Run a Python script in the test environment.
 
         Uses T_MEDIUM (15s local, 45s CI) as default timeout.
@@ -134,7 +135,7 @@ class VeloTestEnv:
         """Compat property for artifact collection."""
         return self.path / "home"
 
-    def spawn_velo(self, *args, **kwargs) -> subprocess.Popen:
+    def spawn_velo(self, *args: str, **kwargs: Any) -> subprocess.Popen[str]:
         """Spawn Velo binary in the test environment (non-blocking)."""
         if self.velo_binary is None:
             pytest.skip("Velo binary not found")

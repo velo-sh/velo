@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 
-def test_no_hardcoded_absolute_paths():
+def test_no_hardcoded_absolute_paths() -> None:
     """
     Governance Test: Ensures no hardcoded absolute paths to the current
     workspace exist in the source or documentation.
@@ -59,7 +59,7 @@ def test_no_hardcoded_absolute_paths():
         pytest_fail(msg)
 
 
-def pytest_fail(msg):
+def pytest_fail(msg: str) -> None:
     import pytest
 
     pytest.fail(msg)

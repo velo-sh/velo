@@ -1,11 +1,12 @@
 import marshal
 import struct
 from pathlib import Path
+from typing import Any
 
 
-def create_bomb_bundle(output_path: Path, depth: int = 1000):
+def create_bomb_bundle(output_path: Path, depth: int = 1000) -> None:
     # 1. Create deeply nested object
-    obj = "x"
+    obj: Any = "x"
     for _ in range(depth):
         obj = (obj,)
 
@@ -57,7 +58,8 @@ def create_bomb_bundle(output_path: Path, depth: int = 1000):
 
         hasher = blake3()
     except ImportError:
-        hasher = hashlib.sha256()
+        hasher_fb: Any = hashlib.sha256()
+        hasher = hasher_fb
 
     hasher.update(bundle_data[0:20])
     hasher.update(bundle_data[52:])

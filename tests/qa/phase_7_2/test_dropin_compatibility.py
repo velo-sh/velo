@@ -44,10 +44,10 @@ class DropInTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"dropin_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "DropInTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -60,15 +60,15 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "DropInTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "DropInTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, port: int = None):
+    def start_server(self, app_module: str, port: int | None = None) -> "DropInTestProject":
         if port is None:
             import socket
 
@@ -100,13 +100,15 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
     @property
     def alive(self) -> bool:
-        return self._proc and self._proc.poll() is None
+        return self._proc is not None and self._proc.poll() is None
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)

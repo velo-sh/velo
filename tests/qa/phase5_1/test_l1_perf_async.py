@@ -7,6 +7,7 @@ Verifies the 15ms startup target and orphan management (RFC-0008).
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,7 +21,7 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
     """Helper to run velo command."""
     result = subprocess.run(
         [velo_binary] + args,
@@ -32,7 +33,7 @@ def run_velo(args: list, cwd: Path, velo_binary: str, timeout: int = 60):
     return result
 
 
-def stop_zygote(velo_binary: str, cwd: Path):
+def stop_zygote(velo_binary: str, cwd: Path) -> None:
     """Stop any running Zygote daemon."""
     run_velo(["zygote", "stop"], cwd, velo_binary)
     time.sleep(0.5)
@@ -44,7 +45,7 @@ class TestZygoteAsyncMode:
     """
 
     @pytest.mark.happy_path
-    def test_perf_5_1_001_async_speed(self, velo_binary, tmp_path):
+    def test_perf_5_1_001_async_speed(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         PERF-5.1-001: Async mode returns in < 20ms
         """
@@ -70,7 +71,7 @@ class TestZygoteAsyncMode:
         assert elapsed_ms < 50, f"Async mode too slow: {elapsed_ms:.2f}ms"
 
     @pytest.mark.happy_path
-    def test_func_5_1_001_async_execution(self, velo_binary, tmp_path):
+    def test_func_5_1_001_async_execution(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         FUNC-5.1-001: Verify async worker actually executes
         """
@@ -101,7 +102,7 @@ with open("{marker_file}", "w") as f:
         assert marker_file.read_text() == "async_ok"
 
     @pytest.mark.security
-    def test_sec_51_001_mutual_exclusion(self, velo_binary, tmp_path):
+    def test_sec_51_001_mutual_exclusion(self, velo_binary: Any, tmp_path: Path) -> None:
         """
         Verify --async and --profile are mutually exclusive
         """

@@ -17,7 +17,7 @@ import pytest
 
 
 # Get the velo binary path
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Find the velo binary."""
     project_root = Path(__file__).parent.parent.parent
     debug_binary = project_root / "target" / "debug" / "velo"
@@ -51,7 +51,7 @@ class TestStartupLatency:
             times.append(elapsed_ms)
 
             if result.returncode != 0:
-                pytest.skip(f"Module execution failed: {result.stderr}")
+                pytest.skip(f"Module execution failed: {result.stderr!r}")
 
         avg = sum(times) / len(times)
         min_time = min(times)

@@ -89,7 +89,7 @@ def test_sse_streaming_realtime(isolated_env, run_velo_e2e):
         s.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
 
         start_time = time.time()
-        received_chunks = []
+        received_chunks: list[float] = []
 
         # Read headers
         # Read body chunks with raw recv to avoid any buffering logic
@@ -100,7 +100,7 @@ def test_sse_streaming_realtime(isolated_env, run_velo_e2e):
             # Only count chunks that contain "data:"
             if b"data:" in data:
                 elapsed = time.time() - start_time
-                print(f"Received data at {elapsed:.2f}s: {data}")
+                print(f"Received data at {elapsed:.2f}s: {data!r}")
                 received_chunks.append(elapsed)
 
         assert len(received_chunks) == 5
