@@ -276,8 +276,188 @@ for (i, import) in slow_imports.iter().take(20).enumerate() {
 
 ---
 
+## 9. Security Considerations
+
+> [!CAUTION]
+> This section addresses **P0 security issues** identified in [Council Review](./0011-reviews/RFC-0038-EXT-COUNCIL-REVIEW.md).
+
+### 9.1 Path Traversal Defense (SEC-001)
+
+**Risk**: Malicious packages could set `__file__` to sensitive paths like `/etc/passwd`.
+
+**Mitigation**:
+```rust
+fn is_safe_file_path(path: &Path) -> bool {
+    // 1. Must be absolute path
+    if !path.is_absolute() {
+        return false;
+    }
+    
+    // 2. Must be within known safe directories
+    let safe_prefixes = [
+        "/lib/python",          // System site-packages
+        "/usr/lib/python",
+        "/.venv/",              // Virtual environments
+        "/site-packages/",      // Pip packages
+        "/dist-packages/",      // Debian packages
+    ];
+    
+    let path_str = path.to_string_lossy();
+    safe_prefixes.iter().any(|prefix| path_str.contains(prefix))
+        || path_str.starts_with(std::env::current_dir().unwrap().to_string_lossy().as_ref())
+}
+
+pub fn extract_module_entry_snippet(file_path: &Path) -> Option<CodeSnippet> {
+    // SECURITY: Validate path before reading
+    if !is_safe_file_path(file_path) {
+        return None;
+    }
+    // ... rest of implementation
+}
+```
+
+### 9.2 Secret Sanitization in Snippets (SEC-002)
+
+**Risk**: Code snippets may contain hardcoded secrets (`API_KEY = "sk-..."`)
+
+**Mitigation**:
+```rust
+fn sanitize_snippet_line(line: &str) -> String {
+    let secret_patterns = ["KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL"];
+    
+    // Check if line contains assignment with secret-like variable
+    if secret_patterns.iter().any(|p| line.to_uppercase().contains(p)) {
+        if line.contains('=') || line.contains(':') {
+            return "# [REDACTED - Potential Secret]".to_string();
+        }
+    }
+    line.to_string()
+}
+
+// Apply to each line in snippet
+snippet.lines = snippet.lines.iter()
+    .map(|l| sanitize_snippet_line(l))
+    .collect();
+```
+
+### 9.3 File Size Limit
+
+**Risk**: Malicious `__file__` pointing to large files or `/dev/urandom`.
+
+**Mitigation**:
+```rust
+const MAX_SOURCE_SIZE: u64 = 1_048_576;  // 1MB
+
+fn read_source_safely(path: &Path) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if metadata.len() > MAX_SOURCE_SIZE {
+        return None;
+    }
+    std::fs::read_to_string(path).ok()
+}
+```
+
+---
+
+## 10. Error Handling
+
+> [!IMPORTANT]
+> This section addresses **P0 stability issues** from Council Review.
+
+### 10.1 Rayon Panic Handling (PANIC-001)
+
+**Risk**: AST parsing panic in parallel thread crashes Velo process.
+
+**Mitigation**:
+```rust
+use std::panic;
+
+pub fn extract_snippets_parallel(imports: &[SlowImportInfo]) -> Vec<Option<CodeSnippet>> {
+    imports.par_iter()
+        .take(5)
+        .map(|i| {
+            // SAFETY: Catch any panics during parsing
+            panic::catch_unwind(|| {
+                i.file_path.as_ref().and_then(extract_module_entry_snippet)
+            }).unwrap_or(None)
+        })
+        .collect()
+}
+```
+
+### 10.2 Namespace Package Handling (COMPAT-001)
+
+**Risk**: Namespace packages have `__file__ = None`, frozen modules have `<frozen>`.
+
+**Mitigation** (Python hook):
+```python
+def _velo_timed_import(name, *args, **kwargs):
+    start = time.perf_counter()
+    module = _velo_original_import(name, *args, **kwargs)
+    elapsed = (time.perf_counter() - start) * 1000
+    
+    if elapsed > 1.0:
+        file_path = getattr(module, '__file__', None)
+        
+        # Skip namespace packages and frozen modules
+        if file_path is None or file_path.startswith('<'):
+            file_path = None
+        
+        _velo_import_data[name] = {
+            "elapsed_ms": elapsed,
+            "file": file_path,
+            "is_namespace": file_path is None
+        }
+    return module
+```
+
+### 10.3 Threshold Configuration
+
+The 1.0ms threshold should be configurable:
+
+```python
+_VELO_IMPORT_THRESHOLD_MS = float(os.environ.get('VELO_IMPORT_THRESHOLD_MS', '1.0'))
+
+if elapsed > _VELO_IMPORT_THRESHOLD_MS:
+    # ... capture data
+```
+
+---
+
+## 11. Benchmark Requirements
+
+> [!WARNING]
+> The performance budget (<100ms) MUST be validated with benchmarks before merge.
+
+### Required Benchmarks
+
+```rust
+#[cfg(test)]
+mod bench {
+    use criterion::{black_box, criterion_group, Criterion};
+    
+    fn bench_snippet_extraction(c: &mut Criterion) {
+        c.bench_function("extract_5_snippets", |b| {
+            b.iter(|| {
+                extract_snippets_parallel(black_box(&test_imports))
+            })
+        });
+    }
+}
+```
+
+| Metric | Target | Gate |
+|:---|:---|:---|
+| Top 5 snippet extraction | <100ms | **Must pass** |
+| Single file AST parse | <50ms | Advisory |
+| Memory peak | <10MB | Advisory |
+
+---
+
 ## References
 
 - [RFC-0038: AI-Native Diagnostics](./0038-ai-native-diagnostics.md)
+- [Council Review](./0011-reviews/RFC-0038-EXT-COUNCIL-REVIEW.md)
 - [rustpython_parser documentation](https://docs.rs/rustpython-parser)
 - [rayon parallel iterator](https://docs.rs/rayon)
+
