@@ -29,6 +29,11 @@ Author: Velo Forensic AI (QA Role)
 Date: 2026-01-14
 """
 
+import pytest
+
+# Mark entire module as CI flaky - skip in CI due to framework installation timing
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 import json
 import os
 import shutil

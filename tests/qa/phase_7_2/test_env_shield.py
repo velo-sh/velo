@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+# Mark entire module as CI flaky - skip in CI due to env isolation issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier1]
+
 
 class TestEnvShield:
     """

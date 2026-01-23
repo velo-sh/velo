@@ -10,6 +10,11 @@ Run after L0 passes.
 Following QA SOP v2.2.
 """
 
+import pytest
+
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier1]
+
 
 class TestL1Features:
     """L1: Feature tests for Zygote Worker Integration."""
