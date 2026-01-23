@@ -46,6 +46,10 @@ pub struct RunCmd {
     #[arg(long = "prof-md", value_name = "FILE")]
     pub prof_md: Option<PathBuf>,
 
+    /// Output AI-Native diagnostic report as JSON (RFC-0038)
+    #[arg(long = "prof-json", value_name = "FILE")]
+    pub prof_json: Option<PathBuf>,
+
     /// Use fast loader with bundle acceleration
     #[arg(long)]
     pub fast: bool,
@@ -75,9 +79,11 @@ impl RunCmd {
     /// Validate arguments
     pub fn validate(&self) -> Result<()> {
         // Mutual exclusion check (Phase 5.1 / AUDIT-51-001)
-        if (self.async_mode || self.zygote) && (self.profile || self.prof_md.is_some()) {
+        let profiling_requested =
+            self.profile || self.prof_md.is_some() || self.prof_json.is_some();
+        if (self.async_mode || self.zygote) && profiling_requested {
             bail!(
-                "Zygote/Async and Profiling (--profile or --prof-md) are mutually exclusive\n\
+                "Zygote/Async and Profiling (--profile, --prof-md, or --prof-json) are mutually exclusive\n\
                  Profiling requires synchronous native execution to capture full trace."
             );
         }
@@ -334,7 +340,7 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         let (status, total_time, profile_data) = runner::run_script_with_profile_capture(
             &python_path,
             script_path_str,
-            pythonpath,
+            pythonpath.clone(),
             &config,
         )?;
 
@@ -366,6 +372,53 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
         MarkdownFormatter::write_atomic(prof_md_path, &report)?;
 
         eprintln!("📝 Diagnostic report written to {}", prof_md_path.display());
+
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        return Ok(());
+    }
+
+    // AI-Native Diagnostics JSON format (RFC-0038 GAP-3)
+    if let Some(prof_json_path) = &cmd.prof_json {
+        let (status, total_time, profile_data) = runner::run_script_with_profile_capture(
+            &python_path,
+            script_path_str,
+            pythonpath.clone(),
+            &config,
+        )?;
+
+        let timeline = StartupTimeline {
+            zygote_ms: _discovery_time.as_millis() as u64
+                + _config_time.as_millis() as u64
+                + _python_time.as_millis() as u64,
+            app_entry_ms: total_time.as_millis() as u64 / 10,
+            total_ms: total_time.as_millis() as u64,
+        };
+
+        let formatter = MarkdownFormatter::new("Velo Diagnostic Report");
+        let env_map: HashMap<String, String> = std::env::vars().collect();
+        let sanitized_env = MarkdownFormatter::sanitize_env(&env_map);
+
+        let (bottlenecks, memory_delta_mb) = if let Some(pd) = profile_data {
+            (pd.to_bottlenecks(20), pd.memory_delta_mb)
+        } else {
+            (Vec::new(), 0.0)
+        };
+
+        let report = formatter.format_json(
+            total_time,
+            memory_delta_mb,
+            &sanitized_env,
+            bottlenecks,
+            timeline,
+        );
+        std::fs::write(prof_json_path, &report)?;
+
+        eprintln!(
+            "📝 JSON diagnostic report written to {}",
+            prof_json_path.display()
+        );
 
         if !status.success() {
             std::process::exit(status.code().unwrap_or(1));

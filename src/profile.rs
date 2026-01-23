@@ -107,7 +107,7 @@ impl ProfileData {
             .map(|(name, time)| crate::common::diagnostics::BottleneckInfo {
                 name: name.to_string(),
                 duration_ms: **time,
-                location: None,
+                location: get_module_location(name),
                 agent_hint: get_optimization_suggestions(name).map(|msg| {
                     crate::common::diagnostics::AgentHint {
                         tag: crate::common::diagnostics::HINT_PRELOAD_MISS.to_string(),
@@ -185,6 +185,23 @@ pub fn get_optimization_suggestions(module: &str) -> Option<&'static str> {
         "scipy" => Some("C-Extension."),
         "sklearn" | "scikit-learn" => Some("Model loading."),
         "transformers" => Some("Tokenizer loading."),
+        _ => None,
+    }
+}
+
+/// Provide location hints for known heavy modules (RFC-0038 GAP-4).
+pub fn get_module_location(module: &str) -> Option<String> {
+    match module {
+        "numpy" => Some("numpy/__init__.py (C-extension init)".to_string()),
+        "pandas" => Some("pandas/__init__.py".to_string()),
+        "torch" | "pytorch" => Some("torch/__init__.py (CUDA init)".to_string()),
+        "tensorflow" => Some("tensorflow/__init__.py (GPU init)".to_string()),
+        "django" => Some("django/__init__.py (apps registry)".to_string()),
+        "fastapi" => Some("fastapi/__init__.py".to_string()),
+        "sqlalchemy" => Some("sqlalchemy/__init__.py".to_string()),
+        "scipy" => Some("scipy/__init__.py (C-extension)".to_string()),
+        "sklearn" | "scikit-learn" => Some("sklearn/__init__.py".to_string()),
+        "transformers" => Some("transformers/__init__.py (tokenizers)".to_string()),
         _ => None,
     }
 }

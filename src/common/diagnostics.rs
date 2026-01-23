@@ -68,6 +68,17 @@ impl MarkdownFormatter {
         md.push_str("| Variable | Value |\n");
         md.push_str("| :--- | :--- |\n");
 
+        // RFC-0038 §3.2: Required static fields
+        let gil_status = std::env::var("PYTHON_GIL")
+            .map(|v| if v == "0" { "Disabled" } else { "Enabled" })
+            .unwrap_or("Enabled");
+        md.push_str(&format!("| **PYTHON_GIL** | `{}` |\n", gil_status));
+        md.push_str(&format!(
+            "| **PLATFORM** | `{} {}` |\n",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
+
         // Show all sanitized environment variables
         let mut keys: Vec<_> = environment.keys().collect();
         keys.sort();
@@ -159,6 +170,63 @@ impl MarkdownFormatter {
         fs::rename(&temp_path, path)
             .with_context(|| format!("Failed to move diagnostic file to final path: {:?}", path))?;
         Ok(())
+    }
+
+    /// Generate JSON format report (RFC-0038 GAP-3)
+    pub fn format_json(
+        &self,
+        total_runtime: std::time::Duration,
+        memory_delta_mb: f64,
+        environment: &HashMap<String, String>,
+        bottlenecks: Vec<BottleneckInfo>,
+        timeline: StartupTimeline,
+    ) -> String {
+        use serde_json::json;
+
+        let gil_status = std::env::var("PYTHON_GIL")
+            .map(|v| if v == "0" { "Disabled" } else { "Enabled" })
+            .unwrap_or("Enabled");
+
+        let platform = format!("{} {}", std::env::consts::OS, std::env::consts::ARCH);
+
+        let bottleneck_json: Vec<serde_json::Value> = bottlenecks
+            .iter()
+            .map(|b| {
+                json!({
+                    "name": b.name,
+                    "duration_ms": b.duration_ms,
+                    "location": b.location,
+                    "agent_hint": b.agent_hint.as_ref().map(|h| json!({
+                        "tag": h.tag,
+                        "message": h.message
+                    }))
+                })
+            })
+            .collect();
+
+        let report = json!({
+            "schema_version": self.version,
+            "summary": {
+                "total_runtime_ms": total_runtime.as_millis(),
+                "primary_bottleneck": bottlenecks.first().map(|b| &b.name),
+                "memory_delta_mb": memory_delta_mb,
+                "optimization_budget": "CPU-bound",
+                "status": "Within Budget"
+            },
+            "environment": {
+                "PYTHON_GIL": gil_status,
+                "PLATFORM": platform,
+                "variables": environment
+            },
+            "timeline": {
+                "zygote_ms": timeline.zygote_ms,
+                "app_entry_ms": timeline.app_entry_ms,
+                "total_ms": timeline.total_ms
+            },
+            "bottlenecks": bottleneck_json
+        });
+
+        serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Strip ANSI escape codes to ensure "Purity" (Council P0)

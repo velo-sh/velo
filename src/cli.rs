@@ -47,7 +47,9 @@ RUN OPTIONS:
     --port <PORT>  Vibe gateway port (default: 8080)
     --profile  Show detailed startup timing breakdown
     --prof-md [FILE] Output AI-Native diagnostic report (RFC-0038)
+    --prof-json [FILE] Output AI-Native diagnostic report as JSON (RFC-0038)
     --shm <PATH>  Map .safetensors into shared memory (Memory Gravity)
+
 
 SERVE OPTIONS:
     --host <HOST>    Bind host (default: 127.0.0.1)
