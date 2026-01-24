@@ -48,9 +48,11 @@ impl VeloPaths {
                 }
                 return path;
             }
-            // SEC-004: If override is too long, we fall back to /tmp immediately
+            // SEC-004: If override is too long, we fall back to user state dir (RFC-0012 Path Sovereignty)
             let dir_name = format!("velo-{}", uid);
-            let fallback = std::env::temp_dir().join(dir_name);
+            let home = std::env::var("HOME")
+                .unwrap_or_else(|_| "/var/run".to_string());
+            let fallback = PathBuf::from(home).join(".local/state/velo/sockets").join(dir_name);
             let _ = ensure_socket_dir(&fallback);
             return fallback;
         }
@@ -89,8 +91,10 @@ impl VeloPaths {
             return socket_path;
         }
 
-        // Fallback to temp dir (guaranteed short on macOS/Linux) if path is too long
-        let fallback = std::env::temp_dir().join(dir_name);
+        // Fallback to user state dir (RFC-0012 Path Sovereignty) if path is too long
+        let home = std::env::var("HOME")
+            .unwrap_or_else(|_| "/var/run".to_string());
+        let fallback = PathBuf::from(home).join(".local/state/velo/sockets").join(dir_name);
         // DEF-72-P01: Enforce 0700 on fallback path too
         let _ = ensure_socket_dir(&fallback);
         fallback
@@ -108,10 +112,11 @@ impl VeloPaths {
             if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
                 result = result.replace("${XDG_RUNTIME_DIR}", xdg.trim_end_matches('/'));
             } else {
-                // Fallback to /tmp if XDG_RUNTIME_DIR not set
-                let tmp = std::env::temp_dir();
-                let tmp_str = tmp.to_string_lossy();
-                result = result.replace("${XDG_RUNTIME_DIR}", tmp_str.trim_end_matches('/'));
+                // Fallback to ~/.local/state/velo if XDG_RUNTIME_DIR not set (RFC-0012 Path Sovereignty)
+                let home = std::env::var("HOME")
+                    .unwrap_or_else(|_| "/var/run".to_string());
+                let fallback = format!("{}/.local/state/velo", home);
+                result = result.replace("${XDG_RUNTIME_DIR}", &fallback);
             }
         }
 
@@ -620,11 +625,11 @@ mod tests {
 
         // Scenario 1: No override
         let sdir = VeloPaths::socket_dir();
-        // If the default path is already > limit, it should have fallen back to /tmp
+        // If the default path is already > limit, it should have fallen back to ~/.local/state/velo
         if sdir.to_string_lossy().len() + 30 > SOCKET_PATH_LIMIT {
             assert!(
-                sdir.to_string_lossy().starts_with("/tmp/"),
-                "Should fallback to /tmp when path too long"
+                sdir.to_string_lossy().contains(".local/state/velo"),
+                "Should fallback to ~/.local/state/velo when path too long"
             );
         }
 

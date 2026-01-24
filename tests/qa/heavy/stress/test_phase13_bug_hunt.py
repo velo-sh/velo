@@ -8,7 +8,6 @@ import os
 import tempfile
 import threading
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -82,8 +81,13 @@ class TestBug003_SilentReinitFailure:
 
         register_fork_reinit(failing_callback)
 
-        # This should raise or at least log, but it doesn't
-        velo_fork_reinit(MagicMock())
+        # RFC-0012 Zero-Mock: Use minimal real object instead of MagicMock
+        class MinimalItem:
+            """Minimal pytest item-like object for testing."""
+            nodeid = "test::reinit_test"
+            name = "reinit_test"
+
+        velo_fork_reinit(MinimalItem())
 
         # Restore
         _fork_reinit_callbacks.clear()

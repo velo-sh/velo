@@ -74,14 +74,11 @@ class TestRFC0030IronAuditV2:
 
     def test_spawner_logic_audit(self):
         """DEFECT-003: VeloSpawner in Python returns incorrect command structure."""
-        # We manually import the spawner to audit its logic
+        # RFC-0012 Zero-Mock: Use real imports or skip
         import sys
-        from unittest.mock import MagicMock
 
-        # Mock jupyterhub
-        sys.modules["jupyterhub"] = MagicMock()
-        sys.modules["jupyterhub.spawner"] = MagicMock()
-        sys.modules["traitlets"] = MagicMock()
+        pytest.importorskip("jupyterhub", reason="JupyterHub not installed")
+        pytest.importorskip("traitlets", reason="traitlets not installed")
 
         # Import from the repo path
         sys.path.append(os.path.join(os.getcwd(), "python"))
