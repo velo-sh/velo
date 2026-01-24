@@ -420,12 +420,17 @@ A critical requirement is supporting multiple Python versions (3.9, 3.10, 3.11) 
     *   **Total Deduplication**: Common files between different OS versions (e.g. `ca-certificates`, `locale`) are physically deduplicated.
     *   **Simplicity**: No OverlayFS Driver needed. VeloVFS handles the entire stack.
 
-### 9.3 Integration Contract: Zygote Alignment (Supervisor Responsibility)
-*   **Scope**: This is an **Orchestration Constraint**, not a VeloVFS internal function. VeloVFS is process-agnostic.
-*   **Requirement**: The **Velo Supervisor** MUST ensure the *Process ABI* (Zygote) matches the *vFilesystem ABI* (VeloVFS Projection).
-    *   **VeloVFS Responsibility**: Serve the requested ABI projection (e.g., `rootfs-cp311`).
-    *   **Supervisor Responsibility**: Select the matching Zygote (e.g., `pool-cp311`) to `fork()` from.
-    *   **Failure Mode**: Mismatch results in a Dynamic Linker crash (Fail-Fast). VeloVFS cannot detect this mismtach on its own.
+### 9.3 Adaptive Zygote Lifecycle (Hybrid Strategy)
+*   **Concern**: Maintaining pre-warmed pools for every possible Python version (3.7-3.13) consumes excessive RAM.
+*   **Solution**: **Hot-Path Optimization, Cold-Path Fallback**.
+    *   **Tier 1 (High Traffic)**: Active Zygote Pools for top Runtime ABIs (e.g., `cp310`, `cp311`).
+        *   Latency: **< 10ms**.
+    *   **Tier 2 (Long Tail)**: Rare ABIs (e.g., `cp38`) bypass the Zygote.
+        *   Mechanism: Supervisor triggers standard `fork() + exec()` (Cold Boot) inside the unified VeloVFS projection.
+        *   Latency: **~150ms**.
+*   **Safety Logic**:
+    *   The Supervisor logic is: `if pool_exists(abi) { use_zygote() } else { cold_boot() }`.
+    *   **No Crash**: We never "force" a mismatch. The dynamic linker crash is only a theoretical final guardrail against Supervisor logic bugs.
 
 ---
 
