@@ -356,3 +356,40 @@ impl Filesystem for VeloVFS {
     }
 }
 ```
+
+---
+
+## 7. Critical Implementation Constraints
+
+The Reference PoC above is simplified. Production implementation **MUST** address three known bottlenecks:
+
+### 7.1 Concurrency Bottleneck (The `&mut self` Trap)
+*   **Problem**: The PoC uses `&mut self` for FUSE callbacks, forcing exclusive locking.
+*   **Mandate**: Production code **MUST** use `&self` with internal mutability containers (e.g., `DashMap` or `Arc<RwLock<InodeMap>>`).
+*   **Goal**: Lock-free reads for high-concurrency Agents (`import` storms).
+
+### 7.2 Syscall Trashing (The `open()` Trap)
+*   **Problem**: Calling `File::open()` on every `read()` chunk generates 2x Syscall amplification.
+*   **Mandate**: Implement a **File Handle Cache**.
+    *   `opendir/open`: Open physical file once, store fd in a map, return a generic handle ID.
+    *   `read`: Resolve handle ID -> pinned fd.
+    *   `release`: Close physical fd.
+
+### 7.3 Memory Spikes (Readdir Buffering)
+*   **Problem**: Generates a full `Vec<Entry>` for `readdir`. A directory with 50k files triggers massive allocation.
+*   **Mandate**: Use **Iterator-Based Streaming**. Populate the reply buffer incrementally until full, then yield. Do not materialize the full list.
+
+---
+
+## 8. Security & Stability Hardening
+
+### 8.1 Path Traversal Defense
+*   **Risk**: If a malicious Controller injects a hash like `../../etc/passwd`.
+*   **Defense**: **Strict Hash Validation**. The CAS path builder MUST verify:
+    *   Length == 64 chars (BLAKE3).
+    *   Charset == `[a-f0-9]`.
+    *   Otherwise: PANIC/Refuse to Serve.
+
+### 8.2 Zero-Copy mmap Support
+*   **Requirement**: Python relies heavily on loading `.pyc` and `.so` files via `mmap`.
+*   **Implementation**: VeloVFS MUST support `FOPEN_KEEP_CACHE` (or `FUSE_PASSTHROUGH` where available) to allow the Kernel to manage page faults directly from the physical file, bypassing the FUSE daemon for memory-mapped regions.
