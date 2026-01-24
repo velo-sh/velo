@@ -49,7 +49,7 @@ print(f"PID: {os.getpid()}")
     if torch_lib.exists():
         libs.extend([str(p) for p in torch_lib.glob("*.dylib")])
 
-    libs_str = ",\n    ".join([f'"{l}"' for l in libs])
+    libs_str = ",\n    ".join([f'"{lib}"' for lib in libs])
 
     (WORKSPACE / "pyproject.toml").write_text(f"""
 [tool.velo]
@@ -69,7 +69,7 @@ native_libraries = [
         text=True,
         env={**os.environ, "PYTHONPATH": str(SITE_PACKAGES)},
     )
-    cold_e2e_ms = (time.perf_counter() - start_t) * 1000
+    (time.perf_counter() - start_t) * 1000
 
     cold_tti = 0.0
     for line in res_cold.stdout.splitlines():
@@ -102,7 +102,7 @@ native_libraries = [
         text=True,
         env={**os.environ, "VELO_PYTHON": sys.executable, "PYTHONPATH": str(SITE_PACKAGES), "VELO_TEST_MODE": "1"},
     )
-    velo_e2e_ms = (time.perf_counter() - start_t) * 1000
+    (time.perf_counter() - start_t) * 1000
 
     if res_velo.returncode != 0:
         print(f"❌ Velo Run Failed!\n{res_velo.stderr}")

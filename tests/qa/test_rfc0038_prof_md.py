@@ -695,7 +695,7 @@ class TestUserPerspectiveBugs:
         # The value should be escaped, not contain raw newlines that break the table
         # Check that "NEWLINE_VAR" row doesn't span multiple lines
         lines = content.split("\n")
-        newline_var_lines = [l for l in lines if "NEWLINE_VAR" in l]
+        newline_var_lines = [line for line in lines if "NEWLINE_VAR" in line]
         assert len(newline_var_lines) == 1, (
             f"NEWLINE_VAR should be on single line, found {len(newline_var_lines)} lines"
         )

@@ -126,15 +126,20 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # function calls in defaults (FastAPI pattern)
+    "PERF401",  # loop to comprehension - optional suggestion, not enforced
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["velo_zygote"]
 
 [tool.ruff.lint.per-file-ignores]
-# E402: Bootstrap pattern requires imports after sys.path manipulation
+# E402: Tests legitimately require sys.path manipulation before imports
+"tests/**/*.py" = ["E402"]
+"pytest_velo/**/*.py" = ["E402"]
 "velo_zygote/main.py" = ["E402"]
 "velo_zygote/worker_launcher.py" = ["E402"]
+# F401: conftest files import fixtures for other tests to use
+"**/conftest.py" = ["F401"]
 # F403/F405: Star imports from constants.py is SSOT pattern (constants are generated)
 "velo_zygote/settings.py" = ["F403", "F405"]
 "velo_zygote/paths.py" = ["F403", "F405"]

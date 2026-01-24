@@ -140,10 +140,7 @@ class TestWhiteBoxPythonStress:
 
         This is a DESIGN DEFECT test - it will FAIL to prove the vulnerability exists.
         """
-        try:
-            import umsgpack
-        except ImportError:
-            pytest.skip("umsgpack not available")
+        pytest.importorskip("umsgpack")
 
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()
@@ -188,10 +185,7 @@ class TestWhiteBoxPythonStress:
         If Zygote has no throttling, rapid Forks will exhaust PIDs or memory.
         Test verifies rate limiting returns "Rate limit exceeded" errors.
         """
-        try:
-            import umsgpack
-        except ImportError:
-            pytest.skip("umsgpack not available")
+        pytest.importorskip("umsgpack")
 
         proc = velo_serve_fixture.start("main:app", workers=1)
         proc.wait_ready()

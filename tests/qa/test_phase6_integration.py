@@ -68,7 +68,7 @@ class TestPhase6Integration:
                 text=True,
             )
             # Filter stat calls related to 'mod.py'
-            stat_calls = [l for l in result.stderr.splitlines() if "mod.py" in l]
+            stat_calls = [line for line in result.stderr.splitlines() if "mod.py" in line]
             # There should be 0 stat calls for the .py file during import resolution
             assert len(stat_calls) == 0, f"Found stat() calls for bundled module: {stat_calls}"
         except FileNotFoundError:

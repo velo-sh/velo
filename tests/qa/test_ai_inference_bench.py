@@ -119,7 +119,7 @@ class TestAIFirstBenchmark:
 
         # --- 4. BREATHTAKING RESULTS ---
         speedup_internal = cold_internal_ms / velo_internal_ms
-        speedup_e2e = cold_internal_ms / velo_e2e_ms
+        cold_internal_ms / velo_e2e_ms
 
         print("\n" + "=" * 60)
         print("🚀 VELO AI-FIRST BENCHMARK: COLD START ELIMINATION")

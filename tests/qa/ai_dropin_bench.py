@@ -58,7 +58,7 @@ def setup_workspace():
         # Emergency backup: just add the directory itself to trigger recursive lookup if supported
         libs = [str(torch_lib)]
 
-    libs_str = ",\n    ".join([f'"{l}"' for l in libs])
+    libs_str = ",\n    ".join([f'"{lib}"' for lib in libs])
     print(f"📦 Discovered {len(libs)} native libraries for preloading.")
 
     # Create pyproject.toml

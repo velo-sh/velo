@@ -74,8 +74,8 @@ def send_raw_hostile(sock_path: str, total_len: int, version: int, payload_bytes
         # 1. Consume Greeting (RFC-0011)
         header = s.recv(5)
         if len(header) == 5:
-            l = struct.unpack("<I", header[:4])[0]
-            s.recv(l - 1)
+            length = struct.unpack("<I", header[:4])[0]
+            s.recv(length - 1)
 
         # 2. Inject Hostile Packet
         header = struct.pack("<I", total_len)
@@ -177,8 +177,8 @@ def test_state_visibility_via_status(zygote_process):
 
         # Read Response
         resp_header = s.recv(5)
-        l = struct.unpack("<I", resp_header[:4])[0]
-        resp_payload = s.recv(l - 1)
+        length = struct.unpack("<I", resp_header[:4])[0]
+        resp_payload = s.recv(length - 1)
         resp = msgpack.unpackb(resp_payload)
 
         assert resp["type"] == "Status"
@@ -242,8 +242,8 @@ def test_state_lifecycle_progression():
             h = struct.pack("<I", 1 + len(p))
             sock.sendall(h + bytes([PROTOCOL_VERSION]) + p)
             rh = sock.recv(5)
-            l = struct.unpack("<I", rh[:4])[0]
-            rp = sock.recv(l - 1)
+            length = struct.unpack("<I", rh[:4])[0]
+            rp = sock.recv(length - 1)
             return msgpack.unpackb(rp)["state"]
 
         # 2. Check for PRELOADING or IDLE/PRELOADING transition
@@ -268,8 +268,8 @@ def test_state_lifecycle_progression():
 
         # Read Ack
         rh = s.recv(5)
-        l = struct.unpack("<I", rh[:4])[0]
-        s.recv(l - 1)
+        length = struct.unpack("<I", rh[:4])[0]
+        s.recv(length - 1)
 
         # 5. Verify SHUTDOWN state if possible before exit
         # We try one last status, it might fail if process exits too fast

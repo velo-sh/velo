@@ -31,7 +31,7 @@ class TestP0PolicyEnforcement:
 
         if result.returncode == 0:
             # Filter out this file and comments
-            lines = [l for l in result.stdout.strip().split("\n") if "test_policy_enforcement.py" not in l]
+            lines = [line for line in result.stdout.strip().split("\n") if "test_policy_enforcement.py" not in line]
             if lines:
                 pytest.fail(
                     "P0 VIOLATION: MagicMock import detected!\\n"
@@ -55,6 +55,8 @@ class TestP0PolicyEnforcement:
         if result.returncode == 0:
             lines = result.stdout.strip().split("\\n")
             # Filter out test code and comments
-            violations = [l for l in lines if "#[test]" not in l and "// " not in l and "mod tests" not in l]
+            violations = [
+                line for line in lines if "#[test]" not in line and "// " not in line and "mod tests" not in line
+            ]
             if violations:
                 pytest.fail("P0 VIOLATION: Hardcoded /tmp found!\\nViolations:\\n" + "\\n".join(violations[:10]))
