@@ -229,8 +229,14 @@ class TestL4Security:
         env.pop("VELO_ZYGOTE_SOCKET", None)
         env.pop("XDG_RUNTIME_DIR", None)  # Ensure fallback to TMPDIR
         env["TMPDIR"] = str(tmp_dir)
+
         # RFC-0012: Velo defaults to ~/.local/state/velo/sockets, so we must force it to use our tmp dir
-        env["VELO_SOCKET_DIR"] = str(tmp_dir / f"velo-{uid}")
+        socket_dir_path = tmp_dir / f"velo-{uid}"
+        env["VELO_SOCKET_DIR"] = str(socket_dir_path)
+
+        # Pre-create the directory because Velo does not auto-create overrides (as per src/common/paths.rs)
+        # We explicitly create it with loose permissions to verify Velo fixes them to 0700 (SEC-605)
+        socket_dir_path.mkdir(mode=0o777, exist_ok=True)
 
         # Create a dummy app manually since isolated_env is just a path here
         app_code = "from fastapi import FastAPI\napp = FastAPI()"
