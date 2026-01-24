@@ -13,6 +13,8 @@ const CONSTANTS_TOML: &str = include_str!("../config/constants.toml");
 pub struct VeloConfig {
     /// Modules to preload in Zygote
     pub preload: Vec<String>,
+    /// Native libraries to preload via dlopen (RFC-0035)
+    pub native_libraries: Vec<String>,
     /// Maximum bundle size in Bytes
     pub max_bundle_size: usize,
     /// Zygote socket startup timeout in seconds
@@ -92,6 +94,7 @@ impl Default for VeloConfig {
 
         Self {
             preload: Vec::new(),
+            native_libraries: Vec::new(),
             max_bundle_size: 1024 * 1024 * 1024, // 1GB default
             zygote_socket_timeout: extract_default_u64("socket_startup_timeout", 5),
             slow_threshold_ms: extract_default_u64("default_slow_threshold_ms", 100),
@@ -179,6 +182,9 @@ impl VeloConfig {
         if let Ok(val) = std::env::var("VELO_PRELOAD") {
             self.preload = Self::parse_string_array(&val);
         }
+        if let Ok(val) = std::env::var("VELO_NATIVE_PRELOAD") {
+            self.native_libraries = Self::parse_string_array(&val);
+        }
         if let Some(mb) = std::env::var("VELO_MAX_BUNDLE_SIZE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
@@ -264,6 +270,12 @@ impl VeloConfig {
                     "preload" => {
                         if value.starts_with('[') && value.ends_with(']') {
                             config.preload = Self::parse_string_array(&value[1..value.len() - 1]);
+                        }
+                    }
+                    "native_libraries" => {
+                        if value.starts_with('[') && value.ends_with(']') {
+                            config.native_libraries =
+                                Self::parse_string_array(&value[1..value.len() - 1]);
                         }
                     }
                     "max_bundle_size" => {

@@ -11,6 +11,7 @@ pub mod graph;
 pub mod info;
 pub mod jupyter; // RFC-0030: Jupyter kernel integration
 pub mod pre_flight;
+pub mod preload;
 
 pub mod python;
 pub mod run;
@@ -28,6 +29,7 @@ pub use graph::cmd_graph;
 pub use info::cmd_info;
 pub use jupyter::cmd_jupyter; // RFC-0030: Jupyter kernel
 pub use pre_flight::cmd_debug_pre_flight;
+pub use preload::cmd_preload;
 pub use python::cmd_python; // RFC-0018: managed Python
 pub use run::cmd_run;
 pub use serve::cmd_serve;

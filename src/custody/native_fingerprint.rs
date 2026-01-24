@@ -3,8 +3,7 @@
 //! This module implements the metadata structure and hashing logic for
 //! mapping native libraries to their runtime fingerprints.
 
-use anyhow::{Context, Result};
-use goblin::elf::Elf;
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -44,15 +43,35 @@ pub enum LoadStage {
 }
 
 impl NativeLibFingerprint {
-    /// Parse ELF metadata (SONAME, NEEDED) from a library
-    pub fn parse_elf(path: &Path) -> Result<(String, Vec<String>)> {
+    /// Parse metadata (SONAME, NEEDED) from a native library (ELF or Mach-O)
+    pub fn parse_native_lib(path: &Path) -> Result<(String, Vec<String>)> {
         let buffer = std::fs::read(path)
-            .with_context(|| format!("Failed to read library for ELF parsing: {:?}", path))?;
-        let elf =
-            Elf::parse(&buffer).with_context(|| format!("Failed to parse ELF: {:?}", path))?;
+            .with_context(|| format!("Failed to read library for parsing: {:?}", path))?;
 
-        let soname = elf.soname.unwrap_or("").to_string();
-        let needed = elf.libraries.iter().map(|s| s.to_string()).collect();
+        let mut soname = String::new();
+        let mut needed = Vec::new();
+
+        match goblin::Object::parse(&buffer)? {
+            goblin::Object::Elf(elf) => {
+                soname = elf.soname.unwrap_or("").to_string();
+                needed = elf.libraries.iter().map(|s| s.to_string()).collect();
+            }
+            goblin::Object::Mach(mach) => {
+                // For Mach-O, we use the install name
+                match mach {
+                    goblin::mach::Mach::Binary(bin) => {
+                        soname = bin.name.unwrap_or("").to_string();
+                        // For libraries this is a list of dylibs
+                        needed = bin.libs.iter().map(|s| s.to_string()).collect();
+                    }
+                    goblin::mach::Mach::Fat(_fat) => {
+                        // For fat binaries, we'll just take the first slice?
+                        // Simplified for now
+                    }
+                }
+            }
+            _ => bail!("Unsupported binary format for {:?}", path),
+        }
 
         Ok((soname, needed))
     }
@@ -81,5 +100,159 @@ impl NativeLibFingerprint {
         let full_hash = hasher.finalize().to_hex().to_string();
 
         Ok((full_hash, header_hash))
+    }
+
+    /// Verify library against fingerprint (INV-PRELOAD-001, INV-PRELOAD-007)
+    /// Uses mtime as a fast-path (P2-002)
+    pub fn verify(&self, path: &Path, deep_verify: bool) -> Result<bool> {
+        let metadata = path
+            .metadata()
+            .with_context(|| format!("Failed to get metadata for {:?}", path))?;
+
+        let current_mtime = metadata
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+
+        // P2-002: Fast-path via mtime
+        if current_mtime == self.mtime && !deep_verify {
+            return Ok(true);
+        }
+
+        // Slow-path: Calculate hashes
+        let (full_hash, header_hash) = Self::calculate_hashes(path)?;
+
+        // Header verification for early exit
+        if header_hash != self.header_hash {
+            return Ok(false);
+        }
+
+        if deep_verify && full_hash != self.hash {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+}
+
+/// Root structure of the `preload.lock` file (RFC-0035 §3.4)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreloadLock {
+    pub version: String,
+    pub generator: String,
+    pub fingerprints: Vec<NativeLibFingerprint>,
+}
+
+impl PreloadLock {
+    pub fn new(fingerprints: Vec<NativeLibFingerprint>) -> Self {
+        Self {
+            version: "1.0".to_string(),
+            generator: format!("velo-{}", env!("CARGO_PKG_VERSION")),
+            fingerprints,
+        }
+    }
+
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string_pretty(self).context("Failed to serialize preload.lock to JSON")
+    }
+
+    pub fn from_json(json: &str) -> Result<Self> {
+        serde_json::from_str(json).context("Failed to parse preload.lock from JSON")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_preload_lock_roundtrip() {
+        let fp = NativeLibFingerprint {
+            relative_path: PathBuf::from("lib/libtorch.so"),
+            package: "torch".to_string(),
+            soname: "libtorch.so".to_string(),
+            hash: "full_hash".to_string(),
+            header_hash: "head_hash".to_string(),
+            mtime: 123456789,
+            platform: LibPlatform {
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                python_version: "3.10".to_string(),
+                libc_type: "gnu".to_string(),
+                libc_version: "2.31".to_string(),
+                soabi: "cpython-310-x86_64-linux-gnu".to_string(),
+            },
+            load_stage: LoadStage::PreInit,
+        };
+
+        let lock = PreloadLock::new(vec![fp]);
+        let json = lock.to_json().unwrap();
+
+        // Assert JSON contains key fields
+        assert!(json.contains("\"version\": \"1.0\""));
+        assert!(json.contains("\"generator\": \"velo-"));
+        assert!(json.contains("\"relative_path\": \"lib/libtorch.so\""));
+
+        let decoded: PreloadLock = PreloadLock::from_json(&json).unwrap();
+        assert_eq!(decoded.version, "1.0");
+        assert_eq!(decoded.fingerprints.len(), 1);
+        assert_eq!(decoded.fingerprints[0].soname, "libtorch.so");
+    }
+
+    #[test]
+    fn test_hash_calculation() {
+        let tmp = tempdir().unwrap();
+        let lib_path = tmp.path().join("test.so");
+        let content = vec![0u8; 8192]; // 8KB
+        fs::write(&lib_path, &content).unwrap();
+
+        let (full, head) = NativeLibFingerprint::calculate_hashes(&lib_path).unwrap();
+        assert_eq!(full, blake3::hash(&content).to_hex().to_string());
+        assert_eq!(head, blake3::hash(&content[..4096]).to_hex().to_string());
+    }
+
+    #[test]
+    fn test_mtime_fast_path() {
+        let tmp = tempdir().unwrap();
+        let lib_path = tmp.path().join("test.so");
+        fs::write(&lib_path, "binary").unwrap();
+
+        let metadata = lib_path.metadata().unwrap();
+        let mtime = metadata
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let mut fp = NativeLibFingerprint {
+            relative_path: PathBuf::from("test.so"),
+            package: "test".to_string(),
+            soname: "test.so".to_string(),
+            hash: "fake".to_string(),
+            header_hash: "fake".to_string(),
+            mtime,
+            platform: LibPlatform {
+                os: "linux".to_string(),
+                arch: "x86_64".to_string(),
+                python_version: "3.10".to_string(),
+                libc_type: "gnu".to_string(),
+                libc_version: "2.31".to_string(),
+                soabi: "abc".to_string(),
+            },
+            load_stage: LoadStage::PreInit,
+        };
+
+        // 1. mtime matches, should skip hash and return true
+        assert!(fp.verify(&lib_path, false).unwrap());
+
+        // 2. mtime matches but deep_verify is true, should check hash and fail
+        assert!(!fp.verify(&lib_path, true).unwrap());
+
+        // 3. mtime changed, should check hash and fail
+        fp.mtime -= 1;
+        assert!(!fp.verify(&lib_path, false).unwrap());
     }
 }

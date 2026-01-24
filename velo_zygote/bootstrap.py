@@ -66,6 +66,58 @@ def _log_banner() -> None:
         sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
 
 
+def _native_preload() -> None:
+    """
+    RFC-0035: Native Library Preload (Stage 1 & 2).
+    Uses 'velo preload check' for Death Pact vetting before ctypes.CDLL.
+    """
+    lock_json = os.environ.get("VELO_NATIVE_PRELOAD_LOCK")
+    if not lock_json:
+        return
+
+    try:
+        import ctypes
+        import json
+        import subprocess
+
+        lock_data = json.loads(lock_json)
+        fingerprints = lock_data.get("fingerprints", [])
+
+        for fp in fingerprints:
+            lib_path = fp.get("relative_path")
+            soname = fp.get("soname")
+
+            # 1. Rust-based "Death Pact" Vetting
+            # We call the CLI to perform the fork-vet-load in a separate process.
+            try:
+                # Use current process environment to ensure paths are correct
+                velo_exe = os.environ.get("VELO_EXE_PATH", "velo")
+
+                # Directive B: Promote critical libs
+                is_critical = any(x in soname.lower() for x in ["libtorch", "libtensorflow", "libpython"])
+
+                cmd = [velo_exe, "preload", "check", "--path", lib_path]
+                if is_critical:
+                    cmd.append("--global")
+
+                subprocess.run(cmd, capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError as e:
+                sys.stderr.write(f"[VELO-NATIVE] Vetting failed for {soname}: {e.stderr}\n")
+                continue
+
+            # 2. Process-local Load
+            # If vetting passed, it's safe to load in the current process.
+            try:
+                mode = ctypes.RTLD_GLOBAL if is_critical else ctypes.RTLD_LOCAL
+                ctypes.CDLL(lib_path, mode=mode)
+                # sys.stderr.write(f"[VELO-NATIVE] Preloaded {soname}\n")
+            except Exception as e:
+                sys.stderr.write(f"[VELO-NATIVE] Load failed for {soname}: {e}\n")
+
+    except Exception as e:
+        sys.stderr.write(f"[VELO-NATIVE-ERROR] Bootstrap failed: {e}\n")
+
+
 def initialize() -> None:
     """
     Standardize the Velo Python environment.
@@ -84,12 +136,15 @@ def initialize() -> None:
     # 1. Environment Normalization (Phase 11.1)
     _normalize_environment()
 
+    # 1.1 RFC-0035 Native Preloading (Pre-Warming)
+    # This must happen before sys.path modification to ensure clean state
+    _native_preload()
+
     # 2. Normalize sys.path
     # SCRIPT_DIR is the directory of this file (velo_zygote/)
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     # PKG_ROOT is the directory containing velo_zygote/
     _pkg_root = os.path.dirname(_script_dir)
-
     # Ensure package root is in sys.path
     if _pkg_root not in sys.path:
         sys.path.insert(0, _pkg_root)

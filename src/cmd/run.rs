@@ -209,6 +209,26 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
     let python_path = python::detect_python(&project_dir)?;
     let _python_time = _python_start.elapsed();
 
+    // 3.1 RFC-0035: Auto-Preload (Native Library Preload)
+    let lock_path = project_dir.join("preload.lock");
+    if lock_path.exists() {
+        use crate::custody::native_fingerprint::{LoadStage, PreloadLock};
+        use crate::custody::preload_orchestrator::PreloadOrchestrator;
+
+        match std::fs::read_to_string(&lock_path) {
+            Ok(json) => match PreloadLock::from_json(&json) {
+                Ok(lock) => {
+                    let orch = PreloadOrchestrator::new(lock, &project_dir);
+                    if let Err(e) = orch.load_stage(LoadStage::PreInit, &project_dir) {
+                        tracing::warn!("Auto-preload Stage 1 (PreInit) failed: {}", e);
+                    }
+                }
+                Err(e) => tracing::warn!("Failed to parse preload.lock: {}", e),
+            },
+            Err(e) => tracing::warn!("Failed to read preload.lock: {}", e),
+        }
+    }
+
     if cmd.profile {
         eprintln!(
             "[VELO] Discovery: {:.1}ms, Config: {:.1}ms, Python Detect: {:.1}ms",

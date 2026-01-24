@@ -26,6 +26,7 @@ USAGE:
     velo audit
     velo graph <generate|verify> [OPTIONS]
     velo jupyter <install> [OPTIONS]     # Jupyter kernel integration (RFC-0030)
+    velo preload <analyze|verify>
 
 COMMANDS:
     run      Run a Python script
@@ -39,6 +40,7 @@ COMMANDS:
     info     Show environment information
     audit    Verify architectural governance (audit SSOT/Naming/Perf)
     jupyter  Jupyter kernel integration (RFC-0030)
+    preload  Manage native library preloading (RFC-0035)
 
 RUN OPTIONS:
     --zygote   Use Zygote for fast startup (auto-starts if needed)
@@ -81,7 +83,7 @@ OPTIONS:
 fn suggest_command(target: &str) -> Option<&'static str> {
     const COMMANDS: &[&str] = &[
         "run", "serve", "test", "python", "pip", "analyze", "bench", "bundle", "info", "audit",
-        "zygote", "graph", "jupyter",
+        "zygote", "graph", "jupyter", "preload",
     ];
     let mut best_match = None;
     let mut min_dist = 2; // MANDATE OBS-001: Max threshold 2
@@ -137,6 +139,7 @@ pub fn run() -> Result<()> {
         "debug" => cmd::cmd_debug(&args),
         "graph" => cmd::cmd_graph(&args),
         "jupyter" => cmd::cmd_jupyter(&args), // RFC-0030: Jupyter kernel
+        "preload" => cmd::cmd_preload(&args), // RFC-0035: Native Preload
         "worker-native" => cmd::cmd_worker_native(&args),
         cmd => {
             eprintln!("{}: unknown command '{}'", "error".red().bold(), cmd);
