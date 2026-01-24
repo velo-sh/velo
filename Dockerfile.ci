@@ -40,6 +40,8 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM ${BASE_IMAGE} AS cacher
 WORKDIR /workspace
 COPY --from=planner /workspace/recipe.json recipe.json
+# Copy vendor directory for path dependencies (granian-core)
+COPY vendor/ vendor/
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/workspace/target \
@@ -48,9 +50,16 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 # Stage 3: Real Builder
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /workspace
+# CI environment for builder stage
+ENV CI=true
+ENV GITHUB_ACTIONS=true
+ENV PYO3_PYTHON=/workspace/.venv/bin/python3
 COPY . .
-# Copy pre-compiled dependencies from cacher
-COPY --from=cacher /workspace/target /workspace/target
+# NOTE: Mount cache is shared between stages, so dependencies from cacher are available
+
+# Create Python venv FIRST so PYO3_PYTHON is valid during cargo build
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync
 
 # Rebuild with real source (using cached dependencies)
 # Build both release AND debug for tests that use target/debug/velo
@@ -60,10 +69,6 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
     cargo build --release && \
     cargo build && \
     cp target/release/velo ./velo-bin 2>/dev/null || true
-
-# Ensure Python deps are synced with full pyproject.toml
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync
 
 
 # Default: run local-ci.sh (SSOT for CI logic)
