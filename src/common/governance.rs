@@ -14,6 +14,8 @@ pub enum SignalComponent {
     NumaAffinity,
     EnvShield,
     FastLoader,
+    /// RFC-0012 Phase 11.0: Python-side optimization failure
+    PythonWorker,
 }
 
 impl fmt::Display for SignalComponent {
@@ -24,6 +26,7 @@ impl fmt::Display for SignalComponent {
             Self::NumaAffinity => "NUMA/Affinity",
             Self::EnvShield => "EnvShield/Scrubbing",
             Self::FastLoader => "FastLoader/Bundle",
+            Self::PythonWorker => "Python/Worker",
         };
         write!(f, "{}", s)
     }
@@ -110,6 +113,35 @@ impl GovernanceSignal {
             self.impact_estimate,
             self.healing_tip
         )
+    }
+
+    /// RFC-0012 Phase 11.0: Create GovernanceSignal from Python-side IPC error
+    /// Used to bridge VeloOptimizationError from Python workers into Rust H-Gov audit flow.
+    pub fn from_python_error(
+        optimization_id: &str,
+        message: &str,
+        trace_id: Option<&str>,
+    ) -> Self {
+        // Map optimization_id prefix to appropriate component
+        let component = if optimization_id.starts_with("SHM") {
+            SignalComponent::MemoryGravity
+        } else if optimization_id.starts_with("IPC") {
+            SignalComponent::ZygoteIPC
+        } else if optimization_id.starts_with("ENV") {
+            SignalComponent::EnvShield
+        } else {
+            SignalComponent::PythonWorker
+        };
+
+        Self {
+            component,
+            reason: format!("[{}] {}", optimization_id, message),
+            impact_estimate: "~10-50ms latency (Python-side fallback)",
+            healing_tip: "Check Python logs for detailed traceback",
+            trace_id: trace_id
+                .map(|t| TraceID(t.to_string()))
+                .unwrap_or_else(TraceID::generate),
+        }
     }
 }
 

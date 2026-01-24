@@ -189,6 +189,23 @@ pub enum ZygoteResponse {
         stdout: Option<String>,
         stderr: Option<String>,
     },
+    /// RFC-0012 Phase 11.0: H-Gov Optimization Error from Python worker
+    /// Enables Python-side VeloOptimizationError to be tunneled to Rust H-Gov audit flow.
+    OptimizationError {
+        /// Unique optimization identifier (e.g., "SHM-MMAP-001")
+        optimization_id: String,
+        /// Human-readable error message
+        message: String,
+        /// Worker PID that emitted the error
+        #[serde(default)]
+        worker_pid: Option<u32>,
+        /// Trace ID for correlation (X-Velo-Trace-ID)
+        #[serde(default)]
+        trace_id: Option<String>,
+        /// Additional context from Python
+        #[serde(default)]
+        context: std::collections::HashMap<String, String>,
+    },
 }
 
 /// Get the default socket path for Zygote IPC
