@@ -80,16 +80,21 @@ To mitigate the inode/space cost of dynamic package installation (e.g., `pip ins
 2.  **RO Mount**: This store is mounted **Read-Only** into the VVE at `/opt/velo/cache`.
 3.  **Link Mode**: The Agent's installer is configured to use **Symlinks** (`--link-mode=symlink`) instead of copying files.
     *   **Result**: Installing `numpy` (100MB, 2000 files) consumes **0MB** of `tmpfs` data and only lightweight symlink inodes.
+    *   **Result**: Installing `numpy` (100MB, 2000 files) consumes **0MB** of `tmpfs` data and only lightweight symlink inodes.
     *   **Safety**: Since the source is Read-Only, a compromised Agent cannot poison the cache for others.
+    *   **Garbage Collection Constraint**: The Host Cache MUST implement a **GC Lock** (Reference Counting). It MUST NOT delete packages referenced by active VVE symlinks to prevent breaking live agents.
 
 ### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
 2.  **Fork**: Zygote forks a new worker.
+    *   **Invariant**: The Zygote process **MUST be Single-Threaded** at the moment of fork. `unshare(CLONE_NEWUSER)` will fail with `EINVAL` if the calling process is multi-threaded.
 3.  **Encapsulation (Post-Fork)**: 
     *   Subprocess calls `unshare(CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWPID | CLONE_NEWUSER)`.
     *   Mounts a per-session **UpperLayer** (Tmpfs/Ramdisk) for write capability.
     *   Executes `pivot_root` to switch to the isolated VVE root.
 4.  **Activation**: The Python Agent starts, seeing a "Fresh VM" environment.
+    *   **Reseed Hook (Anti-Drift)**: The Python runtime **MUST invalidate `sys.path` and `sys.modules` caches** immediately after activation. This prevents "Phantom Dependency" bugs where the Agent sees Host-loaded modules instead of VVE-installed ones.
+    *   **Prohibition**: Zygote **MUST NOT** preload version-overrideable libraries (e.g., pandas, requests). Only the immutable Velo Runtime Core is allowed in the Zygote.
 
 ### 4.2 Filesystem Sovereignty (OverlayFS)
 VVE uses OverlayFS to provide a "Writable Root" experience without persistent storage overhead.
@@ -104,6 +109,7 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 *   Isolated `lo` (loopback) interface.
 *   **eBPF Datapath**: Unlike traditional `iptables` which suffer from lock contention at high churn, VVE MUST use **eBPF (TC/XDP)** for egress filtering. This allows lock-free packet inspection for thousands of ephemeral containers.
 *   **NON-GOAL**: **No Legacy Fallback**. `iptables` fallback is explicitly **FORBIDDEN**. If eBPF is unavailable, VVE L4 creation MUST fail. "Temporary usage" of legacy netfilter paths introduces unacceptable jitter/locking risks.
+*   **Safety Mechanism**: **Network Panic Button**. The Supervisor MUST maintain a direct handle to the `tc` (Traffic Control) layer. If eBPF maps become corrupted or unresponsive, the Supervisor invokes a high-priority `drop all` rule to universally sever the VVE's network access.
 
 ### 4.5 Persistence (L5 Stateful Extensions)
 While VVE is designed to be ephemeral, certain "Long-Running Agents" require state persistence across restarts.
@@ -130,6 +136,7 @@ For scenarios requiring **"RAM Speed + Crash Recovery"**, Velo implements a **Wr
     *   The "Shadow Dir" is injected as a **read-only Middle Layer** (between Base and new Upper).
     *   **Result**: The Agent restarts instantly with its files intact (minus the last few milliseconds of data), effectively "resurrecting" the session state without paying the disk I/O penalty on the hot path.
 *   **Security Constraint**: Shadow Replication **MUST NOT** replay executable files (`chmod +x` is masked) or modify interpreter paths. This prevents "resurrecting" malware or injected binaries.
+    *   **Data-Only Filter**: The Shadow Syncer MUST enforce a strict Allowlist (e.g., MIME types like `.json`, `.csv`, `.txt`, `.pkl`) or target a non-executable data directory. Executables and scripts are dropped.
 
 ---
 
