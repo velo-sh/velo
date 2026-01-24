@@ -235,7 +235,7 @@ parse_tier_to_paths() {
 
 run_rust_tests() {
     log_step "Running Rust tests..."
-    cargo test --lib
+    cargo test --lib ${EXTRA_RUST_ARGS:-}
     log_success "Rust tests passed"
 }
 
@@ -252,13 +252,13 @@ run_python_tests() {
     
     # Determine parallelism
     local parallel_args=""
-    if python -c "import xdist" 2>/dev/null; then
+    if [[ "${NO_XDIST:-false}" == "false" ]] && python -c "import xdist" 2>/dev/null; then
         parallel_args="-n auto --dist loadscope"
         log_step "Using pytest-xdist: $parallel_args"
     fi
     
     set +e # Allow test failure to capture artifacts
-    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short
+    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short ${EXTRA_PY_ARGS:-}
     local EXIT_CODE=$?
     set -e
 

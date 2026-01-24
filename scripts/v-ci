@@ -62,6 +62,8 @@ print_usage() {
 }
 
 # Parse Arguments
+EXTRA_RUST_ARGS=()
+EXTRA_PY_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --local)  MODE="local"; shift ;;
@@ -72,7 +74,22 @@ while [[ $# -gt 0 ]]; do
         --build)  ACTION="build"; shift ;;
         --shell)  ACTION="shell"; shift ;;
         --clean)  ACTION="clean"; shift ;;
+        --rust-args) 
+            shift
+            while [[ $# -gt 0 ]] && [[ "$1" != "--" ]] && [[ "$1" != "--py-args" ]]; do
+                EXTRA_RUST_ARGS+=("$1")
+                shift
+            done
+            ;;
+        --py-args)
+            shift
+            while [[ $# -gt 0 ]] && [[ "$1" != "--" ]] && [[ "$1" != "--rust-args" ]]; do
+                EXTRA_PY_ARGS+=("$1")
+                shift
+            done
+            ;;
         --help|-h) print_usage; exit 0 ;;
+        --)       shift; EXTRA_PY_ARGS+=("$@"); break ;;
         *) log_error "Unknown option: $1"; print_usage; exit 1 ;;
     esac
 done
@@ -118,8 +135,11 @@ run_in_docker() {
         -e GITHUB_ACTIONS=true \
         -e CI=true \
         -e VELO_ENV=ci \
+        -e NO_XDIST="${NO_XDIST:-false}" \
         "$DOCKER_IMAGE" \
-        /workspace/scripts/v-ci --local --tier "$TIER"
+        /workspace/scripts/v-ci --local --tier "$TIER" \
+        --rust-args ${EXTRA_RUST_ARGS[@]+"${EXTRA_RUST_ARGS[@]}"} \
+        --py-args ${EXTRA_PY_ARGS[@]+"${EXTRA_PY_ARGS[@]}"}
 }
 
 # =============================================================================
@@ -139,6 +159,8 @@ run_locally() {
             ;;
         *)
             # The heart of the Universal Driver
+            export EXTRA_RUST_ARGS="${EXTRA_RUST_ARGS[*]}"
+            export EXTRA_PY_ARGS="${EXTRA_PY_ARGS[*]}"
             run_full_ci "$TIER"
             ;;
     esac

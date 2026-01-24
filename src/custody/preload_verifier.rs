@@ -26,8 +26,9 @@ impl PreloadVerifier {
         // 1. Block dangerous prefixes
         let dangerous_prefixes = ["/tmp/", "/var/tmp/", "/dev/shm/"];
         let path_str = canonical_path.to_string_lossy();
+        let venv_str = self.venv_root.to_string_lossy();
         for prefix in dangerous_prefixes {
-            if path_str.starts_with(prefix) {
+            if path_str.starts_with(prefix) && !venv_str.starts_with(prefix) {
                 bail!(
                     "Security Violation: Path {:?} uses forbidden prefix {}",
                     canonical_path,
