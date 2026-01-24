@@ -59,6 +59,7 @@ $ rift exec -- npm install
 To eliminate muscle-memory friction, `rift` supports transparent shell hooks.
 *   **The Hook**: `rift hook --shell zsh`. Use standard commands (`npm`, `cargo`) and they are transparently accelerated.
 *   **The Experience**: Users don't learn a new tool. They just notice their existing tools became instant.
+*   **The Psychology**: Zero friction means zero cognitive load. It leverages **Muscle Memory** to drive adoption.
 
 ---
 
@@ -107,9 +108,13 @@ To eliminate muscle-memory friction, `rift` supports transparent shell hooks.
 
 | Mode | Backend | Use Case |
 |:---|:---|:---|
-| **Local Accelerate** | Local NVMe (`/var/cas`) | Developer workstations, Gaming assets |
-| **Cluster Shared** | Network CAS (S3/MinIO) | CI Runners, K8s Pods, Distributed Training |
-| **Ephemeral memory** | RAM (`/dev/shm`) | Temporary builds, High-speed test fixtures |
+| **Local Accelerate** | Local NVMe (`/var/cas`) | **Latency Focus**: Developer workstations, Gaming assets |
+| **Cluster Shared** | Network CAS + Local Cache | **Throughput Focus**: CI Runners (P2P), K8s Pods. Seamlessly switches between Local hot-path and Cluster cold-storage. |
+| **Ephemeral memory** | RAM (`/dev/shm`) | **Speed Focus**: Temporary builds, High-speed test fixtures |
+
+> **Engineering Note (The Globbing Trap)**: 
+> Tools like Webpack/ESLint often scan the entire directory tree (Globbing) at startup.
+> Rift must implement **Metadata Prefetching** (faking the dentry structure in RAM) to prevent these scans from triggering a "JIT Storm" of network requests.
 
 ---
 
