@@ -218,221 +218,38 @@ fn main() {
     generate_python_constants(&constants, &git_hash);
 }
 
-/// Generate velo_zygote/constants.py from SSOT (Replaces scripts/sync-constants.py)
-fn generate_python_constants(config: &Constants, git_hash: &str) {
-    let py_path = Path::new("velo_zygote/constants.py");
-    let py_env = &config.python_environment;
+/// Generate velo_zygote/constants.py via sync-constants.py (SSOT - Phase 11.0 Fix)
+///
+/// DESIGN: sync-constants.py is the single source of truth for Python constants generation.
+/// build.rs delegates to it instead of duplicating the generation logic.
+/// This ensures pre-commit sync checks always pass.
+fn generate_python_constants(_config: &Constants, _git_hash: &str) {
+    // Call the Python script which is the canonical generator
+    let status = Command::new("python3")
+        .args(["scripts/sync-constants.py"])
+        .status();
 
-    let env_vars_str = py_env
-        .env_vars
-        .iter()
-        .map(|v| format!("\"{}\"", v))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let mut lines = Vec::new();
-    lines.push("# Generated from config/constants.toml by build.rs".to_string());
-    lines.push("# DO NOT EDIT MANUALLY".to_string());
-    lines.push(String::new());
-    lines.push("import sys".to_string());
-    lines.push(String::new());
-    lines.push(format!("BUILD_SCM_HASH = \"{}\"", git_hash));
-    lines.push(format!("PROTOCOL_VERSION = {}", config.protocol_version));
-    lines.push(format!("PYTHON_VERSION = \"{}\"", config.python_version));
-    lines.push(format!("SOCKET_PATH_LIMIT = {}", config.socket_path_limit));
-    lines.push(format!("MAX_MESSAGE_SIZE = {}", config.max_message_size));
-    lines.push(format!(
-        "SOCKET_STARTUP_TIMEOUT = {}",
-        config.socket_startup_timeout
-    ));
-    lines.push(format!(
-        "GRACEFUL_SHUTDOWN_TIMEOUT = {}",
-        config.graceful_shutdown_timeout
-    ));
-    lines.push(format!("DEFAULT_PORT = {}", config.default_port));
-    lines.push(String::new());
-    lines.push(format!(
-        "SECURITY_BASE_TRUSTED_PREFIXES = \"{}\"",
-        config.security_base_trusted_prefixes
-    ));
-    lines.push(format!(
-        "SECURITY_BASE_ENV_WHITELIST = \"{}\"",
-        config.security_base_env_whitelist
-    ));
-    lines.push(format!(
-        "PATH_SOCKET_DIR_NAME = \"{}\"",
-        config.path_socket_dir_name
-    ));
-    lines.push(format!(
-        "PATH_LOG_DIR_RELATIVE = \"{}\"",
-        config.path_log_dir_relative
-    ));
-    lines.push(String::new());
-    lines.push("# Level 1: Platform Defaults".to_string());
-    lines.push(format!(
-        "PATH_MACOS_FD_DIR = \"{}\"",
-        config.path_macos_fd_dir
-    ));
-    lines.push(format!(
-        "PATH_LINUX_FD_DIR = \"{}\"",
-        config.path_linux_fd_dir
-    ));
-    lines.push(format!(
-        "PATH_MACOS_BASE_SOCKET_PARENT = \"{}\"",
-        config.path_macos_base_socket_parent
-    ));
-    lines.push(format!(
-        "PATH_LINUX_BASE_SOCKET_PARENT = \"{}\"",
-        config.path_linux_base_socket_parent
-    ));
-    lines.push(String::new());
-
-    lines.push("if sys.platform == \"darwin\":".to_string());
-    lines.push(format!(
-        "    SECURITY_MACOS_BASE_TRUSTED_PREFIXES = \"{}\"",
-        config.security_macos_base_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_BASE_ENV_WHITELIST = \"{}\"",
-        config.security_macos_base_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_DEV_TRUSTED_PREFIXES = \"{}\"",
-        config.security_macos_dev_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_DEV_ENV_WHITELIST = \"{}\"",
-        config.security_macos_dev_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_CI_TRUSTED_PREFIXES = \"{}\"",
-        config.security_macos_ci_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_CI_ENV_WHITELIST = \"{}\"",
-        config.security_macos_ci_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_PROD_TRUSTED_PREFIXES = \"{}\"",
-        config.security_macos_prod_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_MACOS_PROD_ENV_WHITELIST = \"{}\"",
-        config.security_macos_prod_env_whitelist
-    ));
-    lines.push(format!(
-        "    PATH_MACOS_BASE_SOCKET_PARENT = \"{}\"",
-        config.path_macos_base_socket_parent
-    ));
-    lines.push(format!(
-        "    PATH_MACOS_BASE_LOG_PARENT = \"{}\"",
-        config.path_macos_base_log_parent
-    ));
-    lines.push(format!(
-        "    PATH_MACOS_CI_SOCKET_PARENT = \"{}\"",
-        config.path_macos_ci_socket_parent
-    ));
-    lines.push(format!(
-        "    PATH_MACOS_FD_DIR = \"{}\"",
-        config.path_macos_fd_dir
-    ));
-    lines.push(String::new());
-
-    lines.push("if sys.platform == \"linux\":".to_string());
-    lines.push(format!(
-        "    SECURITY_LINUX_BASE_TRUSTED_PREFIXES = \"{}\"",
-        config.security_linux_base_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_BASE_ENV_WHITELIST = \"{}\"",
-        config.security_linux_base_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_DEV_TRUSTED_PREFIXES = \"{}\"",
-        config.security_linux_dev_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_DEV_ENV_WHITELIST = \"{}\"",
-        config.security_linux_dev_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_CI_TRUSTED_PREFIXES = \"{}\"",
-        config.security_linux_ci_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_CI_ENV_WHITELIST = \"{}\"",
-        config.security_linux_ci_env_whitelist
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_PROD_TRUSTED_PREFIXES = \"{}\"",
-        config.security_linux_prod_trusted_prefixes
-    ));
-    lines.push(format!(
-        "    SECURITY_LINUX_PROD_ENV_WHITELIST = \"{}\"",
-        config.security_linux_prod_env_whitelist
-    ));
-    lines.push(format!(
-        "    PATH_LINUX_BASE_SOCKET_PARENT = \"{}\"",
-        config.path_linux_base_socket_parent
-    ));
-    lines.push(format!(
-        "    PATH_LINUX_BASE_LOG_PARENT = \"{}\"",
-        config.path_linux_base_log_parent
-    ));
-    lines.push(format!(
-        "    PATH_LINUX_CI_SOCKET_PARENT = \"{}\"",
-        config.path_linux_ci_socket_parent
-    ));
-    lines.push(format!(
-        "    PATH_LINUX_FD_DIR = \"{}\"",
-        config.path_linux_fd_dir
-    ));
-    lines.push(String::new());
-
-    lines.push(format!(
-        "PYTHON_REQUIRED_VERSION = \"{}\"",
-        py_env.required_version
-    ));
-    lines.push(format!("PYTHON_VENV_PATH = \"{}\"", py_env.venv_path));
-    lines.push(format!(
-        "PYTHON_LIB_DIR_PATTERN = \"{}\"",
-        py_env.lib_dir_pattern
-    ));
-    lines.push(format!(
-        "PYTHON_LIB_DYNLOAD_SUBDIR = \"{}\"",
-        py_env.lib_dynload_subdir
-    ));
-    lines.push(format!("PYTHON_ENV_VARS = [{}]", env_vars_str));
-    lines.push(String::new());
-
-    let np = &config.native_preload;
-    lines.push(format!(
-        "NATIVE_PRELOAD_RUNTIME_PREFIX = \"{}\"",
-        np.runtime_prefix
-    ));
-    lines.push(format!("NATIVE_PRELOAD_LOCK_ENV = \"{}\"", np.lock_env));
-    lines.push(format!(
-        "NATIVE_PRELOAD_EXE_PATH_ENV = \"{}\"",
-        np.exe_path_env
-    ));
-    lines.push(format!("NATIVE_PRELOAD_STRICT_ENV = \"{}\"", np.strict_env));
-    lines.push(format!(
-        "NATIVE_PRELOAD_STAGE_PRE_INIT = \"{}\"",
-        np.stage_pre_init
-    ));
-    lines.push(format!(
-        "NATIVE_PRELOAD_STAGE_POST_INIT = \"{}\"",
-        np.stage_post_init
-    ));
-    lines.push(format!(
-        "DEFAULT_BLOCKED_PATHS = {:?}",
-        config.default_blocked_paths
-    ));
-
-    let content = lines.join("\n");
-    fs::write(py_path, content).unwrap();
-    println!("cargo:warning=✅ Generated velo_zygote/constants.py from constants.toml");
+    match status {
+        Ok(s) if s.success() => {
+            println!("cargo:warning=✅ Generated velo_zygote/constants.py via sync-constants.py");
+        }
+        Ok(s) => {
+            // Script failed, emit warning but don't fail build
+            println!(
+                "cargo:warning=⚠️  sync-constants.py exited with code {:?}",
+                s.code()
+            );
+        }
+        Err(e) => {
+            // python3 not available, emit warning
+            println!(
+                "cargo:warning=⚠️  Could not run sync-constants.py: {}",
+                e
+            );
+        }
+    }
 }
+
 
 /// RFC-0018: Download and prepare uv binary for embedding
 /// Now reads from config/embedded_assets.toml for declarative platform configuration
