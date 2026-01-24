@@ -278,7 +278,53 @@ fn validate_library_path(lib_path: &Path, venv_root: &Path) -> Result<()> {
 | `local` (default) | `RTLD_NOW \| RTLD_LOCAL` | Most libraries | Low - isolated symbols |
 | `global` (opt-in) | `RTLD_NOW \| RTLD_GLOBAL` | Interdependent libs (CUDA) | High - symbol pollution |
 
----
+### 4.3 Threat Model (Phase 6.7)
+
+> [!IMPORTANT]
+> This section documents the *explicit* security boundaries of Native Library Preload.
+
+#### 4.3.1 Attack Scenarios COVERED ✅
+
+| Attack | Mitigation | Invariant |
+|--------|------------|-----------|
+| **Path Traversal Side-Loading** | Path Integrity validates library is within trusted boundaries (venv, project, system) | INV-PRELOAD-002 |
+| **Adversarial Staging** (`/tmp`, `/dev/shm`) | Blocked paths list rejects adversarial staging areas | INV-PRELOAD-002 |
+| **Binary Tampering (Post-Install)** | BLAKE3 fingerprint in `preload.lock` detects file modification | INV-PRELOAD-001, 003 |
+| **Platform Mismatch** | Runtime fingerprint (os/arch/libc/SOABI) blocks cross-platform loading | INV-PRELOAD-004, 005 |
+| **Stale Configuration** | mtime + hash verification forces re-analysis after pip upgrades | INV-PRELOAD-003 |
+| **ld.so State Corruption** | Death Pact (Vet-then-Load) sandboxes risky dlopen in child process | INV-PRELOAD-008 |
+| **Symbol Pollution** | RTLD_LOCAL default isolates symbols; RTLD_GLOBAL requires opt-in | Section 4.2 |
+
+#### 4.3.2 Attack Scenarios NOT COVERED ❌
+
+> [!CAUTION]
+> The following attacks are **out of scope** for Native Preload and require additional security layers.
+
+| Attack | Why NOT Covered | Future Mitigation |
+|--------|-----------------|-------------------|
+| **Compromised Package Index** | Malicious `.so` uploaded to PyPI → installed into trusted `site-packages` → passes path check | Provenance Guard (PEP 740 attestations, Sigstore) |
+| **Build Poisoning (Toolchain)** | Library compiled with malicious compiler flags → no toolchain attestation | SLSA Build Provenance verification |
+| **Supply Chain Substitution** | Typosquatting attack installs `numppy` instead of `numpy` → library in trusted path | Package name verification against lockfile |
+| **Unsigned Wheel Replacement** | Attacker with venv write access replaces `.so` file → new hash matches new malicious file | Code signing verification (macOS `codesign`, Linux sigstore) |
+| **C Extension Backdoors** | Malicious code in extension's `_init` → executes on import | Source code auditing, sandbox isolation |
+
+#### 4.3.3 Security Recommendations
+
+**For Users:**
+1. **Lock Pip Dependencies**: Use `pip freeze` or `uv lock` to pin exact versions
+2. **Verify PyPI Hashes**: Install with `pip install --require-hashes`
+3. **Enable Path Integrity**: Keep `path_integrity = "warn"` (default) or `"enforce"` for strict mode
+4. **Regular Re-Analysis**: Run `velo preload analyze` after any pip install/upgrade
+
+**For Operators:**
+1. **Immutable Deployments**: Deploy locked venv images to prevent runtime tampering
+2. **Monitor Zygote Logs**: Watch for `[VELO-PRELOAD-FAIL]` and `[VELO-PATH-INTEGRITY]` warnings
+3. **Network Isolation**: Prevent runtime package installation in production
+
+**For Future Velo Versions (P1 Roadmap):**
+- `provenance` field in `preload.lock` for signature/attestation storage
+- macOS `codesign --verify` for system libraries
+- Optional Sigstore integration for Linux
 
 ## 5. CLI Interface
 

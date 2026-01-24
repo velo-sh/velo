@@ -20,6 +20,9 @@ pub struct NativeLibFingerprint {
     pub mtime: u64,
     pub platform: LibPlatform,
     pub load_stage: LoadStage,
+    /// Provenance information for future supply chain verification (Phase 7+)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 /// Platform-specific metadata for compatibility checking
@@ -31,6 +34,26 @@ pub struct LibPlatform {
     pub libc_type: String,
     pub libc_version: String,
     pub soabi: String,
+}
+
+/// Provenance information for supply chain verification (RFC-0035 Phase 7 Roadmap)
+/// Currently a placeholder for future implementation of:
+/// - Code signing verification (macOS codesign, Linux sigstore)
+/// - Build attestation (SLSA, PEP 740)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Provenance {
+    /// Signature type: "codesign" | "gpg" | "sigstore" | "slsa" | null
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_type: Option<String>,
+    /// Base64-encoded signature or attestation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// URL to verify attestation (e.g., sigstore transparency log)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attestation_url: Option<String>,
+    /// Verification status from last analysis: "verified" | "unverified" | "unsigned"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Loading stage for the library
@@ -185,6 +208,7 @@ mod tests {
                 soabi: "cpython-310-x86_64-linux-gnu".to_string(),
             },
             load_stage: LoadStage::PreInit,
+            provenance: None,
         };
 
         let lock = PreloadLock::new(vec![fp]);
@@ -243,6 +267,7 @@ mod tests {
                 soabi: "abc".to_string(),
             },
             load_stage: LoadStage::PreInit,
+            provenance: None,
         };
 
         // 1. mtime matches, should skip hash and return true

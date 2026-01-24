@@ -27,6 +27,8 @@ pub enum PreloadOperation {
     Analyze,
     /// Validate preload.lock against installed libraries
     Verify,
+    /// Show preload statistics from preload.lock
+    Stats,
     /// Load libraries from a JSON lock string (Internal use)
     Load {
         #[arg(long)]
@@ -49,6 +51,7 @@ pub fn cmd_preload(args: &[String]) -> Result<()> {
     match cmd.operation {
         PreloadOperation::Analyze => analyze_impl(),
         PreloadOperation::Verify => verify_impl(),
+        PreloadOperation::Stats => stats_impl(),
         PreloadOperation::Load { lock, stage } => load_impl(&lock, &stage),
         PreloadOperation::Check { path, global } => check_impl(&path, global),
     }
@@ -157,6 +160,7 @@ fn analyze_impl() -> Result<()> {
                         soabi: py_info.abi_tag.clone(),
                     },
                     load_stage: LoadStage::PreInit,
+                    provenance: None,
                 };
                 fingerprints.push(fp);
             }
@@ -231,6 +235,80 @@ fn load_impl(lock_json: &str, stage_str: &str) -> Result<()> {
 fn check_impl(path: &Path, global: bool) -> Result<()> {
     use crate::custody::preload_loader::PreloadLoader;
     PreloadLoader::vett_only(path, global)
+}
+
+/// Display preload statistics from preload.lock
+fn stats_impl() -> Result<()> {
+    use crate::custody::native_fingerprint::PreloadLock;
+
+    let lock_path = PathBuf::from("preload.lock");
+    if !lock_path.exists() {
+        println!("⚠️  No preload.lock found. Run 'velo preload analyze' first.");
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&lock_path)?;
+    let lock: PreloadLock = serde_json::from_str(&content)?;
+
+    // Calculate statistics
+    let total_libs = lock.fingerprints.len();
+    let mut total_size_bytes: u64 = 0;
+    let mut packages: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut pre_init_count = 0;
+    let mut post_init_count = 0;
+
+    for fp in &lock.fingerprints {
+        // Count by package
+        *packages.entry(fp.package.clone()).or_insert(0) += 1;
+
+        // Count by stage
+        match fp.load_stage {
+            LoadStage::PreInit => pre_init_count += 1,
+            LoadStage::PostInit => post_init_count += 1,
+        }
+
+        // Calculate file size (if file exists)
+        let cwd = std::env::current_dir()?;
+        let full_path = cwd.join(&fp.relative_path);
+        if let Ok(meta) = std::fs::metadata(&full_path) {
+            total_size_bytes += meta.len();
+        }
+    }
+
+    // Format size
+    let size_str = if total_size_bytes >= 1024 * 1024 * 1024 {
+        format!(
+            "{:.2} GB",
+            total_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        )
+    } else if total_size_bytes >= 1024 * 1024 {
+        format!("{:.2} MB", total_size_bytes as f64 / (1024.0 * 1024.0))
+    } else if total_size_bytes >= 1024 {
+        format!("{:.2} KB", total_size_bytes as f64 / 1024.0)
+    } else {
+        format!("{} bytes", total_size_bytes)
+    };
+
+    // Print statistics
+    println!("┌────────────────────────────────────────┐");
+    println!("│        📊 Preload Statistics           │");
+    println!("├────────────────────────────────────────┤");
+    println!("│  Lock File: {:} │", lock_path.display());
+    println!("│  Version: {:}                          │", lock.version);
+    println!("│  Generator: {:}                   │", lock.generator);
+    println!("├────────────────────────────────────────┤");
+    println!("│  Total Libraries: {:>20} │", total_libs);
+    println!("│  Total Size: {:>24} │", size_str);
+    println!("│  PreInit Stage: {:>21} │", pre_init_count);
+    println!("│  PostInit Stage: {:>20} │", post_init_count);
+    println!("├────────────────────────────────────────┤");
+    println!("│  Libraries by Package:                 │");
+    for (pkg, count) in &packages {
+        println!("│    {}: {} │", pkg, count);
+    }
+    println!("└────────────────────────────────────────┘");
+
+    Ok(())
 }
 
 fn detect_libc_type() -> String {
