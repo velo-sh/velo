@@ -59,6 +59,7 @@ env_logger = "0.11"      # RFC-0020: Global structured logging
 tracing = "0.1"          # RFC-0018: Structured tracing for custody
 dirs = "5.0"             # RFC-0018: Cross-platform home directory
 which = "6.0"            # RFC-0018: System binary lookup
+goblin = "0.9"           # RFC-0035: ELF parsing for native preloading
 
 # Phase 6.1: velo serve enhancements
 notify = "6.1"           # File system watching

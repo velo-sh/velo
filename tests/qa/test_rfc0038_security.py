@@ -22,7 +22,7 @@ def test_SEC_038_001_key_redaction(velo_test_env):
     env_vars = os.environ.copy()
     env_vars["TEST_API_KEY"] = "super_secret_123"
 
-    result = env.run_velo(["run", f"--prof-md={report}", str(script)], env=env_vars)
+    result = env.run_velo("run", f"--prof-md={report}", str(script), env=env_vars)
 
     assert result.returncode == 0
     content = report.read_text()
@@ -48,7 +48,7 @@ def test_SEC_038_all_redactions(velo_test_env):
     env_vars["AUTH_TOKEN"] = "token_789"
     env_vars["MYSQL_PASSWORD"] = "password_abc"
 
-    result = env.run_velo(["run", f"--prof-md={report}", str(script)], env=env_vars)
+    result = env.run_velo("run", f"--prof-md={report}", str(script), env=env_vars)
 
     assert result.returncode == 0
     content = report.read_text()

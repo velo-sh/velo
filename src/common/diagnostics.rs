@@ -173,20 +173,33 @@ impl MarkdownFormatter {
             ));
         }
 
+        // P0-003: Path Sanitization for Privacy
+        if let Ok(user) = std::env::var("USER") {
+            let home_search = format!("/Users/{}/", user);
+            md = md.replace(&home_search, "~/");
+            // For Linux
+            let linux_home = format!("/home/{}/", user);
+            md = md.replace(&linux_home, "~/");
+        }
+
         md
     }
 
-    /// Redact sensitive environment variables
+    /// Redact sensitive environment variables and truncate long values
     pub fn sanitize_env(env: &HashMap<String, String>) -> HashMap<String, String> {
         let sensitive_keys = ["KEY", "SECRET", "TOKEN", "PASSWORD"];
         env.iter()
             .map(|(k, v)| {
                 let is_sensitive = sensitive_keys.iter().any(|&s| k.to_uppercase().contains(s));
-                if is_sensitive {
-                    (k.clone(), "***".to_string())
+                let value = if is_sensitive {
+                    "***".to_string()
+                } else if v.len() > 200 {
+                    // P0-001: Truncate long values for token efficiency
+                    format!("{}...", &v[..197])
                 } else {
-                    (k.clone(), v.clone())
-                }
+                    v.clone()
+                };
+                (k.clone(), value)
             })
             .collect()
     }

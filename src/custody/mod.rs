@@ -31,6 +31,7 @@ pub mod autopilot;
 pub mod custodian;
 pub mod error;
 pub mod fingerprint;
+pub mod native_fingerprint;
 pub mod sync;
 
 pub use autopilot::{AutopilotDecision, AutopilotEngine};
