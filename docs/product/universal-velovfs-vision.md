@@ -1,12 +1,12 @@
-# Project Gravity: Download RAM. Literally.
+# Product Vision: Velo Rift
 
-> **The Slogan**: "Why download files when you can download memory?"
+> **Slogan**: "Rift through the I/O Latency."
 
 ---
 
-## 1. The Concept: Zero-Gravity I/O
+## 1. The Concept: Zero-Distance I/O
 
-We are building a tool that lets you **download RAM**.
+We are building a tool that lets you **tear a hole in the network**.
 
 When you run `npm install` or load an AI dataset, you are normally doing "Heavy I/O":
 1.  Download compressed tarball.
@@ -14,33 +14,32 @@ When you run `npm install` or load an AI dataset, you are normally doing "Heavy 
 3.  Write 100,000 files to NVMe (Metadata heavy).
 4.  Read back from NVMe to RAM (Kernel heavy).
 
-**Gravity** skips steps 2, 3, and 4.
-It maps the remote dataset directly into your process's memory space.
-It feels like downloading a 100GB dataset takes **seconds**—because you aren't actually downloading it. You are just "linking" it.
+**Velo Rift** skips steps 2, 3, and 4.
+It opens a "Rift" — a memory tunnel that maps the remote dataset directly into your process's address space.
+It feels like downloading a 100GB dataset takes **seconds**—because you aren't actually downloading it. You are projecting it.
 
 ---
 
-## 2. Technical Form Factor: `velocity` (The CLI)
+## 2. Technical Form Factor: `rift` (The CLI)
 
-We expose this capability via a standalone binary tool (`velocity`).
+We expose this capability via a standalone binary tool (`rift`).
 
-### 2.1 Mode A: Explicit Acceleration (`velocity map`)
+### 2.1 Mode A: Explicit Acceleration (`rift open`)
 
-Turn any remote dataset into a local memory map.
+Tear open a rift to any remote dataset.
 
 ```bash
 # Old Way: 
 $ wget dataset.tar.gz && tar -xvf dataset.tar.gz # Waits 10 minutes
 
-# Gravity Way:
-$ velocity map s3://my-bucket/dataset ./local_mount
-> Establishing Memory Link... Done (0.5s).
-> ./local_mount is now accessible. 
-> Data is streamed on-demand from the network directly to CPU L3 Cache.
-```
+# Rift Way:
+$ rift open s3://my-bucket/dataset ./local_mount
+> Opening Spatial Rift... Done (0.5s).
+> ./local_mount is now consistent. 
+> Data is streamed on-demand via the Rift directly to CPU L3 Cache.
 ```
 
-### 2.2 Mode B: Just-in-Time Projection (`velo run`)
+### 2.2 Mode B: Just-in-Time Projection (`rift exec`)
 
 Intercept filesystem operations to project dependencies on demand.
 
@@ -48,18 +47,17 @@ Intercept filesystem operations to project dependencies on demand.
 # Traditional
 $ npm install  # Writes 500MB to disk, high I/O wait time.
 
-# Velo-Powered
-$ velo exec -- npm install
-> Intercepting I/O writes...
-> Redirecting to CAS Store...
-> Materializing node_modules as VeloVFS Projection...
+# Rift Powered
+$ rift exec -- npm install
+> Intercepting I/O...
+> Materializing Rift Projection...
 > Done. (Significant reduction in I/O wait).
 ```
 
 ### 2.3 Zero-Friction Integration (The "Magic Alias")
 
-To eliminate muscle-memory friction, `velocity` supports transparent shell hooks.
-*   **The Hook**: `velocity hook --shell zsh`. Use standard commands (`npm`, `cargo`) and they are transparently accelerated.
+To eliminate muscle-memory friction, `rift` supports transparent shell hooks.
+*   **The Hook**: `rift hook --shell zsh`. Use standard commands (`npm`, `cargo`) and they are transparently accelerated.
 *   **The Experience**: Users don't learn a new tool. They just notice their existing tools became instant.
 
 ---
@@ -69,23 +67,35 @@ To eliminate muscle-memory friction, `velocity` supports transparent shell hooks
 ### 3.1 CI/CD Shared Cache
 *   **Scenario**: Multiple CI Runners in a cluster downloading similar dependencies.
 *   **Optimization**: 
-    1.  **Runner 1**: Downloads & Ingests to a Shared CAS (S3/Redis/NFS).
-    2.  **Runner 2-N**: Mounts the CAS Hash instantly.
-*   **The Billboard Effect (Viral Loop)**:
-    *   At the end of every CI run, `velocity` prints a high-contrast summary:
+    1.  **Runner 1**: Downloads & Ingests to a Shared CAS.
+    2.  **Runner 2-N**: Mounts the CAS Hash instantly via Rift.
+*   **The Viral Loop (Share the Speed)**:
+    *   At the end of every CI run, `rift` prints a high-contrast summary:
     ```text
-    🚀 Velocity Summary:
+    🚀 Rift Summary:
     ---------------------------------------------
-    Original Est. Time:   4m 30s
-    Velocity Time:        12s
-    You saved:            4m 18s (☕ time!)
+    Original Est. Time:   5m 42s
+    Rift Time:            11s
+    You just Rifted 5m 31s of your life.
     ---------------------------------------------
-    Get Velocity: https://velo.dev/cli
+    Share: https://velo.dev/rift #RiftChallenge
     ```
-    *   **Goal**: Convert every engineer debugging a build log into a user.
 
 ### 3.2 High-Performance Dataloaders
 *   **Scenario**: Training models on datasets with millions of small files.
+*   **Optimization**:
+    *   Ingest dataset into a single VeloVFS CAS blob.
+    *   Mount using `FUSE_PASSTHROUGH` or DAX.
+    *   **Result**: Random access patterns achieve near-sequential read performance.
+
+---
+
+## 4. Visual Identity (The Glitch)
+
+*   **Logo**: A teared circle or fracture, with **Purple/Blue Neon** glow.
+*   **Aesthetic**: **Glitch Art / Sci-Fi**. 
+*   **Metaphor**: "Tearing Space". It shouldn't look like a "File Manager". It should look like a "Portal Gun".
+*   **Landing Page**: Hero section features a dynamic rift opening animation, projecting data as light onto the user's screen.
 *   **Optimization**:
     *   Ingest dataset into a single VeloVFS CAS blob.
     *   Mount using `FUSE_PASSTHROUGH` or DAX.
