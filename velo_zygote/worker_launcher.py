@@ -37,16 +37,20 @@ except ImportError:
 import argparse
 import inspect
 import signal
+import tempfile
 import time
 import traceback
 from types import FrameType
 from typing import Any
 
 _T0 = time.perf_counter()
+# RFC-0012: Use system temp dir instead of hardcoded /tmp
+_PROF_LOG_PATH = os.path.join(tempfile.gettempdir(), "worker_prof.log")
+_PROF_STATS_PATH = os.path.join(tempfile.gettempdir(), "worker.prof_log")
 
 
 def _prof_log(msg: str) -> None:
-    with open("/tmp/worker_prof.log", "a") as f:
+    with open(_PROF_LOG_PATH, "a") as f:
         f.write(f"[{time.perf_counter()}] {msg}\n")
 
 
@@ -251,7 +255,7 @@ def main() -> None:
                 uvicorn.run(**config_kwargs)
             finally:
                 profiler.disable()
-                with open("/tmp/worker.prof_log", "w") as f:
+                with open(_PROF_STATS_PATH, "w") as f:
                     ps = pstats.Stats(profiler, stream=f).sort_stats("cumulative")
                     ps.print_stats()
 

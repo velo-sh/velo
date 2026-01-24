@@ -297,12 +297,16 @@ def hook_telemetry(**kwargs: Any) -> None:
 
 
 def hook_isolation(**kwargs: Any) -> None:
-    """P0: Isolated TMPDIR per worker."""
+    """P0: Isolated TMPDIR per worker (RFC-0012: No hardcoded /tmp)."""
+    import tempfile
+
     worker_pid = os.getpid()
-    worker_base = f"/tmp/velo-worker-{worker_pid}"
+    # RFC-0012: Use system temp dir instead of hardcoded /tmp
+    system_tmp = tempfile.gettempdir()
+    worker_base = os.path.join(system_tmp, f"velo-worker-{worker_pid}")
 
     # P0: Isolated TMPDIR - prevents temp file collisions
-    worker_tmp = f"{worker_base}/tmp"
+    worker_tmp = os.path.join(worker_base, "tmp")
     os.makedirs(worker_tmp, exist_ok=True)
     os.environ["TMPDIR"] = worker_tmp
     os.environ["TMP"] = worker_tmp
@@ -310,8 +314,9 @@ def hook_isolation(**kwargs: Any) -> None:
 
     # P1: Socket namespace isolation
     os.environ["VELO_WORKER_ID"] = str(worker_pid)
-    os.environ["VELO_WORKER_SOCKET_DIR"] = f"{worker_base}/sockets"
-    os.makedirs(f"{worker_base}/sockets", exist_ok=True)
+    worker_socket_dir = os.path.join(worker_base, "sockets")
+    os.environ["VELO_WORKER_SOCKET_DIR"] = worker_socket_dir
+    os.makedirs(worker_socket_dir, exist_ok=True)
 
 
 reinit_hooks.register(hook_security)

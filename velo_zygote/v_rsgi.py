@@ -235,8 +235,10 @@ class RSGIWorker:
         LogUtils.debug_log(f"RSGI Request: {method} {clean_path} (Query: {query_string})")
 
         # RFC-0011: Recover client information from proxy headers
+        # RFC-0012 Phase 11.0: X-Velo-Trace-ID propagation for full observability
         client_host = "127.0.0.1"
         scheme = "http"
+        trace_id = None  # Initialize before loop
         for k, v in headers:
             k_lower = k.lower()
             if k_lower == "x-forwarded-for":
@@ -251,8 +253,6 @@ class RSGIWorker:
                     pass
             elif k_lower == "x-velo-trace-id":
                 trace_id = v.strip()
-            else:
-                trace_id = None
 
         scope = {
             "type": "http",

@@ -34,15 +34,15 @@ class VeloPaths:
         result = path_str
 
         if "${HOME}" in result:
-            result = result.replace("${HOME}", os.environ.get("HOME", "/tmp"))
+            result = result.replace("${HOME}", os.environ.get("HOME", tempfile.gettempdir()))
 
         if "${XDG_RUNTIME_DIR}" in result:
             xdg = os.environ.get("XDG_RUNTIME_DIR")
             if xdg:
                 result = result.replace("${XDG_RUNTIME_DIR}", xdg)
             else:
-                # Fallback to /tmp if XDG_RUNTIME_DIR not set (matching Rust)
-                result = result.replace("${XDG_RUNTIME_DIR}", "/tmp")
+                # RFC-0012: Fallback to system temp if XDG_RUNTIME_DIR not set
+                result = result.replace("${XDG_RUNTIME_DIR}", tempfile.gettempdir())
 
         if "${TMPDIR}" in result:
             result = result.replace("${TMPDIR}", tempfile.gettempdir())
@@ -117,7 +117,7 @@ class VeloPaths:
 
             # DEF-SOCKET-STABLE: Use ~/.local/state/velo/sockets/ instead of temp dir
             # macOS temp directories can be cleaned up unexpectedly, causing socket issues
-            home = os.environ.get("HOME", "/tmp")
+            home = os.environ.get("HOME", tempfile.gettempdir())
             socket_path = Path(home) / ".local" / "state" / "velo" / "sockets"
 
         else:
