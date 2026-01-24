@@ -482,3 +482,39 @@ For Agents running inside MicroVMs (Firecracker / Cloud Hypervisor), VeloVFS lev
 *   **Result**: **Zero-Copy Virtualization**.
     *   When the Guest CPU executes `MOV RAX, [Address]`, the hardware EPT (Extended Page Tables) translates it directly to the Host's Physical RAM containing the CAS blob.
     *   We bypass the Guest Page Cache, the Host Page Cache, and the Virtualization Switch cost. It is literally "Metal Speed".
+
+---
+
+## 12. Observability (The Ghost Map)
+
+To debug the "illusion", we need tools to inspect the reality behind the curtain.
+
+### 12.1 `velo-vfs-inspect` (Introspection Tool)
+*   **Requirement**: A CLI tool capable of attaching to a running VeloVFS socket.
+*   **Capabilities**:
+    *   **Layer Blame**: `inspect /site-packages/numpy` -> "Provided by Layer 2 (Middleware Manifest: $HASH)".
+    *   **Physical Resolution**: `inspect /site-packages/numpy` -> "Mapped to Host Path: /var/cas/objects/e3/b0/...".
+    *   **Heatmap**: Show which files are currently `mmap`'ed and resident in RAM vs Cold.
+
+### 12.2 Panic Telemetry Linkage
+*   **Risk**: If VeloVFS panics, the Agent sees a generic `EIO`.
+*   **Mandate**: The Supervisor must capture VeloVFS `stderr` and correlate VeloVFS Panics with the Agent's `TraceID`. A crash in the storage layer must appear in the Agent's observability stream as a "Storage Infrastructure Failure", not "Application Error".
+
+---
+
+## 13. Phased Implementation Plan
+
+### Phase 1: The "Simple" Projection (v12.0.0)
+*   **Goal**: Replace the "Symlink Farm" (RFC-0042) with a stable FUSE implementation.
+*   **Scope**:
+    *   Single-Layer FUSE Daemon (No CoW Maps yet).
+    *   Basic Hash Validation (Security).
+    *   File Handle Cache (Performance).
+    *   Standard Ext4/XFS Backing Store.
+
+### Phase 2: The "Hyper" Optimization (v12.1.0)
+*   **Goal**: Maximize density and support MicroVMs.
+*   **Scope**:
+    *   **Manifest Layering**: Implement CoW Inode Maps for O(1) metadata scale.
+    *   **Zero-Copy upgrades**: Integrate `FUSE_PASSTHROUGH` and user-space `mmap`.
+    *   **Virtio-FS Support**: Enable Firecracker DAX support.
