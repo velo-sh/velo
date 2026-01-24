@@ -72,6 +72,15 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   **Tmpfs Size Cap**: Maximum bytes for the read-write layer.
 > *   Note: `pip install` inside the sandbox is **Best-Effort**. If it hits the quota, the process receives `ENOSPC`.
 
+#### 4.2.1 Optimization: Package Deduplication (The UV Strategy)
+To mitigate the inode/space cost of dynamic package installation (e.g., `pip install numpy`), Velo adopts a **Symlink-Based Deduplication** strategy inspired by `uv`:
+
+1.  **Host Cache**: The Supervisor maintains a central, verify-only package store on the host (e.g., `/var/cache/velo/pypi`).
+2.  **RO Mount**: This store is mounted **Read-Only** into the VVE at `/opt/velo/cache`.
+3.  **Link Mode**: The Agent's installer is configured to use **Symlinks** (`--link-mode=symlink`) instead of copying files.
+    *   **Result**: Installing `numpy` (100MB, 2000 files) consumes **0MB** of `tmpfs` data and only lightweight symlink inodes.
+    *   **Safety**: Since the source is Read-Only, a compromised Agent cannot poison the cache for others.
+
 ### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
 2.  **Fork**: Zygote forks a new worker.
