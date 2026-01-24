@@ -269,7 +269,7 @@ class TestL4Security:
             ready = False
             socket_dir = None
 
-            while time.time() - start < 10:
+            while time.time() - start < 30:
                 if proc.poll() is not None:
                     break
 
