@@ -420,12 +420,12 @@ A critical requirement is supporting multiple Python versions (3.9, 3.10, 3.11) 
     *   **Total Deduplication**: Common files between different OS versions (e.g. `ca-certificates`, `locale`) are physically deduplicated.
     *   **Simplicity**: No OverlayFS Driver needed. VeloVFS handles the entire stack.
 
-### 9.3 Zygote Alignment Constraint
-*   **Constraint**: While VeloVFS can project *any* filesystem, the *running process* must match.
-*   **Solution**: **Zygote Pools**.
-    *   The Supervisor maintains pre-warmed pools for each ABI: `pool-cp39`, `pool-cp310`, `pool-cp311`.
-    *   Request for `python:3.11` -> Fork from `pool-cp311` -> Project `rootfs-cp311`.
-    *   Mismatch (e.g., Fork `cp39` but Project `cp311`) matches = **Immediate Panic/Crash** (Dynamic Linker failure).
+### 9.3 Integration Contract: Zygote Alignment (Supervisor Responsibility)
+*   **Scope**: This is an **Orchestration Constraint**, not a VeloVFS internal function. VeloVFS is process-agnostic.
+*   **Requirement**: The **Velo Supervisor** MUST ensure the *Process ABI* (Zygote) matches the *vFilesystem ABI* (VeloVFS Projection).
+    *   **VeloVFS Responsibility**: Serve the requested ABI projection (e.g., `rootfs-cp311`).
+    *   **Supervisor Responsibility**: Select the matching Zygote (e.g., `pool-cp311`) to `fork()` from.
+    *   **Failure Mode**: Mismatch results in a Dynamic Linker crash (Fail-Fast). VeloVFS cannot detect this mismtach on its own.
 
 ---
 
