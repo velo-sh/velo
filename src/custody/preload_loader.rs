@@ -76,6 +76,14 @@ impl PreloadLoader {
 
             if pid == 0 {
                 // --- Child Process ---
+                // Redirect child pipes to /dev/null
+                let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+                if null >= 0 {
+                    libc::dup2(null, libc::STDOUT_FILENO);
+                    libc::dup2(null, libc::STDERR_FILENO);
+                    libc::close(null);
+                }
+
                 // Attempt to load the library
                 let handle = libc::dlopen(c_path.as_ptr(), flags);
                 if handle.is_null() {
@@ -100,17 +108,18 @@ impl PreloadLoader {
                         }
                         break;
                     } else if result < 0 {
-                        bail!("Failed to wait for vetting process");
+                        let err = std::io::Error::last_os_error();
+                        bail!("Failed to wait for vetting process: {}", err);
                     }
 
                     if start.elapsed().as_secs() >= 5 {
                         timed_out = true;
-                        // Time's up! Kill the child.
+                        // RFC-0035 INV-PRELOAD-008: Force kill and non-blocking reap
                         let _ = libc::kill(pid, libc::SIGKILL);
-                        let _ = waitpid(pid, &mut status, 0); // Reap it
+                        let _ = waitpid(pid, &mut status, libc::WNOHANG);
                         break;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
 
                 if vetting_ok {
@@ -180,6 +189,15 @@ impl PreloadLoader {
             }
 
             if pid == 0 {
+                // Redirect child pipes to /dev/null to prevent hangs in parent pipe-waiters
+                // and to prevent child output from polluting the main terminal during vetting.
+                let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+                if null >= 0 {
+                    libc::dup2(null, libc::STDOUT_FILENO);
+                    libc::dup2(null, libc::STDERR_FILENO);
+                    libc::close(null);
+                }
+
                 let handle = libc::dlopen(c_path.as_ptr(), flags);
                 if handle.is_null() {
                     std::process::exit(1);
@@ -190,7 +208,6 @@ impl PreloadLoader {
                 let mut status: c_int = 0;
                 let mut vetting_ok = false;
                 let mut timed_out = false;
-
                 loop {
                     let result = waitpid(pid, &mut status, libc::WNOHANG);
                     if result > 0 {
@@ -206,7 +223,7 @@ impl PreloadLoader {
                     if start.elapsed().as_secs() >= 5 {
                         timed_out = true;
                         let _ = libc::kill(pid, libc::SIGKILL);
-                        let _ = waitpid(pid, &mut status, 0);
+                        let _ = waitpid(pid, &mut status, libc::WNOHANG);
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
