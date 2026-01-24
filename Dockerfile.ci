@@ -61,6 +61,12 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
 
+# HARDENING: Sabotage system python to ensure only venv is used
+# This forces developers and scripts to use /workspace/.venv/bin/python3
+RUN mv /usr/bin/python3 /usr/bin/python3-SYSTEM-RESTRICTED && \
+    printf '#!/bin/bash\necho "[FATAL] CI-Sovereignty: System Python usage detected! Use .venv/bin/python instead." >&2\nexit 1\n' > /usr/bin/python3 && \
+    chmod +x /usr/bin/python3
+
 # Rebuild with real source (using cached dependencies)
 # Build both release AND debug for tests that use target/debug/velo
 RUN --mount=type=cache,target=/root/.cargo/registry \
