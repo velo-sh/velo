@@ -31,10 +31,17 @@ impl PreloadLoader {
         let project_dir = std::env::current_dir()?;
         let venv_path = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from);
 
-        if !VeloPaths::is_path_trusted(path, &project_dir, venv_path.as_deref()) {
+        // Ensure path is absolute for trusted boundary check
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            project_dir.join(path)
+        };
+
+        if !VeloPaths::is_path_trusted(&abs_path, &project_dir, venv_path.as_deref()) {
             let msg = format!(
                 "Supply Chain Violation: Native library {:?} is outside trusted boundaries.",
-                path
+                abs_path
             );
             if mode == "enforce" {
                 bail!("{}", msg);
@@ -78,14 +85,35 @@ impl PreloadLoader {
                 std::process::exit(0);
             } else {
                 // --- Parent Process ---
+                // RFC-0035 INV-PRELOAD-008: Implement vetting timeout (5s)
+                let start = std::time::Instant::now();
                 let mut status: c_int = 0;
-                let result = waitpid(pid, &mut status, 0);
+                let mut vetting_ok = false;
+                let mut timed_out = false;
 
-                if result < 0 {
-                    bail!("Failed to wait for vetting process");
+                loop {
+                    let result = waitpid(pid, &mut status, libc::WNOHANG);
+                    if result > 0 {
+                        // Child exited
+                        if WIFEXITED(status) && WEXITSTATUS(status) == 0 {
+                            vetting_ok = true;
+                        }
+                        break;
+                    } else if result < 0 {
+                        bail!("Failed to wait for vetting process");
+                    }
+
+                    if start.elapsed().as_secs() >= 5 {
+                        timed_out = true;
+                        // Time's up! Kill the child.
+                        let _ = libc::kill(pid, libc::SIGKILL);
+                        let _ = waitpid(pid, &mut status, 0); // Reap it
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
 
-                if WIFEXITED(status) && WEXITSTATUS(status) == 0 {
+                if vetting_ok {
                     // Child survived! Safe to load in parent.
                     let handle = libc::dlopen(c_path.as_ptr(), flags);
                     if handle.is_null() {
@@ -100,21 +128,24 @@ impl PreloadLoader {
                     // Handle Directive A: No dlclose() - intentionally leak handle
                     Ok(())
                 } else {
-                    // Vetting Failed
+                    // Vetting Failed or Timed Out
                     let strict_env = crate::common::constants::NATIVE_PRELOAD_STRICT_ENV;
-                    let val = std::env::var(strict_env).unwrap_or_else(|_| "not set".to_string());
+                    let val = std::env::var(strict_env).unwrap_or_else(|_| "0".to_string());
                     let is_strict = val == "1" || val.to_lowercase() == "true";
+
+                    let reason = if timed_out { "timed out" } else { "crashed" };
 
                     if is_strict {
                         bail!(
-                            "Death Pact (STRICT): Library {:?} caused child process to crash or fail",
-                            path
+                            "Death Pact (STRICT): Library {:?} {} during vetting",
+                            path,
+                            reason
                         );
                     } else {
                         log::warn!(
-                            "[VELO-PRELOAD-DEGRADED] Vetting failed for {:?} (strict={}), skipping load in parent.",
-                            path,
-                            val
+                            "[VELO-PRELOAD-DEGRADED] Vetting {} for {:?}, skipping load in parent.",
+                            reason,
+                            path
                         );
                         Ok(())
                     }
@@ -155,17 +186,41 @@ impl PreloadLoader {
                 }
                 std::process::exit(0);
             } else {
+                let start = std::time::Instant::now();
                 let mut status: c_int = 0;
-                let result = waitpid(pid, &mut status, 0);
+                let mut vetting_ok = false;
+                let mut timed_out = false;
 
-                if result < 0 {
-                    bail!("Failed to wait for vetting process");
+                loop {
+                    let result = waitpid(pid, &mut status, libc::WNOHANG);
+                    if result > 0 {
+                        if WIFEXITED(status) && WEXITSTATUS(status) == 0 {
+                            vetting_ok = true;
+                        }
+                        break;
+                    } else if result < 0 {
+                        let err = std::io::Error::last_os_error();
+                        bail!("Failed to wait for vetting process: {}", err);
+                    }
+
+                    if start.elapsed().as_secs() >= 5 {
+                        timed_out = true;
+                        let _ = libc::kill(pid, libc::SIGKILL);
+                        let _ = waitpid(pid, &mut status, 0);
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
                 }
 
-                if WIFEXITED(status) && WEXITSTATUS(status) == 0 {
+                if vetting_ok {
                     Ok(())
+                } else if timed_out {
+                    bail!("Death Pact: Vetting timed out for {:?}", path);
                 } else {
-                    bail!("Death Pact: Vetting failed for {:?}", path);
+                    bail!(
+                        "Death Pact: Vetting failed (crashed or non-zero exit) for {:?}",
+                        path
+                    );
                 }
             }
         }
