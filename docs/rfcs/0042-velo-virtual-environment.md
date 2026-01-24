@@ -57,9 +57,22 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   **Production**: Requires a signed `velo.policy.toml` or `VELO_ALLOW_UNSAFE=1` (Admin-only env var).
 > An Agent executing with a user-level request for `tier: "L-1"` WILL FAIL if the cluster policy explicitly forbids it.
 
+> **AUDIT REQUIREMENT**:
+> The **Agent Manifest** MUST inescapably record the environment state for every execution:
+> *   `execution.tier`: The actual activated L-tier (e.g., "L3").
+> *   `execution.nitro`: Boolean, true if security bypass was active.
+> *   `execution.downgraded`: Boolean, true if fallback occurred.
+> *   **Future Phase**: Runtime Attestation Hook to allow the Agent to query its own effective tier.
+
 ### 4.2 L4 VVE (Virtual Environment) Implementation
 
-### 4.1 The "Instant Container" Workflow
+> **RESOURCE SAFETY**:
+> To prevent `tmpfs` inode exhaustion (e.g., via `pip install` installing thousands of small files), L4 execution **MUST** enforce:
+> *   **Inode Quota**: Strict limit on file count in the UpperLayer.
+> *   **Tmpfs Size Cap**: Maximum bytes for the read-write layer.
+> *   Note: `pip install` inside the sandbox is **Best-Effort**. If it hits the quota, the process receives `ENOSPC`.
+
+### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
 2.  **Fork**: Zygote forks a new worker.
 3.  **Encapsulation (Post-Fork)**: 
@@ -80,6 +93,7 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 ### 4.4 Networking (Network Namespaces)
 *   Isolated `lo` (loopback) interface.
 *   **eBPF Datapath**: Unlike traditional `iptables` which suffer from lock contention at high churn, VVE MUST use **eBPF (TC/XDP)** for egress filtering. This allows lock-free packet inspection for thousands of ephemeral containers.
+*   **NON-GOAL**: **No Legacy Fallback**. `iptables` fallback is explicitly **FORBIDDEN**. If eBPF is unavailable, VVE L4 creation MUST fail. "Temporary usage" of legacy netfilter paths introduces unacceptable jitter/locking risks.
 
 ### 4.5 Persistence (L5 Stateful Extensions)
 While VVE is designed to be ephemeral, certain "Long-Running Agents" require state persistence across restarts.
@@ -120,8 +134,17 @@ Standard Velo performance relies on `/dev/shm` zero-copy.
     5.  The bound SHM remains accessible at `/dev/shm` inside the new namespace.
     *Note: This relies on the file descriptor remaining valid across the namespace transition, which is standard Linux behavior.*
 
-### 5.2 ABI Parity
-The Rootfs base image must precisely match the Zygote's runtime ABI (glibc/musl version) to prevent `dlopen` failures of pre-loaded libraries.
+### 5.2 ABI Parity (Hard Invariant)
+The Rootfs base image must precisely match the Zygote's runtime ABI to prevent `dlopen` failures (segfaults) of pre-loaded libraries.
+
+> **P0 PRODUCTION INVARIANT**:
+> **VVE Base Image ABI Hash MUST match Zygote ABI Hash.**
+> This check includes:
+> *   `glibc` / `musl` version
+> *   `ld-linux` path and checksum
+> *   ELF interpreter checksum
+>
+> **Violation Policy**: If the hashes do not match at startup, the Zygote MUST panic immediately. It is unsafe to proceed with mismatched ABIs.
 
 ### 5.3 Kubernetes Compatibility (The "Sticky Bit" Risk)
 `CLONE_NEWUSER` is often restricted in managed Kubernetes environments (EKS/GKE) via `unprivileged_userns_clone`.
