@@ -1,15 +1,16 @@
 import mmap
 import sys
+from types import ModuleType
 
 try:
     import torch
 except ImportError:
-    torch = None
+    torch: ModuleType | None = None  # type: ignore[no-redef]
 import weakref
 from typing import Any
 
 # H-17: Immutability Defense (Monkey-patching)
-_ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None
+_ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None  # type: ignore
 
 
 def _safe_data_ptr(self: Any) -> int | None:
@@ -54,7 +55,7 @@ class SharedMemoryManager:
                     # Create a tensor from the buffer (zero-copy)
                     # We assume float32 for default demonstration, but real impl
                     # would use metadata from the segment header.
-                    t = torch.frombuffer(buf, dtype=torch.uint8)
+                    t = torch.frombuffer(buf, dtype=torch.uint8)  # type: ignore
                     self._tensor_refs.append(weakref.ref(t))
                     return t  # type: ignore[return-value, no-any-return]
                 except Exception as e:
