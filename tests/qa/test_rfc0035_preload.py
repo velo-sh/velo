@@ -74,6 +74,13 @@ def get_shared_clean_mb(pid: int) -> float:
     return 0.0
 
 
+def load_fixture(name: str) -> str:
+    """Load a JSON fixture from the preload_lock_samples directory."""
+    fixture_path = Path(__file__).parent / "fixtures" / "preload_lock_samples" / name
+    return fixture_path.read_text()
+
+
+
 # =============================================================================
 # L0: Smoke Tests (5)
 # =============================================================================
@@ -379,31 +386,9 @@ class TestL2EdgeCases:
 
     def test_L2_004_path_traversal(self) -> None:
         """L2-004: Path traversal ../../../ - blocked."""
-        lock = {
-            "version": "1.0",
-            "generator": "velo-test",
-            "fingerprints": [
-                {
-                    "relative_path": "../../../etc/passwd",
-                    "package": "evil",
-                    "soname": "",
-                    "hash": "fake",
-                    "header_hash": "fake",
-                    "mtime": 0,
-                    "platform": {
-                        "os": platform.system().lower(),
-                        "arch": platform.machine(),
-                        "python_version": "3.11",
-                        "libc_type": "bsd",
-                        "libc_version": "unknown",
-                        "soabi": "cpython-311-darwin",
-                    },
-                    "load_stage": "PreInit",
-                }
-            ],
-        }
+        lock_content = load_fixture("path_traversal.json")
         lock_path = PROJECT_ROOT / "preload.lock"
-        lock_path.write_text(json.dumps(lock, indent=2))
+        lock_path.write_text(lock_content)
         result = run_velo("preload", "verify")
         assert result.returncode != 0
 
@@ -476,31 +461,9 @@ class TestSEC035PathContainment:
 
     def test_SEC_035_004_relative_path_escape(self) -> None:
         """SEC-035-004: Relative path escape ../../ is blocked."""
-        lock = {
-            "version": "1.0",
-            "generator": "velo-test",
-            "fingerprints": [
-                {
-                    "relative_path": "../../etc/passwd",
-                    "package": "evil",
-                    "soname": "",
-                    "hash": "fake",
-                    "header_hash": "fake",
-                    "mtime": 0,
-                    "platform": {
-                        "os": "macos",
-                        "arch": "aarch64",
-                        "python_version": "3.11",
-                        "libc_type": "bsd",
-                        "libc_version": "unknown",
-                        "soabi": "cpython-311-darwin",
-                    },
-                    "load_stage": "PreInit",
-                }
-            ],
-        }
+        lock_content = load_fixture("path_traversal.json")
         lock_path = PROJECT_ROOT / "preload.lock"
-        lock_path.write_text(json.dumps(lock, indent=2))
+        lock_path.write_text(lock_content)
         result = run_velo("preload", "verify")
         assert result.returncode != 0
         # Verification error should be in stdout as a cross mark
@@ -552,31 +515,9 @@ class TestSEC035PlatformMismatch:
 
     def test_SEC_035_008_linux_lock_on_macos(self) -> None:
         """SEC-035-008: Lock from linux, run on macOS - blocked."""
-        lock = {
-            "version": "1.0",
-            "generator": "velo-test",
-            "fingerprints": [
-                {
-                    "relative_path": ".venv/lib/test.so",
-                    "package": "test",
-                    "soname": "",
-                    "hash": "abc",
-                    "header_hash": "abc",
-                    "mtime": 0,
-                    "platform": {
-                        "os": "linux",  # Wrong OS
-                        "arch": platform.machine(),
-                        "python_version": "3.11",
-                        "libc_type": "gnu",
-                        "libc_version": "2.31",
-                        "soabi": "cpython-311-linux-gnu",
-                    },
-                    "load_stage": "PreInit",
-                }
-            ],
-        }
+        lock_content = load_fixture("linux_platform.json")
         lock_path = PROJECT_ROOT / "preload.lock"
-        lock_path.write_text(json.dumps(lock, indent=2))
+        lock_path.write_text(lock_content)
         result = run_velo("preload", "verify")
         # Should fail or skip due to platform mismatch
         # The implementation may handle this differently
