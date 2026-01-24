@@ -71,15 +71,19 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   **Tmpfs Size Cap**: Maximum bytes for the read-write layer.
 > *   Note: `pip install` inside the sandbox is **Best-Effort**. If it hits the quota, the process receives `ENOSPC`.
 
-#### 4.2.1 Optimization: Package Deduplication (The UV Strategy)
-To mitigate the inode/space cost of dynamic package installation (e.g., `pip install numpy`), Velo adopts a **Symlink-Based Deduplication** strategy inspired by `uv`:
+#### 4.2.1 Optimization: Content-Addressable Storage (CAS) Isolation
+To mitigate the security risks of raw symlinks and brittle package management, Velo adopts a **CAS-Based Isolation** strategy:
 
-1.  **Host Cache**: The Supervisor maintains a central, verify-only package store on the host (e.g., `/var/cache/velo/pypi`).
-2.  **RO Mount**: This store is mounted **Read-Only** into the VVE at `/opt/velo/cache`.
-3.  **Link Mode**: The Agent's installer is configured to use **Symlinks** (`--link-mode=symlink`) instead of copying files.
-    *   **Result**: Installing `numpy` (100MB, 2000 files) consumes **0MB** of `tmpfs` data and only lightweight symlink inodes.
-    *   **Safety**: Since the source is Read-Only, a compromised Agent cannot poison the cache for others.
-    *   **GC Lock Requirement**: The Host Cache MUST implement Reference Counting Garbage Collection. Packages currently referenced by active VVE symlinks **MUST NOT** be deleted or moved, as this would break the live agent's environment.
+1.  **Physical Store (BLAKE3)**: All dependnecy files are stored in a flat, host-level CAS repository keyed by their **BLAKE3 Hash**.
+    *   Path: `/var/cas/velo/objects/8f/4b/8f4b2e...`
+    *   **Immutability**: Files in the CAS are verify-only and immutable.
+2.  **Virtual Mapping Layer (VeloVFS)**: The Agent does not see the CAS directly.
+    *   A userspace filesystem mapping layer (FUSE/VirtioFS) presents a standard file structure (`/site-packages/numpy/...`) to the Agent.
+    *   Reads are intercepted and served from the CAS blobs based on a hash map.
+3.  **Security**:
+    *   **Isolation**: No direct `readlink` access to host paths. The Agent sees "real files".
+    *   **Integrity**: Every read operation is cryptographically verified against the hash.
+    *   **Deduplication**: Happens at the **File Level** (BLAKE3), not Package Level. Identical content across different package versions incurs zero storage cost.
 
 ### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
