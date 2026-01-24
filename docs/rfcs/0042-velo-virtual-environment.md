@@ -48,7 +48,13 @@ Unlike rigid containers, Velo's sandbox is a **modular capability matrix**. User
 VVE allows developers to "dial-in" the exact environment needed. A data-science agent might need **L0 (Performance) + L2 (File Safety)**, while a web-scraping agent needs **L4 (Networking) + L3 (Resource Caps)**.
 
 ### 4.1 Opt-Out Policy (The "Nitro" Switch)
-Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for legacy compatibility or when the execution environment is already secured by external means (e.g., inside an existing locked-down VPC).
+Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for legacy compatibility.
+
+> **CRITICAL SECURITY REQUIREMENT**:
+> To prevent privilege escalation, the "Nitro Switch" (L-1/L0 opt-out) is **gated by a Cluster-Level Policy**.
+> *   **Local Dev**: Enabled by default.
+> *   **Production**: Requires a signed `velo.policy.toml` or `VELO_ALLOW_UNSAFE=1` (Admin-only env var).
+> An Agent executing with a user-level request for `tier: "L-1"` WILL FAIL if the cluster policy explicitly forbids it.
 
 ### 4.2 L4 VVE (Virtual Environment) Implementation
 
@@ -80,8 +86,14 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 
 ### 5.1 SHM Gravity (The Velo Dilemma)
 Standard Velo performance relies on `/dev/shm` zero-copy.
-*   **Challenge**: `pivot_root` unmounts the host's `/dev/shm`.
-*   **Solution**: The Rust Supervisor MUST `mount --bind` the specific Zygote SHM file descriptors into the UpperLayer's `/dev/shm` **BEFORE** executing `pivot_root`. This ensures the memory window remains open in the new namespace.
+*   **Challenge**: `pivot_root` moves the root mount, potentially obscuring the host's `/dev/shm` before the new environment is ready.
+*   **Solution**: The Rust Supervisor follows a strict `unshare` -> `mount` sequence:
+    1.  `unshare(CLONE_NEWNS)`: Create private mount namespace.
+    2.  `mount --make-rslave /`: Prevent propagation of changes back to host.
+    3.  `mount --bind /dev/shm <upper_layer_path>/dev/shm`: Bind host SHM to the target location *before* pivoting.
+    4.  `pivot_root`: Switch root.
+    5.  The bound SHM remains accessible at `/dev/shm` inside the new namespace.
+    *Note: This relies on the file descriptor remaining valid across the namespace transition, which is standard Linux behavior.*
 
 ### 5.2 ABI Parity
 The Rootfs base image must precisely match the Zygote's runtime ABI (glibc/musl version) to prevent `dlopen` failures of pre-loaded libraries.
@@ -89,7 +101,9 @@ The Rootfs base image must precisely match the Zygote's runtime ABI (glibc/musl 
 ### 5.3 Kubernetes Compatibility (The "Sticky Bit" Risk)
 `CLONE_NEWUSER` is often restricted in managed Kubernetes environments (EKS/GKE) via `unprivileged_userns_clone`.
 *   **Mitigation**: VVE detection logic must probe `/proc/sys/kernel/unprivileged_userns_clone` at startup.
-*   **Fallback**: If UserNS is unavailable, VVE will degrade to **L3 (Titanium)**, enforcing isolation via Cgroups/Seccomp only, without the virtual rootfs.
+*   **Fallback Policy**:
+    *   **Default**: **Fail-Closed**. If L4 is requested but UserNS is blocked, the Agent fails to start. Silent degradation is forbidden.
+    *   **Explicit Downgrade**: If and only if the Agent spec includes `allow_downgrade: true`, Velo will fallback to **L3 (Titanium)** (Seccomp/Cgroups only).
 
 ---
 
