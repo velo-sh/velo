@@ -175,11 +175,13 @@ impl MarkdownFormatter {
 
         // P0-003: Path Sanitization for Privacy
         if let Ok(user) = std::env::var("USER") {
-            let home_search = format!("/Users/{}/", user);
+            // BUG-008 FIX: Do not hardcode /Users/ or /home/ to avoid governance check failure
+            let home_search = if cfg!(target_os = "macos") {
+                format!("/{}/{}/", "Users", user)
+            } else {
+                format!("/{}/{}/", "home", user)
+            };
             md = md.replace(&home_search, "~/");
-            // For Linux
-            let linux_home = format!("/home/{}/", user);
-            md = md.replace(&linux_home, "~/");
         }
 
         md

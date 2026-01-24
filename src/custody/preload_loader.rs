@@ -337,7 +337,8 @@ mod tests {
             std::env::set_var("VELO_PATH_INTEGRITY", "enforce");
         }
 
-        let path = Path::new("/tmp/evil_lib.so");
+        let binding = std::env::temp_dir().join("evil_lib.so");
+        let path = binding.as_path();
         let result = PreloadLoader::safe_load(path, false);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -358,7 +359,8 @@ mod tests {
 
         // Path is untrusted, but should NOT error in warn mode
         // (it will fail later on dlopen, but path validation passes)
-        let path = Path::new("/tmp/fake_lib.so");
+        let binding = std::env::temp_dir().join("fake_lib.so");
+        let path = binding.as_path();
         // Use validate_path directly since safe_load would try to dlopen
         let config = crate::config::VeloConfig::from_env_only();
         let result = PreloadLoader::validate_path(path, &config.path_integrity);
@@ -377,7 +379,8 @@ mod tests {
             std::env::set_var("VELO_PATH_INTEGRITY", "off");
         }
 
-        let path = Path::new("/tmp/any_lib.so");
+        let binding = std::env::temp_dir().join("any_lib.so");
+        let path = binding.as_path();
         let config = crate::config::VeloConfig::from_env_only();
         let result = PreloadLoader::validate_path(path, &config.path_integrity);
         assert!(result.is_ok()); // off mode returns Ok

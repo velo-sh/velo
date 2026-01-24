@@ -94,11 +94,13 @@ mod tests {
 
         // On macOS /tmp is often a symlink to /private/tmp
         // We test based on the actual canonical path
-        let forbidden_paths = [
-            "/tmp/libmalicious.so",
-            "/var/tmp/libmalicious.so",
-            "/dev/shm/libmalicious.so",
-        ];
+        let binding = std::env::temp_dir().join("libmalicious.so");
+        let tmp_path = binding.to_str().unwrap();
+        // Mock paths for other locations as strings since we just test prefix logic
+        let var_tmp = "/var/tmp/libmalicious.so";
+        let dev_shm = "/dev/shm/libmalicious.so";
+
+        let forbidden_paths = [tmp_path, var_tmp, dev_shm];
 
         for path_str in forbidden_paths {
             let _path = PathBuf::from(path_str);
