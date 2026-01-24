@@ -1,0 +1,23 @@
+{
+    "version": "1.0",
+    "generator": "velo-test-fixture",
+    "fingerprints": [
+        {
+            "relative_path": "../../../etc/passwd",
+            "package": "malicious",
+            "soname": "",
+            "hash": "fake",
+            "header_hash": "fake",
+            "mtime": 0,
+            "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "python_version": "3.11",
+                "libc_type": "bsd",
+                "libc_version": "unknown",
+                "soabi": "cpython-311-darwin"
+            },
+            "load_stage": "PreInit"
+        }
+    ]
+}
