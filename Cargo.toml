@@ -88,6 +88,7 @@ futures-util = "0.3"
 parking_lot = "0.12"
 tokio-tungstenite = "0.21"
 once_cell = "1.19"
+rayon = "1.10"           # RFC-0038-ext: Parallel AST parsing for code snippets
 
 # RFC-0019: Vendored Granian Core for Native Sovereignty
 granian-core = { path = "vendor/granian" }

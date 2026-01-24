@@ -11,6 +11,7 @@ use std::path::Path;
 
 /// Python code to inject as sitecustomize.py for profiling.
 /// This hooks into builtins.__import__ to track import times.
+/// RFC-0038-ext: Extended to capture __file__ for code snippet extraction.
 pub const SITECUSTOMIZE_PY: &str = r#"
 import sys
 import time
@@ -19,17 +20,31 @@ import os
 import builtins
 import tempfile
 
-_velo_import_times = {}
+_velo_import_data = {}
 _velo_original_import = builtins.__import__
+
+# RFC-0038-ext: Configurable threshold (default 1.0ms)
+_VELO_IMPORT_THRESHOLD_MS = float(os.environ.get('VELO_IMPORT_THRESHOLD_MS', '1.0'))
 
 def _velo_timed_import(name, *args, **kwargs):
     start = time.perf_counter()
-    result = _velo_original_import(name, *args, **kwargs)
+    module = _velo_original_import(name, *args, **kwargs)
     elapsed = (time.perf_counter() - start) * 1000  # ms
-    if elapsed > 0.5:  # Only track imports > 0.5ms
-        if name not in _velo_import_times:
-            _velo_import_times[name] = elapsed
-    return result
+    
+    if elapsed > _VELO_IMPORT_THRESHOLD_MS:
+        if name not in _velo_import_data:
+            file_path = getattr(module, '__file__', None)
+            
+            # RFC-0038-ext COMPAT-001: Skip namespace packages and frozen modules
+            if file_path is not None and file_path.startswith('<'):
+                file_path = None
+            
+            _velo_import_data[name] = {
+                "elapsed_ms": elapsed,
+                "file": file_path,
+                "is_namespace": file_path is None
+            }
+    return module
 
 builtins.__import__ = _velo_timed_import
 
@@ -38,7 +53,7 @@ def _velo_write_profile():
     output_path = os.environ.get('VELO_PROFILE_OUTPUT', default_path)
     try:
         with open(output_path, 'w') as f:
-            json.dump(_velo_import_times, f)
+            json.dump(_velo_import_data, f)
     except:
         pass  # Best effort - don't fail on profile write error
 
@@ -59,16 +74,52 @@ sys.excepthook = _velo_excepthook
 pub struct ProfileData {
     /// Module name -> import time in milliseconds
     pub import_times: HashMap<String, f64>,
+    /// Module name -> file path (RFC-0038-ext: for code snippet extraction)
+    pub import_files: HashMap<String, Option<String>>,
     /// Total import time
     pub total_import_time_ms: f64,
+    /// Memory growth during execution (MB)
+    pub memory_delta_mb: f64,
+}
+
+/// RFC-0038-ext: Import entry from Python hook
+#[derive(Debug, Clone, serde::Deserialize)]
+struct ImportEntry {
+    elapsed_ms: f64,
+    file: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)] // Captured from Python for future use
+    is_namespace: bool,
 }
 
 impl ProfileData {
     /// Parse profile data from JSON file produced by sitecustomize.py.
+    /// RFC-0038-ext: Now parses new format with file paths.
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read profile file: {:?}", path))?;
 
+        // Try new format first (dict of {elapsed_ms, file, is_namespace})
+        if let Ok(import_entries) = serde_json::from_str::<HashMap<String, ImportEntry>>(&content) {
+            let import_times: HashMap<String, f64> = import_entries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.elapsed_ms))
+                .collect();
+            let import_files: HashMap<String, Option<String>> = import_entries
+                .iter()
+                .map(|(k, v)| (k.clone(), v.file.clone()))
+                .collect();
+            let total_import_time_ms = import_times.values().sum();
+
+            return Ok(Self {
+                import_times,
+                import_files,
+                total_import_time_ms,
+                memory_delta_mb: 0.0,
+            });
+        }
+
+        // Fallback: legacy format (dict of module -> time_ms)
         let import_times: HashMap<String, f64> =
             serde_json::from_str(&content).with_context(|| "Failed to parse profile JSON")?;
 
@@ -76,7 +127,9 @@ impl ProfileData {
 
         Ok(Self {
             import_times,
+            import_files: HashMap::new(),
             total_import_time_ms,
+            memory_delta_mb: 0.0,
         })
     }
 
@@ -91,6 +144,55 @@ impl ProfileData {
         imports.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         imports.truncate(n);
         imports
+    }
+
+    /// Get the top N slowest imports as SlowImportInfo.
+    /// RFC-0038-ext: Now includes file paths and code snippets for top 5.
+    pub fn to_slow_imports(&self, n: usize) -> Vec<crate::common::diagnostics::SlowImportInfo> {
+        use crate::common::snippet_extractor::extract_snippets_parallel;
+        use std::path::PathBuf;
+
+        let mut imports: Vec<(&String, &f64)> = self.import_times.iter().collect();
+        imports.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Collect file paths for top N imports
+        let file_paths: Vec<Option<PathBuf>> = imports
+            .iter()
+            .take(n)
+            .map(|(name, _)| {
+                self.import_files
+                    .get(*name)
+                    .and_then(|p| p.as_ref())
+                    .map(PathBuf::from)
+            })
+            .collect();
+
+        // Extract snippets in parallel (only top 5)
+        let snippets = extract_snippets_parallel(&file_paths);
+
+        imports
+            .iter()
+            .take(n)
+            .enumerate()
+            .map(|(i, (name, time))| {
+                let file_path = file_paths.get(i).cloned().flatten();
+                let code_snippet = snippets.get(i).cloned().flatten();
+
+                crate::common::diagnostics::SlowImportInfo {
+                    name: name.to_string(),
+                    duration_ms: **time,
+                    file_path,
+                    location: get_module_location(name),
+                    code_snippet,
+                    agent_hint: get_optimization_suggestions(name).map(|msg| {
+                        crate::common::diagnostics::AgentHint {
+                            tag: crate::common::diagnostics::HINT_PRELOAD_MISS.to_string(),
+                            message: msg.to_string(),
+                        }
+                    }),
+                }
+            })
+            .collect()
     }
 
     /// Format profile as a table for display.
@@ -160,6 +262,23 @@ pub fn get_optimization_suggestions(module: &str) -> Option<&'static str> {
         "scipy" => Some("C-Extension."),
         "sklearn" | "scikit-learn" => Some("Model loading."),
         "transformers" => Some("Tokenizer loading."),
+        _ => None,
+    }
+}
+
+/// Provide location hints for known heavy modules (RFC-0038 GAP-4).
+pub fn get_module_location(module: &str) -> Option<String> {
+    match module {
+        "numpy" => Some("numpy/__init__.py (C-extension init)".to_string()),
+        "pandas" => Some("pandas/__init__.py".to_string()),
+        "torch" | "pytorch" => Some("torch/__init__.py (CUDA init)".to_string()),
+        "tensorflow" => Some("tensorflow/__init__.py (GPU init)".to_string()),
+        "django" => Some("django/__init__.py (apps registry)".to_string()),
+        "fastapi" => Some("fastapi/__init__.py".to_string()),
+        "sqlalchemy" => Some("sqlalchemy/__init__.py".to_string()),
+        "scipy" => Some("scipy/__init__.py (C-extension)".to_string()),
+        "sklearn" | "scikit-learn" => Some("sklearn/__init__.py".to_string()),
+        "transformers" => Some("transformers/__init__.py (tokenizers)".to_string()),
         _ => None,
     }
 }

@@ -361,30 +361,42 @@ jobs:
           command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short
 
 
-  qa-zygote-suite:
-    name: "QA: Zygote Full Suite"
+  qa-zygote-matrix:
+    name: "QA: Zygote ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     needs: [build, changes]
     if: |
       needs.changes.outputs.zygote == 'true' || 
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "E2E Real Env", path: "tests/qa/test_phase3_e2e_real_env.py" }
+          - { name: "Security", path: "tests/qa/test_phase3_security.py" }
+          - { name: "Deployment", path: "tests/qa/test_phase3_deployment.py" }
+          - { name: "Weird Env", path: "tests/qa/test_phase3_weird_env.py" }
+          - { name: "Brutal Attacks", path: "tests/qa/test_phase3_brutal_attacks.py" }
+        include:
+          - suite: { name: "E2E Real Env" }
+            suite_name: "E2E Real Env"
+          - suite: { name: "Security" }
+            suite_name: "Security"
+          - suite: { name: "Deployment" }
+            suite_name: "Deployment"
+          - suite: { name: "Weird Env" }
+            suite_name: "Weird Env"
+          - suite: { name: "Brutal Attacks" }
+            suite_name: "Brutal Attacks"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Use parallel pytest for the whole suite
-          command: |
-            uv run pytest \
-              tests/qa/test_phase3_e2e_real_env.py \
-              tests/qa/test_phase3_security.py \
-              tests/qa/test_phase3_deployment.py \
-              tests/qa/test_phase3_weird_env.py \
-              tests/qa/test_phase3_brutal_attacks.py \
-              -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
 
   # ============================================

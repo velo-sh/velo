@@ -56,7 +56,7 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 | Key | Value |
 | :--- | :--- |
 | **Total Runtime** | 1.04s |
-| **Primary Bottleneck** | `heavy_compute` |
+| **Slowest Import** | `torch` |
 | **Optimization Budget**| CPU-bound |
 | **Status** | 🟢 Within Budget |
 
@@ -77,21 +77,24 @@ Output must follow GitHub Flavored Markdown (GFM) standards and include **Contex
 >
 > **Note**: This is a best-effort keyword filter. Production deployments handling sensitive data should use dedicated secret management systems.
 
-## 🔍 Top Bottleneck Analysis
+## 🐢 Slow Imports (Critical Path)
 
-### 1. `heavy_compute` (492ms)
-**Location:** `utils.py:45`
-**Signature:** `def heavy_compute(data: List[int]) -> int:`
-> **Agent Hint [loop-hot]**: High self-time in a loop. Check for nested list comprehensions.
+> [!NOTE]
+> This section profiles **module import times**, not function execution. For function-level profiling, use `cProfile` or `py-spy`.
 
-> [!CAUTION]
-> **Snippet Bounds**: Any code context or signature provided MUST be truncated to the **Top 5 lines** (Def + Docstring) to maintain token budget.
+### 1. `torch` (462ms)
+**Location:** `torch/__init__.py (CUDA init)`
+> **Agent Hint [preload-miss]**: GPU initialization. Use Zygote pre-warming.
 
-## Hot Functions (Top 20)
-| Self % | Self | Function | Location |
+### 2. `numpy` (68ms)
+**Location:** `numpy/__init__.py (C-extension init)`
+> **Agent Hint [preload-miss]**: C-Extension. Consider Zygote pre-warming.
+
+## Slow Imports (Top 20)
+| Import % | Time | Module | Location |
 | :--- | :--- | :--- | :--- |
-| 47.3% | 492ms | `heavy_compute` | `utils.py:45` |
-| 36.1% | 376ms | `_data_load` | `data/loader.py:12` |
+| 87.2% | 462ms | `torch` | `torch/__init__.py` |
+| 12.8% | 68ms | `numpy` | `numpy/__init__.py` |
 ... (truncated) ...
 ```
 
@@ -209,3 +212,14 @@ The following Agent Hints are reserved for structured routing. New hints require
 | `[memory-leak]` | Memory growth without release | Audit object lifecycle |
 | `[gil-contention]` | GIL blocking multi-threaded work | Suggest multiprocessing |
 | `[preload-miss]` | Library not in RFC-0035 preload cache | Add to `[tool.velo.native_preload]` |
+
+---
+
+## Appendix B: Extension Documents
+
+The following extension documents provide detailed architecture for planned enhancements:
+
+| Extension | Status | Description |
+| :--- | :--- | :--- |
+| [RFC-0038-ext: Code Snippets](./0038-ext-code-snippets.md) | **Proposed** (v1.0 Target) | Source code context in diagnostic reports |
+

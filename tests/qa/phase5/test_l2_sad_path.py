@@ -181,11 +181,6 @@ print(f"new_module works: {new_module.NEW_VALUE}")
         REBUILD-001: Source changed triggers auto-rebuild
 
         RFC-0006: Modified source should invalidate bundle.
-
-        NOTE: This test is currently skipped because auto-rebuild requires:
-        1. Bundle fingerprint validation against source mtimes
-        2. Automatic rebuild when fingerprint mismatches
-        These features are not yet fully implemented.
         """
         # Initial build
         build_bundle(simple_project)

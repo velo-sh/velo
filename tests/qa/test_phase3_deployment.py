@@ -23,9 +23,6 @@ import pytest
 # Import CI-aware timeout constants
 from conftest_utils import T_MEDIUM
 
-# Mark entire module as CI flaky - skip in CI due to deployment path issues
-pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
-
 
 def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
