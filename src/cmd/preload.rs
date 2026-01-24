@@ -65,54 +65,71 @@ fn analyze_impl() -> Result<()> {
 
     let mut fingerprints = Vec::new();
 
-    // 1. Process explicit libraries from config
+    // 1. Process libraries from config with expansion
     // RFC-0035 §3.4: Use config.native_libraries
-    for lib_path_str in &config.native_libraries {
-        let lib_path = if Path::new(lib_path_str).is_absolute() {
-            PathBuf::from(lib_path_str)
+    for raw_path_str in &config.native_libraries {
+        // Step A: Expand placeholders
+        let expanded_pattern = expand_library_placeholders(raw_path_str, &py_info);
+
+        // Step B: Glob expansion
+        let matched_paths = if expanded_pattern.contains('*') || expanded_pattern.contains('?') {
+            match glob::glob(&expanded_pattern) {
+                Ok(paths) => paths.filter_map(Result::ok).collect(),
+                Err(e) => {
+                    log::error!("Invalid glob pattern '{}': {}", expanded_pattern, e);
+                    continue;
+                }
+            }
         } else {
-            project_dir.join(lib_path_str)
+            vec![PathBuf::from(&expanded_pattern)]
         };
 
-        if !lib_path.exists() {
-            log::warn!("Configured native library not found: {:?}", lib_path);
-            continue;
+        for lib_path in matched_paths {
+            let lib_path = if lib_path.is_absolute() {
+                lib_path
+            } else {
+                project_dir.join(lib_path)
+            };
+
+            if !lib_path.exists() {
+                log::warn!("Configured native library not found: {:?}", lib_path);
+                continue;
+            }
+
+            let canonical_lib = lib_path.canonicalize()?;
+            let (hash, header_hash) = NativeLibFingerprint::calculate_hashes(&canonical_lib)?;
+            let (soname, _needed) = NativeLibFingerprint::parse_native_lib(&canonical_lib)?;
+            let metadata = canonical_lib.metadata()?;
+            let mtime = metadata
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs();
+
+            // Calculate relative path to project root
+            let relative_path = canonical_lib
+                .strip_prefix(&project_dir)
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|_| canonical_lib.clone());
+
+            let fp = NativeLibFingerprint {
+                relative_path,
+                package: "unknown".to_string(),
+                soname,
+                hash,
+                header_hash,
+                mtime,
+                platform: LibPlatform {
+                    os: std::env::consts::OS.to_string(),
+                    arch: std::env::consts::ARCH.to_string(),
+                    python_version: format!("{}.{}", py_info.version.major, py_info.version.minor),
+                    libc_type: detect_libc_type(),
+                    libc_version: detect_libc_version(),
+                    soabi: py_info.abi_tag.clone(),
+                },
+                load_stage: LoadStage::PreInit,
+            };
+            fingerprints.push(fp);
         }
-
-        let canonical_lib = lib_path.canonicalize()?;
-        let (hash, header_hash) = NativeLibFingerprint::calculate_hashes(&canonical_lib)?;
-        let (soname, _needed) = NativeLibFingerprint::parse_native_lib(&canonical_lib)?;
-        let metadata = canonical_lib.metadata()?;
-        let mtime = metadata
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-
-        // Calculate relative path to project root (usually venv is nearby)
-        // INV-PRELOAD-002: Venv-bound path containment
-        let relative_path = canonical_lib
-            .strip_prefix(&project_dir)
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|_| canonical_lib.clone());
-
-        let fp = NativeLibFingerprint {
-            relative_path,
-            package: "unknown".to_string(), // TODO: enhance package detection
-            soname,
-            hash,
-            header_hash,
-            mtime,
-            platform: LibPlatform {
-                os: std::env::consts::OS.to_string(),
-                arch: std::env::consts::ARCH.to_string(),
-                python_version: format!("{}.{}", py_info.version.major, py_info.version.minor),
-                libc_type: "gnu".to_string(),
-                libc_version: "2.31".to_string(), // TODO: detect libc version
-                soabi: py_info.abi_tag.clone(),
-            },
-            load_stage: LoadStage::PreInit,
-        };
-        fingerprints.push(fp);
     }
 
     let lock = PreloadLock::new(fingerprints);
@@ -183,4 +200,62 @@ fn load_impl(lock_json: &str, stage_str: &str) -> Result<()> {
 fn check_impl(path: &Path, global: bool) -> Result<()> {
     use crate::custody::preload_loader::PreloadLoader;
     PreloadLoader::vett_only(path, global)
+}
+
+fn detect_libc_type() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        "gnu".to_string() // Assume GNU for now, could detect musl via ldd
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "bsd".to_string()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        "unknown".to_string()
+    }
+}
+
+fn detect_libc_version() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("getconf").arg("GNU_LIBC_VERSION").output() {
+            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if s.starts_with("glibc ") {
+                return s.replace("glibc ", "");
+            }
+            return s;
+        }
+    }
+    "unknown".to_string()
+}
+
+fn expand_library_placeholders(s: &str, py: &PythonInfo) -> String {
+    let mut res = s.to_string();
+
+    // ${PYTHON_VERSION} -> 3.11
+    res = res.replace(
+        "${PYTHON_VERSION}",
+        &format!("{}.{}", py.version.major, py.version.minor),
+    );
+
+    // ${SOABI} -> cpython-311-darwin
+    res = res.replace("${SOABI}", &py.abi_tag);
+
+    // ${OS} -> macos, linux
+    res = res.replace("${OS}", std::env::consts::OS);
+
+    // ${ARCH} -> aarch64, x86_64
+    res = res.replace("${ARCH}", std::env::consts::ARCH);
+
+    // ${SO_EXT} -> .dylib, .so
+    let ext = match std::env::consts::OS {
+        "macos" => "dylib",
+        _ => "so",
+    };
+    res = res.replace("${SO_EXT}", ext);
+
+    res
 }

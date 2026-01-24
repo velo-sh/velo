@@ -401,15 +401,15 @@ impl ZygoteLauncher {
 
         // Inject current executable path for native preload helper
         if let Ok(exe_path) = std::env::current_exe() {
-            cmd.env("VELO_EXE_PATH", exe_path);
+            cmd.env("VELO_RUNTIME_EXE_PATH", exe_path);
         }
 
-        // 3.2 RFC-0035: Native Preload for Zygote
+        // 3.2 RFC-0035: Native Preload for Zygote (Moved to VELO_RUNTIME_PRELOAD_LOCK)
         let lock_path = project_dir.join("preload.lock");
         if lock_path.exists()
             && let Ok(lock_json) = std::fs::read_to_string(&lock_path)
         {
-            cmd.env("VELO_NATIVE_PRELOAD_LOCK", lock_json);
+            cmd.env("VELO_RUNTIME_PRELOAD_LOCK", lock_json);
         }
 
         // --- Bridge of Truth: Structured Environment Propagation (SPEC-0005) ---

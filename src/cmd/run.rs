@@ -210,22 +210,15 @@ fn run_script_impl(cmd: &RunCmd) -> Result<()> {
     let _python_time = _python_start.elapsed();
 
     // 3.1 RFC-0035: Auto-Preload (Native Library Preload)
+    // For non-Zygote runs, we do NOT load in the Rust process (SPEC-0007 alignment).
+    // We only verify the existence/validity of the lock here; inheritance is handled in runner.rs.
     let lock_path = project_dir.join("preload.lock");
     if lock_path.exists() {
-        use crate::custody::native_fingerprint::{LoadStage, PreloadLock};
-        use crate::custody::preload_orchestrator::PreloadOrchestrator;
-
-        match std::fs::read_to_string(&lock_path) {
-            Ok(json) => match PreloadLock::from_json(&json) {
-                Ok(lock) => {
-                    let orch = PreloadOrchestrator::new(lock, &project_dir);
-                    if let Err(e) = orch.load_stage(LoadStage::PreInit, &project_dir) {
-                        tracing::warn!("Auto-preload Stage 1 (PreInit) failed: {}", e);
-                    }
-                }
-                Err(e) => tracing::warn!("Failed to parse preload.lock: {}", e),
-            },
-            Err(e) => tracing::warn!("Failed to read preload.lock: {}", e),
+        use crate::custody::native_fingerprint::PreloadLock;
+        if let Ok(json) = std::fs::read_to_string(&lock_path) {
+            if let Err(e) = PreloadLock::from_json(&json) {
+                tracing::warn!("Failed to parse preload.lock: {}", e);
+            }
         }
     }
 

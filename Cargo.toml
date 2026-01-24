@@ -93,6 +93,7 @@ rayon = "1.10"           # RFC-0038-ext: Parallel AST parsing for code snippets
 
 # RFC-0019: Vendored Granian Core for Native Sovereignty
 granian-core = { path = "vendor/granian" }
+glob = "0.3.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

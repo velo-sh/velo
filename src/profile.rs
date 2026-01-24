@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Python code to inject as sitecustomize.py for profiling.
-/// This hooks into builtins.__import__ to track import times.
+/// Python code to inject as sitecustomize.py for profiling and preloading.
+/// This hooks into builtins.__import__ to track import times and performs native preloading.
 /// RFC-0038-ext: Extended to capture __file__ for code snippet extraction.
 pub const SITECUSTOMIZE_PY: &str = r#"
 import sys
@@ -19,6 +19,23 @@ import json
 import os
 import builtins
 import tempfile
+
+# --- RFC-0035 Native Preloading Hook ---
+def _v_activate_preloading():
+    lock_json = os.environ.get("VELO_RUNTIME_PRELOAD_LOCK")
+    if not lock_json:
+        return
+    try:
+        # Assuming velo_zygote is in PYTHONPATH
+        from velo_zygote import bootstrap
+        bootstrap._v_native_preload("PreInit")
+    except Exception as e:
+        # LOP compliant error (approximate for early boot)
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        sys.stderr.write(f"[{timestamp}] [STD] WARN [VELO-PRELOAD-FAIL] Native preload hook failed: {e}\n")
+
+_v_activate_preloading()
+# ---------------------------------------
 
 _velo_import_data = {}
 _velo_original_import = builtins.__import__

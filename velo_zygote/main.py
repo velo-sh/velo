@@ -769,6 +769,8 @@ class ZygoteServer:
     def _preload_core_modules(self) -> None:
         import importlib
 
+        from velo_zygote import bootstrap
+
         # 1. Preload specified modules (Standard libraries, frameworks)
         for module_name in self.preload:
             try:
@@ -776,6 +778,13 @@ class ZygoteServer:
                 self._preloaded_modules.append(module_name)
             except Exception as e:
                 LogUtils.log(f"Preload failed for {module_name}: {e}")
+
+        # 2. Stage-Gated Preloading: Stage 2 (PostInit)
+        # RFC-0035/SPEC-0007: Load extension modules after Python core is ready.
+        try:
+            bootstrap._v_native_preload("PostInit")
+        except Exception as e:
+            LogUtils.log(f"PostInit native preload failed: {e}")
 
     def _preload_app_and_warming(self) -> None:
         import importlib

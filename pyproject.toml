@@ -151,3 +151,7 @@ dev = [
     "pytest-shard>=0.1.2",  # For CI test sharding
 ]
 
+
+[tool.velo]
+native_libraries = [".venv/lib/python*/site-packages/msgpack/_cmsgpack*"]
+preload = ["json"]

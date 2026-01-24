@@ -66,12 +66,13 @@ def _log_banner() -> None:
         sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
 
 
-def _native_preload() -> None:
+def _v_native_preload(target_stage: str) -> None:
     """
     RFC-0035: Native Library Preload (Stage 1 & 2).
     Uses 'velo preload check' for Death Pact vetting before ctypes.CDLL.
+    Aligns with SPEC-0006 LOP logging.
     """
-    lock_json = os.environ.get("VELO_NATIVE_PRELOAD_LOCK")
+    lock_json = os.environ.get("VELO_RUNTIME_PRELOAD_LOCK")
     if not lock_json:
         return
 
@@ -79,21 +80,29 @@ def _native_preload() -> None:
         import ctypes
         import json
         import subprocess
+        import time
 
         lock_data = json.loads(lock_json)
         fingerprints = lock_data.get("fingerprints", [])
 
+        # Map target_stage string to internal enum
+        # PreInit maps to 'pre-init', PostInit maps to 'post-init' in the lock file usually?
+        # Let's check native_fingerprint.rs: PreInit, PostInit.
+        # serde usually serializes enums as strings "PreInit", "PostInit" or similar.
+        # Actually in preload.rs: LoadStage::PreInit is used.
+
         for fp in fingerprints:
             lib_path = fp.get("relative_path")
             soname = fp.get("soname")
+            fp_stage = fp.get("load_stage")
 
-            # 1. Rust-based "Death Pact" Vetting
-            # We call the CLI to perform the fork-vet-load in a separate process.
+            # SPEC-0007: Stage-Gated Loading
+            if fp_stage != target_stage:
+                continue
+
+            # 1. Rust-based "Death Pact" Vetting (INV-PRELOAD-008)
             try:
-                # Use current process environment to ensure paths are correct
-                velo_exe = os.environ.get("VELO_EXE_PATH", "velo")
-
-                # Directive B: Promote critical libs
+                velo_exe = os.environ.get("VELO_RUNTIME_EXE_PATH", "velo")
                 is_critical = any(x in soname.lower() for x in ["libtorch", "libtensorflow", "libpython"])
 
                 cmd = [velo_exe, "preload", "check", "--path", lib_path]
@@ -102,20 +111,28 @@ def _native_preload() -> None:
 
                 subprocess.run(cmd, capture_output=True, text=True, check=True)
             except subprocess.CalledProcessError as e:
-                sys.stderr.write(f"[VELO-NATIVE] Vetting failed for {soname}: {e.stderr}\n")
+                # SPEC-0006: LOP Logging
+                timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+                sys.stderr.write(
+                    f"[{timestamp}] [ZYGOTE] WARN [VELO-PRELOAD-FAIL] Vetting failed for {soname}: {e.stderr}\n"
+                )
                 continue
 
             # 2. Process-local Load
-            # If vetting passed, it's safe to load in the current process.
             try:
                 mode = ctypes.RTLD_GLOBAL if is_critical else ctypes.RTLD_LOCAL
                 ctypes.CDLL(lib_path, mode=mode)
-                # sys.stderr.write(f"[VELO-NATIVE] Preloaded {soname}\n")
+
+                # SPEC-0006: LOP Logging (Optional for success)
+                # timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+                # sys.stderr.write(f"[{timestamp}] [ZYGOTE] INFO [VELO-PRELOAD-OK] Preloaded {soname}\n")
             except Exception as e:
-                sys.stderr.write(f"[VELO-NATIVE] Load failed for {soname}: {e}\n")
+                timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+                sys.stderr.write(f"[{timestamp}] [ZYGOTE] WARN [VELO-PRELOAD-ERR] Load failed for {soname}: {e}\n")
 
     except Exception as e:
-        sys.stderr.write(f"[VELO-NATIVE-ERROR] Bootstrap failed: {e}\n")
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        sys.stderr.write(f"[{timestamp}] [ZYGOTE] ERROR [VELO-PRELOAD-CRIT] Bootstrap failed: {e}\n")
 
 
 def initialize() -> None:
@@ -137,8 +154,8 @@ def initialize() -> None:
     _normalize_environment()
 
     # 1.1 RFC-0035 Native Preloading (Pre-Warming)
-    # This must happen before sys.path modification to ensure clean state
-    _native_preload()
+    # Aligned with SPEC-0007: This is the PreInit stage.
+    _v_native_preload("PreInit")
 
     # 2. Normalize sys.path
     # SCRIPT_DIR is the directory of this file (velo_zygote/)

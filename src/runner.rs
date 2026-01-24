@@ -8,6 +8,43 @@ use std::process::Command;
 
 use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
 use crate::profile;
+use std::fs;
+use std::io::Write;
+use tempfile::TempDir;
+
+/// Helper to setup a temporary sitecustomize.py for profiling or preloading.
+/// Returns (new_pythonpath, Option<TempDir>)
+fn setup_sitecustomize(
+    base_pythonpath: &str,
+    _config: &crate::config::VeloConfig,
+    force_preload: bool,
+) -> Result<(String, Option<TempDir>)> {
+    let has_lock = std::env::var("VELO_RUNTIME_PRELOAD_LOCK").is_ok()
+        || Path::new("preload.lock").exists()
+        || force_preload;
+
+    if !has_lock {
+        return Ok((base_pythonpath.to_string(), None));
+    }
+
+    // Create temp directory for sitecustomize.py
+    let temp_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let temp_dir = tempfile::Builder::new()
+        .prefix("velo_site_")
+        .tempdir_in(&temp_root)?;
+    let temp_dir_path = temp_dir.path();
+
+    // Write sitecustomize.py (includes native preloading hook)
+    let sitecustomize_path = temp_dir_path.join("sitecustomize.py");
+    let mut file = fs::File::create(&sitecustomize_path)?;
+    file.write_all(profile::SITECUSTOMIZE_PY.as_bytes())?;
+
+    // Prepend temp dir to PYTHONPATH
+    let temp_dir_str = temp_dir_path.to_string_lossy().to_string();
+    let new_pythonpath = format!("{}:{}", temp_dir_str, base_pythonpath);
+
+    Ok((new_pythonpath, Some(temp_dir)))
+}
 
 /// Run a Python script.
 pub fn run_script(
@@ -28,10 +65,12 @@ pub fn run_script(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ".".to_string());
 
-        // Build PYTHONPATH
+        // Build base PYTHONPATH (Include CWD for velo_zygote)
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let cwd_str = cwd.to_string_lossy();
         let final_pythonpath = match pythonpath {
-            Some(pp) => format!("{}:{}", script_dir, pp),
-            None => script_dir,
+            Some(pp) => format!("{}:{}:{}", script_dir, cwd_str, pp),
+            None => format!("{}:{}", script_dir, cwd_str),
         };
 
         // Run the script using user's Python
@@ -42,7 +81,9 @@ pub fn run_script(
         shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
 
         // Build final PYTHONPATH
-        cmd.env("PYTHONPATH", &final_pythonpath);
+        let (final_pythonpath_env, _sc_temp) =
+            setup_sitecustomize(&final_pythonpath, config, false)?;
+        cmd.env("PYTHONPATH", &final_pythonpath_env);
 
         // Phase 8.0: Bridge of Truth (Configuration Injection)
         cmd.env(
@@ -62,6 +103,28 @@ pub fn run_script(
             "VELO_SECURITY_HPC_THREADS",
             config.security_hpc_threads.to_string(),
         );
+
+        // RFC-0035/SPEC-0005: Native Preload SSOT Injection
+        if let Ok(exe_path) = std::env::current_exe() {
+            cmd.env("VELO_RUNTIME_EXE_PATH", exe_path);
+        }
+
+        let lock_path_in_script = path.parent().unwrap_or(Path::new(".")).join("preload.lock");
+        let lock_path_in_cwd = Path::new("preload.lock");
+
+        let final_lock_path = if lock_path_in_script.exists() {
+            Some(lock_path_in_script)
+        } else if lock_path_in_cwd.exists() {
+            Some(lock_path_in_cwd.to_path_buf())
+        } else {
+            None
+        };
+
+        if let Some(lp) = final_lock_path
+            && let Ok(lock_json) = std::fs::read_to_string(&lp)
+        {
+            cmd.env("VELO_RUNTIME_PRELOAD_LOCK", lock_json);
+        }
 
         // RFC-0012 §3.6: FD & Signal Hygiene
         apply_standard_hygiene(&mut cmd);
@@ -144,28 +207,10 @@ pub fn run_script_with_profile_capture(
     std::time::Duration,
     Option<profile::ProfileData>,
 )> {
-    use std::fs;
-    use std::io::Write;
-
     let path = Path::new(script_path);
     if !path.exists() {
         anyhow::bail!("Script not found: {}", script_path);
     }
-
-    // Create temp directory
-    let temp_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let temp_dir = tempfile::Builder::new()
-        .prefix("velo_profile_")
-        .tempdir_in(&temp_root)?;
-    let temp_dir_path = temp_dir.path();
-
-    // Write sitecustomize.py
-    let sitecustomize_path = temp_dir_path.join("sitecustomize.py");
-    let mut file = fs::File::create(&sitecustomize_path)?;
-    file.write_all(profile::SITECUSTOMIZE_PY.as_bytes())?;
-
-    // Profile output path
-    let profile_output = temp_dir_path.join("profile.json");
 
     // Get script directory
     let script_dir = path
@@ -173,11 +218,25 @@ pub fn run_script_with_profile_capture(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
 
-    // Build PYTHONPATH
-    let temp_dir_str = temp_dir_path.to_string_lossy().to_string();
+    // Build base PYTHONPATH
     let final_pythonpath = match pythonpath {
-        Some(pp) => format!("{}:{}:{}", temp_dir_str, script_dir, pp),
-        None => format!("{}:{}", temp_dir_str, script_dir),
+        Some(pp) => format!("{}:{}", script_dir, pp),
+        None => script_dir,
+    };
+
+    // Setup sitecustomize for profiling AND preloading (forced for profile)
+    let (final_pythonpath_env, temp_dir_option) =
+        setup_sitecustomize(&final_pythonpath, config, true)?;
+
+    // Profile output path
+    let profile_output = if let Some(temp_dir) = &temp_dir_option {
+        temp_dir.path().join("profile.json")
+    } else {
+        // This case should ideally not happen if setup_sitecustomize always returns a temp_dir
+        // when `force_preload` is true. For now, we'll use a fallback or error.
+        // Given the context, `setup_sitecustomize` with `true` for `force_preload`
+        // should always return `Some(temp_dir)`.
+        anyhow::bail!("Failed to get temporary directory for profile output.");
     };
 
     // Measure memory and time
@@ -189,7 +248,7 @@ pub fn run_script_with_profile_capture(
     let shield = EnvironmentShield::new(config);
     shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
 
-    cmd.env("PYTHONPATH", &final_pythonpath)
+    cmd.env("PYTHONPATH", &final_pythonpath_env)
         .env("VELO_PROFILE_OUTPUT", &profile_output);
 
     // Standard Velo envs
@@ -210,6 +269,27 @@ pub fn run_script_with_profile_capture(
         "VELO_SECURITY_HPC_THREADS",
         config.security_hpc_threads.to_string(),
     );
+
+    // RFC-0035/SPEC-0005: Native Preload SSOT Injection
+    if let Ok(exe_path) = std::env::current_exe() {
+        cmd.env("VELO_RUNTIME_EXE_PATH", exe_path);
+    }
+    let lock_path_in_script = path.parent().unwrap_or(Path::new(".")).join("preload.lock");
+    let lock_path_in_cwd = Path::new("preload.lock");
+
+    let final_lock_path = if lock_path_in_script.exists() {
+        Some(lock_path_in_script)
+    } else if lock_path_in_cwd.exists() {
+        Some(lock_path_in_cwd.to_path_buf())
+    } else {
+        None
+    };
+
+    if let Some(lp) = final_lock_path
+        && let Ok(lock_json) = std::fs::read_to_string(&lp)
+    {
+        cmd.env("VELO_RUNTIME_PRELOAD_LOCK", lock_json);
+    }
 
     apply_standard_hygiene(&mut cmd);
 
@@ -247,28 +327,20 @@ pub fn run_module_with_profile_capture(
     std::time::Duration,
     Option<profile::ProfileData>,
 )> {
-    use std::fs;
-    use std::io::Write;
+    // Build base PYTHONPATH
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let final_pythonpath = current_dir.to_string_lossy().to_string();
 
-    // Create temp directory
-    let temp_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let temp_dir = tempfile::Builder::new()
-        .prefix("velo_profile_mod_")
-        .tempdir_in(&temp_root)?;
-    let temp_dir_path = temp_dir.path();
-
-    // Write sitecustomize.py
-    let sitecustomize_path = temp_dir_path.join("sitecustomize.py");
-    let mut file = fs::File::create(&sitecustomize_path)?;
-    file.write_all(profile::SITECUSTOMIZE_PY.as_bytes())?;
+    // Setup sitecustomize for profiling AND preloading (forced for profile)
+    let (_final_pythonpath_env, temp_dir_option) =
+        setup_sitecustomize(&final_pythonpath, config, true)?;
 
     // Profile output path
-    let profile_output = temp_dir_path.join("profile.json");
-
-    // Build PYTHONPATH
-    let temp_dir_str = temp_dir_path.to_string_lossy().to_string();
-    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let final_pythonpath = format!("{}:{}", temp_dir_str, current_dir.display());
+    let profile_output = if let Some(temp_dir) = &temp_dir_option {
+        temp_dir.path().join("profile.json")
+    } else {
+        anyhow::bail!("Failed to get temporary directory for profile output.");
+    };
 
     // Measure memory and time
     let rss_before = crate::common::memory::get_process_rss_bytes().unwrap_or(0);
@@ -278,15 +350,6 @@ pub fn run_module_with_profile_capture(
     let mut cmd = Command::new(python);
     let shield = EnvironmentShield::new(config);
     shield.apply(&mut cmd).map_err(anyhow::Error::msg)?;
-
-    cmd.env("PYTHONPATH", &final_pythonpath)
-        .env("VELO_PROFILE_OUTPUT", &profile_output);
-
-    // Standard Velo envs
-    cmd.env(
-        "VELO_GRACEFUL_SHUTDOWN_TIMEOUT",
-        config.graceful_shutdown_timeout.to_string(),
-    );
     cmd.env(
         "VELO_SOCKET_STARTUP_TIMEOUT",
         config.zygote_socket_timeout.to_string(),
@@ -300,6 +363,18 @@ pub fn run_module_with_profile_capture(
         "VELO_SECURITY_HPC_THREADS",
         config.security_hpc_threads.to_string(),
     );
+
+    // RFC-0035/SPEC-0005: Native Preload SSOT Injection
+    if let Ok(exe_path) = std::env::current_exe() {
+        cmd.env("VELO_RUNTIME_EXE_PATH", exe_path);
+    }
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let lock_path = current_dir.join("preload.lock");
+    if lock_path.exists()
+        && let Ok(lock_json) = std::fs::read_to_string(&lock_path)
+    {
+        cmd.env("VELO_RUNTIME_PRELOAD_LOCK", lock_json);
+    }
 
     apply_standard_hygiene(&mut cmd);
 
