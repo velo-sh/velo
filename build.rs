@@ -242,14 +242,10 @@ fn generate_python_constants(_config: &Constants, _git_hash: &str) {
         }
         Err(e) => {
             // python3 not available, emit warning
-            println!(
-                "cargo:warning=⚠️  Could not run sync-constants.py: {}",
-                e
-            );
+            println!("cargo:warning=⚠️  Could not run sync-constants.py: {}", e);
         }
     }
 }
-
 
 /// RFC-0018: Download and prepare uv binary for embedding
 /// Now reads from config/embedded_assets.toml for declarative platform configuration
