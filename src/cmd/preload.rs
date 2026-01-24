@@ -42,6 +42,12 @@ pub enum PreloadOperation {
         path: PathBuf,
         #[arg(long)]
         global: bool,
+        /// Expected BLAKE3 hash (if provided, verification is enforced)
+        #[arg(long)]
+        expected_hash: Option<String>,
+        /// Expected mtime (for fast-path verification)
+        #[arg(long)]
+        expected_mtime: Option<u64>,
     },
 }
 
@@ -53,7 +59,12 @@ pub fn cmd_preload(args: &[String]) -> Result<()> {
         PreloadOperation::Verify => verify_impl(),
         PreloadOperation::Stats => stats_impl(),
         PreloadOperation::Load { lock, stage } => load_impl(&lock, &stage),
-        PreloadOperation::Check { path, global } => check_impl(&path, global),
+        PreloadOperation::Check {
+            path,
+            global,
+            expected_hash,
+            expected_mtime,
+        } => check_impl(&path, global, expected_hash, expected_mtime),
     }
 }
 
@@ -232,7 +243,12 @@ fn load_impl(lock_json: &str, stage_str: &str) -> Result<()> {
     Ok(())
 }
 
-fn check_impl(path: &Path, global: bool) -> Result<()> {
+fn check_impl(
+    path: &Path,
+    global: bool,
+    expected_hash: Option<String>,
+    expected_mtime: Option<u64>,
+) -> Result<()> {
     use crate::custody::preload_loader::PreloadLoader;
 
     // RFC-0035 INV-PRELOAD-002: Enforce strict path containment for `check` command
@@ -260,6 +276,40 @@ fn check_impl(path: &Path, global: bool) -> Result<()> {
         );
     }
 
+    // RFC-0035 Phase 6.5: Integrity Verification BEFORE Vetting
+    if let Some(hash) = expected_hash {
+        let mtime = expected_mtime.unwrap_or(0);
+        // Create a temporary fingerprint for verification
+        let _fp = NativeLibFingerprint {
+            relative_path: path.to_path_buf(),
+            package: "unknown".to_string(),
+            soname: "unknown".to_string(),
+            hash: hash.clone(),
+            header_hash: String::new(), // Deep verify will check full hash
+            mtime,
+            platform: LibPlatform {
+                os: String::new(),
+                arch: String::new(),
+                python_version: String::new(),
+                libc_type: String::new(),
+                libc_version: String::new(),
+                soabi: String::new(),
+            },
+            load_stage: LoadStage::PreInit,
+            provenance: None,
+        };
+
+        // For check command, we ALWAYS deep verify if a hash is provided
+        let (actual_hash, _) = NativeLibFingerprint::calculate_hashes(&resolved_path)?;
+        if actual_hash != hash {
+            anyhow::bail!(
+                "Integrity Violation: Native library {:?} does not match fingerprint.\n  Expected: {}\n  Actual:   {}\n  Hint: Run 'velo preload analyze' to refresh lock file.",
+                path,
+                hash,
+                actual_hash
+            );
+        }
+    }
     PreloadLoader::vett_only(&resolved_path, global)
 }
 

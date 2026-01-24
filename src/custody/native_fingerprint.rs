@@ -145,8 +145,8 @@ impl NativeLibFingerprint {
         // Slow-path: Calculate hashes
         let (full_hash, header_hash) = Self::calculate_hashes(path)?;
 
-        // Header verification for early exit
-        if header_hash != self.header_hash {
+        // Header verification for early exit (Only if expected header hash is provided)
+        if !self.header_hash.is_empty() && header_hash != self.header_hash {
             return Ok(false);
         }
 

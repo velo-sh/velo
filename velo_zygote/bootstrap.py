@@ -151,7 +151,17 @@ def _v_native_preload(target_stage: str) -> None:
                 velo_exe = os.environ.get("VELO_RUNTIME_EXE_PATH", "velo")
                 is_critical = any(x in soname.lower() for x in ["libtorch", "libtensorflow", "libpython"])
 
-                cmd = [velo_exe, "preload", "check", "--path", lib_path]
+                cmd = [
+                    velo_exe,
+                    "preload",
+                    "check",
+                    "--path",
+                    lib_path,
+                    "--expected-hash",
+                    fp.get("hash", ""),
+                    "--expected-mtime",
+                    str(fp.get("mtime", 0)),
+                ]
                 if is_critical:
                     cmd.append("--global")
 
@@ -160,8 +170,15 @@ def _v_native_preload(target_stage: str) -> None:
                 # SPEC-0006: LOP Logging
                 timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
                 sys.stderr.write(
-                    f"[{timestamp}] [ZYGOTE] WARN [VELO-PRELOAD-FAIL] Vetting failed for {soname}: {e.stderr}\n"
+                    f"[{timestamp}] [ZYGOTE] ERROR [VELO-PRELOAD-FAIL] Integrity/Vetting failed for {soname}: {e.stderr}\n"
                 )
+
+                # RFC-0035 §1.1 / §4.2: Environmental Guardrail
+                # If strict mode is on, or if this is an environment where we MUST trust the lock
+                if os.environ.get("VELO_NATIVE_PRELOAD_STRICT") == "1":
+                    sys.stderr.write("🚨 VELO_NATIVE_PRELOAD_STRICT is enabled. Aborting execution for security.\n")
+                    os._exit(1)
+
                 continue
 
             # 2. Process-local Load
