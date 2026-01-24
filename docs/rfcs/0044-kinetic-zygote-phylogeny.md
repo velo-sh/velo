@@ -64,6 +64,13 @@ We treat the Zygote set not as a "Pool" (unordered collection) but as a "Tree" (
 
 The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamically.
 
+### 4.1 Phylogenetic Maintenance (Rebasing)
+*   **Trigger**: When the upstream `Genesis` image updates (e.g., security patch `python:3.11.8` -> `3.11.9`).
+*   **Cascade Invalidation**: Since Zygotes are immutable snapshots, we cannot "patch" them.
+*   **Action**: The Supervisor **prunes** the entire affected branch.
+    *   New requests trigger a `Cold Boot` from the new Genesis.
+    *   The Tree naturally "regrows" the new lineage (e.g., `3.11.9 -> Numpy -> Torch`) based on demand.
+
 *   **Lazy Growth**: Branches are only grown when requested.
 *   **TTL Pruning**: Leaf nodes (Specific Zygotes) are killed after X minutes of inactivity to reclaim RAM.
 *   **Root Anchoring**: The `Genesis` node is pinned.
@@ -80,10 +87,12 @@ The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamic
     *   **Static Analysis**: Prefer loading "Pure Code" (Functions/Classes) over "Mutable State" (Dictionaries/Lists) in Zygotes.
 
 ### 6.2 ASLR Weakness (The Clone Army)
-*   **Risk**: All Zygote children share the exact same memory layout (Base Address). A successful buffer overflow exploit in one Agent works on all 1000 Agents.
-*   **Policy**:
-    *   **L0-L2 (Trusted)**: Accept risk for performance.
-    *   **L3-L4 (Untrusted)**: **MUST** use `exec()` (Cold Boot) to scramble ASLR, bypassing the Zygote Tree for security-critical tasks.
+*   **Risk**: Zygote children share the identical memory layout (Base Address) of the parent. An RCE exploit for one works for all.
+*   **Policy (Selective Hardening)**:
+    *   **L0-L2 (Trusted Internal Agents)**: **CONTINUE** to use Zygote. We trust internal code and prioritize the 5ms startup.
+    *   **L3 (Untrusted/Multitenant)**: **MUST DISABLE** Zygote.
+        *   Mechanism: Force `exec()` (Cold Boot) to trigger Kernel ASLR randomization.
+        *   Trade-off: We accept ~200ms latency penalty for maximum security isolation.
 
 ### 6.3 Entropy Reseeding (The Clone UUID)
 *   **Risk**: `fork()` copies the internal state of Pseudo-Random Number Generators (PRNG).
