@@ -93,13 +93,16 @@ The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamic
     *   **L3 (Untrusted)**: **STRICTLY PROHIBITED**. Supervisor must force `exec()` (Cold Boot) to randomize ASLR.
 
 ### 6.3 Entropy Reseeding (The Clone UUID)
-*   **Mandate**: `pthread_atfork` hooks MUST reseed OpenSSL, Python `random`, and `numpy.random` immediately upon fork.
+*   **Mandate**: `pthread_atfork` hooks MUST explicitly reseed:
+    *   **OpenSSL**: `OpenSSL_RAND_poll()` (Critical for C-Extensions like `urllib3`).
+    *   **Python**: `random.seed()` and `secrets`.
+    *   **Numpy**: `numpy.random`.
 
 ### 6.4 Branch Poisoning Defense (The Zygote Seal)
 *   **Risk**: If a Zygote is compromised or chemically altered (e.g., global state drift) before forking, the entire lineage is poisoned.
 *   **Mandate**: **Zygote Seal**.
-    *   Before entering the "Fork Loop", the Zygote process MUST call `MPROTECT` to mark its own Heap as **Read-Only**.
-    *   Attempts to modify global state after freeze will trigger `SIGSEGV` (Crash), ensuring immutability.
+    *   **Mechanism**: The Zygote process calls `MPROTECT` to lock memory as **Read-Only**.
+    *   **Scope Engineering**: MUST carefully target only **Data Segments** and **Old-Generation Heaps**. Applying MPROTECT to the entire heap will crash the Python VM Garbage Collector (which needs to write mark bits).
 
 ---
 
@@ -111,5 +114,7 @@ The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamic
     *   Low (~ 1.0): CoW has decayed (RefCounting Trap). Pruning recommended.
 
 ### 7.2 The Reaper (Chaos Engineering)
-*   **Mechanism**: A background daemon ("The Reaper") aggressively prunes Zygote branches that have not spawned children for 5 minutes.
+*   **Mechanism**: A background daemon ("The Reaper") aggressively prunes Zygote branches based on:
+    *   **TTL**: 5 minutes of inactivity.
+    *   **Memory Pressure (PSI)**: When system-wide Pressure Stall Information (PSI) spikes, force-kill LRU branches immediately.
 *   **Goal**: Prevent "Zombie Lineages" from consuming RAM indefinitely.
