@@ -1,4 +1,0 @@
-error: invalid value 'text' for '--output-format <OUTPUT_FORMAT>'
-  [possible values: concise, full, json, json-lines, junit, grouped, github, gitlab, pylint, rdjson, azure, sarif]
-
-For more information, try '--help'.
