@@ -82,11 +82,11 @@ When a Python Agent performs `import numpy`, the following kernel-user dance occ
 
 ---
 
-## 5. Performance Optimizations (The "Nuclear" Option)
+## 5. Optimization & Risk Management
 
-User-space filesystems (FUSE) are notoriously slow due to Context Switches. VeloVFS eliminates this penalty using three "Nuclear" optimizations:
+While the design is architecturally sound, real-world implementation must address three critical bottlenecks:
 
-### 5.1 Infinite Kernel Cache (TTL = ∞)
+### 5.1 Infinite Kernel Cache (The Speed of Light)
 Because CAS content is **Cryptographically Immutable**:
 *   VeloVFS returns `entry_timeout` and `attr_timeout` as **100 Years**.
 *   **Result**: The Linux Kernel will **NEVER** ask VeloVFS about the same file twice.
@@ -94,15 +94,21 @@ Because CAS content is **Cryptographically Immutable**:
     *   Second Access: **Zero Overhead** (Direct Hit in Kernel Page Cache).
 
 ### 5.2 Physical Deduplication (OS Page Cache Magic)
-*   **Scenario**: 1000 Agents running `numpy`.
-*   **Virtual View**: 1000 distinct `numpy.so` files.
-*   **Physical View**: All 1000 VeloVFS daemons redirect `read()` to the **same physical path** on the host.
-*   **Result**: Linux Kernel detects the same physical inode is being read. It keeps **ONE COPY** in RAM (Page Cache). 1000 Agents share a single physical memory footprint.
+*   **Virtual View**: 1000 distinct `numpy.so` files across 1000 Agents.
+*   **Physical View**: All 1000 VeloVFS daemons redirect `read()` to the **same physical inode** on the host.
+*   **Result**: Linux Kernel detects the physical inode overlap and keeps **ONE COPY** in global RAM. We utilize the OS to achieve zero-cost memory deduplication.
 
----
+### 5.3 Cold Start Latency (FUSE Passthrough)
+*   **Risk**: The "First Bite" latency. Even with infinite cache, the very first metadata lookup hits user-space.
+*   **Mitigation**: Use `FUSE_PASSTHROUGH` (Linux 5.15+ / Android Common Kernel).
+    *   VeloVFS can hand a physical file descriptor to the kernel during `open()`.
+    *   Subsequent `read()` calls bypass the FUSE daemon entirely, routed directly by the kernel to the underlying NVMe file.
 
-## 6. Reference Implementation (Rust PoC)
-The following code demonstrates the core FUSE loop and Inode resolution logic.
+### 5.4 Resource Exhaustion (FD & Memory)
+*   **FD Exhaustion**: 10k open files in Agent = 10k open FDs in VeloVFS.
+    *   **Mitigation**: Implement an **FD LRU Cache**. VeloVFS virtually holds files open for the Agent but physically closes inactive host FDs, re-opening them silently on demand.
+*   **Inode Bloat**: Storing millions of inodes in RAM.
+    *   **Mitigation**: Use compact Rust structures (`SmallString` for filenames, `u32` for indices) to minimize heap fragmentation.
 
 ```rust
 //! VeloVFS Reference Implementation (Proof of Concept)
