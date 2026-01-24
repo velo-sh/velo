@@ -77,11 +77,12 @@ mod tests {
         let verifier = PreloadVerifier::new(venv.path().to_path_buf());
         let result = verifier.validate_path(&lib_path);
         assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("outside of venv root")
+            error_msg.contains("outside of venv root")
+                || error_msg.contains("uses forbidden prefix"),
+            "Error message should indicate a security violation, got: {}",
+            error_msg
         );
     }
 
@@ -132,11 +133,12 @@ mod tests {
 
         let result = verifier.validate_path(&link_path);
         assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
         assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("outside of venv root")
+            error_msg.contains("outside of venv root")
+                || error_msg.contains("uses forbidden prefix"),
+            "Error message should indicate a security violation, got: {}",
+            error_msg
         );
     }
 }

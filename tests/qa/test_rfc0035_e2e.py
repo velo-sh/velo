@@ -85,7 +85,7 @@ class TestRFC0035UserExperience:
         Design Goal: Library must be loaded BEFORE Python script byte 1.
         """
         workspace = setup_workspace
-        lib = compile_lib("proof_lib", "proof.so", workspace)
+        compile_lib("proof_lib", "proof.so", workspace)
 
         # 1. Setup pyproject.toml
         pyproject = workspace / "pyproject.toml"
@@ -174,8 +174,8 @@ native_libraries = ["libs/secure.so"]
         # For E2E simplicity, we verify 'analyze' picks up multiple entries
         # when configured with a glob that matches dependencies.
 
-        lib1 = compile_lib("simple_lib", "base.so", workspace)
-        lib2 = compile_lib("simple_lib", "dependent.so", workspace)
+        compile_lib("simple_lib", "base.so", workspace)
+        compile_lib("simple_lib", "dependent.so", workspace)
 
         pyproject = workspace / "pyproject.toml"
         pyproject.write_text("""
