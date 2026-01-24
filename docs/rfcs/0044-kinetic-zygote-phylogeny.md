@@ -70,7 +70,25 @@ The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamic
 
 ---
 
-## 5. Implementation Roadmap
-This is an advanced feature targeting **Phase 5 (Kinetic Optimization)**. It requires:
-1.  **Velo Supervisor v2**: Capable of graph-based process management.
-2.  **Snapshotting**: Optional CRIU integration for saving "Committed" Zygote states to disk (Persistence).
+## 6. Council Review Constraints (Security & Stability)
+
+### 6.1 The CoW Decay (RefCounting Trap)
+*   **Problem**: Python is Reference Counted. Merely *reading* a shared object (e.g., `len(numpy_array)`) writes to its refcount header.
+*   **Result**: This triggers a `Page Fault`, marking the page "Dirty" and breaking the CoW sharing. 1000 agents will eventually Copy-on-Read 100% of the heap.
+*   **Mitigation**:
+    *   **Mandatory gc.freeze()**: Before calling `velo_freeze()`, the Zygote MUST call `gc.freeze()`. This moves objects to the permanent generation and (in newer Python) optimizes refcounting locality.
+    *   **Static Analysis**: Prefer loading "Pure Code" (Functions/Classes) over "Mutable State" (Dictionaries/Lists) in Zygotes.
+
+### 6.2 ASLR Weakness (The Clone Army)
+*   **Risk**: All Zygote children share the exact same memory layout (Base Address). A successful buffer overflow exploit in one Agent works on all 1000 Agents.
+*   **Policy**:
+    *   **L0-L2 (Trusted)**: Accept risk for performance.
+    *   **L3-L4 (Untrusted)**: **MUST** use `exec()` (Cold Boot) to scramble ASLR, bypassing the Zygote Tree for security-critical tasks.
+
+### 6.3 Entropy Reseeding (The Clone UUID)
+*   **Risk**: `fork()` copies the internal state of Pseudo-Random Number Generators (PRNG).
+*   **Result**: 1000 Agents might generate identical `uuid.uuid4()` or Session Keys if not carefully handled.
+*   **Mandate**: The Velo Runtime Core MUST implement a **Reseed Hook** (`pthread_atfork` child handler) that explicitly:
+    *   Reseeds OpenSSL `RAND_poll()`.
+    *   Reseeds Python `random.seed()` and `secrets`.
+    *   Reseeds `numpy.random`.
