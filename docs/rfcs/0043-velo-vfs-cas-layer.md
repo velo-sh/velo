@@ -505,12 +505,13 @@ To debug the "illusion", we need tools to inspect the reality behind the curtain
 ## 13. Phased Implementation Plan
 
 ### Phase 1: The "Simple" Projection (v12.0.0)
-*   **Goal**: Replace the "Symlink Farm" (RFC-0042) with a stable FUSE implementation.
+*   **Goal**: Replace the "Symlink Farm" (RFC-0042) with a stable, production-grade FUSE implementation.
 *   **Scope**:
-    *   Single-Layer FUSE Daemon (No CoW Maps yet).
-    *   Basic Hash Validation (Security).
-    *   File Handle Cache (Performance).
-    *   Standard Ext4/XFS Backing Store.
+    *   **Concurrency**: Single-Layer FUSE Daemon with Lock-Free Architecture (`DashMap`). replacement of `&mut self` is mandatory.
+    *   **Memory Safety**: Iterator-based Streaming `readdir` to prevent OOM on large directories.
+    *   **Performance**: File Handle Cache to eliminate `open()` redundancy.
+    *   **Security**: Strict Hash Validation & Path Traversal Defense.
+    *   **Storage**: Standard Ext4/XFS Backing Store.
 
 ### Phase 2: The "Hyper" Optimization (v12.1.0)
 *   **Goal**: Maximize density and support MicroVMs.
