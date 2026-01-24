@@ -309,5 +309,5 @@ class TestServePerformance:
                 proc.terminate()
                 try:
                     proc.wait(timeout=5)
-                except:
+                except Exception:
                     proc.kill()

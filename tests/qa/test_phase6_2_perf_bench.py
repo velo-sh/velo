@@ -46,12 +46,12 @@ def measure_startup_phases(
                 return (arch_latency, total_latency)
 
             if (time.perf_counter() - start) > 15.0:
-                raise TimeoutError(f"Server failed to start. Last log: {line.strip()}")
+                raise TimeoutError(f"Server failed to start. Last log: {line.strip()}") from None
     finally:
         try:
             os.kill(proc.pid, signal.SIGKILL)
             proc.wait()
-        except:
+        except Exception:
             pass
     return (None, 99999.0)
 

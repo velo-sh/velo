@@ -107,7 +107,7 @@ class TestAgentCSecurity:
         env_vars = os.environ.copy()
         env_vars["PYTHONPATH"] = "/tmp/evil"
 
-        result = env.run_velo("serve", "--dry-run", env=env_vars, timeout=2)
+        env.run_velo("serve", "--dry-run", env=env_vars, timeout=2)
         # Verify PYTHONPATH was not passed to subprocess
         # This would need to check the spawned uvicorn's environment
 
@@ -125,7 +125,7 @@ class TestAgentCSecurity:
         env_vars = os.environ.copy()
         env_vars["LD_LIBRARY_PATH"] = "/tmp/evil"
 
-        result = env.run_velo("serve", "--dry-run", env=env_vars, timeout=2)
+        env.run_velo("serve", "--dry-run", env=env_vars, timeout=2)
         # Verify LD_LIBRARY_PATH was not passed to subprocess
 
     @pytest.mark.skip(reason="Awaiting D1: --health-bind implementation")

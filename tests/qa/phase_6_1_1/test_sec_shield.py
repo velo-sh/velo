@@ -82,7 +82,7 @@ class TestSandboxShield:
             # Cleanup
             p1.terminate()
             p2.terminate()
-        except:
+        except Exception:
             pass
 
         # MANDATE: Each project root MUST have a unique Zygote socket path.

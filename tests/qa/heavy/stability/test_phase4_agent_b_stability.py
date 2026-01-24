@@ -36,7 +36,7 @@ def velo_analyze_available() -> bool:
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
-    except:
+    except Exception:
         return False
 
 
@@ -323,7 +323,7 @@ class TestRegression:
             p.set_file("main.py", "import requests")
             p.sync()
 
-            result = p.analyze("--fix")
+            p.analyze("--fix")
 
             after = p.read_pyproject()
             # Original config should still be there

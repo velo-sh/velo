@@ -168,7 +168,7 @@ def health():
             # Wait for graceful shutdown
             try:
                 proc.wait(timeout=10)
-            except:
+            except Exception:
                 proc.kill()
                 proc.wait()
                 pytest.fail("Server did not shut down gracefully within 10s")

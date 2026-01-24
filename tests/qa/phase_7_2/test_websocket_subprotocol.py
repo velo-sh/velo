@@ -69,6 +69,6 @@ async def app(scope, receive, send):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()

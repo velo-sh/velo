@@ -43,7 +43,7 @@ import hard_mod          # Hard
 if False: import soft_if  # Soft
 try:
     import soft_try
-except:
+except Exception:
     pass # Soft
 def f(): import soft_fn  # Soft
 """,

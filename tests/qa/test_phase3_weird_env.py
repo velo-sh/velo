@@ -559,7 +559,7 @@ time.sleep(10)
             for pid in orphans:
                 try:
                     os.kill(int(pid), signal.SIGKILL)
-                except:
+                except Exception:
                     pass
 
             print(f"  Orphans found: {len(orphans)}")

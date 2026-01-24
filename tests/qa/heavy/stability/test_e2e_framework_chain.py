@@ -442,9 +442,7 @@ async def app(scope, proto):
             p.start_serve("main:app")
             p.assert_worker_spawned()
 
-            resp = p.assert_http_response(
-                "/", expected_status=200, expected_json_key="framework", expected_json_value="RSGI"
-            )
+            p.assert_http_response("/", expected_status=200, expected_json_key="framework", expected_json_value="RSGI")
 
             summary = p.summary()
             print(f"\n📊 E2E Summary: {summary['passed']}/{summary['total']} assertions passed")

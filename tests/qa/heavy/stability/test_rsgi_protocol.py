@@ -182,9 +182,9 @@ app = FastAPI()
 @app.get("/error/{code}")
 async def trigger_error(code: int):
     if code == 404:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Not found") from None
     elif code == 500:
-        raise HTTPException(status_code=500, detail="Server error")
+        raise HTTPException(status_code=500, detail="Server error") from None
     return {"code": code}
 """,
         )

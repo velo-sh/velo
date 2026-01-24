@@ -45,7 +45,7 @@ class MockASGIApp:
 
         # Get request body
         request = await receive()
-        body = request.get("body", b"")
+        request.get("body", b"")
 
         # Send response
         await send(
@@ -200,7 +200,7 @@ async def test_rsgi_request_body_streaming() -> None:
 
         try:
             # Handshake
-            ready = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
+            await asyncio.wait_for(recv_msg(reader), timeout=2.0)
             await send_msg(writer, [TYPE_AUTH_OK, "session", 10485760])
 
             # Send request with body
@@ -211,7 +211,7 @@ async def test_rsgi_request_body_streaming() -> None:
 
             # Get response
             res_start = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
-            res_body = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
+            await asyncio.wait_for(recv_msg(reader), timeout=2.0)
 
             assert res_start[2] == 200
             assert len(received_body) > 0, "No body received by app"

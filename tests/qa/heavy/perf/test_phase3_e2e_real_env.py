@@ -54,7 +54,7 @@ class RealUserEnv:
         start = time.perf_counter()
 
         # Merge isolated env vars
-        env = url_env = os.environ.copy()
+        env = os.environ.copy()
         env.update(self.env_vars)
 
         result = subprocess.run(

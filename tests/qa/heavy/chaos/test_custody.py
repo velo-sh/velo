@@ -152,7 +152,7 @@ class TestCustody002AtomicExtraction:
         )
 
         # Check if .velo or similar directory was created
-        velo_dir = tmp_path / ".velo"
+        tmp_path / ".velo"
 
         # Should not crash regardless of outcome
         assert result.returncode in [0, 1, 2], f"Unexpected crash: {result.stderr}"
@@ -792,7 +792,7 @@ dependencies = []
         script = project_dir / "test.py"
         script.write_text("print('test')")
 
-        result = subprocess.run(
+        subprocess.run(
             [velo_binary, "run", str(script)],
             capture_output=True,
             text=True,

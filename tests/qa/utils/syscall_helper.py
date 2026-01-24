@@ -97,8 +97,8 @@ def check_writable_vmas_robust(fd: int) -> tuple[bool | None, str]:
     """
     try:
         stat_info = os.fstat(fd)
-        target_inode = stat_info.st_ino
-        target_dev = stat_info.st_dev
+        _target_inode = stat_info.st_ino
+        _target_dev = stat_info.st_dev
     except OSError as e:
         return None, f"fstat failed: {e}"
 
@@ -115,10 +115,10 @@ def check_writable_vmas_robust(fd: int) -> tuple[bool | None, str]:
                     if len(parts) < 5:
                         continue
 
-                    address_range = parts[0]
-                    perms = parts[1]
-                    offset = parts[2]
-                    dev = parts[3]
+                    _address_range = parts[0]
+                    _perms = parts[1]
+                    _offset = parts[2]
+                    _dev = parts[3]
                     inode_str = parts[4]
                     pathname = parts[5].strip() if len(parts) > 5 else ""
 
@@ -129,16 +129,16 @@ def check_writable_vmas_robust(fd: int) -> tuple[bool | None, str]:
                         continue
 
                     # Check if this VMA matches our fd
-                    if line_inode == target_inode:
+                    if line_inode == _target_inode:
                         # Check for write permission (second char of perms)
-                        if len(perms) >= 2 and perms[1] == "w":
+                        if len(_perms) >= 2 and _perms[1] == "w":
                             return True, f"Writable VMA found: {line.strip()}"
 
                     # Fallback: Check for memfd pattern in pathname
                     if "memfd:" in pathname and line_inode > 0:
-                        if len(perms) >= 2 and perms[1] == "w":
+                        if len(_perms) >= 2 and _perms[1] == "w":
                             # Could be our memfd - check inode
-                            if line_inode == target_inode:
+                            if line_inode == _target_inode:
                                 return True, f"Writable memfd VMA: {line.strip()}"
 
                 except (ValueError, IndexError):
@@ -161,7 +161,7 @@ def is_ptrace_available() -> bool:
         libc = get_libc()
         # PTRACE_TRACEME = 0, should return 0 on success, -1 on error
         # Note: This will fail if already being traced
-        result = libc.ptrace(0, 0, 0, 0)
+        _result = libc.ptrace(0, 0, 0, 0)
         return True  # If we get here, ptrace is available
     except (OSError, AttributeError):
         return False

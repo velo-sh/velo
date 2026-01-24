@@ -233,7 +233,7 @@ class TestBenchmarkReport:
                 sock.settimeout(0.001)
                 sock.connect(str(p))
                 sock.close()
-            except:
+            except Exception:
                 pass
         ac10_ms = (time.perf_counter() - start) * 1000
         ac10_pass = "PASS" if ac10_ms < THRESHOLD_CLEANUP_MS else "FAIL"

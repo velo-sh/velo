@@ -211,7 +211,7 @@ class TestL4Security:
             # Building in /tmp may work (project location)
             # But loading should warn or reject
             if bundle_path.exists():
-                result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
+                run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
                 # Should work but may warn about insecure location
 
     @pytest.mark.security
@@ -230,7 +230,7 @@ class TestL4Security:
             tmp_path = Path(tmp)
             create_simple_project(tmp_path)
 
-            bundle_path = build_bundle(tmp_path)
+            build_bundle(tmp_path)
             # Similar to /tmp test
 
     @pytest.mark.security
@@ -423,7 +423,7 @@ class TestL4MarshalDepth:
 
         # Generate deeply nested function calls (50 levels)
         nested = "x"
-        for i in range(50):
+        for _i in range(50):
             nested = f"(lambda: {nested})()"
 
         main_py.write_text(

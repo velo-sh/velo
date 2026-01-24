@@ -78,7 +78,7 @@ class TestBug003_SilentReinitFailure:
 
         def failing_callback():
             error_occurred.append(True)
-            raise RuntimeError("Database connection failed!")
+            raise RuntimeError("Database connection failed!") from None
 
         register_fork_reinit(failing_callback)
 
@@ -169,7 +169,6 @@ class TestEdgeCase_ForkWithThreads:
         from pytest_velo.plugin import assert_single_threaded
 
         barrier = threading.Barrier(2)
-        error = []
 
         def worker():
             barrier.wait()

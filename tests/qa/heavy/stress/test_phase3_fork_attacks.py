@@ -133,7 +133,7 @@ os._exit(42)  # Abrupt exit without cleanup
             initial_zombies = count_zombie_processes()
 
             # Run with zygote
-            result = run_velo(["run", "--zygote", "abrupt_exit.py"], cwd=env.path, timeout=10)
+            run_velo(["run", "--zygote", "abrupt_exit.py"], cwd=env.path, timeout=10)
 
             # Give time for cleanup
             time.sleep(0.5)
@@ -171,7 +171,7 @@ while True:
             # Run with short timeout (handled by velo, not test harness)
             start = time.perf_counter()
             result = run_velo(["run", "--zygote", "infinite.py"], cwd=env.path, timeout=10)
-            elapsed = time.perf_counter() - start
+            time.perf_counter() - start
 
             # Should timeout eventually (test harness timeout catches this)
             # The point is it shouldn't hang forever

@@ -146,7 +146,7 @@ class TestFingerprintRACE:
                         (env.path / "uv.lock").write_text(f"version = {counter}\n")
                         counter += 1
                         time.sleep(0.01)
-                    except:
+                    except Exception:
                         pass
 
             modifier_thread = threading.Thread(target=modify_uv_lock)

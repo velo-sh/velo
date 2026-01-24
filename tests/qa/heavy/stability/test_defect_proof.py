@@ -38,7 +38,7 @@ def app(scope, receive, send):
         msg = f"LEAK_DETECTED: {{data}}"
     except Exception as e:
         msg = f"NO_LEAK: {{e}}"
-        
+
     async def respond():
         await send({{
             'type': 'http.response.start',
@@ -88,7 +88,7 @@ async def app(scope, receive, send):
         msg = "BYPASS_DETECTED"
     except ImportError:
         msg = "SHIELD_ACTIVE"
-        
+
     if scope['type'] == 'http':
         await send({
             'type': 'http.response.start',
@@ -129,7 +129,7 @@ async def app(scope, receive, send):
                 import requests
 
                 resp = requests.get(f"http://127.0.0.1:{port}/", timeout=10)
-            except:
+            except Exception:
                 time.sleep(5)
                 import requests
 

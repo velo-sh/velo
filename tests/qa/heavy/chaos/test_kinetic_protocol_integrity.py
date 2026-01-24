@@ -61,7 +61,7 @@ def zygote_process():
     proc.terminate()
     try:
         proc.wait(timeout=2)
-    except:
+    except Exception:
         proc.kill()
     if os.path.exists(sock_path):
         os.unlink(sock_path)
@@ -87,7 +87,7 @@ def send_raw_hostile(sock_path: str, total_len: int, version: int, payload_bytes
         # 3. Try to read (optional, usually Zygote closes connection)
         try:
             s.recv(1024)
-        except:
+        except Exception:
             pass
     finally:
         s.close()
@@ -278,7 +278,7 @@ def test_state_lifecycle_progression():
         try:
             final_state = get_state(s)
             assert final_state == "SHUTDOWN"
-        except:
+        except Exception:
             pass  # Process might have exited
 
     finally:

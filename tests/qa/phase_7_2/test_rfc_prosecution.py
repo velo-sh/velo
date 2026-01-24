@@ -76,7 +76,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -122,7 +122,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -212,7 +212,7 @@ async def app(scope, proto):
             try:
                 proc.terminate()
                 proc.wait()
-            except:
+            except Exception:
                 pass
 
     @pytest.mark.tier2
@@ -399,7 +399,7 @@ async def app(scope, proto):
             # Trigger hard exit
             try:
                 requests.get(f"http://127.0.0.1:{port}/exit", timeout=5)
-            except:
+            except Exception:
                 pass  # Expected to fail
 
             time.sleep(2)
@@ -421,7 +421,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -496,7 +496,7 @@ class TestRFC0019NativeRuntimeProsecution:
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -564,7 +564,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -600,9 +600,9 @@ async def app(scope, proto):
                     open_fds.append(fd)
                 except OSError:
                     pass
-        except:
+        except Exception:
             pass
-            
+
         proto.response_str(200, [("content-type", "application/json")], json.dumps({"open_fds": open_fds}))
 """,
             )
@@ -633,7 +633,6 @@ async def app(scope, proto):
 
                 # Filter out baseline runtime FDs to find true 'leaks' (inherited).
                 # On macOS, kqueues and newly opened unix sockets are the standard footprint.
-                leaked = []
                 for fd in data["open_fds"]:
                     if fd <= 2:
                         continue  # Standard
@@ -666,7 +665,7 @@ async def app(scope, proto):
             finally:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except:
+                except Exception:
                     pass
                 proc.wait()
         finally:
@@ -674,7 +673,7 @@ async def app(scope, proto):
                 try:
                     f.close()
                     os.unlink(f.name)
-                except:
+                except Exception:
                     pass
 
     @pytest.mark.tier2
@@ -740,13 +739,13 @@ async def app(scope, proto):
             for s in sockets:
                 try:
                     s.close()
-                except:
+                except Exception:
                     pass
 
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -784,7 +783,7 @@ async def app(scope, proto):
             latencies = []
             for _ in range(100):
                 start = time.perf_counter()
-                resp = requests.get(f"http://127.0.0.1:{port}/")
+                requests.get(f"http://127.0.0.1:{port}/")
                 end = time.perf_counter()
                 latencies.append((end - start) * 1_000_000)
 
@@ -794,7 +793,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -844,6 +843,6 @@ async def app(scope, receive, send):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()

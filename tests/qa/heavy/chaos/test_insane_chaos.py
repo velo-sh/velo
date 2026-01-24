@@ -177,7 +177,7 @@ class TestHeaderChaos:
             try:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     assert resp.status == 200
-            except:
+            except Exception:
                 pass  # Many clients block this, but we check if server crashes
 
     @pytest.mark.tier5
@@ -308,7 +308,7 @@ async def app(scope, receive, send):
 
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n")
-                for i in range(10):
+                for _i in range(10):
                     sock.sendall(b"X")
                     time.sleep(1)
                 # Should finish and return 10
@@ -393,7 +393,7 @@ async def app(scope, receive, send):
 
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 50\r\n\r\n")
-                for i in range(50):
+                for _i in range(50):
                     sock.sendall(b"X")
                     time.sleep(0.01)
 
@@ -467,7 +467,7 @@ class TestConcurrencyChaos:
                 try:
                     r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10)
                     return int(r.status_code)
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
@@ -499,7 +499,7 @@ async def websocket_endpoint(websocket: WebSocket):
             def do_http():
                 try:
                     return requests.get(f"http://127.0.0.1:{p.port}/", timeout=2).status_code
-                except:
+                except Exception:
                     return 0
 
             def do_ws():
@@ -510,12 +510,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     msg = ws.recv()
                     ws.close()
                     return 1 if msg == "hello" else 0
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 f_http = [executor.submit(do_http) for _ in range(50)]
-                f_ws = [executor.submit(do_ws) for _ in range(50)]
+                [executor.submit(do_ws) for _ in range(50)]
 
             assert [f.result() for f in f_http].count(200) >= 40
 
@@ -537,7 +537,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     s = socket.create_connection(("127.0.0.1", p.port), timeout=1)
                     s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                     s.close()
-                except:
+                except Exception:
                     pass
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
@@ -586,7 +586,7 @@ async def websocket_endpoint(websocket: WebSocket):
             def req() -> int:
                 try:
                     return int(requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code)
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:

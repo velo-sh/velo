@@ -62,29 +62,29 @@ def worker_process(worker_id, model_mmaps_info, barrier, result_queue):
     try:
         # Wait for all workers to be ready
         barrier.wait(timeout=10)
-        
+
         # Simulate attaching to a model (round-robin assignment)
         model_idx = worker_id % NUM_MODELS
-        
+
         # Create own mmap (simulating FD passing)
         mm = mmap.mmap(-1, MODEL_SIZE, access=mmap.ACCESS_READ)
-        
+
         # Simulate reading from the model
         data = mm[:1024]
-        
+
         # Simulate inference work
         time.sleep(0.1)
-        
+
         mm.close()
         result_queue.put((worker_id, "OK"))
-        
+
     except Exception as e:
         result_queue.put((worker_id, f"ERROR: {e}"))
 
 def main():
     print(f"Starting multi-model scalability test")
     print(f"Workers: {NUM_WORKERS}, Models: {NUM_MODELS}")
-    
+
     # Create model mmaps (simulating Velo Host)
     model_mmaps = []
     for i in range(NUM_MODELS):
@@ -92,13 +92,13 @@ def main():
         mm.write(b"M" * MODEL_SIZE)  # Fill with data
         mm.seek(0)
         model_mmaps.append(mm)
-    
+
     print(f"Created {NUM_MODELS} model segments ({MODEL_SIZE // 1024}KB each)")
-    
+
     # Create synchronization primitives
     barrier = multiprocessing.Barrier(NUM_WORKERS, timeout=30)
     result_queue = multiprocessing.Queue()
-    
+
     # Spawn workers
     processes = []
     for i in range(NUM_WORKERS):
@@ -108,15 +108,15 @@ def main():
         )
         processes.append(p)
         p.start()
-    
+
     # Wait for all workers
     for p in processes:
         p.join(timeout=30)
-    
+
     # Collect results
     success_count = 0
     error_count = 0
-    
+
     while not result_queue.empty():
         worker_id, status = result_queue.get_nowait()
         if status == "OK":
@@ -124,13 +124,13 @@ def main():
         else:
             error_count += 1
             print(f"Worker {worker_id}: {status}")
-    
+
     # Cleanup
     for mm in model_mmaps:
         mm.close()
-    
+
     print(f"Results: {success_count}/{NUM_WORKERS} workers succeeded")
-    
+
     if success_count == NUM_WORKERS:
         print("PASS: All workers completed successfully")
         return 0
@@ -179,59 +179,59 @@ def get_fd_count():
     if sys.platform == "linux":
         try:
             return len(os.listdir(f"/proc/{os.getpid()}/fd"))
-        except:
+        except Exception:
             return -1
     return -1
 
 def main():
     print(f"Running attach/detach storm: {CYCLES} cycles")
-    
+
     initial_fd_count = get_fd_count()
     print(f"Initial FD count: {initial_fd_count}")
-    
+
     errors = 0
-    
+
     for cycle in range(CYCLES):
         try:
             # Create (attach)
             mm = mmap.mmap(-1, SEGMENT_SIZE, access=mmap.ACCESS_WRITE)
-            
+
             # Write some data
             mm.write(b"\\x00" * 1024)
             mm.seek(0)
-            
+
             # Read it back
             _ = mm.read(1024)
-            
+
             # Close (detach)
             mm.close()
-            
+
         except Exception as e:
             errors += 1
             print(f"Cycle {cycle}: ERROR - {e}")
             if errors > 5:
                 print("Too many errors, aborting")
                 break
-        
+
         # Periodic GC to ensure cleanup
         if cycle % 100 == 0 and cycle > 0:
             gc.collect()
             print(f"Cycle {cycle}: OK")
-    
+
     # Force GC and check FD count
     gc.collect()
     final_fd_count = get_fd_count()
     print(f"Final FD count: {final_fd_count}")
-    
+
     if initial_fd_count > 0 and final_fd_count > 0:
         fd_delta = final_fd_count - initial_fd_count
         print(f"FD delta: {fd_delta}")
-        
+
         # Allow small variance (2 FDs) for interpreter overhead
         if fd_delta > 2:
             print(f"FAIL: FD leak detected ({fd_delta} leaked)")
             return 1
-    
+
     if errors == 0:
         print(f"PASS: {CYCLES} cycles completed without errors")
         return 0
@@ -277,7 +277,7 @@ def check_hugepage_support():
     """Check if HugePages are available on this system."""
     if sys.platform != "linux":
         return False, "Not Linux"
-    
+
     try:
         with open("/proc/meminfo", "r") as f:
             content = f.read()
@@ -288,22 +288,22 @@ def check_hugepage_support():
                         if free > 0:
                             return True, f"{free} HugePages available"
                         return False, "No free HugePages"
-    except:
+    except Exception:
         pass
-    
+
     return False, "Cannot read /proc/meminfo"
 
 def test_standard_pages():
     """Test with standard 4KB pages."""
     size = 10 * 1024 * 1024  # 10MB
-    
+
     try:
         mm = mmap.mmap(-1, size, access=mmap.ACCESS_WRITE)
-        
+
         # Touch all pages to ensure allocation
         for i in range(0, size, 4096):
             mm[i] = 0
-        
+
         mm.close()
         return True, "Standard pages work"
     except Exception as e:
@@ -312,16 +312,16 @@ def test_standard_pages():
 def test_hugepage_fallback():
     """
     Test H-28: Runtime Revertability
-    
+
     If HugeTLB is unavailable, must gracefully fall back.
     """
     # This simulates the fallback behavior
     hugepage_available, reason = check_hugepage_support()
-    
+
     if not hugepage_available:
         print(f"HugePages not available: {reason}")
         print("Testing fallback to standard pages...")
-        
+
         success, msg = test_standard_pages()
         if success:
             print(f"PASS: Fallback successful - {msg}")
@@ -332,7 +332,7 @@ def test_hugepage_fallback():
     else:
         print(f"HugePages available: {reason}")
         print("System supports HugePages, testing standard pages for baseline...")
-        
+
         success, msg = test_standard_pages()
         if success:
             print(f"PASS: Standard pages work - {msg}")
@@ -390,19 +390,19 @@ def worker_that_crashes(shared_flag, crash_type):
     try:
         # Create own mmap
         mm = mmap.mmap(-1, SEGMENT_SIZE, access=mmap.ACCESS_READ)
-        
+
         # Signal that we're attached
         shared_flag.value = 1
-        
+
         # Wait a bit then crash
         time.sleep(0.1)
-        
+
         if crash_type == "sigkill":
             os.kill(os.getpid(), signal.SIGKILL)
         elif crash_type == "exit":
             mm.close()
             sys.exit(1)
-        
+
     except Exception as e:
         print(f"Worker error: {e}")
         sys.exit(1)
@@ -416,45 +416,45 @@ def recovery_worker(flag):
 
 def main():
     print("Testing worker crash recovery...")
-    
+
     # Create shared flag
     attached_flag = multiprocessing.Value('i', 0)
-    
+
     # Start a worker that will crash
     p = multiprocessing.Process(target=worker_that_crashes, args=(attached_flag, "exit"))
     p.start()
-    
+
     # Wait for worker to attach
     timeout = 5
     start = time.time()
     while attached_flag.value == 0 and (time.time() - start) < timeout:
         time.sleep(0.1)
-    
+
     if attached_flag.value == 0:
         print("FAIL: Worker never attached")
         return 1
-    
+
     print("Worker attached, waiting for crash...")
-    
+
     # Wait for worker to finish (crash)
     p.join(timeout=5)
-    
+
     if p.exitcode is None:
         print("FAIL: Worker didn't exit")
         p.terminate()
         return 1
-    
+
     print(f"Worker exited with code: {p.exitcode}")
-    
+
     # Now verify we can spawn a new worker
     print("Spawning recovery worker...")
-    
+
     attached_flag.value = 0
-    
+
     p2 = multiprocessing.Process(target=recovery_worker, args=(attached_flag,))
     p2.start()
     p2.join(timeout=5)
-    
+
     if attached_flag.value == 1 and p2.exitcode == 0:
         print("PASS: Recovery worker attached successfully")
         return 0
@@ -506,28 +506,28 @@ def check_memfd_count():
             capture_output=True, text=True
         )
         count = int(result.stdout.strip())
-    except:
+    except Exception:
         pass
     return count
 
 def main():
     print("Testing host restart survivability (simplified)...")
-    
+
     initial_memfd = check_memfd_count()
     print(f"Initial memfd count: {initial_memfd}")
-    
+
     # Create a memfd-like anonymous mmap
     mm = mmap.mmap(-1, 1024 * 1024, access=mmap.ACCESS_WRITE)
-    
+
     during_memfd = check_memfd_count()
     print(f"During test memfd count: {during_memfd}")
-    
+
     # Close it (simulating host shutdown)
     mm.close()
-    
+
     final_memfd = check_memfd_count()
     print(f"Final memfd count: {final_memfd}")
-    
+
     # Verify cleanup
     if final_memfd <= initial_memfd:
         print("PASS: No memfd leak detected")

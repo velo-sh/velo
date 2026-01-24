@@ -397,7 +397,7 @@ time.sleep(60)
         # Write 5MB file slowly (1MB chunks every 200ms)
         app_file = env.path / "main.py"
         with open(app_file, "w") as f:
-            for i in range(5):
+            for _i in range(5):
                 # Write 1MB comment block + a few prints to reach 5MB total
                 f.write(f"# {'x' * 1_000_000}\n")
                 f.write("print('LOADING')\n")

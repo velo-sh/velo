@@ -37,7 +37,7 @@ def velo_analyze_available() -> bool:
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
-    except:
+    except Exception:
         return False
 
 
@@ -86,12 +86,12 @@ dependencies = {json.dumps(deps or [])}
             for d in dirs:
                 try:
                     os.chmod(os.path.join(root, d), 0o755)
-                except:
+                except Exception:
                     pass
             for f in files:
                 try:
                     os.chmod(os.path.join(root, f), 0o644)
-                except:
+                except Exception:
                     pass
         shutil.rmtree(self.path, ignore_errors=True)
 
@@ -154,7 +154,7 @@ class TestFileSystemSecurity:
             p.set_pyproject()
             p.set_file("main.py", "print(1)")
             p.sync()
-            result = p.analyze()
+            p.analyze()
 
         tmp_after = set(os.listdir("/tmp"))
         new_files = tmp_after - tmp_before
@@ -192,7 +192,7 @@ builtins.__import__ = evil_import
             )
             p.sync()
 
-            result = p.analyze("evil.py")
+            p.analyze("evil.py")
 
             # Check that the evil code didn't create the marker file
             assert not os.path.exists("/tmp/velo_pwned"), "Import hook escaped sandbox!"
@@ -219,7 +219,7 @@ os.system("touch {marker}")
             if os.path.exists(marker):
                 os.remove(marker)
 
-            result = p.analyze("danger.py")
+            p.analyze("danger.py")
             assert not os.path.exists(marker), "SECURITY: os.system() escaped sandbox!"
 
 
@@ -253,7 +253,7 @@ class TestInformationDisclosure:
             p.sync()
 
             output_file = p.path / "report.json"
-            result = p.analyze("--output", str(output_file))
+            p.analyze("--output", str(output_file))
 
             if output_file.exists():
                 mode = os.stat(output_file).st_mode
@@ -271,7 +271,7 @@ class TestInformationDisclosure:
                 p.sync()
 
                 output_file = p.path / "private.json"
-                result = p.analyze("--output", str(output_file))
+                p.analyze("--output", str(output_file))
 
                 if output_file.exists():
                     mode = os.stat(output_file).st_mode & 0o777
@@ -301,7 +301,7 @@ class TestInputValidation:
             except OSError:
                 pytest.skip("Cannot create file with shell chars")
 
-            result = p.analyze(evil_name)
+            p.analyze(evil_name)
 
             # Shell injection should not have worked
             assert not os.path.exists("/tmp/pwned.py")
@@ -315,10 +315,10 @@ class TestInputValidation:
 
             # Try command substitution
             evil_output = "$(whoami).json"
-            result = p.analyze("--output", evil_output)
+            p.analyze("--output", evil_output)
 
             # Should create literal file, not execute whoami
-            literal_file = p.path / evil_output
+            p.path / evil_output
             # The output should be treated as literal filename
             # Check that no file with user's name was created
             import getpass

@@ -41,7 +41,7 @@ class TestZygoteLifecycleCHAOS:
             initial_zombies = count_zombie_processes()
 
             # Start Zygote in background
-            result = run_velo(["zygote", "start"], cwd=env.path, timeout=10)
+            run_velo(["zygote", "start"], cwd=env.path, timeout=10)
 
             # If it started, kill it immediately
             if env.zygote_pid:
@@ -142,7 +142,7 @@ class TestZygoteLifecycleCHAOS:
 
             initial_zombies = count_zombie_processes()
 
-            for i in range(5):
+            for _i in range(5):
                 run_velo(["zygote", "start"], cwd=env.path, timeout=5)
                 run_velo(["zygote", "stop"], cwd=env.path, timeout=5)
 

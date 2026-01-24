@@ -56,7 +56,7 @@ def main():
     project_dir, script_path = setup_project()
     try:
         # 1. Build bundle
-        bundle_path = build_bundle(project_dir)
+        build_bundle(project_dir)
 
         # 2. Try without config (default limit applies)
         config_path = project_dir / "pyproject.toml"
@@ -104,7 +104,7 @@ def main_logic() -> None:
     project_dir, script_path = setup_project()
     try:
         # 1. Build bundle
-        bundle_path = build_bundle(project_dir)
+        build_bundle(project_dir)
 
         # 2. Try without config (default limit applies)
         config_path = project_dir / "pyproject.toml"

@@ -19,7 +19,7 @@ def get_binary_arch(binary_path: str) -> str:
         if "x86_64" in output:
             return "x86_64"
         return "unknown"
-    except:
+    except Exception:
         return "unknown"
 
 

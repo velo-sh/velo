@@ -132,7 +132,7 @@ def get_fds():
                     resp = requests.get(f"http://127.0.0.1:{port}/fds", timeout=1)
                     if resp.status_code == 200:
                         break
-                except:
+                except Exception:
                     pass
                 time.sleep(0.5)
 

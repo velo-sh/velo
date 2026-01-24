@@ -105,7 +105,7 @@ class TestDesignGoal_Performance:
 
         # Multiple samples
         latencies = [measure_fork_latency() for _ in range(10)]
-        avg = sum(latencies) / len(latencies)
+        sum(latencies) / len(latencies)
         median = sorted(latencies)[len(latencies) // 2]
 
         # RFC target is < 2ms
@@ -289,7 +289,7 @@ class TestQualityGate_A_PytestFeaturesWork:
     def test_exception_assertions_work(self):
         """pytest.raises works"""
         with pytest.raises(ZeroDivisionError):
-            1 / 0
+            _ = 1 / 0
 
     def test_approx_assertions_work(self):
         """pytest.approx works"""

@@ -177,7 +177,7 @@ class TestEnvironmentPollutionRegression:
             text=True,
             timeout=5,
         )
-        venv_executable = result.stdout.strip()
+        result.stdout.strip()
 
         # Run velo to detect Python (using a command that reports Python info)
         result = subprocess.run(

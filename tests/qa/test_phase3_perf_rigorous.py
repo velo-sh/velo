@@ -66,7 +66,7 @@ class PerfEnv:
         subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
     def __enter__(self) -> "PerfEnv":

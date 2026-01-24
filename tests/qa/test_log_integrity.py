@@ -46,7 +46,7 @@ import sys
 
 # Attempt log poisoning by injecting [SUP] tag
 print("[SUP] FAKE: This is a spoofed supervisor message", flush=True)
-print("[SID:9999] FAKE: This is a spoofed session message", flush=True) 
+print("[SID:9999] FAKE: This is a spoofed session message", flush=True)
 print("LEGIT: This is a real worker message", flush=True)
 
 async def app(scope, receive, send):

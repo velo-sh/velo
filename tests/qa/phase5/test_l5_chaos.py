@@ -142,7 +142,7 @@ except Exception as e:
         pyproject.write_text('[project]\nname = "unicode-test"\nversion = "0.1.0"')
 
         # Build and run
-        bundle_path = build_bundle(tmp_path)
+        build_bundle(tmp_path)
         result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
 
         # Should not crash
@@ -233,7 +233,7 @@ print(f"Deep value: {deep.DEEP_VALUE}")
         pyproject.write_text('[project]\nname = "deep-nest"\nversion = "0.1.0"')
 
         # Build and run
-        bundle_path = build_bundle(tmp_path)
+        build_bundle(tmp_path)
         result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
 
         assert result.returncode == 0 or "ok" in result.stdout
@@ -315,7 +315,7 @@ class TestL5Boundary:
         if bundle_path.exists():
             # Append data to exceed 256MB (fake large file)
             # Actually creating 256MB takes too long, so we test the check logic
-            original = bundle_path.read_bytes()
+            bundle_path.read_bytes()
 
             # Create a file that reports as >256MB wouldn't work in test
             # Instead verify the constant exists in implementation
@@ -350,14 +350,14 @@ class TestL5CircularDeps:
         pyproject.write_text('[project]\nname = "circular-test"\nversion = "0.1.0"')
 
         # Build which may detect cycle
-        bundle_path = build_bundle(tmp_path)
+        build_bundle(tmp_path)
 
         # If detected, should report
         # If not detected, Python will handle at runtime (normal behavior)
         # Either is acceptable
 
         # Run to verify it doesn't crash
-        run_result = run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
+        run_velo(["run", "--fast", "main.py"], tmp_path, velo_binary)
         # Python allows circular imports in many cases
         # Just verify no crash
 
@@ -418,7 +418,7 @@ class TestL5MemoryPressure:
         pyproject.write_text('[project]\nname = "memory-test"\nversion = "0.1.0"')
 
         # Build
-        bundle_path = build_bundle(tmp_path)
+        build_bundle(tmp_path)
 
         # Run and verify memory usage isn't excessive
         # (Actual memory measurement requires more infrastructure)

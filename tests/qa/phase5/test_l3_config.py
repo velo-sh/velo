@@ -86,18 +86,18 @@ class TestL3Config:
 
         bundle_path = simple_project / ".velo" / "cache" / "bundle.veloc"
         if bundle_path.exists():
-            mtime_before = bundle_path.stat().st_mtime
+            _ = bundle_path.stat().st_mtime
 
             # Force rebuild (even without changes)
             import time
 
             time.sleep(0.1)
 
-            result = run_velo(["build", "--rebuild"], simple_project, velo_binary)
+            run_velo(["build", "--rebuild"], simple_project, velo_binary)
 
             # Check it was rebuilt
             if bundle_path.exists():
-                mtime_after = bundle_path.stat().st_mtime
+                _ = bundle_path.stat().st_mtime
                 # Should have new mtime (rebuilt)
                 # Note: some systems may not update mtime, so we just check success
 

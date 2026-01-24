@@ -111,13 +111,13 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             proc_a.terminate()
             try:
                 proc_a.wait(timeout=5)
-            except:
+            except Exception:
                 proc_a.kill()
         if "proc_b" in locals() and proc_b:
             proc_b.terminate()
             try:
                 proc_b.wait(timeout=5)
-            except:
+            except Exception:
                 proc_b.kill()
 
         # Debug: List socket dirs
@@ -130,7 +130,7 @@ def test_socket_path_determinism():
     Exposes deterministic socket path which leads to collision.
     """
     # Run velo in current dir
-    env_a = os.environ.copy()
+    os.environ.copy()
     # No hash in path expected in broken state
 
     # We expect this to FAIL once we implement the proper fix (hashing)

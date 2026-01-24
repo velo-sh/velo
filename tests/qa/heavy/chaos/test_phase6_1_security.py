@@ -43,7 +43,7 @@ class TestPhase61Security(unittest.TestCase):
             # Alternatively, we might look for the debug binary.
             self.skipTest("Velo binary not found in PATH")
 
-        cmd = ["velo", "serve", "--pid-file", str(self.pid_file)]
+        ["velo", "serve", "--pid-file", str(self.pid_file)]
 
         # 4. execution
         # process = subprocess.run(cmd, capture_output=True, text=True)

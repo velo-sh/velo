@@ -173,11 +173,11 @@ class TestNetworkConcerns:
         # Should timeout and close
         start = time.time()
         try:
-            data = s.recv(1024)
-            elapsed = time.time() - start
+            s.recv(1024)
+            time.time() - start
             # If we get a response quickly, server handled it
         except (TimeoutError, OSError):
-            elapsed = time.time() - start
+            time.time() - start
 
         s.close()
 
@@ -298,7 +298,7 @@ class TestK8sConcerns:
             proc.proc.wait()
 
         # Most requests should succeed during drain
-        success_count = sum(1 for r in results if r == 200)
+        sum(1 for r in results if r == 200)
         # At least some should succeed during graceful shutdown
         # (exact behavior depends on implementation)
 
@@ -389,7 +389,7 @@ class TestO11yConcerns:
         headers = response.json()
 
         # traceparent should be passed through to worker
-        header_keys_lower = [k.lower() for k in headers.keys()]
+        [k.lower() for k in headers.keys()]
         # Either passed as-is or modified (span ID updated)
         # Just verify header system works
 
@@ -411,7 +411,7 @@ class TestO11yConcerns:
         assert response.status_code == 200
 
         headers = response.json()
-        header_keys_lower = [k.lower() for k in headers.keys()]
+        [k.lower() for k in headers.keys()]
 
         # Check if x-request-id is present (either generated or passed through)
         # Implementation may vary

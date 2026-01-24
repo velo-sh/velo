@@ -40,7 +40,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except:
+    except Exception:
         return False
 
 
@@ -253,10 +253,10 @@ dependencies = [
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
-            except:
+            except Exception:
                 try:
                     proc.kill()
-                except:
+                except Exception:
                     pass
 
         if self.stdout_f:
@@ -266,7 +266,7 @@ dependencies = [
 
         # try:
         #     shutil.rmtree(self.path)
-        # except:
+        # except Exception:
         #     pass
 
     def __enter__(self):
@@ -365,7 +365,7 @@ class TestDefectRegression:
             project.set_app(
                 "crash_app.py",
                 """
-raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT") from None
 """,
             )
             project.uv_add("fastapi", "uvicorn", "msgpack")
@@ -496,7 +496,7 @@ def health():
 
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
             assert response.status_code == 200
-            assert response.json()["healthy"] == True
+            assert response.json()["healthy"]
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_multiple_requests(self) -> None:
@@ -526,7 +526,7 @@ def count():
                 pytest.skip(f"Server did not start: {error}")
 
             # Make 10 requests
-            for i in range(10):
+            for _i in range(10):
                 response = requests.get(f"http://127.0.0.1:{port}/count", timeout=5)
                 assert response.status_code == 200
 
@@ -571,7 +571,7 @@ def root():
             proc.terminate()
 
             try:
-                exit_code = proc.wait(timeout=10)
+                proc.wait(timeout=10)
                 # Should exit cleanly
                 assert True
             except subprocess.TimeoutExpired:

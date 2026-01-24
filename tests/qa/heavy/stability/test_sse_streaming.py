@@ -83,7 +83,6 @@ def test_sse_streaming_realtime(isolated_env: Any, run_velo_e2e: Any) -> None:
     proc, port, stdout_p, stderr_p, socket_dir, debug_log = run_velo_e2e(app_path)
     try:
         time.sleep(5)
-        url = f"http://127.0.0.1:{port}/"
 
         # We use a raw socket to read line by line and measure timing
         s = socket.create_connection(("127.0.0.1", port))
@@ -119,6 +118,6 @@ def test_sse_streaming_realtime(isolated_env: Any, run_velo_e2e: Any) -> None:
 
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except:
+        except Exception:
             pass
         proc.wait()

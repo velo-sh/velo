@@ -194,7 +194,7 @@ dev-dependencies = []
                         self.results["response_valid"] = data.get(expected_key) == expected_value
                     else:
                         self.results["response_valid"] = True
-                except:
+                except Exception:
                     self.results["response_valid"] = "ok" in resp.text.lower()
             else:
                 self.results["error"] = f"HTTP {resp.status_code}: {resp.text[:200]}"
@@ -1081,7 +1081,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             await websocket.send_text(f"Starlette Echo: {data}")
-    except:
+    except Exception:
         pass
 
 app = Starlette(routes=[

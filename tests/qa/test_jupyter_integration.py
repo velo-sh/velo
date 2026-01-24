@@ -185,7 +185,7 @@ class TestKernelStartupLatency:
 
         for _ in range(5):
             start = time.perf_counter()
-            result = subprocess.run(
+            subprocess.run(
                 [VELO_BINARY, "run", "-m", "site", "--", "--help"],
                 capture_output=True,
                 timeout=30,

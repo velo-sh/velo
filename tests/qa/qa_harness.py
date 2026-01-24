@@ -130,7 +130,7 @@ class VeloTestEnv:
         if self.cache_path.exists():
             try:
                 os.chmod(self.cache_path, 0o755)
-            except:
+            except Exception:
                 pass
         self.temp_dir.cleanup()
 

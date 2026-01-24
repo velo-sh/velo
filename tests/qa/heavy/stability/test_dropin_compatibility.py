@@ -279,7 +279,7 @@ app = FastAPI()
 @app.get("/items/{item_id}")
 async def get_item(item_id: int):
     if item_id == 0:
-        raise HTTPException(status_code=404, detail="Item not found")
+        raise HTTPException(status_code=404, detail="Item not found") from None
     return {"item_id": item_id}
 """,
             )
@@ -656,10 +656,10 @@ async def app(scope, receive, send):
         body += message.get("body", b"")
         if not message.get("more_body", False):
             break
-    
+
     data = json.loads(body) if body else {}
     response = json.dumps({"received": data}).encode()
-    
+
     await send({
         "type": "http.response.start",
         "status": 200,
@@ -693,7 +693,7 @@ import json
 async def app(scope, receive, send):
     headers = dict(scope.get("headers", []))
     user_agent = headers.get(b"user-agent", b"unknown").decode()
-    
+
     await send({
         "type": "http.response.start",
         "status": 200,
@@ -729,14 +729,14 @@ import json
 
 async def app(scope, receive, send):
     path = scope.get("path", "/")
-    
+
     if path == "/":
         response = {"page": "home"}
     elif path == "/api":
         response = {"page": "api"}
     else:
         response = {"page": "not_found"}
-    
+
     await send({
         "type": "http.response.start",
         "status": 200,

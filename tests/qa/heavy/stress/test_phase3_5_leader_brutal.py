@@ -34,7 +34,7 @@ class BrutalTestEnv:
         self.path = Path(tempfile.mkdtemp(prefix="velo_brutal_"))
         self.velo = get_velo_binary()
 
-    def setup(self) -> BrutalTestEnv:
+    def setup(self) -> "BrutalTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
@@ -62,7 +62,7 @@ class BrutalTestEnv:
         except Exception:
             pass
 
-    def __enter__(self) -> BrutalTestEnv:
+    def __enter__(self) -> "BrutalTestEnv":
         return self.setup()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -461,7 +461,7 @@ class TestHangAttempts:
         payload = "a" * 50 + "!"
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
@@ -478,7 +478,7 @@ class TestHangAttempts:
         deep_path = "/".join(["a"] * 100)
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{deep_path}:app"],
                 capture_output=True,
                 text=True,
@@ -502,7 +502,7 @@ class TestInformationLeak:
 
         # Determine project root from velo binary location
         # e.g., /path/to/velo/target/release/velo -> /path/to/velo
-        project_root = str(Path(velo).parents[4])
+        str(Path(velo).parents[4])
 
         result = subprocess.run(
             [velo, "serve", "nonexistent_module:app"],

@@ -51,7 +51,7 @@ class TestMsgpackStability(unittest.TestCase):
             self.assertEqual(packed, baseline, f"Iteration {i}: Output must be identical")
 
         # Verify deserialize works
-        for i in range(100):
+        for _i in range(100):
             unpacked = umsgpack.unpackb(baseline)
             self.assertEqual(unpacked["type"], "Fork")
             self.assertEqual(unpacked["fast_mode"], True)

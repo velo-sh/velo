@@ -63,7 +63,7 @@ def run_velo_native(isolated_env):
                 with socket.create_connection(("127.0.0.1", port), timeout=1):
                     success = True
                     break
-            except:
+            except Exception:
                 time.sleep(0.5)
 
         if not success:
@@ -86,7 +86,7 @@ def test_rsgi_native_http_basic(run_velo_native):
     async def app(scope, proto):
         if scope.proto == 'http':
             proto.response_str(
-                200, 
+                200,
                 [('content-type', 'application/json')],
                 '{"status": "ok", "mode": "native"}'
             )

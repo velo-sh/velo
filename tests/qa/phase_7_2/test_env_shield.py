@@ -38,7 +38,7 @@ async def app(scope, receive, send):
         except Exception as e:
             with open("/tmp/worker_err.log", "a") as f:
                 f.write(f"Failed to write env to {filepath}: {e}\\n")
-                
+
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
 """
@@ -74,7 +74,7 @@ async def app(scope, receive, send):
                     res = requests.get(f"http://127.0.0.1:{port}/", timeout=2)
                     if res.status_code == 200:
                         break
-                except:
+                except Exception:
                     time.sleep(0.5)
 
             # 4. Check the captured environment
@@ -97,7 +97,7 @@ async def app(scope, receive, send):
             if os.path.exists(env_file_path):
                 try:
                     os.remove(env_file_path)
-                except:
+                except Exception:
                     pass
             proc.terminate()
             proc.wait()

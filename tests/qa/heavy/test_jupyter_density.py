@@ -59,10 +59,10 @@ import os
 try:
     import numpy as np
     # Force a large allocation that stays in memory
-    _data = np.zeros((1000, 1000)) 
+    _data = np.zeros((1000, 1000))
 except ImportError:
     # Fallback to pure python memory pressure
-    _data = [0] * (10**6) 
+    _data = [0] * (10**6)
 
 # Stay alive until killed
 print(f"KERNEL_READY_PID_{os.getpid()}")

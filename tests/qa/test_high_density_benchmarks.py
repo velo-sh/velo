@@ -40,7 +40,7 @@ class TestStartupLatency:
         """Measure cold start latency (no Zygote)."""
         times = []
 
-        for i in range(5):
+        for _i in range(5):
             start = time.perf_counter()
             result = subprocess.run(
                 [VELO_BINARY, "run", "-m", "site", "--", "--help"],
@@ -80,9 +80,9 @@ class TestStartupLatency:
         time.sleep(1)
 
         times = []
-        for i in range(5):
+        for _i in range(5):
             start = time.perf_counter()
-            result = subprocess.run(
+            subprocess.run(
                 [VELO_BINARY, "run", "--zygote", "-m", "site", "--", "--help"],
                 capture_output=True,
                 timeout=30,
@@ -227,7 +227,6 @@ class TestMemoryDensity:
 
             # CRITICAL [QA]: Verify Zygote actually handled these workers
             status = subprocess.run([VELO_BINARY, "zygote", "status"], capture_output=True, text=True)
-            zygote_active = "Running" in status.stdout and "100 modules" not in status.stdout  # Rough check
 
             print("\n📊 100 Kernels Memory (HONEST):")
             print(f"   Total Delta: {delta_mb:.1f} MB")
@@ -249,7 +248,7 @@ class TestMemoryDensity:
             for proc in processes:
                 try:
                     proc.wait(timeout=2)
-                except:
+                except Exception:
                     proc.kill()
             if test_dir.exists():
                 import shutil

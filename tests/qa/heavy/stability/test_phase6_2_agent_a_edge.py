@@ -50,7 +50,7 @@ class DeletingZygote:
                 time.sleep(0.01)
                 send_msgpack(conn, {"type": "Ready"})
                 conn.close()
-        except:
+        except Exception:
             pass
         finally:
             self.server.close()

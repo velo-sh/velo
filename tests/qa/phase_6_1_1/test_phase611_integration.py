@@ -122,7 +122,7 @@ class TestPhase611Integration:
 
         # Start load
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-            futures = [pool.submit(load_generator) for _ in range(10)]
+            [pool.submit(load_generator) for _ in range(10)]
 
             # Let load stabilize
             time.sleep(1)

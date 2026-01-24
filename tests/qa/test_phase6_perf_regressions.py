@@ -107,7 +107,7 @@ app = FastAPI()
         )
 
         # 2. Build
-        result_build = env.run_velo("bundle", "build")
+        env.run_velo("bundle", "build")
 
         # 3. Measure load performance
         env_vars = os.environ.copy()

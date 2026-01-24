@@ -66,21 +66,21 @@ ALIGNMENT = 64
 def calculate_aligned_header_length(original_length: int) -> int:
     """
     Calculate the aligned header length using RFC-0015 algorithm.
-    
+
     RFC-0015 Appendix A:
     "Since sizeof(u64) is 8, we need header_len % 64 == 56"
-    
+
     Target: (8 + header_len) % 64 == 0
     Therefore: header_len % 64 == 56
     """
     L = original_length
     remainder = L % ALIGNMENT
-    
+
     if remainder <= 56:
         T = L + (56 - remainder)
     else:
         T = L + (ALIGNMENT - remainder) + 56
-    
+
     return T
 
 def verify_alignment(header_len: int) -> Tuple[bool, int]:
@@ -96,21 +96,21 @@ def main():
     print("=" * 60)
     print(f"Testing {len(TEST_HEADER_LENGTHS)} header lengths...")
     print()
-    
+
     all_passed = True
     results = []
-    
+
     for original_len in TEST_HEADER_LENGTHS:
         aligned_len = calculate_aligned_header_length(original_len)
         is_aligned, tensor_offset = verify_alignment(aligned_len)
-        
+
         status = "✅ PASS" if is_aligned else "❌ FAIL"
-        
+
         print(f"Header {original_len:4d} → Padded to {aligned_len:4d}")
         print(f"  Tensor offset: {tensor_offset} (offset % 64 = {tensor_offset % 64})")
         print(f"  {status}")
         print()
-        
+
         results.append({
             "original": original_len,
             "aligned": aligned_len,
@@ -118,15 +118,15 @@ def main():
             "mod_64": tensor_offset % 64,
             "passed": is_aligned
         })
-        
+
         if not is_aligned:
             all_passed = False
-    
+
     # Summary
     print("=" * 60)
     passed_count = sum(1 for r in results if r["passed"])
     print(f"Results: {passed_count}/{len(results)} header lengths correctly aligned")
-    
+
     if all_passed:
         print("\\nPASS: All tensor offsets are 64-byte aligned")
         return 0
@@ -163,37 +163,37 @@ from typing import Tuple
 
 ALIGNMENT = 64
 
-def create_aligned_safetensors(output_path: Path, metadata: dict, 
+def create_aligned_safetensors(output_path: Path, metadata: dict,
                                tensor_data: bytes) -> Tuple[int, int]:
     """
     Create a safetensors file with proper alignment.
-    
+
     Returns: (header_length, tensor_offset)
     """
     # Serialize metadata to JSON
     json_str = json.dumps(metadata, separators=(',', ':'))
     json_bytes = json_str.encode('utf-8')
     original_len = len(json_bytes)
-    
+
     # Calculate aligned length (header_len % 64 == 56)
     remainder = original_len % ALIGNMENT
     if remainder <= 56:
         target_len = original_len + (56 - remainder)
     else:
         target_len = original_len + (ALIGNMENT - remainder) + 56
-    
+
     # Pad with spaces (valid JSON whitespace)
     padding_needed = target_len - original_len
-    
+
     # Insert padding before the closing brace
     if json_str.endswith('}'):
         padded_json = json_str[:-1] + ' ' * padding_needed + '}'
     else:
         padded_json = json_str + ' ' * padding_needed
-    
+
     padded_bytes = padded_json.encode('utf-8')
     assert len(padded_bytes) == target_len
-    
+
     # Write file
     with open(output_path, 'wb') as f:
         # u64 header length (little-endian)
@@ -202,7 +202,7 @@ def create_aligned_safetensors(output_path: Path, metadata: dict,
         f.write(padded_bytes)
         # Tensor data
         f.write(tensor_data)
-    
+
     tensor_offset = 8 + target_len
     return target_len, tensor_offset
 
@@ -212,55 +212,55 @@ def read_and_verify_safetensors(file_path: Path) -> bool:
         # Read header length
         header_len_bytes = f.read(8)
         header_len = struct.unpack('<Q', header_len_bytes)[0]
-        
+
         # Read header
         header_bytes = f.read(header_len)
-        
+
         # Calculate tensor offset
         tensor_offset = 8 + header_len
-        
+
         # Check alignment
         is_aligned = (tensor_offset % ALIGNMENT) == 0
-        
+
         print(f"  Header length: {header_len}")
         print(f"  Tensor offset: {tensor_offset}")
         print(f"  Aligned: {is_aligned} (mod 64 = {tensor_offset % ALIGNMENT})")
-        
+
         return is_aligned
 
 def main():
     print("L4-SHM-11: Real Safetensors Alignment Test")
     print("=" * 60)
-    
+
     test_dir = Path("/tmp/alignment_test")
     test_dir.mkdir(exist_ok=True)
-    
+
     # Create test files with different header sizes
     test_cases = [
         ({"t1": {"dtype": "F32", "shape": [10], "data_offsets": [0, 40]}}, b"\\x00" * 40),
-        ({"tensor_with_longer_name": {"dtype": "F32", "shape": [100, 100], 
+        ({"tensor_with_longer_name": {"dtype": "F32", "shape": [100, 100],
           "data_offsets": [0, 40000]}}, b"\\x00" * 40000),
     ]
-    
+
     all_passed = True
-    
+
     for i, (metadata, tensor_data) in enumerate(test_cases):
         file_path = test_dir / f"test_{i}.safetensors"
         print(f"\\nTest case {i+1}:")
-        
+
         header_len, offset = create_aligned_safetensors(file_path, metadata, tensor_data)
         is_aligned = read_and_verify_safetensors(file_path)
-        
+
         if not is_aligned:
             all_passed = False
             print("  ❌ FAIL")
         else:
             print("  ✅ PASS")
-    
+
     # Cleanup
     import shutil
     shutil.rmtree(test_dir, ignore_errors=True)
-    
+
     print("\\n" + "=" * 60)
     if all_passed:
         print("PASS: All safetensors files properly aligned")
@@ -317,7 +317,7 @@ def detect_numa_topology():
         )
         if result.returncode != 0:
             return None, "numactl not available"
-        
+
         # Parse output
         lines = result.stdout.split("\\n")
         num_nodes = 0
@@ -326,9 +326,9 @@ def detect_numa_topology():
                 parts = line.split()
                 num_nodes = int(parts[1])
                 break
-        
+
         return num_nodes, result.stdout
-        
+
     except FileNotFoundError:
         return None, "numactl not installed"
     except Exception as e:
@@ -343,7 +343,7 @@ def check_process_numa_placement(pid: int):
             capture_output=True, text=True
         )
         affinity = result.stdout.strip() if result.returncode == 0 else "unknown"
-        
+
         # Check /proc/PID/numa_maps if available
         numa_maps_path = f"/proc/{pid}/numa_maps"
         numa_info = "N/A"
@@ -351,65 +351,65 @@ def check_process_numa_placement(pid: int):
             with open(numa_maps_path, 'r') as f:
                 # Just read first few lines
                 numa_info = f.read(500)
-        
+
         return affinity, numa_info
-        
+
     except Exception as e:
         return "error", str(e)
 
 def main():
     print("L4-SHM-12: NUMA Locality Test")
     print("=" * 60)
-    
+
     # Step 1: Detect NUMA topology
     num_nodes, topo_info = detect_numa_topology()
-    
+
     if num_nodes is None:
         print(f"SKIP: Cannot detect NUMA topology ({topo_info})")
         print("This test requires numactl to be installed")
         return 0  # Skip, not fail
-    
+
     print(f"Detected {num_nodes} NUMA node(s)")
-    
+
     if num_nodes == 1:
         print("\\nSingle NUMA node system - NUMA pinning is a no-op")
         print("PASS: NUMA test skipped on single-node system (expected behavior)")
         return 0
-    
+
     print(f"\\nMulti-NUMA system detected ({num_nodes} nodes)")
     print("Testing NUMA-aware allocation...")
-    
+
     # Step 2: Check current process placement
     my_pid = os.getpid()
     affinity, numa_info = check_process_numa_placement(my_pid)
     print(f"\\nCurrent process (PID {my_pid}):")
     print(f"  CPU affinity: {affinity}")
-    
+
     # Step 3: Try to pin to node 0
     print("\\nAttempting to bind to NUMA node 0...")
-    
+
     try:
         # Run a test command with explicit NUMA binding
         result = subprocess.run(
-            ["numactl", "--membind=0", "--cpunodebind=0", "python3", "-c", 
+            ["numactl", "--membind=0", "--cpunodebind=0", "python3", "-c",
              "import os; print(f'Child PID: {os.getpid()}'); "
              "import mmap; mm = mmap.mmap(-1, 1024*1024); mm.close(); "
              "print('PASS: Memory allocated on node 0')"],
             capture_output=True, text=True,
             timeout=10
         )
-        
+
         print(result.stdout)
         if result.stderr:
             print(f"stderr: {result.stderr}")
-        
+
         if "PASS" in result.stdout:
             print("\\nPASS: NUMA binding verified")
             return 0
         else:
             print("\\nWARNING: NUMA binding may not have worked")
             return 0  # Still pass - NUMA is optional H-30
-            
+
     except subprocess.TimeoutExpired:
         print("FAIL: NUMA test timed out")
         return 1
@@ -497,30 +497,30 @@ def main():
     print(f"Data size: {DATA_SIZE / 1024 / 1024:.1f} MB")
     print(f"Iterations: {ITERATIONS}")
     print()
-    
+
     # Create test file
     with tempfile.NamedTemporaryFile(delete=False) as f:
         f.write(b"\\x00" * DATA_SIZE)
         test_file = f.name
-    
+
     try:
         # Benchmark file read
         file_time = benchmark_file_read(test_file)
         print(f"File read:     {file_time*1000:.2f} ms")
-        
+
         # Benchmark mmap read
         mmap_time = benchmark_mmap_read(test_file)
         print(f"mmap read:     {mmap_time*1000:.2f} ms")
-        
+
         # Benchmark SHM attach
         shm_time = benchmark_shm_attach()
         print(f"SHM attach:    {shm_time*1000:.2f} ms")
-        
+
         print()
         print("Speedup ratios:")
         print(f"  mmap vs file: {file_time/mmap_time:.2f}x")
         print(f"  SHM vs file:  {file_time/shm_time:.2f}x")
-        
+
         # Memory Gravity target: sub-50ms attachment
         if shm_time * 1000 < 50:
             print(f"\\nPASS: SHM attachment ({shm_time*1000:.2f}ms) < 50ms target")
@@ -528,7 +528,7 @@ def main():
         else:
             print(f"\\nWARNING: SHM attachment ({shm_time*1000:.2f}ms) >= 50ms")
             return 0  # Warning only
-            
+
     finally:
         os.unlink(test_file)
 

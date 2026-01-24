@@ -124,7 +124,7 @@ def test_reg_62_003_ci_home_allowance(isolated_env, short_socket):
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 
     # Start Zygote
-    proc = subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env, cwd=env.path)
+    subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env, cwd=env.path)
 
     # Wait for socket
     success = False

@@ -39,7 +39,7 @@ class TestCoreFlow:
                 assert "hello world" in run_result.stdout
 
             # Stop
-            stop = run_velo(["zygote", "stop"], cwd=env.path, timeout=10)
+            run_velo(["zygote", "stop"], cwd=env.path, timeout=10)
             # Stop should work
         finally:
             env.cleanup()
@@ -104,7 +104,7 @@ print(f"args: {sys.argv[1:]}")
             env.create_uv_lock()
             env.create_script("exit42.py", "import sys; sys.exit(42)")
 
-            result = run_velo(["run", "--zygote", "exit42.py"], cwd=env.path, timeout=30)
+            run_velo(["run", "--zygote", "exit42.py"], cwd=env.path, timeout=30)
             # Return code should be 42 or contain 42 in some form
             # (exact behavior depends on implementation)
         finally:
@@ -230,7 +230,7 @@ class TestIdempotency:
             env.create_script("deterministic.py", "print('RESULT:42')")
 
             outputs = []
-            for i in range(20):  # Reduced from 100 for test speed
+            for _i in range(20):  # Reduced from 100 for test speed
                 result = run_velo(["run", "--zygote", "deterministic.py"], cwd=env.path, timeout=30)
                 if result.success:
                     outputs.append(result.stdout.strip())
@@ -254,7 +254,7 @@ class TestIdempotency:
             env.create_uv_lock()
             env.create_script("check.py", "print('consistent')")
 
-            for i in range(5):  # Reduced from 10
+            for _i in range(5):  # Reduced from 10
                 run_velo(["zygote", "start"], cwd=env.path, timeout=10)
                 result = run_velo(["run", "--zygote", "check.py"], cwd=env.path, timeout=10)
                 run_velo(["zygote", "stop"], cwd=env.path, timeout=5)
@@ -367,7 +367,7 @@ class TestStabilitySecurity:
             env.create_uv_lock()
             env.create_script("crash.py", "import sys; sys.exit(1)")
 
-            result = run_velo(["run", "--zygote", "crash.py"], cwd=env.path, timeout=10)
+            run_velo(["run", "--zygote", "crash.py"], cwd=env.path, timeout=10)
 
             # Check no core files created
             import glob

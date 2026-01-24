@@ -24,7 +24,7 @@ def test_VIBE_HEROS_JOURNEY_MASTER_E2E(isolated_env: VeloTestEnv) -> None:
     7. Large Output -> Verify Framing.
     """
     # 1. SETUP: Multi-file project
-    utils_py = isolated_env.create_app("utils.py", "def get_version(): return '1.0.0'")
+    _utils_py = isolated_env.create_app("utils.py", "def get_version(): return '1.0.0'")
     main_py = isolated_env.create_app("main.py", "import utils\nprint(f'Vibe {utils.get_version()}')")
 
     port = isolated_env.next_port()

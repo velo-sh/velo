@@ -79,8 +79,8 @@ async def app(scope, receive, send):
         # Return all environment variables
         env_json = json.dumps(dict(os.environ))
         await send({
-            'type': 'http.response.start', 
-            'status': 200, 
+            'type': 'http.response.start',
+            'status': 200,
             'headers': [(b'content-type', b'application/json')]
         })
         await send({'type': 'http.response.body', 'body': env_json.encode()})
@@ -173,8 +173,8 @@ async def app(scope, receive, send):
     if scope['type'] == 'http':
         # Return a hop-by-hop header
         await send({
-            'type': 'http.response.start', 
-            'status': 200, 
+            'type': 'http.response.start',
+            'status': 200,
             'headers': [(b'connection', b'close'), (b'keep-alive', b'timeout=5')]
         })
         await send({'type': 'http.response.body', 'body': b'ok'})

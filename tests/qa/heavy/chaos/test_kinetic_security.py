@@ -94,7 +94,7 @@ def get_random():
                 if pid not in samples:
                     samples[pid] = []
                 samples[pid].append(data)
-            except:
+            except Exception:
                 pass
             time.sleep(0.1)
 
@@ -113,5 +113,5 @@ def get_random():
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             proc.wait(timeout=5)
-        except:
+        except Exception:
             pass

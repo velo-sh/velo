@@ -63,14 +63,14 @@ def worker_process(worker_id, barrier, shared_data_path):
     """Worker that attaches to shared memory."""
     import mmap
     import time
-    
+
     # Wait for all workers to be ready
     barrier.wait()
-    
+
     # Simulate reading from shared memory
     # In real Memory Gravity, this would be FD passing + mmap
     time.sleep(0.5)  # Simulate work
-    
+
     # Get own RSS
     rss_kb = 0
     if sys.platform == "linux":
@@ -80,45 +80,45 @@ def worker_process(worker_id, barrier, shared_data_path):
                     if line.startswith("VmRSS:"):
                         rss_kb = int(line.split()[1])
                         break
-        except:
+        except Exception:
             pass
-    
+
     print(f"Worker {worker_id} RSS: {rss_kb} KB")
     return rss_kb
 
 def main():
     NUM_WORKERS = 4
     MODEL_SIZE_KB = MODEL_SIZE // 1024
-    
+
     print(f"Model size: {MODEL_SIZE_KB} KB")
     print(f"Number of workers: {NUM_WORKERS}")
-    
+
     # Create shared memory
     shared_mm = create_shared_memory()
-    
+
     # Create a barrier for synchronization
     barrier = multiprocessing.Barrier(NUM_WORKERS)
-    
+
     # Spawn workers
     processes = []
     for i in range(NUM_WORKERS):
         p = multiprocessing.Process(target=worker_process, args=(i, barrier, None))
         processes.append(p)
         p.start()
-    
+
     # Wait for all workers to complete
     for p in processes:
         p.join(timeout=10)
-    
+
     # Get total RSS of all processes (in real test, we'd sum worker RSS)
     # For this simulation, success is that workers spawned without crash
     print("SUCCESS: Workers spawned and attached without crash")
     print(f"Expected RSS bound: {MODEL_SIZE_KB * 1.5} KB (1.5x model)")
     print(f"Bad case would be: {MODEL_SIZE_KB * NUM_WORKERS} KB ({NUM_WORKERS}x model)")
-    
+
     # Cleanup
     shared_mm.close()
-    
+
     return 0
 
 if __name__ == "__main__":
@@ -160,44 +160,44 @@ TARGET_ATTACHMENT_MS = 50  # Target: < 50ms
 
 def measure_attachment_time():
     """Measure time to create and attach to shared memory."""
-    
+
     # Create shared memory region
     start_create = time.perf_counter()
     mm = mmap.mmap(-1, MODEL_SIZE, access=mmap.ACCESS_WRITE)
     mm.write(b"\\x00" * MODEL_SIZE)
     create_time_ms = (time.perf_counter() - start_create) * 1000
-    
+
     # Close and reopen (simulate worker attachment)
     mm.close()
-    
+
     # Measure attachment time (simulating worker attaching via FD)
     start_attach = time.perf_counter()
     mm2 = mmap.mmap(-1, MODEL_SIZE, access=mmap.ACCESS_READ)
     attach_time_ms = (time.perf_counter() - start_attach) * 1000
-    
+
     # Simulate accessing first tensor
     start_access = time.perf_counter()
     _ = mm2[:1024]  # Read first 1KB
     access_time_ms = (time.perf_counter() - start_access) * 1000
-    
+
     mm2.close()
-    
+
     return create_time_ms, attach_time_ms, access_time_ms
 
 def main():
     # Run multiple iterations for stable measurement
     iterations = 5
     attach_times = []
-    
+
     for i in range(iterations):
         create_ms, attach_ms, access_ms = measure_attachment_time()
         attach_times.append(attach_ms)
         print(f"Iteration {i+1}: create={create_ms:.2f}ms, attach={attach_ms:.2f}ms, access={access_ms:.2f}ms")
-    
+
     avg_attach_ms = sum(attach_times) / len(attach_times)
     print(f"Average attachment time: {avg_attach_ms:.2f}ms")
     print(f"Target: < {TARGET_ATTACHMENT_MS}ms")
-    
+
     if avg_attach_ms < TARGET_ATTACHMENT_MS:
         print("PASS: Attachment time within target")
         return 0
@@ -241,7 +241,7 @@ SEGMENT_SIZE = 4096
 def test_bounds_checking():
     """Test that we can't access outside mapped region."""
     mm = mmap.mmap(-1, SEGMENT_SIZE, access=mmap.ACCESS_READ)
-    
+
     # Valid access
     try:
         _ = mm[0:100]
@@ -249,7 +249,7 @@ def test_bounds_checking():
     except Exception as e:
         print(f"Valid access failed: {e}")
         return 1
-    
+
     # Boundary access (should work)
     try:
         _ = mm[SEGMENT_SIZE-1:SEGMENT_SIZE]
@@ -257,7 +257,7 @@ def test_bounds_checking():
     except Exception as e:
         print(f"Boundary access failed: {e}")
         return 1
-    
+
     # Out of bounds access (should raise or return empty)
     try:
         data = mm[SEGMENT_SIZE:SEGMENT_SIZE+100]
@@ -268,7 +268,7 @@ def test_bounds_checking():
             return 1
     except (IndexError, ValueError) as e:
         print(f"Out-of-bounds access blocked: OK ({e})")
-    
+
     mm.close()
     print("PASS: Offset validation working correctly")
     return 0

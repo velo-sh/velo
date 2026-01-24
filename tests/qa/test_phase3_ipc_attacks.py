@@ -99,7 +99,7 @@ class TestIPCAttacks:
             if start_result.success and env.socket_path.exists():
                 # Send garbage
                 garbage = os.urandom(1024)
-                response = env.send_raw_ipc(garbage, timeout=2)
+                env.send_raw_ipc(garbage, timeout=2)
 
                 # Zygote should still be running
                 status = run_velo(["zygote", "status"], cwd=env.path, timeout=5)
@@ -125,7 +125,7 @@ class TestIPCAttacks:
             if start_result.success and env.socket_path.exists():
                 # Send partial message
                 partial = b'{"cmd": "run", "script":'  # Incomplete JSON
-                response = env.send_raw_ipc(partial, timeout=2)
+                env.send_raw_ipc(partial, timeout=2)
 
                 # Should timeout, not hang forever
                 # Zygote should survive
@@ -154,7 +154,7 @@ class TestIPCAttacks:
                 huge_data = b"A" * (10 * 1024 * 1024)  # 10MB
 
                 try:
-                    response = env.send_raw_ipc(huge_data, timeout=5)
+                    env.send_raw_ipc(huge_data, timeout=5)
                 except Exception:
                     pass  # Expected to fail
 

@@ -86,7 +86,7 @@ def test_verify_zygote_presence():
     # Check if we're running in a Zygote-forked worker
     # The environment variable may be VELO_ZYGOTE_FORK or VELO_IS_ZYGOTE
     is_forked = (
-        os.environ.get("VELO_ZYGOTE_FORK") == "1" or 
+        os.environ.get("VELO_ZYGOTE_FORK") == "1" or
         os.environ.get("VELO_IS_ZYGOTE") == "1" or
         os.environ.get("_VELO_ZYGOTE_WORKER") == "1"
     )

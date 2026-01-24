@@ -54,7 +54,7 @@ async def app(scope, receive, send):
             ws = websocket.create_connection(f"ws://127.0.0.1:{port}/")
             ws.send("close_me_4000")
             try:
-                msg = ws.recv()
+                ws.recv()
             except websocket.WebSocketConnectionClosedException:
                 # websocket-client status code is in e or captured during close
                 pass
@@ -81,6 +81,6 @@ async def app(scope, receive, send):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()

@@ -100,7 +100,7 @@ class TestGoldenPathE2E:
         seen_workers = set()
         success_count = 0
 
-        for i in range(100):
+        for _i in range(100):
             try:
                 # Use /whoami endpoint which returns worker's PID
                 r = requests.get(f"http://127.0.0.1:{proc.port}/whoami", timeout=T_SHORT)

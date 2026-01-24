@@ -34,7 +34,7 @@ class TestInputFuzzingPATHS:
             env.create_uv_lock()
 
             # Create script with spaces in name
-            script = env.create_script("my script.py", "print('spaces work')")
+            env.create_script("my script.py", "print('spaces work')")
 
             result = run_velo(["run", "my script.py"], cwd=env.path)
             assert_no_crash(result)
@@ -51,7 +51,7 @@ class TestInputFuzzingPATHS:
             env.create_uv_lock()
 
             # Create script with unicode name
-            script = env.create_script("测试脚本.py", "print('unicode works: 中文')")
+            env.create_script("测试脚本.py", "print('unicode works: 中文')")
 
             result = run_velo(["run", "测试脚本.py"], cwd=env.path)
             assert_no_crash(result)

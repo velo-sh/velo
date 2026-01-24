@@ -128,7 +128,7 @@ def test_AGGRESSIVE_direct_fork_thread_graveyard():
 
     # Run multiple times to catch the race condition
     results = []
-    for i in range(20):
+    for _i in range(20):
         # We need to use multiprocessing to isolate each test run
         # because fork() in the test runner is problematic
         ctx = multiprocessing.get_context("fork")
@@ -153,7 +153,7 @@ def test_AGGRESSIVE_direct_fork_thread_graveyard():
             try:
                 result = q.get_nowait()
                 results.append("DEADLOCK" if result == 1 else "OK")
-            except:
+            except Exception:
                 results.append("ERROR")
 
     deadlock_count = results.count("DEADLOCK") + results.count("TIMEOUT")
@@ -227,7 +227,7 @@ def test_AGGRESSIVE_logging_deadlock():
             return os.WEXITSTATUS(status)
 
     results = []
-    for i in range(10):
+    for _i in range(10):
         ctx = multiprocessing.get_context("fork")
         q = ctx.Queue()
 
@@ -255,7 +255,7 @@ def test_AGGRESSIVE_logging_deadlock():
                     results.append("DEADLOCK")
                 else:
                     results.append("ERROR")
-            except:
+            except Exception:
                 results.append("ERROR")
 
     deadlock_count = results.count("DEADLOCK") + results.count("TIMEOUT")
@@ -310,7 +310,7 @@ def test_AGGRESSIVE_simulated_vibe_preload():
 
         # Simulate 5 "file change" events (5 forks)
         results = []
-        for i in range(5):
+        for _i in range(5):
             pid = os.fork()
 
             if pid == 0:
@@ -326,7 +326,7 @@ def test_AGGRESSIVE_simulated_vibe_preload():
                     data = library.get_data()
                     signal.alarm(0)
                     os._exit(0 if data else 1)
-                except:
+                except Exception:
                     os._exit(1)
             else:
                 # PARENT: Wait for worker

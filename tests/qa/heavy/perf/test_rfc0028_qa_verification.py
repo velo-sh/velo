@@ -68,7 +68,7 @@ import pytest
 def session_fixture():
     return "session_value"
 
-@pytest.fixture(scope="module")  
+@pytest.fixture(scope="module")
 def module_fixture():
     return "module_value"
 

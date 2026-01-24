@@ -171,17 +171,17 @@ def test_isolated_tmp():
     # P0: Isolated TMPDIR per worker
     tmp = os.environ.get("TMPDIR", "/tmp")
     assert "velo-worker-" in tmp
-    
+
     # Ensure the directory exists
     assert os.path.exists(tmp)
-    
+
     # Write a file and wait - if isolation fails, another worker might see it
     id_file = Path(tmp) / "isolation_id"
     worker_id = os.getpid()
     id_file.write_text(str(worker_id))
-    
+
     time.sleep(0.1)
-    
+
     assert id_file.read_text() == str(worker_id)
 """)
 
@@ -260,7 +260,7 @@ def test_verify_env():
     # RFC Requirement 1: CWD must be project root (v_fork.py must call os.chdir(project_root))
     cwd = Path(os.getcwd())
     assert "gold_200_phase14" in str(cwd), f"CWD not set to project root: {cwd}"
-    
+
     # RFC Requirement 2: PYTHONPATH must be preserved
     # The 'velo_app' should be importable if PYTHONPATH was correctly propagated
     try:

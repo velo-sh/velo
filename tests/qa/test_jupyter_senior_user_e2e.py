@@ -177,9 +177,7 @@ class TestJupyterSeniorUserExperience:
         """
         Forensic Resilience: Heal after socket deletion.
         """
-        socket_path = (
-            Path.home() / ".local/share/velo/sockets/velo-504/velo-zygote-v01.sock"
-        )  # Use exact path if known or pattern
+        (Path.home() / ".local/share/velo/sockets/velo-504/velo-zygote-v01.sock")  # Use exact path if known or pattern
         # Since exact path varies, let's just use 'velo zygote stop' to clear it
         subprocess.run([VELO_BINARY, "zygote", "stop"], capture_output=True)
 

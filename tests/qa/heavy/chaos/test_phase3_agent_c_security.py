@@ -327,7 +327,7 @@ preload = ["../../etc/passwd", "__import__('os').system('id')"]
             if env.socket_path.exists():
                 # Try to send malicious IPC command
                 malicious = b'{"cmd": "__import__(os).system(id)"}'
-                response = env.send_raw_ipc(malicious, timeout=2)
+                env.send_raw_ipc(malicious, timeout=2)
 
                 # Should not execute arbitrary code
                 # Zygote should survive

@@ -53,7 +53,7 @@ def recv_msg(sock: socket.socket, timeout: float = 2.0) -> Any:
         header += chunk
 
     total_len = struct.unpack("<I", header)[0]
-    version = sock.recv(1)
+    sock.recv(1)
 
     payload = b""
     to_read = total_len - 1

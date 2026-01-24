@@ -96,11 +96,11 @@ class TestL1Features:
             with open("/proc/net/unix") as f:
                 unix_content = f.read()
             # Either abstract (@velo-) or filesystem sockets
-            has_sockets = "velo" in unix_content.lower()
+            assert "velo" in unix_content.lower()
         else:
             # macOS: Check filesystem sockets
             socket_dir = Path(f"/tmp/velo-{os.getuid()}")
-            has_sockets = socket_dir.exists()
+            socket_dir.exists()
 
         # Either way, server should respond
         import requests

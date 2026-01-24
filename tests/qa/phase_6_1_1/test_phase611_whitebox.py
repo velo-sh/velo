@@ -48,7 +48,7 @@ class TestWhiteBoxPythonStress:
 
         zombies_detected = 0
 
-        for i in range(STRESS_ITERATIONS):
+        for _i in range(STRESS_ITERATIONS):
             workers = proc.get_worker_pids()
             if not workers:
                 continue
@@ -85,7 +85,7 @@ class TestWhiteBoxPythonStress:
         Target: velo_zygote/main.py:679-680
 
         We send a STORM of signals to Zygote while simultaneously killing workers.
-        If the bare 'except: break' swallows EINTR, zombies will accumulate.
+        If the bare 'except Exception: break' swallows EINTR, zombies will accumulate.
         """
         proc = velo_serve_fixture.start("main:app", workers=4)
         proc.wait_ready()
@@ -222,7 +222,7 @@ class TestWhiteBoxPythonStress:
                     str(proc.script_path) if hasattr(proc, "script_path") else str(proc.project_dir / "main.py")
                 )
 
-                for i in range(FORK_BOMB_COUNT):
+                for _i in range(FORK_BOMB_COUNT):
                     fork_cmd = {
                         "type": "Fork",
                         "script_path": script_path,
@@ -370,7 +370,7 @@ class TestWhiteBoxRustStress:
         for s in connections:
             try:
                 s.close()
-            except:
+            except Exception:
                 pass
 
         # Wait and check server health

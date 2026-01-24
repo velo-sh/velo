@@ -53,7 +53,7 @@ class SlowZygote:
 
                 send_msgpack(conn, {"type": "Ready"})
                 conn.close()
-        except:
+        except Exception:
             pass
         finally:
             self.server.close()
@@ -88,7 +88,7 @@ def test_STAB_621_cumulative_timeout(isolated_env: Any) -> None:
 
     start_time = time.time()
     proc = env.run_velo("serve", "main:app", "--workers", "1", env=cmd_env, timeout=10)
-    duration = time.time() - start_time
+    time.time() - start_time
 
     zygote.stop()
 

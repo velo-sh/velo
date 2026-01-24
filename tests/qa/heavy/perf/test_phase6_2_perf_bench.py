@@ -37,7 +37,7 @@ def measure_startup_phases(
                 if proc.poll() is not None:
                     break
                 if (time.perf_counter() - start) > 20.0:
-                    raise TimeoutError("Server failed to start (total timeout)")
+                    raise TimeoutError("Server failed to start (total timeout)") from None
                 continue
 
             if pid_output := proc.stdout:
@@ -58,12 +58,12 @@ def measure_startup_phases(
                 return (arch_latency, total_latency)
 
             if (time.perf_counter() - start) > 15.0:
-                raise TimeoutError(f"Server failed to start. Last log: {line.strip()}")
+                raise TimeoutError(f"Server failed to start. Last log: {line.strip()}") from None
     finally:
         try:
             os.kill(proc.pid, signal.SIGKILL)
             proc.wait()
-        except:
+        except Exception:
             pass
     return (None, 99999.0)
 

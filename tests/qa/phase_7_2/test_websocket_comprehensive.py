@@ -99,13 +99,13 @@ def ws_test_env(isolated_env: VeloTestEnv) -> Generator[Any, None, None]:
                     pass
                 try:
                     proc.wait(timeout=5)
-                except:
+                except Exception:
                     pass
 
             for f in self.temp_files:
                 try:
                     f.unlink()
-                except:
+                except Exception:
                     pass
 
     ws_env: WSTestEnv = WSTestEnv(isolated_env)
@@ -145,7 +145,7 @@ async def app(scope, receive, send):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)  # Wait for server startup
 
@@ -211,7 +211,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -268,7 +268,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -325,7 +325,7 @@ app = Starlette(routes=[
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -388,7 +388,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -434,7 +434,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -484,7 +484,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -542,7 +542,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -550,13 +550,13 @@ async def websocket_endpoint(websocket: WebSocket):
             import websocket
 
             successful = 0
-            for i in range(20):
+            for _i in range(20):
                 try:
                     ws = websocket.create_connection(f"ws://127.0.0.1:{port}/ws", timeout=5)
-                    msg = ws.recv()
+                    ws.recv()
                     ws.close()
                     successful += 1
-                except:
+                except Exception:
                     pass
 
             print(f"Rapid connect/disconnect: {successful}/20 successful")
@@ -597,7 +597,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -644,7 +644,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -722,7 +722,7 @@ async def status():
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -783,7 +783,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -850,7 +850,7 @@ async def websocket_endpoint(websocket: WebSocket):
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -936,14 +936,14 @@ async def websocket_endpoint(websocket: WebSocket):
     # Extract Origin header from scope
     headers = dict(websocket.scope.get("headers", []))
     origin = headers.get(b"origin", b"none").decode()
-    
+
     await websocket.accept()
     await websocket.send_text(f"Origin: {origin}")
     await websocket.close()
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -1004,15 +1004,15 @@ from starlette.websockets import WebSocket
 # Django Channels-style consumer pattern
 class ChatConsumer:
     '''Simulates Django Channels consumer pattern.'''
-    
+
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.websocket = websocket
-    
+
     async def receive(self, text_data: str):
         # Echo back with consumer pattern
         await self.websocket.send_text(f"Consumer: {text_data}")
-    
+
     async def disconnect(self, code: int):
         pass
 
@@ -1032,7 +1032,7 @@ app = Starlette(routes=[
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -1091,7 +1091,7 @@ async def get_last_close():
 """,
         )
         port = ws_test_env.next_port()
-        proc = ws_test_env.spawn_velo_rsgi("main:app", port)
+        ws_test_env.spawn_velo_rsgi("main:app", port)
 
         time.sleep(5)
 
@@ -1104,7 +1104,7 @@ async def get_last_close():
             # Server will close with 1000
             try:
                 ws.recv()  # May raise or return close frame
-            except:
+            except Exception:
                 pass
 
             print("CLOSE CODES: PASSED (server-initiated close works)")

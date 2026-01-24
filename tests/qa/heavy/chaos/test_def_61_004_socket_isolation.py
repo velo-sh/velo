@@ -243,7 +243,7 @@ class TestEdgeCases:
 
         try:
             # ensure_socket_dir should NOT raise an exception
-            result = ensure_socket_dir(socket_dir)
+            ensure_socket_dir(socket_dir)
             # The function should return True since dir exists (even though we can't modify perms)
             # OR return False gracefully without crashing
             # Either way, no exception should be raised
@@ -280,7 +280,7 @@ class TestEdgeCases:
         assert len(errors) == 0, f"Race condition errors: {errors}"
         assert len(results) == 5, "All threads should return a path"
         # All threads should return the same path
-        assert len(set(str(p) for p in results)) == 1, "All threads should get same path"
+        assert len({str(p) for p in results}) == 1, "All threads should get same path"
 
     def test_t9_symlink_attack_protection(self, tmp_path, monkeypatch):
         """T9: Symlink attack protection.
@@ -387,7 +387,7 @@ class TestVersionRegression:
 
         # Verify path construction includes UID
         socket_dir = get_socket_dir()
-        socket_path = get_versioned_socket_path()
+        get_versioned_socket_path()
 
         assert f"velo-{uid}" in str(socket_dir) or "velo" in str(socket_dir), (
             f"Socket dir should be user-isolated: {socket_dir}"

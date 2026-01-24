@@ -286,7 +286,9 @@ def hijack_execnet() -> None:
                 except Exception as e:
                     import warnings
 
-                    warnings.warn(f"Zygote Gateway failed: {e}. Falling back to standard popen.", RuntimeWarning)
+                    warnings.warn(
+                        f"Zygote Gateway failed: {e}. Falling back to standard popen.", RuntimeWarning, stacklevel=2
+                    )
 
             return original_makegateway(self, spec)
 
@@ -450,13 +452,13 @@ def pytest_configure(config: Any) -> None:
                     else:
                         import warnings
 
-                        warnings.warn("Zygote socket not ready after 10s", RuntimeWarning)
+                        warnings.warn("Zygote socket not ready after 10s", RuntimeWarning, stacklevel=2)
                         proc.terminate()
                         _zygote = True  # Fallback to direct fork mode
                 except Exception as e:
                     import warnings
 
-                    warnings.warn(f"Zygote startup error: {e}", RuntimeWarning)
+                    warnings.warn(f"Zygote startup error: {e}", RuntimeWarning, stacklevel=2)
                     _zygote = True  # Fallback
             else:
                 # xdist worker: Hot connect to shared Zygote
@@ -629,7 +631,9 @@ def run_in_zygote_fork(item: Any, strict_compat: bool = False) -> bool:
         except Exception as e:
             import warnings
 
-            warnings.warn(f"Failed to execute test via Zygote: {e}. Falling back to direct fork.", RuntimeWarning)
+            warnings.warn(
+                f"Failed to execute test via Zygote: {e}. Falling back to direct fork.", RuntimeWarning, stacklevel=2
+            )
 
     # Fallback/Phase 1 Legacy: Direct Fork Mode
     pid = os.fork()

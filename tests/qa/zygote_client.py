@@ -30,22 +30,22 @@ class ZygoteClient:
                 raise ProtocolError(f"Protocol Handshake Failed: Expected 'Ready', got {ready}")
             return True
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to Zygote at {self.socket_path}: {e}")
+            raise ConnectionError(f"Failed to connect to Zygote at {self.socket_path}: {e}") from e
 
     async def send(self, cmd: dict[str, Any]) -> None:
         """Send a command to the Zygote."""
         if not self._transport:
-            raise ConnectionError("Client not connected")
+            raise ConnectionError("Client not connected") from None
         await self._transport.send(cmd)
 
     async def recv(self, timeout: float = 30.0) -> dict[str, Any] | None:
         """Receive a response from the Zygote."""
         if not self._transport:
-            raise ConnectionError("Client not connected")
+            raise ConnectionError("Client not connected") from None
         try:
             return await asyncio.wait_for(self._transport.recv(), timeout=timeout)
-        except TimeoutError:
-            raise TimeoutError("Zygote response timeout")
+        except TimeoutError as e:
+            raise TimeoutError("Zygote response timeout") from e
 
     async def close(self) -> None:
         """Close the connection."""

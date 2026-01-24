@@ -37,7 +37,7 @@ def velo_analyze_available() -> bool:
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
-    except:
+    except Exception:
         return False
 
 
@@ -162,7 +162,7 @@ class TestMalformedInput:
             p.set_file("huge.py", imports)
 
             try:
-                result = p.analyze("huge.py", timeout=30)
+                p.analyze("huge.py", timeout=30)
                 # Should complete or timeout, not crash
                 assert True
             except subprocess.TimeoutExpired:
@@ -178,7 +178,7 @@ class TestMalformedInput:
             p.set_file("c.py", "import a")
 
             try:
-                result = p.analyze("a.py", timeout=10)
+                p.analyze("a.py", timeout=10)
                 # Should complete, not hang
                 assert True
             except subprocess.TimeoutExpired:
@@ -198,7 +198,7 @@ class TestMalformedInput:
         with EdgeProject() as p:
             p.set_pyproject()
             p.set_file("main.py", "print(1)")
-            result = p.analyze("--slow-threshold-ms=999999999999999999")
+            p.analyze("--slow-threshold-ms=999999999999999999")
             # Should handle gracefully
             # Either error or use max value
             assert True  # No crash
@@ -234,14 +234,14 @@ class TestRaceConditions:
                 time.sleep(0.05)
                 try:
                     (p.path / "ephemeral.py").unlink()
-                except:
+                except Exception:
                     pass
 
             thread = threading.Thread(target=delete_after_delay)
             thread.start()
 
             try:
-                result = p.analyze("ephemeral.py", timeout=10)
+                p.analyze("ephemeral.py", timeout=10)
                 # May succeed or fail, but should not crash
                 assert True
             except subprocess.TimeoutExpired:
@@ -259,14 +259,14 @@ class TestRaceConditions:
                 time.sleep(0.05)
                 try:
                     (p.path / "pyproject.toml").write_text("[project]\nname='changed'")
-                except:
+                except Exception:
                     pass
 
             thread = threading.Thread(target=modify_after_delay)
             thread.start()
 
             try:
-                result = p.analyze(timeout=10)
+                p.analyze(timeout=10)
                 assert True  # No crash
             except subprocess.TimeoutExpired:
                 pass

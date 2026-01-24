@@ -49,13 +49,17 @@ class ZygoteTestHelper:
             if self.process.poll() is not None:
                 assert self.process.stderr is not None
                 stderr = self.process.stderr.read().decode()
-                raise RuntimeError(f"Zygote process died early! RC={self.process.returncode}, Stderr: {stderr}")
+                raise RuntimeError(
+                    f"Zygote process died early! RC={self.process.returncode}, Stderr: {stderr}"
+                ) from None
             if self.socket_path.exists():
                 break
             time.sleep(0.1)
         else:
             assert self.process.stderr is not None
-            raise RuntimeError(f"Zygote socket not created in time. Stderr: {self.process.stderr.read().decode()}")
+            raise RuntimeError(
+                f"Zygote socket not created in time. Stderr: {self.process.stderr.read().decode()}"
+            ) from None
 
     def connect(self) -> socket.socket:
         """Connect to Zygote socket."""
@@ -68,7 +72,7 @@ class ZygoteTestHelper:
         total_len = int.from_bytes(len_data, "little")
 
         # 2. Read Version (1 byte)
-        ver_data = self._recv_exact(sock, 1)
+        self._recv_exact(sock, 1)
 
         # 3. Read Payload
         payload_len = total_len - 1
@@ -98,7 +102,7 @@ class ZygoteTestHelper:
         len_data = self._recv_exact(sock, 4)
         total_len = int.from_bytes(len_data, "little")
 
-        ver_data = self._recv_exact(sock, 1)
+        self._recv_exact(sock, 1)
 
         payload_len = total_len - 1
         payload_data = self._recv_exact(sock, payload_len)
@@ -116,7 +120,7 @@ class ZygoteTestHelper:
                 data += chunk
             return data
         except TimeoutError:
-            raise RuntimeError(f"Socket timeout waiting for {n} bytes")
+            raise RuntimeError(f"Socket timeout waiting for {n} bytes") from None
         finally:
             sock.settimeout(None)
 

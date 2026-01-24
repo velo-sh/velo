@@ -205,7 +205,7 @@ dependencies = []
             )
 
             # Check pyproject.toml was updated
-            content = (project / "pyproject.toml").read_text()
+            (project / "pyproject.toml").read_text()
             # Note: With threshold 0, there may or may not be slow imports
             # The test just verifies the command runs successfully
             assert result.returncode == 0

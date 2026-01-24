@@ -37,7 +37,7 @@ def start_fake_zygote(socket_path: Path, delay: float = 0.05) -> threading.Threa
                     time.sleep(delay)
                 send_msgpack(conn, {"type": "Ready"})
                 conn.close()
-        except:
+        except Exception:
             pass
         finally:
             server.close()

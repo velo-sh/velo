@@ -110,7 +110,7 @@ class TestL0Smoke:
 
         # Retry logic for CI transient connection failures
         last_error = None
-        for attempt in range(3):
+        for _attempt in range(3):
             try:
                 response = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=T_SHORT)
                 assert response.status_code == 200, f"Expected 200, got {response.status_code}"

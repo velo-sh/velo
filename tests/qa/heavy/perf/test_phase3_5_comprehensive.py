@@ -51,7 +51,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except:
+    except Exception:
         return False
 
 
@@ -72,7 +72,7 @@ def get_child_pids(parent_pid: int) -> list[int]:
     try:
         parent = psutil.Process(parent_pid)
         return [p.pid for p in parent.children(recursive=True)]
-    except:
+    except Exception:
         return []
 
 
@@ -223,10 +223,10 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 try:
                     proc.kill()
-                except:
+                except Exception:
                     pass
 
         if hasattr(self, "stdout_f") and self.stdout_f:
@@ -236,7 +236,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
 
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
     def __enter__(self) -> Self:
@@ -308,7 +308,7 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
             if wait_for_port(port, timeout=T_MEDIUM):
                 L0_PASSED = True
@@ -349,7 +349,7 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
@@ -381,7 +381,7 @@ def echo(data: dict):
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
@@ -412,14 +412,14 @@ def count():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
 
             time.sleep(1)
 
-            for i in range(100):
+            for _i in range(100):
                 response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
                 assert response.status_code == 200
 
@@ -454,8 +454,8 @@ def on_exit():
                 pytest.skip("Server did not start")
 
             # Make a request to ensure it's working (with retries for slow worker start)
-            start_req = time.time()
-            for i in range(10):
+            time.time()
+            for _i in range(10):
                 try:
                     response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                     if response.status_code == 200:
@@ -470,7 +470,7 @@ def on_exit():
 
             # Send SIGTERM
             proc.terminate()
-            exit_code = proc.wait(timeout=T_MEDIUM)
+            proc.wait(timeout=T_MEDIUM)
 
             # Check graceful shutdown
             shutdown_file = env.path / "shutdown.txt"
@@ -521,7 +521,7 @@ class TestL2SadPath:
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
+            env.create_app("crasher.py", 'raise RuntimeError("CRASH")') from None
             env.install("uvicorn")  # Install uvicorn so we test crash handling
 
             result = env.run_velo("serve", "crasher:app")
@@ -577,7 +577,7 @@ def root():
 
             # Use specific port
             port = 19500
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
@@ -585,7 +585,7 @@ def root():
                 pytest.skip("Server did not start")
 
             # Verify it's on the right port (with retries for slow worker start)
-            for i in range(10):
+            for _i in range(10):
                 try:
                     response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                     if response.status_code == 200:
@@ -620,7 +620,7 @@ def get_pid():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, workers=4, capture=True)
+            env.serve("main:app", port, workers=4, capture=True)
 
             if not wait_for_port(port, timeout=30):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
@@ -634,7 +634,7 @@ def get_pid():
                     response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json()["pid"])
-                except:
+                except Exception:
                     pass
 
             # With 4 workers, should see multiple PIDs
@@ -676,7 +676,7 @@ def root():
             proc.send_signal(signal.SIGINT)
 
             try:
-                exit_code = proc.wait(timeout=T_MEDIUM)
+                proc.wait(timeout=T_MEDIUM)
                 # SIGINT should cause clean exit
             except subprocess.TimeoutExpired:
                 proc.kill()
@@ -806,7 +806,7 @@ def root():
 
             # Warm start
             start2 = time.perf_counter()
-            proc2 = env.serve("main:app", port2)
+            env.serve("main:app", port2)
             warm_started = wait_for_port(port2, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
 

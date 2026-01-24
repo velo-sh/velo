@@ -111,8 +111,8 @@ class TestL4Security:
 
         # SIGINT and SIGTERM should be reset
         # Acceptable values: SIG_DFL, SIG_IGN, or explicit worker handler
-        valid_sigint = any(x in signals.get("SIGINT", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
-        valid_sigterm = any(x in signals.get("SIGTERM", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
+        any(x in signals.get("SIGINT", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
+        any(x in signals.get("SIGTERM", "") for x in ["SIG_DFL", "SIG_IGN", "handler", "function"])
 
         # At minimum, should not contain uvloop or asyncio pollution markers
         assert "uvloop" not in str(signals).lower(), f"uvloop pollution detected: {signals}"
@@ -221,7 +221,7 @@ class TestL4Security:
         for p in tmp_dir.glob(f"velo-{uid}"):
             try:
                 shutil.rmtree(p)
-            except:
+            except Exception:
                 pass
 
         # Prepare environment
@@ -299,7 +299,7 @@ class TestL4Security:
                 found_sock = False
                 for sock in socket_dir.glob("*.sock"):
                     found_sock = True
-                    sock_mode = sock.stat().st_mode & 0o777
+                    sock.stat().st_mode & 0o777
                     # Socket permissions depend on umask and OS. Write access is critical check?
                     # Usually we want 755 or 700. If 755, world can connect? No, write required.
                     # Just ensure existence for now as proof of life.
@@ -312,5 +312,5 @@ class TestL4Security:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
-            except:
+            except Exception:
                 proc.kill()

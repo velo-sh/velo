@@ -122,7 +122,7 @@ class TestL2EdgeCases:
         proc.wait_ready()
 
         # Check for filesystem socket
-        socket_dir = Path(f"/tmp/velo-{os.getuid()}")
+        Path(f"/tmp/velo-{os.getuid()}")
 
         # Either socket dir exists or server responds (implementation may vary)
         import requests
@@ -148,7 +148,7 @@ class TestL2EdgeCases:
             # Give it a moment to fail
             time.sleep(2)
             if not proc.is_running():
-                raise Exception("Process exited as expected")
+                raise Exception("Process exited as expected") from None
 
     @pytest.mark.slow
     def test_EDGE_605_hundred_workers(self, velo_serve_fixture):

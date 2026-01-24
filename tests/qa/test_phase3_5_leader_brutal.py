@@ -474,7 +474,7 @@ class TestHangAttempts:
         payload = "a" * 50 + "!"
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
@@ -491,7 +491,7 @@ class TestHangAttempts:
         deep_path = "/".join(["a"] * 100)
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{deep_path}:app"],
                 capture_output=True,
                 text=True,
@@ -515,7 +515,7 @@ class TestInformationLeak:
 
         # Determine project root from velo binary location
         # e.g., /path/to/velo/target/release/velo -> /path/to/velo
-        project_root = str(Path(velo).parent.parent.parent)
+        str(Path(velo).parent.parent.parent)
 
         result = subprocess.run(
             [velo, "serve", "nonexistent_module:app"],

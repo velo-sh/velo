@@ -126,7 +126,6 @@ class TestAgentCSecurity:
 
     def test_SEC_604_rkyv_bomb_protection(self, isolated_env):
         """SEC-604: Verify protection against deeply nested Rkyv bombs (H-10)."""
-        env = isolated_env
 
         # Create a "bomb" file - we use a mock script or pre-generated hex
         # that encodes a 101-level deep rkyv structure.

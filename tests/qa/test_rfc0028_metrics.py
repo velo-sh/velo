@@ -143,8 +143,8 @@ class TestMetric_MemoryOverhead:
             pid = os.fork()
             if pid == 0:
                 # Child: do some operations to trigger COW
-                data = list(range(1000))
-                child_mem = self.get_memory_usage_kb()
+                list(range(1000))
+                self.get_memory_usage_kb()
                 os._exit(0)
             else:
                 os.waitpid(pid, 0)

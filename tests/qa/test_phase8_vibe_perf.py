@@ -27,7 +27,7 @@ def test_PERF_801_latency_benchmark(isolated_env: VeloTestEnv) -> None:
                 isolated_env.create_app("app.py", f"print('bench {i}')")
 
                 # Wait for broadcast
-                msg = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                await asyncio.wait_for(websocket.recv(), timeout=2.0)
                 end_time = time.perf_counter()
 
                 latency_ms = (end_time - start_time) * 1000

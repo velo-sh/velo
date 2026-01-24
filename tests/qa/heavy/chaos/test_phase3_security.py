@@ -57,7 +57,7 @@ class SecurityEnv:
         full_env = os.environ.copy()
         full_env.update(self.env_vars)
 
-        result = subprocess.run(
+        subprocess.run(
             [self.velo, "zygote", "start"],
             cwd=self.path,
             capture_output=True,
@@ -97,7 +97,7 @@ class SecurityEnv:
             s.connect(str(self.socket_path))
 
             # Read Ready message first
-            ready = s.recv(1024)
+            s.recv(1024)
 
             s.sendall(data)
             response = s.recv(4096)
@@ -113,7 +113,7 @@ class SecurityEnv:
         try:
             lines = response.decode().strip().split("\n")
             return json.loads(lines[-1]) if lines else {}
-        except:
+        except Exception:
             return {"raw": response.decode()}
 
     def create_script(self, name: str, content: str) -> None:
@@ -122,12 +122,12 @@ class SecurityEnv:
     def cleanup(self) -> None:
         try:
             self.stop_zygote()
-        except:
+        except Exception:
             pass
 
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
     def __enter__(self) -> Self:
@@ -320,7 +320,7 @@ class TestSymlinkAttacks:
                         legit_script.symlink_to("/etc/passwd")
                         race_won = True
                         break
-                    except:
+                    except Exception:
                         pass
                     time.sleep(0.001)
 
@@ -498,13 +498,13 @@ class TestDoS:
 
             # Hold many connections open
             sockets = []
-            for i in range(20):
+            for _i in range(20):
                 try:
                     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     s.settimeout(1)
                     s.connect(str(env.socket_path))
                     sockets.append(s)
-                except:
+                except Exception:
                     break
 
             print(f"  Held {len(sockets)} connections open")
@@ -516,14 +516,14 @@ class TestDoS:
                 test.connect(str(env.socket_path))
                 print("  Still accepting connections: Yes")
                 test.close()
-            except:
+            except Exception:
                 print("  ⚠️ DoS: No new connections accepted!")
 
             # Cleanup
             for s in sockets:
                 try:
                     s.close()
-                except:
+                except Exception:
                     pass
 
     def test_sec_016_fork_bomb_via_ipc(self):
@@ -557,7 +557,7 @@ class TestDoS:
             for pid in pids:
                 try:
                     os.kill(pid, 9)
-                except:
+                except Exception:
                     pass
 
     def test_sec_017_slowloris_style(self):

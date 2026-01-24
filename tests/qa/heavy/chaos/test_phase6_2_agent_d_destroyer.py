@@ -71,7 +71,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
         # Verify socket still exists (Zygote still running and accepting)
         # Also verify we can reconnect (daemon is still accepting connections)
         if not socket_path.exists():
-            assert False, "Zygote crashed on protocol flooding! Socket disappeared."
+            raise AssertionError("Zygote crashed on protocol flooding! Socket disappeared.")
 
         # Try to reconnect to verify Zygote is still accepting connections
         try:
@@ -80,7 +80,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
             s2.connect(str(socket_path))
             s2.close()
         except (OSError, ConnectionRefusedError) as e:
-            assert False, f"Zygote crashed on protocol flooding! Cannot reconnect: {e}"
+            raise AssertionError(f"Zygote crashed on protocol flooding! Cannot reconnect: {e}") from e
 
     finally:
         # Clean up: Stop the Zygote daemon
@@ -108,7 +108,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
     try:
         # Induce many rapid forks and kill Zygote
         spawned = []
-        for i in range(5):
+        for _i in range(5):
             p = subprocess.Popen(
                 [env.velo, "serve", "main:app"],
                 env=cmd_env,
@@ -131,7 +131,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
             try:
                 p.terminate()
                 p.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 p.kill()
 
         # Verify no orphaned Python processes (heuristic check)
@@ -144,11 +144,11 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
                 if p.poll() is None:
                     p.terminate()
                     p.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 try:
                     p.kill()
                     p.wait()
-                except:
+                except Exception:
                     pass
 
         if proc.poll() is None:
@@ -184,7 +184,7 @@ def test_CHAOS_623_socket_exhaustion(isolated_env):
             try:
                 s.connect(str(socket_path))
                 sockets.append(s)
-            except:
+            except Exception:
                 pass
 
         # Verify L0-1: Smoke test

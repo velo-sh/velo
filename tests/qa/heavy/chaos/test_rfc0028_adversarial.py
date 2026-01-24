@@ -183,7 +183,7 @@ def test_slow_{i}():
             # Create tests that fail
             (test_dir / "test_failing.py").write_text("""
 def test_fail_1():
-    raise Exception("Intentional failure 1")
+    raise Exception("Intentional failure 1") from None
 
 def test_fail_2():
     assert False, "Intentional failure 2"
@@ -196,7 +196,7 @@ def test_fail_3():
             before = self._count_velo_processes()
 
             # Run failing tests
-            result = run_velo(["test", str(test_dir), "--zygote"], timeout=30, env={"PYTHONPATH": tmpdir})
+            run_velo(["test", str(test_dir), "--zygote"], timeout=30, env={"PYTHONPATH": tmpdir})
 
             time.sleep(1.0)
             after = self._count_velo_processes()
@@ -363,7 +363,7 @@ def test_never_runs():
             assert result.returncode in (1, 2, 4), f"BUG: Unexpected return code {result.returncode} for ImportError"
 
             # Zygote should still be stoppable
-            stop_result = run_velo(["zygote", "stop"])
+            run_velo(["zygote", "stop"])
             # Should not hang
 
     def test_ERROR_002_syntax_error_in_test(self):
@@ -413,7 +413,7 @@ def test_hangs():
 
             start = time.time()
             try:
-                result = subprocess.run(
+                subprocess.run(
                     [str(VELO_BIN), "test", str(test_dir), "--zygote"],
                     capture_output=True,
                     text=True,

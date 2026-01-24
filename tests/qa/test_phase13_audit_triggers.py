@@ -84,13 +84,12 @@ class TestAuditTrigger_P0Security:
 
         tree = ast.parse(source)
 
-        atexit_clear_found = False
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 if hasattr(node.func, "attr") and node.func.attr == "_clear":
                     if hasattr(node.func, "value"):
                         if hasattr(node.func.value, "id") and node.func.value.id == "atexit":
-                            atexit_clear_found = True
+                            pass
 
         # atexit._clear is in child_process_hygiene, which is called from run_in_zygote_fork
         hygiene_source = inspect.getsource(child_process_hygiene)
@@ -270,7 +269,7 @@ class TestAuditTrigger_PythonInternals:
         """atexit._clear() behavior matches expectations"""
         import atexit
 
-        callbacks_before = len(atexit._exithandlers) if hasattr(atexit, "_exithandlers") else 0
+        len(atexit._exithandlers) if hasattr(atexit, "_exithandlers") else 0
 
         # After _clear, no handlers should remain
         # (We can't actually call _clear in parent as it would break tests)

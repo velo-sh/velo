@@ -116,7 +116,7 @@ dev-dependencies = []
 
         # Build environment that activates the isolated .venv
         run_env = os.environ.copy()
-        venv_python = self.path / ".venv" / "bin" / "python"
+        self.path / ".venv" / "bin" / "python"
         venv_site = self.path / ".venv" / "lib"
 
         # Find actual site-packages path

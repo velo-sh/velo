@@ -53,7 +53,7 @@ class TestEdgeCasesLifecycle:
             t2.join(timeout=15)
 
             # No crashes
-            for cmd, result in results:
+            for _cmd, result in results:
                 assert_no_crash(result)
         finally:
             env.cleanup()

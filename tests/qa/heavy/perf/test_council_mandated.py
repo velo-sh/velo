@@ -612,7 +612,7 @@ async def app(scope, receive, send):
                     )
                     # Should not have X-Injected in response
                     assert "X-Injected" not in str(resp.headers)
-                except:
+                except Exception:
                     pass  # Connection errors are acceptable (rejected request)
 
     @pytest.mark.tier3
@@ -700,7 +700,7 @@ async def app(scope, receive, send):
                     resp = requests.get(f"http://127.0.0.1:{p.port}/", headers={"X-Large": "A" * 100000}, timeout=5)
                     # Should either reject or handle gracefully
                     assert resp.status_code in [200, 400, 431]
-                except:
+                except Exception:
                     pass  # Connection rejection is acceptable
 
 
@@ -742,7 +742,7 @@ async def ws_ping(websocket: WebSocket):
                 import websocket
 
                 ws = websocket.create_connection(f"ws://127.0.0.1:{p.port}/ws", timeout=5)
-                ping = ws.recv()
+                ws.recv()
                 ws.send("pong")
                 resp = ws.recv()
                 ws.close()

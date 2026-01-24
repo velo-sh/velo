@@ -246,7 +246,7 @@ class TestWorkerEnvironmentIsolation:
         pid = os.fork()
         if pid == 0:
             # Child process
-            worker_base = worker_environment_isolation()
+            worker_environment_isolation()
 
             # Verify TMPDIR is set to worker-specific path
             assert os.environ.get("TMPDIR", "").startswith("/tmp/velo-worker-")
@@ -265,7 +265,7 @@ class TestWorkerEnvironmentIsolation:
 
         pid = os.fork()
         if pid == 0:
-            worker_base = worker_environment_isolation()
+            worker_environment_isolation()
 
             # Verify socket isolation env vars
             assert "VELO_WORKER_ID" in os.environ
@@ -283,7 +283,7 @@ class TestWorkerEnvironmentIsolation:
 
         pid = os.fork()
         if pid == 0:
-            worker_base = worker_environment_isolation()
+            worker_environment_isolation()
 
             # Verify log isolation
             assert "VELO_WORKER_LOG_DIR" in os.environ

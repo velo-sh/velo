@@ -251,7 +251,7 @@ async def app(scope, receive, send):
         import os
         import time
         import signal
-        
+
         async def app(scope, receive, send):
             if scope['type'] == 'http':
                 await send({
@@ -364,7 +364,7 @@ async def app(scope, receive, send):
                 if debug_log.exists():
                     with open(debug_log) as f:
                         print(f"--- Zygote Worker Log ---\n{f.read()}\n------------------")
-                assert False, f"ZOMBIE PERSISTENCE (C06): Workers {survivors} still alive after Host shutdown!"
+                raise AssertionError(f"ZOMBIE PERSISTENCE (C06): Workers {survivors} still alive after Host shutdown!")
 
             print("Verified C06: All workers reaped successfully.")
 

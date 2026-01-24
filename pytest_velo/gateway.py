@@ -51,7 +51,7 @@ class ZygoteGateway(execnet.gateway.Gateway):
         try:
             sock.connect(socket_path)
         except Exception as e:
-            raise RuntimeError(f"Velo Gateway could not connect to Zygote at {socket_path}: {e}")
+            raise RuntimeError(f"Velo Gateway could not connect to Zygote at {socket_path}: {e}") from e
 
         # 2. Negotiate Handover
         transport = ZygoteTransport(sock)

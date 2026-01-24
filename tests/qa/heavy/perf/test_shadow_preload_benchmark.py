@@ -44,7 +44,7 @@ def wait_for_socket(socket_path: str, timeout: float = 10.0) -> float:
             except (TimeoutError, ConnectionRefusedError):
                 pass
         time.sleep(0.01)
-    raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s")
+    raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s") from None
 
 
 def send_handshake(socket_path: str) -> dict[str, Any]:
@@ -59,7 +59,7 @@ def send_handshake(socket_path: str) -> dict[str, Any]:
         length_bytes = s.recv(4)
         length = int.from_bytes(length_bytes, "little")  # P1 FIX: Match Rust little-endian
         data = s.recv(length)
-        ready = msgpack.unpackb(data, raw=False)
+        msgpack.unpackb(data, raw=False)
 
         # Send Handshake
         handshake = {"type": "Handshake", "version": 0x01, "capabilities": []}
@@ -88,7 +88,7 @@ def wait_for_preload_ready(socket_path: str, timeout: float = 30.0) -> float:
         except Exception:
             pass
         time.sleep(0.05)
-    raise TimeoutError(f"Preload not ready after {timeout}s")
+    raise TimeoutError(f"Preload not ready after {timeout}s") from None
 
 
 def measure_preload_time(modules: list[str]) -> float:
@@ -138,7 +138,7 @@ def run_benchmark() -> None:
         *preload_modules,
     ]
 
-    start_time = time.perf_counter()
+    time.perf_counter()
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     try:

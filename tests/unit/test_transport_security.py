@@ -45,7 +45,7 @@ def test_zygote_transport_sets_timeout():
         try:
             # Reduce timeout for faster test
             server_sock.settimeout(0.5)
-            msg = transport.recv()
+            transport.recv()
             pytest.fail("recv() should have timed out on partial data")
         except TimeoutError:
             # Expected: timeout instead of indefinite blocking

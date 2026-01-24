@@ -81,14 +81,14 @@ app = FastAPI()
 @app.get("/check")
 def check():
     results = {}
-    
+
     # 1. Project Root (Should be allowed)
     try:
         with open("sandbox_app.py", "r") as f:
             results["project_root"] = "ALLOW"
     except Exception as e:
         results["project_root"] = f"DENY: {str(e)}"
-        
+
     # 2. Dangerous Path: /Users (Should be denied)
     # Note: On macOS sandbox, this might be a FileNotFoundError if the sandbox
     # hides the path, or a PermissionError.
@@ -98,7 +98,7 @@ def check():
         results["users_dir"] = "LEAK"
     except Exception as e:
         results["users_dir"] = "DENY"
-        
+
     return results
 """
         )

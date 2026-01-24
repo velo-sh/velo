@@ -274,7 +274,7 @@ def get_velo_binary() -> str:
         except Exception as e:
             print(f"❌ Failed to auto-build: {e}")
 
-    raise RuntimeError(
+    raise RuntimeError( from None
         "Velo binary not found or platform mismatch. Run 'cargo build --release' first or set VELO_BINARY."
     )
 

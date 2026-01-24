@@ -112,14 +112,14 @@ class StabilityTestEnv:
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 try:
                     proc.kill()
-                except:
+                except Exception:
                     pass
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
     def __enter__(self) -> Self:
@@ -272,14 +272,14 @@ def health():
             env.install_deps("fastapi", "uvicorn")
 
             port = 18103
-            proc = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=T_SHORT)
             assert response.status_code == 200
-            assert response.json()["healthy"] == True
+            assert response.json()["healthy"]
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests not installed")
     def test_happy_003_post_request(self):
@@ -304,7 +304,7 @@ def create_item(item: Item):
             env.install_deps("fastapi", "uvicorn", "pydantic")
 
             port = 18104
-            proc = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
@@ -374,7 +374,7 @@ def root():
             port = 18105
 
             # First server
-            proc1 = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("First server did not start")
 
@@ -394,7 +394,7 @@ def root():
             except subprocess.TimeoutExpired:
                 proc2.kill()
 
-            stderr = proc2.stderr.read() if proc2.stderr else ""
+            proc2.stderr.read() if proc2.stderr else ""
             # Should mention port conflict
             # (or second server may have just failed silently)
 

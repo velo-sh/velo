@@ -147,7 +147,7 @@ class TestAgentDChaos:
             data = b""
             try:
                 data = s.recv(1024)
-            except:
+            except Exception:
                 pass
             assert data == b"", "Zygote failed to close connection on version mismatch"
 
@@ -163,7 +163,7 @@ class TestAgentDChaos:
             data = b""
             try:
                 data = s.recv(1024)
-            except:
+            except Exception:
                 pass
             assert data == b"", "Zygote failed to close connection on invalid payload"
 

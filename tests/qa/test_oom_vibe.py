@@ -30,7 +30,7 @@ def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv) -> None:
 
     async def check_bomb() -> None:
         uri = f"ws://127.0.0.1:{port}"
-        async with websockets.connect(uri) as websocket:
+        async with websockets.connect(uri):
             isolated_env.create_app("app.py", code)
             # Wait for execution to finish and Master to process it
             start = time.time()

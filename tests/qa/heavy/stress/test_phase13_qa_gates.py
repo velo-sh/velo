@@ -87,7 +87,7 @@ def test_with_threads():
     def worker():
         time.sleep(0.005)
         results.append(1)
-    
+
     threads = [threading.Thread(target=worker) for _ in range(3)]
     for t in threads: t.start()
     for t in threads: t.join()

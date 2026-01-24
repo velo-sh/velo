@@ -110,7 +110,7 @@ class VeloServeProcess:
                     print(f"\n📄 [ZYGOTE LOG] {log_path}")
                     print(log_path.read_text())
 
-                raise RuntimeError(f"Server process died (exit code: {exit_code})")
+                raise RuntimeError(f"Server process died (exit code: {exit_code})") from None
 
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
@@ -124,7 +124,7 @@ class VeloServeProcess:
         # On timeout, try to read what happened
         print("Timeout reached.")
         self.proc.terminate()
-        raise TimeoutError(f"Server not ready after {timeout}s")
+        raise TimeoutError(f"Server not ready after {timeout}s") from None
 
     def wait_worker_ready(self, timeout: float | None = None) -> None:
         """Wait for a worker to be ready after restart."""
@@ -397,7 +397,7 @@ def velo_binary() -> str:
     if debug_bin.exists():
         return str(debug_bin.resolve())
 
-    raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}")
+    raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}") from None
 
 
 @pytest.fixture
@@ -541,13 +541,13 @@ async def echo_body(body: EchoBody):
 async def trigger_error(code: int):
     """Simulate error responses - tests error handling through proxy."""
     if code == 500:
-        raise HTTPException(status_code=500, detail="Simulated server error")
+        raise HTTPException(status_code=500, detail="Simulated server error") from None
     elif code == 404:
-        raise HTTPException(status_code=404, detail="Simulated not found")
+        raise HTTPException(status_code=404, detail="Simulated not found") from None
     elif code == 503:
-        raise HTTPException(status_code=503, detail="Simulated service unavailable")
+        raise HTTPException(status_code=503, detail="Simulated service unavailable") from None
     else:
-        raise HTTPException(status_code=code, detail=f"Simulated error {code}")
+        raise HTTPException(status_code=code, detail=f"Simulated error {code}") from None
 
 
 @app.get("/large")
@@ -565,15 +565,15 @@ async def track_concurrent():
     _concurrent_counter += 1
     if _concurrent_counter > _max_concurrent:
         _max_concurrent = _concurrent_counter
-    
+
     current = _concurrent_counter
     max_seen = _max_concurrent
-    
+
     # Simulate some work
     await asyncio.sleep(0.1)
-    
+
     _concurrent_counter -= 1
-    
+
     return {
         "concurrent_at_entry": current,
         "max_concurrent_seen": max_seen,

@@ -77,7 +77,7 @@ class AttackEnv:
         subprocess.run(["pkill", "^velo$"], capture_output=True)
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
     def __enter__(self) -> AttackEnv:
@@ -160,7 +160,7 @@ finally:
     for fd in fds:
         try:
             os.close(fd)
-        except:
+        except Exception:
             pass
 """,
             )
@@ -192,7 +192,7 @@ finally:
     for f in files:
         try:
             os.unlink(f)
-        except:
+        except Exception:
             pass
 """,
             )
@@ -450,7 +450,7 @@ class TestIPCAttacks:
                         s.settimeout(1)
                         s.connect(str(sock_path))
                         s.close()
-                    except:
+                    except Exception:
                         errors += 1
 
                 print(f"  Connection spam: {100 - errors}/100 succeeded")
@@ -489,7 +489,7 @@ class TestIPCAttacks:
                         s.connect(str(sock_path))
                         s.sendall(payload)
                         s.close()
-                    except:
+                    except Exception:
                         pass
 
                 # Zygote should survive
@@ -519,7 +519,7 @@ class TestIPCAttacks:
                         s.shutdown(socket.SHUT_WR)  # Half-close
                         time.sleep(0.1)
                         s.close()
-                    except:
+                    except Exception:
                         pass
 
 
@@ -559,13 +559,12 @@ class TestConcurrentAttacks:
     def test_attack_start_stop_race(self):
         """Race condition: start and stop at same time."""
         with AttackEnv() as env:
-            errors = []
 
             def start_loop():
                 for _ in range(20):
                     try:
                         env.run(["zygote", "start"], timeout=T_SHORT)
-                    except:
+                    except Exception:
                         pass
                     time.sleep(0.05)
 
@@ -573,7 +572,7 @@ class TestConcurrentAttacks:
                 for _ in range(20):
                     try:
                         env.run(["zygote", "stop"], timeout=T_SHORT)
-                    except:
+                    except Exception:
                         pass
                     time.sleep(0.05)
 

@@ -164,9 +164,9 @@ print(f"new_module works: {new_module.NEW_VALUE}")
 
         bundle_path = simple_project / ".velo" / "cache" / "bundle.veloc"
         if bundle_path.exists():
-            mtime_before = bundle_path.stat().st_mtime
+            _ = bundle_path.stat().st_mtime
         else:
-            mtime_before = 0
+            pass
 
         # Wait a bit to ensure mtime changes
         time.sleep(0.1)

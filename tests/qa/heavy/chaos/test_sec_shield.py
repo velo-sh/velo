@@ -89,7 +89,7 @@ class TestSandboxShield:
                 except subprocess.TimeoutExpired:
                     p.kill()
                     p.wait()
-        except:
+        except Exception:
             pass
 
         # MANDATE: Each project root MUST have a unique Zygote socket path.

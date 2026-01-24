@@ -60,7 +60,7 @@ class DestroyerTestEnv:
         self.velo = get_velo_binary()
         self.procs: list[subprocess.Popen[str]] = []
 
-    def setup(self) -> DestroyerTestEnv:
+    def setup(self) -> "DestroyerTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True, timeout=T_LONG)
         (self.path / "uv.lock").write_text("{}")
         return self
@@ -91,14 +91,14 @@ class DestroyerTestEnv:
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 proc.kill()
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
-    def __enter__(self) -> DestroyerTestEnv:
+    def __enter__(self) -> "DestroyerTestEnv":
         return self.setup()
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -243,7 +243,7 @@ def get_pid():
                     response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json().get("pid"))
-                except:
+                except Exception:
                     pass
 
             # With 4 workers, we should see multiple PIDs
@@ -283,7 +283,7 @@ class TestErrorRecovery:
                 "crash_on_import.py",
                 """
 # This will crash when imported
-raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT") from None
 """,
             )
 
@@ -502,7 +502,7 @@ def timing():
 
             # Second start - should be faster if Zygote is working
             start2 = time.perf_counter()
-            proc2 = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
             warm_started = wait_for_port(port, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
 
