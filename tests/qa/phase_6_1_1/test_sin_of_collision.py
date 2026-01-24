@@ -66,14 +66,24 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
 
     try:
         # Wait for A to be ready
-        time.sleep(3)
-        try:
-            resp_a = requests.get("http://127.0.0.1:8001/")
-        except Exception as e:
+        # Robust wait loop (replaces flaky sleep)
+        start = time.time()
+        while time.time() - start < 10:
+            if proc_a.poll() is not None:
+                assert proc_a.stderr is not None
+                raise RuntimeError(f"Proc A failed: {proc_a.stderr.read().decode()}")
+            try:
+                requests.get("http://127.0.0.1:8001/").json()
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
             if proc_a.poll() is not None:
                 assert proc_a.stderr is not None
                 print(f"Proc A failed: {proc_a.stderr.read().decode()}")
-            raise e
+            raise TimeoutError("Server A did not start in time")
+
+        resp_a = requests.get("http://127.0.0.1:8001/")
         assert resp_a.json() == {"ws": "A"}
 
         # 2. Start Workspace B's server (port 8002)

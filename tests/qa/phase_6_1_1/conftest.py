@@ -273,6 +273,7 @@ class VeloServeFactory:
         port: int | None = None,
         rsgi: bool = False,
         extra_args: list[str] | None = None,
+        wait: bool = True,
     ) -> VeloServeProcess:
         """Start a velo serve process."""
         if port is None:
@@ -361,6 +362,10 @@ class VeloServeFactory:
         )
         wrapper = VeloServeProcess(proc, port, str(socket_path), forensic_secret)
         self.processes.append(wrapper)
+
+        if wait:
+            wrapper.wait_ready()
+
         return wrapper
 
     def cleanup(self) -> None:

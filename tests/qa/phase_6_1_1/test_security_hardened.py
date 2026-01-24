@@ -1,5 +1,4 @@
 import os
-import time
 
 import pytest
 import requests
@@ -31,7 +30,6 @@ def get_env():
             proc = velo_serve_fixture.start("env_app:app", workers=2, zygote=True)
             url = f"http://127.0.0.1:{proc.port}/env"
 
-            time.sleep(3)
             resp = requests.get(url)
             assert resp.status_code == 200
             data = resp.json()
@@ -63,7 +61,6 @@ def hack():
         proc = velo_serve_fixture.start("shield_app:app", workers=2, zygote=True)
         url = f"http://127.0.0.1:{proc.port}/hack"
 
-        time.sleep(3)
         resp = requests.get(url)
         assert resp.status_code == 200
         assert resp.json()["status"] == "SHIELDED"
@@ -106,7 +103,6 @@ def check():
         proc = velo_serve_fixture.start("sandbox_app:app", workers=2, zygote=True)
         url = f"http://127.0.0.1:{proc.port}/check"
 
-        time.sleep(3)
         resp = requests.get(url)
         assert resp.status_code == 200
         data = resp.json()
