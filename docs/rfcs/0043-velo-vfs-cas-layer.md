@@ -17,12 +17,15 @@ VeloVFS acts as a **"Security Projection Layer"** that decouples the Agent's log
 
 ---
 
-## 2. Core Philosophy (The "Lie")
+## 2. Core Philosophy (The Memory Broker)
 
-VeloVFS is not a general-purpose filesystem. It does not manage disk blocks or journals.
-*   **Physical Reality**: Flat BLAKE3-hashed blobs on host NVMe.
-*   **Logical Illusion**: Standard POSIX directory tree.
-*   **Mechanism**: A Rust-based FUSE daemon intercepting VFS calls.
+VeloVFS is **NOT a file mover**. It is a **Memory Mapping Broker**.
+
+*   **Old Way**: Read(File) -> Kernel -> FUSE -> Disk -> FUSE -> Kernel -> User Buffer. (Data moves 4 times).
+*   **Velo Way**: Map(File) -> Kernel -> Host RAM. (Data never moves).
+*   **Mission**: "Establish the mapping, then get out of the way."
+    *   The FUSE layer exists *only* to handle the initial metadata lookup and "Handshake".
+    *   Once the file is opened, the data path should remain entirely within userspace (CPU `MOV` instructions).
 
 ---
 
@@ -110,8 +113,17 @@ Because CAS content is **Cryptographically Immutable**:
 *   **Inode Bloat**: Storing millions of inodes in RAM.
     *   **Mitigation**: Use compact Rust structures (`SmallString` for filenames, `u32` for indices) to minimize heap fragmentation.
 
-### 5.5 Invariant-Driven Memory Convergence (The Memory Singularity)
-Aligning with the philosophy "Maximize Sharing, Minimize I/O", VeloVFS leverages the immutability of CAS blobs to implement **Global Memory Deduplication**:
+### 5.5 The Direct Access Mandate (DAX / mmap)
+Aligning with the philosophy "Maximize Sharing, Minimize I/O", VeloVFS implements **User-Space Memory Convergence**:
+
+*   **The Handshake Protocol**:
+    1.  **Request**: Agent calls `open()`.
+    2.  **Setup**: VeloVFS sets up the Inode and (optionally) `mmap` the host file into the Guest's address space.
+    3.  **Retire**: VeloVFS exits the hot path.
+*   **The Execution (DAX)**:
+    *   Subsequent "Reads" are just CPU `MOV` instructions execution against the mapped RAM.
+    *   **Zero Syscalls**: No `read()`, no `ioctl`, no Context Switch.
+    *   **Speed**: Limited only by DDR Memory Bandwidth (Nodes of GB/s).
 
 *   **Tiered Hot-Mem CAS**:
     *   The Supervisor identifies "Hot Blobs" (e.g., `numpy`, `torch` core libraries).
@@ -454,3 +466,19 @@ Instead of a single monolithic InodeMap, the filesystem is composed of stacked l
     *   With CoW Layers, 1000 Agents share that single 50MB structure.
     *   Per-Agent overhead drops to nearly zero (only the unique files in Layer 3).
 *   **Result**: "Everything is Shared". Not just the CAS Blobs (Data), but also the Filesystem Structure (Metadata).
+
+---
+
+## 11. Hyper-Converged Transport (Virtio-FS & DAX)
+
+For Agents running inside MicroVMs (Firecracker / Cloud Hypervisor), VeloVFS leverages hardware virtualization to puncture the Guest/Host boundary.
+
+### 11.1 Virtio-FS DAX
+*   **Scenario**: Strict Isolation required (L4 MicroVM).
+*   **Mechanism**:
+    1.  **Host**: Maps the CAS Hot Storage (`/var/cas/hot`) into a KVM Shared Memory Region.
+    2.  **Virtio**: Exposes this region to the Guest via PCI BAR (Base Address Register).
+    3.  **Guest DAX**: The Guest Kernel maps the file access directly to these PCI memory addresses.
+*   **Result**: **Zero-Copy Virtualization**.
+    *   When the Guest CPU executes `MOV RAX, [Address]`, the hardware EPT (Extended Page Tables) translates it directly to the Host's Physical RAM containing the CAS blob.
+    *   We bypass the Guest Page Cache, the Host Page Cache, and the Virtualization Switch cost. It is literally "Metal Speed".
