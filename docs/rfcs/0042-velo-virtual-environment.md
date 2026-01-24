@@ -72,6 +72,7 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   Note: `pip install` inside the sandbox is **Best-Effort**. If it hits the quota, the process receives `ENOSPC`.
 
 #### 4.2.1 Optimization: Phased Package Isolation Strategy
+> **Committee Note**: The shift from Symlinks to CAS solves the "Host GC Race Condition." However, the VeloVFS layer must be highly optimized to avoid FUSE latency overhead. To mitigate the security risks of raw symlinks and brittle package management while maintaining performance, Velo adopts a phased strategy:
 
 Velo adopts a pragmatic, phased approach to balancing performance and improved isolation.
 
