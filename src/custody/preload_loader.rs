@@ -116,7 +116,12 @@ impl PreloadLoader {
                         timed_out = true;
                         // RFC-0035 INV-PRELOAD-008: Force kill and non-blocking reap
                         let _ = libc::kill(pid, libc::SIGKILL);
-                        let _ = waitpid(pid, &mut status, libc::WNOHANG);
+                        for _ in 0..10 {
+                            if waitpid(pid, &mut status, libc::WNOHANG) > 0 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -223,7 +228,12 @@ impl PreloadLoader {
                     if start.elapsed().as_secs() >= 5 {
                         timed_out = true;
                         let _ = libc::kill(pid, libc::SIGKILL);
-                        let _ = waitpid(pid, &mut status, libc::WNOHANG);
+                        for _ in 0..10 {
+                            if waitpid(pid, &mut status, libc::WNOHANG) > 0 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));

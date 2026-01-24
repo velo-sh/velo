@@ -260,7 +260,7 @@ fn check_impl(path: &Path, global: bool) -> Result<()> {
         );
     }
 
-    PreloadLoader::vett_only(path, global)
+    PreloadLoader::vett_only(&resolved_path, global)
 }
 
 /// Display preload statistics from preload.lock
