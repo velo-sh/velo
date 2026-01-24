@@ -1,12 +1,13 @@
 import mmap
 import sys
+import weakref
+from types import ModuleType
+from typing import Any
 
 try:
     import torch
 except ImportError:
-    torch = None
-import weakref
-from typing import Any
+    torch: ModuleType | None = None  # type: ignore[no-redef]
 
 # H-17: Immutability Defense (Monkey-patching)
 _ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None

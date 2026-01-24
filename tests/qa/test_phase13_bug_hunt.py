@@ -8,7 +8,7 @@ import os
 import tempfile
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import Mock  # RFC-0012: Use Mock, not MagicMock
 
 import pytest
 
@@ -83,7 +83,7 @@ class TestBug003_SilentReinitFailure:
         register_fork_reinit(failing_callback)
 
         # This should raise or at least log, but it doesn't
-        velo_fork_reinit(MagicMock())
+        velo_fork_reinit(Mock())
 
         # Restore
         _fork_reinit_callbacks.clear()

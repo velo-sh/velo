@@ -50,9 +50,10 @@ impl VeloPaths {
             }
             // SEC-004: If override is too long, we fall back to user state dir (RFC-0012 Path Sovereignty)
             let dir_name = format!("velo-{}", uid);
-            let home = std::env::var("HOME")
-                .unwrap_or_else(|_| "/var/run".to_string());
-            let fallback = PathBuf::from(home).join(".local/state/velo/sockets").join(dir_name);
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
+            let fallback = PathBuf::from(home)
+                .join(".local/state/velo/sockets")
+                .join(dir_name);
             let _ = ensure_socket_dir(&fallback);
             return fallback;
         }
@@ -92,9 +93,10 @@ impl VeloPaths {
         }
 
         // Fallback to user state dir (RFC-0012 Path Sovereignty) if path is too long
-        let home = std::env::var("HOME")
-            .unwrap_or_else(|_| "/var/run".to_string());
-        let fallback = PathBuf::from(home).join(".local/state/velo/sockets").join(dir_name);
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
+        let fallback = PathBuf::from(home)
+            .join(".local/state/velo/sockets")
+            .join(dir_name);
         // DEF-72-P01: Enforce 0700 on fallback path too
         let _ = ensure_socket_dir(&fallback);
         fallback
@@ -113,8 +115,7 @@ impl VeloPaths {
                 result = result.replace("${XDG_RUNTIME_DIR}", xdg.trim_end_matches('/'));
             } else {
                 // Fallback to ~/.local/state/velo if XDG_RUNTIME_DIR not set (RFC-0012 Path Sovereignty)
-                let home = std::env::var("HOME")
-                    .unwrap_or_else(|_| "/var/run".to_string());
+                let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
                 let fallback = format!("{}/.local/state/velo", home);
                 result = result.replace("${XDG_RUNTIME_DIR}", &fallback);
             }
@@ -577,12 +578,10 @@ mod tests {
             );
 
             std::env::remove_var("XDG_RUNTIME_DIR");
+            // RFC-0012: When XDG_RUNTIME_DIR is unset, fallback uses $HOME/.local/state/velo
             assert_eq!(
                 VeloPaths::expand_path_placeholders("${XDG_RUNTIME_DIR}/velo"),
-                std::env::temp_dir()
-                    .join("velo")
-                    .to_string_lossy()
-                    .into_owned()
+                "/mock/home/.local/state/velo/velo"
             );
         }
     }

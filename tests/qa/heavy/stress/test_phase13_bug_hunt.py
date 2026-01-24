@@ -84,6 +84,7 @@ class TestBug003_SilentReinitFailure:
         # RFC-0012 Zero-Mock: Use minimal real object instead of MagicMock
         class MinimalItem:
             """Minimal pytest item-like object for testing."""
+
             nodeid = "test::reinit_test"
             name = "reinit_test"
 

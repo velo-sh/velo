@@ -21,10 +21,7 @@ fn test_hgov_audit_log_format() {
         critical.contains("H-GOV CRITICAL:"),
         "Missing H-GOV CRITICAL prefix"
     );
-    assert!(
-        critical.contains("MemoryGravity"),
-        "Missing component name"
-    );
+    assert!(critical.contains("MemoryGravity"), "Missing component name");
     assert!(
         critical.contains("strict_optimizations"),
         "Missing strict mode warning"

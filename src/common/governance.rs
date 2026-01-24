@@ -117,11 +117,7 @@ impl GovernanceSignal {
 
     /// RFC-0012 Phase 11.0: Create GovernanceSignal from Python-side IPC error
     /// Used to bridge VeloOptimizationError from Python workers into Rust H-Gov audit flow.
-    pub fn from_python_error(
-        optimization_id: &str,
-        message: &str,
-        trace_id: Option<&str>,
-    ) -> Self {
+    pub fn from_python_error(optimization_id: &str, message: &str, trace_id: Option<&str>) -> Self {
         // Map optimization_id prefix to appropriate component
         let component = if optimization_id.starts_with("SHM") {
             SignalComponent::MemoryGravity

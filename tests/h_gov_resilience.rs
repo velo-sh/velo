@@ -23,11 +23,8 @@ fn test_governance_signal_from_python_error() {
 /// Test that IPC prefix maps to correct component
 #[test]
 fn test_governance_signal_ipc_prefix() {
-    let signal = GovernanceSignal::from_python_error(
-        "IPC-SOCKET-002",
-        "Socket connection timeout",
-        None,
-    );
+    let signal =
+        GovernanceSignal::from_python_error("IPC-SOCKET-002", "Socket connection timeout", None);
 
     assert_eq!(signal.component, SignalComponent::ZygoteIPC);
 }
@@ -47,11 +44,7 @@ fn test_governance_signal_env_prefix() {
 /// Test that unknown prefix maps to PythonWorker
 #[test]
 fn test_governance_signal_unknown_prefix() {
-    let signal = GovernanceSignal::from_python_error(
-        "UNKNOWN-ERR-001",
-        "Some error",
-        None,
-    );
+    let signal = GovernanceSignal::from_python_error("UNKNOWN-ERR-001", "Some error", None);
 
     assert_eq!(signal.component, SignalComponent::PythonWorker);
 }
