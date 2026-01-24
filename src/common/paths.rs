@@ -335,6 +335,32 @@ impl VeloPaths {
         auth_path.set_extension("auth");
         auth_path
     }
+
+    /// Verify if a path is within trusted boundaries (Project root, Venv, or System libs).
+    pub fn is_path_trusted(path: &Path, project_root: &Path, venv_path: Option<&Path>) -> bool {
+        // 1. Check project root
+        if path.starts_with(project_root) {
+            return true;
+        }
+
+        // 2. Check virtual environment
+        if let Some(venv) = venv_path
+            && path.starts_with(venv)
+        {
+            return true;
+        }
+
+        // 3. Check system library paths
+        let path_str = path.to_string_lossy();
+        if path_str.starts_with("/usr/lib")
+            || path_str.starts_with("/lib")
+            || path_str.starts_with("/System/Library")
+        {
+            return true;
+        }
+
+        false
+    }
 }
 
 /// Legacy wrapper for get_socket_dir (delegates to VeloPaths)

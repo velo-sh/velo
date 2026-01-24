@@ -122,6 +122,16 @@ fn analyze_impl() -> Result<()> {
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_secs();
 
+                // RFC-0035 Phase 6.5: Attribution & Path Integrity
+                let package = detect_package_name(&canonical_lib);
+                let venv_path = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from);
+                if !VeloPaths::is_path_trusted(&canonical_lib, &project_dir, venv_path.as_deref()) {
+                    log::warn!(
+                        "Supply Chain Security Warning: Native library {:?} is outside project/venv prefixes!",
+                        canonical_lib
+                    );
+                }
+
                 // Calculate relative path to project root
                 let relative_path = canonical_lib
                     .strip_prefix(&project_dir)
@@ -130,7 +140,7 @@ fn analyze_impl() -> Result<()> {
 
                 let fp = NativeLibFingerprint {
                     relative_path,
-                    package: "unknown".to_string(), // TODO: Detect package if in venv
+                    package,
                     soname,
                     hash,
                     header_hash,
@@ -370,4 +380,20 @@ fn resolve_otool_deps(_path: &Path) -> Result<Vec<PathBuf>> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn resolve_ldd_deps(_path: &Path) -> Result<Vec<PathBuf>> {
     Ok(Vec::new())
+}
+
+fn detect_package_name(path: &Path) -> String {
+    let components: Vec<_> = path.components().collect();
+    for i in 0..components.len() {
+        let comp = components[i].as_os_str().to_string_lossy();
+        if (comp == "site-packages" || comp == "dist-packages") && i + 1 < components.len() {
+            let pkg_name = components[i + 1].as_os_str().to_string_lossy();
+            // Strip .dist-info, .egg-info etc if it's the top level
+            if pkg_name.contains(".dist-info") || pkg_name.contains(".egg-info") {
+                return pkg_name.split('.').next().unwrap_or("unknown").to_string();
+            }
+            return pkg_name.to_string();
+        }
+    }
+    "unknown".to_string()
 }

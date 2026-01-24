@@ -14,8 +14,27 @@ use libc::{RTLD_GLOBAL, RTLD_LOCAL, RTLD_NOW, WEXITSTATUS, WIFEXITED, c_int, for
 pub struct PreloadLoader;
 
 impl PreloadLoader {
+    /// Internal helper to ensure a path is within trusted boundaries
+    fn validate_path(path: &Path) -> Result<()> {
+        use crate::common::paths::VeloPaths;
+        use std::path::PathBuf;
+
+        let project_dir = std::env::current_dir()?;
+        let venv_path = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from);
+
+        if !VeloPaths::is_path_trusted(path, &project_dir, venv_path.as_deref()) {
+            bail!(
+                "Supply Chain Violation: Native library {:?} is outside trusted boundaries.",
+                path
+            );
+        }
+        Ok(())
+    }
+
     /// Safe dlopen using a fork-sandbox (INV-PRELOAD-008)
     pub fn safe_load(path: &Path, global: bool) -> Result<()> {
+        Self::validate_path(path)?;
+
         let path_str = path.to_str().context("Invalid library path encoding")?;
         let c_path = CString::new(path_str)?;
 
@@ -94,6 +113,8 @@ impl PreloadLoader {
 
     /// Perform only the "Death Pact" vetting without loading in parent
     pub fn vett_only(path: &Path, global: bool) -> Result<()> {
+        Self::validate_path(path)?;
+
         let path_str = path.to_str().context("Invalid library path encoding")?;
         let c_path = CString::new(path_str)?;
 
@@ -173,7 +194,10 @@ mod tests {
     #[test]
     fn test_non_existent_lib_degraded() {
         let _lock = TEST_MUTEX.lock().unwrap();
-        let path = Path::new("/tmp/non_existent_lib_random_name_123.so");
+        // Use a path within the current working directory (trusted boundary)
+        let cwd = std::env::current_dir().unwrap();
+        let path = cwd.join("non_existent_lib_random_name_123.so");
+
         // Ensure we are NOT in strict mode
         let strict_env = crate::common::constants::NATIVE_PRELOAD_STRICT_ENV;
         unsafe {
@@ -181,7 +205,7 @@ mod tests {
         }
 
         // By default, it should succeed (log warning but return Ok)
-        let result = PreloadLoader::safe_load(path, false);
+        let result = PreloadLoader::safe_load(&path, false);
         assert!(result.is_ok());
     }
 
@@ -194,12 +218,24 @@ mod tests {
             std::env::set_var(strict_env, "1");
         }
 
-        let path = Path::new("/tmp/non_existent_lib_random_name_123.so");
-        let result = PreloadLoader::safe_load(path, false);
+        // Use a path within the current working directory (trusted boundary)
+        let cwd = std::env::current_dir().unwrap();
+        let path = cwd.join("non_existent_lib_random_name_123.so");
+        let result = PreloadLoader::safe_load(&path, false);
         assert!(result.is_err());
 
         unsafe {
             std::env::remove_var(strict_env);
         }
+    }
+
+    #[test]
+    fn test_untrusted_path_blocked() {
+        // Verify that paths outside trusted boundaries are always rejected
+        let path = Path::new("/tmp/evil_lib.so");
+        let result = PreloadLoader::safe_load(path, false);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Supply Chain Violation"));
     }
 }

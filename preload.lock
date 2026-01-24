@@ -4,7 +4,7 @@
   "fingerprints": [
     {
       "relative_path": ".venv/lib/python3.11/site-packages/msgpack/_cmsgpack.cpython-311-darwin.so",
-      "package": "unknown",
+      "package": "msgpack",
       "soname": "",
       "hash": "ce79bc3e3ae44d728f3ea3dacbff6437cfbfcb46a6c1ff3645a76425bf08808d",
       "header_hash": "162a877a2b2d40fe842dcfcac637e8ef4609d8e94fe5b8a47c4b05673cdebc84",
