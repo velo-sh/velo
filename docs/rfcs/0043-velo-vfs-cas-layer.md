@@ -110,6 +110,17 @@ Because CAS content is **Cryptographically Immutable**:
 *   **Inode Bloat**: Storing millions of inodes in RAM.
     *   **Mitigation**: Use compact Rust structures (`SmallString` for filenames, `u32` for indices) to minimize heap fragmentation.
 
+### 5.5 Invariant-Driven Memory Convergence (The Memory Singularity)
+Aligning with the philosophy "Maximize Sharing, Minimize I/O", VeloVFS leverages the immutability of CAS blobs to implement **Global Memory Deduplication**:
+
+*   **Tiered Hot-Mem CAS**:
+    *   The Supervisor identifies "Hot Blobs" (e.g., `numpy`, `torch` core libraries).
+    *   These blobs are actively preloaded into a **Shared Memory Region** (`/dev/shm/velo_hot_cas`) or pinned via `mlock`.
+*   **Zero-Copy Projection**:
+    *   Instead of `read()`, VeloVFS can utilize `mmap` to project these physical RAM pages directly into the Agent's address space.
+    *   **Benefit**: 1000 Agents loading `torch` consume exactly **0 bytes** of additional physical RAM for the library code. It becomes a pure pointer mapping operation.
+    *   **Result**: "Disk" becomes just a backup. Execution happens entirely in shared memory.
+
 ```rust
 //! VeloVFS Reference Implementation (Proof of Concept)
 //! 
