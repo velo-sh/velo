@@ -95,7 +95,22 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             stderr=subprocess.PIPE,
         )
 
-        time.sleep(3)
+        # Robust wait loop for B
+        start = time.time()
+        while time.time() - start < 10:
+            if proc_b.poll() is not None:
+                assert proc_b.stderr is not None
+                raise RuntimeError(f"Proc B failed: {proc_b.stderr.read().decode()}")
+            try:
+                requests.get("http://127.0.0.1:8002/").json()
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            if proc_b.poll() is not None:
+                assert proc_b.stderr is not None
+                print(f"Proc B failed: {proc_b.stderr.read().decode()}")
+            raise TimeoutError("Server B did not start in time")
 
         # 3. VERIFY HIJACKING
         # Now Workspace B should return its own content, which is fine.
