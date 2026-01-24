@@ -72,7 +72,7 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 
 ### 4.4 Networking (Network Namespaces)
 *   Isolated `lo` (loopback) interface.
-*   Virtual Ethernet (`veth`) pair for external API access (LLM calls) with strict whitelist egress filtering via `iptables/nftables` in the host namespace.
+*   **eBPF Datapath**: Unlike traditional `iptables` which suffer from lock contention at high churn, VVE MUST use **eBPF (TC/XDP)** for egress filtering. This allows lock-free packet inspection for thousands of ephemeral containers.
 
 ---
 
@@ -80,10 +80,16 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 
 ### 5.1 SHM Gravity (The Velo Dilemma)
 Standard Velo performance relies on `/dev/shm` zero-copy.
-*   **Solution**: Precise `mount --bind` of the specific SHM file descriptors into the sandbox's `/dev/shm` before dropping privileges.
+*   **Challenge**: `pivot_root` unmounts the host's `/dev/shm`.
+*   **Solution**: The Rust Supervisor MUST `mount --bind` the specific Zygote SHM file descriptors into the UpperLayer's `/dev/shm` **BEFORE** executing `pivot_root`. This ensures the memory window remains open in the new namespace.
 
 ### 5.2 ABI Parity
 The Rootfs base image must precisely match the Zygote's runtime ABI (glibc/musl version) to prevent `dlopen` failures of pre-loaded libraries.
+
+### 5.3 Kubernetes Compatibility (The "Sticky Bit" Risk)
+`CLONE_NEWUSER` is often restricted in managed Kubernetes environments (EKS/GKE) via `unprivileged_userns_clone`.
+*   **Mitigation**: VVE detection logic must probe `/proc/sys/kernel/unprivileged_userns_clone` at startup.
+*   **Fallback**: If UserNS is unavailable, VVE will degrade to **L3 (Titanium)**, enforcing isolation via Cgroups/Seccomp only, without the virtual rootfs.
 
 ---
 
