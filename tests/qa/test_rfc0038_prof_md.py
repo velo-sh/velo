@@ -574,6 +574,7 @@ class TestBugRegressions:
             result = subprocess.run(
                 [velo_binary, "run", f"--prof-json={report_path}", str(test_script)],
                 capture_output=True,
+                text=True,
                 timeout=30,
                 cwd=tmp_path,
             )
@@ -615,7 +616,7 @@ class TestBugRegressions:
         """
         import time
 
-        times = []
+        times: list[float] = []
         for _ in range(5):
             report_path = tmp_path / f"report_{len(times)}.md"
             start = time.perf_counter()

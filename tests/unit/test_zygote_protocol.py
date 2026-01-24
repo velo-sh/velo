@@ -1,5 +1,6 @@
 import asyncio
 import struct
+from typing import Any, cast
 
 import msgpack
 import pytest
@@ -9,37 +10,37 @@ from velo_zygote.protocol import ProtocolError, ZygoteTransport
 
 
 class MockStream:
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = bytearray()
         self.closed = False
 
-    async def readexactly(self, n):
+    async def readexactly(self, n: int) -> bytes:
         if len(self.data) < n:
             raise asyncio.IncompleteReadError(self.data, n)
         chunk = self.data[:n]
         self.data = self.data[n:]
         return bytes(chunk)
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         self.data.extend(data)
 
-    async def drain(self):
+    async def drain(self) -> None:
         pass
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
-    def is_closing(self):
+    def is_closing(self) -> bool:
         return self.closed
 
-    async def wait_closed(self):
+    async def wait_closed(self) -> None:
         pass
 
 
 @pytest.mark.anyio
 async def test_protocol_success():
     stream = MockStream()
-    transport = ZygoteTransport(stream, stream)
+    transport = ZygoteTransport(cast(Any, stream), cast(Any, stream))
 
     test_msg = {"type": "Test", "data": "Hello"}
     await transport.send(test_msg)
@@ -52,7 +53,7 @@ async def test_protocol_success():
 @pytest.mark.anyio
 async def test_protocol_version_mismatch():
     stream = MockStream()
-    transport = ZygoteTransport(stream, stream)
+    transport = ZygoteTransport(cast(Any, stream), cast(Any, stream))
 
     # Manual craft message with WRONG version
     payload = msgpack.packb({"foo": "bar"})
@@ -69,7 +70,7 @@ async def test_protocol_version_mismatch():
 @pytest.mark.anyio
 async def test_protocol_oversized_payload():
     stream = MockStream()
-    transport = ZygoteTransport(stream, stream)
+    transport = ZygoteTransport(cast(Any, stream), cast(Any, stream))
 
     # Manual craft message with HUGE length
     header = struct.pack("<I", MAX_MESSAGE_SIZE + 1)
@@ -82,7 +83,7 @@ async def test_protocol_oversized_payload():
 @pytest.mark.anyio
 async def test_protocol_malformed_msgpack():
     stream = MockStream()
-    transport = ZygoteTransport(stream, stream)
+    transport = ZygoteTransport(cast(Any, stream), cast(Any, stream))
 
     total_len = 5
     header = struct.pack("<I", total_len)
@@ -98,7 +99,7 @@ async def test_protocol_malformed_msgpack():
 @pytest.mark.anyio
 async def test_protocol_not_a_dict():
     stream = MockStream()
-    transport = ZygoteTransport(stream, stream)
+    transport = ZygoteTransport(cast(Any, stream), cast(Any, stream))
 
     payload = msgpack.packb(["not", "a", "dict"])
     total_len = 1 + len(payload)
