@@ -20,6 +20,12 @@ import pytest
 VELO = Path(__file__).parents[2] / "target" / "debug" / "velo"
 PROJECT_ROOT = Path(__file__).parents[2]
 
+# Skip all tests if binary not built
+pytestmark = pytest.mark.skipif(
+    not VELO.exists(),
+    reason=f"velo binary not found at {VELO}. Run 'cargo build' first.",
+)
+
 
 def run_velo(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Run velo command and return result."""
