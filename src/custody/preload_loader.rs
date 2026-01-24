@@ -14,26 +14,43 @@ use libc::{RTLD_GLOBAL, RTLD_LOCAL, RTLD_NOW, WEXITSTATUS, WIFEXITED, c_int, for
 pub struct PreloadLoader;
 
 impl PreloadLoader {
-    /// Internal helper to ensure a path is within trusted boundaries
-    fn validate_path(path: &Path) -> Result<()> {
+    /// Check path against trusted boundaries based on path_integrity mode.
+    /// Returns:
+    ///   - Ok(()) if path is trusted or mode is "off"
+    ///   - Err(...) if mode is "enforce" and path is untrusted
+    ///   - Ok(()) with log warning if mode is "warn" and path is untrusted
+    pub(crate) fn validate_path(path: &Path, mode: &str) -> Result<()> {
         use crate::common::paths::VeloPaths;
         use std::path::PathBuf;
+
+        // If mode is "off", skip validation entirely
+        if mode == "off" {
+            return Ok(());
+        }
 
         let project_dir = std::env::current_dir()?;
         let venv_path = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from);
 
         if !VeloPaths::is_path_trusted(path, &project_dir, venv_path.as_deref()) {
-            bail!(
+            let msg = format!(
                 "Supply Chain Violation: Native library {:?} is outside trusted boundaries.",
                 path
             );
+            if mode == "enforce" {
+                bail!("{}", msg);
+            } else {
+                // mode == "warn" (default)
+                log::warn!("[VELO-PATH-INTEGRITY] {}", msg);
+            }
         }
         Ok(())
     }
 
     /// Safe dlopen using a fork-sandbox (INV-PRELOAD-008)
     pub fn safe_load(path: &Path, global: bool) -> Result<()> {
-        Self::validate_path(path)?;
+        // Get path_integrity mode from config
+        let config = crate::config::VeloConfig::from_env_only();
+        Self::validate_path(path, &config.path_integrity)?;
 
         let path_str = path.to_str().context("Invalid library path encoding")?;
         let c_path = CString::new(path_str)?;
@@ -113,7 +130,8 @@ impl PreloadLoader {
 
     /// Perform only the "Death Pact" vetting without loading in parent
     pub fn vett_only(path: &Path, global: bool) -> Result<()> {
-        Self::validate_path(path)?;
+        let config = crate::config::VeloConfig::from_env_only();
+        Self::validate_path(path, &config.path_integrity)?;
 
         let path_str = path.to_str().context("Invalid library path encoding")?;
         let c_path = CString::new(path_str)?;
@@ -230,12 +248,60 @@ mod tests {
     }
 
     #[test]
-    fn test_untrusted_path_blocked() {
-        // Verify that paths outside trusted boundaries are always rejected
+    fn test_untrusted_path_blocked_enforce() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        // Set path_integrity to "enforce" to block untrusted paths
+        unsafe {
+            std::env::set_var("VELO_PATH_INTEGRITY", "enforce");
+        }
+
         let path = Path::new("/tmp/evil_lib.so");
         let result = PreloadLoader::safe_load(path, false);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Supply Chain Violation"));
+
+        unsafe {
+            std::env::remove_var("VELO_PATH_INTEGRITY");
+        }
+    }
+
+    #[test]
+    fn test_untrusted_path_warn_mode() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        // Default mode is "warn", which should allow but log
+        unsafe {
+            std::env::set_var("VELO_PATH_INTEGRITY", "warn");
+        }
+
+        // Path is untrusted, but should NOT error in warn mode
+        // (it will fail later on dlopen, but path validation passes)
+        let path = Path::new("/tmp/fake_lib.so");
+        // Use validate_path directly since safe_load would try to dlopen
+        let config = crate::config::VeloConfig::from_env_only();
+        let result = PreloadLoader::validate_path(path, &config.path_integrity);
+        assert!(result.is_ok()); // warn mode returns Ok
+
+        unsafe {
+            std::env::remove_var("VELO_PATH_INTEGRITY");
+        }
+    }
+
+    #[test]
+    fn test_untrusted_path_off_mode() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        // Set path_integrity to "off" to disable checks entirely
+        unsafe {
+            std::env::set_var("VELO_PATH_INTEGRITY", "off");
+        }
+
+        let path = Path::new("/tmp/any_lib.so");
+        let config = crate::config::VeloConfig::from_env_only();
+        let result = PreloadLoader::validate_path(path, &config.path_integrity);
+        assert!(result.is_ok()); // off mode returns Ok
+
+        unsafe {
+            std::env::remove_var("VELO_PATH_INTEGRITY");
+        }
     }
 }

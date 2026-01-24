@@ -4,7 +4,7 @@
 
 import sys
 
-BUILD_SCM_HASH = "83645b5e-dirty"
+BUILD_SCM_HASH = "615cea42-dirty"
 PROTOCOL_VERSION = 1
 PYTHON_VERSION = "3.11"
 SOCKET_PATH_LIMIT = 104
@@ -82,7 +82,7 @@ PYTHON_LIB_DYNLOAD_SUBDIR = "lib-dynload"
 PYTHON_ENV_VARS = ["PYTHONHOME", "VELO_PYTHON_LIB_DIR", "VELO_PYTHON_LIB_DYNLOAD", "VIRTUAL_ENV", "VELO_PYTHON_EXECUTABLE"]
 
 # Native Preloading SSOT (Phase 6 Hardening)
-_np = {"runtime_prefix": "_v_", "lock_env": "VELO_RUNTIME_PRELOAD_LOCK", "exe_path_env": "VELO_RUNTIME_EXE_PATH", "strict_env": "VELO_RUNTIME_STRICT", "stage_pre_init": "PreInit", "stage_post_init": "PostInit"}
+_np = {"runtime_prefix": "_v_", "lock_env": "VELO_RUNTIME_PRELOAD_LOCK", "exe_path_env": "VELO_RUNTIME_EXE_PATH", "strict_env": "VELO_RUNTIME_STRICT", "stage_pre_init": "PreInit", "stage_post_init": "PostInit", "path_integrity": "warn"}
 NATIVE_PRELOAD_RUNTIME_PREFIX = _np.get("runtime_prefix", "_v_")
 NATIVE_PRELOAD_LOCK_ENV = _np.get("lock_env", "VELO_RUNTIME_PRELOAD_LOCK")
 NATIVE_PRELOAD_EXE_PATH_ENV = _np.get("exe_path_env", "VELO_RUNTIME_EXE_PATH")
