@@ -1,41 +1,43 @@
-# Product Vision: Universal VeloVFS (Project Gravity)
+# Project Gravity: Download RAM. Literally.
 
-> **Goal**: Generalize the VeloVFS technology into a standalone I/O accelerator for read-heavy workloads (NPM, Cargo, AI Datasets), independent of the full Velo platform.
-
----
-
-## 1. The Engineering Problem: "The File Fatigue"
-
-Modern development is plagued by "Many-Small-Files" bottlenecks:
-*   **NPM/Node**: `node_modules` often contains 100k+ small files, causing slow deletions and high I/O latency.
-*   **AI Training**: ImageNet datasets consist of millions of JPEGs. Loading them puts immense pressure on Metadata Servers.
-*   **CI/CD**: Pipelines repeatedly re-download and extract identical tarballs, wasting bandwidth and time.
-
-**Solution**: VeloVFS transforms these file operations into efficient **Memory Mappings**, bypassing traditional I/O overhead.
+> **The Slogan**: "Why download files when you can download memory?"
 
 ---
 
-## 2. Technical Form Factor: `velo-cli`
+## 1. The Concept: Zero-Gravity I/O
 
-We expose VeloVFS via a standalone binary tool (`velo`), decoupling the filesystem technology from the orchestration layer.
+We are building a tool that lets you **download RAM**.
 
-### 2.1 Mode A: Explicit Acceleration (`velo accelerate`)
+When you run `npm install` or load an AI dataset, you are normally doing "Heavy I/O":
+1.  Download compressed tarball.
+2.  Decompress to disk (CPU heavy).
+3.  Write 100,000 files to NVMe (Metadata heavy).
+4.  Read back from NVMe to RAM (Kernel heavy).
 
-Accelerate an existing directory on a workstation or server.
+**Gravity** skips steps 2, 3, and 4.
+It maps the remote dataset directly into your process's memory space.
+It feels like downloading a 100GB dataset takes **seconds**—because you aren't actually downloading it. You are just "linking" it.
+
+---
+
+## 2. Technical Form Factor: `velocity` (The CLI)
+
+We expose this capability via a standalone binary tool (`velocity`).
+
+### 2.1 Mode A: Explicit Acceleration (`velocity map`)
+
+Turn any remote dataset into a local memory map.
 
 ```bash
-# Before: High latency, significant disk usage
-$ ls -R ./big_dataset
+# Old Way: 
+$ wget dataset.tar.gz && tar -xvf dataset.tar.gz # Waits 10 minutes
 
-# Action: Ingest & Accelerate
-$ velo accelerate ./big_dataset --in-place
-> Ingesting 1,000,000 files... Done (3s)
-> Deduplication Ratio: 4.2x
-> Mounting VeloVFS at ./big_dataset... OK.
-
-# After: ./big_dataset is now a VeloVFS Mountpoint
-# Reads are served via Memory/DAX. 
-# Metadata operations are O(1).
+# Gravity Way:
+$ velocity map s3://my-bucket/dataset ./local_mount
+> Establishing Memory Link... Done (0.5s).
+> ./local_mount is now accessible. 
+> Data is streamed on-demand from the network directly to CPU L3 Cache.
+```
 ```
 
 ### 2.2 Mode B: Just-in-Time Projection (`velo run`)
@@ -54,6 +56,12 @@ $ velo exec -- npm install
 > Done. (Significant reduction in I/O wait).
 ```
 
+### 2.3 Zero-Friction Integration (The "Magic Alias")
+
+To eliminate muscle-memory friction, `velocity` supports transparent shell hooks.
+*   **The Hook**: `velocity hook --shell zsh`. Use standard commands (`npm`, `cargo`) and they are transparently accelerated.
+*   **The Experience**: Users don't learn a new tool. They just notice their existing tools became instant.
+
 ---
 
 ## 3. Key Use Cases
@@ -63,10 +71,18 @@ $ velo exec -- npm install
 *   **Optimization**: 
     1.  **Runner 1**: Downloads & Ingests to a Shared CAS (S3/Redis/NFS).
     2.  **Runner 2-N**: Mounts the CAS Hash instantly.
-    3.  **Result**: 
-        *   **Bandwidth**: Minimal redundant downloads.
-        *   **Startup**: Instant environment provisioning.
-        *   **Storage**: Physical deduplication across the cluster.
+*   **The Billboard Effect (Viral Loop)**:
+    *   At the end of every CI run, `velocity` prints a high-contrast summary:
+    ```text
+    🚀 Velocity Summary:
+    ---------------------------------------------
+    Original Est. Time:   4m 30s
+    Velocity Time:        12s
+    You saved:            4m 18s (☕ time!)
+    ---------------------------------------------
+    Get Velocity: https://velo.dev/cli
+    ```
+    *   **Goal**: Convert every engineer debugging a build log into a user.
 
 ### 3.2 High-Performance Dataloaders
 *   **Scenario**: Training models on datasets with millions of small files.
