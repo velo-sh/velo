@@ -63,14 +63,14 @@ security_macos_dev_trusted_prefixes = "${OS_BASE},${HOME},${VIRTUAL_ENV},${CONDA
 security_macos_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX,PYTHONHOME,DYLD_LIBRARY_PATH,DYLD_FALLBACK_LIBRARY_PATH"
 
 security_linux_dev_trusted_prefixes = "${OS_BASE},${HOME},${VIRTUAL_ENV},${CONDA_PREFIX}"
-security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX"
+security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX,LD_LIBRARY_PATH"
 
 # CI (Automated)
 security_macos_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,${HOME},${VIRTUAL_ENV}"
 security_macos_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
 
 security_linux_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,/home/runner,${HOME},${VIRTUAL_ENV}"
-security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
+security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL,LD_LIBRARY_PATH"
 
 # Prod (Hardened)
 security_macos_prod_trusted_prefixes = "${OS_BASE}"

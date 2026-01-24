@@ -264,8 +264,8 @@ def hook_computing(**kwargs: Any) -> None:
         try:
             import torch
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if torch.cuda.is_available():  # type: ignore
+                torch.cuda.empty_cache()  # type: ignore
         except Exception:
             pass
 
