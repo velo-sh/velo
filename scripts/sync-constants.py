@@ -163,6 +163,15 @@ PYTHON_VENV_PATH = "{py_env.get("venv_path", ".venv")}"
 PYTHON_LIB_DIR_PATTERN = "{py_env.get("lib_dir_pattern", "lib/python{{version}}")}"
 PYTHON_LIB_DYNLOAD_SUBDIR = "{py_env.get("lib_dynload_subdir", "lib-dynload")}"
 PYTHON_ENV_VARS = [{env_vars_str}]
+
+# Native Preloading SSOT (Phase 6 Hardening)
+_np = {json.dumps(config.get("native_preload", {}))}
+NATIVE_PRELOAD_RUNTIME_PREFIX = _np.get("runtime_prefix", "_v_")
+NATIVE_PRELOAD_LOCK_ENV = _np.get("lock_env", "VELO_RUNTIME_PRELOAD_LOCK")
+NATIVE_PRELOAD_EXE_PATH_ENV = _np.get("exe_path_env", "VELO_RUNTIME_EXE_PATH")
+NATIVE_PRELOAD_STRICT_ENV = _np.get("strict_env", "VELO_RUNTIME_STRICT")
+NATIVE_PRELOAD_STAGE_PRE_INIT = _np.get("stage_pre_init", "PreInit")
+NATIVE_PRELOAD_STAGE_POST_INIT = _np.get("stage_post_init", "PostInit")
 '''
 
 

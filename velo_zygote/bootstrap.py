@@ -7,6 +7,13 @@ try:
 except (ImportError, ValueError):
     from env_profile import ENV_PROFILE  # type: ignore[no-redef]
 
+# RFC-0035 Phase 6: Dunder Namespace Isolation
+import types
+
+__velo__ = types.ModuleType("__velo__")
+__velo__.ENV_PROFILE = ENV_PROFILE  # type: ignore[attr-defined]
+sys.modules["__velo__"] = __velo__
+
 
 def _normalize_environment() -> None:
     """
@@ -64,6 +71,45 @@ def _log_banner() -> None:
     except Exception as e:
         # Don't let banner failure crash the service
         sys.stderr.write(f"[BOOTSTRAP-WARN] Failed to display banner: {e}\n")
+
+
+def _get_pss_kb() -> int:
+    """Get Proportional Set Size in KB (Linux only)."""
+    if sys.platform != "linux":
+        return 0
+    try:
+        with open("/proc/self/smaps_rollup", "rb") as f:
+            for line in f:
+                if line.startswith(b"Pss:"):
+                    return int(line.split()[1])
+    except Exception:
+        pass
+    return 0
+
+
+def _log_memory_metrics(label: str) -> None:
+    """Log memory metrics via LOP (Log Origin Protocol)."""
+    try:
+        import resource
+        import time
+
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # On macOS, ru_maxrss is in bytes; on Linux, it's in KB.
+        if sys.platform == "darwin":
+            rss_kb //= 1024
+
+        pss_kb = _get_pss_kb()
+
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        msg = f"[{timestamp}] [ZYGOTE] INFO [VELO-MEM-METRIC] {label}: RSS={rss_kb}KB"
+        if pss_kb > 0:
+            efficiency = (1.0 - (pss_kb / rss_kb)) * 100 if rss_kb > 0 else 0
+            msg += f", PSS={pss_kb}KB, COW-Efficiency={efficiency:.1f}%"
+
+        sys.stderr.write(msg + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def _v_native_preload(target_stage: str) -> None:
@@ -135,6 +181,11 @@ def _v_native_preload(target_stage: str) -> None:
         sys.stderr.write(f"[{timestamp}] [ZYGOTE] ERROR [VELO-PRELOAD-CRIT] Bootstrap failed: {e}\n")
 
 
+# Expose internal hooks to the isolated namespace
+__velo__.native_preload = _v_native_preload  # type: ignore[attr-defined]
+__velo__.log_memory = _log_memory_metrics  # type: ignore[attr-defined]
+
+
 def initialize() -> None:
     """
     Standardize the Velo Python environment.
@@ -156,6 +207,7 @@ def initialize() -> None:
     # 1.1 RFC-0035 Native Preloading (Pre-Warming)
     # Aligned with SPEC-0007: This is the PreInit stage.
     _v_native_preload("PreInit")
+    _log_memory_metrics("After PreInit")
 
     # 2. Normalize sys.path
     # SCRIPT_DIR is the directory of this file (velo_zygote/)

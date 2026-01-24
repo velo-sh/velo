@@ -143,3 +143,14 @@ env_vars = [
     "VIRTUAL_ENV",          # Virtual environment root
     "VELO_PYTHON_EXECUTABLE", # Python executable path
 ]
+
+# =============================================================================
+# Native Preloading SSOT (Phase 6 Hardening)
+# =============================================================================
+[native_preload]
+runtime_prefix = "_v_"
+lock_env = "VELO_RUNTIME_PRELOAD_LOCK"
+exe_path_env = "VELO_RUNTIME_EXE_PATH"
+strict_env = "VELO_RUNTIME_STRICT"
+stage_pre_init = "PreInit"
+stage_post_init = "PostInit"

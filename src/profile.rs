@@ -26,13 +26,18 @@ def _v_activate_preloading():
     if not lock_json:
         return
     try:
-        # Assuming velo_zygote is in PYTHONPATH
-        from velo_zygote import bootstrap
-        bootstrap._v_native_preload("PreInit")
-    except Exception as e:
-        # LOP compliant error (approximate for early boot)
-        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
-        sys.stderr.write(f"[{timestamp}] [STD] WARN [VELO-PRELOAD-FAIL] Native preload hook failed: {e}\n")
+        # Try to use the isolated namespace first
+        import __velo__
+        __velo__.native_preload("PreInit")
+    except ImportError:
+        try:
+            # Fallback to bootstrap if not initialized
+            from velo_zygote import bootstrap
+            bootstrap.initialize()
+        except Exception as e:
+            # LOP compliant error (approximate for early boot)
+            timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+            sys.stderr.write(f"[{timestamp}] [STD] WARN [VELO-PRELOAD-FAIL] Native preload hook failed: {e}\n")
 
 _v_activate_preloading()
 # ---------------------------------------

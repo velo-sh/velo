@@ -36,15 +36,9 @@ impl PreloadLoader {
                 // Attempt to load the library
                 let handle = libc::dlopen(c_path.as_ptr(), flags);
                 if handle.is_null() {
-                    // We don't exit with error here because failing to load
-                    // is different from crashing. A missing dependency
-                    // should be handled gracefully, but a crash shouldn't
-                    // kill the parent.
-                    // However, RFC-0035 says we only load in parent if child survives.
-                    std::process::exit(0);
+                    // Failing to load is an error in vetting context
+                    std::process::exit(1);
                 }
-                // Handle Directive A: Intentional leak for process lifetime
-                // We just exit successfully.
                 std::process::exit(0);
             } else {
                 // --- Parent Process ---
@@ -70,10 +64,24 @@ impl PreloadLoader {
                     // Handle Directive A: No dlclose() - intentionally leak handle
                     Ok(())
                 } else {
-                    bail!(
-                        "Death Pact: Library {:?} caused child process to crash or fail",
-                        path
-                    );
+                    // Vetting Failed
+                    let strict_env = crate::common::constants::NATIVE_PRELOAD_STRICT_ENV;
+                    let val = std::env::var(strict_env).unwrap_or_else(|_| "not set".to_string());
+                    let is_strict = val == "1" || val.to_lowercase() == "true";
+
+                    if is_strict {
+                        bail!(
+                            "Death Pact (STRICT): Library {:?} caused child process to crash or fail",
+                            path
+                        );
+                    } else {
+                        log::warn!(
+                            "[VELO-PRELOAD-DEGRADED] Vetting failed for {:?} (strict={}), skipping load in parent.",
+                            path,
+                            val
+                        );
+                        Ok(())
+                    }
                 }
             }
         }
@@ -133,11 +141,16 @@ impl PreloadLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[test]
     #[cfg(unix)]
     fn test_death_pact_safety() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         let _tmp = tempdir().unwrap();
         // We can't easily create a "crashing" .so in a unit test
         // without a compiler, but we can verify success path.
@@ -158,9 +171,35 @@ mod tests {
     }
 
     #[test]
-    fn test_non_existent_lib() {
+    fn test_non_existent_lib_degraded() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        let path = Path::new("/tmp/non_existent_lib_random_name_123.so");
+        // Ensure we are NOT in strict mode
+        let strict_env = crate::common::constants::NATIVE_PRELOAD_STRICT_ENV;
+        unsafe {
+            std::env::remove_var(strict_env);
+        }
+
+        // By default, it should succeed (log warning but return Ok)
+        let result = PreloadLoader::safe_load(path, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_non_existent_lib_strict() {
+        let _lock = TEST_MUTEX.lock().unwrap();
+        // Force strict mode for this test
+        let strict_env = crate::common::constants::NATIVE_PRELOAD_STRICT_ENV;
+        unsafe {
+            std::env::set_var(strict_env, "1");
+        }
+
         let path = Path::new("/tmp/non_existent_lib_random_name_123.so");
         let result = PreloadLoader::safe_load(path, false);
         assert!(result.is_err());
+
+        unsafe {
+            std::env::remove_var(strict_env);
+        }
     }
 }

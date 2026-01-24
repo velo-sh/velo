@@ -22,3 +22,27 @@ pub fn get_process_rss_bytes() -> Option<u64> {
         None
     }
 }
+
+/// Get the current process PSS (Proportional Set Size) in bytes.
+/// On Linux, this reads from /proc/self/smaps_rollup.
+/// On macOS, this currently falls back to RSS (approximation).
+pub fn get_process_pss_bytes() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::fs::read_to_string;
+        if let Ok(content) = read_to_string("/proc/self/smaps_rollup") {
+            for line in content.lines() {
+                if line.starts_with("Pss:") {
+                    return line
+                        .split_whitespace()
+                        .nth(1)
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(|kb| kb * 1024);
+                }
+            }
+        }
+    }
+
+    // Fallback: Use RSS
+    get_process_rss_bytes()
+}

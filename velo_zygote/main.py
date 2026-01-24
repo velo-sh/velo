@@ -783,6 +783,7 @@ class ZygoteServer:
         # RFC-0035/SPEC-0007: Load extension modules after Python core is ready.
         try:
             bootstrap._v_native_preload("PostInit")
+            bootstrap._log_memory_metrics("After PostInit")
         except Exception as e:
             LogUtils.log(f"PostInit native preload failed: {e}")
 

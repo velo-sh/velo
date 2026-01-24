@@ -96,39 +96,60 @@ fn analyze_impl() -> Result<()> {
                 continue;
             }
 
-            let canonical_lib = lib_path.canonicalize()?;
-            let (hash, header_hash) = NativeLibFingerprint::calculate_hashes(&canonical_lib)?;
-            let (soname, _needed) = NativeLibFingerprint::parse_native_lib(&canonical_lib)?;
-            let metadata = canonical_lib.metadata()?;
-            let mtime = metadata
-                .modified()?
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_secs();
+            // RFC-0035 Phase 6: Recursive Dependency Discovery
+            let dependencies = resolve_dependencies_recursive(&lib_path)?;
+            let mut all_to_process = vec![lib_path];
+            all_to_process.extend(dependencies);
 
-            // Calculate relative path to project root
-            let relative_path = canonical_lib
-                .strip_prefix(&project_dir)
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|_| canonical_lib.clone());
+            for path in all_to_process {
+                let canonical_lib = path.canonicalize()?;
 
-            let fp = NativeLibFingerprint {
-                relative_path,
-                package: "unknown".to_string(),
-                soname,
-                hash,
-                header_hash,
-                mtime,
-                platform: LibPlatform {
-                    os: std::env::consts::OS.to_string(),
-                    arch: std::env::consts::ARCH.to_string(),
-                    python_version: format!("{}.{}", py_info.version.major, py_info.version.minor),
-                    libc_type: detect_libc_type(),
-                    libc_version: detect_libc_version(),
-                    soabi: py_info.abi_tag.clone(),
-                },
-                load_stage: LoadStage::PreInit,
-            };
-            fingerprints.push(fp);
+                // Avoid duplicates
+                if fingerprints.iter().any(|f: &NativeLibFingerprint| {
+                    if let Ok(c) = project_dir.join(&f.relative_path).canonicalize() {
+                        return c == canonical_lib;
+                    }
+                    false
+                }) {
+                    continue;
+                }
+
+                let (hash, header_hash) = NativeLibFingerprint::calculate_hashes(&canonical_lib)?;
+                let (soname, _needed) = NativeLibFingerprint::parse_native_lib(&canonical_lib)?;
+                let metadata = canonical_lib.metadata()?;
+                let mtime = metadata
+                    .modified()?
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_secs();
+
+                // Calculate relative path to project root
+                let relative_path = canonical_lib
+                    .strip_prefix(&project_dir)
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|_| canonical_lib.clone());
+
+                let fp = NativeLibFingerprint {
+                    relative_path,
+                    package: "unknown".to_string(), // TODO: Detect package if in venv
+                    soname,
+                    hash,
+                    header_hash,
+                    mtime,
+                    platform: LibPlatform {
+                        os: std::env::consts::OS.to_string(),
+                        arch: std::env::consts::ARCH.to_string(),
+                        python_version: format!(
+                            "{}.{}",
+                            py_info.version.major, py_info.version.minor
+                        ),
+                        libc_type: detect_libc_type(),
+                        libc_version: detect_libc_version(),
+                        soabi: py_info.abi_tag.clone(),
+                    },
+                    load_stage: LoadStage::PreInit,
+                };
+                fingerprints.push(fp);
+            }
         }
     }
 
@@ -258,4 +279,95 @@ fn expand_library_placeholders(s: &str, py: &PythonInfo) -> String {
     res = res.replace("${SO_EXT}", ext);
 
     res
+}
+
+fn resolve_dependencies_recursive(path: &Path) -> Result<Vec<PathBuf>> {
+    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut dependencies = Vec::new();
+    let mut to_visit = vec![path.to_path_buf()];
+
+    while let Some(current) = to_visit.pop() {
+        if !visited.insert(current.clone()) {
+            continue;
+        }
+
+        #[cfg(target_os = "macos")]
+        let deps = resolve_otool_deps(&current)?;
+        #[cfg(target_os = "linux")]
+        let deps = resolve_ldd_deps(&current)?;
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let deps: Vec<PathBuf> = Vec::new();
+
+        for dep in deps {
+            if dep.exists() && !visited.contains(&dep) {
+                // Heuristic: Only follow libraries in the same prefix or venv
+                // to avoid bloating preload.lock with standard system libs.
+                // However, RFC-0035 asks for comprehensive vetting.
+                // Let's filter out core system paths but keep user/venv paths.
+                let dep_str = dep.to_string_lossy();
+                let is_system = dep_str.starts_with("/usr/lib")
+                    || dep_str.starts_with("/lib")
+                    || dep_str.starts_with("/System/Library");
+
+                if !is_system {
+                    dependencies.push(dep.clone());
+                    to_visit.push(dep);
+                }
+            }
+        }
+    }
+
+    Ok(dependencies)
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_otool_deps(path: &Path) -> Result<Vec<PathBuf>> {
+    use std::process::Command;
+    let output = Command::new("otool")
+        .args(["-L", path.to_str().unwrap()])
+        .output()?;
+    let s = String::from_utf8_lossy(&output.stdout);
+    let mut deps = Vec::new();
+
+    for line in s.lines().skip(1) {
+        let line = line.trim();
+        if let Some(path_part) = line.split(" (").next() {
+            let dep_path = PathBuf::from(path_part);
+            if dep_path.exists() && dep_path.is_absolute() {
+                deps.push(dep_path);
+            }
+        }
+    }
+    Ok(deps)
+}
+
+#[cfg(target_os = "linux")]
+fn resolve_ldd_deps(path: &Path) -> Result<Vec<PathBuf>> {
+    use std::process::Command;
+    let output = Command::new("ldd").arg(path).output()?;
+    let s = String::from_utf8_lossy(&output.stdout);
+    let mut deps = Vec::new();
+
+    for line in s.lines() {
+        // e.g. "libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007f9c...)"
+        if let Some(pos) = line.find("=>") {
+            let part = &line[pos + 2..];
+            if let Some(path_part) = part.split_whitespace().next() {
+                let dep_path = PathBuf::from(path_part);
+                if dep_path.exists() && dep_path.is_absolute() {
+                    deps.push(dep_path);
+                }
+            }
+        }
+    }
+    Ok(deps)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn resolve_otool_deps(_path: &Path) -> Result<Vec<PathBuf>> {
+    Ok(Vec::new())
+}
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn resolve_ldd_deps(_path: &Path) -> Result<Vec<PathBuf>> {
+    Ok(Vec::new())
 }
