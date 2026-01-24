@@ -38,6 +38,7 @@ class VeloConfig:
 
     # Security
     shield_active: bool = field(default=False)
+    shield_mode: str = field(default="enforce")  # enforce, dry_run, disabled
     trusted_proxy: bool = field(default=False)
     forwarded_allow_ips: str = field(default="")
     trusted_prefixes: list[str] = field(default_factory=list)
@@ -102,6 +103,7 @@ class VeloConfig:
         instance = cls(
             env=env_mode,
             shield_active=os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1",
+            shield_mode=os.environ.get("VELO_SHIELD_MODE", "enforce"),
             trusted_proxy=os.environ.get("VELO_TRUSTED_PROXY") == "1",
             forwarded_allow_ips=os.environ.get("VELO_FORWARDED_ALLOW_IPS", ""),
             timeout_multiplier=ENV_PROFILE.timeout_multiplier,

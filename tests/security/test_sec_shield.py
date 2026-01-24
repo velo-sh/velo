@@ -137,15 +137,12 @@ class TestSecurityShieldIntegration:
                         "SECURITY FAILURE: Abstract Zygote socket not detected in /proc/net/unix"
                     )
             else:
-                # macOS check: Look for the secure randomized path
-                # Pattern: /tmp/velo-secure-*/velo-zygote-v*.sock
-                matches = glob.glob("/tmp/velo-secure-*/velo-zygote-v*.sock") + glob.glob(
-                    os.path.join(
-                        os.environ.get("TMPDIR", "/tmp"),
-                        "velo-secure-*/velo-zygote-v*.sock",
-                    )
-                )
-                assert len(matches) > 0, "SECURITY FAILURE: Atomic randomized Zygote socket not found on macOS"
+                # RFC-0012 Phase 11.0: Uses ~/.local/state/velo/sockets/velo-{uid} by default
+                home = os.environ.get("HOME", "/tmp")
+                uid = os.getuid()
+                stable_path = os.path.join(home, f".local/state/velo/sockets/velo-{uid}/velo-zygote-v*.sock")
+                matches = glob.glob(stable_path) + glob.glob("/tmp/velo-secure-*/velo-zygote-v*.sock")
+                assert len(matches) > 0, f"SECURITY FAILURE: Zygote socket not found. Checked: {stable_path}"
 
         finally:
             proc.terminate()
@@ -166,8 +163,10 @@ class TestSecurityShieldIntegration:
                 "import os; print(os.environ.get('LD_LIBRARY_PATH', 'CLEAN')); print(os.environ.get('PYTHONHOME', 'CLEAN'))"
             )
 
+        toxin_env["VELO_ENV"] = "prod"  # Force Prod for strict blocking
         result = subprocess.run([VELO_BIN, "run", probe_file], env=toxin_env, capture_output=True, text=True)
 
         assert "CLEAN" in result.stdout
+        # Prod profile should block toxin paths entirely
         assert "/tmp/evil_libs" not in result.stdout
         assert "/tmp/evil_python" not in result.stdout

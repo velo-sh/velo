@@ -283,10 +283,16 @@ def make_hooks(loop, app):
                     "http_stream": None
                 }
                 
-                # SPEC-0006 §6: Generate TraceID for cross-language observability
+                # SPEC-0006 §6: Prefer TraceID from Host headers (Phase 11.0 Hardening)
                 trace_id = f"velo-{int(time.time() * 1000)}-{id(rsgi_scope):x}"
-                print(f"[{trace_id}] asgi_bridge START")
-                
+                headers_raw = rsgi_scope.headers.raw_items()
+                for k, v in headers_raw:
+                    if k.lower() == b"x-velo-trace-id":
+                        try:
+                            trace_id = v.decode("latin-1")
+                            break
+                        except: pass
+
                 # RFC-0019/INV-POLY-005: Robust Protocol Identification
                 # Detect if this is a WebSocket request (either natively or via headers)
                 try:
@@ -294,7 +300,6 @@ def make_hooks(loop, app):
                     is_ws_native = proto_val in ("ws", "websocket")
                     is_upgrade = False
                     
-                    headers_raw = rsgi_scope.headers.raw_items()
                     for k, v in headers_raw:
                         k_low = k.lower()
                         if k_low == b"upgrade" and b"websocket" in v.lower():
@@ -304,6 +309,8 @@ def make_hooks(loop, app):
                     is_ws = is_ws_native or is_upgrade
                 except Exception:
                     is_ws = False
+                
+                print(f"[{trace_id}] asgi_bridge START {'(WS)' if is_ws else ''}")
                 
                 # RFC-0019 C04: WebSocket handshake MUST return 501 Not Implemented 
                 # IF we are forced to handle it via HTTP protocol (remediation case)
@@ -474,7 +481,13 @@ def make_hooks(loop, app):
                     watcher.err(e)
                     import traceback
                     import sys
-                    sys.stderr.write(f"[{trace_id}] ASGI Bridge Error: {e}\n")
+                    from velo_zygote.errors import VeloOptimizationError
+                    
+                    if isinstance(e, VeloOptimizationError):
+                        sys.stderr.write(f"[{trace_id}] [OPTIMIZATION-FAILED] id={e.optimization_id} msg={str(e)}\n")
+                    else:
+                        sys.stderr.write(f"[{trace_id}] ASGI Bridge Error: {e}\n")
+                    
                     traceback.print_exc(file=sys.stderr)
                     sys.stderr.flush()
                     if not ctx.get("response_sent") and not is_ws:

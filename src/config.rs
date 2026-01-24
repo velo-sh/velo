@@ -6,119 +6,14 @@ use crate::common::paths::VeloPaths;
 use std::path::Path;
 
 /// Embedded SSOT for runtime defaults
-const CONSTANTS_TOML: &str = include_str!("../config/constants.toml");
+use velo_macros::generate_config;
 
-/// Velo configuration
-#[derive(Debug, Clone)]
-pub struct VeloConfig {
-    /// Modules to preload in Zygote
-    pub preload: Vec<String>,
-    /// Native libraries to preload via dlopen (RFC-0035)
-    pub native_libraries: Vec<String>,
-    /// Path integrity check mode: "enforce" | "warn" | "off"
-    pub path_integrity: String,
-    /// Maximum bundle size in Bytes
-    pub max_bundle_size: usize,
-    /// Zygote socket startup timeout in seconds
-    pub zygote_socket_timeout: u64,
-    /// Threshold in ms for "slow" imports
-    pub slow_threshold_ms: u64,
-    /// Trusted path prefixes for environment scrubbing
-    pub security_trusted_prefixes: Vec<String>,
-    /// Whitelisted environment variables
-    pub security_env_whitelist: Vec<String>,
-    /// Max threads for HPC libraries (OpenMP, MKL, etc)
-    pub security_hpc_threads: usize,
-    /// Graceful shutdown timeout in seconds
-    pub graceful_shutdown_timeout: u64,
-    /// H-Gov: Whether optimizations must be strictly enforced (bail on failure)
-    pub strict_optimizations: bool,
-    /// SEC-005: Forensic secret for Zygote authentication
-    pub forensic_secret: Option<String>,
-}
+generate_config!();
 
-impl Default for VeloConfig {
-    fn default() -> Self {
-        // VELO_ENV determines the security profile: dev (default), ci, prod
-        // VELO_TEST_MODE=1 implies "ci" profile (allows fallback, same as CI)
-        let env_mode = match std::env::var("VELO_ENV") {
-            Ok(mode) => mode,
-            Err(_) => {
-                // If VELO_TEST_MODE is set, use "ci" profile for test resilience
-                if std::env::var("VELO_TEST_MODE").is_ok() {
-                    "ci".to_string()
-                } else {
-                    "dev".to_string()
-                }
-            }
-        };
-
-        // Detect OS at runtime
-        let os_name = match std::env::consts::OS {
-            "macos" => "macos",
-            "linux" => "linux",
-            _ => "linux", // Fallback to linux for other Unix
-        };
-
-        // Level 0: Global Base
-        let base_prefixes =
-            extract_default_str("security_base_trusted_prefixes").unwrap_or_default();
-        let base_envs = extract_default_str("security_base_env_whitelist").unwrap_or_default();
-
-        // Level 1: OS Base (merge with global base via ${BASE})
-        let os_base_prefix_key = format!("security_{}_base_trusted_prefixes", os_name);
-        let os_base_env_key = format!("security_{}_base_env_whitelist", os_name);
-
-        let os_base_prefixes = extract_default_str(&os_base_prefix_key)
-            .unwrap_or_default()
-            .replace("${BASE}", &base_prefixes);
-        let os_base_envs = extract_default_str(&os_base_env_key)
-            .unwrap_or_default()
-            .replace("${BASE}", &base_envs);
-
-        // Level 2: OS + Environment (merge with OS base via ${OS_BASE})
-        let final_prefix_key = format!("security_{}_{}_trusted_prefixes", os_name, env_mode);
-        let final_env_key = format!("security_{}_{}_env_whitelist", os_name, env_mode);
-
-        // Fallback to dev if profile not found
-        let fallback_prefix_key = format!("security_{}_dev_trusted_prefixes", os_name);
-        let fallback_env_key = format!("security_{}_dev_env_whitelist", os_name);
-
-        let raw_prefixes = extract_default_str(&final_prefix_key)
-            .or_else(|| extract_default_str(&fallback_prefix_key))
-            .unwrap_or_default()
-            .replace("${OS_BASE}", &os_base_prefixes);
-
-        let raw_envs = extract_default_str(&final_env_key)
-            .or_else(|| extract_default_str(&fallback_env_key))
-            .unwrap_or_default()
-            .replace("${OS_BASE}", &os_base_envs);
-
-        Self {
-            preload: Vec::new(),
-            native_libraries: Vec::new(),
-            path_integrity: extract_default_str("path_integrity")
-                .unwrap_or_else(|| "warn".to_string()),
-            max_bundle_size: 1024 * 1024 * 1024, // 1GB default
-            zygote_socket_timeout: extract_default_u64("socket_startup_timeout", 5),
-            slow_threshold_ms: extract_default_u64("default_slow_threshold_ms", 100),
-            security_trusted_prefixes: Self::parse_string_array(&raw_prefixes),
-            security_env_whitelist: Self::parse_string_array(&raw_envs),
-            security_hpc_threads: extract_default_u64("security_hpc_threads", 1) as usize,
-            graceful_shutdown_timeout: extract_default_u64("graceful_shutdown_timeout", 30),
-            strict_optimizations: match env_mode.as_str() {
-                "prod" => false, // SECURITY: Never crash in Production (Graceful Degradation)
-                "ci" => false,   // CI/Test: Allow graceful fallback for resilience
-                _ => extract_default_bool("strict_optimizations", true),
-            },
-            forensic_secret: None, // Generated at runtime or from env
-        }
-    }
-}
-
-/// Extract a string default from the embedded TOML
-fn extract_default_str(key: &str) -> Option<String> {
-    for line in CONSTANTS_TOML.lines() {
+/// Public interface to extract path configuration (RFC-0012 Phase 6.5)
+pub fn extract_path_config(key: &str) -> Option<String> {
+    // Fallback to manual parsing for dynamic keys not baked into the macro
+    for line in include_str!("../config/constants.toml").lines() {
         let line = line.trim();
         if line.starts_with(key)
             && let Some((_, val)) = line.split_once('=')
@@ -127,43 +22,6 @@ fn extract_default_str(key: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Public interface to extract path configuration (RFC-0012 Phase 6.5)
-pub fn extract_path_config(key: &str) -> Option<String> {
-    extract_default_str(key)
-}
-
-/// Extract a u64 default from the embedded TOML
-fn extract_default_u64(key: &str, default: u64) -> u64 {
-    for line in CONSTANTS_TOML.lines() {
-        let line = line.trim();
-        if line.starts_with(key) {
-            let val = line
-                .split_once('=')
-                .and_then(|(_, v)| v.trim().parse().ok());
-            if let Some(v) = val {
-                return v;
-            }
-        }
-    }
-    default
-}
-
-/// Extract a bool default from the embedded TOML
-fn extract_default_bool(key: &str, default: bool) -> bool {
-    for line in CONSTANTS_TOML.lines() {
-        let line = line.trim();
-        if line.starts_with(key) {
-            let val = line
-                .split_once('=')
-                .and_then(|(_, v)| v.split_whitespace().next().and_then(|t| t.parse().ok()));
-            if let Some(v) = val {
-                return v;
-            }
-        }
-    }
-    default
 }
 
 impl VeloConfig {

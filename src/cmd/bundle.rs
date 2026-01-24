@@ -308,7 +308,7 @@ fn cmd_bundle_collect_impl(output: Option<PathBuf>, log_dir: Option<PathBuf>) ->
     // Determine log directory
     let home = std::env::var("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"));
+        .unwrap_or_else(|_| std::env::temp_dir());
     let default_log_dir = home.join(".local/state/velo");
     let target_dir = log_dir.unwrap_or(default_log_dir);
 

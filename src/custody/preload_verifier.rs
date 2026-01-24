@@ -24,7 +24,7 @@ impl PreloadVerifier {
             .map_err(|e| anyhow::anyhow!("Failed to canonicalize path {:?}: {}", path, e))?;
 
         // 1. Block dangerous prefixes
-        let dangerous_prefixes = ["/tmp/", "/var/tmp/", "/dev/shm/"];
+        let dangerous_prefixes = crate::common::paths::VeloPaths::dangerous_prefixes();
         let path_str = canonical_path.to_string_lossy();
         let venv_str = self.venv_root.to_string_lossy();
         for prefix in dangerous_prefixes {

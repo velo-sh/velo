@@ -50,7 +50,7 @@ impl VeloPaths {
             }
             // SEC-004: If override is too long, we fall back to /tmp immediately
             let dir_name = format!("velo-{}", uid);
-            let fallback = PathBuf::from("/tmp").join(dir_name);
+            let fallback = std::env::temp_dir().join(dir_name);
             let _ = ensure_socket_dir(&fallback);
             return fallback;
         }
@@ -71,7 +71,8 @@ impl VeloPaths {
             .unwrap_or_else(|| {
                 // DEF-SOCKET-STABLE: Use ~/.local/state/velo/sockets/ instead of temp dir
                 // macOS temp directories can be cleaned up unexpectedly, causing socket issues
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                let home = std::env::var("HOME")
+                    .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
                 format!("{}/.local/state/velo/sockets", home)
             });
 
@@ -88,8 +89,8 @@ impl VeloPaths {
             return socket_path;
         }
 
-        // Fallback to /tmp (guaranteed short on macOS/Linux) if path is too long
-        let fallback = PathBuf::from("/tmp").join(dir_name);
+        // Fallback to temp dir (guaranteed short on macOS/Linux) if path is too long
+        let fallback = std::env::temp_dir().join(dir_name);
         // DEF-72-P01: Enforce 0700 on fallback path too
         let _ = ensure_socket_dir(&fallback);
         fallback
@@ -360,6 +361,11 @@ impl VeloPaths {
         }
 
         false
+    }
+
+    /// RFC-0011 Phase 11.0: Dangerous prefixes that should be blocked for workers.
+    pub fn dangerous_prefixes() -> &'static [&'static str] {
+        &["/tmp", "/var/tmp", "/dev/shm"]
     }
 }
 

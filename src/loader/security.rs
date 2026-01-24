@@ -57,12 +57,12 @@ pub fn validate_permissions(_path: &Path) -> Result<()> {
 /// Handover Section 2.3: Reject /tmp and shared directories
 /// Uses canonicalize() to prevent symlink traversal attacks
 pub fn validate_location(path: &Path) -> Result<()> {
-    let insecure_prefixes = ["/tmp", "/var/tmp", "/dev/shm"];
+    let insecure_prefixes = crate::common::paths::VeloPaths::dangerous_prefixes();
 
     // Ritual Layer 1: Raw Path Analysis
     // Reject obvious insecure prefixes in the input string
     let raw_path_str = path.to_string_lossy();
-    for prefix in &insecure_prefixes {
+    for prefix in insecure_prefixes {
         if raw_path_str.starts_with(prefix) {
             return Err(LoaderError::InsecureLocation {
                 path: path.to_path_buf(),
@@ -77,7 +77,7 @@ pub fn validate_location(path: &Path) -> Result<()> {
         #[allow(clippy::collapsible_if)]
         if let Ok(target) = std::fs::read_link(path) {
             let target_str = target.to_string_lossy();
-            for prefix in &insecure_prefixes {
+            for prefix in insecure_prefixes {
                 if target_str.starts_with(prefix) {
                     return Err(LoaderError::InsecureLocation {
                         path: path.to_path_buf(),
@@ -91,7 +91,7 @@ pub fn validate_location(path: &Path) -> Result<()> {
     // resolve all symlinks and ".." to find the actual physical location
     if let Ok(canonical) = path.canonicalize() {
         let canonical_str = canonical.to_string_lossy();
-        for prefix in &insecure_prefixes {
+        for prefix in insecure_prefixes {
             if canonical_str.starts_with(prefix) {
                 return Err(LoaderError::InsecureLocation { path: canonical });
             }
@@ -100,7 +100,7 @@ pub fn validate_location(path: &Path) -> Result<()> {
         // Fallback for non-existent files: validate the parent directory
         if let Ok(canonical_parent) = parent.canonicalize() {
             let parent_str = canonical_parent.to_string_lossy();
-            for prefix in &insecure_prefixes {
+            for prefix in insecure_prefixes {
                 if parent_str.starts_with(prefix) {
                     return Err(LoaderError::InsecureLocation {
                         path: path.to_path_buf(),

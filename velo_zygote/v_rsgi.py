@@ -32,6 +32,7 @@ _INTERNED_HEADERS = {
         "transfer-encoding",
         "x-forwarded-for",
         "x-real-ip",
+        "x-velo-trace-id",
     ]
 }
 
@@ -248,6 +249,10 @@ class RSGIWorker:
                     scheme = v.strip()
                 except Exception:
                     pass
+            elif k_lower == "x-velo-trace-id":
+                trace_id = v.strip()
+            else:
+                trace_id = None
 
         scope = {
             "type": "http",
@@ -262,6 +267,7 @@ class RSGIWorker:
             "client": (client_host, 0),
             "server": None,
             "rsgi.id": req_id,
+            "velo.trace_id": trace_id,
         }
 
         # Request Body Buffer

@@ -3130,7 +3130,20 @@ dependencies = [
  "tower-service",
  "tracing",
  "uuid",
+ "velo_macros",
  "which",
+]
+
+[[package]]
+name = "velo_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
+ "toml",
 ]
 
 [[package]]

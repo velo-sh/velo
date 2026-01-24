@@ -448,16 +448,23 @@ impl ZygoteLauncher {
             let socket_dir = self
                 .socket_path
                 .parent()
-                .unwrap_or_else(|| Path::new("/tmp"));
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(std::env::temp_dir);
             let log_path = get_log_path();
-            let log_dir = log_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+            let log_dir = log_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(std::env::temp_dir);
+
+            let temp_dir = std::env::temp_dir();
+            let temp_str = temp_dir.to_string_lossy();
 
             let profile = format!(
                 r#"(version 1)
 (allow default)
 (allow file-read*)
 (allow file-write*
-    (subpath "/tmp")
+    (subpath "{}")
     (subpath "/private/tmp")
     (subpath "/var/folders")
     (subpath "{}")
@@ -465,6 +472,7 @@ impl ZygoteLauncher {
     (subpath "{}")
 )
 "#,
+                temp_str,
                 std::env::current_dir().unwrap_or_default().display(),
                 socket_dir.display(),
                 log_dir.display()

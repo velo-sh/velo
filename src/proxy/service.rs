@@ -96,6 +96,7 @@ impl VeloProxyService {
         // 4. Inject correlation headers (RFC A.3, B.3)
         Self::inject_request_id(&mut req);
         Self::ensure_trace_context(&mut req);
+        Self::inject_velo_trace_id(&mut req);
 
         // 5. Add X-Velo-Worker header for debugging/QA verification (Worker side)
         let socket_path = guard.socket_path();
@@ -242,6 +243,28 @@ impl VeloProxyService {
 
             if let Ok(val) = HeaderValue::from_str(&traceparent) {
                 req.headers_mut().insert("traceparent", val);
+            }
+        }
+    }
+
+    /// RFC-0011 Phase 11.0: Inject X-Velo-Trace-ID for optimization backtunnels.
+    ///
+    /// This header is used by Velo-RSGI and Zygote for forensic trace correlation.
+    pub fn inject_velo_trace_id<B>(req: &mut Request<B>) {
+        if !req.headers().contains_key("x-velo-trace-id") {
+            // Extract from traceparent if available
+            let trace_id = if let Some(tp) = req.headers().get("traceparent")
+                && let Ok(tp_str) = tp.to_str()
+                && tp_str.starts_with("00-")
+                && tp_str.len() >= 35
+            {
+                tp_str[3..35].to_string()
+            } else {
+                generate_request_id()
+            };
+
+            if let Ok(val) = HeaderValue::from_str(&trace_id) {
+                req.headers_mut().insert("x-velo-trace-id", val);
             }
         }
     }
