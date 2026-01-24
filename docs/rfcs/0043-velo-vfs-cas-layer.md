@@ -393,3 +393,23 @@ The Reference PoC above is simplified. Production implementation **MUST** addres
 ### 8.2 Zero-Copy mmap Support
 *   **Requirement**: Python relies heavily on loading `.pyc` and `.so` files via `mmap`.
 *   **Implementation**: VeloVFS MUST support `FOPEN_KEEP_CACHE` (or `FUSE_PASSTHROUGH` where available) to allow the Kernel to manage page faults directly from the physical file, bypassing the FUSE daemon for memory-mapped regions.
+
+---
+
+## 9. Multi-Version Support (The ABI Matrix)
+
+A critical requirement is supporting multiple Python versions (3.9, 3.10, 3.11) and System ABIs (glibc 2.31, 2.35) simultaneously on the same host. VeloVFS handles this via **Dimensional Isolation**:
+
+### 9.1 ABI-Keyed Hash Separation
+*   **Challenge**: `numpy v1.24` compiled for Python 3.10 is NOT binary compatible with Python 3.11.
+*   **Solution**: The CAS key is NOT just `Hash(Content)`. It is `Hash(Content + ABI_Tag)`.
+    *   Blob A: `numpy.so (cp310)` -> stored at `/var/cas/objects/a1/b2/...`
+    *   Blob B: `numpy.so (cp311)` -> stored at `/var/cas/objects/c3/d4/...`
+    *   **Result**: Different ABIs physically map to different blobs. No collision possible.
+
+### 9.2 Dynamic Rootfs Overlay
+*   **Challenge**: System libraries (`libc.so`) differ between OS versions.
+*   **Solution**: VeloVFS is overlaid on top of a **Versioned LowerLayer**.
+    *   Env A request `python:3.9`: Mounts `rootfs-ubuntu-20.04.squashfs` as LowerDir.
+    *   Env B request `python:3.11`: Mounts `rootfs-ubuntu-22.04.squashfs` as LowerDir.
+    *   **VeloVFS Role**: VeloVFS only prepares the `/site-packages` injection for that specific ABI. It does not manage the base OS layers.
