@@ -419,3 +419,33 @@ A critical requirement is supporting multiple Python versions (3.9, 3.10, 3.11) 
     *   **Atomic OS Switching**: Switching from glibc 2.31 to 2.35 is just a VeloVFS pointer swap.
     *   **Total Deduplication**: Common files between different OS versions (e.g. `ca-certificates`, `locale`) are physically deduplicated.
     *   **Simplicity**: No OverlayFS Driver needed. VeloVFS handles the entire stack.
+
+### 9.3 Zygote Alignment Constraint
+*   **Constraint**: While VeloVFS can project *any* filesystem, the *running process* must match.
+*   **Solution**: **Zygote Pools**.
+    *   The Supervisor maintains pre-warmed pools for each ABI: `pool-cp39`, `pool-cp310`, `pool-cp311`.
+    *   Request for `python:3.11` -> Fork from `pool-cp311` -> Project `rootfs-cp311`.
+    *   Mismatch (e.g., Fork `cp39` but Project `cp311`) matches = **Immediate Panic/Crash** (Dynamic Linker failure).
+
+---
+
+## 10. Advanced Optimization: Manifest Layering (Logical Deduplication)
+
+To answer the challenge of "1000 Agents with 99% Shared Dependencies", VeloVFS implements **Layered Manifests**.
+
+### 10.1 The Layer Cake
+Instead of a single monolithic InodeMap, the filesystem is composed of stacked layers:
+1.  **Base Layer**: Ubuntu 22.04 + Python 3.11 + glibc. (Shared by 100% of agents)
+2.  **Middleware Layer**: `numpy`, `pandas`, `scikit-learn`. (Shared by 80% of data-science agents)
+3.  **User Layer**: `my_script.py`, `/tmp`. (Unique per agent)
+
+### 10.2 Copy-on-Write (CoW) Inode Maps
+*   **Architecture**:
+    *   Layers 1 & 2 are **Read-Only & Immutable**. They are loaded once into shared memory (Arc).
+    *   Layer 3 is the only mutable HashMap.
+*   **Lookup Mechanism**: `lookup(path)` checks Layer 3 -> Layer 2 -> Layer 1.
+*   **Memory Savings**:
+    *   If Layer 1+2 contains 100,000 files (OS + Anaconda), the metadata might take 50MB RAM.
+    *   With CoW Layers, 1000 Agents share that single 50MB structure.
+    *   Per-Agent overhead drops to nearly zero (only the unique files in Layer 3).
+*   **Result**: "Everything is Shared". Not just the CAS Blobs (Data), but also the Filesystem Structure (Metadata).
