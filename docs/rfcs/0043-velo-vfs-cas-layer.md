@@ -407,9 +407,15 @@ A critical requirement is supporting multiple Python versions (3.9, 3.10, 3.11) 
     *   Blob B: `numpy.so (cp311)` -> stored at `/var/cas/objects/c3/d4/...`
     *   **Result**: Different ABIs physically map to different blobs. No collision possible.
 
-### 9.2 Dynamic Rootfs Overlay
-*   **Challenge**: System libraries (`libc.so`) differ between OS versions.
-*   **Solution**: VeloVFS is overlaid on top of a **Versioned LowerLayer**.
-    *   Env A request `python:3.9`: Mounts `rootfs-ubuntu-20.04.squashfs` as LowerDir.
-    *   Env B request `python:3.11`: Mounts `rootfs-ubuntu-22.04.squashfs` as LowerDir.
-    *   **VeloVFS Role**: VeloVFS only prepares the `/site-packages` injection for that specific ABI. It does not manage the base OS layers.
+### 9.2 Unified System Projection (The "One File System" Theory)
+*   **Concept**: We eliminate the "Split Brain" distinction between "Base OS" (SquashFS) and "Packages" (VeloVFS).
+*   **Mechanism**:
+    *   **Ingestion**: The Base OS (e.g., Ubuntu 22.04) is decomposed. Every file in `/usr/lib`, `/bin`, `/etc` is hashed and stored in the global CAS.
+    *   **Projection**: VeloVFS mounts as the **Global Root (`/`)**.
+    *   **Composition**: The "Root Inode" is now a merge of:
+        *   `System Manifest` (Hash of Ubuntu 22.04 file tree)
+        *   `Environment Manifest` (Hash of Python 3.11 + Numpy 1.24 file tree)
+*   **Implication**:
+    *   **Atomic OS Switching**: Switching from glibc 2.31 to 2.35 is just a VeloVFS pointer swap.
+    *   **Total Deduplication**: Common files between different OS versions (e.g. `ca-certificates`, `locale`) are physically deduplicated.
+    *   **Simplicity**: No OverlayFS Driver needed. VeloVFS handles the entire stack.
