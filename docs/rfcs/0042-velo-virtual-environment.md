@@ -90,7 +90,7 @@ Velo adopts a pragmatic, phased approach to balancing performance and improved i
     *   **File-Level Deduplication**: More granular than package-level.
 *   **Cons**: Higher Complexity (Rust Daemon), Slight Cold Start Overhead (Context Switches).
 *   **Target**: Multi-Tenant SaaS, Untrusted Code Execution.
-*   **Note**: See [Supplementary Design: VeloVFS Architecture](0042-velovfs-architecture.md) for details.
+*   **Note**: See [RFC-0043: VeloVFS - The CAS Projection Layer](0043-velo-vfs-cas-layer.md) for details.
 
 ### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
