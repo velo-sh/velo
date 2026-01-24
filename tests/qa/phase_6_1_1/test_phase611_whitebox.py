@@ -32,6 +32,7 @@ SIGNAL_STORM_COUNT = 100  # Number of signals to send in rapid succession
 FORK_BOMB_COUNT = 20  # Number of rapid Fork requests
 
 
+@pytest.mark.xdist_group(name="stress")
 class TestWhiteBoxPythonStress:
     """White-box STRESS tests for Python Zygote internals."""
 
@@ -260,6 +261,7 @@ class TestWhiteBoxPythonStress:
             pytest.fail(f"WB-005 STRESS: Fork bomb caused {len(errors)} errors without rate limiting")
 
 
+@pytest.mark.xdist_group(name="stress")
 class TestWhiteBoxRustStress:
     """White-box STRESS tests for Rust Supervisor internals."""
 
