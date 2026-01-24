@@ -360,6 +360,14 @@ class VeloTestEnv:
             }
         )
 
+        # RFC-0019: Critical library path preservation for native pyo3 workers
+        # The velo binary is linked against libpython and requires LD_LIBRARY_PATH
+        # to find the shared library at runtime. This is especially important in CI
+        # where pytest-xdist workers spawn in isolated environments.
+        for lib_path_var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            if lib_path_var in os.environ:
+                self.env[lib_path_var] = os.environ[lib_path_var]
+
         # RFC-0012: First Principles Isolation
         # We must NOT inherit PYTHONHOME from the host, as it overrides VIRTUAL_ENV
         # and causes version mismatches (e.g. Host 3.10 vs Velo 3.11).
