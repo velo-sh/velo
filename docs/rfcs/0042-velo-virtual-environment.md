@@ -39,6 +39,7 @@ Unlike rigid containers, Velo's sandbox is a **modular capability matrix**. User
 | **L2** | **Sovereign** | Filesystem Security | Landlock (VFS Access Control) | Optional |
 | **L3** | **Titanium** | Untrusted Code | Seccomp (Syscall filtering), Cgroups | Optional |
 | **L4** | **Virtual** | Full Virtualization | Namespaces, OverlayFS | Optional |
+| **L5** | **Persistent** | Long-Running State | L4 + External Volume Mounts | Optional |
 
 
 ---
@@ -79,6 +80,30 @@ Using User Namespaces, VVE allows the Agent to act as `root` (UID 0) inside the 
 ### 4.4 Networking (Network Namespaces)
 *   Isolated `lo` (loopback) interface.
 *   **eBPF Datapath**: Unlike traditional `iptables` which suffer from lock contention at high churn, VVE MUST use **eBPF (TC/XDP)** for egress filtering. This allows lock-free packet inspection for thousands of ephemeral containers.
+
+### 4.5 Persistence (L5 Stateful Extensions)
+While VVE is designed to be ephemeral, certain "Long-Running Agents" require state persistence across restarts.
+
+*   **Mechanism**: **Volume Passthrough (Bind Mounts)**.
+*   **Implementation**: VVE allows mounting specific host directories into the container at runtime.
+    *   **Config**: `mounts = ["/data/agent-123:/app/data:rw"]`
+    *   **Behavior**:
+        *   System Reset: The rootfs (`/`) is still wiped on exit.
+        *   Data Survival: Files in `/app/data` persist on the host disk.
+*   **Security Note**: L5 is **privileged**. Mounting host directories punctures the file system isolation. It requires strict ACLs or dedicated per-tenant storage volumes (e.g., EBS/PVCs).
+
+### 4.6 Async Persistence (Shadow Replication)
+For scenarios requiring **"RAM Speed + Crash Recovery"**, Velo implements a **Write-Behind** pattern.
+
+*   **Concept**:
+    *   Agent writes to `tmpfs` (UpperDir) -> **Nanosecond Latency**.
+    *   Rust Supervisor watches UpperDir via `fanotify`.
+    *   **Shadow Syncer**: Asynchronously copies dirty files to a persistent disk buffer (WAL or specific snapshot dir).
+*   **Crash Recovery (Restart-in-Place)**:
+    *   If the Agent crashes, the Supervisor detects the fault.
+    *   The Supervisor launches a new VVE.
+    *   The "Shadow Dir" is injected as a **read-only Middle Layer** (between Base and new Upper).
+    *   **Result**: The Agent restarts instantly with its files intact (minus the last few milliseconds of data), effectively "resurrecting" the session state without paying the disk I/O penalty on the hot path.
 
 ---
 
