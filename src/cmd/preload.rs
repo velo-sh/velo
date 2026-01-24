@@ -234,6 +234,32 @@ fn load_impl(lock_json: &str, stage_str: &str) -> Result<()> {
 
 fn check_impl(path: &Path, global: bool) -> Result<()> {
     use crate::custody::preload_loader::PreloadLoader;
+
+    // RFC-0035 INV-PRELOAD-002: Enforce strict path containment for `check` command
+    // Only allow paths within project root or venv - system paths are NOT trusted
+    let project_dir = std::env::current_dir()?;
+    let venv_path = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from);
+
+    // Resolve relative paths to absolute for proper boundary checking
+    let resolved_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        project_dir.join(path)
+    };
+
+    let is_in_project = resolved_path.starts_with(&project_dir);
+    let is_in_venv = venv_path
+        .as_ref()
+        .is_some_and(|venv| resolved_path.starts_with(venv));
+
+    if !is_in_project && !is_in_venv {
+        anyhow::bail!(
+            "Path {} is outside trusted boundaries (project root or venv). \
+             Only libraries in site-packages or project directories may be vetted.",
+            path.display()
+        );
+    }
+
     PreloadLoader::vett_only(path, global)
 }
 
