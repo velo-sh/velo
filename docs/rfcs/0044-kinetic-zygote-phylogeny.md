@@ -80,24 +80,36 @@ The **Supervisor** acts as the "Gardener", pruning and grafting the tree dynamic
 ## 6. Council Review Constraints (Security & Stability)
 
 ### 6.1 The CoW Decay (RefCounting Trap)
-*   **Problem**: Python is Reference Counted. Merely *reading* a shared object (e.g., `len(numpy_array)`) writes to its refcount header.
-*   **Result**: This triggers a `Page Fault`, marking the page "Dirty" and breaking the CoW sharing. 1000 agents will eventually Copy-on-Read 100% of the heap.
-*   **Mitigation**:
-    *   **Mandatory gc.freeze()**: Before calling `velo_freeze()`, the Zygote MUST call `gc.freeze()`. This moves objects to the permanent generation and (in newer Python) optimizes refcounting locality.
-    *   **Static Analysis**: Prefer loading "Pure Code" (Functions/Classes) over "Mutable State" (Dictionaries/Lists) in Zygotes.
+*   **Problem**: Python is Reference Counted. Merely *reading* a shared object accesses its refcount header, causing a `Page Fault` (Dirty CoW).
+*   **Mitigation Strategy**:
+    *   **Python 3.12+ (Recommended)**: Use "Immortal Objects" (PEP 683) to lock refcounts. This provides permanent zero-copy sharing.
+    *   **Legacy Python (Allowed with Caveats)**: For Python < 3.12, we accept linear CoW decay.
+        *   *Rationale*: Short-lived Agents (Lambda-like) finish before significant decay occurs. The 500ms startup gain outweighs the gradual RAM loss.
 
 ### 6.2 ASLR Weakness (The Clone Army)
-*   **Risk**: Zygote children share the identical memory layout (Base Address) of the parent. An RCE exploit for one works for all.
+*   **Risk**: Zygote children share a static memory layout. An RCE exploit for one works for all.
 *   **Policy (Selective Hardening)**:
-    *   **L0-L2 (Trusted Internal Agents)**: **CONTINUE** to use Zygote. We trust internal code and prioritize the 5ms startup.
-    *   **L3 (Untrusted/Multitenant)**: **MUST DISABLE** Zygote.
-        *   Mechanism: Force `exec()` (Cold Boot) to trigger Kernel ASLR randomization.
-        *   Trade-off: We accept ~200ms latency penalty for maximum security isolation.
+    *   **L0-L2 (Trusted)**: **CONTINUE** to use Zygote.
+    *   **L3 (Untrusted)**: **STRICTLY PROHIBITED**. Supervisor must force `exec()` (Cold Boot) to randomize ASLR.
 
 ### 6.3 Entropy Reseeding (The Clone UUID)
-*   **Risk**: `fork()` copies the internal state of Pseudo-Random Number Generators (PRNG).
-*   **Result**: 1000 Agents might generate identical `uuid.uuid4()` or Session Keys if not carefully handled.
-*   **Mandate**: The Velo Runtime Core MUST implement a **Reseed Hook** (`pthread_atfork` child handler) that explicitly:
-    *   Reseeds OpenSSL `RAND_poll()`.
-    *   Reseeds Python `random.seed()` and `secrets`.
-    *   Reseeds `numpy.random`.
+*   **Mandate**: `pthread_atfork` hooks MUST reseed OpenSSL, Python `random`, and `numpy.random` immediately upon fork.
+
+### 6.4 Branch Poisoning Defense (The Zygote Seal)
+*   **Risk**: If a Zygote is compromised or chemically altered (e.g., global state drift) before forking, the entire lineage is poisoned.
+*   **Mandate**: **Zygote Seal**.
+    *   Before entering the "Fork Loop", the Zygote process MUST call `MPROTECT` to mark its own Heap as **Read-Only**.
+    *   Attempts to modify global state after freeze will trigger `SIGSEGV` (Crash), ensuring immutability.
+
+---
+
+## 7. Operational Excellence
+
+### 7.1 Monitoring: The Efficiency Ratio
+*   **Metric**: `PSS / USS` Ratio.
+    *   High (> 1.5): Healthy sharing.
+    *   Low (~ 1.0): CoW has decayed (RefCounting Trap). Pruning recommended.
+
+### 7.2 The Reaper (Chaos Engineering)
+*   **Mechanism**: A background daemon ("The Reaper") aggressively prunes Zygote branches that have not spawned children for 5 minutes.
+*   **Goal**: Prevent "Zombie Lineages" from consuming RAM indefinitely.
