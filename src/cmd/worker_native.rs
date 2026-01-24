@@ -34,6 +34,11 @@ pub struct WorkerNativeCmd {
 /// Handle 'velo worker-native' command
 pub fn cmd_worker_native(args: &[String]) -> Result<()> {
     // RFC-0020: Every velo process must initialize structured logging.
+    // Initialize Sovereignty-First Logger
+    if std::env::var("RUST_LOG").is_err() {
+        // SAFETY: Called during single-threaded process startup
+        unsafe { std::env::set_var("RUST_LOG", "info") };
+    }
     let _ = env_logger::try_init();
 
     // Parse with clap - skip "velo" prefix

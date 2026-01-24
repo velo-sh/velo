@@ -39,6 +39,9 @@ pub struct PythonEnv {
     /// lib-dynload directory for C extensions (e.g., {lib_dir}/lib-dynload)
     pub lib_dynload: PathBuf,
 
+    /// Project root directory (SSOT)
+    pub project_root: Option<PathBuf>,
+
     /// Virtual environment root (if applicable)
     pub venv_root: Option<PathBuf>,
 
@@ -120,6 +123,7 @@ impl PythonEnv {
             version,
             lib_dir,
             lib_dynload,
+            project_root,
             venv_root,
             site_packages,
         };
@@ -147,13 +151,25 @@ impl PythonEnv {
             }
         }
 
-        // Fallback: Query Python version ( subprocess)
+        // Fallback: Query Python version (subprocess)
         let version = Self::detect_version(python_path)?;
 
         // Fallback: Query base_prefix
         let base_prefix = Self::detect_base_prefix(python_path)?;
 
-        Ok((base_prefix, version))
+        // Final sanity check: if version doesn't match base_prefix's structure,
+        // try to derive version from base_prefix (common on macOS with multiple pythons)
+        let re = regex::Regex::new(r"python(\d+\.\d+)").unwrap();
+        let final_version = if re.is_match(&version) {
+            version
+        } else {
+            re.captures(&base_prefix.to_string_lossy())
+                .and_then(|cap| cap.get(1))
+                .map(|m| m.as_str().to_string())
+                .unwrap_or(version)
+        };
+
+        Ok((base_prefix, final_version))
     }
 
     /// Parse pyvenv.cfg for both home (prefix) and version.
@@ -295,28 +311,29 @@ impl PythonEnv {
             cmd.env("VIRTUAL_ENV", venv);
         }
 
-        // PYTHONPATH: Include stdlib + dynload + site-packages (SPEC-0005/06)
+        // PYTHONPATH reconstruction (Isolated)
+        // SPEC-0005/06: Build PYTHONPATH strictly from SSOT detected paths.
+        // We NO LONGER inherit host PYTHONPATH by default to prevent leakage/mismatch.
         let sep = if cfg!(windows) { ";" } else { ":" };
         let mut entries: Vec<String> = Vec::new();
 
+        // Phase 1: Project Root (Application code)
+        if let Some(ref root) = self.project_root {
+            entries.push(root.to_string_lossy().to_string());
+        }
+
+        // Phase 2: High-priority directories
         entries.push(self.lib_dir.to_string_lossy().to_string());
         if self.lib_dynload.exists() {
             entries.push(self.lib_dynload.to_string_lossy().to_string());
         }
+
+        // Phase 3: Site-packages/Venv
         if let Some(ref sp) = self.site_packages {
             entries.push(sp.to_string_lossy().to_string());
             cmd.env("VELO_PYTHON_SITE_PACKAGES", sp);
         }
 
-        if let Ok(current) = std::env::var("PYTHONPATH")
-            && !current.is_empty()
-        {
-            entries.extend(current.split(sep).map(|s| s.to_string()));
-        }
-
-        // Deduplicate while preserving order
-        let mut seen = std::collections::HashSet::new();
-        entries.retain(|item| seen.insert(item.clone()));
         if !entries.is_empty() {
             cmd.env("PYTHONPATH", entries.join(sep));
         }
@@ -366,23 +383,26 @@ impl PythonEnv {
         let venv_root = std::env::var("VIRTUAL_ENV").ok();
         let site_packages = std::env::var("VELO_PYTHON_SITE_PACKAGES").ok();
 
-        // Extract version from lib_dir (e.g., "python3.11" -> "3.11")
-        let version = lib_dir
-            .rsplit('/')
-            .find(|s| s.starts_with("python"))
-            .and_then(|s| s.strip_prefix("python"))
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                // If we can't extract version, we are in a corrupt state
-                // Don't use a hardcoded fallback that leads to 'encodings' errors
-                "3.10".to_string() // User is on 3.10, but we should really be dynamic
-            });
+        // Extract version from lib_dir (e.g., ".../lib/python3.11" -> "3.11")
+        // SPEC-0005: Use robust regex for version extraction
+        let re = regex::Regex::new(r"python(\d+\.\d+)").ok()?;
+        let version = re
+            .captures(&lib_dir)
+            .and_then(|cap| cap.get(1))
+            .map(|m| m.as_str().to_string())
+            .or_else(|| {
+                // Fallback attempt: if lib_dir itself doesn't have it, try base_prefix
+                re.captures(&base_prefix)
+                    .and_then(|cap| cap.get(1))
+                    .map(|m| m.as_str().to_string())
+            })?;
 
         Some(Self {
             base_prefix: PathBuf::from(base_prefix),
             version,
             lib_dir: PathBuf::from(lib_dir),
             lib_dynload: lib_dynload.map(PathBuf::from).unwrap_or_default(),
+            project_root: None, // Will be re-detected locally if needed
             venv_root: venv_root.map(PathBuf::from),
             site_packages: site_packages.map(PathBuf::from),
         })

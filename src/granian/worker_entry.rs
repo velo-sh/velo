@@ -122,63 +122,58 @@ fn fixup_python_path(py: pyo3::Python<'_>) -> std::result::Result<(), pyo3::PyEr
     let py_env = crate::common::python_env::PythonEnv::from_env();
 
     if let Some(env) = py_env {
-        debug!("[SSOT] Fixing up sys.path with lib_dir: {:?}", env.lib_dir);
-
-        // Get sys.path as a PyList
+        // Step 1: Detect current environment SSOT
         let sys = py.import("sys")?;
-        let sys_path = sys.getattr("path")?;
-        #[allow(deprecated)]
-        let sys_path_list = sys_path
-            .downcast::<pyo3::types::PyList>()
-            .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyTypeError, _>(e.to_string()))?;
+        let sys_path_list: Bound<'_, pyo3::types::PyList> = sys.getattr("path")?.cast_into()?;
 
-        // Add lib_dir if not present
+        // [FORENSIC] SOP-004: Sovereignty Audit
+        // Use direct eprintln to bypass logger suppression
+        let _ = (|| -> anyhow::Result<()> {
+            let version: String = sys.getattr("version")?.extract()?;
+            let prefix: String = sys.getattr("prefix")?.extract()?;
+            let executable: String = sys.getattr("executable")?.extract()?;
+            let sys_path: Vec<String> = sys_path_list.extract()?;
+
+            eprintln!("[SSOT] Native Worker Sovereignty Audit:");
+            eprintln!("  Python Version: {}", version.replace('\n', " "));
+            eprintln!("  Prefix: {}", prefix);
+            eprintln!("  Executable: {}", executable);
+            eprintln!("  Initial sys.path:");
+            for p in &sys_path {
+                eprintln!("    - {}", p);
+            }
+            Ok(())
+        })();
+
+        // Phase 1: High-priority directories (Lib & Dynload)
+        // Ensure our detected SSOT paths are at the very beginning
         let lib_dir_str = env.lib_dir.to_string_lossy().to_string();
         if !sys_path_list.contains(&lib_dir_str)? {
             sys_path_list.insert(0, &lib_dir_str)?;
-            debug!("[SSOT] Added to sys.path: {}", lib_dir_str);
         }
 
-        // Add lib-dynload if it exists and not present
-        if env.lib_dynload.exists() {
-            let lib_dynload_str = env.lib_dynload.to_string_lossy().to_string();
-            if !sys_path_list.contains(&lib_dynload_str)? {
-                sys_path_list.insert(1, &lib_dynload_str)?;
-                debug!("[SSOT] Added to sys.path: {}", lib_dynload_str);
+        let lib_dynload_str = env.lib_dynload.to_string_lossy().to_string();
+        if !lib_dynload_str.is_empty() && !sys_path_list.contains(&lib_dynload_str)? {
+            sys_path_list.insert(1, &lib_dynload_str)?;
+        }
+
+        // Phase 2: Site-packages
+        if let Some(ref sp) = env.site_packages {
+            let sp_str = sp.to_string_lossy().to_string();
+            if !sys_path_list.contains(&sp_str)? {
+                sys_path_list.insert(2, &sp_str)?;
             }
+        }
+
+        let final_path: Vec<String> = sys_path_list.extract()?;
+        eprintln!("[SSOT] Final sys.path:");
+        for p in final_path {
+            eprintln!("    - {}", p);
         }
     } else {
-        // Fallback: Try legacy PYTHONHOME env var
-        if let Ok(home) = std::env::var("PYTHONHOME") {
-            debug!("[SSOT] Fallback: Using PYTHONHOME: {}", home);
-
-            let sys = py.import("sys")?;
-            let version_info = sys.getattr("version_info")?;
-            let major: u32 = version_info.getattr("major")?.extract()?;
-            let minor: u32 = version_info.getattr("minor")?.extract()?;
-            let version_str = format!("python{}.{}", major, minor);
-
-            let lib_dir = std::path::Path::new(&home).join("lib").join(&version_str);
-            let lib_dynload = lib_dir.join("lib-dynload");
-
-            let sys_path = sys.getattr("path")?;
-            #[allow(deprecated)]
-            let sys_path_list = sys_path
-                .downcast::<pyo3::types::PyList>()
-                .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyTypeError, _>(e.to_string()))?;
-
-            let lib_dir_str = lib_dir.to_string_lossy().to_string();
-            if !sys_path_list.contains(&lib_dir_str)? {
-                sys_path_list.insert(0, &lib_dir_str)?;
-            }
-
-            if lib_dynload.exists() {
-                let lib_dynload_str = lib_dynload.to_string_lossy().to_string();
-                if !sys_path_list.contains(&lib_dynload_str)? {
-                    sys_path_list.insert(1, &lib_dynload_str)?;
-                }
-            }
-        }
+        log::warn!(
+            "[SSOT] PythonEnv not found in worker process. Path consistency is NOT guaranteed!"
+        );
     }
 
     Ok(())

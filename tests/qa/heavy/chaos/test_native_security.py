@@ -61,13 +61,26 @@ def info():
                     pass
                 time.sleep(0.5)
 
-            resp = requests.get(f"http://127.0.0.1:{port}/info", timeout=5)
-            assert resp.status_code == 200
-
             data = resp.json()
 
             # Worker should be in a separate process
-            assert data["pid"] != proc.pid, "Worker PID should differ from Host"
+            worker_pid = data["pid"]
+            host_pid = proc.pid
+
+            if worker_pid == host_pid:
+                # Debug PID hierarchy
+                print(f"\nCRITICAL: PID Overlap Detected! Worker PID: {worker_pid}, Host PID: {host_pid}")
+                try:
+                    p = psutil.Process(host_pid)
+                    print(f"Host Process: {p.name()} (status: {p.status()})")
+                    print(f"Host Cmdline: {' '.join(p.cmdline())}")
+                    print("Children of Host:")
+                    for child in p.children(recursive=True):
+                        print(f"  - PID {child.pid}: {child.name()} (cmd: {' '.join(child.cmdline())})")
+                except Exception as e:
+                    print(f"Failed to dump process tree: {e}")
+
+            assert worker_pid != host_pid, f"Worker PID {worker_pid} should differ from Host {host_pid}"
             assert data["pid"] > 0, "Worker PID should be valid"
 
         finally:
