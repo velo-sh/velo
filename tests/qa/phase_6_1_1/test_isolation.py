@@ -21,6 +21,10 @@ from fastapi import FastAPI
 import sys
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def read_root():
     try:
@@ -61,6 +65,10 @@ def read_root():
             """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def read_root():

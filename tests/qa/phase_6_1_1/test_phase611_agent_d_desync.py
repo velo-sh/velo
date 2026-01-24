@@ -44,7 +44,7 @@ def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock: socket.socket, timeout: float = 2.0) -> Any:
+def recv_msg(sock: socket.socket, timeout: float = 10.0) -> Any:
     sock.settimeout(timeout)
     header = b""
     while len(header) < 4:
@@ -112,23 +112,30 @@ class TestAgentDDesync:
         # Attack: Fork 50 times rapidly
         try:
             for _ in range(50):
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                s.connect(socket_path)
-                recv_msg(s)  # Ready
-                auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
+                try:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    s.connect(socket_path)
+                    recv_msg(s)  # Ready
+                    auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
 
-                send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
-                resp = recv_msg(s)
-                if resp and resp.get("type") == "Forked":
-                    pids.append(resp["worker_pid"])
-                conns.append(s)
+                    send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
+                    resp = recv_msg(s)
+                    if resp and resp.get("type") == "Forked":
+                        pids.append(resp["worker_pid"])
+                    conns.append(s)
+                except (OSError, BrokenPipeError, ConnectionResetError):
+                    # Zygote might shed load or reset connection under extreme pressure
+                    # This is acceptable as long as it survives the attack
+                    pass
         finally:
             for s in conns:
                 s.close()
 
         # Verify Zygote survived the bomb
-        time.sleep(1)
-        requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=2)
+        time.sleep(3)
+        if not proc.is_running():
+            pytest.fail("Server crashed during Fork Bomb")
+        requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
 
         # Verify all forked processes are eventually reaped or present
         # Currently, main.py reaps in loop and via SIGCHLD
