@@ -529,7 +529,7 @@ class TestL2SadPath:
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
-            env.create_app("crasher.py", 'raise RuntimeError("CRASH")') from None
+            env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
             env.install("uvicorn")  # Install uvicorn so we test crash handling
 
             result = env.run_velo("serve", "crasher:app")

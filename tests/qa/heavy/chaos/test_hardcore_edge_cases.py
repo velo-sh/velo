@@ -1041,7 +1041,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.get("/error/{code}")
 async def trigger_error(code: int):
-    raise HTTPException(status_code=code, detail=f"Error {code}") from None
+    raise HTTPException(status_code=code, detail=f"Error {code}")
 """,
             )
             p.install_deps()

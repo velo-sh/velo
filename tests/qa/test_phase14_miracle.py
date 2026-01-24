@@ -21,7 +21,7 @@ def test_p1_miracle_gateway_hijack(tmp_path):
 
         velo_bin_found = shutil.which("velo")
         if not velo_bin_found:
-            raise RuntimeError("Could not find velo binary") from None
+            raise RuntimeError("Could not find velo binary")
     velo_bin = str(velo_bin_found)
 
     # 1. Start Zygote manually to ensure it's fresh

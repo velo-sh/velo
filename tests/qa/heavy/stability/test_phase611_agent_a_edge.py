@@ -148,7 +148,7 @@ class TestL2EdgeCases:
             # Give it a moment to fail
             time.sleep(2)
             if not proc.is_running():
-                raise Exception("Process exited as expected") from None
+                raise Exception("Process exited as expected")
 
     @pytest.mark.slow
     def test_EDGE_605_hundred_workers(self, velo_serve_fixture):

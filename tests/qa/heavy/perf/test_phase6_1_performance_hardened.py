@@ -71,7 +71,7 @@ class TestPhase61PerformanceHardened:
                         if proc.poll() is not None:
                             # Capture remaining output
                             stdout_rem, stderr_rem = proc.communicate()
-                            raise RuntimeError( from None
+                            raise RuntimeError(
                                 f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}"
                             )
                         break  # Timeout but still running? Continue loop or fail?
@@ -121,7 +121,7 @@ class TestPhase61PerformanceHardened:
 
         time.sleep(3)
         if proc.poll() is not None:
-            raise RuntimeError(f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}") from None
+            raise RuntimeError(f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}")
         try:
             p = psutil.Process(proc.pid)
             total_rss = p.memory_info().rss
@@ -181,7 +181,7 @@ class TestPhase61PerformanceHardened:
             time.sleep(2)
             if proc.poll() is not None:
                 stdout, stderr = proc.communicate()
-                raise RuntimeError(f"Velo crashed: {proc.returncode}\nSTDOUT: {stdout}\nSTDERR: {stderr}") from None
+                raise RuntimeError(f"Velo crashed: {proc.returncode}\nSTDOUT: {stdout}\nSTDERR: {stderr}")
             p = psutil.Process(proc.pid)
             initial_fds = p.num_fds()
 

@@ -365,7 +365,7 @@ class TestDefectRegression:
             project.set_app(
                 "crash_app.py",
                 """
-raise RuntimeError("INTENTIONAL CRASH ON IMPORT") from None
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
 """,
             )
             project.uv_add("fastapi", "uvicorn", "msgpack")

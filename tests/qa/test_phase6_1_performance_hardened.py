@@ -54,7 +54,7 @@ class TestPhase61PerformanceHardened:
                     if not line and proc.poll() is not None:
                         # Capture remaining output
                         stdout_rem, stderr_rem = proc.communicate()
-                        raise RuntimeError( from None
+                        raise RuntimeError(
                             f"Velo exited during reload: {proc.returncode}\nSTDOUT: {stdout_rem}\nSTDERR: {stderr_rem}"
                         )
                     if "Changes detected, restarting server..." in line:
@@ -103,7 +103,7 @@ class TestPhase61PerformanceHardened:
 
         time.sleep(3)
         if proc.poll() is not None:
-            raise RuntimeError(f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}") from None
+            raise RuntimeError(f"Velo crashed: {proc.stderr.read().decode() if proc.stderr else 'No stderr'}")
         try:
             p = psutil.Process(proc.pid)
             total_rss = p.memory_info().rss

@@ -35,7 +35,7 @@ class TestDefect_SilentReinitFailure:
         _fork_reinit_callbacks.clear()
 
         def failing_callback():
-            raise RuntimeError("Database connection failed!") from None
+            raise RuntimeError("Database connection failed!")
 
         register_fork_reinit(failing_callback)
 

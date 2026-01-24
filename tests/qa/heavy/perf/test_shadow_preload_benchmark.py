@@ -44,7 +44,7 @@ def wait_for_socket(socket_path: str, timeout: float = 10.0) -> float:
             except (TimeoutError, ConnectionRefusedError):
                 pass
         time.sleep(0.01)
-    raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s") from None
+    raise TimeoutError(f"Socket {socket_path} not ready after {timeout}s")
 
 
 def send_handshake(socket_path: str) -> dict[str, Any]:
@@ -88,7 +88,7 @@ def wait_for_preload_ready(socket_path: str, timeout: float = 30.0) -> float:
         except Exception:
             pass
         time.sleep(0.05)
-    raise TimeoutError(f"Preload not ready after {timeout}s") from None
+    raise TimeoutError(f"Preload not ready after {timeout}s")
 
 
 def measure_preload_time(modules: list[str]) -> float:

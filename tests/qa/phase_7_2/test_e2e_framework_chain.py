@@ -177,7 +177,7 @@ dev-dependencies = []
         )
 
         if self._proc is None:
-            raise RuntimeError("Process failed to start") from None
+            raise RuntimeError("Process failed to start")
         return self._proc
 
     def assert_worker_spawned(self) -> None:

@@ -183,7 +183,7 @@ def test_slow_{i}():
             # Create tests that fail
             (test_dir / "test_failing.py").write_text("""
 def test_fail_1():
-    raise Exception("Intentional failure 1") from None
+    raise Exception("Intentional failure 1")
 
 def test_fail_2():
     assert False, "Intentional failure 2"

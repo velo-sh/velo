@@ -118,7 +118,7 @@ class TestProfile:
         try:
             env.create_venv()
             env.create_uv_lock()
-            env.create_script("crash.py", "raise RuntimeError('boom')") from None
+            env.create_script("crash.py", "raise RuntimeError('boom')")
 
             result = run_velo(["run", "--profile", "crash.py"], cwd=env.path)
             assert_no_crash(result)

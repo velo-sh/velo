@@ -109,7 +109,7 @@ class VeloServeProcess:
             if not self.is_running():
                 exit_code = self.proc.returncode
                 time.sleep(0.2)
-                raise RuntimeError(f"Server process died (exit code: {exit_code})") from None
+                raise RuntimeError(f"Server process died (exit code: {exit_code})")
 
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
@@ -126,7 +126,7 @@ class VeloServeProcess:
         except subprocess.TimeoutExpired:
             self.proc.kill()
             self.proc.wait()
-        raise TimeoutError(f"Server not ready after {timeout}s") from None
+        raise TimeoutError(f"Server not ready after {timeout}s")
 
     def _detect_zygote_pid(self) -> None:
         """Find the Zygote process PID by checking children of Velo supervisor."""

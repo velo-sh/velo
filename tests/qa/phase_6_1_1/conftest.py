@@ -110,7 +110,7 @@ class VeloServeProcess:
                     print(f"\n📄 [ZYGOTE LOG] {log_path}")
                     print(log_path.read_text())
 
-                raise RuntimeError(f"Server process died (exit code: {exit_code})") from None
+                raise RuntimeError(f"Server process died (exit code: {exit_code})")
 
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
@@ -124,7 +124,7 @@ class VeloServeProcess:
         # On timeout, try to read what happened
         print("Timeout reached.")
         self.proc.terminate()
-        raise TimeoutError(f"Server not ready after {timeout}s") from None
+        raise TimeoutError(f"Server not ready after {timeout}s")
 
     def wait_worker_ready(self, timeout: float | None = None) -> None:
         """Wait for a worker to be ready after restart."""
@@ -397,7 +397,7 @@ def velo_binary() -> str:
     if debug_bin.exists():
         return str(debug_bin.resolve())
 
-    raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}") from None
+    raise RuntimeError(f"Velo binary not found in workspace at {debug_bin}")
 
 
 @pytest.fixture
@@ -541,13 +541,13 @@ async def echo_body(body: EchoBody):
 async def trigger_error(code: int):
     """Simulate error responses - tests error handling through proxy."""
     if code == 500:
-        raise HTTPException(status_code=500, detail="Simulated server error") from None
+        raise HTTPException(status_code=500, detail="Simulated server error")
     elif code == 404:
-        raise HTTPException(status_code=404, detail="Simulated not found") from None
+        raise HTTPException(status_code=404, detail="Simulated not found")
     elif code == 503:
-        raise HTTPException(status_code=503, detail="Simulated service unavailable") from None
+        raise HTTPException(status_code=503, detail="Simulated service unavailable")
     else:
-        raise HTTPException(status_code=code, detail=f"Simulated error {code}") from None
+        raise HTTPException(status_code=code, detail=f"Simulated error {code}")
 
 
 @app.get("/large")

@@ -35,13 +35,13 @@ class ZygoteClient:
     async def send(self, cmd: dict[str, Any]) -> None:
         """Send a command to the Zygote."""
         if not self._transport:
-            raise ConnectionError("Client not connected") from None
+            raise ConnectionError("Client not connected")
         await self._transport.send(cmd)
 
     async def recv(self, timeout: float = 30.0) -> dict[str, Any] | None:
         """Receive a response from the Zygote."""
         if not self._transport:
-            raise ConnectionError("Client not connected") from None
+            raise ConnectionError("Client not connected")
         try:
             return await asyncio.wait_for(self._transport.recv(), timeout=timeout)
         except TimeoutError as e:

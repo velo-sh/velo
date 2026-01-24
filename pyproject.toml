@@ -96,6 +96,8 @@ warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+exclude = 'benchmarks/|examples/|ai-serverless-demo/|python/velo/_vendor/|scripts/|bench\.py|benchmark_.*\.py|run_tests\.py|vibe_demo\.py|python/jupyterhub_velo/|python/bundle_builder\.py|python/detect_app\.py|python/velo_loader\.py|slow\.py|fd_report_mod\.py'
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"

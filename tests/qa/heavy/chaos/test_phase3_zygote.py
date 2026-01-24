@@ -61,7 +61,7 @@ class ZygoteTestHelper:
             stderr = ""
             if self.process.stderr:
                 stderr = self.process.stderr.read().decode()
-            raise RuntimeError(f"Zygote socket not created in time. Stderr: {stderr}") from None
+            raise RuntimeError(f"Zygote socket not created in time. Stderr: {stderr}")
 
     def connect(self) -> socket.socket:
         """Connect to Zygote socket."""

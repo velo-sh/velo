@@ -78,7 +78,7 @@ class TestBug003_SilentReinitFailure:
 
         def failing_callback():
             error_occurred.append(True)
-            raise RuntimeError("Database connection failed!") from None
+            raise RuntimeError("Database connection failed!")
 
         register_fork_reinit(failing_callback)
 

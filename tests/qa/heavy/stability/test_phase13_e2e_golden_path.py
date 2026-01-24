@@ -86,7 +86,7 @@ def create_item(item: Item):
 @app.get("/items/{item_id}", response_model=ItemResponse)
 def read_item(item_id: int):
     if item_id not in items_db:
-        raise HTTPException(status_code=404, detail="Item not found") from None
+        raise HTTPException(status_code=404, detail="Item not found")
     return items_db[item_id]
 
 
@@ -98,7 +98,7 @@ def list_items():
 @app.delete("/items/{item_id}")
 def delete_item(item_id: int):
     if item_id not in items_db:
-        raise HTTPException(status_code=404, detail="Item not found") from None
+        raise HTTPException(status_code=404, detail="Item not found")
     del items_db[item_id]
     return {"deleted": item_id}
 '''

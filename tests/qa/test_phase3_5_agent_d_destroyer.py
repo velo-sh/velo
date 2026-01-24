@@ -293,7 +293,7 @@ class TestErrorRecovery:
                 "crash_on_import.py",
                 """
 # This will crash when imported
-raise RuntimeError("INTENTIONAL CRASH ON IMPORT") from None
+raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
 """,
             )
 
