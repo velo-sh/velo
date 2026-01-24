@@ -239,7 +239,9 @@ class TestL4Security:
         socket_dir_path.mkdir(mode=0o777, exist_ok=True)
 
         # Create a dummy app manually since isolated_env is just a path here
-        app_code = "from fastapi import FastAPI\napp = FastAPI()"
+        app_code = (
+            "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}"
+        )
         (isolated_env.root / "main.py").write_text(app_code)
         (isolated_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
 

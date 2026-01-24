@@ -32,7 +32,7 @@ def workspace_a(tmp_path):
     ws = tmp_path / "workspace_a"
     ws.mkdir()
     (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'A'}"
+        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'A'}"
     )
     return ws
 
@@ -42,7 +42,7 @@ def workspace_b(tmp_path):
     ws = tmp_path / "workspace_b"
     ws.mkdir()
     (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'B'}"
+        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'B'}"
     )
     return ws
 

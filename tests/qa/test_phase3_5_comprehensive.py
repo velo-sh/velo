@@ -308,6 +308,10 @@ class TestL0Smoke:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -349,6 +353,10 @@ class TestL1HappyPath:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"message": "hello"}
@@ -381,6 +389,10 @@ def root():
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.post("/echo")
 def echo(data: dict):
     return {"received": data}
@@ -408,6 +420,10 @@ def echo(data: dict):
                 """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 counter = 0
 
 @app.get("/count")
@@ -442,6 +458,10 @@ from fastapi import FastAPI
 import atexit
 
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def root():
@@ -576,6 +596,10 @@ class TestL3Config:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"port": "custom"}
@@ -619,6 +643,10 @@ def root():
 import os
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/pid")
 def get_pid():
@@ -668,6 +696,10 @@ class TestL4Lifecycle:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -698,6 +730,10 @@ def root():
                 """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def root():
@@ -751,6 +787,10 @@ class TestL5Integration:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"framework": "fastapi"}
@@ -788,6 +828,10 @@ def root():
                 """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def root():
