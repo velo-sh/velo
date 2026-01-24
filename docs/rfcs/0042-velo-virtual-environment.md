@@ -13,7 +13,7 @@
 
 As AI Agents transition from "code generation" to "autonomous execution," the requirement for a secure, isolated, yet fully functional execution environment has become critical. Conventional isolation methods (MicroVMs, Containers) often introduce significant overhead or latency penalties that conflict with low-latency execution requirements.
 
-RFC-0042 defines the **Velo Virtual Environment (VVE)**: a modular isolation architecture designed to provide full environment sovereignty (Private Rootfs, Network, and PID isolation) with sub-20ms startup latency by leveraging Zygote-based pre-initialization.
+RFC-0042 defines the **Velo Virtual Environment (VVE)** (Internal Alias: **Execution Cell**): a modular isolation architecture designed to provide full environment sovereignty (Private Rootfs, Network, and PID isolation) with sub-20ms startup latency by leveraging Zygote-based pre-initialization.
 
 
 ---
@@ -62,6 +62,7 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   `execution.tier`: The actual activated L-tier (e.g., "L3").
 > *   `execution.nitro`: Boolean, true if security bypass was active.
 > *   `execution.downgraded`: Boolean, true if fallback occurred.
+> *   **Invariant**: These fields are **Append-Only** and cannot be overridden or "washed" by user code.
 > *   **Future Phase**: Runtime Attestation Hook to allow the Agent to query its own effective tier.
 
 ### 4.2 L4 VVE (Virtual Environment) Implementation
@@ -114,6 +115,7 @@ While VVE is designed to be ephemeral, certain "Long-Running Agents" require sta
         *   System Reset: The rootfs (`/`) is still wiped on exit.
         *   Data Survival: Files in `/app/data` persist on the host disk.
 *   **Security Note**: L5 is **privileged**. Mounting host directories punctures the file system isolation. It requires strict ACLs or dedicated per-tenant storage volumes (e.g., EBS/PVCs).
+*   **Hard Rule**: **L5 environments MUST NOT be eligible for L(-1)/Nitro opt-out.** "Bare execution + Host Bind Mount" is a catastrophic risk combination.
 
 ### 4.6 Async Persistence (Shadow Replication)
 For scenarios requiring **"RAM Speed + Crash Recovery"**, Velo implements a **Write-Behind** pattern.
@@ -127,6 +129,7 @@ For scenarios requiring **"RAM Speed + Crash Recovery"**, Velo implements a **Wr
     *   The Supervisor launches a new VVE.
     *   The "Shadow Dir" is injected as a **read-only Middle Layer** (between Base and new Upper).
     *   **Result**: The Agent restarts instantly with its files intact (minus the last few milliseconds of data), effectively "resurrecting" the session state without paying the disk I/O penalty on the hot path.
+*   **Security Constraint**: Shadow Replication **MUST NOT** replay executable files (`chmod +x` is masked) or modify interpreter paths. This prevents "resurrecting" malware or injected binaries.
 
 ---
 
