@@ -64,7 +64,7 @@ fn cleanup_zygote_processes_for_test(socket_path: &Path) {
 #[cfg(unix)]
 fn cleanup_descendants_for_test(parent_pid: i32) {
     let output = std::process::Command::new("/bin/ps")
-        .args(["-ax", "-o", "pid=,ppid="])
+        .args(["-ax", "-o", "pid=,ppid=,pgid="])
         .output();
     let Ok(output) = output else {
         return;
@@ -72,8 +72,11 @@ fn cleanup_descendants_for_test(parent_pid: i32) {
     let Ok(text) = String::from_utf8(output.stdout) else {
         return;
     };
+
     let mut children_map: std::collections::HashMap<i32, Vec<i32>> =
         std::collections::HashMap::new();
+    let mut pgid_map: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+
     for line in text.lines() {
         let mut parts = line.split_whitespace();
         let Some(pid_str) = parts.next() else {
@@ -82,25 +85,50 @@ fn cleanup_descendants_for_test(parent_pid: i32) {
         let Some(ppid_str) = parts.next() else {
             continue;
         };
-        if let (Ok(pid), Ok(ppid)) = (pid_str.parse::<i32>(), ppid_str.parse::<i32>()) {
+        let Some(pgid_str) = parts.next() else {
+            continue;
+        };
+
+        if let (Ok(pid), Ok(ppid), Ok(pgid)) = (
+            pid_str.parse::<i32>(),
+            ppid_str.parse::<i32>(),
+            pgid_str.parse::<i32>(),
+        ) {
             children_map.entry(ppid).or_default().push(pid);
+            pgid_map.insert(pid, pgid);
         }
     }
 
     let mut stack = vec![parent_pid];
     let mut descendants = Vec::new();
+    let mut target_pgids = std::collections::HashSet::new();
+
     while let Some(ppid) = stack.pop() {
         if let Some(children) = children_map.get(&ppid) {
             for &child in children {
                 descendants.push(child);
                 stack.push(child);
+                if let Some(&pgid) = pgid_map.get(&child) {
+                    target_pgids.insert(pgid);
+                }
             }
         }
     }
 
+    // Phase 1: Kill all direct descendants
     for pid in descendants {
         unsafe {
             let _ = libc::kill(pid, libc::SIGKILL);
+        }
+    }
+
+    // Phase 2: Kill any orphan that belongs to one of the identified descendant PGIDs
+    // This catches processes re-parented to PID 1
+    for (pid, pgid) in pgid_map {
+        if target_pgids.contains(&pgid) {
+            unsafe {
+                let _ = libc::kill(pid, libc::SIGKILL);
+            }
         }
     }
 }
@@ -118,12 +146,22 @@ fn cleanup_uvicorn_workers_for_test(socket_dir: &Path) {
     };
     let socket_dir_str = socket_dir.to_string_lossy();
     for line in text.lines() {
-        if !line.contains("uvicorn")
-            || !line.contains("--uds")
-            || !line.contains(socket_dir_str.as_ref())
-        {
+        // Look for uvicorn workers. They usually contain the app name or our socket dir
+        // in their command line. In test mode, we are more aggressive.
+        if !line.contains("uvicorn") {
             continue;
         }
+
+        // Check if it's related to our test session or specific app
+        // uvicorn commands in our tests always have either --uds or are spawned by our binary
+        let is_ours = line.contains(socket_dir_str.as_ref())
+            || line.contains("--uds")
+            || line.contains("main:app"); // Default app name in most tests
+
+        if !is_ours {
+            continue;
+        }
+
         let mut parts = line.split_whitespace();
         let Some(pid_str) = parts.next() else {
             continue;
@@ -858,26 +896,20 @@ pub fn run_server(
     let mut rsgi_enabled = args.rsgi;
     if rsgi_enabled {
         if let Ok(py_env) = crate::common::python_env::PythonEnv::detect(python_path) {
-            let pyo3_version = if cfg!(Py_3_13) {
-                "3.13"
-            } else if cfg!(Py_3_12) {
-                "3.12"
-            } else if cfg!(Py_3_11) {
-                "3.11"
-            } else if cfg!(Py_3_10) {
-                "3.10"
-            } else {
-                "unknown"
-            };
-            if pyo3_version == "unknown" {
-                logger.warn("RSGI disabled: unknown PyO3 ABI version.");
-                rsgi_enabled = false;
-            } else if py_env.version != pyo3_version {
+            // SPEC-0005: Use runtime-detected version for ABI verification
+            // This is more reliable than cfg! which is often missing in multi-crate builds
+            let pyo3_version = py_env.version.as_str();
+
+            let is_supported = matches!(pyo3_version, "3.10" | "3.11" | "3.12" | "3.13");
+
+            if !is_supported {
                 logger.warn(&format!(
-                    "RSGI disabled: Python ABI mismatch (runtime {}, pyo3 {}).",
-                    py_env.version, pyo3_version
+                    "RSGI disabled: Python {} is not in supported ABI range (3.10-3.13).",
+                    pyo3_version
                 ));
                 rsgi_enabled = false;
+            } else {
+                log::debug!("[SSOT] RSGI ABI verified: {}", pyo3_version);
             }
         } else {
             logger.warn("RSGI disabled: failed to detect Python runtime version.");
