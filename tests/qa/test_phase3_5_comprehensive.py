@@ -481,7 +481,11 @@ def on_exit():
             if not wait_for_port(port):
                 pytest.skip("Server did not start")
 
+            if not wait_for_port(port):
+                pytest.skip("Server did not start")
+
             # Make a request to ensure it's working (with retries for slow worker start)
+            time.sleep(2)  # Allow worker to fully initialize
             time.time()
             for _i in range(10):
                 try:
@@ -617,6 +621,7 @@ def root():
                 pytest.skip("Server did not start")
 
             # Verify it's on the right port (with retries for slow worker start)
+            time.sleep(2)  # Allow worker to fully initialize
             for _i in range(10):
                 try:
                     response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
