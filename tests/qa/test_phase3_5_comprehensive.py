@@ -94,9 +94,12 @@ class ComprehensiveTestEnv:
         self._port_counter = 19200
 
     def next_port(self) -> int:
-        """Get unique port for test."""
-        self._port_counter += 1
-        return self._port_counter
+        """Get unique port for test using socket binding."""
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
 
     def setup(self, with_project: bool = True) -> "ComprehensiveTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
@@ -611,8 +614,8 @@ def root():
             )
             env.install("fastapi", "uvicorn")
 
-            # Use specific port
-            port = 19500
+            # Use specific port (allocated dynamically to avoid collision)
+            port = env.next_port()
             env.serve("main:app", port, capture=True)
 
             if not wait_for_port(port):
@@ -636,7 +639,7 @@ def root():
                 pytest.fail("Port option request failed")
 
             # Verify it's NOT on some other port we don't expect
-            assert not is_port_open(19501)
+            assert not is_port_open(port + 1)
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_l3_002_workers_spawn_multiple(self):
