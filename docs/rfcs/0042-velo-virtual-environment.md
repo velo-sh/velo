@@ -71,15 +71,27 @@ Velo allows the explicit disabling of `ImportShield` or `PathSanitization` for l
 > *   **Tmpfs Size Cap**: Maximum bytes for the read-write layer.
 > *   Note: `pip install` inside the sandbox is **Best-Effort**. If it hits the quota, the process receives `ENOSPC`.
 
-#### 4.2.1 Optimization: Package Deduplication (The UV Strategy)
-To mitigate the inode/space cost of dynamic package installation (e.g., `pip install numpy`), Velo adopts a **Symlink-Based Deduplication** strategy inspired by `uv`:
+#### 4.2.1 Optimization: Phased Package Isolation Strategy
+> **Committee Note**: The shift from Symlinks to CAS solves the "Host GC Race Condition." However, the VeloVFS layer must be highly optimized to avoid FUSE latency overhead. To mitigate the security risks of raw symlinks and brittle package management while maintaining performance, Velo adopts a phased strategy:
 
-1.  **Host Cache**: The Supervisor maintains a central, verify-only package store on the host (e.g., `/var/cache/velo/pypi`).
-2.  **RO Mount**: This store is mounted **Read-Only** into the VVE at `/opt/velo/cache`.
-3.  **Link Mode**: The Agent's installer is configured to use **Symlinks** (`--link-mode=symlink`) instead of copying files.
-    *   **Result**: Installing `numpy` (100MB, 2000 files) consumes **0MB** of `tmpfs` data and only lightweight symlink inodes.
-    *   **Safety**: Since the source is Read-Only, a compromised Agent cannot poison the cache for others.
-    *   **GC Lock Requirement**: The Host Cache MUST implement Reference Counting Garbage Collection. Packages currently referenced by active VVE symlinks **MUST NOT** be deleted or moved, as this would break the live agent's environment.
+Velo adopts a pragmatic, phased approach to balancing performance and improved isolation.
+
+**Phase 1: UV Symlink Strategy (Default & Stable)**
+*   **Mechanism**: `pip install` creates thousands of symlinks pointing to the Read-Only Host Cache (`/opt/velo/cache`).
+*   **Pros**: Zero-Copy startup, Native Kernel Performance (Page Cache), Low Implementation Complexity.
+*   **Cons**: Path Leakage (Agent can `readlink` to see Host structure).
+*   **Target**: Trusted Internal Workloads, Cost-Sensitive deployments.
+*   **Safety**: Relies on `RO Mount` + `GC Lock` (Reference Counting) to prevent cache poisoning or deletion.
+
+**Phase 2: VeloVFS CAS Strategy (High Security Target)**
+*   **Mechanism**: A FUSE-based "Projection Layer" maps `BLAKE3` Content-Addressable Storage (CAS) blobs to virtual files.
+*   **Pros**:
+    *   **Anti-Reconnaissance**: Agent sees "real files", no Symlinks. Host structure is hidden.
+    *   **Immutability**: File content is physically immutable and hash-verified per read.
+    *   **File-Level Deduplication**: More granular than package-level.
+*   **Cons**: Higher Complexity (Rust Daemon), Slight Cold Start Overhead (Context Switches).
+*   **Target**: Multi-Tenant SaaS, Untrusted Code Execution.
+*   **Note**: See [RFC-0043: VeloVFS - The CAS Projection Layer](0043-velo-vfs-cas-layer.md) for details.
 
 ### 4.3 The "Instant Container" Workflow
 1.  **Preparation**: Velo maintains a pre-mounted **LowerLayer** (ReadOnly Rootfs) containing the base OS and Python distribution.
