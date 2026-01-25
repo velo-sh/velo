@@ -18,6 +18,12 @@ The **Trinity Architecture** unifies the cloud stack by eliminating the boundari
 *   **Concept**: Compute is not a linear "process start"; it is a phylogenetic fork from a parent state.
 *   **RFC**: [RFC-0044 Kinetic Zygote](./rfcs/0044-kinetic-zygote-phylogeny.md)
 
+### 2.1 Modular Phylogeny (Composable Genes)
+A Zygote is not a monolithic snapshot. It is composed of independent **Genetic Units** (e.g., specific Python Libs, Shared Objects).
+*   **Composition**: A Zygote State = `Σ(Unit_A, Unit_B, Unit_C...)`.
+*   **Evolution**: Upgrading a single unit (e.g., `LibA v1` -> `v2`) does not restart the process. It **forks** a new state leaf where only that unit's memory pages are rebased.
+*   **Result**: Granular, non-destructive upgrades for running compute.
+
 ## III. The Spirit: Environment (Universal Intent)
 *   **The Context**: Pervasive Logic & Configuration.
 *   **The Mechanism**: **Dirty State Injection**.
