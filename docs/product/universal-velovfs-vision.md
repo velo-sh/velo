@@ -1,6 +1,7 @@
 # Product Vision: Velo Rift
 
 > **Slogan**: "Rift through the I/O Latency."
+> **Architecture**: Built on the [Trinity Architecture](../architecture/trinity_architecture.md).
 
 ---
 
