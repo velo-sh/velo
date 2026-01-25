@@ -15,7 +15,8 @@ The **Trinity Architecture** unifies the cloud stack by eliminating the boundari
 ## II. The Son: Compute (Zygote Tree)
 *   **The Act**: Execution as a Branching Tree.
 *   **The Mechanism**: **Copy-on-Write (CoW)**.
-*   **Concept**: Compute is not a linear "process start"; it is a phylogenetic fork from a parent state.
+*   **The Theory**: **Compute Phylogeny**.
+    *   Compute is not a linear "process start"; it is a phylogenetic fork from a parent state.
 *   **RFC**: [RFC-0044 Kinetic Zygote](./rfcs/0044-kinetic-zygote-phylogeny.md)
 
 ### 2.1 Modular Phylogeny (Composable Genes)
