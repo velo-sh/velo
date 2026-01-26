@@ -96,28 +96,28 @@ jobs:
         with:
           filters: |
             rust:
-              - 'src/**/*.rs'
+              - 'crates/**/*.rs'
               - 'tests/**/*.rs'
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
-              - 'build.rs'
               - 'config/**'
+              - 'velo_macros/**/*.rs'
             loader:
-              - 'src/loader/**/*.rs'
+              - 'crates/velo-cli/src/cmd/loader.rs'
               - 'python/velo_loader.py'
               - 'tests/qa/test_phase5_loader.py'
               - 'tests/qa/phase5/**'
               - 'tests/qa/phase5_1/**'
               - 'tests/qa/phase5_2/**'
             zygote:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
               - 'tests/qa/test_preflight.py'
             serve:
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
               - 'tests/qa/phase_6_1_1/**'
               - 'tests/qa/phase6_1/**'
@@ -126,13 +126,13 @@ jobs:
               - 'tests/qa/test_e2e_serve.py'
               - 'scripts/qa-fast.sh'
             analyze:
-              - 'src/cmd/analyze.rs'
-              - 'src/cmd/agent.rs'
+              - 'crates/velo-cli/src/cmd/analyze.rs'
+              - 'crates/velo-cli/src/cmd/agent.rs'
               - 'tests/qa/test_phase4_*.py'
             kinetic:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase6_2_*.py'
             workflow:
               - '.github/workflows/ci.yml'
