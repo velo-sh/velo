@@ -109,6 +109,15 @@ This document tracks high-potential technologies, architectural candidates, and 
     - Web dashboards can decode MessagePack logs directly
     - Online playground for protocol learning
 
+### VS Code / Jupyter Integration
+- **Status**: Research
+- **Context**: Developer Experience Vision
+- **Value**: Native integration with popular development environments.
+- **Benefits**:
+    - VS Code extension for Zygote status monitoring and IPC debugging
+    - Jupyter kernel with Velo-aware execution (COW fork per cell)
+    - JetBrains plugin support via shared WASM module
+
 ### velo-core Modular Split
 - **Status**: Research
 - **Context**: RFC-0033 Follow-up
