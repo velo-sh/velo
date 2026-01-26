@@ -3118,8 +3118,6 @@ dependencies = [
  "rayon",
  "rkyv",
  "rmp-serde",
- "rustpython-ast",
- "rustpython-parser",
  "serde",
  "serde_json",
  "strsim",
