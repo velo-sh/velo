@@ -26,6 +26,24 @@ class VeloRuntimeShield:
         if not self.runtime_root.endswith(os.sep):
             self.runtime_root += os.sep
 
+        # PERFORMANCE: Pre-calculate the set of protected internal names.
+        # This turns the per-import syscall check into an O(1) set lookup.
+        self.protected_names = self._scan_protected_names()
+
+    def _scan_protected_names(self) -> set[str]:
+        """Scan the runtime root for .py files that need protection."""
+        names = set()
+        try:
+            with os.scandir(self.runtime_root) as it:
+                for entry in it:
+                    if entry.name.endswith(".py") and entry.is_file():
+                        names.add(entry.name[:-3])  # Remove .py
+                    elif entry.is_dir() and os.path.isfile(os.path.join(entry.path, "__init__.py")):
+                        names.add(entry.name)
+        except OSError:
+            pass
+        return names
+
     @classmethod
     def install(cls) -> None:
         """Install the shield at the front of sys.meta_path."""
@@ -54,65 +72,44 @@ class VeloRuntimeShield:
         if fullname.startswith("velo_zygote"):
             return None
 
-        # 2. Check if this module NAME is a known internal module
-        # Optimization: We could just check ALL imports, but that's expensive I/O.
-        # We only care if it resolves to OUR directory.
-        # But we can't accept the spec if we don't know where it is.
-        # So we let Python find it first? No, we are the finder.
+        # 2. PERFORMANCE FAST-PATH:
+        # Check if this module NAME is even in our protected set.
+        # This avoids all syscalls and IO for 99.9% of user imports (numpy, pandas, etc).
+        if fullname not in self.protected_names:
+            return None
 
-        # CRITICAL ARCHITECTURE:
-        # We cannot easily "resolve" without being a full PathFinder.
-        # Instead, we rely on the fact that if 'sys.path' is clean, standard finders won't find it.
-        # BUT the user might add the path back.
-        # So we must inspect if the user is trying to import a module that EXISTS in our runtime root.
+        # 3. COLLISION DETECTED (It matches an internal name like 'utils')
+        # We must determine if this import resolves to the RUNTIME ROOT (Block)
+        # or to a user-space file (Allow).
 
-        # Fast check: Is this a potential collision candidate?
-        # We convert the dot-path to a filesystem path relative to runtime root.
+        # Use PathFinder to simulate standard resolution WITHOUT triggering meta_path recursion.
+        from importlib.machinery import PathFinder
 
-        # CASE A: Top-level import 'utils' -> velo_zygote/utils.py
-        candidate_path = os.path.join(self.runtime_root, *fullname.split("."))
+        try:
+            # We use the current sys.path (or the path argument passed to find_spec)
+            search_path = path if path is not None else sys.path
+            spec = PathFinder.find_spec(fullname, path=search_path)
 
-        # Only check generic top-level names or common submodules
-        # Performance: Checking implies syscalls.
-        is_hit = False
-        if os.path.isfile(candidate_path + ".py"):
-            is_hit = True
-        elif os.path.isdir(candidate_path) and os.path.isfile(os.path.join(candidate_path, "__init__.py")):
-            is_hit = True
+            if spec and spec.origin:
+                # Check physical location
+                # Resolve symlinks to be sure
+                try:
+                    origin_path = os.path.realpath(spec.origin)
+                    runtime_real = os.path.realpath(self.runtime_root)
 
-        if is_hit:
-            # COLLISION DETECTED
-            # We must determine if this import resolves to the RUNTIME ROOT (Block)
-            # or to a user-space file (Allow).
+                    if origin_path.startswith(runtime_real):
+                        msg = f"ImportShield Violation: Access denied to runtime kernel module '{fullname}'."
+                        try:
+                            sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
+                        except Exception:
+                            pass
+                        raise ImportError(msg)
+                except OSError:
+                    pass
 
-            # Use PathFinder to simulate standard resolution WITHOUT triggering meta_path recursion.
-            from importlib.machinery import PathFinder
-
-            try:
-                # We use the current sys.path (or the path argument passed to find_spec)
-                search_path = path if path is not None else sys.path
-                spec = PathFinder.find_spec(fullname, path=search_path)
-
-                if spec and spec.origin:
-                    # Check physical location
-                    # Resolve symlinks to be sure
-                    try:
-                        origin_path = os.path.realpath(spec.origin)
-                        runtime_real = os.path.realpath(self.runtime_root)
-
-                        if origin_path.startswith(runtime_real):
-                            msg = f"ImportShield Violation: Access denied to runtime kernel module '{fullname}'."
-                            try:
-                                sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
-                            except Exception:
-                                pass
-                            raise ImportError(msg)
-                    except OSError:
-                        pass
-
-            except ImportError:
-                # If PathFinder can't find it, we permit continuation (it will fail later anyway)
-                pass
+        except ImportError:
+            # If PathFinder can't find it, we permit continuation (it will fail later anyway)
+            pass
 
         return None
 
