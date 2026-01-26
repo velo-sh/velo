@@ -43,6 +43,15 @@ This document tracks high-potential technologies, architectural candidates, and 
 - **Context**: Roadmap Phase 12
 - **Value**: Hardware affinity to minimize L3 Cache misses in ultra-high concurrency (>50k RPS) scenarios.
 
+### Linux Landlock LSM (Security Hardening)
+- **Status**: Candidate
+- **Context**: RFC-0033 Supplemental Audit (Jan 2026)
+- **Value**: Implementation of path-level whitelisting within `v_shield.rs` (Linux 5.13+).
+- **Benefits**:
+    - Prevents untrusted Python code from accessing host sensitive files (e.g., `/etc/passwd`).
+    - Provides a "Surgical Shielding" layer beyond standard namespaces.
+
+
 ---
 
 ## ⚡ Application Scenarios (Zygote COW Vision)
@@ -79,7 +88,16 @@ This document tracks high-potential technologies, architectural candidates, and 
 - **Status**: Research
 - **Scope**: Automated `kill -9` rotation and environment poisoning to verify 0% error rate under pressure.
 
+### IPC Protocol Fuzzing (Reliability)
+- **Status**: Research
+- **Context**: Security Hardening Audit (Jan 2026)
+- **Value**: Using `cargo-fuzz` to stress test the `velo-protocol` deserialization boundaries.
+- **Benefits**:
+    - Detects memory safety or DoS vulnerabilities in cross-process communication.
+    - Ensures the Zygote is resilient against maliciously crafted payloads.
+
+
 ---
 
 **Custodian**: Velo Architect
-**Last Updated**: 2026-01-19
+**Last Updated**: 2026-01-26
