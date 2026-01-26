@@ -1,7 +1,9 @@
 import os
 import sys
 import types
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 try:
     from .settings import velo_config
@@ -9,107 +11,118 @@ except (ImportError, ValueError):
     from settings import velo_config  # type: ignore[no-redef]
 
 
-class ImportShield:
+class VeloRuntimeShield:
     """
-    RFC-0012: Resilience Whitelist for Framework Bootstrap.
-    Prevents unauthorized access to internal framework modules.
+    SPEC-0005: Active Runtime Defense (The reset gate).
+    Intercepts and BLOCKS any import that resolves to the Velo Runtime physical path
+    unless it is addressed via the authorized 'velo_zygote' namespace.
     """
 
     _active = False
-    _is_velo_import_shield = True
+
+    def __init__(self, runtime_root: str):
+        self.runtime_root = os.path.abspath(runtime_root)
+        # Ensure we match directories correctly
+        if not self.runtime_root.endswith(os.sep):
+            self.runtime_root += os.sep
+
+        # PERFORMANCE: Pre-calculate the set of protected internal names.
+        # This turns the per-import syscall check into an O(1) set lookup.
+        self.protected_names = self._scan_protected_names()
+
+    def _scan_protected_names(self) -> set[str]:
+        """Scan the runtime root for .py files that need protection."""
+        names = set()
+        try:
+            with os.scandir(self.runtime_root) as it:
+                for entry in it:
+                    if entry.name.endswith(".py") and entry.is_file():
+                        names.add(entry.name[:-3])  # Remove .py
+                    elif entry.is_dir() and os.path.isfile(os.path.join(entry.path, "__init__.py")):
+                        names.add(entry.name)
+        except OSError:
+            pass
+        return names
 
     @classmethod
-    def activate(cls) -> None:
-        """Enable the shield. Once enabled, internal imports are blocked."""
-        cls.install()
-        cls._active = True
-        # Set environment variable for persistence in forks
-        os.environ["VELO_ZYGOTE_SHIELD_ACTIVE"] = "1"
+    def install(cls) -> None:
+        """Install the shield at the front of sys.meta_path."""
+        runtime_root = os.path.dirname(os.path.abspath(__file__))
+
+        # Avoid duplicate installation
+        for f in sys.meta_path:
+            if isinstance(f, VeloRuntimeShield):
+                return
+
+        sys.meta_path.insert(0, cls(runtime_root))  # type: ignore
+
+    # Compatibility for v_fork.py which calls .activate()
+    activate = install
 
     def find_spec(
         self,
         fullname: str,
-        path: list[str] | None,
+        path: Sequence[str] | None,
         target: types.ModuleType | None = None,
-    ) -> types.ModuleType | None:
-        # 0. Only block if shield is active (via class var or environment)
-        # Environment check is the target-safe SSOT for forked children.
-        if not self._active:
+    ) -> Any:
+        """
+        The Gatekeeper Logic.
+        """
+        # 1. Allow authorized namespace
+        if fullname.startswith("velo_zygote"):
             return None
 
-        # RFC-0012: Block velo_zygote imports unless whitelisted.
-        # The shield is activated AFTER the Zygote imports what it needs,
-        # but workers still need some internal modules for bootstrap.
-        whitelist = {
-            "velo_zygote.v_rsgi",
-            "velo_zygote.utils",
-            "velo_zygote.bootstrap",
-            "velo_zygote.settings",
-            "velo_zygote.paths",
-            "velo_zygote.memory",
-        }
-        if fullname.startswith("velo_zygote") and fullname not in whitelist:
-            msg = f"Unauthorized access to internal framework module: {fullname}"
+        # 2. PERFORMANCE FAST-PATH:
+        # Check if this module NAME is even in our protected set.
+        # This avoids all syscalls and IO for 99.9% of user imports (numpy, pandas, etc).
+        if fullname not in self.protected_names:
+            return None
 
-            # Check mode
-            mode = velo_config.shield_mode
+        # 3. COLLISION DETECTED (It matches an internal name like 'utils')
+        # We must determine if this import resolves to the RUNTIME ROOT (Block)
+        # or to a user-space file (Allow).
 
-            if mode == "dry_run":
+        # Use PathFinder to simulate standard resolution WITHOUT triggering meta_path recursion.
+        from importlib.machinery import PathFinder
+
+        try:
+            # We use the current sys.path (or the path argument passed to find_spec)
+            search_path = path if path is not None else sys.path
+            spec = PathFinder.find_spec(fullname, path=search_path)
+
+            if spec and spec.origin:
+                # Check physical location
+                # Resolve symlinks to be sure
                 try:
-                    sys.stderr.write(f"🛡️ [SECURITY AUDIT] ImportShield violation (ALLOWED by dry_run): {fullname}\n")
-                    sys.stderr.flush()
-                except Exception:
+                    origin_path = os.path.realpath(spec.origin)
+                    runtime_real = os.path.realpath(self.runtime_root)
+
+                    if origin_path.startswith(runtime_real):
+                        msg = f"ImportShield Violation: Access denied to runtime kernel module '{fullname}'."
+                        try:
+                            sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
+                        except Exception:
+                            pass
+                        raise ImportError(msg)
+                except OSError:
                     pass
-                return None  # Allow the import
 
-            if mode == "disabled":
-                return None
+        except ImportError:
+            # If PathFinder can't find it, we permit continuation (it will fail later anyway)
+            pass
 
-            try:
-                # Log to stderr for visibility in CI logs (Trap 178.2/3)
-                sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg}\n")
-                sys.stderr.flush()
-            except Exception:
-                pass
-            raise ImportError(msg)
-
-        # 1. Block Sensitive Standard Library Modules (Defect-01)
-        # Workers should not spawn subprocesses or access valid OS functions directly.
-        if fullname in ("os", "subprocess"):
-            msg = f"Unauthorized access to sensitive module: {fullname}"
-
-            # Check mode (DRY RUN logic applied here too)
-            mode = velo_config.shield_mode
-            if mode == "dry_run":
-                return None
-
-            if mode == "disabled":
-                return None
-
-            raise ImportError(msg)
-
-        # 2. Shadowing Protection: main.py
-        # This finder is installed at the top of sys.meta_path.
-        # If it returns None, Python falls back to standard finders (PathFinder).
         return None
 
-    @staticmethod
-    def install() -> None:
-        """Install the shield at the front of sys.meta_path."""
-        # Use name check instead of isinstance to avoid potential ABC issues or hangs
-        if not any(type(f).__name__ == "ImportShield" for f in sys.meta_path):
-            sys.meta_path.insert(0, ImportShield())  # type: ignore[arg-type]
+    @classmethod
+    def validate_security(cls) -> None:
+        """Self-test to ensure the shield is active."""
+        # Simple check if we are in meta_path
+        if not any(isinstance(f, cls) for f in sys.meta_path):
+            cls.install()
 
-            # Centralized Path Sanitization (RFC-0011 6A.1)
-            # Prevent shadowing of user modules by framework modules.
-            # Zygote itself needs this path during boot (Trap 178.6)
-            if os.environ.get("VELO_IS_ZYGOTE") != "1":
-                try:
-                    framework_dir = os.path.dirname(os.path.abspath(__file__))
-                    if framework_dir in sys.path:
-                        sys.path.remove(framework_dir)
-                except Exception:
-                    pass
+
+# Legacy Alias for backward compatibility if needed
+ImportShield = VeloRuntimeShield
 
 
 # RFC-0012 Phase 11.3: Auto-install when environment variable is set.

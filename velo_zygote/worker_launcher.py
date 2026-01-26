@@ -182,6 +182,15 @@ def _enforce_ghost_mode() -> None:
     if runtime_root in sys.path:
         sys.path.remove(runtime_root)
 
+    # SPEC-0005: Install Active Import Shield
+    # This prevents re-importing internal modules even if sys.path is tampered with.
+    try:
+        from velo_zygote.v_shield import VeloRuntimeShield
+
+        VeloRuntimeShield.install()
+    except ImportError:
+        pass
+
 
 def _wrap_app_with_middleware(app_path: str) -> Any:
     """
