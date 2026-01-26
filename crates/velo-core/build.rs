@@ -232,7 +232,9 @@ fn main() {
 /// This ensures pre-commit sync checks always pass.
 fn generate_python_constants(_config: &Constants, _git_hash: &str) {
     // Call the Python script which is the canonical generator
-    let status = Command::new("python3")
+    // SSOT: Use PYO3_PYTHON if set (Docker CI sets this to venv python), else fallback to python3
+    let python = env::var("PYO3_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let status = Command::new(&python)
         .args(["../../scripts/sync-constants.py"])
         .status();
 

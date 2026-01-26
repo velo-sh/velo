@@ -54,6 +54,7 @@ WORKDIR /workspace
 ENV CI=true
 ENV GITHUB_ACTIONS=true
 ENV PYO3_PYTHON=/workspace/.venv/bin/python3
+ENV PATH=/workspace/.venv/bin:$PATH
 COPY . .
 # NOTE: Mount cache is shared between stages, so dependencies from cacher are available
 
@@ -72,16 +73,16 @@ RUN mv /usr/bin/python3 /usr/bin/python3-SYSTEM-RESTRICTED && \
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/workspace/target \
-    cargo build --release -p velo-protocol && \
-    cargo build -p velo-protocol
+    PATH=/workspace/.venv/bin:$PATH cargo build --release -p velo-protocol && \
+    PATH=/workspace/.venv/bin:$PATH cargo build -p velo-protocol
 
 # Rebuild full workspace with real source (using cached dependencies + protocol)
 # Build both release AND debug for tests that use target/debug/velo
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
     --mount=type=cache,target=/workspace/target \
-    cargo build --release && \
-    cargo build && \
+    PATH=/workspace/.venv/bin:$PATH cargo build --release && \
+    PATH=/workspace/.venv/bin:$PATH cargo build && \
     cp target/release/velo ./velo-bin 2>/dev/null || true
 
 
