@@ -89,27 +89,26 @@ class VeloRuntimeShield:
             # We use the current sys.path (or the path argument passed to find_spec)
             search_path = path if path is not None else sys.path
             spec = PathFinder.find_spec(fullname, path=search_path)
-
-            if spec and spec.origin:
-                # Check physical location
-                # Resolve symlinks to be sure
-                try:
-                    origin_path = os.path.realpath(spec.origin)
-                    runtime_real = os.path.realpath(self.runtime_root)
-
-                    if origin_path.startswith(runtime_real):
-                        msg = f"ImportShield Violation: Access denied to runtime kernel module '{fullname}'."
-                        try:
-                            sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
-                        except Exception:
-                            pass
-                        raise ImportError(msg)
-                except OSError:
-                    pass
-
         except ImportError:
             # If PathFinder can't find it, we permit continuation (it will fail later anyway)
-            pass
+            spec = None
+
+        if spec and spec.origin:
+            # Check physical location
+            # Resolve symlinks to be sure
+            try:
+                origin_path = os.path.realpath(spec.origin)
+                runtime_real = os.path.realpath(self.runtime_root)
+
+                if origin_path.startswith(runtime_real):
+                    msg = f"ImportShield Violation: Access denied to runtime kernel module '{fullname}'."
+                    try:
+                        sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
+                    except Exception:
+                        pass
+                    raise ImportError(msg)
+            except OSError:
+                pass
 
         return None
 
