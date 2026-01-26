@@ -139,7 +139,7 @@ class VeloServeProcess:
                 try:
                     cmdline = child.cmdline()
                     cmdline_str = " ".join(cmdline).lower()
-                    if "velo_zygote/main.py" in cmdline_str:
+                    if "velo_zygote/zygote_main.py" in cmdline_str:
                         if self.socket_path:
                             if any(self.socket_path in arg for arg in cmdline):
                                 self.zygote_pid = int(child.pid)
@@ -172,7 +172,7 @@ class VeloServeProcess:
                     try:
                         cmdline = " ".join(child.cmdline()).lower()
                         if any(x in cmdline for x in ["python", "granian", "uvicorn", "worker-native"]):
-                            if "velo_zygote/main.py" not in cmdline:
+                            if "velo_zygote/zygote_main.py" not in cmdline:
                                 if child.pid not in workers:
                                     workers.append(child.pid)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -246,7 +246,7 @@ class VeloServeFactory:
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
 
-        env["VELO_ZYGOTE_PATH"] = str(Path(__file__).parents[3] / "velo_zygote/main.py")
+        env["VELO_ZYGOTE_PATH"] = str(Path(__file__).parents[3] / "velo_zygote/zygote_main.py")
         env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 

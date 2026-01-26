@@ -6,7 +6,7 @@ Velo QA: Phase 3 Deployment Tests
 GOAL: Expose hardcoded path bugs that only appear in production deployment.
 
 Problem found in find_zygote_module():
-- Hardcoded "velo_zygote/main.py" path
+- Hardcoded "velo_zygote/zygote_main.py" path
 - Only searches 4 levels from exe
 - WILL FAIL when installed via pip/cargo install
 """
@@ -98,7 +98,7 @@ class TestDeploymentScenarios:
         DEPLOY-001: Velo binary installed in isolated /usr/local/bin.
 
         This simulates `cargo install velo` where binary goes to ~/.cargo/bin
-        but velo_zygote/main.py is NOT copied.
+        but velo_zygote/zygote_main.py is NOT copied.
         """
         with DeployEnv() as env:
             # Simulate installed binary (no velo_zygote nearby)

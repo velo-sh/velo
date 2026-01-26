@@ -137,8 +137,8 @@ known-first-party = ["velo_zygote"]
 # E402: Tests legitimately require sys.path manipulation before imports
 "tests/**/*.py" = ["E402"]
 "pytest_velo/**/*.py" = ["E402"]
-"velo_zygote/main.py" = ["E402"]
 "velo_zygote/worker_launcher.py" = ["E402"]
+"velo_zygote/zygote_main.py" = ["E402"]
 # F401: conftest files import fixtures for other tests to use
 "**/conftest.py" = ["F401"]
 # F403/F405: Star imports from constants.py is SSOT pattern (constants are generated)

@@ -153,7 +153,7 @@ class VeloServeProcess:
                 try:
                     cmdline = child.cmdline()
                     cmdline_str = " ".join(cmdline).lower()
-                    if "velo_zygote/main.py" in cmdline_str:
+                    if "velo_zygote/zygote_main.py" in cmdline_str:
                         # If we have a specific socket path, match it
                         if self.socket_path:
                             if any(self.socket_path in arg for arg in cmdline):
@@ -202,7 +202,7 @@ class VeloServeProcess:
                             or "worker-native" in cmdline
                         ):
                             # Avoid detecting the Zygote itself as a worker
-                            if "velo_zygote/main.py" not in cmdline:
+                            if "velo_zygote/zygote_main.py" not in cmdline:
                                 if child.pid not in workers:
                                     workers.append(child.pid)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -319,7 +319,7 @@ class VeloServeFactory:
         # RFC-0013 Phase 6.1.1: Prevent Workspace Pollution
         # Explicitly set Zygote path to current workspace
         root_dir = Path(__file__).parents[3]
-        env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/main.py")
+        env["VELO_ZYGOTE_PATH"] = str(root_dir / "velo_zygote/zygote_main.py")
 
         # RFC-0012: Resilience Whitelist for Framework Bootstrap
         # We must explicitly trust /workspace so sys.path isn't scrubbed by the Rust binary's EnvironmentShield
