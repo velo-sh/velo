@@ -96,8 +96,52 @@ This document tracks high-potential technologies, architectural candidates, and 
     - Detects memory safety or DoS vulnerabilities in cross-process communication.
     - Ensures the Zygote is resilient against maliciously crafted payloads.
 
+---
+
+## 🏗️ Architecture Evolution (RFC-0033 Follow-up)
+
+### velo-protocol WASM Target
+- **Status**: Candidate
+- **Context**: RFC-0033 Closure (Jan 2026)
+- **Value**: Compile `velo-protocol` to WebAssembly for browser-based tools.
+- **Benefits**:
+    - IDE plugins can parse Zygote messages without Rust toolchain
+    - Web dashboards can decode MessagePack logs directly
+    - Online playground for protocol learning
+
+### velo-core Modular Split
+- **Status**: Research
+- **Context**: RFC-0033 Follow-up
+- **Proposal**: Split `graph/` (static analysis) and `zygote/` (process management) into separate crates.
+- **Value**: Improved compile parallelism; clearer domain boundaries.
+
+### Feature Flags for velo-serve
+- **Status**: Deferred
+- **Context**: RFC-0033 Optimization Review
+- **Proposal**: Make `hyper`/WebSocket optional via Cargo features.
+- **Trade-off**: Increases test matrix complexity; implement only if user demand exists.
+
+### Parallel Test Matrix
+- **Status**: Candidate
+- **Context**: CI Optimization
+- **Value**: Split `cargo test` into per-crate parallel jobs (similar to clippy-matrix).
+
+---
+
+## 🔧 Technical Debt
+
+### lifecycle.py Rename
+- **Status**: Planned
+- **Issue**: Historical naming causes confusion for new developers.
+- **Proposed Name**: `worker_lifecycle.py` or `process_manager.py`
+
+### WorkerRegistry Lock Optimization
+- **Status**: Research
+- **Context**: Performance Hardening
+- **Proposal**: Migrate from global lock to fine-grained or lock-free design.
+- **Prerequisite**: Monitor lock contention metrics first.
 
 ---
 
 **Custodian**: Velo Architect
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-27
