@@ -237,12 +237,22 @@ jobs:
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
 
-  clippy:
-    name: Clippy
+  # Parallel Clippy Matrix - RFC-0033: Leverage workspace independence
+  clippy-matrix:
+    name: "Clippy: ${{ matrix.crate }}"
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-core
+          - velo-serve
+          - velo-cli
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -250,7 +260,8 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build-v2"
+          shared-key: "velo-clippy-${{ matrix.crate }}"
+          cache-on-failure: true
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
@@ -258,8 +269,8 @@ jobs:
       - run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: "Clippy: ${{ matrix.crate }}"
+        run: cargo clippy -p ${{ matrix.crate }} --all-targets --all-features -- -D warnings
 
   python-tests:
     name: Python Unit Tests
