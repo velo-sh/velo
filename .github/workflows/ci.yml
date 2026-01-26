@@ -261,6 +261,39 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  python-tests:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run Pytest
+        run: uv run pytest tests/unit
+
+  bench-check:
+    name: Zygote Startup Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Build Velo
+        run: cargo build -p velo
+      - name: Run Startup Benchmark
+        run: |
+          ./target/debug/velo zygote start &
+          pid=$!
+          # Simple check for startup speed (should be < 2s in CI)
+          timeout 2s sh -c 'until ./target/debug/velo zygote status; do sleep 0.1; done'
+          ./target/debug/velo zygote stop
+
   fmt:
     name: Format
     needs: changes

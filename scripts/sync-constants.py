@@ -95,6 +95,8 @@ MAX_MESSAGE_SIZE = {config["max_message_size"]}
 SOCKET_STARTUP_TIMEOUT = {config["socket_startup_timeout"]}
 GRACEFUL_SHUTDOWN_TIMEOUT = {config["graceful_shutdown_timeout"]}
 DEFAULT_PORT = {config["default_port"]}
+SANDBOX_NETWORK_ISOLATION = {str(config["sandbox_network_isolation"])}
+SANDBOX_PRIVILEGE_ESCALATION_BLOCK = {str(config["sandbox_privilege_escalation_block"])}
 
 # Valid Environment Variables
 # VELO_ENV: dev, ci, prod

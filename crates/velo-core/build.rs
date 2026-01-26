@@ -28,6 +28,8 @@ struct Constants {
     graceful_shutdown_timeout: u64,
     default_slow_threshold_ms: u64,
     strict_optimizations: bool,
+    sandbox_network_isolation: bool,
+    sandbox_privilege_escalation_block: bool,
 
     // Network
     default_host: String,
@@ -163,6 +165,8 @@ fn main() {
          pub const BUILD_TARGET: &str = \"{target}\";\n\
          pub const BUILD_TARGET_ARCH: &str = \"{target_arch}\";\n\
          pub const PYTHON_VERSION: &str = \"{python_version}\";\n\
+         pub const SANDBOX_NETWORK_ISOLATION: bool = {sandbox_network_isolation};\n\
+         pub const SANDBOX_PRIVILEGE_ESCALATION_BLOCK: bool = {sandbox_privilege_escalation_block};\n\
          \n\
          // Python Environment SSOT (Phase 7.3+)\n\
          pub const PYTHON_REQUIRED_VERSION: &str = \"{py_required_version}\";\n\
@@ -181,6 +185,8 @@ fn main() {
         target = env::var("TARGET").unwrap_or_else(|_| "unknown".into()),
         target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".into()),
         python_version = constants.python_version,
+        sandbox_network_isolation = constants.sandbox_network_isolation,
+        sandbox_privilege_escalation_block = constants.sandbox_privilege_escalation_block,
         py_required_version = py_env.required_version,
         py_venv_path = py_env.venv_path,
         py_lib_dir_pattern = py_env.lib_dir_pattern,

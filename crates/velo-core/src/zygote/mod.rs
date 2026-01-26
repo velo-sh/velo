@@ -551,6 +551,10 @@ impl ZygoteLauncher {
 
         #[cfg(target_os = "linux")]
         let strict_optimizations = config.strict_optimizations;
+        #[cfg(target_os = "linux")]
+        let network_isolation = crate::common::constants::SANDBOX_NETWORK_ISOLATION;
+        #[cfg(target_os = "linux")]
+        let priv_block = crate::common::constants::SANDBOX_PRIVILEGE_ESCALATION_BLOCK;
 
         // Detach from parent process group so Zygote survives CLI exit
         #[cfg(unix)]
@@ -572,15 +576,19 @@ impl ZygoteLauncher {
                         // RFC-0011 Linux-Shield: Network Isolation
                         // Use unshare to create a private network namespace (effectively disabling global network access)
                         // Note: This requires CLONE_NEWNET.
-                        // Only enabled when strict_optimizations is TRUE (Prod mode).
-                        if strict_optimizations && libc::unshare(libc::CLONE_NEWNET) != 0 {
+                        // Only enabled when strict_optimizations is TRUE (Prod mode) or via SSOT.
+                        if (strict_optimizations || network_isolation)
+                            && libc::unshare(libc::CLONE_NEWNET) != 0
+                        {
                             // We continue even if it fails, as some old kernels might not support it
                             // but ideally, we should log a warning if we had a logger here.
                         }
 
                         // RFC-0011 Linux-Shield: Prevent privilege escalation
                         // PR_SET_NO_NEW_PRIVS ensures that the process and its children cannot gain new privileges (e.g., via setuid)
-                        if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                        if (strict_optimizations || priv_block)
+                            && libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
+                        {
                             // Same here, fallback gracefully
                         }
 
