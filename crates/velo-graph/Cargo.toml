@@ -1,0 +1,31 @@
+[package]
+name = "velo-graph"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Static Python import graph analysis for Velo"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Serialization
+rkyv = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Python AST parsing
+rustpython-parser = "0.4"
+rustpython-ast = "0.4"
+
+# File system
+ignore = "0.4"
+
+# Parallelism
+rayon = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# Utilities
+thiserror = { workspace = true }

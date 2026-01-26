@@ -208,21 +208,32 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
-  # Rust tests run in parallel with other QA jobs
-  rust-tests:
-    name: Rust Tests
+  # Parallel Rust Test Matrix - RFC-0033: Leverage workspace independence
+  rust-tests-matrix:
+    name: "Rust Tests: ${{ matrix.crate }}"
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-graph
+          - velo-core
+          - velo-serve
+          - velo-cli
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build-v2"
+          shared-key: "velo-test-${{ matrix.crate }}"
+          cache-on-failure: true
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
@@ -231,8 +242,8 @@ jobs:
         run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
-      - name: Run Rust tests
-        run: cargo test --workspace
+      - name: "Test: ${{ matrix.crate }}"
+        run: cargo test -p ${{ matrix.crate }}
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
@@ -249,6 +260,7 @@ jobs:
       matrix:
         crate:
           - velo-protocol
+          - velo-graph
           - velo-core
           - velo-serve
           - velo-cli

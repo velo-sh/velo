@@ -1,6 +1,6 @@
 use rkyv::util::AlignedVec;
 
-pub use crate::graph::{ModuleRecord, StaticImportGraph, TargetArch};
+pub use crate::{ModuleRecord, StaticImportGraph, TargetArch};
 
 // Methods moved to mod.rs or replaced by StaticImportGraph implementation
 
@@ -16,11 +16,10 @@ pub fn calculate_padding(current_offset: u64, alignment: u64) -> u64 {
 
 pub fn verify_graph(bytes: &[u8]) -> std::result::Result<(), String> {
     // Safety: bytes must be aligned for ArchivedStaticImportGraph
-    let graph =
-        match rkyv::access::<crate::graph::ArchivedStaticImportGraph, rkyv::rancor::Error>(bytes) {
-            Ok(g) => g,
-            Err(e) => return Err(format!("Rkyv validation failed: {:?}", e)),
-        };
+    let graph = match rkyv::access::<crate::ArchivedStaticImportGraph, rkyv::rancor::Error>(bytes) {
+        Ok(g) => g,
+        Err(e) => return Err(format!("Rkyv validation failed: {:?}", e)),
+    };
 
     if graph.target_arch_id != TargetArch::current().id() {
         return Err(format!(
@@ -45,7 +44,7 @@ pub fn verify_graph(bytes: &[u8]) -> std::result::Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::TargetArch;
+    use crate::TargetArch;
     use std::collections::{HashMap, HashSet};
 
     #[test]

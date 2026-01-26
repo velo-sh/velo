@@ -3174,9 +3174,25 @@ dependencies = [
  "toml",
  "tracing",
  "uuid",
+ "velo-graph",
  "velo-protocol",
  "velo_macros",
  "which",
+]
+
+[[package]]
+name = "velo-graph"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "log",
+ "rayon",
+ "rkyv",
+ "rustpython-ast",
+ "rustpython-parser",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

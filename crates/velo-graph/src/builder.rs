@@ -1,5 +1,5 @@
-use crate::graph::cycle::Tarjan;
-use crate::graph::dependency::{DependencyScanner, DependencyType};
+use crate::cycle::Tarjan;
+use crate::dependency::{DependencyScanner, DependencyType};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -47,8 +47,8 @@ impl GraphBuilder {
         self.modules.values().cloned().collect()
     }
 
-    pub fn to_static_graph(&self) -> crate::graph::StaticImportGraph {
-        use crate::graph::{ModuleRecord, StaticImportGraph, TargetArch};
+    pub fn to_static_graph(&self) -> crate::StaticImportGraph {
+        use crate::{ModuleRecord, StaticImportGraph, TargetArch};
         use std::collections::{HashMap, HashSet};
 
         let mut module_records = Vec::new();

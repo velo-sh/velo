@@ -4,7 +4,7 @@ pub mod cache;
 pub mod common;
 pub mod config;
 pub mod custody;
-pub mod graph;
+pub use velo_graph as graph;
 pub mod hardware;
 pub mod hardware_k8s;
 pub mod lifecycle;
