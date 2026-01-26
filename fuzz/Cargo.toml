@@ -1,0 +1,26 @@
+[package]
+name = "velo-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+velo-protocol = { path = "../crates/velo-protocol", features = ["fuzz"] }
+rmp-serde = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+
+# Prevent this from interfering with workspace checks
+[workspace]
+
+[[bin]]
+name = "protocol_roundtrip"
+path = "fuzz_targets/protocol_roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "structured_protocol"
+path = "fuzz_targets/structured_protocol.rs"
+test = false
+doc = false

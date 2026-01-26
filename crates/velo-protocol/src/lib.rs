@@ -7,7 +7,8 @@ pub mod constants {
 }
 
 /// Commands sent from Launcher to Zygote
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
 pub enum ZygoteCommand {
     /// Fork a new worker to execute a script
@@ -112,7 +113,8 @@ pub enum ZygoteCommand {
 }
 
 /// Responses sent from Zygote to Launcher
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[serde(tag = "type")]
 pub enum ZygoteResponse {
     /// Zygote is ready to accept commands
