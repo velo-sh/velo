@@ -17,6 +17,7 @@ dependencies = [
     "torch>=2.10.0",
     "uvicorn>=0.40.0",
     "websocket-client>=1.8.0",
+    "websockets>=12.0",
 ]
 
 # RFC-0028: pytest-velo plugin registration
