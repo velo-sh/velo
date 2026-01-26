@@ -1,15 +1,19 @@
 use crate::zygote::ZygoteLauncher;
 use crate::zygote::core_ipc;
 use crate::zygote::error::Result;
+use smallvec::SmallVec;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+/// Type alias for preload module list - typically small (3-5 items)
+pub type PreloadList = SmallVec<[String; 8]>;
+
 /// Parameters needed to restart a Zygote service.
 #[derive(Clone, Debug)]
 pub struct ZygoteStartParams {
-    pub preload: Vec<String>,
+    pub preload: PreloadList,
     pub app_name: Option<String>,
     pub python_path: PathBuf,
     pub config: crate::config::VeloConfig,

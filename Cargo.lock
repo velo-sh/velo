@@ -3166,6 +3166,7 @@ dependencies = [
  "rustpython-parser",
  "serde",
  "serde_json",
+ "smallvec",
  "socket2",
  "strsim",
  "tempfile",

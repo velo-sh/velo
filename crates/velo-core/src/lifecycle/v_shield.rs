@@ -10,6 +10,7 @@
 //! - Async-safe using tokio::fs
 //! - Logs operations for debugging
 
+use smallvec::SmallVec;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::fs;
@@ -505,7 +506,7 @@ fn close_non_standard_fds() {
     // SAFETY: We're reading the FD directory and closing non-standard FDs.
     // The directory read itself may open an FD, but we track that via dir_fd.
     // We collect FDs first to avoid modifying the directory while iterating.
-    let mut fds_to_close: Vec<i32> = Vec::with_capacity(16);
+    let mut fds_to_close: SmallVec<[i32; 16]> = SmallVec::new();
 
     // SAFETY: opendir returns a DIR* that we must closedir later
     let dir = unsafe { libc::opendir(fd_dir_cstr.as_ptr()) };
