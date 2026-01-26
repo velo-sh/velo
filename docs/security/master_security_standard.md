@@ -57,6 +57,7 @@ While `ImportShield` prevents unauthorized module access (e.g., `os`, `subproces
 - **Risk**: Complex frameworks (FastAPI, Django, Flask) or libraries using **Lazy Imports** may crash if they attempt to load a blocked module after shield activation.
 - **Current Observation**: 100% compatibility is the target, but current implementation may break dynamic dependency chains.
 - **Mitigation**: Use `VELO_SHIELD_MODE=dry_run` for auditing in production environments with complex dependencies.
+- **Hardening Roadmap**: See **[IMPORT_SHIELD_HARDENING.md](./IMPORT_SHIELD_HARDENING.md)** for detailed post-mortem of the Jan 2026 bypass and tiered defense plan.
 - **Systematic Goal**: 
     1. **Pre-spawn Analysis**: Static analysis of requirements to identify required sensitive modules.
     2. **Trusted Profiles**: Pre-loading verified framework dependencies into `sys.modules` before shield lock-in.
@@ -117,6 +118,7 @@ AI Agents often inadvertently leak sensitive information through hardcoded absol
 - **2026-01-06**: Reached **TITANIUM Certification**. Verified defense against the "Three Sins".
 - **2026-01-06**: Rectified `velo serve` security divergence by replacing environment blacklist with `EnvironmentShield` whitelist.
 - **2026-01-10**: Institutionalized **SEC-L01/L02/L03** (The Sin of Leakage) following a critical path leakage incident.
+- **2026-01-26**: Patched **SEC-2026-001** (ImportShield Bypass). Successfully defended against `sys.path` tampering in the "Sin of Collision" attack suite.
 
 ---
 *Conversation references: 5feed919-71ef-413d-a2bc-8d35dad5f505 (Certification), Phase 6.1.1 Audit, c3049c7e (Leakage Fix)*

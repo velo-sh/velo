@@ -159,8 +159,8 @@ run_locally() {
             ;;
         *)
             # The heart of the Universal Driver
-            export EXTRA_RUST_ARGS="${EXTRA_RUST_ARGS[*]}"
-            export EXTRA_PY_ARGS="${EXTRA_PY_ARGS[*]}"
+            export EXTRA_RUST_ARGS="${EXTRA_RUST_ARGS[*]:-}"
+            export EXTRA_PY_ARGS="${EXTRA_PY_ARGS[*]:-}"
             run_full_ci "$TIER"
             ;;
     esac
