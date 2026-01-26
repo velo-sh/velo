@@ -759,6 +759,14 @@ class ZygoteServer:
         self.preload_complete.set()
         LogUtils.log("Zygote Fully Preloaded and Ready for Warm Forks.")
 
+        # Tier 1 Security Hardening: Scrub runtime from sys.path
+        try:
+            from velo_zygote.v_shield import ImportShield
+
+            ImportShield.scrub_runtime_path()
+        except Exception:
+            pass
+
     def _preload_app_and_warming_safe(self) -> None:
         try:
             self._preload_app_and_warming()

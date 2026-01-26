@@ -2,6 +2,7 @@ import os
 import sys
 import types
 from collections.abc import Sequence
+from importlib.machinery import PathFinder
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,15 @@ try:
     from .settings import velo_config
 except (ImportError, ValueError):
     from settings import velo_config  # type: ignore[no-redef]
+
+
+class VeloImportShieldViolation(BaseException):
+    """
+    Critical security violation raised by the Import Shield.
+    Inherits from BaseException to prevent accidental swallowing by 'except Exception'.
+    """
+
+    pass
 
 
 class VeloRuntimeShield:
@@ -56,8 +66,13 @@ class VeloRuntimeShield:
 
         sys.meta_path.insert(0, cls(runtime_root))  # type: ignore
 
-    # Compatibility for v_fork.py which calls .activate()
-    activate = install
+    @classmethod
+    def activate(cls) -> None:
+        """
+        Explicitly activate enforcement (Pattern 746).
+        """
+        cls.install()
+        cls._active = True
 
     def find_spec(
         self,
@@ -68,6 +83,10 @@ class VeloRuntimeShield:
         """
         The Gatekeeper Logic.
         """
+        # 0. Recursion Guard & Activation Check
+        if not VeloRuntimeShield._active or fullname.startswith("importlib") or fullname == "velo_zygote":
+            return None
+
         # 1. Allow authorized namespace
         if fullname.startswith("velo_zygote"):
             return None
@@ -82,15 +101,12 @@ class VeloRuntimeShield:
         # We must determine if this import resolves to the RUNTIME ROOT (Block)
         # or to a user-space file (Allow).
 
-        # Use PathFinder to simulate standard resolution WITHOUT triggering meta_path recursion.
-        from importlib.machinery import PathFinder
-
         try:
             # We use the current sys.path (or the path argument passed to find_spec)
             search_path = path if path is not None else sys.path
             spec = PathFinder.find_spec(fullname, path=search_path)
-        except ImportError:
-            # If PathFinder can't find it, we permit continuation (it will fail later anyway)
+        except (ImportError, ValueError, AttributeError):
+            # If resolution fails, we permit continuation
             spec = None
 
         if spec and spec.origin:
@@ -106,9 +122,9 @@ class VeloRuntimeShield:
                         sys.stderr.write(f"🛡️ [ImportShield] BLOCKED: {msg} (Origin: {origin_path})\n")
                     except Exception:
                         pass
-                    raise ImportError(msg)
-            except OSError:
-                pass
+                    raise VeloImportShieldViolation(msg)
+            except (OSError, VeloImportShieldViolation):
+                raise
 
         return None
 
@@ -119,18 +135,38 @@ class VeloRuntimeShield:
         if not any(isinstance(f, cls) for f in sys.meta_path):
             cls.install()
 
+    @classmethod
+    def scrub_runtime_path(cls) -> None:
+        """
+        Active Path Scrubbing (Tier 1 Hardening).
+        Removes the Velo runtime directory from sys.path to prevent 'Accidental' leaks
+        and shadowing by framework internals.
+        """
+        runtime_root = os.path.dirname(os.path.abspath(__file__))
+        real_runtime = os.path.realpath(runtime_root)
+
+        # 1. Direct path removal
+        while runtime_root in sys.path:
+            sys.path.remove(runtime_root)
+
+        # 2. Realpath removal
+        while real_runtime in sys.path:
+            sys.path.remove(real_runtime)
+
+        # 3. Trailing slash removal
+        r_strip = real_runtime.rstrip(os.sep)
+        while r_strip in sys.path:
+            sys.path.remove(r_strip)
+
 
 # Legacy Alias for backward compatibility if needed
 ImportShield = VeloRuntimeShield
 
 
 # RFC-0012 Phase 11.3: Auto-install when environment variable is set.
-# This ensures protection even when Zygote falls back to direct uvicorn mode.
+# Activation remains EXPLICIT via .activate() to avoid Zygote parent corruption.
 if os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1":
     ImportShield.install()
-    # Zygote itself must NOT be shielded from its own internal modules (Trap 178.4)
-    if os.environ.get("VELO_IS_ZYGOTE") != "1":
-        ImportShield._active = True
 
 
 class PathValidator:
