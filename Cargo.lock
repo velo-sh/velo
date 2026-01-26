@@ -3220,6 +3220,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "uuid",
  "velo-core",

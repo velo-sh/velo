@@ -54,6 +54,7 @@ serde = { version = "1.0", features = ["derive"] }
 default = ["embedded_uv", "granian_native"]
 embedded_uv = []
 granian_native = []
+sandbox_disabled = []
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

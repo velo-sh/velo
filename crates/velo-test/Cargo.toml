@@ -15,6 +15,7 @@ clap = { version = "4.5.54", features = ["derive"] }
 tokio = { version = "1", features = ["full", "net"] }
 uuid = { version = "1.7", features = ["v4", "v7"] }
 indicatif = "0.17"
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
