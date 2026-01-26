@@ -1073,7 +1073,7 @@ pub fn run_server(
         Some(args.app.as_str())
     };
 
-    if use_zygote && velo_core::zygote::is_supported() {
+    if use_zygote && velo_core::zygote::is_supported() && !args.dry_run {
         let socket_path = velo_core::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
         let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
 
