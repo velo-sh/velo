@@ -338,7 +338,7 @@ async def handle_shutdown(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[s
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
-    server.worker_registry.kill_all()
+    server._cleanup()
     # RFC-0012 C.6: Schedule exit for next tick to allow sending Ack
     asyncio.get_event_loop().call_later(0.01, lambda: os._exit(0))
     return {"type": "Ack"}
@@ -923,6 +923,16 @@ class ZygoteServer:
 
             await asyncio.sleep(1.0)  # Slower check, ReplenishPool command triggers immediate fill
 
+    def _cleanup(self) -> None:
+        """Cleanup resources on exit (socket, workers)."""
+        self.worker_registry.kill_all()
+        if not self.is_abstract and os.path.exists(self.socket_path):
+            try:
+                os.unlink(self.socket_path)
+                LogUtils.log(f"Cleaned up socket at {self.socket_path}")
+            except OSError as e:
+                LogUtils.log(f"Failed to cleanup socket: {e}")
+
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
             # P0 Production: Graceful shutdown chain
@@ -939,8 +949,10 @@ class ZygoteServer:
                 LogUtils.log(f"Force killing {len(remaining)} unresponsive workers...")
                 self.worker_registry.force_kill(remaining)
 
-            # Phase 3: Exit cleanly
-            LogUtils.log("Graceful shutdown complete.")
+            # Phase 3: Cleanup resources (Socket, Registry) and Exit
+            # SEC-P0-006: Ensure socket is deleted even if we use os._exit
+            LogUtils.log("Graceful shutdown complete. Cleaning up...")
+            self._cleanup()
             os._exit(0)
 
         # Use standard signal.signal for reliable termination even if loop is hung
