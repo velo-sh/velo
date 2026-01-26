@@ -230,6 +230,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "velo-test-${{ matrix.crate }}"
@@ -243,7 +244,7 @@ jobs:
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: "Test: ${{ matrix.crate }}"
-        run: cargo test -p ${{ matrix.crate }}
+        run: cargo nextest run -p ${{ matrix.crate }}
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough

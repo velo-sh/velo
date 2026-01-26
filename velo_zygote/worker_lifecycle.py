@@ -59,6 +59,27 @@ class IdlePool:
                 # Slow decay
                 self._target_size = max(self._min_size, self._target_size - 1)
 
+    def get_metrics(self) -> dict[str, Any]:
+        """Return Prometheus-style metrics for monitoring.
+
+        Metrics:
+        - idle_pool_size: Current number of idle workers
+        - idle_pool_target: Target pool size (adaptive)
+        - idle_pool_min: Minimum pool size
+        - idle_pool_max: Maximum pool size
+        - idle_pool_utilization: size / target ratio (0-1)
+        """
+        with self.lock:
+            current = len(self.pool)
+            target = self._target_size
+            return {
+                "idle_pool_size": current,
+                "idle_pool_target": target,
+                "idle_pool_min": self._min_size,
+                "idle_pool_max": self._max_size,
+                "idle_pool_utilization": current / target if target > 0 else 0.0,
+            }
+
 
 class ZygoteState(Enum):
     """
@@ -120,6 +141,27 @@ class WorkerRegistry:
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
             return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Return Prometheus-style metrics for monitoring.
+
+        Metrics:
+        - worker_registry_count: Total registered workers
+        - worker_registry_ttl: Worker time-to-live setting
+        - worker_registry_oldest_age: Age of oldest worker (seconds)
+        """
+        now = time.time()
+        with self._lock:
+            count = len(self.workers)
+            oldest_age = 0.0
+            if self.workers:
+                oldest_start = min(start for start, _ in self.workers.values())
+                oldest_age = now - oldest_start
+            return {
+                "worker_registry_count": count,
+                "worker_registry_ttl": self.worker_ttl,
+                "worker_registry_oldest_age": round(oldest_age, 2),
+            }
 
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
