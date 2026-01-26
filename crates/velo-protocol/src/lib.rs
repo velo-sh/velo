@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Protocol constants driven by SSoT
+pub mod constants {
+    include!(concat!(env!("OUT_DIR"), "/constants.rs"));
+}
+
 /// Commands sent from Launcher to Zygote
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]

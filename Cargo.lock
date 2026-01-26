@@ -3167,6 +3167,7 @@ version = "0.1.0"
 dependencies = [
  "rmp-serde",
  "serde",
+ "toml",
  "uuid",
 ]
 

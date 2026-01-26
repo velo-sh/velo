@@ -21,7 +21,7 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
-pub use crate::common::constants::{MAX_MESSAGE_SIZE, PROTOCOL_VERSION};
+pub use velo_protocol::constants::{MAX_MESSAGE_SIZE, PROTOCOL_VERSION};
 
 pub use velo_protocol::{ZygoteCommand, ZygoteResponse};
 
