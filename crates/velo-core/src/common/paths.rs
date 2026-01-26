@@ -38,7 +38,10 @@ impl VeloPaths {
             && !socket_override.is_empty()
         {
             let path = PathBuf::from(&socket_override);
-            log::debug!("[PATHS] socket_dir: VELO_SOCKET_DIR override={}", socket_override);
+            log::debug!(
+                "[PATHS] socket_dir: VELO_SOCKET_DIR override={}",
+                socket_override
+            );
 
             // Validate length constraint even for overrides (SEC-004)
             if path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
@@ -52,7 +55,10 @@ impl VeloPaths {
                 return path;
             }
             // SEC-004: If override is too long, we fall back to user state dir (RFC-0012 Path Sovereignty)
-            log::debug!("[PATHS] socket_dir: override too long ({}), falling back", path.to_string_lossy().len());
+            log::debug!(
+                "[PATHS] socket_dir: override too long ({}), falling back",
+                path.to_string_lossy().len()
+            );
             let dir_name = format!("velo-{}", uid);
             let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
             let fallback = PathBuf::from(home)
@@ -73,7 +79,11 @@ impl VeloPaths {
         // Try environment-specific override first (e.g., path_macos_ci_socket_parent)
         let env_key = format!("path_{}_{}_socket_parent", os_name, env_mode);
         let base_key = format!("path_{}_base_socket_parent", os_name);
-        log::debug!("[PATHS] socket_dir: trying config keys: {} / {}", env_key, base_key);
+        log::debug!(
+            "[PATHS] socket_dir: trying config keys: {} / {}",
+            env_key,
+            base_key
+        );
 
         let parent_path = Self::get_path_config(&env_key)
             .or_else(|| Self::get_path_config(&base_key))
@@ -89,7 +99,11 @@ impl VeloPaths {
         // Expand placeholders
         let expanded_parent = Self::expand_path_placeholders(&parent_path);
         let dir_name = format!("velo-{}", uid);
-        log::debug!("[PATHS] socket_dir: expanded={}, dir_name={}", expanded_parent, dir_name);
+        log::debug!(
+            "[PATHS] socket_dir: expanded={}, dir_name={}",
+            expanded_parent,
+            dir_name
+        );
 
         let socket_path = PathBuf::from(expanded_parent).join(&dir_name);
 

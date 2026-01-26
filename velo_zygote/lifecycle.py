@@ -172,7 +172,7 @@ class WorkerRegistry:
 class ReinitHooks:
     """
     Layer 3: Hook-based Re-initialization system.
-    
+
     SPEC-0005 Compliance: Singleton pattern with encapsulated hook methods.
     All post-fork re-initialization logic is centralized here.
     """
@@ -346,4 +346,3 @@ reinit_hooks = ReinitHooks.get_instance()
 def post_fork_reinit(keep_fds: set[int] | None = None) -> None:
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
     reinit_hooks.run_all(keep_fds=keep_fds)
-
