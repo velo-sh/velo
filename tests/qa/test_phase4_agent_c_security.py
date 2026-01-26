@@ -82,17 +82,22 @@ dependencies = {json.dumps(deps or [])}
 
     def cleanup(self) -> None:
         # Restore permissions before cleanup
+        # CRITICAL: Skip symlinks to avoid modifying target files (like the system Python binary)
         for root, dirs, files in os.walk(self.path):
             for d in dirs:
-                try:
-                    os.chmod(os.path.join(root, d), 0o755)
-                except Exception:
-                    pass
+                dir_path = os.path.join(root, d)
+                if not os.path.islink(dir_path):
+                    try:
+                        os.chmod(dir_path, 0o755)
+                    except Exception:
+                        pass
             for f in files:
-                try:
-                    os.chmod(os.path.join(root, f), 0o644)
-                except Exception:
-                    pass
+                file_path = os.path.join(root, f)
+                if not os.path.islink(file_path):
+                    try:
+                        os.chmod(file_path, 0o644)
+                    except Exception:
+                        pass
         shutil.rmtree(self.path, ignore_errors=True)
 
     def __enter__(self) -> "SecureProject":
