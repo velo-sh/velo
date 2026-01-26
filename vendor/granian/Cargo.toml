@@ -6,8 +6,8 @@ authors = ["Giovanni Barillari <g@baro.dev>", "Velo Team"]
 license = "BSD-3-Clause"
 edition = "2024"
  
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(PyPy)', 'cfg(Py_3_10)', 'cfg(Py_GIL_DISABLED)'] }
+[lints]
+workspace = true
 
 # This is a vendored fork of Granian, modified for Velo integration
 # Original: https://github.com/emmett-framework/granian

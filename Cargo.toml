@@ -6,8 +6,18 @@ members = [
     "crates/velo-test",
     "crates/velo-cli",
     "velo_macros",
+    "vendor/granian",
 ]
 default-members = ["crates/velo-cli"]
+
+[workspace.lints.rust]
+# Allow too_many_arguments due to vendored code (granian)
+# This allows us to resume strict CI/CD without --no-verify
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(sandbox_disabled)', 'cfg(PyPy)', 'cfg(Py_3_10)', 'cfg(Py_GIL_DISABLED)'] }
+
+[workspace.lints.clippy]
+# Global strictness restored.
+# Specific allowances will be moved to vendor/granian.
 
 # Shared profile settings
 [profile.dev]

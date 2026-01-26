@@ -104,7 +104,8 @@ fn main() {
     enforce_environment_ssot();
 
     // 1. Re-run if config changes
-    println!("cargo:rerun-if-changed=config/constants.toml");
+    println!("cargo:rerun-if-changed=../../config/constants.toml");
+    println!("cargo:rerun-if-changed=../../scripts/sync-constants.py");
     println!("cargo:rerun-if-changed=../../assets/");
 
     // SSOT: Force recompilation when Python interpreter changes
@@ -234,15 +235,19 @@ fn generate_python_constants(_config: &Constants, _git_hash: &str) {
             println!("cargo:warning=✅ Generated velo_zygote/constants.py via sync-constants.py");
         }
         Ok(s) => {
-            // Script failed, emit warning but don't fail build
-            println!(
-                "cargo:warning=⚠️  sync-constants.py exited with code {:?}",
+            panic!(
+                "\n\n[SSOT FATAL] sync-constants.py failed with code {:?}.\n\
+                 This prevents Rust and Python constants from remaining in sync.\n\
+                 Fix the TOML or the script before proceeding.\n\n",
                 s.code()
             );
         }
         Err(e) => {
-            // python3 not available, emit warning
-            println!("cargo:warning=⚠️  Could not run sync-constants.py: {}", e);
+            panic!(
+                "\n\n[SSOT FATAL] Could not run sync-constants.py: {}.\n\
+                 Ensure 'python3' is available and in your PATH.\n\n",
+                e
+            );
         }
     }
 }

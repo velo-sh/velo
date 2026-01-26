@@ -1,3 +1,7 @@
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::wrong_self_convention)]
+
 // Original Copyright (c) 2022 Giovanni Barillari
 // Modified by Velo Team for Velo Runtime, 2026
 // SPDX-License-Identifier: BSD-3-Clause

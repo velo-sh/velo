@@ -232,7 +232,7 @@ jobs:
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: Run Rust tests
-        run: cargo test
+        run: cargo test --workspace
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
@@ -259,7 +259,7 @@ jobs:
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Format

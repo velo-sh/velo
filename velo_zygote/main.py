@@ -51,14 +51,13 @@ except (ImportError, ValueError):
         from .v_shield import PathValidator
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
+        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
         from settings import velo_config  # type: ignore[no-redef, import-not-found]
         from transport_sync import ProtocolError, ZygoteTransport  # type: ignore[no-redef, import-not-found]
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
-
-        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
