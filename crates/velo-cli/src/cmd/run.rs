@@ -142,7 +142,7 @@ fn run_vibe_mode(cmd: &RunCmd) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         use colored::Colorize;
-        use velo_core::v_live::engine::VibeEngine;
+        use velo_serve::v_live::engine::VibeEngine;
 
         // Determine port: CLI arg > Env Var > Default
         let port = if let Ok(env_port) = std::env::var("VELO_VIBE_PORT") {

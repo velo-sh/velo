@@ -105,7 +105,7 @@ async fn run_vibe_test_mode(test_path: &Path) -> Result<()> {
     let target = test_path.to_path_buf();
     let gateway_addr = "127.0.0.1:8080";
 
-    let engine = velo_core::v_live::engine::VibeEngine::new(target, gateway_addr);
+    let engine = velo_serve::v_live::engine::VibeEngine::new(target, gateway_addr);
     engine.start().await?;
 
     Ok(())

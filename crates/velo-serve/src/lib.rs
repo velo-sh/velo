@@ -15,6 +15,7 @@ pub mod worker;
 pub mod granian;
 pub mod proxy;
 pub mod rsgi;
+pub mod v_live;
 
 pub use crate::config::{LogFormat, ServeArgs};
 pub use crate::error::ServeError;

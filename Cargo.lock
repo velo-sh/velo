@@ -3108,6 +3108,7 @@ dependencies = [
  "tracing",
  "uuid",
  "velo-core",
+ "velo-protocol",
  "velo-serve",
  "velo-test",
  "which",
@@ -3152,12 +3153,21 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tokio-tungstenite 0.21.0",
  "toml",
  "tracing",
  "uuid",
+ "velo-protocol",
  "velo_macros",
  "which",
+]
+
+[[package]]
+name = "velo-protocol"
+version = "0.1.0"
+dependencies = [
+ "rmp-serde",
+ "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -3205,6 +3215,7 @@ dependencies = [
  "tower-service",
  "uuid",
  "velo-core",
+ "velo-protocol",
 ]
 
 [[package]]
@@ -3224,6 +3235,8 @@ dependencies = [
  "tokio",
  "uuid",
  "velo-core",
+ "velo-protocol",
+ "velo-serve",
 ]
 
 [[package]]

@@ -9,16 +9,18 @@ workspace = true
 
 [dependencies]
 velo-core = { path = "../velo-core" }
-anyhow = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-log = "0.4"
-colored = "2.0"
-clap = { version = "4.5.54", features = ["derive"] }
-tokio = { version = "1", features = ["full", "net"] }
-uuid = { version = "1.7", features = ["v4", "v7"] }
-indicatif = "0.17"
-tempfile = "3"
+velo-serve = { path = "../velo-serve" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+colored = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+indicatif = { workspace = true }
+tempfile = { workspace = true }
+velo-protocol = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

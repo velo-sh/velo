@@ -274,8 +274,8 @@ fn suggest_app(target: &str, python_path: &Path, project_dir: &Path) -> Option<S
 /// This starts the VibeEngine with the app as the target.
 #[tokio::main]
 async fn run_vibe_serve_mode(cmd: &ServeCmd) -> Result<()> {
+    use crate::v_live::engine::VibeEngine;
     use colored::Colorize;
-    use velo_core::v_live::engine::VibeEngine;
 
     let app = cmd.app.clone().unwrap_or_else(|| "main:app".to_string());
     let gateway_addr = format!("{}:{}", cmd.host, cmd.port);
