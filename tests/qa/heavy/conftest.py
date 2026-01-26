@@ -242,7 +242,11 @@ class VeloServeFactory:
         import hashlib
 
         h = hashlib.md5(str(self.test_env.root).encode()).hexdigest()[:8]
-        socket_dir = Path("/tmp") / f"velo-test-{h}"
+        # FIX: Append random suffix to prevent race conditions
+        import uuid
+
+        rand_suffix = str(uuid.uuid4())[:8]
+        socket_dir = Path("/tmp") / f"velo-test-{h}-{rand_suffix}"
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
 

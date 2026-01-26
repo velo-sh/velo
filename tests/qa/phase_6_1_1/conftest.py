@@ -310,9 +310,13 @@ class VeloServeFactory:
         # RFC-0011/0012: Ensure socket path does NOT exceed 104 chars (macOS limit)
         # We prioritize a short, stable path in /tmp for tests to avoid deep nesting issues.
         import hashlib
+        import uuid
 
         h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
-        socket_dir = Path("/tmp") / f"velo-test-{h}"
+        # FIX: Append random suffix to prevent race conditions with lingering Zygotes from previous tests
+        # (See test_WB_009 failure analysis)
+        rand_suffix = str(uuid.uuid4())[:8]
+        socket_dir = Path("/tmp") / f"velo-test-{h}-{rand_suffix}"
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
 
