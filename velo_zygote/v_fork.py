@@ -9,12 +9,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 try:
-    from .lifecycle import WorkerRegistry, post_fork_reinit
     from .utils import LogUtils
+    from .worker_lifecycle import WorkerRegistry, post_fork_reinit
 except (ImportError, ValueError):
     from utils import LogUtils  # type: ignore[no-redef, import-not-found]
-
-    from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
+    from worker_lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
 
 
 class InboundSharedMemory:

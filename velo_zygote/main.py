@@ -30,7 +30,6 @@ from typing import Any
 
 try:
     from velo_zygote.constants import PROTOCOL_VERSION
-    from velo_zygote.lifecycle import IdlePool, WorkerRegistry, ZygoteState
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
@@ -38,10 +37,10 @@ try:
     from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.v_fork import ForkHandler
     from velo_zygote.v_shield import PathValidator
+    from velo_zygote.worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION
-        from .lifecycle import IdlePool, WorkerRegistry, ZygoteState
         from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
@@ -49,15 +48,16 @@ except (ImportError, ValueError):
         from .utils import ForkRateLimiter, LogUtils, request_context
         from .v_fork import ForkHandler
         from .v_shield import PathValidator
+        from .worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
-        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
         from settings import velo_config  # type: ignore[no-redef, import-not-found]
         from transport_sync import ProtocolError, ZygoteTransport  # type: ignore[no-redef, import-not-found]
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
+        from worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
