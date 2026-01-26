@@ -6,7 +6,7 @@ Velo QA: Phase 3 E2E Real-World Tests
 Tests that simulate REAL user environments, not dev environment!
 
 Critical: These tests run OUTSIDE the velo source directory to catch
-path-related bugs like DEF-003 (velo_zygote/zygote_main.py not found).
+path-related bugs like DEF-003 (velo_zygote/main.py not found).
 """
 
 import os
@@ -101,7 +101,7 @@ class TestZygoteInRealUserEnv:
 
             code, stdout, stderr, _ = env.run_velo(["run", "--zygote", "hello.py"])
 
-            # Should NOT fail with "Could not find velo_zygote/zygote_main.py"
+            # Should NOT fail with "Could not find velo_zygote/main.py"
             assert "Could not find velo_zygote" not in stderr, (
                 f"DEF-003: Zygote can't find main.py in user project!\n{stderr}"
             )

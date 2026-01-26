@@ -232,7 +232,7 @@ def test_phase14_iron_chaos_audit():
 
     time.sleep(1.0)
     print("[Chaos] Slapping Zygote (SIGKILL)...")
-    subprocess.run(["pkill", "-9", "-f", "velo_zygote/zygote_main.py"], capture_output=True, timeout=T_SHORT)
+    subprocess.run(["pkill", "-9", "-f", "velo_zygote/main.py"], capture_output=True, timeout=T_SHORT)
 
     # 3. Wait for test to finish or hang
     try:
@@ -311,7 +311,7 @@ def test_phase14_orphan_storm_prevention():
 
     ps_out = subprocess.check_output(["ps", "-Ao", "pid,args"], text=True)
     for line in ps_out.splitlines():
-        if ("velo_zygote/zygote_main.py" in line or "velo zygote start" in line) and cwd_name in line:
+        if ("velo_zygote/main.py" in line or "velo zygote start" in line) and cwd_name in line:
             try:
                 pid = int(line.strip().split()[0])
                 os.kill(pid, 9)

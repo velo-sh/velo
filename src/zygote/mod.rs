@@ -126,7 +126,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
 /// 6. Current working directory (fallback)
 #[allow(clippy::collapsible_if)]
 pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
-    const ZYGOTE_MAIN: &str = "velo_zygote/zygote_main.py";
+    const ZYGOTE_MAIN: &str = "velo_zygote/main.py";
 
     // 1. Check VELO_ZYGOTE_PATH environment variable (explicit override)
     if let Ok(env_path) = std::env::var("VELO_ZYGOTE_PATH") {

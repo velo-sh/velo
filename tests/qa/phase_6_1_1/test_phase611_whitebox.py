@@ -39,7 +39,7 @@ class TestWhiteBoxPythonStress:
     def test_WB_002_STRESS_zombie_accumulation(self, velo_serve_fixture):
         """WB-002 STRESS: Rapid worker kills to trigger zombie accumulation.
 
-        Target: velo_zygote/zygote_main.py:398-402
+        Target: velo_zygote/main.py:398-402
 
         We rapidly kill and respawn workers, racing the reaper.
         If zombies accumulate, the reaper has a bug.
@@ -83,7 +83,7 @@ class TestWhiteBoxPythonStress:
     def test_WB_003_STRESS_eintr_signal_storm(self, velo_serve_fixture):
         """WB-003 STRESS: Signal storm during waitpid to trigger EINTR handling.
 
-        Target: velo_zygote/zygote_main.py:679-680
+        Target: velo_zygote/main.py:679-680
 
         We send a STORM of signals to Zygote while simultaneously killing workers.
         If the bare 'except Exception: break' swallows EINTR, zombies will accumulate.
@@ -137,7 +137,7 @@ class TestWhiteBoxPythonStress:
     def test_WB_004_cross_app_affinity(self, velo_serve_fixture):
         """WB-004: Handshake should verify app affinity to prevent cross-talk.
 
-        Target: velo_zygote/zygote_main.py:748-756
+        Target: velo_zygote/main.py:748-756
 
         This is a DESIGN DEFECT test - it will FAIL to prove the vulnerability exists.
         """
@@ -181,7 +181,7 @@ class TestWhiteBoxPythonStress:
     def test_WB_005_STRESS_fork_bomb_throttling(self, velo_serve_fixture):
         """WB-005 STRESS (NEW): Rapid Fork requests to test throttling.
 
-        Target: velo_zygote/zygote_main.py (ForkHandler + ForkRateLimiter)
+        Target: velo_zygote/main.py (ForkHandler + ForkRateLimiter)
 
         If Zygote has no throttling, rapid Forks will exhaust PIDs or memory.
         Test verifies rate limiting returns "Rate limit exceeded" errors.
@@ -391,7 +391,7 @@ class TestWhiteBoxProtocolCompliance:
     def test_WB_009_endianness_consistency(self, velo_serve_fixture):
         """WB-009: Verify IPC protocol uses little-endian length prefix.
 
-        Target: velo_zygote/zygote_main.py:264,285 and src/zygote/ipc.rs:397
+        Target: velo_zygote/main.py:264,285 and src/zygote/ipc.rs:397
 
         This test verifies:
         1. Little-endian length prefix is correctly parsed by Zygote

@@ -52,7 +52,7 @@ It is NOT a vulnerability in Velo's implementation. Our architecture is fork-saf
 Related:
 - DEF-08-013: Original audit finding (RESOLVED by architecture)
 - RFC-0028: Zygote lifecycle specification
-- velo_zygote/zygote_main.py: ZygoteServer._async_preload() implementation
+- velo_zygote/main.py: ZygoteServer._async_preload() implementation
 """
 
 import multiprocessing

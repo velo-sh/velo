@@ -25,6 +25,13 @@ _pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)
 
+# DEF-003: Runtime Isolation (SPEC-0005)
+# Remove the script's directory from sys.path to prevent namespace collision
+# (e.g. user 'main.py' vs 'velo_zygote/main.py')
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir in sys.path:
+    sys.path.remove(_script_dir)
+
 # Standard bootstrap
 try:
     from velo_zygote import bootstrap
@@ -141,6 +148,13 @@ def _wrap_app_with_middleware(app_path: str) -> Any:
     import importlib
 
     module_name, attr_name = app_path.rsplit(":", 1)
+
+    # DEF-003: Runtime Isolation (SPEC-0005)
+    # If 'main' is already loaded (e.g. from Velo Runtime), we MUST unload it
+    # so that import_module('main') searches sys.path for the user's app.
+    if module_name == "main" and "main" in sys.modules:
+        del sys.modules["main"]
+
     module = importlib.import_module(module_name)
     app = getattr(module, attr_name)
     return UDSProxyMiddleware(app)

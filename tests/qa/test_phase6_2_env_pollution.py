@@ -125,11 +125,11 @@ class TestEnvironmentPollutionRegression:
         expected_zygote = velo_path.parent.parent.parent / "velo_zygote" / "main.py"
 
         # This is a sanity check that our path sensing would find the right module
-        assert expected_zygote.exists(), f"velo_zygote/zygote_main.py not found at {expected_zygote}"
+        assert expected_zygote.exists(), f"velo_zygote/main.py not found at {expected_zygote}"
 
         # Read a few lines to verify it's the right file
         content = expected_zygote.read_text()
-        assert "ZygoteServer" in content, "velo_zygote/zygote_main.py doesn't contain ZygoteServer"
+        assert "ZygoteServer" in content, "velo_zygote/main.py doesn't contain ZygoteServer"
 
     def test_reg_62_013_python_architecture_consistency(self):
         """
