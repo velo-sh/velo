@@ -170,161 +170,180 @@ class WorkerRegistry:
 
 
 class ReinitHooks:
-    """Layer 3: Hook-based Re-initialization system."""
+    """
+    Layer 3: Hook-based Re-initialization system.
+    
+    SPEC-0005 Compliance: Singleton pattern with encapsulated hook methods.
+    All post-fork re-initialization logic is centralized here.
+    """
+
+    _instance: "ReinitHooks | None" = None
 
     def __init__(self) -> None:
         self.hooks: list[Any] = []
 
+    @classmethod
+    def get_instance(cls) -> "ReinitHooks":
+        """Get the singleton ReinitHooks registry."""
+        if cls._instance is None:
+            cls._instance = cls()
+            cls._instance._register_default_hooks()
+        return cls._instance
+
     def register(self, hook_func: Any) -> None:
+        """Register a hook to run after fork."""
         self.hooks.append(hook_func)
 
     def run_all(self, *args: Any, **kwargs: Any) -> None:
+        """Execute all registered hooks."""
         for hook in self.hooks:
             try:
                 hook(*args, **kwargs)
             except Exception as e:
                 LogUtils.log(f"Hook Failure: {hook.__name__}: {e}")
 
+    def _register_default_hooks(self) -> None:
+        """Register the standard post-fork hooks."""
+        self.register(self.hook_security)
+        self.register(self.hook_computing)
+        self.register(self.hook_telemetry)
+        self.register(self.hook_isolation)
 
-# Global hooks registry
-reinit_hooks = ReinitHooks()
-
-
-def hook_security(keep_fds: set[int] | None = None) -> None:
-    """Industrial Grade Cord-Cutting."""
-    # 1. Close all non-standard file descriptors
-    try:
-        from .constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
-    except (ImportError, ValueError):
-        from constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR  # type: ignore[no-redef, import-not-found]
-
-    fd_dir = PATH_MACOS_FD_DIR if sys.platform == "darwin" else PATH_LINUX_FD_DIR
-    try:
-        fds = os.listdir(fd_dir)
-        for fd_str in fds:
-            try:
-                fd = int(fd_str)
-                if fd > 2 and (keep_fds is None or fd not in keep_fds):
-                    # SEC-P0-001: Close FDs from parent Zygote
-                    os.close(fd)
-            except (ValueError, OSError):
-                continue
-    except OSError as e:
-        LogUtils.log(
-            f"Forensic Cleanup Warning: Failed to list descriptors in '{fd_dir}': {e}. Falling back to range scan."
-        )
-        # Fallback for systems without /proc or /dev/fd
-        for fd in range(3, 1024):
-            if keep_fds is None or fd not in keep_fds:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-
-    # 2. Reset signal handlers
-    for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD]:
+    @staticmethod
+    def hook_security(keep_fds: set[int] | None = None, **kwargs: Any) -> None:
+        """Industrial Grade Cord-Cutting."""
+        # 1. Close all non-standard file descriptors
         try:
-            signal.signal(sig, signal.SIG_DFL)
+            from .constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR
+        except (ImportError, ValueError):
+            from constants import PATH_LINUX_FD_DIR, PATH_MACOS_FD_DIR  # type: ignore[no-redef, import-not-found]
+
+        fd_dir = PATH_MACOS_FD_DIR if sys.platform == "darwin" else PATH_LINUX_FD_DIR
+        try:
+            fds = os.listdir(fd_dir)
+            for fd_str in fds:
+                try:
+                    fd = int(fd_str)
+                    if fd > 2 and (keep_fds is None or fd not in keep_fds):
+                        # SEC-P0-001: Close FDs from parent Zygote
+                        os.close(fd)
+                except (ValueError, OSError):
+                    continue
+        except OSError as e:
+            LogUtils.log(
+                f"Forensic Cleanup Warning: Failed to list descriptors in '{fd_dir}': {e}. Falling back to range scan."
+            )
+            # Fallback for systems without /proc or /dev/fd
+            for fd in range(3, 1024):
+                if keep_fds is None or fd not in keep_fds:
+                    try:
+                        os.close(fd)
+                    except Exception:
+                        pass
+
+        # 2. Reset signal handlers
+        for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGCHLD]:
+            try:
+                signal.signal(sig, signal.SIG_DFL)
+            except Exception:
+                pass
+
+        # 2.5 Asyncio Event Loop Cleanup (DEF-VTEST-ASYNCIO)
+        # Forked workers inherit the parent Zygote's asyncio event loop with scheduled tasks.
+        # We must cancel all tasks and reset the event loop to prevent socket interference.
+        try:
+            import asyncio
+
+            try:
+                loop = asyncio.get_running_loop()
+                # Cancel all tasks inherited from parent
+                for task in asyncio.all_tasks(loop):
+                    task.cancel()
+            except RuntimeError:
+                pass  # No running loop
+            # Create a new event loop for this child process
+            asyncio.set_event_loop(asyncio.new_event_loop())
         except Exception:
             pass
 
-    # 2.5 Asyncio Event Loop Cleanup (DEF-VTEST-ASYNCIO)
-    # Forked workers inherit the parent Zygote's asyncio event loop with scheduled tasks.
-    # We must cancel all tasks and reset the event loop to prevent socket interference.
-    try:
-        import asyncio
+        # 3. Re-seed random number generators
+        random.seed()
+
+        if "numpy" in sys.modules:
+            try:
+                import numpy as np
+
+                np.random.seed()
+            except Exception:
+                pass
+
+    @staticmethod
+    def hook_computing(**kwargs: Any) -> None:
+        """OpenMP and CUDA reset."""
+        if "torch" in sys.modules:
+            try:
+                import torch
+
+                if torch.cuda.is_available():  # type: ignore
+                    torch.cuda.empty_cache()  # type: ignore
+            except Exception:
+                pass
+
+        # RFC-0011 HPC-001: Restore threading environment post-fork
+        # Defaulting to 0 (which usually triggers logical CPU count in BLAS)
+        # or explicitly reading cpu_count.
+        import multiprocessing
 
         try:
-            loop = asyncio.get_running_loop()
-            # Cancel all tasks inherited from parent
-            for task in asyncio.all_tasks(loop):
-                task.cancel()
-        except RuntimeError:
-            pass  # No running loop
-        # Create a new event loop for this child process
-        asyncio.set_event_loop(asyncio.new_event_loop())
-    except Exception:
+            cpus = str(multiprocessing.cpu_count())
+            for var in [
+                "OMP_NUM_THREADS",
+                "MKL_NUM_THREADS",
+                "OPENBLAS_NUM_THREADS",
+                "VECLIB_MAXIMUM_THREADS",
+                "NUMEXPR_NUM_THREADS",
+            ]:
+                if var in os.environ:
+                    # Restore to CPU count for workers to ensure performance
+                    os.environ[var] = cpus
+        except Exception as e:
+            LogUtils.log(f"HPC Restoration Warning: {e}")
+
+    @staticmethod
+    def hook_telemetry(**kwargs: Any) -> None:
+        """Reset spans/trace context."""
+        # Placeholder for OpenTelemetry re-init
         pass
 
-    # 3. Re-seed random number generators
-    random.seed()
+    @staticmethod
+    def hook_isolation(**kwargs: Any) -> None:
+        """P0: Isolated TMPDIR per worker (RFC-0012: No hardcoded /tmp)."""
+        import tempfile
 
-    if "numpy" in sys.modules:
-        try:
-            import numpy as np
+        worker_pid = os.getpid()
+        # RFC-0012: Use system temp dir instead of hardcoded /tmp
+        system_tmp = tempfile.gettempdir()
+        worker_base = os.path.join(system_tmp, f"velo-worker-{worker_pid}")
 
-            np.random.seed()
-        except Exception:
-            pass
+        # P0: Isolated TMPDIR - prevents temp file collisions
+        worker_tmp = os.path.join(worker_base, "tmp")
+        os.makedirs(worker_tmp, exist_ok=True)
+        os.environ["TMPDIR"] = worker_tmp
+        os.environ["TMP"] = worker_tmp
+        os.environ["TEMP"] = worker_tmp
 
-
-def hook_computing(**kwargs: Any) -> None:
-    """OpenMP and CUDA reset."""
-    if "torch" in sys.modules:
-        try:
-            import torch
-
-            if torch.cuda.is_available():  # type: ignore
-                torch.cuda.empty_cache()  # type: ignore
-        except Exception:
-            pass
-
-    # RFC-0011 HPC-001: Restore threading environment post-fork
-    # Defaulting to 0 (which usually triggers logical CPU count in BLAS)
-    # or explicitly reading cpu_count.
-    import multiprocessing
-
-    try:
-        cpus = str(multiprocessing.cpu_count())
-        for var in [
-            "OMP_NUM_THREADS",
-            "MKL_NUM_THREADS",
-            "OPENBLAS_NUM_THREADS",
-            "VECLIB_MAXIMUM_THREADS",
-            "NUMEXPR_NUM_THREADS",
-        ]:
-            if var in os.environ:
-                # Restore to CPU count for workers to ensure performance
-                os.environ[var] = cpus
-    except Exception as e:
-        LogUtils.log(f"HPC Restoration Warning: {e}")
+        # P1: Socket namespace isolation
+        os.environ["VELO_WORKER_ID"] = str(worker_pid)
+        worker_socket_dir = os.path.join(worker_base, "sockets")
+        os.environ["VELO_WORKER_SOCKET_DIR"] = worker_socket_dir
+        os.makedirs(worker_socket_dir, exist_ok=True)
 
 
-def hook_telemetry(**kwargs: Any) -> None:
-    """Reset spans/trace context."""
-    # Placeholder for OpenTelemetry re-init
-    pass
-
-
-def hook_isolation(**kwargs: Any) -> None:
-    """P0: Isolated TMPDIR per worker (RFC-0012: No hardcoded /tmp)."""
-    import tempfile
-
-    worker_pid = os.getpid()
-    # RFC-0012: Use system temp dir instead of hardcoded /tmp
-    system_tmp = tempfile.gettempdir()
-    worker_base = os.path.join(system_tmp, f"velo-worker-{worker_pid}")
-
-    # P0: Isolated TMPDIR - prevents temp file collisions
-    worker_tmp = os.path.join(worker_base, "tmp")
-    os.makedirs(worker_tmp, exist_ok=True)
-    os.environ["TMPDIR"] = worker_tmp
-    os.environ["TMP"] = worker_tmp
-    os.environ["TEMP"] = worker_tmp
-
-    # P1: Socket namespace isolation
-    os.environ["VELO_WORKER_ID"] = str(worker_pid)
-    worker_socket_dir = os.path.join(worker_base, "sockets")
-    os.environ["VELO_WORKER_SOCKET_DIR"] = worker_socket_dir
-    os.makedirs(worker_socket_dir, exist_ok=True)
-
-
-reinit_hooks.register(hook_security)
-reinit_hooks.register(hook_computing)
-reinit_hooks.register(hook_telemetry)
-reinit_hooks.register(hook_isolation)
+# Global hooks registry (singleton access for backward compatibility)
+reinit_hooks = ReinitHooks.get_instance()
 
 
 def post_fork_reinit(keep_fds: set[int] | None = None) -> None:
     """RFC-0011 6A.2: Reset child process state using Hooks Registry."""
     reinit_hooks.run_all(keep_fds=keep_fds)
+

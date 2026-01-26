@@ -920,8 +920,7 @@ class ZygoteServer:
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
             # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
-            sys.stderr.write(f"\nZygote received signal {sig}. Cleaning up workers...\n")
-            sys.stderr.flush()
+            LogUtils.log(f"Zygote received signal {sig}. Cleaning up workers...")
             self.worker_registry.kill_all()
             # Use os._exit to ensure immediate death and no orphans
             os._exit(0)

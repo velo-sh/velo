@@ -30,6 +30,7 @@ impl VeloPaths {
     /// Get the canonical socket directory using hierarchical path resolution.
     pub fn socket_dir() -> PathBuf {
         let uid = unsafe { libc::getuid() };
+        log::debug!("[PATHS] socket_dir: resolving for uid={}", uid);
 
         // RFC-0012 Phase 6.5: Config-driven path resolution
         // Check for environment override first
@@ -37,6 +38,7 @@ impl VeloPaths {
             && !socket_override.is_empty()
         {
             let path = PathBuf::from(&socket_override);
+            log::debug!("[PATHS] socket_dir: VELO_SOCKET_DIR override={}", socket_override);
 
             // Validate length constraint even for overrides (SEC-004)
             if path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
@@ -46,15 +48,18 @@ impl VeloPaths {
                 if path.exists() {
                     let _ = ensure_socket_dir(&path);
                 }
+                log::debug!("[PATHS] socket_dir: using override path {:?}", path);
                 return path;
             }
             // SEC-004: If override is too long, we fall back to user state dir (RFC-0012 Path Sovereignty)
+            log::debug!("[PATHS] socket_dir: override too long ({}), falling back", path.to_string_lossy().len());
             let dir_name = format!("velo-{}", uid);
             let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
             let fallback = PathBuf::from(home)
                 .join(".local/state/velo/sockets")
                 .join(dir_name);
             let _ = ensure_socket_dir(&fallback);
+            log::debug!("[PATHS] socket_dir: fallback path {:?}", fallback);
             return fallback;
         }
 
@@ -68,6 +73,7 @@ impl VeloPaths {
         // Try environment-specific override first (e.g., path_macos_ci_socket_parent)
         let env_key = format!("path_{}_{}_socket_parent", os_name, env_mode);
         let base_key = format!("path_{}_base_socket_parent", os_name);
+        log::debug!("[PATHS] socket_dir: trying config keys: {} / {}", env_key, base_key);
 
         let parent_path = Self::get_path_config(&env_key)
             .or_else(|| Self::get_path_config(&base_key))
@@ -78,10 +84,12 @@ impl VeloPaths {
                     .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
                 format!("{}/.local/state/velo/sockets", home)
             });
+        log::debug!("[PATHS] socket_dir: parent_path={}", parent_path);
 
         // Expand placeholders
         let expanded_parent = Self::expand_path_placeholders(&parent_path);
         let dir_name = format!("velo-{}", uid);
+        log::debug!("[PATHS] socket_dir: expanded={}, dir_name={}", expanded_parent, dir_name);
 
         let socket_path = PathBuf::from(expanded_parent).join(&dir_name);
 
@@ -89,16 +97,19 @@ impl VeloPaths {
         if socket_path.to_string_lossy().len() + 30 <= SOCKET_PATH_LIMIT {
             // DEF-72-P01: Always enforce 0700 permissions
             let _ = ensure_socket_dir(&socket_path);
+            log::debug!("[PATHS] socket_dir: resolved to {:?}", socket_path);
             return socket_path;
         }
 
         // Fallback to user state dir (RFC-0012 Path Sovereignty) if path is too long
+        log::debug!("[PATHS] socket_dir: path too long, using fallback");
         let home = std::env::var("HOME").unwrap_or_else(|_| "/var/run".to_string());
         let fallback = PathBuf::from(home)
             .join(".local/state/velo/sockets")
             .join(dir_name);
         // DEF-72-P01: Enforce 0700 on fallback path too
         let _ = ensure_socket_dir(&fallback);
+        log::debug!("[PATHS] socket_dir: final fallback {:?}", fallback);
         fallback
     }
 
