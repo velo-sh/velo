@@ -87,30 +87,39 @@ except (ImportError, ValueError):
 
 
 class WorkerRegistry:
-    """Layer 3: State Management - Tracks worker lifecycle."""
+    """Layer 3: State Management - Tracks worker lifecycle.
+
+    Thread-safe implementation using RLock for read-heavy workloads.
+    RLock allows reentrant locking (is_alive can call remove safely).
+    """
 
     def __init__(self, worker_ttl: int = 3600):
         self.workers: dict[int, tuple[float, Any]] = {}  # pid -> (start_time, metadata)
         self.worker_ttl = worker_ttl
+        self._lock = threading.RLock()  # Reentrant lock for nested calls
 
     def add(self, pid: int, metadata: Any = None) -> None:
-        self.workers[pid] = (time.time(), metadata)
+        with self._lock:
+            self.workers[pid] = (time.time(), metadata)
 
     def remove(self, pid: int) -> None:
-        self.workers.pop(pid, None)
+        with self._lock:
+            self.workers.pop(pid, None)
 
     def is_alive(self, pid: int) -> bool:
-        if pid not in self.workers:
-            return False
+        with self._lock:
+            if pid not in self.workers:
+                return False
         try:
             os.kill(pid, 0)
             return True
         except ProcessLookupError:
-            self.remove(pid)
+            self.remove(pid)  # RLock allows reentrant call
             return False
 
     def get_stats(self) -> dict[str, Any]:
-        return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
+        with self._lock:
+            return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
         """Guardian thread to prevent orphans."""
@@ -135,7 +144,8 @@ class WorkerRegistry:
 
     def kill_all(self) -> None:
         """Emergency cleanup of all workers."""
-        pids = list(self.workers.keys())
+        with self._lock:
+            pids = list(self.workers.keys())
         sys.stderr.write(f"\n[ZYGOTE] Eradicating {len(pids)} workers: {pids}\n")
         sys.stderr.flush()
         # RFC-0012 C.6: Robust Eradication - Kill all registered workers
@@ -151,22 +161,22 @@ class WorkerRegistry:
 
         # Give workers a moment to process SIGTERM before Zygote itself exits
         time.sleep(0.1)
-        self.workers.clear()
+        with self._lock:
+            self.workers.clear()
         sys.stderr.write("[ZYGOTE] Worker eradication complete.\n")
         sys.stderr.flush()
 
     def reap_stale(self) -> None:
         """Cleanup logic for timed-out or missing workers."""
         now = time.time()
-        for pid, (start_time, _) in list(self.workers.items()):
-            if now - start_time > self.worker_ttl:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except Exception:
-                    pass
-                self.remove(pid)
-            elif not self.is_alive(pid):
-                self.remove(pid)
+        with self._lock:
+            stale_pids = [pid for pid, (start_time, _) in self.workers.items() if now - start_time > self.worker_ttl]
+        for pid in stale_pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+            self.remove(pid)
 
 
 class ReinitHooks:
