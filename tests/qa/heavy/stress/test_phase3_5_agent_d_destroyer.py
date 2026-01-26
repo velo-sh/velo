@@ -40,6 +40,13 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
+def get_free_port() -> int:
+    """Get a free port for testing. Uses OS to allocate to avoid conflicts in xdist."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
@@ -143,7 +150,7 @@ def health():
                 timeout=T_LONG,
             )
 
-            port = 18001
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             # Wait for server to start
@@ -186,8 +193,8 @@ def root():
                 timeout=T_LONG,
             )
 
-            # Use custom port
-            port = 18099
+            # Use dynamically allocated port
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             if wait_for_port(port, timeout=T_MEDIUM):
@@ -225,7 +232,7 @@ def get_pid():
                 timeout=T_LONG,
             )
 
-            port = 18002
+            port = get_free_port()
             proc = env.start_serve("main:app", port, workers=4)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
@@ -287,7 +294,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
 """,
             )
 
-            proc = env.start_serve("crash_on_import:app", 18003)
+            proc = env.start_serve("crash_on_import:app", get_free_port())
             time.sleep(3)
 
             # Should have exited with error
@@ -316,7 +323,7 @@ y = 2
 """,
             )
 
-            proc = env.start_serve("no_app:app", 18004)
+            proc = env.start_serve("no_app:app", get_free_port())
             time.sleep(3)
 
             if proc.poll() is None:
@@ -401,7 +408,7 @@ def cleanup():
                 timeout=T_LONG,
             )
 
-            port = 18005
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
@@ -442,7 +449,7 @@ def root():
                 timeout=T_LONG,
             )
 
-            port = 18006
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
@@ -485,7 +492,7 @@ def timing():
                 timeout=T_LONG,
             )
 
-            port = 18007
+            port = get_free_port()
 
             # First start - cold
             start1 = time.perf_counter()
@@ -540,7 +547,7 @@ def framework():
                 timeout=T_LONG,
             )
 
-            port = 18008
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             if wait_for_port(port, timeout=T_MEDIUM):
@@ -573,7 +580,7 @@ def framework():
                 timeout=T_LONG,
             )
 
-            port = 18009
+            port = get_free_port()
             proc = env.start_serve("main:app", port)
 
             # Flask detection may not be implemented yet
