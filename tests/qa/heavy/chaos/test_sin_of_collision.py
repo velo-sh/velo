@@ -1,138 +1,105 @@
-import os
-import subprocess
-import sys
-import time
+# tests/qa/heavy/chaos/test_sin_of_collision.py
+from pathlib import Path
 
 import pytest
-import requests
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
-import arch_guard
-
-# Robust binary path resolution
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-
-# Priority 1: Check for Release Binary (CI/Prod)
-VELO_BIN = os.path.join(PROJECT_ROOT, "target/release/velo")
-if not os.path.exists(VELO_BIN):
-    # Priority 2: Check for Debug Binary (Local Dev)
-    VELO_BIN = os.path.join(PROJECT_ROOT, "target/debug/velo")
-
-# Ensure we aren't getting confused by symlinks or relative path madness
-if not os.path.exists(VELO_BIN):
-    # Fallback for when running from root
-    if os.path.exists("target/release/velo"):
-        VELO_BIN = os.path.abspath("target/release/velo")
-    else:
-        VELO_BIN = os.path.abspath("target/debug/velo")
+# List of Velo internal modules that might be shadowed
+COLLISION_TARGETS = [
+    # Core Infrastructure
+    "bootstrap.py",
+    "lifecycle.py",
+    "paths.py",
+    "settings.py",
+    "utils.py",
+    "constants.py",
+    # Logic Modules
+    "routing.py",
+    "protocol.py",
+    "v_fork.py",
+    "v_shield.py",
+    "worker_launcher.py",  # The launcher itself
+]
 
 
-@pytest.fixture
-def workspace_a(tmp_path):
-    ws = tmp_path / "workspace_a"
-    ws.mkdir()
-    (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'A'}"
-    )
-    return ws
-
-
-@pytest.fixture
-def workspace_b(tmp_path):
-    ws = tmp_path / "workspace_b"
-    ws.mkdir()
-    (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'B'}"
-    )
-    return ws
-
-
-@pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Build velo first")
-def test_workspace_collision_hijacking(workspace_a, workspace_b):
+@pytest.mark.heavy
+class TestSinOfCollision:
     """
-    FATAL DEFECT TEST: Demonstrates that Workspace B can hijack Workspace A's Zygote server
-    because they both use the same static socket path in /tmp.
+    CHAOS-005: The "Sin of Collision" Suite.
+
+    Demonstrates architectural failure in Environment Isolation.
+    We deliberately create user applications named identically to Velo's internal
+    modules. If Velo's environment is truly isolated, these should ALL work.
+
+    If Velo crashes or imports the internal module instead of the user one,
+    IT IS A FATAL ISOLATION FAILURE.
     """
-    # 0. Automating Sensing: Check Architecture Compatibility
-    arch_guard.assert_velo_compatible(VELO_BIN)
 
-    # 1. Start Workspace A's server (port 8001)
-    proc_a = subprocess.Popen(
-        [VELO_BIN, "serve", "main:app", "--port", "8001"],
-        cwd=workspace_a,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    @pytest.mark.parametrize("filename", COLLISION_TARGETS)
+    def test_collision_leakage_audit(self, velo_test_env, velo_binary, filename):
+        """
+        Dynamically create an app with a colliding filename and try to run it.
+        """
+        module_name = filename.replace(".py", "")
 
-    try:
-        # Wait for A to be ready
-        time.sleep(3)
+        # 1. Create the colliding file in the user workspace
+        # This file exports 'app' so it validly looks like an ASGI app
+        user_code = f'''
+# User's {filename} - SHOULD BE LOADED
+from fastapi import FastAPI
+import sys
+import os
+
+app = FastAPI()
+
+@app.get("/identity")
+def identity():
+    return {{
+        "module": "{module_name}", 
+        "file": __file__,
+        "cwd": os.getcwd()
+    }}
+
+@app.get("/health")
+def health():
+    return {{"status": "ok"}}
+'''
+        app_file = velo_test_env.root / filename
+        app_file.write_text(user_code)
+
+        # 2. Also ensure pyproject.toml exists for Zygote detection
+        (velo_test_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
+
+        # 3. Explicitly construct the CLI command to run THIS file
+        # We use a custom factory logic here or re-use VeloServeFactory if possible via fixture
+        # But we need to instantiate it specifically for this test case
+        from tests.qa.phase_6_1_1.conftest import VeloServeFactory
+
+        factory = VeloServeFactory(velo_test_env, velo_binary)
+
         try:
-            resp_a = requests.get("http://127.0.0.1:8001/")
+            # Try to start it.
+            # If isolation is broken, one of two things happens:
+            # A) AttributeError: module 'xxx' has no attribute 'app' (Loaded internal Velo module)
+            # B) ImportError / Crash during Velo startup (Velo loaded user module instead of internal)
+            proc = factory.start(f"{module_name}:app", workers=1, zygote=True)
+            proc.wait_ready(timeout=10.0)  # Short timeout, should be fast
+
+            # 4. Verify the identity
+            # The app MUST return that it was loaded from the USER directory, NOT velo_zygote
+            import requests
+
+            resp = requests.get(f"http://127.0.0.1:{proc.port}/identity", timeout=2)
+            assert resp.status_code == 200
+            data = resp.json()
+
+            loaded_path = Path(data["file"]).resolve()
+            expected_path = app_file.resolve()
+
+            assert loaded_path == expected_path, (
+                f"ISOLATION FAILURE: Loaded {loaded_path} instead of user code {expected_path}"
+            )
+
         except Exception as e:
-            if proc_a.poll() is not None:
-                stderr = ""
-                if proc_a.stderr:
-                    stderr = proc_a.stderr.read().decode()
-                print(f"Proc A failed: {stderr}")
-            raise e
-        assert resp_a.json() == {"ws": "A"}
-
-        # 2. Start Workspace B's server (port 8002)
-        # It will see the existing socket and HIJACK it (if bug exists).
-        proc_b = subprocess.Popen(
-            [VELO_BIN, "serve", "main:app", "--port", "8002"],
-            cwd=workspace_b,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        time.sleep(3)
-
-        # 3. VERIFY HIJACKING
-        # Now Workspace B should return its own content, which is fine.
-        resp_b = requests.get("http://127.0.0.1:8002/")
-        assert resp_b.json() == {"ws": "B"}
-
-        # CRITICAL FAILURE POINT:
-        # If we restart Workspace A's WORKERS (or if it respawns),
-        # it might connect to Workspace B's Zygote because the socket is shared!
-        # Or even worse: Workspace A's requests are now routed through B's Zygote's preloaded state.
-
-        # In the current (broken) implementation, both use the same socket.
-        # Let's verify that both are indeed hitting the same Zygote.
-        # We can check this by looking for the socket file.
-
-        # Find the socket used by A
-        # Since we haven't implemented hashing yet, it's likely /tmp/velo-v01.sock (or similar)
-
-    finally:
-        if "proc_a" in locals() and proc_a:
-            proc_a.terminate()
-            try:
-                proc_a.wait(timeout=5)
-            except Exception:
-                proc_a.kill()
-        if "proc_b" in locals() and proc_b:
-            proc_b.terminate()
-            try:
-                proc_b.wait(timeout=5)
-            except Exception:
-                proc_b.kill()
-
-        # Debug: List socket dirs
-        print("\n[DEBUG] Socket Dirs found:")
-        os.system(f"ls -d {os.environ.get('TMPDIR', '/tmp')}velo-secure-* || echo 'None'")
-
-
-def test_socket_path_determinism():
-    """
-    Exposes deterministic socket path which leads to collision.
-    """
-    # Run velo in current dir
-    os.environ.copy()
-    # No hash in path expected in broken state
-
-    # We expect this to FAIL once we implement the proper fix (hashing)
-    # But currently it will show collision.
-    pass
+            pytest.fail(f"CRASHED on collision with {filename}: {e}")
+        finally:
+            factory.cleanup()

@@ -138,20 +138,67 @@ class UDSProxyMiddleware:
             await result
 
 
+def _enforce_ghost_mode() -> None:
+    """
+    SPEC-0005: Ghost Mode Isolation.
+    Purge any internal Velo modules from sys.modules that leaked into the top-level namespace.
+    """
+    import os
+    import sys
+
+    # Identify the physical location of the runtime
+    runtime_root = os.path.dirname(os.path.abspath(__file__))
+
+    # Identify modules to purge
+    to_purge = []
+
+    # We must iterate over a copy of keys
+    for name, module in list(sys.modules.items()):
+        # If the module names starts with 'velo_zygote', it's namespaced correctly. Keep it.
+        if name.startswith("velo_zygote"):
+            continue
+
+        # If the module has no file attribute, we skipped it (built-ins)
+        if not hasattr(module, "__file__") or not module.__file__:
+            continue
+
+        # Check if the module resides inside our runtime root
+        # e.g. /path/to/velo_zygote/utils.py imported as 'utils'
+        try:
+            mod_path = os.path.abspath(module.__file__)
+            if mod_path.startswith(runtime_root):
+                # LEAK DETECTED!
+                # This is an internal module masquerading as a top-level one.
+                to_purge.append(name)
+        except Exception:
+            continue
+
+    # Purge them
+    for name in to_purge:
+        if name in sys.modules:
+            del sys.modules[name]
+
+    # Also ensure the runtime root is NOT in sys.path
+    if runtime_root in sys.path:
+        sys.path.remove(runtime_root)
+
+
 def _wrap_app_with_middleware(app_path: str) -> Any:
     """
-    RFC-0011 GOLD-013: Load and wrap app with UDSProxyMiddleware.
-
-    This is required for UDS connections where uvicorn's proxy_headers
-    doesn't work (no TCP client to trust).
+    Wrap the ASGI app with UDS Proxy Middleware (Trusted).
     """
     import importlib
+    import sys
+
+    # SPEC-0005: Enforce Ghost Mode before loading user code
+    _enforce_ghost_mode()
 
     module_name, attr_name = app_path.rsplit(":", 1)
 
     # DEF-003: Runtime Isolation (SPEC-0005)
     # If 'main' is already loaded (e.g. from Velo Runtime), we MUST unload it
     # so that import_module('main') searches sys.path for the user's app.
+    # Note: _enforce_ghost_mode handles generic leaks, but we check 'main' explicitly as a fail-safe
     if module_name == "main" and "main" in sys.modules:
         del sys.modules["main"]
 
