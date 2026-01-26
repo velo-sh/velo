@@ -60,24 +60,19 @@ class IdlePool:
                 self._target_size = max(self._min_size, self._target_size - 1)
 
     def get_metrics(self) -> dict[str, Any]:
-        """Return Prometheus-style metrics for monitoring.
+        """Return OpenMetrics-compliant metrics for Prometheus.
 
-        Metrics:
-        - idle_pool_size: Current number of idle workers
-        - idle_pool_target: Target pool size (adaptive)
-        - idle_pool_min: Minimum pool size
-        - idle_pool_max: Maximum pool size
-        - idle_pool_utilization: size / target ratio (0-1)
+        Metrics follow naming convention: velo_zygote_<subsystem>_<name>
         """
         with self.lock:
             current = len(self.pool)
             target = self._target_size
             return {
-                "idle_pool_size": current,
-                "idle_pool_target": target,
-                "idle_pool_min": self._min_size,
-                "idle_pool_max": self._max_size,
-                "idle_pool_utilization": current / target if target > 0 else 0.0,
+                "velo_zygote_pool_idle_count": current,
+                "velo_zygote_pool_target_size": target,
+                "velo_zygote_pool_min_size": self._min_size,
+                "velo_zygote_pool_max_size": self._max_size,
+                "velo_zygote_pool_utilization_ratio": current / target if target > 0 else 0.0,
             }
 
 
@@ -143,12 +138,9 @@ class WorkerRegistry:
             return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
     def get_metrics(self) -> dict[str, Any]:
-        """Return Prometheus-style metrics for monitoring.
+        """Return OpenMetrics-compliant metrics for Prometheus.
 
-        Metrics:
-        - worker_registry_count: Total registered workers
-        - worker_registry_ttl: Worker time-to-live setting
-        - worker_registry_oldest_age: Age of oldest worker (seconds)
+        Metrics follow naming convention: velo_zygote_<subsystem>_<name>
         """
         now = time.time()
         with self._lock:
@@ -158,9 +150,9 @@ class WorkerRegistry:
                 oldest_start = min(start for start, _ in self.workers.values())
                 oldest_age = now - oldest_start
             return {
-                "worker_registry_count": count,
-                "worker_registry_ttl": self.worker_ttl,
-                "worker_registry_oldest_age": round(oldest_age, 2),
+                "velo_zygote_workers_active_count": count,
+                "velo_zygote_workers_ttl_seconds": self.worker_ttl,
+                "velo_zygote_workers_oldest_age_seconds": round(oldest_age, 2),
             }
 
     def start_guardian(self, parent_pid: int, ttl: int, monitor_parent: bool = True) -> None:
