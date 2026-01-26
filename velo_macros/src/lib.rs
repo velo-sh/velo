@@ -14,6 +14,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     }
 
     if !toml_path.exists() {
+        toml_path = Path::new(&manifest_dir).join("../../config/constants.toml");
+    }
+
+    if !toml_path.exists() {
         return TokenStream::from(quote! {
             compile_error!("Could not find config/constants.toml");
         });
