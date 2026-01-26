@@ -200,6 +200,83 @@ class WorkerRegistry:
         sys.stderr.write("[ZYGOTE] Worker eradication complete.\n")
         sys.stderr.flush()
 
+    def drain_all(self, timeout_secs: float = 30.0) -> list[int]:
+        """Graceful shutdown: SIGTERM all workers and wait for exit.
+
+        P0 Production: Proper drain sequence for Kubernetes/systemd compatibility.
+        Returns list of PIDs that didn't exit in time (caller should SIGKILL).
+        """
+        with self._lock:
+            pids = list(self.workers.keys())
+
+        if not pids:
+            return []
+
+        sys.stderr.write(f"\n[ZYGOTE] Graceful drain initiated ({len(pids)} workers, {timeout_secs}s timeout)\n")
+        sys.stderr.flush()
+
+        # Send SIGTERM to all workers
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                self.remove(pid)
+            except Exception:
+                pass
+
+        # Poll for worker exit (100ms intervals)
+        start = time.time()
+        while time.time() - start < timeout_secs:
+            with self._lock:
+                remaining = [p for p in pids if p in self.workers]
+            if not remaining:
+                sys.stderr.write("[ZYGOTE] All workers exited gracefully.\n")
+                sys.stderr.flush()
+                return []
+
+            # Check if workers are still alive using kill(0)
+            for pid in remaining:
+                try:
+                    os.kill(pid, 0)  # Check if process exists
+                except ProcessLookupError:
+                    # Process is dead
+                    self.remove(pid)
+                except PermissionError:
+                    # Process exists but we don't have permission (shouldn't happen for our workers)
+                    pass
+
+            # Also try to reap any zombies (for direct children only)
+            try:
+                while True:
+                    reaped_pid, _ = os.waitpid(-1, os.WNOHANG)
+                    if reaped_pid == 0:
+                        break
+                    if reaped_pid in pids:
+                        self.remove(reaped_pid)
+            except ChildProcessError:
+                pass  # No children to wait for
+
+            time.sleep(0.1)
+
+        # Return PIDs that didn't exit
+        with self._lock:
+            remaining = [p for p in pids if p in self.workers]
+        if remaining:
+            sys.stderr.write(f"[ZYGOTE] Drain timeout: {len(remaining)} workers still alive: {remaining}\n")
+            sys.stderr.flush()
+        return remaining
+
+    def force_kill(self, pids: list[int]) -> None:
+        """Force kill workers that didn't respond to SIGTERM."""
+        for pid in pids:
+            try:
+                sys.stderr.write(f"[ZYGOTE] SIGKILL -> PID {pid}\n")
+                sys.stderr.flush()
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+            self.remove(pid)
+
     def reap_stale(self) -> None:
         """Cleanup logic for timed-out or missing workers."""
         now = time.time()

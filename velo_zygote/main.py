@@ -748,6 +748,12 @@ class ZygoteServer:
             # 2. Start Fork Queue immediately
             asyncio.create_task(self._process_fork_queue())
 
+            # P0: Prewarm connection pool at startup
+            # Ensures first request doesn't block on pool fill
+            if self.idle_pool._target_size > 0:
+                asyncio.create_task(self._fill_pool_now())
+                LogUtils.log(f"Pool prewarming initiated (target: {self.idle_pool._target_size})")
+
             # 3. Second Pass: App and Deep Warming (Background)
             # We want this to finish before we set preload_complete
             await loop.run_in_executor(None, self._preload_app_and_warming_safe)
@@ -919,10 +925,22 @@ class ZygoteServer:
 
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
-            # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
-            LogUtils.log(f"Zygote received signal {sig}. Cleaning up workers...")
-            self.worker_registry.kill_all()
-            # Use os._exit to ensure immediate death and no orphans
+            # P0 Production: Graceful shutdown chain
+            # SIGTERM → drain_workers(timeout) → SIGKILL remaining → exit(0)
+            drain_timeout = float(os.environ.get("VELO_DRAIN_TIMEOUT", "30"))
+            LogUtils.log(f"Zygote received signal {sig}. Starting graceful shutdown (drain: {drain_timeout}s)...")
+            self._set_state(ZygoteState.SHUTDOWN)
+
+            # Phase 1: Graceful drain with timeout
+            remaining = self.worker_registry.drain_all(drain_timeout)
+
+            # Phase 2: Force kill any workers that didn't exit gracefully
+            if remaining:
+                LogUtils.log(f"Force killing {len(remaining)} unresponsive workers...")
+                self.worker_registry.force_kill(remaining)
+
+            # Phase 3: Exit cleanly
+            LogUtils.log("Graceful shutdown complete.")
             os._exit(0)
 
         # Use standard signal.signal for reliable termination even if loop is hung
