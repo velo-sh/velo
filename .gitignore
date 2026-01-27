@@ -47,3 +47,4 @@ test_deploy_tmp/
 artifacts/
 tests/qa/forensic_benchmarks/
 video_assets/
+.velo_summary.txt

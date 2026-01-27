@@ -430,6 +430,23 @@ def export_results_json(
     return results
 
 
+def save_summary_metric(name: str, result: str):
+    """
+    Append a metric to the global summary file for the demo.
+    Format: '   • {name}: {result}'
+    """
+    summary_file = os.getenv("HIO_SUMMARY_FILE", ".velo_summary.txt")
+    
+    # Pad name for alignment (max length ~22 based on longest name "LangChain/Pydantic")
+    formatted_line = f"   • {name:<22} {result}"
+    
+    try:
+        with open(summary_file, "a") as f:
+            f.write(f"'{formatted_line}' ") # Write as quoted string for gum style arg
+    except Exception:
+        pass  # Fail silently to not disrupt benchmark
+
+
 def spinner_context(message: str):
     """Return Spinner context manager."""
     if RICH_AVAILABLE:

@@ -46,6 +46,7 @@ done
 # Standardize paths
 export PYTHONPATH="$VELO_ROOT:$PYTHONPATH"
 export PYTHONWARNINGS="ignore:NotOpenSSLWarning"
+export HIO_SUMMARY_FILE="$VELO_ROOT/.velo_summary.txt"
 
 # macOS fork safety
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES

@@ -34,7 +34,9 @@ try:
         print_verdict,
         print_reproduce_hint,
         create_progress_context,
+        create_progress_context,
         export_results_json,
+        save_summary_metric,
         IS_QUIET
     )
 except ImportError:
@@ -53,6 +55,7 @@ except ImportError:
             def remove_task(self, *a): pass
         return D(), False
     def export_results_json(*a, **k): pass
+    def save_summary_metric(*a, **k): pass
     IS_QUIET = False
 
 
@@ -232,6 +235,9 @@ def main():
     
     if args.export_json:
         export_results_json(args.export_json, cpython_times, velo_times)
+
+    # Save summary for demo
+    save_summary_metric("LangChain/Pydantic", f"~{speedup:.0f}x faster schema gen")
 
 
 if __name__ == "__main__":
