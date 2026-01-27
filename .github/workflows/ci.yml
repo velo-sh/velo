@@ -309,9 +309,6 @@ jobs:
       - name: Build Velo
         run: |
           uv sync --dev
-          PYO3_PYTHON="$(pwd)/.venv/bin/python"
-          export PYO3_PYTHON
-          echo "PYO3_PYTHON=$PYO3_PYTHON" >> "$GITHUB_ENV"
           cargo build -p velo
       - name: Run Startup Benchmark
         run: |
