@@ -323,6 +323,12 @@ impl VeloPaths {
         log_dir.join("zygote.log")
     }
 
+    /// Path to persistent circuit breaker state (SSOT-CB-001)
+    pub fn circuit_breaker_state() -> PathBuf {
+        let dir = Self::socket_dir();
+        dir.join("circuit_breaker.state")
+    }
+
     /// Get the path to the Zygote's profiling data.
     pub fn zygote_profile(project_root: &Path) -> PathBuf {
         Self::project_file(project_root, VELO_PROFILE_JSON)

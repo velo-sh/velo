@@ -59,11 +59,11 @@ class IdlePool:
                 # Slow decay
                 self._target_size = max(self._min_size, self._target_size - 1)
 
-    def get_metrics(self) -> dict[str, Any]:
-        """Return OpenMetrics-compliant metrics for Prometheus.
+    def get_metrics(self, config: Any = None) -> dict[str, Any]:
+        """Return OpenMetrics-compliant metrics for Prometheus."""
+        if config and hasattr(config, "metrics_enabled") and not config.metrics_enabled:
+            return {}
 
-        Metrics follow naming convention: velo_zygote_<subsystem>_<name>
-        """
         with self.lock:
             current = len(self.pool)
             target = self._target_size
@@ -137,11 +137,11 @@ class WorkerRegistry:
         with self._lock:
             return {"worker_count": len(self.workers), "pids": list(self.workers.keys())}
 
-    def get_metrics(self) -> dict[str, Any]:
-        """Return OpenMetrics-compliant metrics for Prometheus.
+    def get_metrics(self, config: Any = None) -> dict[str, Any]:
+        """Return OpenMetrics-compliant metrics for Prometheus."""
+        if config and hasattr(config, "metrics_enabled") and not config.metrics_enabled:
+            return {}
 
-        Metrics follow naming convention: velo_zygote_<subsystem>_<name>
-        """
         now = time.time()
         with self._lock:
             count = len(self.workers)

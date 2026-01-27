@@ -57,6 +57,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     let hpc_threads = get_u64("security_hpc_threads", 1) as usize;
     let path_integrity = get_str("path_integrity", "warn");
     let strict_opt = get_bool("strict_optimizations", true);
+    let cb_threshold = get_u64("circuit_breaker_threshold", 3);
+    let cb_enabled = get_bool("circuit_breaker_enabled", true);
+    let metrics_enabled = get_bool("metrics_enabled", true);
+    let tracing_enabled = get_bool("tracing_enabled", true);
     let blocked_paths = config
         .get("default_blocked_paths")
         .and_then(|v| v.as_array())
@@ -123,6 +127,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
             pub security_hpc_threads: usize,
             pub graceful_shutdown_timeout: u64,
             pub strict_optimizations: bool,
+            pub circuit_breaker_threshold: u32,
+            pub circuit_breaker_enabled: bool,
+            pub metrics_enabled: bool,
+            pub tracing_enabled: bool,
             pub forensic_secret: Option<String>,
             pub default_blocked_paths: Vec<String>,
         }
@@ -171,6 +179,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
                         "ci" => false,
                         _ => #strict_opt,
                     },
+                    circuit_breaker_threshold: #cb_threshold as u32,
+                    circuit_breaker_enabled: #cb_enabled,
+                    metrics_enabled: #metrics_enabled,
+                    tracing_enabled: #tracing_enabled,
                     forensic_secret: None,
                     default_blocked_paths: blocked_paths_raw.into_iter().map(|s| s.to_string()).collect(),
                 }

@@ -104,6 +104,30 @@ impl VeloConfig {
         if let Ok(val) = std::env::var("VELO_ZYGOTE_AUTH") {
             self.forensic_secret = Some(val);
         }
+        if let Some(n) = std::env::var("VELO_CIRCUIT_BREAKER_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            self.circuit_breaker_threshold = n;
+        }
+        if let Some(b) = std::env::var("VELO_CIRCUIT_BREAKER_ENABLED")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+        {
+            self.circuit_breaker_enabled = b;
+        }
+        if let Some(b) = std::env::var("VELO_METRICS_ENABLED")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+        {
+            self.metrics_enabled = b;
+        }
+        if let Some(b) = std::env::var("VELO_TRACING_ENABLED")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+        {
+            self.tracing_enabled = b;
+        }
     }
 
     /// Read from specific path and apply environment overrides
@@ -207,6 +231,26 @@ impl VeloConfig {
                     "slo_fork_latency_ms" => {
                         if let Ok(ms) = value.parse::<u64>() {
                             config.slo_fork_latency_ms = ms;
+                        }
+                    }
+                    "circuit_breaker_threshold" => {
+                        if let Ok(n) = value.parse::<u32>() {
+                            config.circuit_breaker_threshold = n;
+                        }
+                    }
+                    "circuit_breaker_enabled" => {
+                        if let Ok(b) = value.parse::<bool>() {
+                            config.circuit_breaker_enabled = b;
+                        }
+                    }
+                    "metrics_enabled" => {
+                        if let Ok(b) = value.parse::<bool>() {
+                            config.metrics_enabled = b;
+                        }
+                    }
+                    "tracing_enabled" => {
+                        if let Ok(b) = value.parse::<bool>() {
+                            config.tracing_enabled = b;
                         }
                     }
                     _ => {}

@@ -3,6 +3,7 @@
 //! This module handles worker process spawning and lifecycle management.
 //! Aligned with Python: velo_zygote/v_fork.py
 
+use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
 use crate::zygote::core_ipc;
 use crate::zygote::error::{Result, ZygoteError};
@@ -12,6 +13,54 @@ use std::path::{Path, PathBuf};
 /// Get worker timeout from config
 fn get_worker_timeout_secs() -> u64 {
     VeloConfig::from_env_only().zygote_socket_timeout
+}
+
+/// Circuit Breaker State (SSOT-CB-001)
+/// Persists failure count to disk to handle multiple CLI calls.
+struct ZygoteCircuitBreaker;
+
+impl ZygoteCircuitBreaker {
+    fn is_tripped(config: &VeloConfig) -> bool {
+        if !config.circuit_breaker_enabled {
+            return false;
+        }
+        let path = VeloPaths::circuit_breaker_state();
+        let failures = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| c.trim().parse::<u32>().ok());
+        if let Some(f) = failures {
+            return f >= config.circuit_breaker_threshold;
+        }
+        false
+    }
+
+    fn record_failure(config: &VeloConfig) {
+        if !config.circuit_breaker_enabled {
+            return;
+        }
+        let path = VeloPaths::circuit_breaker_state();
+        let current = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        let failures = current + 1;
+        let _ = std::fs::write(&path, failures.to_string());
+
+        if failures >= config.circuit_breaker_threshold {
+            log::error!(
+                "🚨 Zygote Circuit Breaker TRIPPED after {} failures. Falling back to direct spawn.",
+                failures
+            );
+        }
+    }
+
+    fn record_success() {
+        let path = VeloPaths::circuit_breaker_state();
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+            log::info!("✅ Zygote Circuit Breaker RESET. Resuming Zygote forks.");
+        }
+    }
 }
 
 /// Handle to a spawned worker process
@@ -213,6 +262,21 @@ pub fn spawn_worker(
         (None, None)
     };
 
+    // Check Circuit Breaker (RFC-0036)
+    if ZygoteCircuitBreaker::is_tripped(config) {
+        log::warn!("🚧 Zygote Circuit Breaker is OPEN. Fallback to direct spawn.");
+        return spawn_direct(
+            &script_path,
+            module,
+            args,
+            stdout_path,
+            stderr_path,
+            exit_code_path,
+            env_overrides,
+            config,
+        );
+    }
+
     // Send FORK command over socket
     log::debug!(
         "[spawn_worker] Sending Fork command to socket: {:?}",
@@ -221,11 +285,11 @@ pub fn spawn_worker(
     log::debug!("[spawn_worker] Socket exists: {}", socket_path.exists());
 
     let start_time = std::time::Instant::now();
-    let response = core_ipc::send_command(
+    let response_result = core_ipc::send_command(
         socket_path,
         core_ipc::ZygoteCommand::Fork {
-            script_path,
-            module,
+            script_path: script_path.clone(),
+            module: module.clone(),
             args: args.iter().map(|s| s.to_string()).collect(),
             async_mode,
             stdout_path: Some(stdout_path.clone()),
@@ -237,7 +301,7 @@ pub fn spawn_worker(
             max_bundle_size,
             env: {
                 let mut base_env = crate::lifecycle::EnvironmentShield::new(config).compile_env();
-                if let Some(overrides) = env_overrides {
+                if let Some(overrides) = env_overrides.clone() {
                     for (k, v) in overrides {
                         base_env.insert(k, v);
                     }
@@ -248,7 +312,35 @@ pub fn spawn_worker(
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         },
         fd_to_pass,
-    )?;
+    );
+
+    let response = match response_result {
+        Ok(resp) => {
+            ZygoteCircuitBreaker::record_success();
+            resp
+        }
+        Err(e) => {
+            log::error!(
+                "❌ Zygote IPC failure: {}. Recording failure for Circuit Breaker.",
+                e
+            );
+            ZygoteCircuitBreaker::record_failure(config);
+            if ZygoteCircuitBreaker::is_tripped(config) {
+                log::warn!("🔄 Emergency fallback to direct spawn after Zygote failure.");
+                return spawn_direct(
+                    &script_path,
+                    module,
+                    args,
+                    stdout_path,
+                    stderr_path,
+                    exit_code_path,
+                    env_overrides,
+                    config,
+                );
+            }
+            return Err(e);
+        }
+    };
 
     // SLO: Error Budget Policy (Fork Latency)
     let elapsed = start_time.elapsed();
@@ -256,14 +348,14 @@ pub fn spawn_worker(
 
     // We only check SLO if fork succeeded (otherwise it's an error, handled elsewhere)
     if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
-        if elapsed_ms >= config.slo_fork_latency_ms {
+        if config.metrics_enabled && elapsed_ms >= config.slo_fork_latency_ms {
             log::warn!(
                 "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
                 elapsed_ms,
                 config.slo_fork_latency_ms,
                 worker_pid
             );
-        } else {
+        } else if config.metrics_enabled {
             log::debug!("✅ Fork latency {}ms (PID: {})", elapsed_ms, worker_pid);
         }
     }
@@ -296,20 +388,134 @@ pub fn spawn_worker(
     }
 }
 
+/// Fallback mechanism: Spawn worker directly via standard process (P2-001)
+#[allow(clippy::too_many_arguments)]
+fn spawn_direct(
+    script: &Path,
+    module: Option<String>,
+    args: &[&str],
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+    exit_code_path: PathBuf,
+    env_overrides: Option<HashMap<String, String>>,
+    config: &VeloConfig,
+) -> Result<WorkerHandle> {
+    use std::process::{Command, Stdio};
+
+    let python = crate::python::detect_python(Path::new("."))
+        .map_err(|e| ZygoteError::IOError(format!("Python detection failed: {}", e)))?;
+
+    let mut cmd = Command::new(python);
+
+    if let Some(m) = module {
+        cmd.arg("-m").arg(m);
+    } else {
+        cmd.arg(script);
+    }
+
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    // Apply shielded environment
+    let mut base_env = crate::lifecycle::EnvironmentShield::new(config).compile_env();
+    if let Some(overrides) = env_overrides {
+        for (k, v) in overrides {
+            base_env.insert(k, v);
+        }
+    }
+    cmd.envs(base_env);
+
+    // Redirect IO to temp files for compatibility with WorkerHandle
+    let stdout_file = std::fs::File::create(&stdout_path)
+        .map_err(|e| ZygoteError::IOError(format!("Failed to create stdout file: {}", e)))?;
+    let stderr_file = std::fs::File::create(&stderr_path)
+        .map_err(|e| ZygoteError::IOError(format!("Failed to create stderr file: {}", e)))?;
+
+    cmd.stdout(Stdio::from(stdout_file));
+    cmd.stderr(Stdio::from(stderr_file));
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| ZygoteError::ForkFailed(format!("Direct spawn failed: {}", e)))?;
+
+    let pid = child.id();
+
+    // Spawn a thread to wait for the child and write the exit code
+    // This maintains the WorkerHandle::wait() contract.
+    let exit_path_clone = exit_code_path.clone();
+    std::thread::spawn(move || {
+        let mut child = child;
+        if let Ok(status) = child.wait() {
+            let code = status.code().unwrap_or(0);
+            let _ = std::fs::write(&exit_path_clone, code.to_string());
+        }
+    });
+
+    Ok(WorkerHandle::new(
+        pid,
+        Some(stdout_path),
+        Some(stderr_path),
+        Some(exit_code_path),
+    ))
+}
+
 #[cfg(not(unix))]
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_worker(
-    _socket_path: &Path,
-    _script: &Path,
+    _socket_path: &std::path::Path,
+    _script: &std::path::Path,
+    _module: Option<String>,
     _args: &[&str],
     _async_mode: bool,
     _fast_mode: bool,
-    _bundle_path: Option<PathBuf>,
-    _project_root: Option<PathBuf>,
+    _bundle_path: Option<std::path::PathBuf>,
+    _project_root: Option<std::path::PathBuf>,
     _max_bundle_size: Option<u64>,
     _shm_file: Option<&std::fs::File>,
-    _env_overrides: Option<HashMap<String, String>>,
-    _config: &VeloConfig,
+    _env_overrides: Option<std::collections::HashMap<String, String>>,
+    _config: &crate::config::VeloConfig,
 ) -> Result<WorkerHandle> {
     Err(ZygoteError::NotSupported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_circuit_breaker_persistence() {
+        let dir = tempdir().unwrap();
+        let socket_dir = dir.path().to_path_buf();
+        unsafe {
+            std::env::set_var("VELO_SOCKET_DIR", socket_dir.to_str().unwrap());
+        }
+
+        let mut config = VeloConfig::default();
+        config.circuit_breaker_enabled = true;
+        config.circuit_breaker_threshold = 2;
+
+        // Verify initial state
+        assert!(!ZygoteCircuitBreaker::is_tripped(&config));
+
+        // Record first failure
+        ZygoteCircuitBreaker::record_failure(&config);
+        assert!(!ZygoteCircuitBreaker::is_tripped(&config));
+
+        // Record second failure (should trip)
+        ZygoteCircuitBreaker::record_failure(&config);
+        assert!(ZygoteCircuitBreaker::is_tripped(&config));
+
+        // Verify it persists on disk (simulate new process by checking again)
+        assert!(ZygoteCircuitBreaker::is_tripped(&config));
+
+        // Record success (should reset)
+        ZygoteCircuitBreaker::record_success();
+        assert!(!ZygoteCircuitBreaker::is_tripped(&config));
+
+        unsafe {
+            std::env::remove_var("VELO_SOCKET_DIR");
+        }
+    }
 }
