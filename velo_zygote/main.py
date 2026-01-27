@@ -212,6 +212,9 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
                 "message": "Preload timeout: modules still loading after 30s",
             }
 
+    if server.state == ZygoteState.ERROR:
+        return {"type": "Error", "message": "Zygote is in ERROR state due to previous preload failure."}
+
     if not server.fork_rate_limiter.acquire():
         return {
             "type": "Error",
@@ -778,6 +781,7 @@ class ZygoteServer:
             LogUtils.log("Zygote Background Warming Complete.")
         except Exception as e:
             LogUtils.log(f"Background Warming Failed: {e}")
+            self._set_state(ZygoteState.ERROR)
 
     def _preload_core_modules(self) -> None:
         import importlib

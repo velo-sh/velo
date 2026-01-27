@@ -62,7 +62,7 @@ parking_lot = "0.12"
 rayon = "1.10"
 toml = "0.8"
 chrono = "0.4"
-rkyv = { version = "0.8.12", features = ["bytecheck"] }
+rkyv = { version = "0.8.13", features = ["bytecheck"] }
 indicatif = "0.17"
 thiserror = "1.0"
 socket2 = { version = "0.6", features = ["all"] }

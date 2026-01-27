@@ -181,3 +181,15 @@ pub enum ZygoteResponse {
         context: std::collections::HashMap<String, String>,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_protocol_serialization_smoke() {
+        let cmd = ZygoteCommand::Shutdown;
+        let serialized = serde_json::to_string(&cmd).unwrap();
+        assert!(serialized.contains("Shutdown"));
+    }
+}

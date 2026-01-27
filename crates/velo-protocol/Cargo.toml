@@ -22,3 +22,6 @@ serde = { workspace = true }
 
 [features]
 fuzz = ["arbitrary"]
+
+[dev-dependencies]
+serde_json = { workspace = true }
