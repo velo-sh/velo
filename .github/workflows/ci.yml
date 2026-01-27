@@ -306,10 +306,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      - name: Install dependencies
-        run: uv sync --dev
       - name: Build Velo
-        run: cargo build -p velo
+        run: |
+          uv sync --dev
+          echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
+          cargo build -p velo
       - name: Run Startup Benchmark
         run: |
           ./target/debug/velo zygote start &
