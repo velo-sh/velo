@@ -95,6 +95,12 @@ impl VeloConfig {
         {
             self.strict_optimizations = b;
         }
+        if let Some(ms) = std::env::var("VELO_SLO_FORK_LATENCY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            self.slo_fork_latency_ms = ms;
+        }
         if let Ok(val) = std::env::var("VELO_ZYGOTE_AUTH") {
             self.forensic_secret = Some(val);
         }
@@ -196,6 +202,11 @@ impl VeloConfig {
                     "strict_optimizations" => {
                         if let Ok(b) = value.parse::<bool>() {
                             config.strict_optimizations = b;
+                        }
+                    }
+                    "slo_fork_latency_ms" => {
+                        if let Ok(ms) = value.parse::<u64>() {
+                            config.slo_fork_latency_ms = ms;
                         }
                     }
                     _ => {}

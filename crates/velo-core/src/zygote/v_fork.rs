@@ -219,6 +219,8 @@ pub fn spawn_worker(
         socket_path
     );
     log::debug!("[spawn_worker] Socket exists: {}", socket_path.exists());
+
+    let start_time = std::time::Instant::now();
     let response = core_ipc::send_command(
         socket_path,
         core_ipc::ZygoteCommand::Fork {
@@ -247,6 +249,24 @@ pub fn spawn_worker(
         },
         fd_to_pass,
     )?;
+
+    // SLO: Error Budget Policy (Fork Latency)
+    let elapsed = start_time.elapsed();
+    let elapsed_ms = elapsed.as_millis() as u64;
+
+    // We only check SLO if fork succeeded (otherwise it's an error, handled elsewhere)
+    if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
+        if elapsed_ms > config.slo_fork_latency_ms {
+            log::warn!(
+                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
+                elapsed_ms,
+                config.slo_fork_latency_ms,
+                worker_pid
+            );
+        } else {
+            log::debug!("✅ Fork latency {}ms (PID: {})", elapsed_ms, worker_pid);
+        }
+    }
 
     match response {
         core_ipc::ZygoteResponse::Forked {
