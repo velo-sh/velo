@@ -161,9 +161,16 @@ pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
 
     // 3. Compiled-in path from CARGO_MANIFEST_DIR (legacy dev/monorepo builds)
     // This is a fallback to support cargo test/run from the source dir
-    let manifest_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ZYGOTE_MAIN);
-    if manifest_path.exists() {
-        return Ok(manifest_path.canonicalize().unwrap_or(manifest_path));
+    // RFC-0033: Search up from manifest dir to find workspace root
+    let mut manifest_search = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for _ in 0..4 {
+        let path = manifest_search.join(ZYGOTE_MAIN);
+        if path.exists() {
+            return Ok(path.canonicalize().unwrap_or(path));
+        }
+        if !manifest_search.pop() {
+            break;
+        }
     }
 
     // 4. User install location ~/.local/share/velo/
@@ -196,7 +203,7 @@ pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
          - User/System share locations\n\
          - CWD\n\
          Set VELO_ZYGOTE_PATH to override.",
-        manifest_path.display()
+        manifest_search.display()
     )))
 }
 
