@@ -85,7 +85,20 @@ fn lookup(path: &str) -> FileHandle {
 
 ---
 
-## 6. Implementation Strategy
+## 6. Environment Governance Pillars
+
+By adopting this architecture, Velo achieves four strategic goals for enterprise-grade runtimes:
+
+| Pillar | Implementation | Value |
+|:---|:---|:---|
+| **Auditing** | Zygote associated with unique Commit ID | Every line of code and every dependency in production is signed and traceable. |
+| **Tracking** | Git parent/child lineage | Full visibility into how an environment evolved from a bare Genesis image to its current state. |
+| **Reproduction** | CommitID + CAS Bit-Identity | Guaranteed bit-for-bit identical environments across different machines/clusters if Commit ID matches. |
+| **Reuse** | Branch-based hot-partitioning | Heavy initializations (e.g., loading 70B LLM) happen once in a parent node; all children reuse that state instantly via COW. |
+
+---
+
+## 7. Implementation Strategy
 
 1. **Velo-Git-Core**: Integration of `git-oxide` for ODB metadata lookups.
 2. **TheSource Manager**: Logic for hashing and storing blobs into the flat directory.
