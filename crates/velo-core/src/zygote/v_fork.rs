@@ -256,7 +256,7 @@ pub fn spawn_worker(
 
     // We only check SLO if fork succeeded (otherwise it's an error, handled elsewhere)
     if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
-        if elapsed_ms > config.slo_fork_latency_ms {
+        if elapsed_ms >= config.slo_fork_latency_ms {
             log::warn!(
                 "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
                 elapsed_ms,

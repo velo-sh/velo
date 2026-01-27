@@ -318,8 +318,18 @@ fn cmd_zygote_stop() {
 fn cmd_zygote_status() {
     println!("▸ Zygote Status");
     match velo_core::zygote::get_status() {
-        Ok(velo_core::zygote::core_ipc::ZygoteResponse::Status { pid, preload, .. }) => {
+        Ok(velo_core::zygote::core_ipc::ZygoteResponse::Status {
+            pid,
+            preload,
+            pool_count,
+            target_pool_size,
+            ..
+        }) => {
             println!("├─ Status: Running ✅ (PID: {})", pid);
+            println!(
+                "├─ Pool: {} idle (target: {})",
+                pool_count, target_pool_size
+            );
             if preload.is_empty() {
                 println!("└─ Preload: None");
             } else {

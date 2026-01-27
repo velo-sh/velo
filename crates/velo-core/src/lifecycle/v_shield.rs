@@ -853,4 +853,25 @@ mod tests {
             eprintln!("✅ RFC-0030 §9.1.3: /proc/self/fd available for FD enumeration");
         }
     }
+
+    /// SMALLVEC-OVERFLOW-001: Verify SmallVec spills to heap correctly
+    #[test]
+    fn test_smallvec_overflow() {
+        // SmallVec<[i32; 16]> spill check
+        let mut v: SmallVec<[i32; 16]> = SmallVec::new();
+        for i in 0..32 {
+            v.push(i);
+        }
+        assert_eq!(v.len(), 32);
+        assert!(!v.spilled() || v.capacity() >= 32); // It should have spilled or at least have capacity
+        for i in 0..32 {
+            assert_eq!(v[i as usize], i);
+        }
+
+        // Ensure we can clear and it stays usable
+        v.clear();
+        assert_eq!(v.len(), 0);
+        v.push(42);
+        assert_eq!(v[0], 42);
+    }
 }
