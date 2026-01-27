@@ -244,7 +244,8 @@ jobs:
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: "Test: ${{ matrix.crate }}"
-        run: cargo nextest run -p ${{ matrix.crate }}
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh test-crate ${{ matrix.crate }}
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
@@ -283,7 +284,8 @@ jobs:
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
       - name: "Clippy: ${{ matrix.crate }}"
-        run: cargo clippy -p ${{ matrix.crate }} --all-targets --all-features -- -D warnings
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh clippy-crate ${{ matrix.crate }}
 
   python-tests:
     name: Python Unit Tests
@@ -919,8 +921,9 @@ jobs:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
+      # SSOT: Pre-flight must run separately (not as a test argument)
       - name: Pre-Flight Diagnostic
-        run: cargo llvm-cov nextest -- debug pre-flight
+        run: ./scripts/ci-runner.sh pre-flight
 
       - name: Run tests with coverage
         run: cargo llvm-cov nextest --lcov --output-path lcov.info
