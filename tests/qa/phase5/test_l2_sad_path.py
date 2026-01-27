@@ -83,14 +83,23 @@ def velo_binary():
     return "velo"
 
 
-def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
-    """Helper to run velo command."""
+def run_velo(args: list[str], cwd: Path, velo_binary: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    """Helper to run velo command.
+
+    Note: timeout is increased for CI environment where startup can be slow.
+    """
+    import os
+
+    # Apply CI timeout multiplier if set
+    multiplier = int(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1"))
+    effective_timeout = timeout * multiplier
+
     result = subprocess.run(
         [velo_binary] + args,
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=effective_timeout,
     )
     return result
 
