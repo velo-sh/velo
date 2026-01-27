@@ -385,7 +385,7 @@ class TestE2EGoldenPath:
         # Create a failing test
         failing_test = """
 def test_intentional_failure():
-    assert False, "This test should fail"
+    pytest.fail("This test should fail"
 """
         failing_test_path = Path(project_dir) / "test_failing.py"
         failing_test_path.write_text(failing_test)

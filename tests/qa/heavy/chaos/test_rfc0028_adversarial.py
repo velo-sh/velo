@@ -186,7 +186,7 @@ def test_fail_1():
     raise Exception("Intentional failure 1")
 
 def test_fail_2():
-    assert False, "Intentional failure 2"
+    pytest.fail("Intentional failure 2"
 
 def test_fail_3():
     import sys
