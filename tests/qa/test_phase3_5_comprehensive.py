@@ -539,35 +539,83 @@ class TestL2SadPath:
             assert result.returncode != 0
 
     def test_l2_003_syntax_error(self):
-        """Clear error when app has syntax error."""
+        """Clear error when app has syntax error.
+
+        Note: velo serve is a long-running process. We start it in background
+        and wait briefly for it to fail fast on syntax errors.
+        """
         with ComprehensiveTestEnv() as env:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
-            env.install("uvicorn")  # Install uvicorn so we test syntax check
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "broken:app")
-            assert result.returncode != 0
-            # Should mention syntax, error, or uvicorn missing
-            assert (
-                "syntax" in result.stderr.lower()
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
-            )
+            # Start serve in background
+            port = env.next_port()
+            proc = env.serve("broken:app", port)
+
+            try:
+                # Wait up to 5 seconds for process to exit (should fail fast)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # Still running after 5s - fail the test
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    pytest.fail("velo serve should fail fast on syntax error, not hang")
+
+                # Process exited - check result
+                assert proc.returncode != 0, f"Expected non-zero exit, got {proc.returncode}"
+                stderr = proc.stderr.read() if proc.stderr else ""
+                assert "syntax" in stderr.lower() or "error" in stderr.lower() or "uvicorn" in stderr.lower(), (
+                    f"Expected error message, got: {stderr}"
+                )
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
 
     def test_l2_004_app_crashes_on_import(self):
-        """Clear error when app crashes on import."""
+        """Clear error when app crashes on import.
+
+        Note: velo serve is a long-running process. We start it in background
+        and wait briefly for it to fail fast on import errors.
+        """
         with ComprehensiveTestEnv() as env:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
-            env.install("uvicorn")  # Install uvicorn so we test crash handling
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "crasher:app")
-            assert result.returncode != 0
-            # Should show the actual error or dependency message
-            assert (
-                "CRASH" in result.stderr
-                or "RuntimeError" in result.stderr
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
-            )
+            # Start serve in background
+            port = env.next_port()
+            proc = env.serve("crasher:app", port)
+
+            try:
+                # Wait up to 5 seconds for process to exit (should fail fast)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    # Still running after 5s - fail the test
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    pytest.fail("velo serve should fail fast on import error, not hang")
+
+                # Process exited - check result
+                assert proc.returncode != 0, f"Expected non-zero exit, got {proc.returncode}"
+                stderr = proc.stderr.read() if proc.stderr else ""
+                assert (
+                    "CRASH" in stderr
+                    or "RuntimeError" in stderr
+                    or "error" in stderr.lower()
+                    or "uvicorn" in stderr.lower()
+                ), f"Expected error message, got: {stderr}"
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
 
     def test_l2_005_invalid_app_format(self):
         """Clear error for invalid app format."""

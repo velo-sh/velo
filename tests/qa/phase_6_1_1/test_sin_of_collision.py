@@ -48,6 +48,7 @@ def workspace_b(tmp_path):
 
 
 @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Build velo first")
+@pytest.mark.timeout(30)  # Ensure test doesn't hang forever
 def test_workspace_collision_hijacking(workspace_a, workspace_b):
     """
     FATAL DEFECT TEST: Demonstrates that Workspace B can hijack Workspace A's Zygote server
