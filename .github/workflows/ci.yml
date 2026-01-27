@@ -369,6 +369,24 @@ jobs:
       - name: Run Mypy via Pre-Commit (SSOT)
         run: uv run pre-commit run mypy --all-files
 
+  ruff:
+    name: Ruff (Python Lint)
+    needs: changes
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.qa_infra == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      - name: Run Ruff (lint + format check)
+        run: |
+          uv run ruff check tests/ velo_zygote/ scripts/ python/
+          uv run ruff format --check tests/ velo_zygote/ scripts/ python/
+
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
