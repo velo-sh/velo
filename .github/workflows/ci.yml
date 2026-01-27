@@ -21,6 +21,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  PYO3_PYTHON: /home/runner/work/velo/velo/.venv/bin/python
   UV_VERSION: "0.9" # Centralized uv version
   VELO_ENV: ci # RFC-0012: CI environment profile (disables strict_optimizations)
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
@@ -302,8 +303,6 @@ jobs:
   bench-check:
     name: Zygote Startup Benchmark
     runs-on: ubuntu-latest
-    env:
-      PYO3_PYTHON: /home/runner/work/velo/velo/.venv/bin/python
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
