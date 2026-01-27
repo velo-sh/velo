@@ -251,8 +251,9 @@ class WorkerRegistry:
                     reaped_pid, _ = os.waitpid(-1, os.WNOHANG)
                     if reaped_pid == 0:
                         break
-                    if reaped_pid in pids:
-                        self.remove(reaped_pid)
+                    sys.stderr.write(f"[ZYGOTE] Reaped zombie child: {reaped_pid}\n")
+                    sys.stderr.flush()
+                    self.remove(reaped_pid)
             except ChildProcessError:
                 pass  # No children to wait for
 
@@ -273,6 +274,13 @@ class WorkerRegistry:
                 sys.stderr.write(f"[ZYGOTE] SIGKILL -> PID {pid}\n")
                 sys.stderr.flush()
                 os.kill(pid, signal.SIGKILL)
+                # P0: Aggressive reaping post-SIGKILL to prevent zombie accumulation
+                try:
+                    os.waitpid(pid, 0)
+                    sys.stderr.write(f"[ZYGOTE] Reaped PID {pid} after SIGKILL\n")
+                    sys.stderr.flush()
+                except ChildProcessError:
+                    pass
             except Exception:
                 pass
             self.remove(pid)

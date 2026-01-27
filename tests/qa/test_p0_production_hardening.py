@@ -479,14 +479,20 @@ class TestDrainUnderLoad:
 
         try:
             # Fork stubborn workers (ignore SIGTERM)
-            for _ in range(stubborn_count):
+            for i in range(stubborn_count):
                 pid = os.fork()
                 if pid == 0:
+                    # Child
                     signal.signal(signal.SIGTERM, signal.SIG_IGN)
                     time.sleep(60)
-                    sys.exit(0)
+                    os._exit(0)
+                print(f"DEBUG: Forked stubborn {i} PID {pid}")
                 pids.append(pid)
                 registry.add(pid)
+
+            # Give stubborn workers a moment to install SIG_IGN
+            time.sleep(0.1)
+            print(f"DEBUG: Registry after stubborn: {registry.get_stats()}")
 
             # Fork graceful workers
             for _ in range(graceful_count):

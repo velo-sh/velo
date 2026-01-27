@@ -11,7 +11,7 @@ workspace = true
 [dependencies]
 serde = { workspace = true }
 rmp-serde = { workspace = true }
-uuid = { workspace = true }
+uuid = { version = "1.7", features = ["v4", "v7", "js"], optional = true }
 arbitrary = { version = "1.3", features = ["derive"], optional = true }
 # Protocol uses PathBuf for script/socket paths
 # We avoid unnecessary L7 deps here to keep it pure.
