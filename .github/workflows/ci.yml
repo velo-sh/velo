@@ -305,12 +305,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
       - name: Build Velo
-        run: |
-          uv sync --dev
-          cargo build -p velo
+        run: cargo build -p velo
       - name: Run Startup Benchmark
         run: |
           ./target/debug/velo zygote start &
