@@ -288,7 +288,7 @@ velo_zygote/                    # ← Aligned with: src/zygote/
 ├── v_fork.py                   # ← src/zygote/v_fork.rs (REFACTOR REQUIRED)
 ├── v_rsgi.py                   # ← src/serve/v_rsgi.rs (REFACTOR REQUIRED)
 ├── v_shield.py                 # ← src/security/v_shield.rs (REFACTOR REQUIRED)
-├── lifecycle.py                # ← src/zygote/guardian.rs
+├── worker_lifecycle.py          # ← src/zygote/guardian.rs
 ├── settings.py                 # ← src/config.rs
 ├── paths.py                    # ← src/zygote/path.rs
 ├── protocol.py                 # ← src/zygote/protocol.rs
@@ -312,7 +312,7 @@ velo_zygote/                    # ← Aligned with: src/zygote/
 | `velo_zygote/v_fork.py` | Fork 生命周期 | `fork.rs` → **`v_fork.rs`** |
 | `velo_zygote/v_rsgi.py` | RSGI 协议 | `rsgi.rs` → **`v_rsgi.rs`** |
 | `velo_zygote/v_shield.py` | 安全屏障 | `shield.rs` → **`v_shield.rs`** |
-| `velo_zygote/lifecycle.py` | Security hooks | `src/zygote/guardian.rs` |
+| `velo_zygote/worker_lifecycle.py` | Security hooks | `src/zygote/guardian.rs` |
 | `velo_zygote/settings.py` | 配置 SSOT | `src/config.rs` |
 | `velo_zygote/paths.py` | 路径解析 | `src/zygote/path.rs` |
 | `velo_zygote/worker_launcher.py` | Worker 启动 | `src/serve/worker.rs` |
@@ -521,7 +521,7 @@ os.environ["VELO_IS_ZYGOTE"] = "1"
 
 **Solution**: Cancel inherited tasks and reset event loop in `post_fork_reinit`:
 ```python
-# velo_zygote/lifecycle.py::hook_security
+# velo_zygote/worker_lifecycle.py::hook_security
 import asyncio
 try:
     loop = asyncio.get_running_loop()

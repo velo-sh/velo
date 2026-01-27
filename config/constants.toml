@@ -28,7 +28,17 @@ socket_startup_timeout = 30
 worker_handshake_timeout = 10
 graceful_shutdown_timeout = 60
 default_slow_threshold_ms = 100
+# SLO: Error Budget Policy
+slo_fork_latency_ms = 100 # P99 < 100ms
 strict_optimizations = true # H-Gov: Enabled in CI/Dev by default
+sandbox_network_isolation = true # RFC-0011: Enable network namespace isolation
+sandbox_privilege_escalation_block = true # RFC-0011: PR_SET_NO_NEW_PRIVS
+
+# Production Hardening Phase 2
+circuit_breaker_threshold = 3
+circuit_breaker_enabled = true
+metrics_enabled = true
+tracing_enabled = true
 
 # Network
 default_host = "127.0.0.1"

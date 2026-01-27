@@ -81,7 +81,7 @@ class TestCoreContract:
         """
         # Fix: use path relative to the test file
         root_dir = Path(__file__).parents[3]
-        registry_path = root_dir / "src/shm/registry.rs"
+        registry_path = root_dir / "crates/velo-core/src/shm/registry.rs"
         content = registry_path.read_text()
         if "MAP_HUGETLB" not in content:
             pytest.fail("REGRESSION: H-20 HugePage support (MAP_HUGETLB) is MISSING from implementation! (Finding 002)")
@@ -92,7 +92,7 @@ class TestCoreContract:
         H-20: HugePage Support.
         """
         root_dir = Path(__file__).parents[3]
-        registry_path = root_dir / "src/shm/registry.rs"
+        registry_path = root_dir / "crates/velo-core/src/shm/registry.rs"
         content = registry_path.read_text()
 
         has_mfd = "MFD_HUGETLB" in content

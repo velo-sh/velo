@@ -100,6 +100,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -477,6 +486,17 @@ checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid",
  "zeroize",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -881,12 +901,6 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash",
 ]
-
-[[package]]
-name = "hashbrown"
-version = "0.15.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 
 [[package]]
 name = "hashbrown"
@@ -2106,13 +2120,13 @@ dependencies = [
 
 [[package]]
 name = "rkyv"
-version = "0.8.12"
+version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a640b26f007713818e9a9b65d34da1cf58538207b052916a83d80e43f3ffa4"
+checksum = "360b333c61ae24e5af3ae7c8660bd6b21ccd8200dbbc5d33c2454421e85b9c69"
 dependencies = [
  "bytecheck",
  "bytes",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
  "indexmap",
  "munge",
  "ptr_meta",
@@ -2125,9 +2139,9 @@ dependencies = [
 
 [[package]]
 name = "rkyv_derive"
-version = "0.8.12"
+version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd83f5f173ff41e00337d97f6572e416d022ef8a19f371817259ae960324c482"
+checksum = "7c02f8cdd12b307ab69fe0acf4cd2249c7460eb89dce64a0febadf934ebb6a9e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3080,25 +3094,131 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blake3",
- "bytes",
  "chrono",
  "clap",
+ "colored",
+ "dirs",
+ "env_logger",
+ "glob",
+ "goblin",
+ "hex",
+ "hostname",
+ "ignore",
+ "indicatif",
+ "libc",
+ "log",
+ "nix",
+ "pyo3",
+ "rayon",
+ "rkyv",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "strsim",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "velo-core",
+ "velo-protocol",
+ "velo-serve",
+ "velo-test",
+ "which",
+]
+
+[[package]]
+name = "velo-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "bytes",
+ "chrono",
  "colored",
  "crc32fast",
  "dirs",
  "env_logger",
  "fs2",
  "futures-util",
- "glob",
  "goblin",
- "granian-core",
  "hex",
  "hostname",
+ "ignore",
+ "indicatif",
+ "libc",
+ "log",
+ "nix",
+ "notify",
+ "once_cell",
+ "parking_lot",
+ "pyo3",
+ "rayon",
+ "regex",
+ "rkyv",
+ "rmp-serde",
+ "rustpython-ast",
+ "rustpython-parser",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "socket2",
+ "strsim",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
+ "velo-graph",
+ "velo-protocol",
+ "velo_macros",
+ "which",
+]
+
+[[package]]
+name = "velo-graph"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "log",
+ "rayon",
+ "rkyv",
+ "rustpython-ast",
+ "rustpython-parser",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "velo-protocol"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "toml",
+ "uuid",
+]
+
+[[package]]
+name = "velo-serve"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "chrono",
+ "clap",
+ "colored",
+ "futures-util",
+ "glob",
+ "granian-core",
+ "hex",
  "http",
  "http-body-util",
  "hyper",
  "hyper-util",
- "ignore",
  "indicatif",
  "libc",
  "log",
@@ -3112,8 +3232,6 @@ dependencies = [
  "regex",
  "rkyv",
  "rmp-serde",
- "rustpython-ast",
- "rustpython-parser",
  "serde",
  "serde_json",
  "signal-hook",
@@ -3125,13 +3243,32 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite 0.21.0",
- "toml",
  "tower",
  "tower-service",
- "tracing",
  "uuid",
- "velo_macros",
- "which",
+ "velo-core",
+ "velo-protocol",
+]
+
+[[package]]
+name = "velo-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "indicatif",
+ "libc",
+ "log",
+ "nix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "velo-core",
+ "velo-protocol",
+ "velo-serve",
 ]
 
 [[package]]

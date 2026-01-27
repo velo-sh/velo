@@ -60,6 +60,13 @@ class VeloConfig:
     host: str = field(default="127.0.0.1")
     port: int = field(default=DEFAULT_PORT)
 
+    # Hardening (Phase 2)
+    circuit_breaker_threshold: int = field(default=3)
+    circuit_breaker_enabled: bool = field(default=True)
+    metrics_enabled: bool = field(default=True)
+    tracing_enabled: bool = field(default=True)
+    slo_fork_latency_ms: int = field(default=100)
+
     # Features
     preload_modules: list[str] = field(default_factory=list)
 
@@ -115,6 +122,11 @@ class VeloConfig:
             port=get_int("VELO_PORT", DEFAULT_PORT),
             preload_modules=get_list("VELO_PRELOAD"),
             hpc_threads=get_int("VELO_SECURITY_HPC_THREADS", 1),
+            circuit_breaker_threshold=get_int("VELO_CIRCUIT_BREAKER_THRESHOLD", 3),
+            circuit_breaker_enabled=os.environ.get("VELO_CIRCUIT_BREAKER_ENABLED") == "1",
+            metrics_enabled=os.environ.get("VELO_METRICS_ENABLED") == "1",
+            tracing_enabled=os.environ.get("VELO_TRACING_ENABLED") == "1",
+            slo_fork_latency_ms=get_int("VELO_SLO_FORK_LATENCY_MS", 100),
         )
 
         # Resolve Security Matrix (Self-contained logic)

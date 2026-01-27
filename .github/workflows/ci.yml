@@ -96,28 +96,28 @@ jobs:
         with:
           filters: |
             rust:
-              - 'src/**/*.rs'
+              - 'crates/**/*.rs'
               - 'tests/**/*.rs'
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
-              - 'build.rs'
               - 'config/**'
+              - 'velo_macros/**/*.rs'
             loader:
-              - 'src/loader/**/*.rs'
+              - 'crates/velo-cli/src/cmd/loader.rs'
               - 'python/velo_loader.py'
               - 'tests/qa/test_phase5_loader.py'
               - 'tests/qa/phase5/**'
               - 'tests/qa/phase5_1/**'
               - 'tests/qa/phase5_2/**'
             zygote:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
               - 'tests/qa/test_preflight.py'
             serve:
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
               - 'tests/qa/phase_6_1_1/**'
               - 'tests/qa/phase6_1/**'
@@ -126,13 +126,13 @@ jobs:
               - 'tests/qa/test_e2e_serve.py'
               - 'scripts/qa-fast.sh'
             analyze:
-              - 'src/cmd/analyze.rs'
-              - 'src/cmd/agent.rs'
+              - 'crates/velo-cli/src/cmd/analyze.rs'
+              - 'crates/velo-cli/src/cmd/agent.rs'
               - 'tests/qa/test_phase4_*.py'
             kinetic:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase6_2_*.py'
             workflow:
               - '.github/workflows/ci.yml'
@@ -208,21 +208,33 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
-  # Rust tests run in parallel with other QA jobs
-  rust-tests:
-    name: Rust Tests
+  # Parallel Rust Test Matrix - RFC-0033: Leverage workspace independence
+  rust-tests-matrix:
+    name: "Rust Tests: ${{ matrix.crate }}"
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-graph
+          - velo-core
+          - velo-serve
+          - velo
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build-v2"
+          shared-key: "velo-test-${{ matrix.crate }}"
+          cache-on-failure: true
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
@@ -231,18 +243,30 @@ jobs:
         run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
-      - name: Run Rust tests
-        run: cargo test
+      - name: "Test: ${{ matrix.crate }}"
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh test-crate ${{ matrix.crate }}
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
 
-  clippy:
-    name: Clippy
+  # Parallel Clippy Matrix - RFC-0033: Leverage workspace independence
+  clippy-matrix:
+    name: "Clippy: ${{ matrix.crate }}"
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-graph
+          - velo-core
+          - velo-serve
+          - velo
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -250,7 +274,8 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build-v2"
+          shared-key: "velo-clippy-${{ matrix.crate }}"
+          cache-on-failure: true
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
@@ -258,8 +283,39 @@ jobs:
       - run: uv sync --python 3.11
       - name: Set PYO3_PYTHON for Rust build
         run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: "Clippy: ${{ matrix.crate }}"
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh clippy-crate ${{ matrix.crate }}
+
+  python-tests:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run Pytest
+        run: PYTHONPATH=. uv run pytest tests/unit
+
+  bench-check:
+    name: Zygote Startup Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+      - name: Build Velo
+        run: cargo build -p velo
+      - name: Run Startup Benchmark
+        run: |
+          ./target/debug/velo zygote start &
+          # Simple check for startup speed (should be < 2s in CI)
+          timeout 2s sh -c 'until ./target/debug/velo zygote status; do sleep 0.1; done'
+          ./target/debug/velo zygote stop
 
   fmt:
     name: Format
@@ -274,6 +330,25 @@ jobs:
           components: rustfmt
       - name: Check Format
         run: cargo fmt --check
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-audit"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo-audit
+        run: cargo audit
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo-deny
+        run: cargo deny check
 
   mypy:
     name: Mypy (Python Type Check)
@@ -748,6 +823,62 @@ jobs:
              chmod +x .venv/bin/python3
              uv run pytest tests/qa/test_phase4_integration.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
+  # ============================================
+  # P0 Production Hardening & Security Regression
+  # RFC-0033: New critical test suites
+  # ============================================
+
+  qa-p0-production-hardening:
+    name: "QA: P0 Production Hardening"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/test_p0_production_hardening.py -v --tb=short
+
+  qa-security-shield:
+    name: "QA: Security Shield (RFC-0012)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/security/test_sec_shield.py -v --tb=short
+
+  qa-regression-ci-fixes:
+    name: "QA: CI Regression Fixes"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/test_regression_ci_fixes.py -v --tb=short
+
   qa-benchmark:
     name: "QA: Benchmark"
     runs-on: ubuntu-latest
@@ -790,8 +921,9 @@ jobs:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
+      # SSOT: Pre-flight must run separately (not as a test argument)
       - name: Pre-Flight Diagnostic
-        run: cargo llvm-cov nextest -- debug pre-flight
+        run: ./scripts/ci-runner.sh pre-flight
 
       - name: Run tests with coverage
         run: cargo llvm-cov nextest --lcov --output-path lcov.info

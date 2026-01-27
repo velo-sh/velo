@@ -40,6 +40,7 @@ def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
     result = subprocess.run(
         [env.velo, "serve", "main:app", "--dry-run"],
         cwd=env.path,
+        env=env.env,
         capture_output=True,
         text=True,
         timeout=10,
@@ -119,7 +120,7 @@ def test_reg_62_003_ci_home_allowance(isolated_env, short_socket):
     env = isolated_env
     socket_path = short_socket
 
-    cmd_env = os.environ.copy()
+    cmd_env = env.env.copy()
     cmd_env["GITHUB_ACTIONS"] = "true"
     cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
 

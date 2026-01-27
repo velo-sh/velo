@@ -43,6 +43,15 @@ This document tracks high-potential technologies, architectural candidates, and 
 - **Context**: Roadmap Phase 12
 - **Value**: Hardware affinity to minimize L3 Cache misses in ultra-high concurrency (>50k RPS) scenarios.
 
+### Linux Landlock LSM (Security Hardening)
+- **Status**: Candidate
+- **Context**: RFC-0033 Supplemental Audit (Jan 2026)
+- **Value**: Implementation of path-level whitelisting within `v_shield.rs` (Linux 5.13+).
+- **Benefits**:
+    - Prevents untrusted Python code from accessing host sensitive files (e.g., `/etc/passwd`).
+    - Provides a "Surgical Shielding" layer beyond standard namespaces.
+
+
 ---
 
 ## ⚡ Application Scenarios (Zygote COW Vision)
@@ -79,7 +88,140 @@ This document tracks high-potential technologies, architectural candidates, and 
 - **Status**: Research
 - **Scope**: Automated `kill -9` rotation and environment poisoning to verify 0% error rate under pressure.
 
+### IPC Protocol Fuzzing (Reliability)
+- **Status**: Research
+- **Context**: Security Hardening Audit (Jan 2026)
+- **Value**: Using `cargo-fuzz` to stress test the `velo-protocol` deserialization boundaries.
+- **Benefits**:
+    - Detects memory safety or DoS vulnerabilities in cross-process communication.
+    - Ensures the Zygote is resilient against maliciously crafted payloads.
+
+---
+
+## 🏗️ Architecture Evolution (RFC-0033 Follow-up)
+
+### velo-protocol WASM Target
+- **Status**: Candidate
+- **Context**: RFC-0033 Closure (Jan 2026)
+- **Value**: Compile `velo-protocol` to WebAssembly for browser-based tools.
+- **Benefits**:
+    - IDE plugins can parse Zygote messages without Rust toolchain
+    - Web dashboards can decode MessagePack logs directly
+    - Online playground for protocol learning
+
+### VS Code / Jupyter Integration
+- **Status**: Research
+- **Context**: Developer Experience Vision
+- **Value**: Native integration with popular development environments.
+- **Benefits**:
+    - VS Code extension for Zygote status monitoring and IPC debugging
+    - Jupyter kernel with Velo-aware execution (COW fork per cell)
+    - JetBrains plugin support via shared WASM module
+
+### velo-core Modular Split
+- **Status**: Research
+- **Context**: RFC-0033 Follow-up
+- **Proposal**: Split `graph/` (static analysis) and `zygote/` (process management) into separate crates.
+- **Value**: Improved compile parallelism; clearer domain boundaries.
+
+### Feature Flags for velo-serve
+- **Status**: Deferred
+- **Context**: RFC-0033 Optimization Review
+- **Proposal**: Make `hyper`/WebSocket optional via Cargo features.
+- **Trade-off**: Increases test matrix complexity; implement only if user demand exists.
+
+### Parallel Test Matrix
+- **Status**: Candidate
+- **Context**: CI Optimization
+- **Value**: Split `cargo test` into per-crate parallel jobs (similar to clippy-matrix).
+
+---
+
+## 🔧 Technical Debt
+
+### lifecycle.py Rename
+- **Status**: Planned
+- **Issue**: Historical naming causes confusion for new developers.
+- **Proposed Name**: `worker_lifecycle.py` or `process_manager.py`
+
+### WorkerRegistry Lock Optimization
+- **Status**: Research
+- **Context**: Performance Hardening
+- **Proposal**: Migrate from global lock to fine-grained or lock-free design.
+- **Prerequisite**: Monitor lock contention metrics first.
+
+---
+
+## ⚡ Performance Deep Dive (Deferred)
+
+### NUMA Core Pinning
+- **Status**: Research
+- **Context**: High-concurrency servers (>32 cores)
+- **Risk**: macOS has no NUMA; requires dual code path
+- **Prerequisite**: Production workload >50k RPS
+
+### Batch IPC Coalescing
+- **Status**: Research
+- **Proposal**: Merge small IPC messages within `BATCH_WINDOW_MS`
+- **Prerequisite**: Monitor IPC message frequency distribution first
+
+### SmallVec Hot Path Optimization
+- **Status**: Candidate
+- **Proposal**: Replace `Vec<u32>` with `SmallVec<[u32; 8]>` for `WorkerPids`, `ModuleDeps`
+- **Benefit**: Avoid heap allocation for small collections
+
+### Bundle zstd Compression
+- **Status**: Research
+- **Proposal**: zstd + mmap for bundle format
+- **Prerequisite**: Benchmark to confirm decompression speed offsets I/O gains
+
+---
+
+## 🛡️ Security Hardening (Deferred)
+
+### seccomp-bpf Syscall Filtering
+- **Status**: Research
+- **Context**: Linux-only, complements Landlock
+- **Scope**: Restrict worker syscalls to whitelisted set
+
+### SBOM Generation
+- **Status**: Candidate
+- **Proposal**: Use `cargo-sbom` to generate Software Bill of Materials
+- **Benefit**: Enterprise compliance, supply chain transparency
+
+---
+
+## 📊 Observability Maturity (Roadmap)
+
+### L2: Distributed Tracing (OpenTelemetry)
+- **Status**: Research
+- **Context**: Span propagation across fork boundaries
+- **Proposal**: RFC-0046 candidate
+
+### L3: Profiling Integration
+- **Status**: Deferred
+- **Scope**: pprof/pyspy integration for CPU flame graphs
+- **Trigger**: User-reported performance issues
+
+### L4: Anomaly Detection
+- **Status**: Long-term (v2.0+)
+- **Scope**: ML-based latency anomaly alerts
+
+---
+
+## 🔄 Resilience Patterns (Deferred)
+
+### Circuit Breaker for Zygote
+- **Status**: Research
+- **Proposal**: After N consecutive fork failures, degrade to direct spawn
+- **Benefit**: Prevents cascade failures
+
+### Config Hot Reload
+- **Status**: Research
+- **Proposal**: Update pool size / preload list without Zygote restart
+- **Mechanism**: SIGHUP handler + config file watch
+
 ---
 
 **Custodian**: Velo Architect
-**Last Updated**: 2026-01-19
+**Last Updated**: 2026-01-27

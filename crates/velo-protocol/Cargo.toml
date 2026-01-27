@@ -1,0 +1,27 @@
+[package]
+name = "velo-protocol"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+uuid = { version = "1.7", features = ["v4", "v7", "js"], optional = true }
+arbitrary = { version = "1.3", features = ["derive"], optional = true }
+# Protocol uses PathBuf for script/socket paths
+# We avoid unnecessary L7 deps here to keep it pure.
+
+[build-dependencies]
+toml = { workspace = true }
+serde = { workspace = true }
+
+[features]
+fuzz = ["arbitrary"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

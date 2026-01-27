@@ -120,18 +120,24 @@ run_in_docker() {
 
     # 3. Clean
     if [[ "$ACTION" == "clean" ]]; then
-        log_info "Cleaning Docker volumes..."
+        log_info "Cleaning Velo CI Docker volumes..."
+        docker volume rm velo-ci-target velo-ci-venv 2>/dev/null || true
         docker volume prune -f
+        log_info "Docker volumes cleaned"
         return
     fi
 
     # 4. RUN (The Universal Driver Hook)
     # CORE LOGIC: We run THIS SAME SCRIPT inside the container but with --local
+    # 
+    # CRITICAL: We use named volumes for target/ and .venv/ to:
+    # 1. Preserve Docker-built artifacts across runs (speedup)
+    # 2. Avoid masking container's pre-built binaries with empty anonymous volumes
     log_info "Orchestrating Velo CI in Docker..."
     docker run --rm \
         -v "$PROJECT_ROOT:/workspace:delegated" \
-        -v /workspace/target \
-        -v /workspace/.venv \
+        -v velo-ci-target:/workspace/target \
+        -v velo-ci-venv:/workspace/.venv \
         -e GITHUB_ACTIONS=true \
         -e CI=true \
         -e VELO_ENV=ci \

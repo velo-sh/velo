@@ -12,7 +12,7 @@
 |:---|:---|:---|
 | Zygote Server | ✅ | `velo_zygote/main.py` |
 | Fork Handler | ✅ | `velo_zygote/fork.py` |
-| Worker Registry | ✅ | `velo_zygote/lifecycle.py` |
+| Worker Registry | ✅ | `velo_zygote/worker_lifecycle.py` |
 | COW Memory Model | ✅ | Verified 77% sharing |
 
 ---

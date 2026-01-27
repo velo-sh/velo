@@ -30,7 +30,6 @@ from typing import Any
 
 try:
     from velo_zygote.constants import PROTOCOL_VERSION
-    from velo_zygote.lifecycle import IdlePool, WorkerRegistry, ZygoteState
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
@@ -38,10 +37,10 @@ try:
     from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.v_fork import ForkHandler
     from velo_zygote.v_shield import PathValidator
+    from velo_zygote.worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION
-        from .lifecycle import IdlePool, WorkerRegistry, ZygoteState
         from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
@@ -49,6 +48,7 @@ except (ImportError, ValueError):
         from .utils import ForkRateLimiter, LogUtils, request_context
         from .v_fork import ForkHandler
         from .v_shield import PathValidator
+        from .worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
@@ -57,8 +57,7 @@ except (ImportError, ValueError):
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
-
-        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
+        from worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -213,6 +212,9 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
                 "message": "Preload timeout: modules still loading after 30s",
             }
 
+    if server.state == ZygoteState.ERROR:
+        return {"type": "Error", "message": "Zygote is in ERROR state due to previous preload failure."}
+
     if not server.fork_rate_limiter.acquire():
         return {
             "type": "Error",
@@ -339,7 +341,7 @@ async def handle_shutdown(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[s
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
-    server.worker_registry.kill_all()
+    server._cleanup()
     # RFC-0012 C.6: Schedule exit for next tick to allow sending Ack
     asyncio.get_event_loop().call_later(0.01, lambda: os._exit(0))
     return {"type": "Ack"}
@@ -352,6 +354,7 @@ async def handle_zy_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[
         "pid": os.getpid(),
         "state": server.state.name,
         "preload": server._preloaded_modules,
+        "preload_done": server.preload_complete.is_set(),
         # Phase 15 P2: Reporting pool metrics to the Rust Guardian
         "pool_count": server.idle_pool.get_count(),
         "target_pool_size": server.idle_pool._target_size,
@@ -749,6 +752,12 @@ class ZygoteServer:
             # 2. Start Fork Queue immediately
             asyncio.create_task(self._process_fork_queue())
 
+            # P0: Prewarm connection pool at startup
+            # Ensures first request doesn't block on pool fill
+            if self.idle_pool._target_size > 0:
+                asyncio.create_task(self._fill_pool_now())
+                LogUtils.log(f"Pool prewarming initiated (target: {self.idle_pool._target_size})")
+
             # 3. Second Pass: App and Deep Warming (Background)
             # We want this to finish before we set preload_complete
             await loop.run_in_executor(None, self._preload_app_and_warming_safe)
@@ -773,6 +782,7 @@ class ZygoteServer:
             LogUtils.log("Zygote Background Warming Complete.")
         except Exception as e:
             LogUtils.log(f"Background Warming Failed: {e}")
+            self._set_state(ZygoteState.ERROR)
 
     def _preload_core_modules(self) -> None:
         import importlib
@@ -807,6 +817,7 @@ class ZygoteServer:
                 self._preloaded_modules.append(app_module)
             except Exception as e:
                 LogUtils.log(f"Pre-loading application failed: {e}")
+                raise  # Re-raise to trigger ERROR state
 
         # 3. Deep warming: Pre-create uvicorn Server for immediate fork (Target: 10x)
         if self.app_name and "uvicorn" in sys.modules:
@@ -918,13 +929,36 @@ class ZygoteServer:
 
             await asyncio.sleep(1.0)  # Slower check, ReplenishPool command triggers immediate fill
 
+    def _cleanup(self) -> None:
+        """Cleanup resources on exit (socket, workers)."""
+        self.worker_registry.kill_all()
+        if not self.is_abstract and os.path.exists(self.socket_path):
+            try:
+                os.unlink(self.socket_path)
+                LogUtils.log(f"Cleaned up socket at {self.socket_path}")
+            except OSError as e:
+                LogUtils.log(f"Failed to cleanup socket: {e}")
+
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
-            # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
-            sys.stderr.write(f"\nZygote received signal {sig}. Cleaning up workers...\n")
-            sys.stderr.flush()
-            self.worker_registry.kill_all()
-            # Use os._exit to ensure immediate death and no orphans
+            # P0 Production: Graceful shutdown chain
+            # SIGTERM → drain_workers(timeout) → SIGKILL remaining → exit(0)
+            drain_timeout = float(os.environ.get("VELO_DRAIN_TIMEOUT", "30"))
+            LogUtils.log(f"Zygote received signal {sig}. Starting graceful shutdown (drain: {drain_timeout}s)...")
+            self._set_state(ZygoteState.SHUTDOWN)
+
+            # Phase 1: Graceful drain with timeout
+            remaining = self.worker_registry.drain_all(drain_timeout)
+
+            # Phase 2: Force kill any workers that didn't exit gracefully
+            if remaining:
+                LogUtils.log(f"Force killing {len(remaining)} unresponsive workers...")
+                self.worker_registry.force_kill(remaining)
+
+            # Phase 3: Cleanup resources (Socket, Registry) and Exit
+            # SEC-P0-006: Ensure socket is deleted even if we use os._exit
+            LogUtils.log("Graceful shutdown complete. Cleaning up...")
+            self._cleanup()
             os._exit(0)
 
         # Use standard signal.signal for reliable termination even if loop is hung

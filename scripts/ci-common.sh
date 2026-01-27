@@ -235,7 +235,17 @@ parse_tier_to_paths() {
 
 run_rust_tests() {
     log_step "Running Rust tests..."
-    cargo test --lib ${EXTRA_RUST_ARGS:-}
+    
+    # SSOT: Use cargo-nextest if available (matches GitHub CI)
+    # Fallback to cargo test for minimal environments
+    if command -v cargo-nextest &>/dev/null || cargo nextest --version &>/dev/null 2>&1; then
+        log_step "Using cargo-nextest (GitHub CI compatible)"
+        cargo nextest run --lib ${EXTRA_RUST_ARGS:-}
+    else
+        log_step "Falling back to cargo test (nextest not installed)"
+        cargo test --lib ${EXTRA_RUST_ARGS:-}
+    fi
+    
     log_success "Rust tests passed"
 }
 
@@ -283,15 +293,83 @@ run_python_tests() {
 # Phase 4: Lint
 # =============================================================================
 run_clippy() {
-    log_step "Running Clippy..."
+    log_step "Running Clippy (all crates)..."
     cargo clippy --all-targets --all-features -- -D warnings
     log_success "Clippy passed"
+}
+
+# SSOT: Per-crate clippy (for GitHub Actions matrix jobs)
+run_clippy_crate() {
+    local crate="$1"
+    log_step "Running Clippy on crate: $crate..."
+    cargo clippy -p "$crate" --all-targets --all-features -- -D warnings
+    log_success "Clippy passed for $crate"
 }
 
 run_fmt_check() {
     log_step "Checking format..."
     cargo fmt --check
     log_success "Format OK"
+}
+
+# =============================================================================
+# SSOT: Per-crate Rust Tests (for GitHub Actions matrix jobs)
+# =============================================================================
+run_rust_tests_crate() {
+    local crate="$1"
+    log_step "Running Rust tests for crate: $crate..."
+    
+    # SSOT: Always use cargo-nextest for consistency with GitHub CI
+    if command -v cargo-nextest &>/dev/null || cargo nextest --version &>/dev/null 2>&1; then
+        cargo nextest run -p "$crate"
+    else
+        log_warn "cargo-nextest not found, falling back to cargo test"
+        cargo test -p "$crate"
+    fi
+    
+    log_success "Rust tests passed for $crate"
+}
+
+# =============================================================================
+# SSOT: Coverage with cargo-llvm-cov
+# =============================================================================
+run_coverage() {
+    log_step "Running code coverage..."
+    
+    # Pre-flight MUST run separately (not as a test)
+    log_step "Running pre-flight diagnostic before coverage..."
+    run_pre_flight
+    
+    # Run coverage
+    if command -v cargo-llvm-cov &>/dev/null; then
+        cargo llvm-cov nextest --lcov --output-path lcov.info
+        log_success "Coverage generated: lcov.info"
+    else
+        log_fatal "cargo-llvm-cov not installed. Run: cargo install cargo-llvm-cov"
+    fi
+}
+
+# =============================================================================
+# SSOT: Security Audit
+# =============================================================================
+run_security_audit() {
+    log_step "Running security audit..."
+    
+    # cargo-audit
+    if command -v cargo-audit &>/dev/null; then
+        cargo audit
+        log_success "cargo-audit passed"
+    else
+        log_warn "cargo-audit not installed, skipping"
+    fi
+    
+    # cargo-deny
+    if command -v cargo-deny &>/dev/null; then
+        cargo deny check
+        log_success "cargo-deny passed"
+    else
+        log_warn "cargo-deny not installed, skipping"
+    fi
 }
 
 # =============================================================================

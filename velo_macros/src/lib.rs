@@ -14,6 +14,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     }
 
     if !toml_path.exists() {
+        toml_path = Path::new(&manifest_dir).join("../../config/constants.toml");
+    }
+
+    if !toml_path.exists() {
         return TokenStream::from(quote! {
             compile_error!("Could not find config/constants.toml");
         });
@@ -48,10 +52,15 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     // Basic constants
     let socket_timeout = get_u64("socket_startup_timeout", 30);
     let slow_threshold = get_u64("default_slow_threshold_ms", 100);
+    let slo_fork_latency = get_u64("slo_fork_latency_ms", 100);
     let shutdown_timeout = get_u64("graceful_shutdown_timeout", 30);
     let hpc_threads = get_u64("security_hpc_threads", 1) as usize;
     let path_integrity = get_str("path_integrity", "warn");
     let strict_opt = get_bool("strict_optimizations", true);
+    let cb_threshold = get_u64("circuit_breaker_threshold", 3);
+    let cb_enabled = get_bool("circuit_breaker_enabled", true);
+    let metrics_enabled = get_bool("metrics_enabled", true);
+    let tracing_enabled = get_bool("tracing_enabled", true);
     let blocked_paths = config
         .get("default_blocked_paths")
         .and_then(|v| v.as_array())
@@ -112,11 +121,16 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
             pub max_bundle_size: usize,
             pub zygote_socket_timeout: u64,
             pub slow_threshold_ms: u64,
+            pub slo_fork_latency_ms: u64,
             pub security_trusted_prefixes: Vec<String>,
             pub security_env_whitelist: Vec<String>,
             pub security_hpc_threads: usize,
             pub graceful_shutdown_timeout: u64,
             pub strict_optimizations: bool,
+            pub circuit_breaker_threshold: u32,
+            pub circuit_breaker_enabled: bool,
+            pub metrics_enabled: bool,
+            pub tracing_enabled: bool,
             pub forensic_secret: Option<String>,
             pub default_blocked_paths: Vec<String>,
         }
@@ -155,6 +169,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
                     max_bundle_size: 1024 * 1024 * 1024,
                     zygote_socket_timeout: #socket_timeout,
                     slow_threshold_ms: #slow_threshold,
+                    slo_fork_latency_ms: #slo_fork_latency,
                     security_trusted_prefixes: Self::parse_string_array(raw_prefixes),
                     security_env_whitelist: Self::parse_string_array(raw_envs),
                     security_hpc_threads: #hpc_threads,
@@ -164,6 +179,10 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
                         "ci" => false,
                         _ => #strict_opt,
                     },
+                    circuit_breaker_threshold: #cb_threshold as u32,
+                    circuit_breaker_enabled: #cb_enabled,
+                    metrics_enabled: #metrics_enabled,
+                    tracing_enabled: #tracing_enabled,
                     forensic_secret: None,
                     default_blocked_paths: blocked_paths_raw.into_iter().map(|s| s.to_string()).collect(),
                 }
