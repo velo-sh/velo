@@ -821,37 +821,67 @@ pub fn run_server(
         }
     }
 
-    // Step 3: Early validation - Module existence check (FAIL-FAST-001)
-    // Quick Python check to verify the module can be found before starting infrastructure
+    // Step 3: Early validation - Module check (FAIL-FAST-001)
+    // Use find_spec to check existence, then ast.parse to check syntax.
+    // This catches errors without import side effects.
     {
         use std::process::Command;
+        // Python script that checks both existence and syntax without importing
+        let check_script = format!(
+            r#"
+import importlib.util
+import ast
+import sys
+
+# Step 1: Check if module exists
+spec = importlib.util.find_spec('{}')
+if spec is None:
+    print('MODULE_NOT_FOUND', file=sys.stderr)
+    sys.exit(1)
+
+# Step 2: Check syntax of the module file (if it has a file origin)
+if spec.origin and spec.origin.endswith('.py'):
+    try:
+        with open(spec.origin) as f:
+            ast.parse(f.read())
+    except SyntaxError as e:
+        print(f'SYNTAX_ERROR: {{e}}', file=sys.stderr)
+        sys.exit(1)
+"#,
+            module
+        );
+
         let check_result = Command::new(python_path)
-            .args([
-                "-c",
-                &format!(
-                    "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
-                    module
-                ),
-            ])
+            .args(["-c", &check_script])
             .current_dir(project_dir)
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
+            .stderr(std::process::Stdio::piped())
+            .output();
 
         match check_result {
-            Ok(status) if !status.success() => {
-                return Err(anyhow::anyhow!(
-                    "Module '{}' not found. Ensure the module exists and is importable from the project directory.",
-                    module
-                ));
+            Ok(output) if !output.status.success() => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("MODULE_NOT_FOUND") {
+                    return Err(anyhow::anyhow!(
+                        "Module '{}' not found. Ensure the module exists and is importable.",
+                        module
+                    ));
+                } else if stderr.contains("SYNTAX_ERROR") {
+                    return Err(anyhow::anyhow!(
+                        "Syntax error in module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Failed to verify module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                }
             }
-            Err(e) => {
-                // Python execution failed - continue anyway, let uvicorn report the error
-                eprintln!("warning: could not verify module existence: {}", e);
-            }
-            Ok(_) => {
-                // Module found, continue
-            }
+            Err(e) => eprintln!("warning: could not verify module: {}", e),
+            Ok(_) => {}
         }
     }
 

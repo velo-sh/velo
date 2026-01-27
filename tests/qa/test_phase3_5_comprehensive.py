@@ -564,94 +564,33 @@ class TestL2SadPath:
             result = env.run_velo("serve", "noapp:app")
             assert result.returncode != 0
 
-    @pytest.mark.skip(
-        reason="TODO(FAIL-FAST-001): velo serve uses find_spec which doesn't catch syntax errors. "
-        "Rust fix needed in runner.rs to use actual import instead of find_spec. "
-        "Tracked as technical debt - do not modify business logic to fix test."
-    )
     def test_l2_003_syntax_error(self):
-        """Clear error when app has syntax error.
-
-        Note: velo serve is a long-running process. We start it in background
-        and wait briefly for it to fail fast on syntax errors.
-        """
+        """Clear error when app has syntax error."""
         with ComprehensiveTestEnv() as env:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
             env.install("uvicorn")
 
-            # Start serve in background
-            port = env.next_port()
-            proc = env.serve("broken:app", port)
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "broken:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention syntax error
+            assert "syntax" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected syntax error message, got: {result.stderr}"
+            )
 
-            try:
-                # Wait up to 5 seconds for process to exit (should fail fast)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    # Still running after 5s - fail the test
-                    proc.terminate()
-                    proc.wait(timeout=2)
-                    pytest.fail("velo serve should fail fast on syntax error, not hang")
-
-                # Process exited - check result
-                assert proc.returncode != 0, f"Expected non-zero exit, got {proc.returncode}"
-                stderr = proc.stderr.read() if proc.stderr else ""
-                assert "syntax" in stderr.lower() or "error" in stderr.lower() or "uvicorn" in stderr.lower(), (
-                    f"Expected error message, got: {stderr}"
-                )
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-
-    @pytest.mark.skip(
-        reason="TODO(FAIL-FAST-001): velo serve uses find_spec which doesn't catch import errors. "
-        "Rust fix needed in runner.rs to use actual import instead of find_spec. "
-        "Tracked as technical debt - do not modify business logic to fix test."
-    )
     def test_l2_004_app_crashes_on_import(self):
-        """Clear error when app crashes on import.
-
-        Note: velo serve is a long-running process. We start it in background
-        and wait briefly for it to fail fast on import errors.
-        """
+        """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
             env.install("uvicorn")
 
-            # Start serve in background
-            port = env.next_port()
-            proc = env.serve("crasher:app", port)
-
-            try:
-                # Wait up to 5 seconds for process to exit (should fail fast)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    # Still running after 5s - fail the test
-                    proc.terminate()
-                    proc.wait(timeout=2)
-                    pytest.fail("velo serve should fail fast on import error, not hang")
-
-                # Process exited - check result
-                assert proc.returncode != 0, f"Expected non-zero exit, got {proc.returncode}"
-                stderr = proc.stderr.read() if proc.stderr else ""
-                assert (
-                    "CRASH" in stderr
-                    or "RuntimeError" in stderr
-                    or "error" in stderr.lower()
-                    or "uvicorn" in stderr.lower()
-                ), f"Expected error message, got: {stderr}"
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "crasher:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention the error
+            assert "crash" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected error message, got: {result.stderr}"
+            )
 
     def test_l2_005_invalid_app_format(self):
         """Clear error for invalid app format."""
