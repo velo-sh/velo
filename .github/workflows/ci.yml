@@ -302,6 +302,8 @@ jobs:
   bench-check:
     name: Zygote Startup Benchmark
     runs-on: ubuntu-latest
+    env:
+      PYO3_PYTHON: /home/runner/work/velo/velo/.venv/bin/python
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
