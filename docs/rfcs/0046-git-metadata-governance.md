@@ -83,9 +83,26 @@ fn lookup(path: &str) -> FileHandle {
 - **Traceability**: Every running worker has a `Commit ID` identifying exactly what is in its memory and disk.
 - **Distributed Push/Pull**: Sync metadata via `git push`, sync content via `rsync` or `S3 sideband` from `TheSource`.
 
+## 6. In-Memory Git Metadata Engine
+
+To achieve **< 1ms** topology discovery without disk I/O, Velo implements an ephemeral, memory-backed Git Object Database (ODB).
+
+### 6.1 Ephemeral ODB Implementation
+Instead of relying on the standard `.git` directory structure, the **Connection Governance Layer** uses a custom `gitoxide` store:
+- **Storage**: Objects (Commits/Trees) are stored in an in-memory `BTreeMap` or `Hamts` (Hash Array Mapped Tries).
+- **Persistence**: **Volatility is a feature.** Since Zygote connections are tied to live processes, the metadata tree is reconstructed dynamically upon Supervisor restart by probing active PIDs.
+- **Latency**: O(log N) lookup in RAM, typically completing in **microseconds**.
+
+### 6.2 Ancestry Algorithm: Merge-Base Routing
+When a worker request arrives for a specific environment:
+1. **Target**: Resolve the requested environment to a `Commit ID`.
+2. **Search**: Execute a Memory-based `git-rev-list` to find the **Lowest Common Ancestor (LCA)** among all currently live Zygote processes.
+3. **Optimized Fork**: The Supervisor identifies the Zygote node that minimizes the delta (packages to be loaded).
+4. **Grafting**: Fork from the identified parent, execute the diff, and "Commit" the new leaf node to the in-memory DAG.
+
 ---
 
-## 6. Environment Governance Pillars
+## 7. Environment Governance Pillars
 
 By adopting this architecture, Velo achieves four strategic goals for enterprise-grade runtimes:
 
