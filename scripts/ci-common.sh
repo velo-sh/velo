@@ -344,6 +344,13 @@ run_coverage() {
     if command -v cargo-llvm-cov &>/dev/null; then
         cargo llvm-cov nextest --lcov --output-path lcov.info
         log_success "Coverage generated: lcov.info"
+        
+        # Check threshold (70% minimum, warning only)
+        if cargo llvm-cov report --fail-under-lines 70 2>/dev/null; then
+            log_success "Coverage threshold (70%) met"
+        else
+            log_warn "Coverage below 70% threshold (warning only)"
+        fi
     else
         log_fatal "cargo-llvm-cov not installed. Run: cargo install cargo-llvm-cov"
     fi
