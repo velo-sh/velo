@@ -89,9 +89,17 @@ impl VeloConfig {
         {
             self.graceful_shutdown_timeout = secs;
         }
+        let parse_bool = |val: String| -> Option<bool> {
+            match val.to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Some(true),
+                "false" | "0" | "no" | "off" => Some(false),
+                _ => None,
+            }
+        };
+
         if let Some(b) = std::env::var("VELO_STRICT_OPTIMIZATIONS")
             .ok()
-            .and_then(|v| v.parse::<bool>().ok())
+            .and_then(parse_bool)
         {
             self.strict_optimizations = b;
         }
@@ -112,19 +120,19 @@ impl VeloConfig {
         }
         if let Some(b) = std::env::var("VELO_CIRCUIT_BREAKER_ENABLED")
             .ok()
-            .and_then(|v| v.parse::<bool>().ok())
+            .and_then(parse_bool)
         {
             self.circuit_breaker_enabled = b;
         }
         if let Some(b) = std::env::var("VELO_METRICS_ENABLED")
             .ok()
-            .and_then(|v| v.parse::<bool>().ok())
+            .and_then(parse_bool)
         {
             self.metrics_enabled = b;
         }
         if let Some(b) = std::env::var("VELO_TRACING_ENABLED")
             .ok()
-            .and_then(|v| v.parse::<bool>().ok())
+            .and_then(parse_bool)
         {
             self.tracing_enabled = b;
         }

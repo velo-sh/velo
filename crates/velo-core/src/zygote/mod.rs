@@ -17,12 +17,15 @@
 //! ```
 
 pub mod auto_config;
+pub mod circuit_breaker;
 pub mod cli;
 pub mod core_ipc;
 pub mod error;
 pub mod guardian;
 pub mod peer_check;
 pub mod v_fork;
+
+pub use circuit_breaker::ZygoteCircuitBreaker;
 
 // Re-export v_fork types for backward compatibility (RFC-0028 §10.3.5)
 pub use v_fork::{WorkerHandle, spawn_worker};

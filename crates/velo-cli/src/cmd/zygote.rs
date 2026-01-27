@@ -166,6 +166,9 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
     let python_path = velo_core::python::detect_python(project_dir)?;
     let socket_path = velo_core::zygote::core_ipc::default_socket_path();
 
+    // RFC-0036: Reset circuit breaker on deliberate manual start attempt
+    velo_core::zygote::ZygoteCircuitBreaker::record_success();
+
     // SEC-005: Check both socket and auth file to determine if running
     let auth_path = VeloPaths::auth_file_for_socket(&socket_path);
     if socket_path.exists() && auth_path.exists() {
@@ -174,11 +177,9 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
         return Ok(());
     } else if socket_path.exists() {
         // Socket exists but Auth missing -> Stale/Broken state
-        // Fall through to let ZygoteLauncher::start() handle the healing/restart
         println!("⚠️  Zygote socket exists but auth file is missing. Attempting to heal...");
-    } else {
-        // Normal cold start case
     }
+
     #[cfg(unix)]
     if daemon {
         unsafe {
@@ -187,10 +188,7 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
                 0 => {
                     // Child: continues to start the Zygote
                     libc::setsid();
-                    // Redirect IO to null in the daemonized process
-                    // Redirect IO to log file in the daemonized process
                     let log_path = velo_core::common::paths::VeloPaths::zygote_log();
-                    // Ensure logging directory exists
                     if let Some(parent) = log_path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
@@ -201,43 +199,28 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
                         .open(&log_path)
                     {
                         let fd = std::os::unix::io::AsRawFd::as_raw_fd(&log_file);
-
-                        // stdin -> /dev/null
                         if let Ok(null) = std::fs::File::open("/dev/null") {
                             let null_fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
                             libc::dup2(null_fd, 0);
                         }
-
-                        // stdout -> log
                         libc::dup2(fd, 1);
-                        // stderr -> log
                         libc::dup2(fd, 2);
-
-                        // Leak file raw fd to keep it open across process lifetime
-                        // (File object drop would try to close it, but dup2 makes copies)
-                        // Actually, File drop closes original FD, but dup2'd FDs (1, 2) remain open.
-                        // We must ensure 'log_file' lives long enough for dup2, which it does in this scope.
-                    } else {
-                        // Fallback to /dev/null if logging fails
-                        if let Ok(null) = std::fs::File::open("/dev/null") {
-                            let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
-                            libc::dup2(fd, 0);
-                            libc::dup2(fd, 1);
-                            libc::dup2(fd, 2);
-                        }
+                    } else if let Ok(null) = std::fs::File::open("/dev/null") {
+                        let fd = std::os::unix::io::AsRawFd::as_raw_fd(&null);
+                        libc::dup2(fd, 0);
+                        libc::dup2(fd, 1);
+                        libc::dup2(fd, 2);
                     }
                 }
                 _ => {
-                    // Parent: exits immediately after reporting success
                     println!("🚀 Zygote daemonizing...");
                     return Ok(());
                 }
             }
         }
     }
-    let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
 
-    // Parse --preload if provided
+    let mut launcher = ZygoteLauncher::new(socket_path.clone()).with_python(python_path);
     let preload: Vec<&str> = preload_arg
         .as_ref()
         .map(|s| s.split(',').collect())
@@ -250,8 +233,12 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
         "🚀 Starting Zygote{}...",
         if daemon { " daemon" } else { "" }
     );
+
     match launcher.start(&preload, None, daemon, &config) {
         Ok(()) => {
+            // RFC-0036: Reset circuit breaker on deliberate manual start
+            velo_core::zygote::ZygoteCircuitBreaker::record_success();
+
             log::info!(
                 "[ZYGOTE] status=started socket={} preload={:?}",
                 socket_path.display(),
@@ -263,8 +250,6 @@ fn cmd_zygote_start(project_dir: &Path, preload_arg: Option<String>, daemon: boo
             if daemon {
                 println!("🛡️  Guardian engaged. Press Ctrl+C to stop (or use 'velo zygote stop')");
             }
-
-            // Keep launcher alive by forgetting it
             std::mem::forget(launcher);
         }
         Err(e) => {

@@ -3,64 +3,15 @@
 //! This module handles worker process spawning and lifecycle management.
 //! Aligned with Python: velo_zygote/v_fork.py
 
-use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
-use crate::zygote::core_ipc;
 use crate::zygote::error::{Result, ZygoteError};
+use crate::zygote::{ZygoteCircuitBreaker, core_ipc};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Get worker timeout from config
 fn get_worker_timeout_secs() -> u64 {
     VeloConfig::from_env_only().zygote_socket_timeout
-}
-
-/// Circuit Breaker State (SSOT-CB-001)
-/// Persists failure count to disk to handle multiple CLI calls.
-struct ZygoteCircuitBreaker;
-
-impl ZygoteCircuitBreaker {
-    fn is_tripped(config: &VeloConfig) -> bool {
-        if !config.circuit_breaker_enabled {
-            return false;
-        }
-        let path = VeloPaths::circuit_breaker_state();
-        let failures = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|c| c.trim().parse::<u32>().ok());
-        if let Some(f) = failures {
-            return f >= config.circuit_breaker_threshold;
-        }
-        false
-    }
-
-    fn record_failure(config: &VeloConfig) {
-        if !config.circuit_breaker_enabled {
-            return;
-        }
-        let path = VeloPaths::circuit_breaker_state();
-        let current = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or(0);
-        let failures = current + 1;
-        let _ = std::fs::write(&path, failures.to_string());
-
-        if failures >= config.circuit_breaker_threshold {
-            log::error!(
-                "🚨 Zygote Circuit Breaker TRIPPED after {} failures. Falling back to direct spawn.",
-                failures
-            );
-        }
-    }
-
-    fn record_success() {
-        let path = VeloPaths::circuit_breaker_state();
-        if path.exists() {
-            let _ = std::fs::remove_file(path);
-            log::info!("✅ Zygote Circuit Breaker RESET. Resuming Zygote forks.");
-        }
-    }
 }
 
 /// Handle to a spawned worker process

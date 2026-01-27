@@ -16,7 +16,7 @@ use velo_core::custody::{AutopilotDecision, AutopilotEngine, EnvironmentSync};
 use velo_core::python_info::{PythonInfo, PythonVersion};
 
 use velo_core::shm::registry::MemoryRegistry;
-use velo_core::zygote::ZygoteLauncher;
+use velo_core::zygote::{ZygoteCircuitBreaker, ZygoteLauncher};
 
 /// Run a Python script or module
 #[derive(Parser, Debug)]
@@ -652,6 +652,13 @@ fn try_zygote_run(
         return Ok(None);
     }
 
+    // 0. Pre-emptive Circuit Breaker check (RFC-0036)
+    if ZygoteCircuitBreaker::is_tripped(config) {
+        log::warn!("🚧 Zygote Circuit Breaker is OPEN. Fallback to direct spawn.");
+        eprintln!("🚧 Zygote Circuit Breaker is OPEN. Fallback to direct spawn.");
+        return Ok(None);
+    }
+
     let socket_path = velo_core::zygote::core_ipc::default_socket_path();
     let script = script_path
         .map(Path::new)
@@ -675,6 +682,7 @@ fn try_zygote_run(
         }
 
         if let Err(e) = launcher.start(&preload, None, true, config) {
+            ZygoteCircuitBreaker::record_failure(config);
             if config.strict_optimizations {
                 return Err(e.into());
             }
@@ -682,6 +690,8 @@ fn try_zygote_run(
             eprintln!("   Falling back to normal mode");
             return Ok(None);
         }
+        // RFC-0036: Reset circuit breaker on successful manual start
+        ZygoteCircuitBreaker::record_success();
         if profile {
             eprintln!("✅ Zygote ready");
         }
@@ -734,7 +744,14 @@ fn try_zygote_run(
                     std::process::exit(0);
                 }
 
-                eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                if !ZygoteCircuitBreaker::is_tripped(config) {
+                    eprintln!("⚡ Running via Zygote (PID: {})", worker.pid());
+                } else {
+                    eprintln!(
+                        "🚧 Zygote Circuit Breaker is OPEN. Fallback to direct spawn (PID: {}).",
+                        worker.pid()
+                    );
+                }
                 // Wait for worker to complete and get exit code
                 let exit_code = worker.wait().unwrap_or(1);
 
@@ -804,6 +821,9 @@ fn try_zygote_run(
                             std::mem::forget(launcher);
                             std::process::exit(exit_code);
                         }
+                    } else {
+                        // RFC-0036: Record failure if restart fails
+                        ZygoteCircuitBreaker::record_failure(config);
                     }
 
                     // Final fallback
