@@ -54,7 +54,7 @@ app = FastAPI()
 @app.get("/identity")
 def identity():
     return {{
-        "module": "{module_name}", 
+        "module": "{module_name}",
         "file": __file__,
         "cwd": os.getcwd()
     }}
@@ -123,29 +123,29 @@ def hack():
     # 1. Try to find where Velo is
     # We can guess it from an existing module or environment
     # But let's just try to import a known internal module that shouldn't be accessible
-    
+
     try:
         # This should be BLOCKED by VeloRuntimeShield even if we hack sys.path
-        # Note: In a real attack, the user might know the path. 
+        # Note: In a real attack, the user might know the path.
         # Here we simulate "accidental" leak or malicious attempt.
-        import velo_zygote.utils 
+        import velo_zygote.utils
         # Wait, namespaced import is ALLOWED.
-        
+
         # We want to try Top-Level import which maps to internal
         # We need to add the parent of velo_zygote to sys.path
-        
+
         # Let's try to import 'utils' which maps to 'velo_zygote/utils.py'
         # We need to find the runtime root.
         import velo_zygote
         runtime_root = os.path.dirname(velo_zygote.__file__)
-        
+
         # ATTACK: Add runtime root to sys.path (High Risk Action)
         sys.path.insert(0, runtime_root)
-        
+
         # ATTACK: Try to import internal 'utils' as top-level 'utils'
         # This simulates a user file named 'utils.py' being shadowed, or malicious access
         import utils
-        
+
         return {"result": "LEAKED", "file": utils.__file__}
     except ImportError as e:
         # This is the EXPECTED outcome for Active Defense

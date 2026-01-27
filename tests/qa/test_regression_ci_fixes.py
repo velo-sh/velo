@@ -2,6 +2,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from .conftest_utils import VeloTestEnv, get_repo_root, get_velo_binary
 
 
