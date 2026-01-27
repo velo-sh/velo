@@ -394,6 +394,15 @@ class VeloTestEnv:
         # Backward compatibility
         self.path = self.root
 
+    def __enter__(self) -> "VeloTestEnv":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Cleanup test environment if needed."""
+        # We could add automatic directory cleanup here, but for now we follow
+        # the existing pattern of leaving temp dirs for debugging unless explicitly removed.
+        pass
+
     @contextlib.contextmanager
     def env_vars(self, vars: dict[str, str]) -> Generator["VeloTestEnv", None, None]:
         """Temporarily update environment variables."""

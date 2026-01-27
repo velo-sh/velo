@@ -645,15 +645,19 @@ impl RespawnTracker {
             .and_then(|v| v.parse().ok())
             .unwrap_or(1.0);
 
+        let test_mode = std::env::var("VELO_TEST_MODE").is_ok();
+        let default_backoff = if test_mode { 1 } else { 10 };
+        let default_limit = if test_mode { 3 } else { 5 };
+
         let backoff_secs = std::env::var("VELO_BACKOFF_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(10);
+            .unwrap_or(default_backoff);
 
         let base_limit: u32 = std::env::var("VELO_FAIL_FAST_LIMIT")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(5);
+            .unwrap_or(default_limit);
         let fail_fast_limit = (base_limit as f64 * timeout_multiplier) as u32;
 
         Self {
@@ -674,7 +678,10 @@ impl RespawnTracker {
     fn record_failure(&mut self) -> bool {
         self.last_failure = Some(Instant::now());
         self.consecutive_failures += 1;
-        self.backoff_secs = (self.backoff_secs * 2).min(300); // Cap at 5 minutes
+
+        let test_mode = std::env::var("VELO_TEST_MODE").is_ok();
+        let max_backoff = if test_mode { 1 } else { 300 };
+        self.backoff_secs = (self.backoff_secs * 2).min(max_backoff);
 
         // DEF-72-R01: Log backoff for observability
         // Standardized on eprintln! for guaranteed immediate visibility in stderr
@@ -1067,7 +1074,10 @@ pub fn run_server(
         use_zygote = false;
     }
 
-    let app_name_for_zygote = if args.reload || std::env::var("VELO_TEST_MODE").is_ok() {
+    let app_name_for_zygote = if args.reload
+        || (std::env::var("VELO_TEST_MODE").is_ok()
+            && std::env::var("VELO_ZYGOTE_PRELOAD").is_err())
+    {
         None
     } else {
         Some(args.app.as_str())

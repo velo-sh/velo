@@ -521,6 +521,7 @@ mod tests {
             pid: 1234,
             preload: vec!["numpy".to_string(), "pandas".to_string()],
             state: "READY".to_string(),
+            preload_done: true,
             pool_count: 5,
             target_pool_size: 10,
         };

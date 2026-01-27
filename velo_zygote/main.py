@@ -354,6 +354,7 @@ async def handle_zy_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[
         "pid": os.getpid(),
         "state": server.state.name,
         "preload": server._preloaded_modules,
+        "preload_done": server.preload_complete.is_set(),
         # Phase 15 P2: Reporting pool metrics to the Rust Guardian
         "pool_count": server.idle_pool.get_count(),
         "target_pool_size": server.idle_pool._target_size,
@@ -816,6 +817,7 @@ class ZygoteServer:
                 self._preloaded_modules.append(app_module)
             except Exception as e:
                 LogUtils.log(f"Pre-loading application failed: {e}")
+                raise  # Re-raise to trigger ERROR state
 
         # 3. Deep warming: Pre-create uvicorn Server for immediate fork (Target: 10x)
         if self.app_name and "uvicorn" in sys.modules:

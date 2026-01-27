@@ -130,6 +130,9 @@ pub enum ZygoteResponse {
         /// Preload state
         #[serde(default)]
         state: String,
+        /// Whether preloading is fully complete
+        #[serde(default)]
+        preload_done: bool,
         /// Current number of workers in the idle pool
         #[serde(default)]
         pool_count: usize,

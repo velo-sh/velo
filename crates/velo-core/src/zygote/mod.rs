@@ -722,43 +722,84 @@ impl ZygoteLauncher {
 
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
-        let status_cmd = core_ipc::ZygoteCommand::Status {
-            request_id: Some(uuid::Uuid::now_v7().to_string()),
-        };
-        let response = zygote_stream.send_command(&status_cmd, None)?;
+        let boot_start = std::time::Instant::now();
+        let boot_timeout = std::time::Duration::from_secs(30); // Standard BOOT_TIMEOUT_SECS
+        let final_pid: u32;
 
-        if let core_ipc::ZygoteResponse::Status { pid, .. } = response {
-            if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
-                log::warn!(
-                    "Deep probe PID mismatch: got {}, expected {} (Possible Shadow Trap, but continuing)",
-                    pid,
-                    self.zygote_pid.unwrap()
-                );
-            }
-            log::info!("Zygote deep probe successful (PID: {}).", pid);
+        loop {
+            let status_cmd = core_ipc::ZygoteCommand::Status {
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            };
+            let response = zygote_stream.send_command(&status_cmd, None)?;
 
-            // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
-            // Skip Guardian for daemon mode (vtest use case) - the caller manages lifecycle
-            if !daemon {
-                let params = guardian::ZygoteStartParams {
-                    preload: preload.iter().map(|s| s.to_string()).collect(),
-                    app_name: app_name.map(|s| s.to_string()),
-                    python_path: python.clone(),
-                    config: config.clone(),
-                };
-
-                let guardian =
-                    guardian::ZygoteGuardian::new(self.socket_path.clone(), pid, Some(params));
-                if let Err(e) = guardian.start() {
-                    log::warn!("[Guardian] Failed to start background supervisor: {}", e);
-                } else {
-                    log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", pid);
+            if let core_ipc::ZygoteResponse::Status {
+                pid,
+                state,
+                preload_done,
+                ..
+            } = response
+            {
+                if self.zygote_pid.is_some() && self.zygote_pid != Some(pid) {
+                    log::warn!(
+                        "Deep probe PID mismatch: got {}, expected {} (Possible Shadow Trap, but continuing)",
+                        pid,
+                        self.zygote_pid.unwrap()
+                    );
                 }
+                log::info!(
+                    "Zygote deep probe: PID={}, State={}, PreloadDone={}",
+                    pid,
+                    state,
+                    preload_done
+                );
+
+                if state == "ERROR" {
+                    return Err(ZygoteError::ProtocolError(
+                        "Zygote is in ERROR state. Check Zygote log for details.".to_string(),
+                    ));
+                }
+
+                // If we are pre-warming an app, we MUST wait for preload_done
+                // otherwise the supervisor might start spawning workers before the app is ready.
+                if state == "READY" && (app_name.is_none() || preload_done) {
+                    log::info!("Zygote fully initialized.");
+                    final_pid = pid;
+                    break;
+                }
+            } else {
+                return Err(ZygoteError::StartFailed(
+                    "Deep probe failed: invalid response".to_string(),
+                ));
             }
-        } else {
-            return Err(ZygoteError::StartFailed(
-                "Deep probe failed: invalid response".to_string(),
-            ));
+
+            if boot_start.elapsed() > boot_timeout {
+                return Err(ZygoteError::StartFailed(format!(
+                    "Timeout waiting for Zygote initialization after 30s. Progress: state={}, preload_done={}",
+                    // We can't easily get the last state here without saving it, but it's fine for now
+                    "UNKNOWN",
+                    "UNKNOWN"
+                )));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        // Phase 15: Initialize the Rust Guardian with Restart Capabilities (P1)
+        // Skip Guardian for daemon mode (vtest use case) - the caller manages lifecycle
+        if !daemon {
+            let params = guardian::ZygoteStartParams {
+                preload: preload.iter().map(|s| s.to_string()).collect(),
+                app_name: app_name.map(|s| s.to_string()),
+                python_path: python.clone(),
+                config: config.clone(),
+            };
+
+            let guardian =
+                guardian::ZygoteGuardian::new(self.socket_path.clone(), final_pid, Some(params));
+            if let Err(e) = guardian.start() {
+                log::warn!("[Guardian] Failed to start background supervisor: {}", e);
+            } else {
+                log::info!("🛡️ Rust Guardian engaged for Zygote PID {}", final_pid);
+            }
         }
 
         Ok(())
