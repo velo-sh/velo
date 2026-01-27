@@ -443,9 +443,11 @@ mod tests {
             std::env::set_var("VELO_SOCKET_DIR", socket_dir.to_str().unwrap());
         }
 
-        let mut config = VeloConfig::default();
-        config.circuit_breaker_enabled = true;
-        config.circuit_breaker_threshold = 2;
+        let config = VeloConfig {
+            circuit_breaker_enabled: true,
+            circuit_breaker_threshold: 2,
+            ..Default::default()
+        };
 
         // Verify initial state
         assert!(!ZygoteCircuitBreaker::is_tripped(&config));
