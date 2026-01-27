@@ -69,9 +69,7 @@ class VeloBundleBuilder:
 
         self.modules.append(ModuleData(name, code_data, is_package))
 
-    def add_source(
-        self, name: str, source_path: Path, is_package: bool = False, optimize: int = 0
-    ) -> None:
+    def add_source(self, name: str, source_path: Path, is_package: bool = False, optimize: int = 0) -> None:
         """Add a .py source file (compiles to bytecode)"""
         source = source_path.read_text(encoding="utf-8")
         code = compile(source, str(source_path), "exec", optimize=optimize)
@@ -148,11 +146,7 @@ class VeloBundleBuilder:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
-        index_offset = (
-            (graph_offset + len(graph_section))
-            if graph_section
-            else (HEADER_SIZE + len(data_section))
-        )
+        index_offset = (graph_offset + len(graph_section)) if graph_section else (HEADER_SIZE + len(data_section))
 
         # 4. Construct Header components for H-1 Global Hash
         # Prefix (0..20): MAGIC, VERSION, MODULE_COUNT, INDEX_OFFSET
@@ -208,9 +202,7 @@ class VeloBundleBuilder:
         print(f"   Size: {output_path.stat().st_size} bytes")
 
 
-def build_from_project(
-    project_dir: Path, output_path: Path | None = None, optimize: int = 0
-) -> Path:
+def build_from_project(project_dir: Path, output_path: Path | None = None, optimize: int = 0) -> Path:
     """
     Build a bundle from a Python project directory
 
@@ -225,9 +217,7 @@ def build_from_project(
     for py_file in project_dir.rglob("*.py"):
         # Skip __pycache__ and hidden directories/files within project
         rel_path = py_file.relative_to(project_dir)
-        if "__pycache__" in str(rel_path) or any(
-            p.startswith(".") for p in rel_path.parts
-        ):
+        if "__pycache__" in str(rel_path) or any(p.startswith(".") for p in rel_path.parts):
             continue
 
         # Convert path to module name

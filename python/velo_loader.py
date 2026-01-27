@@ -28,10 +28,7 @@ from pathlib import Path
 try:
     import blake3 as blake3_module
 except ImportError:
-    raise ImportError(
-        "blake3 is required for Velo bundle verification. "
-        "Install with: pip install blake3"
-    )
+    raise ImportError("blake3 is required for Velo bundle verification. Install with: pip install blake3")
 
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"
@@ -111,9 +108,7 @@ class VeloBundle:
         # Security: Size check before read
         file_size = self.path.stat().st_size
         if file_size > self.max_size:
-            raise ValueError(
-                f"Bundle too large: {file_size} bytes > {self.max_size} bytes"
-            )
+            raise ValueError(f"Bundle too large: {file_size} bytes > {self.max_size} bytes")
 
         # Atomic read entire file
         self.data = self.path.read_bytes()
@@ -142,9 +137,7 @@ class VeloBundle:
             raise ValueError(f"Invalid bundle magic: {magic!r}")
 
         # Read header fields
-        version, module_count, index_offset = struct.unpack(
-            "<IIQ", bytes(self.view[4:20])
-        )
+        version, module_count, index_offset = struct.unpack("<IIQ", bytes(self.view[4:20]))
 
         if version != VERSION:
             raise ValueError(f"Unsupported bundle version: {version}")
@@ -172,9 +165,7 @@ class VeloBundle:
             self.index[entry.name] = entry
             # Calculate next entry position
             name_len = struct.unpack("<H", bytes(self.view[pos : pos + 2]))[0]
-            pos += (
-                2 + name_len + 8 + 8 + 32 + 1
-            )  # name_len + name + offset + size + hash + is_pkg
+            pos += 2 + name_len + 8 + 8 + 32 + 1  # name_len + name + offset + size + hash + is_pkg
 
     def _read_index_entry(self, pos: int) -> ModuleEntry:
         """Read a single module entry from index"""
@@ -326,9 +317,7 @@ class VeloLoader(importlib.abc.Loader):
     - Handle __path__ for packages (disk plugin support)
     """
 
-    def __init__(
-        self, bundle: VeloBundle, name: str, project_root: Path | None = None
-    ):
+    def __init__(self, bundle: VeloBundle, name: str, project_root: Path | None = None):
         self.bundle = bundle
         self.name = name
         self.project_root = project_root or Path.cwd()
@@ -373,11 +362,7 @@ class VeloLoader(importlib.abc.Loader):
 
         # Try common patterns
         for suffix in [".py", "/__init__.py"]:
-            candidate = (
-                self.project_root
-                / Path(*parts).with_suffix("").parent
-                / (parts[-1] + suffix)
-            )
+            candidate = self.project_root / Path(*parts).with_suffix("").parent / (parts[-1] + suffix)
             if candidate.exists():
                 return str(candidate)
 

@@ -3,9 +3,9 @@
 HIO Visual Components - Terminal Visual Enhancement Library
 Supports CI auto-downgrade, accessibility mode, and quiet mode
 """
+
 import os
 import sys
-from typing import Optional, Tuple, Any
 
 # Environment Detection
 IS_TTY = sys.stdout.isatty()
@@ -22,9 +22,10 @@ RICH_AVAILABLE = False
 if not IS_QUIET and (IS_TTY or FORCE_VISUAL) and (not IS_CI or FORCE_VISUAL):
     try:
         from rich.console import Console
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-        from rich.table import Table
         from rich.panel import Panel
+        from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+        from rich.table import Table
+
         RICH_AVAILABLE = True
     except ImportError:
         pass
@@ -40,13 +41,9 @@ def print_header(project: str, slogan: str):
     """Print Project Header"""
     if IS_QUIET:
         return
-    
+
     if RICH_AVAILABLE:
-        console.print(Panel(
-            f"[bold cyan]{project}[/]\n[dim]{slogan}[/]",
-            title="🚀 Velo HIO",
-            border_style="cyan"
-        ))
+        console.print(Panel(f"[bold cyan]{project}[/]\n[dim]{slogan}[/]", title="🚀 Velo HIO", border_style="cyan"))
     else:
         print("=" * 50)
         print(f" HIO PROJECT: {project}")
@@ -54,71 +51,74 @@ def print_header(project: str, slogan: str):
         print("=" * 50)
 
 
-def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm Cache", memory_data: Optional[Tuple] = None):
+def print_race_result(
+    cpython_time: float, velo_time: float, mode: str = "Warm Cache", memory_data: tuple | None = None
+):
     """Print A/B comparison results (supports time and memory dimensions)"""
     if IS_QUIET:
         mem_str = ""
         if memory_data:
             mem_str = f" | Mem: {memory_data[0]:.1f}MB vs {memory_data[1]:.1f}MB"
-        print(f"CPython: {cpython_time:.3f}s | Velo: {velo_time:.3f}s | Speedup: {cpython_time/velo_time:.1f}x{mem_str}")
+        print(
+            f"CPython: {cpython_time:.3f}s | Velo: {velo_time:.3f}s | Speedup: {cpython_time / velo_time:.1f}x{mem_str}"
+        )
         return
-    
+
     speedup = cpython_time / max(velo_time, 0.001)
     max_time = max(cpython_time, velo_time)
-    
+
     # Calculate time progress bar
     c_width = int((cpython_time / max_time) * 30)
     v_width = int((velo_time / max_time) * 30)
-    
+
     # Calculate memory progress bar (if provided)
     c_mem, v_mem = (0, 0)
     if memory_data:
         c_mem, v_mem = memory_data
-        max_mem = max(c_mem, v_mem, 1) # Avoid division by zero
+        max_mem = max(c_mem, v_mem, 1)  # Avoid division by zero
         c_mem_width = int((c_mem / max_mem) * 30)
         v_mem_width = int((v_mem / max_mem) * 30)
-    
+
     if RICH_AVAILABLE:
-        table = Table(title=f"🏁 STARTUP RACE [dim](Measured under: {mode})[/]", 
-                      show_header=True, border_style="cyan")
+        table = Table(title=f"🏁 STARTUP RACE [dim](Measured under: {mode})[/]", show_header=True, border_style="cyan")
         table.add_column("Metric", width=12)
         table.add_column("Runner", width=8)
         table.add_column("Progress", width=35)
         table.add_column("Value", width=15)
-        
+
         c_bar = "█" * c_width + "░" * (30 - c_width)
         v_bar = "█" * v_width + "░" * (30 - v_width)
-        
+
         # Time Rows
         table.add_row("Startup Time", "CPython", f"[red]{c_bar}[/]", f"{cpython_time:.3f}s")
         table.add_row("", "Velo", f"[green]{v_bar}[/]", f"{velo_time:.3f}s ⚡")
-        
+
         # Memory Rows
         if memory_data:
             table.add_section()
             c_mbar = "█" * c_mem_width + "░" * (30 - c_mem_width)
             v_mbar = "█" * v_mem_width + "░" * (30 - v_mem_width)
-            
+
             table.add_row("RSS Memory", "CPython", f"[red]{c_mbar}[/]", f"{c_mem:.1f}MB")
             table.add_row("", "Velo", f"[green]{v_mbar}[/]", f"{v_mem:.1f}MB (CoW) 📉")
-        
+
         console.print(table)
         console.print(f"\n[bold green]>>> Velo wins by {speedup:.1f}x![/]")
         if memory_data:
-             console.print(f"[dim]    (And saves {(c_mem-v_mem)/c_mem*100:.0f}% memory)[/]")
+            console.print(f"[dim]    (And saves {(c_mem - v_mem) / c_mem * 100:.0f}% memory)[/]")
 
     else:
         # Fallback Mode (Plain Text - Robust ASCII)
         try:
             c_bar = "#" * c_width + "." * (30 - c_width)
             v_bar = "#" * v_width + "." * (30 - v_width)
-            
+
             print("-" * 60)
             print(f" HIO BENCHMARK RUN (Measured under: {mode})")
             print("-" * 60)
             print(f" [Time] CPython:  [{c_bar}]  {cpython_time:.2f}s")
             print(f" [Time] Velo:     [{v_bar}]  {velo_time:.2f}s [FAST]")
-            
+
             if memory_data:
                 c_mem, v_mem = memory_data
                 c_mbar = "#" * c_mem_width + "." * (30 - c_mem_width)
@@ -126,7 +126,7 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
                 print("-" * 60)
                 print(f" [RSS ] CPython:  [{c_mbar}]  {c_mem:.1f}MB")
                 print(f" [RSS ] Velo:     [{v_mbar}]  {v_mem:.1f}MB (CoW)")
-                
+
             print("-" * 60)
             print(f" >>> Velo wins by {speedup:.1f}x!")
             print("-" * 60)
@@ -139,20 +139,22 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
 def print_score(score: float, mem_reduction: float):
     """Print HIO Score"""
     if IS_QUIET:
-        print(f"HIO Score: {score} | Memory Saving: {mem_reduction*100:.0f}%")
+        print(f"HIO Score: {score} | Memory Saving: {mem_reduction * 100:.0f}%")
         return
-    
+
     if RICH_AVAILABLE:
-        console.print(f"\n[bold yellow]>> HIO Score: {score}[/] [dim](Calculated with {mem_reduction*100:.0f}% Memory Saving)[/]")
+        console.print(
+            f"\n[bold yellow]>> HIO Score: {score}[/] [dim](Calculated with {mem_reduction * 100:.0f}% Memory Saving)[/]"
+        )
     else:
-        print(f"\n>> HIO Score: {score} [Calculated with {mem_reduction*100:.0f}% Memory Saving]")
+        print(f"\n>> HIO Score: {score} [Calculated with {mem_reduction * 100:.0f}% Memory Saving]")
 
 
 def print_reproduce_hint(command: str):
     """Print reproduction hint"""
     if IS_QUIET:
         return
-    
+
     if RICH_AVAILABLE:
         console.print(f"\n[dim]📎 Reproduce: {command} | Full docs: velo.dev/hio[/]")
     else:
@@ -169,8 +171,10 @@ def spinner_context(message: str):
             def __enter__(self):
                 print(f"{message}...")
                 return self
+
             def __exit__(self, *args):
                 pass
+
         return DummySpinner()
 
 

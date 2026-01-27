@@ -3,8 +3,8 @@
 Benchmark Scaffolder
 Generates directory structure and templates for Velo Top 100 Benchmarks.
 """
+
 from pathlib import Path
-import os
 
 ROOT_DIR = Path(__file__).parent
 TARGETS = [
@@ -160,11 +160,7 @@ def scaffold():
 
         # 2. benchmark.toml
         toml_path = target_dir / "benchmark.toml"
-        toml_content = (
-            TEMPLATES["benchmark.toml"]
-            .replace("{category}", category)
-            .replace("{pkg}", pkg)
-        )
+        toml_content = TEMPLATES["benchmark.toml"].replace("{category}", category).replace("{pkg}", pkg)
         with open(toml_path, "w") as f:
             f.write(toml_content)
 

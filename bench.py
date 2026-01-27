@@ -9,11 +9,11 @@ Modes:
 4. Serverless - Simulate cold starts (purge cache between runs)
 """
 
+import argparse
+import statistics
 import subprocess
 import sys
 import time
-import statistics
-import argparse
 from pathlib import Path
 
 VELO_BIN = "./target/release/velo"
@@ -55,9 +55,7 @@ def measure_cold_start(cmd: list[str], clear_cache: bool = True) -> float | None
     return elapsed if result.returncode == 0 else None
 
 
-def measure_serverless(
-    cmd: list[str], iterations: int = 5, is_velo: bool = False
-) -> list[float]:
+def measure_serverless(cmd: list[str], iterations: int = 5, is_velo: bool = False) -> list[float]:
     """Simulate serverless cold starts (clear cache between runs for Velo)."""
     # Warmup run to let OS cache the binary
     subprocess.run(cmd, capture_output=True)
@@ -66,7 +64,7 @@ def measure_serverless(
 
     times = []
     for i in range(iterations):
-        print(f"    Run {i+1}/{iterations}...", end="", flush=True)
+        print(f"    Run {i + 1}/{iterations}...", end="", flush=True)
         if is_velo:
             clear_velo_cache()
         start = time.perf_counter()
@@ -179,15 +177,11 @@ def mode_serverless(iterations: int):
     print(f"\n☁️  Serverless Simulation ({iterations} runs each)")
 
     print("\n📊 CPython serverless...")
-    cpython_times = measure_serverless(
-        [sys.executable, TEST_SCRIPT], iterations, is_velo=False
-    )
+    cpython_times = measure_serverless([sys.executable, TEST_SCRIPT], iterations, is_velo=False)
     print_stats("CPython", cpython_times)
 
     print("\n📊 Velo serverless (cache miss each run)...")
-    velo_times = measure_serverless(
-        [VELO_BIN, "run", TEST_SCRIPT], iterations, is_velo=True
-    )
+    velo_times = measure_serverless([VELO_BIN, "run", TEST_SCRIPT], iterations, is_velo=True)
     print_stats("Velo", velo_times)
 
     return cpython_times, velo_times

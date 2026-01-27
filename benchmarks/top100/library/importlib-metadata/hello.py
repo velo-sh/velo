@@ -1,3 +1,2 @@
-import importlib_metadata
 
-print(f"importlib_metadata loaded")
+print("importlib_metadata loaded")

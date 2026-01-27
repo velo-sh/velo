@@ -18,15 +18,13 @@ Usage:
 """
 
 import argparse
+import json
+import os
 import subprocess
 import tempfile
 import time
-import os
-import json
-import shutil
-from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
 
 # Scale configurations
 SCALE_LEVELS = {
@@ -71,12 +69,10 @@ class BenchmarkResult:
     build_time_ms: float
     load_time_ms: float
     success: bool
-    error: Optional[str] = None
+    error: str | None = None
 
 
-def run_command(
-    cmd: list, cwd: Path, timeout: int = 120
-) -> subprocess.CompletedProcess:
+def run_command(cmd: list, cwd: Path, timeout: int = 120) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 
@@ -134,12 +130,8 @@ def get_item_{i}() -> Model{model_idx}:
         )
 
     # Create main app
-    router_imports = "\n".join(
-        [f"from routers.router_{i} import router as r{i}" for i in range(n_routes)]
-    )
-    router_includes = "\n".join(
-        [f"app.include_router(r{i}, prefix='/v{i}')" for i in range(n_routes)]
-    )
+    router_imports = "\n".join([f"from routers.router_{i} import router as r{i}" for i in range(n_routes)])
+    router_includes = "\n".join([f"app.include_router(r{i}, prefix='/v{i}')" for i in range(n_routes)])
 
     (project_dir / "main.py").write_text(
         f"""
@@ -186,12 +178,8 @@ def data_{i}():
         )
 
     # Create main app
-    bp_imports = "\n".join(
-        [f"from blueprints.bp_{i} import bp_{i}" for i in range(n_blueprints)]
-    )
-    bp_registers = "\n".join(
-        [f"app.register_blueprint(bp_{i})" for i in range(n_blueprints)]
-    )
+    bp_imports = "\n".join([f"from blueprints.bp_{i} import bp_{i}" for i in range(n_blueprints)])
+    bp_registers = "\n".join([f"app.register_blueprint(bp_{i})" for i in range(n_blueprints)])
 
     (project_dir / "main.py").write_text(
         f"""
@@ -254,7 +242,7 @@ from django.db import models
 class Entity{i}(models.Model):
     name = models.CharField(max_length=100)
     value = models.IntegerField(default={i})
-    
+
     class Meta:
         app_label = 'app_{i}'
 """
@@ -324,9 +312,7 @@ def run_benchmark(framework: str, level: str, velo_path: str) -> BenchmarkResult
                 env["VELO_REPORT_METRICS"] = "1"
 
                 start_run = time.perf_counter()
-                run_result = run_command(
-                    [velo_path, "run", "--fast", "main.py"], project_dir
-                )
+                run_result = run_command([velo_path, "run", "--fast", "main.py"], project_dir)
                 run_time_ms = (time.perf_counter() - start_run) * 1000
                 load_times.append(run_time_ms)
 
@@ -422,12 +408,8 @@ def main():
     parser.add_argument("--flask", action="store_true", help="Benchmark Flask")
     parser.add_argument("--django", action="store_true", help="Benchmark Django")
     parser.add_argument("--all", action="store_true", help="Benchmark all frameworks")
-    parser.add_argument(
-        "--level", type=str, default="all", help="Scale level (L1-L5 or 'all')"
-    )
-    parser.add_argument(
-        "--output", type=str, default="benchmark_results.json", help="JSON output file"
-    )
+    parser.add_argument("--level", type=str, default="all", help="Scale level (L1-L5 or 'all')")
+    parser.add_argument("--output", type=str, default="benchmark_results.json", help="JSON output file")
     args = parser.parse_args()
 
     # Determine velo path
@@ -467,15 +449,11 @@ def main():
     results = []
     for framework in frameworks:
         for level in levels:
-            print(
-                f"\n⏳ Testing {framework.upper()} @ {level} ({SCALE_LEVELS[level]['name']})..."
-            )
+            print(f"\n⏳ Testing {framework.upper()} @ {level} ({SCALE_LEVELS[level]['name']})...")
             result = run_benchmark(framework, level, velo_path)
             results.append(result)
             if result.success:
-                print(
-                    f"   ✅ Build: {result.build_time_ms:.1f}ms | Load: {result.load_time_ms:.1f}ms"
-                )
+                print(f"   ✅ Build: {result.build_time_ms:.1f}ms | Load: {result.load_time_ms:.1f}ms")
             else:
                 print(f"   ❌ Failed: {result.error[:50]}...")
 

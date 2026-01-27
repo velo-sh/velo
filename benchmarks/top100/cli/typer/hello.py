@@ -1,7 +1,7 @@
 import typer
 
 app = typer.Typer()
-print(f"Typer imported")
+print("Typer imported")
 
 if __name__ == "__main__":
     pass

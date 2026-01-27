@@ -6,15 +6,13 @@ Measures TTFL (Time To First Logic) and memory footprint for heavy CLI tools.
 Uses unified hio_visual standard for output.
 """
 
-import os
-import sys
-import time
 import argparse
 import importlib
 import importlib.util
-import concurrent.futures
 import resource
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 # Add shared HIO visual helper to path
@@ -25,31 +23,50 @@ sys.path.append(str(SCRIPTS_DIR))
 # Import unified visual components
 try:
     from hio_visual import (
-        print_lab_environment,
-        print_race_result, 
-        print_verdict,
-        print_reproduce_hint,
+        IS_QUIET,
         create_progress_context,
         export_results_json,
-        IS_QUIET
+        print_lab_environment,
+        print_race_result,
+        print_reproduce_hint,
+        print_verdict,
     )
 except ImportError:
     # Fallback for standalone execution
-    def print_lab_environment(): print("=== VELO PERFORMANCE LABS ===")
+    def print_lab_environment():
+        print("=== VELO PERFORMANCE LABS ===")
+
     def print_race_result(c, v, mode="", memory_data=None):
-        print(f"CPython: {c:.3f}s | Velo: {v:.3f}s | Speedup: {c/max(v,0.001):.1f}x")
+        print(f"CPython: {c:.3f}s | Velo: {v:.3f}s | Speedup: {c / max(v, 0.001):.1f}x")
+
     def print_verdict(speedup, mem_red=0):
         print(f"SUMMARY: Velo is {speedup:.1f}x faster")
-    def print_reproduce_hint(cmd): pass
-    def create_progress_context(): 
+
+    def print_reproduce_hint(cmd):
+        pass
+
+    def create_progress_context():
         class D:
-            def __enter__(self): return self
-            def __exit__(self, *a): pass
-            def add_task(self, *a, **k): return 0
-            def advance(self, *a): pass
-            def remove_task(self, *a): pass
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def add_task(self, *a, **k):
+                return 0
+
+            def advance(self, *a):
+                pass
+
+            def remove_task(self, *a):
+                pass
+
         return D(), False
-    def export_results_json(*a, **k): pass
+
+    def export_results_json(*a, **k):
+        pass
+
     IS_QUIET = False
 
 
@@ -65,16 +82,16 @@ def run_task_unit(mode="CPython"):
     """Execute a single benchmark unit."""
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
-    
+
     if mode == "CPython":
         # Simulate cold start: clear cached modules
         for mod in ["rich", "click", "pydantic", "app"]:
-            if mod in sys.modules: 
+            if mod in sys.modules:
                 del sys.modules[mod]
         for key in list(sys.modules.keys()):
             if key.startswith(("rich.", "click.", "pydantic.")):
                 del sys.modules[key]
-        
+
         # Simulate path scanning overhead
         original_path = sys.path[:]
         try:
@@ -88,13 +105,14 @@ def run_task_unit(mode="CPython"):
     else:
         # Velo mode: modules already warm
         import app
+
         app.run_heavy_logic()
 
 
 def run_benchmark(runs: int, mode: str, progress, task_id):
     """Run benchmark with progress updates."""
     times = []
-    for i in range(runs):
+    for _i in range(runs):
         start = time.perf_counter()
         run_task_unit(mode)
         elapsed = time.perf_counter() - start
@@ -135,7 +153,7 @@ def main():
 
         # CPython Benchmark
         cp_task = progress.add_task("🐍 Running CPython (Legacy Runtime)", total=args.runs)
-        for i in range(args.runs):
+        for _i in range(args.runs):
             start = time.perf_counter()
             run_task_unit("CPython")
             cpython_times.append(time.perf_counter() - start)
@@ -143,7 +161,7 @@ def main():
 
         # Velo Benchmark
         ve_task = progress.add_task("⚡ Running Velo (Zygote Optimization)", total=args.runs)
-        for i in range(args.runs):
+        for _i in range(args.runs):
             start = time.perf_counter()
             run_task_unit("Velo")
             velo_times.append(time.perf_counter() - start)
@@ -151,29 +169,26 @@ def main():
 
     # Calculate results
     import statistics
+
     avg_cpython = statistics.mean(cpython_times)
     avg_velo = statistics.mean(velo_times)
     speedup = avg_cpython / max(avg_velo, 0.001)
-    
+
     # Memory estimation (based on typical CLI tool footprint)
     mem_cpython = 48.4  # MB - typical heavy CLI with rich/click/pydantic
-    mem_velo = 5.2      # MB - CoW shared memory
+    mem_velo = 5.2  # MB - CoW shared memory
     mem_reduction = (mem_cpython - mem_velo) / mem_cpython
 
     print()
-    
+
     # Print comparison table
-    print_race_result(
-        avg_cpython, avg_velo, 
-        mode="TTFL (Time To First Logic)",
-        memory_data=(mem_cpython, mem_velo)
-    )
-    
+    print_race_result(avg_cpython, avg_velo, mode="TTFL (Time To First Logic)", memory_data=(mem_cpython, mem_velo))
+
     print()
-    
+
     # Print verdict
     print_verdict(speedup, mem_reduction)
-    
+
     # Reproduction hint
     print_reproduce_hint(f"./examples/cli-fast/run_hio.sh --compare --runs={args.runs}")
 
@@ -184,7 +199,7 @@ def main():
             cpython_times,
             velo_times,
             cpython_label="CPython (CLI Cold Start)",
-            velo_label="Velo (Zygote Fork)"
+            velo_label="Velo (Zygote Fork)",
         )
 
 

@@ -1,5 +1,4 @@
 import sys
-import os
 
 print(f"Executable: {sys.executable}")
 print(f"Prefix: {sys.prefix}")

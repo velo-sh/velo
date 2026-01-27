@@ -1,3 +1,2 @@
-import dotenv
 
-print(f"dotenv loaded")
+print("dotenv loaded")

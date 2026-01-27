@@ -1,3 +1,2 @@
-import anyio
 
-print(f"anyio loaded successfully")
+print("anyio loaded successfully")

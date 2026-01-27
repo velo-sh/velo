@@ -180,9 +180,7 @@ def detect_all_apps_in_directory(directory: Path) -> list[AppInfo]:
             all_apps.extend(apps)
 
     # Sort so priority files come first
-    all_apps.sort(
-        key=lambda x: (0 if x.path.name in priority_files else 1, x.path.name)
-    )
+    all_apps.sort(key=lambda x: (0 if x.path.name in priority_files else 1, x.path.name))
 
     return all_apps
 

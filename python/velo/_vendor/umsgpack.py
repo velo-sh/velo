@@ -43,6 +43,7 @@ types.
 
 License: MIT
 """
+
 import collections
 import datetime
 import io
@@ -60,6 +61,7 @@ version = (2, 8, 0)
 ##############################################################################
 # Ext Class
 ##############################################################################
+
 
 # Extension type for application-defined types and data
 class Ext:
@@ -95,10 +97,8 @@ class Ext:
         # Check type is type int and in range
         if not isinstance(type, int):
             raise TypeError("ext type is not type integer")
-        elif not (-(2 ** 7) <= type <= 2 ** 7 - 1):
-            raise ValueError(
-                f"ext type value {type:d} is out of range (-128 to 127)"
-            )
+        elif not (-(2**7) <= type <= 2**7 - 1):
+            raise ValueError(f"ext type value {type:d} is out of range (-128 to 127)")
         # Check data is type bytes or str
         elif sys.version_info[0] == 3 and not isinstance(data, bytes):
             raise TypeError("ext data is not type 'bytes'")
@@ -112,11 +112,7 @@ class Ext:
         """
         Compare this Ext object with another for equality.
         """
-        return (
-            isinstance(other, self.__class__)
-            and self.type == other.type
-            and self.data == other.data
-        )
+        return isinstance(other, self.__class__) and self.type == other.type and self.data == other.data
 
     def __ne__(self, other):
         """
@@ -129,12 +125,7 @@ class Ext:
         String representation of this Ext object.
         """
         s = f"Ext Object (Type: {self.type:d}, Data: "
-        s += " ".join(
-            [
-                f"0x{ord(self.data[i : i + 1]):02x}"
-                for i in xrange(min(len(self.data), 8))
-            ]
-        )
+        s += " ".join([f"0x{ord(self.data[i : i + 1]):02x}" for i in xrange(min(len(self.data), 8))])
         if len(self.data) > 8:
             s += " ..."
         s += ")"
@@ -182,18 +173,14 @@ def ext_serializable(ext_type):
     def wrapper(cls):
         if not isinstance(ext_type, int):
             raise TypeError("Ext type is not type integer")
-        elif not (-(2 ** 7) <= ext_type <= 2 ** 7 - 1):
-            raise ValueError(
-                f"Ext type value {ext_type:d} is out of range of -128 to 127"
-            )
+        elif not (-(2**7) <= ext_type <= 2**7 - 1):
+            raise ValueError(f"Ext type value {ext_type:d} is out of range of -128 to 127")
         elif ext_type in _ext_type_to_class:
             raise ValueError(
                 f"Ext type {ext_type:d} already registered with class {repr(_ext_type_to_class[ext_type]):s}"
             )
         elif cls in _ext_class_to_type:
-            raise ValueError(
-                f"Class {repr(cls):s} already registered with Ext type {ext_type:d}"
-            )
+            raise ValueError(f"Class {repr(cls):s} already registered with Ext type {ext_type:d}")
 
         _ext_type_to_class[ext_type] = cls
         _ext_class_to_type[cls] = ext_type
@@ -312,13 +299,13 @@ def _pack_integer(obj, fp, options):
     else:
         if obj < 128:
             fp.write(struct.pack("B", obj))
-        elif obj < 2 ** 8:
+        elif obj < 2**8:
             fp.write(b"\xcc" + struct.pack("B", obj))
-        elif obj < 2 ** 16:
+        elif obj < 2**16:
             fp.write(b"\xcd" + struct.pack(">H", obj))
-        elif obj < 2 ** 32:
+        elif obj < 2**32:
             fp.write(b"\xce" + struct.pack(">I", obj))
-        elif obj < 2 ** 64:
+        elif obj < 2**64:
             fp.write(b"\xcf" + struct.pack(">Q", obj))
         else:
             raise UnsupportedTypeException("huge unsigned int")
@@ -348,11 +335,11 @@ def _pack_string(obj, fp, options):
     obj_len = len(obj)
     if obj_len < 32:
         fp.write(struct.pack("B", 0xA0 | obj_len) + obj)
-    elif obj_len < 2 ** 8:
+    elif obj_len < 2**8:
         fp.write(b"\xd9" + struct.pack("B", obj_len) + obj)
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xda" + struct.pack(">H", obj_len) + obj)
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xdb" + struct.pack(">I", obj_len) + obj)
     else:
         raise UnsupportedTypeException("huge string")
@@ -360,11 +347,11 @@ def _pack_string(obj, fp, options):
 
 def _pack_binary(obj, fp, options):
     obj_len = len(obj)
-    if obj_len < 2 ** 8:
+    if obj_len < 2**8:
         fp.write(b"\xc4" + struct.pack("B", obj_len) + obj)
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xc5" + struct.pack(">H", obj_len) + obj)
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xc6" + struct.pack(">I", obj_len) + obj)
     else:
         raise UnsupportedTypeException("huge binary string")
@@ -374,9 +361,9 @@ def _pack_oldspec_raw(obj, fp, options):
     obj_len = len(obj)
     if obj_len < 32:
         fp.write(struct.pack("B", 0xA0 | obj_len) + obj)
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xda" + struct.pack(">H", obj_len) + obj)
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xdb" + struct.pack(">I", obj_len) + obj)
     else:
         raise UnsupportedTypeException("huge raw string")
@@ -394,11 +381,11 @@ def _pack_ext(obj, fp, options):
         fp.write(b"\xd7" + struct.pack("B", obj.type & 0xFF) + obj.data)
     elif obj_len == 16:
         fp.write(b"\xd8" + struct.pack("B", obj.type & 0xFF) + obj.data)
-    elif obj_len < 2 ** 8:
+    elif obj_len < 2**8:
         fp.write(b"\xc7" + struct.pack("BB", obj_len, obj.type & 0xFF) + obj.data)
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xc8" + struct.pack(">HB", obj_len, obj.type & 0xFF) + obj.data)
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xc9" + struct.pack(">IB", obj_len, obj.type & 0xFF) + obj.data)
     else:
         raise UnsupportedTypeException("huge ext data")
@@ -416,14 +403,14 @@ def _pack_ext_timestamp(obj, fp, options):
     seconds = delta.seconds + delta.days * 86400
     microseconds = delta.microseconds
 
-    if microseconds == 0 and 0 <= seconds <= 2 ** 32 - 1:
+    if microseconds == 0 and 0 <= seconds <= 2**32 - 1:
         # 32-bit timestamp
         fp.write(b"\xd6\xff" + struct.pack(">I", seconds))
-    elif 0 <= seconds <= 2 ** 34 - 1:
+    elif 0 <= seconds <= 2**34 - 1:
         # 64-bit timestamp
         value = ((microseconds * 1000) << 34) | seconds
         fp.write(b"\xd7\xff" + struct.pack(">Q", value))
-    elif -(2 ** 63) <= abs(seconds) <= 2 ** 63 - 1:
+    elif -(2**63) <= abs(seconds) <= 2**63 - 1:
         # 96-bit timestamp
         fp.write(b"\xc7\x0c\xff" + struct.pack(">Iq", microseconds * 1000, seconds))
     else:
@@ -434,9 +421,9 @@ def _pack_array(obj, fp, options):
     obj_len = len(obj)
     if obj_len < 16:
         fp.write(struct.pack("B", 0x90 | obj_len))
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xdc" + struct.pack(">H", obj_len))
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xdd" + struct.pack(">I", obj_len))
     else:
         raise UnsupportedTypeException("huge array")
@@ -449,9 +436,9 @@ def _pack_map(obj, fp, options):
     obj_len = len(obj)
     if obj_len < 16:
         fp.write(struct.pack("B", 0x80 | obj_len))
-    elif obj_len < 2 ** 16:
+    elif obj_len < 2**16:
         fp.write(b"\xde" + struct.pack(">H", obj_len))
-    elif obj_len < 2 ** 32:
+    elif obj_len < 2**32:
         fp.write(b"\xdf" + struct.pack(">I", obj_len))
     else:
         raise UnsupportedTypeException("huge array")
@@ -536,9 +523,7 @@ def _pack2(obj, fp, **options):
         if t:
             _pack_ext(ext_handlers[t](obj), fp, options)
         else:
-            raise UnsupportedTypeException(
-                f"unsupported type: {str(type(obj)):s}"
-            )
+            raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     elif _ext_class_to_type:
         # Linear search for superclass
         t = next((t for t in _ext_class_to_type if isinstance(obj, t)), None)
@@ -546,13 +531,9 @@ def _pack2(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(
-                    f"Ext serializable class {repr(t):s} is missing implementation of packb()"
-                )
+                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()")
         else:
-            raise UnsupportedTypeException(
-                f"unsupported type: {str(type(obj)):s}"
-            )
+            raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:
         raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
 
@@ -629,9 +610,7 @@ def _pack3(obj, fp, **options):
         if t:
             _pack_ext(ext_handlers[t](obj), fp, options)
         else:
-            raise UnsupportedTypeException(
-                f"unsupported type: {str(type(obj)):s}"
-            )
+            raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     elif _ext_class_to_type:
         # Linear search for superclass
         t = next((t for t in _ext_class_to_type if isinstance(obj, t)), None)
@@ -639,13 +618,9 @@ def _pack3(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(
-                    f"Ext serializable class {repr(t):s} is missing implementation of packb()"
-                )
+                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()")
         else:
-            raise UnsupportedTypeException(
-                f"unsupported type: {str(type(obj)):s}"
-            )
+            raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:
         raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
 
@@ -763,9 +738,7 @@ def _unpack_integer(code, fp, options):
 
 def _unpack_reserved(code, fp, options):
     if code == b"\xc1":
-        raise ReservedCodeException(
-            f"encountered reserved code: 0x{ord(code):02x}"
-        )
+        raise ReservedCodeException(f"encountered reserved code: 0x{ord(code):02x}")
     raise Exception(f"logic error, not reserved code: 0x{ord(code):02x}")
 
 
@@ -890,9 +863,7 @@ def _unpack_ext_timestamp(ext_data, options):
         seconds = struct.unpack(">q", ext_data[4:12])[0]
         microseconds = struct.unpack(">I", ext_data[0:4])[0] // 1000
     else:
-        raise UnsupportedTimestampException(
-            f"unsupported timestamp with data length {len(ext_data):d}"
-        )
+        raise UnsupportedTimestampException(f"unsupported timestamp with data length {len(ext_data):d}")
 
     return _epoch + datetime.timedelta(seconds=seconds, microseconds=microseconds)
 
@@ -938,13 +909,9 @@ def _unpack_map(code, fp, options):
             # Attempt to convert list into a hashable tuple
             k = _deep_list_to_tuple(k)
         elif not isinstance(k, Hashable):
-            raise UnhashableKeyException(
-                f'encountered unhashable key: "{str(k):s}" ({str(type(k)):s})'
-            )
+            raise UnhashableKeyException(f'encountered unhashable key: "{str(k):s}" ({str(type(k)):s})')
         elif k in d:
-            raise DuplicateKeyException(
-                f'encountered duplicate key: "{str(k):s}" ({str(type(k)):s})'
-            )
+            raise DuplicateKeyException(f'encountered duplicate key: "{str(k):s}" ({str(type(k)):s})')
 
         # Unpack value
         v = _unpack(fp, options)
@@ -952,9 +919,7 @@ def _unpack_map(code, fp, options):
         try:
             d[k] = v
         except TypeError:
-            raise UnhashableKeyException(
-                f'encountered unhashable key: "{str(k):s}"'
-            )
+            raise UnhashableKeyException(f'encountered unhashable key: "{str(k):s}"')
     return d
 
 

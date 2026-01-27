@@ -9,15 +9,15 @@ For each request:
   2. Wait for completion
   3. Collect timing + RSS
 """
+
+import json
+import os
+import resource
 import subprocess
 import sys
 import time
-import os
-import resource
-import json
-from pathlib import Path
 from dataclasses import dataclass
-from typing import List, Tuple
+from pathlib import Path
 
 HANDLER_PATH = Path(__file__).parent / "handler.py"
 
@@ -25,6 +25,7 @@ HANDLER_PATH = Path(__file__).parent / "handler.py"
 @dataclass
 class RunResult:
     """Result of a single CPython run."""
+
     elapsed_ms: float
     rss_mb: float
     success: bool
@@ -44,7 +45,7 @@ def get_rss_mb() -> float:
 def run_single(event: dict) -> RunResult:
     """
     Run handler in a fresh Python subprocess.
-    
+
     This simulates traditional serverless cold start:
     - New Python interpreter
     - Fresh imports
@@ -52,7 +53,7 @@ def run_single(event: dict) -> RunResult:
     - Exit
     """
     start = time.perf_counter()
-    
+
     try:
         result = subprocess.run(
             [sys.executable, str(HANDLER_PATH)],
@@ -63,7 +64,7 @@ def run_single(event: dict) -> RunResult:
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
         rss_mb = get_rss_mb()
-        
+
         return RunResult(
             elapsed_ms=elapsed_ms,
             rss_mb=rss_mb,
@@ -86,36 +87,36 @@ def run_single(event: dict) -> RunResult:
         )
 
 
-def run_batch(n: int, event: dict = None) -> List[RunResult]:
+def run_batch(n: int, event: dict = None) -> list[RunResult]:
     """Run N cold starts sequentially."""
     if event is None:
         event = {"test": "payload"}
-    
+
     results = []
-    for i in range(n):
+    for _i in range(n):
         result = run_single(event)
         results.append(result)
-    
+
     return results
 
 
 if __name__ == "__main__":
     import statistics
-    
+
     print("CPython Runner - Cold Start Benchmark")
     print("=" * 50)
-    
+
     # Warm-up (discarded)
     print("Warm-up run (discarded)...")
     _ = run_single({"warmup": True})
-    
+
     # Actual runs
     N = 5
     print(f"Running {N} cold starts...")
     results = run_batch(N)
-    
+
     times = [r.elapsed_ms for r in results]
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Median: {statistics.median(times):.2f}ms")
     print(f"  Mean:   {statistics.mean(times):.2f}ms")
     print(f"  Stdev:   {statistics.stdev(times):.2f}ms" if len(times) > 1 else "")

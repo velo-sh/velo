@@ -5,8 +5,9 @@ We intentionally use time.sleep() to simulate the cost of loading
 native extensions (NumPy, PyTorch, Transformers) without requiring
 actual dependencies. This keeps the demo lightweight and reproducible.
 """
-import time
+
 import os
+import time
 
 # Simulate native extension / model weight loading cost
 # Real-world: torch import ~500ms, transformers ~1s, model.load() ~2s+
