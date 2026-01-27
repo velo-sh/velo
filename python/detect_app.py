@@ -16,7 +16,7 @@ import ast
 import json
 import sys
 from pathlib import Path
-from typing import Optional, NamedTuple, List
+from typing import NamedTuple
 
 
 class AppInfo(NamedTuple):
@@ -127,7 +127,7 @@ class AppDetector(ast.NodeVisitor):
     # Also catch async factory functions
     visit_AsyncFunctionDef = visit_FunctionDef
 
-    def _get_call_name(self, node: ast.Call) -> Optional[str]:
+    def _get_call_name(self, node: ast.Call) -> str | None:
         """Extract the name of a function call."""
         if isinstance(node.func, ast.Name):
             return node.func.id
@@ -147,7 +147,7 @@ class AppDetector(ast.NodeVisitor):
             return self.source_path.stem
 
 
-def detect_app_in_file(file_path: Path) -> List[AppInfo]:
+def detect_app_in_file(file_path: Path) -> list[AppInfo]:
     """Detect ASGI/WSGI apps in a single Python file."""
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -162,7 +162,7 @@ def detect_app_in_file(file_path: Path) -> List[AppInfo]:
     return detector.apps if detector.apps else detector.factories
 
 
-def detect_all_apps_in_directory(directory: Path) -> List[AppInfo]:
+def detect_all_apps_in_directory(directory: Path) -> list[AppInfo]:
     """
     Detect all potential ASGI/WSGI apps in a directory.
     """

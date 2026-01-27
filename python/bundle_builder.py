@@ -5,7 +5,7 @@ RFC-0006 Phase 5.0.2: Build .veloc bundles from Python projects
 
 Usage:
     from bundle_builder import VeloBundleBuilder
-    
+
     builder = VeloBundleBuilder()
     builder.add_module("mymodule", code_bytes, hash_bytes)
     builder.build(Path("bundle.veloc"))
@@ -15,7 +15,6 @@ import marshal
 import struct
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 try:
     import blake3 as blake3_module
@@ -59,7 +58,7 @@ class VeloBundleBuilder:
     """
 
     def __init__(self):
-        self.modules: List[ModuleData] = []
+        self.modules: list[ModuleData] = []
 
     def add_pyc(self, name: str, pyc_path: Path, is_package: bool = False) -> None:
         """Add a .pyc file to the bundle"""
@@ -119,9 +118,9 @@ class VeloBundleBuilder:
 
         # Try to find 'velo' binary and run it if possible
         # (For production this would be handled by the velo binary itself)
+        import os
         import subprocess
         import tempfile
-        import os
 
         velo_bin = os.environ.get("VELO_BIN", "velo")
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -210,7 +209,7 @@ class VeloBundleBuilder:
 
 
 def build_from_project(
-    project_dir: Path, output_path: Optional[Path] = None, optimize: int = 0
+    project_dir: Path, output_path: Path | None = None, optimize: int = 0
 ) -> Path:
     """
     Build a bundle from a Python project directory

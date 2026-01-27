@@ -373,6 +373,24 @@ run_security_audit() {
 }
 
 # =============================================================================
+# SSOT: Python Lint (Ruff)
+# =============================================================================
+run_ruff_check() {
+    log_step "Running Ruff Python lint..."
+    
+    # SSOT: These are the directories to check (excluding vendor code)
+    local PYTHON_DIRS="tests/ velo_zygote/ scripts/"
+    
+    # Lint check (exclude vendored code)
+    uv run ruff check $PYTHON_DIRS --exclude "*/_vendor/*"
+    log_success "Ruff lint passed"
+    
+    # Format check
+    uv run ruff format --check $PYTHON_DIRS --exclude "*/_vendor/*"
+    log_success "Ruff format passed"
+}
+
+# =============================================================================
 # Full CI Pipeline
 # =============================================================================
 run_full_ci() {

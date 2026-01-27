@@ -382,10 +382,9 @@ jobs:
         with:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
+      # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
       - name: Run Ruff (lint + format check)
-        run: |
-          uv run ruff check tests/ velo_zygote/ scripts/ python/
-          uv run ruff format --check tests/ velo_zygote/ scripts/ python/
+        run: ./scripts/ci-runner.sh ruff-check
 
   actionlint:
     name: Actionlint

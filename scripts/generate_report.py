@@ -24,9 +24,7 @@ def generate():
     under_20ms = len([t for t in l4_times if t < 20])
 
     # Sort by speedup (only passed results)
-    results_by_speedup = sorted(
-        passed_results, key=lambda x: x["L1_cpython"] / x["L4_instant"], reverse=True
-    )
+    results_by_speedup = sorted(passed_results, key=lambda x: x["L1_cpython"] / x["L4_instant"], reverse=True)
 
     md = f"""# Velo Top 100 Benchmark Report
 
@@ -37,7 +35,7 @@ def generate():
 - **Total Packages**: {total}
 - **Pass Rate**: {passed}/{total}
 - **Median Startup (L4)**: {median_l4:.1f} ms
-- **Packages < 20ms**: {under_20ms} ({under_20ms/passed*100:.1f}%)
+- **Packages < 20ms**: {under_20ms} ({under_20ms / passed * 100:.1f}%)
 
 ## Highlights
 ### Top 5 Speedups 🚀
@@ -54,9 +52,7 @@ def generate():
 |---|---|---|---|
 """
     # Sort by L4 time desc (only passed results)
-    results_by_slowest = sorted(
-        passed_results, key=lambda x: x["L4_instant"], reverse=True
-    )
+    results_by_slowest = sorted(passed_results, key=lambda x: x["L4_instant"], reverse=True)
     for r in results_by_slowest[:5]:
         speedup = r["L1_cpython"] / r["L4_instant"]
         md += f"| **{r['package']}** | {r['L1_cpython']:.1f}ms | {r['L4_instant']:.1f}ms | {speedup:.1f}x |\\n"
@@ -74,11 +70,7 @@ def generate():
         if r["status"] == "PASS":
             speedup = r["L1_cpython"] / r["L4_instant"]
             # Highlight L4 if < 20ms
-            l4_str = (
-                f"**{r['L4_instant']:.1f}ms**"
-                if r["L4_instant"] < 20
-                else f"{r['L4_instant']:.1f}ms"
-            )
+            l4_str = f"**{r['L4_instant']:.1f}ms**" if r["L4_instant"] < 20 else f"{r['L4_instant']:.1f}ms"
             md += f"| {r['package']} | {r['category']} | {r['L1_cpython']:.1f}ms | {r['L2_velo_zero']:.1f}ms | {r['L3_bundle']:.1f}ms | {l4_str} | {speedup:.1f}x | {status_icon} |\\n"
         else:
             # Failed benchmark - show error

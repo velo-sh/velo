@@ -8,6 +8,7 @@ Key Enhancements:
 - Larger per-module memory footprint
 - More realistic test structure
 """
+
 import argparse
 import shutil
 from pathlib import Path
@@ -151,15 +152,15 @@ def process_data_{service}_{m}_{s}(x: int) -> float:
     """Process data with model validation overhead."""
     # Access shared models (should be COW)
     model = get_model(f"HeavyModel{{x % 100}}")
-    
+
     # Some actual computation
     result = math.sqrt(abs(x)) if x >= 0 else 0.0
-    
+
     # Cache lookup (simulates ORM cache)
     cache_key = f"{{x}}_{{model.name if model else 'none'}}"
     if cache_key not in _CACHE:
         _CACHE[cache_key] = result
-    
+
     return result
 
 
@@ -169,7 +170,7 @@ def get_translation(key: str) -> str:
 ''')
 
     # 4. Create Test Suite
-    tests_per_service = total_tests // len(services)
+    total_tests // len(services)
 
     for idx in range(total_tests):
         service = services[idx % len(services)]
@@ -188,9 +189,9 @@ def get_translation(key: str) -> str:
         test_file = test_dir / f"test_forensic_{idx}.py"
 
         # Cross-service import for extra stress
-        cross_service = services[(idx + 1) % len(services)]
-        cross_m = (idx + 7) % 4
-        cross_s = (idx + 3) % 4
+        services[(idx + 1) % len(services)]
+        (idx + 7) % 4
+        (idx + 3) % 4
 
         test_file.write_text(f'''"""Forensic Test Case #{idx}"""
 import sys
@@ -205,18 +206,18 @@ from velo_app.{service}.module_{m_idx}.sub_{s_idx} import logic
 
 class TestForensic{idx}:
     """Test class for case {idx}."""
-    
+
     def test_primary_processing(self):
         """Test primary data processing path."""
         res = logic.process_data_{service}_{m_idx}_{s_idx}({idx})
         assert res >= 0
-        
+
     def test_model_access(self):
         """Test heavy model registry access (COW target)."""
         model = get_model(f"HeavyModel{{{idx} % 100}}")
         assert model is not None
         assert len(HEAVY_MODELS) == 100
-        
+
     def test_module_loaded(self):
         """Verify heavy modules are in memory (COW shared)."""
         assert "velo_app.models" in sys.modules
@@ -256,7 +257,7 @@ def module_context():
 ''')
 
     # 6. Create pyproject.toml for the specimen
-    (output_dir / "pyproject.toml").write_text(f'''[project]
+    (output_dir / "pyproject.toml").write_text(f"""[project]
 name = "gold_specimen"
 version = "1.0.0"
 description = "Velo Forensic Benchmark Specimen ({total_tests} tests)"
@@ -266,14 +267,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-''')
+""")
 
     print(f"✅ Gold Specimen ready at {output_dir}")
     print(f"   - {total_tests} test files")
     print(f"   - {total_tests * 4} test cases (4 per file)")
-    print(f"   - 100 heavy models (COW target)")
-    print(f"   - 500 translation entries")
-    print(f"   - 5 services x 4 modules x 4 submodules = 80 logic files")
+    print("   - 100 heavy models (COW target)")
+    print("   - 500 translation entries")
+    print("   - 5 services x 4 modules x 4 submodules = 80 logic files")
 
 
 if __name__ == "__main__":

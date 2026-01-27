@@ -10,23 +10,20 @@ This module provides:
 
 Usage:
     from velo_loader import VeloBundle, install_hook
-    
+
     bundle = VeloBundle(Path("bundle.veloc"))
     bundle.open()
     install_hook(bundle)
-    
+
     import my_module  # Served from bundle
 """
 
 import importlib.abc
-import sys
-from pathlib import Path
+import importlib.machinery
 import marshal
 import struct
-import importlib.abc
-import importlib.machinery
-import hashlib
-from typing import Dict, List, Optional, Tuple
+import sys
+from pathlib import Path
 
 try:
     import blake3 as blake3_module
@@ -96,13 +93,13 @@ class VeloBundle:
     - Atomic read before any parsing
     """
 
-    def __init__(self, path: Path, max_size: Optional[int] = None):
+    def __init__(self, path: Path, max_size: int | None = None):
         self.path = path
         self.max_size = max_size or DEFAULT_MAX_BUNDLE_SIZE
-        self.data: Optional[bytes] = None
-        self.view: Optional[memoryview] = None
-        self.index: Dict[str, ModuleEntry] = {}
-        self._content_hash: Optional[bytes] = None
+        self.data: bytes | None = None
+        self.view: memoryview | None = None
+        self.index: dict[str, ModuleEntry] = {}
+        self._content_hash: bytes | None = None
         self._index_offset: int = 0
 
     def open(self) -> None:
@@ -222,7 +219,7 @@ class VeloBundle:
                 f"Actual:   {actual.hex()}"
             )
 
-    def get_code(self, name: str) -> Optional[bytes]:
+    def get_code(self, name: str) -> bytes | None:
         """
         Get marshalled bytecode for a module
 
@@ -265,7 +262,7 @@ class VeloFinder(importlib.abc.MetaPathFinder):
     - Returns None for non-bundled (fallback to standard import)
     """
 
-    def __init__(self, bundle: VeloBundle, project_root: Optional[Path] = None):
+    def __init__(self, bundle: VeloBundle, project_root: Path | None = None):
         self.bundle = bundle
         self.project_root = project_root or Path.cwd()
         self.metrics = {"graph_hits": 0, "graph_misses": 0, "fallback_reasons": {}}
@@ -330,7 +327,7 @@ class VeloLoader(importlib.abc.Loader):
     """
 
     def __init__(
-        self, bundle: VeloBundle, name: str, project_root: Optional[Path] = None
+        self, bundle: VeloBundle, name: str, project_root: Path | None = None
     ):
         self.bundle = bundle
         self.name = name
@@ -404,7 +401,7 @@ class VeloLoader(importlib.abc.Loader):
             module.__path__.append(str(disk_path))
 
 
-def install_hook(bundle: VeloBundle, project_root: Optional[Path] = None) -> VeloFinder:
+def install_hook(bundle: VeloBundle, project_root: Path | None = None) -> VeloFinder:
     """
     Install Velo import hook at sys.meta_path[0]
 
@@ -424,8 +421,8 @@ def uninstall_hook(finder: VeloFinder) -> None:
 # Convenience function for velo run --fast
 def activate_fast_mode(
     bundle_path: Path,
-    project_root: Optional[Path] = None,
-    max_size: Optional[int] = None,
+    project_root: Path | None = None,
+    max_size: int | None = None,
 ) -> VeloBundle:
     """
     Activate fast loader mode

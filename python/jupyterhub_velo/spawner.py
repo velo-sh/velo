@@ -1,14 +1,16 @@
-from jupyterhub.spawner import LocalProcessSpawner
 import os
+
+from jupyterhub.spawner import LocalProcessSpawner
+
 
 class VeloSpawner(LocalProcessSpawner):
     """
     JupyterHub Spawner that uses Velo for high-density kernel deployment.
-    
-    RFC-0030: Uses 'velo run -m ipykernel_launcher' to boot kernels 
+
+    RFC-0030: Uses 'velo run -m ipykernel_launcher' to boot kernels
     with Zygote acceleration and COW memory sharing.
     """
-    
+
     def get_args(self):
         """
         Return the arguments to be passed to the kernel.
@@ -18,12 +20,12 @@ class VeloSpawner(LocalProcessSpawner):
         # ['-m', 'ipykernel_launcher', '-f', '{connection_file}']
         # We transform this into:
         # ['run', '--zygote', '-m', 'ipykernel_launcher', '-f', '{connection_file}']
-        
+
         args = super().get_args()
-        
+
         # Build the new argument list
         new_args = ['run', '--zygote']
-        
+
         # If the original args already have -m, just append everything
         if args and args[0] == '-m':
             new_args.extend(args)
@@ -35,7 +37,7 @@ class VeloSpawner(LocalProcessSpawner):
                 if arg == '-f' and i + 1 < len(args):
                     new_args.extend(['-f', args[i+1]])
                     break
-        
+
         return new_args
 
     # DEF-003: Enforce 'velo' entrypoint strictly, even against Mock-based overrides in tests.
@@ -89,5 +91,5 @@ class VeloSpawner(LocalProcessSpawner):
             hub_socket = os.environ.get('VELO_HUB_ZYGOTE_SOCKET')
             if hub_socket:
                 env['VELO_ZYGOTE_SOCKET'] = hub_socket
-        
+
         return env
