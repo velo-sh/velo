@@ -235,7 +235,17 @@ parse_tier_to_paths() {
 
 run_rust_tests() {
     log_step "Running Rust tests..."
-    cargo test --lib ${EXTRA_RUST_ARGS:-}
+    
+    # SSOT: Use cargo-nextest if available (matches GitHub CI)
+    # Fallback to cargo test for minimal environments
+    if command -v cargo-nextest &>/dev/null || cargo nextest --version &>/dev/null 2>&1; then
+        log_step "Using cargo-nextest (GitHub CI compatible)"
+        cargo nextest run --lib ${EXTRA_RUST_ARGS:-}
+    else
+        log_step "Falling back to cargo test (nextest not installed)"
+        cargo test --lib ${EXTRA_RUST_ARGS:-}
+    fi
+    
     log_success "Rust tests passed"
 }
 
