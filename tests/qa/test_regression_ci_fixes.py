@@ -42,7 +42,7 @@ def test_l2_003_syntax_error_fast_fail():
         # Check for zombie processes
         subprocess.run(["ps", "-ax", "-o", "pid=,ppid=,command=", "-g", str(os.getpgid(0))], check=False)
 
-        assert False, "Regression: velo serve hung while starting with a syntax error in Zygote mode"
+        pytest.fail("Regression: velo serve hung while starting with a syntax error in Zygote mode")
     except Exception as e:
         print(f"\n[FORENSIC] UNEXPECTED ERROR: {e}")
         raise
