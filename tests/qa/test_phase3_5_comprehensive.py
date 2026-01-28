@@ -578,10 +578,6 @@ class TestL2SadPath:
                 f"Expected syntax error message, got: {result.stderr}"
             )
 
-    @pytest.mark.skip(
-        reason="Import-time RuntimeError is caught by uvicorn, not fail-fast. "
-        "Phase 3 import check removed due to dependency resolution issues."
-    )
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:

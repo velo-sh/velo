@@ -822,11 +822,10 @@ pub fn run_server(
     }
 
     // Step 3: Early validation - Module check (FAIL-FAST-001)
-    // Two-phase check:
+    // Three-phase check with proper environment setup:
     // 1. find_spec: check module exists (fast, no side effects)
     // 2. ast.parse: check syntax (fast, no side effects)
-    // Note: We don't do actual import here because it would trigger
-    // dependency resolution (fastapi, etc) which may fail in subprocess.
+    // 3. import: catch runtime import errors (with proper venv activated)
     {
         use std::process::Command;
         let check_script = format!(
@@ -834,8 +833,13 @@ pub fn run_server(
 import importlib.util
 import ast
 import sys
+import os
 
 module_name = '{}'
+
+# Ensure current directory is in sys.path for local imports
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
 
 # Phase 1: Check if module exists (no side effects)
 spec = importlib.util.find_spec(module_name)
@@ -851,6 +855,14 @@ if spec.origin and spec.origin.endswith('.py'):
     except SyntaxError as e:
         print(f'SYNTAX_ERROR: {{e}}', file=sys.stderr)
         sys.exit(1)
+
+# Phase 3: Actually import to catch runtime errors
+# The subprocess uses python_path from project venv, so dependencies are available
+try:
+    __import__(module_name)
+except Exception as e:
+    print(f'IMPORT_ERROR: {{type(e).__name__}}: {{e}}', file=sys.stderr)
+    sys.exit(1)
 "#,
             module
         );
@@ -873,6 +885,12 @@ if spec.origin and spec.origin.endswith('.py'):
                 } else if stderr.contains("SYNTAX_ERROR") {
                     return Err(anyhow::anyhow!(
                         "Syntax error in module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                } else if stderr.contains("IMPORT_ERROR") {
+                    return Err(anyhow::anyhow!(
+                        "Failed to import module '{}'.\n\n{}",
                         module,
                         stderr.trim()
                     ));
