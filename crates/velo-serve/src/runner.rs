@@ -1483,6 +1483,11 @@ except Exception as e:
 
         let lb_for_proxy = lb.clone();
 
+        let timeout_multiplier: f64 = std::env::var("VELO_TIMEOUT_MULTIPLIER")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0);
+
         if rsgi_enabled && _native_listener.is_some() {
             // RFC-0019/0025: Native RSGI Mode
             // Workers handle their own server listening; Master only supervises.
@@ -1497,10 +1502,17 @@ except Exception as e:
                 let listener = tokio::net::TcpListener::bind(bind_addr)
                     .await
                     .expect("Failed to bind proxy");
-                lb_for_proxy.wait_for_healthy(Duration::from_secs(10)).await;
+
+                let wait_timeout = Duration::from_secs_f64(15.0 * timeout_multiplier);
+                let check_interval = Duration::from_secs_f64(5.0 * timeout_multiplier);
+
+                if !lb_for_proxy.wait_for_healthy(wait_timeout).await {
+                    eprintln!("[LB] CRITICAL: Workers failed to become healthy within {:?}. Starting anyway...", wait_timeout);
+                }
+
                 lb_for_proxy
                     .clone()
-                    .spawn_health_checks(Duration::from_secs(5));
+                    .spawn_health_checks(check_interval);
                 eprintln!("🚀 L7 Proxy listening on http://{}", bind_addr);
                 loop {
                     if let Ok((stream, peer_addr)) = listener.accept().await {

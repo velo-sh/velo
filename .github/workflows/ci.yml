@@ -661,8 +661,8 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
           command: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
 
-  qa-phase62-prosecutor:
-    name: "QA 6.2: Prosecutor Suite (RFC-0012)"
+  qa-prosecutor-matrix:
+    name: "QA 6.2: Prosecutor (${{ matrix.suite_name }})"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -671,13 +671,23 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Collision", path: "tests/qa/phase_6_1_1/test_sin_of_collision.py" }
+          - { name: "Sec Shield", path: "tests/qa/phase_6_1_1/test_sec_shield.py" }
+        include:
+          - suite: { name: "Collision" }
+            suite_name: "Collision"
+          - suite: { name: "Sec Shield" }
+            suite_name: "Sec Shield"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
-          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -v --tb=short
 
   qa-phase611-matrix:
     name: "QA 6.1.1: ${{ matrix.suite_name }}"
@@ -693,25 +703,40 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - { name: "Smoke & Gold", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
-          - { name: "Features & Integration", path: "tests/qa/phase_6_1_1/test_phase611_features.py tests/qa/phase_6_1_1/test_phase611_integration.py" }
-          - { name: "Isolation & Agents", path: "tests/qa/phase_6_1_1/test_isolation.py tests/qa/phase_6_1_1/test_phase611_agent_*.py" }
+          - { name: "Smoke", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py" }
+          - { name: "Golden Path", path: "tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
+          - { name: "Features", path: "tests/qa/phase_6_1_1/test_phase611_features.py" }
+          - { name: "Integration", path: "tests/qa/phase_6_1_1/test_phase611_integration.py" }
+          - { name: "Isolation", path: "tests/qa/phase_6_1_1/test_isolation.py" }
+          - { name: "Agents A-B", path: "tests/qa/phase_6_1_1/test_phase611_agent_a_edge.py tests/qa/phase_6_1_1/test_phase611_agent_b_stability.py" }
+          - { name: "Agents C-D", path: "tests/qa/phase_6_1_1/test_phase611_agent_c_security.py tests/qa/phase_6_1_1/test_phase611_agent_d_chaos.py tests/qa/phase_6_1_1/test_phase611_agent_d_desync.py" }
           - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
           - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
-          - { name: "Release Blockers & Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
+          - { name: "Release Blockers", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py" }
+          - { name: "Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
         include:
-          - suite: { name: "Smoke & Gold" }
-            suite_name: "Smoke & Gold"
-          - suite: { name: "Features & Integration" }
-            suite_name: "Features & Integration"
-          - suite: { name: "Isolation & Agents" }
-            suite_name: "Isolation & Agents"
+          - suite: { name: "Smoke" }
+            suite_name: "Smoke"
+          - suite: { name: "Golden Path" }
+            suite_name: "Golden Path"
+          - suite: { name: "Features" }
+            suite_name: "Features"
+          - suite: { name: "Integration" }
+            suite_name: "Integration"
+          - suite: { name: "Isolation" }
+            suite_name: "Isolation"
+          - suite: { name: "Agents A-B" }
+            suite_name: "Agents A-B"
+          - suite: { name: "Agents C-D" }
+            suite_name: "Agents C-D"
           - suite: { name: "Security Hardened" }
             suite_name: "Security Hardened"
           - suite: { name: "Expert Concerns" }
             suite_name: "Expert Concerns"
-          - suite: { name: "Release Blockers & Whitebox" }
-            suite_name: "Release Blockers & Whitebox"
+          - suite: { name: "Release Blockers" }
+            suite_name: "Release Blockers"
+          - suite: { name: "Whitebox" }
+            suite_name: "Whitebox"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
