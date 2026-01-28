@@ -144,3 +144,11 @@ To support **Heterogeneous Workloads** (App A vs App B) while maximizing shared 
 
 **Architectural Value**:
 Even in fully heterogeneous environments (100 different apps), the heavy CPython runtime and stdlib (~15-20MB) are loaded **once** in the Grand Zygote. This saves GBs of RAM in high-density multi-tenant nodes and reduces the cold-start time (Tier 1 creation) to sub-millisecond range.
+
+### 6.1 The Shift in Venv Management
+You correctly identified a fundamental operational shift:
+*   **Single-Machine Mode**: Velo acts as **Builder & Runner**. If `.venv` is missing, Velo calls `uv` to build it.
+*   **Tiered/Serverless Mode**: The `.venv` becomes an **Immutable Artifact**.
+    *   **No Building**: The Grand Zygote MUST NOT run `uv sync`. It assumes the `.venv` is already present (baked into the container image or mounted Volume).
+    *   **Path Injection**: The Supervisor tells Tier 1: "Mutate yourself into *this* specific path: `/opt/app-a/.venv`".
+    *   **Implication**: In this mode, `velo` is purely a **Runtime Supervisor**, completely decoupling from the "Build Phase".
