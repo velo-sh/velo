@@ -152,3 +152,20 @@ You correctly identified a fundamental operational shift:
     *   **No Building**: The Grand Zygote MUST NOT run `uv sync`. It assumes the `.venv` is already present (baked into the container image or mounted Volume).
     *   **Path Injection**: The Supervisor tells Tier 1: "Mutate yourself into *this* specific path: `/opt/app-a/.venv`".
     *   **Implication**: In this mode, `velo` is purely a **Runtime Supervisor**, completely decoupling from the "Build Phase".
+
+### 6.2 The Stackable Venv Architecture (Overlay Pattern)
+To support "Industry Standard Base" (e.g., Data Science), V3 implements a **Three-Layer Stack** via `sys.path` injection (logical OverlayFS).
+
+**The Stack**:
+1.  **Tier 0 (Root Zygote)**: Pure Python + Stdlib.
+2.  **Tier 1 (Industry Zygote)**: Managed by Velo (via `uv`). Contains heavy common libs (numpy, pandas, torch).
+3.  **Tier 2 (User Project)**: Managed by User. Contains app logic + niche deps.
+
+**The Smart Resolution Strategy (Conflict Avoidance)**:
+The core risk is **Version Conflict** (e.g., Tier 1 has `numpy 2.0`, User wants `numpy 1.x`).
+*   **Mechanism**: Velo Supervisor analyzes `pyproject.toml` / `uv.lock` before routing.
+*   **Case A (Hit)**: User deps are compatible with Tier 1. -> **Route to Industry Zygote** (Max Sharing).
+*   **Case B (Miss)**: User deps conflict with Tier 1. -> **Fallback to Root Zygote** (Max Correctness).
+    *   In Fallback mode, the User Venv is loaded directly on top of Tier 0. The Industry layer is skipped entirely.
+
+**Result**: "Default to Speed (Sharing), Fallback to Correctness (Isolation)."
