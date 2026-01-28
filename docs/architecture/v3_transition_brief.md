@@ -38,12 +38,12 @@ We shift to the **Supervisor Model** (similar to Android's `system_server` manag
 ### 3.1 The Supervisor (Rust)
 *   **Role**: Manager ONLY.
 *   **Physics**: A pure binary. **NO** Python dependencies involved in its own execution.
-*   **Responsibility**: Locate User Python -> Scrub Environment -> Inject Shim.
+*   **Responsibility**: Locate User Assets -> Spawn Root Zygote -> Inject Environment.
 *   **Process Physics**:
     *   **Toxin Origin**: When Supervisor spawns a child, it defaults to inheriting the Supervisor's environment (`VELO_CONFIG`, etc). This is why the **Airlock** is mandatory.
-    *   **Velo Physics**: Velo is a **standalone Rust binary** (like `uv`). It does **NOT** require a virtualenv to run itself. It has **Zero** Python dependencies for its own process.
-    *   **Python Source**: The supervisor MUST use the **User Project's Virtualenv Python** (`.venv/bin/python`). It MUST NEVER use the System Python (`/usr/bin/python`). If `.venv` is missing, Supervisor calls `integrated_uv_bin` to create it.
-    *   **UV Physics**: `uv` is a standalone Rust binary. It does **NOT** require a virtualenv to run. It does **NOT** need to maintain a "Velo Internal Venv". It operates directly on the User's Venv.
+    *   **Velo Physics**: Velo is a **standalone Rust binary** (like `uv`). It does **NOT** require a virtualenv to run itself.
+    *   **Python Source**: The supervisor MUST use the **System/Root Python Binary** (`/usr/bin/python3` or embedded). It MUST NEVER execute the User's `.venv/bin/python` directly, as this breaks COW sharing.
+    *   **UV Physics**: `uv` is used only as a build tool (in Single Machine mode) to generate the `.venv` assets. Use of `uv` is decoupled from the runtime execution.
 
 ### 3.2 The Project Zygote (Python)
 *   **Role**: The Worker Factory.
