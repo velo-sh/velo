@@ -662,8 +662,9 @@ jobs:
           command: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
 
   qa-prosecutor-matrix:
-    name: "QA 6.2: Prosecutor (${{ matrix.suite_name }})"
+    name: "QA 6.2: Prosecutor (${{ matrix.shard }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -674,24 +675,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite:
-          - { name: "Collision", path: "tests/qa/phase_6_1_1/test_sin_of_collision.py" }
-          - { name: "Sec Shield", path: "tests/qa/phase_6_1_1/test_sec_shield.py" }
-        include:
-          - suite: { name: "Collision" }
-            suite_name: "Collision"
-          - suite: { name: "Sec Shield" }
-            suite_name: "Sec Shield"
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -v --tb=short
+          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
   qa-phase611-matrix:
     name: "QA 6.1.1: ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -704,7 +699,7 @@ jobs:
       matrix:
         suite:
           - { name: "Smoke", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py" }
-          - { name: "Golden Path", path: "tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
+          - { name: "Golden Path", path: "tests/qa/phase_6_1_1/test_phase611_golden_path.py tests/qa/phase_6_1_1/test_phase611_golden_path_2.py" }
           - { name: "Features", path: "tests/qa/phase_6_1_1/test_phase611_features.py" }
           - { name: "Integration", path: "tests/qa/phase_6_1_1/test_phase611_integration.py" }
           - { name: "Isolation", path: "tests/qa/phase_6_1_1/test_isolation.py" }
