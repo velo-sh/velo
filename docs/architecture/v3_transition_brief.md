@@ -177,3 +177,28 @@ When App X requests `[numpy@1.24, pandas@2.0, my_lib]`:
 If Velo observes that the transition `Candidate B -> Delta Load` happens frequently (Hot Path), it **Crystallizes** the result into a new Base Zygote (`Candidate C`).
 *   **Result**: Future Apps fork directly from *Candidate C*.
 *   **Vision**: The "Infrastructure Base" is not static; it **evolves** based on usage patterns, automatically finding the optimal set of "Common Memory Blocks".
+
+### 6.3 Implementation Mechanics (The Prefix Engine)
+To realize this "Memory Block Assembly", Velo (Rust) runs an internal **Prefix Matching Engine**.
+
+**Step 1: Genome Signature (Normalization)**
+*   Input: `uv.lock`.
+*   Action: Sort dependencies alphabetically to create a canonical signature.
+*   Example: `S = [numpy==1.24, pandas==2.0, torch==2.1]`.
+
+**Step 2: The Zygote Trie (State)**
+Velo maintains an in-memory Tree of all active Zygotes:
+*   `Root` (State=[])
+    *   `Node A` (State=[numpy==1.24])
+        *   `Node B` (State=[numpy==1.24, pandas==2.0])
+
+**Step 3: Longest Prefix Match (The Algorithm)**
+*   Action: Match `S` against the Trie.
+*   Trace: Root -> Node A -> Node B (Mismatch at `torch`).
+*   **Winner**: `Node B` (matches 66% of signature).
+
+**Step 4: Fork & Load (The Synthesis)**
+*   Velo sends command to Node B: `FORK(delta=[torch==2.1])`.
+*   Node B forks -> New Process (Node C).
+*   Node C imports `torch`.
+*   **Result**: Node C is now `[numpy, pandas, torch]`. It is added to the Trie for future reuse.
