@@ -9,21 +9,15 @@ dependencies = [
     "blake3>=1.0.8",
     "fastapi>=0.128.0",
     "msgpack>=1.0",
+    "numpy>=2.4.1",
+    "pandas>=3.0.0",
     "psutil>=5.9",
     "pytest>=7.0",
     "requests>=2.28",
+    "torch>=2.10.0",
     "uvicorn>=0.40.0",
     "websocket-client>=1.8.0",
-    "websockets>=16.0",
-]
-
-[project.optional-dependencies]
-benchmark = [
-    "pydantic>=2.0",
-    "sqlalchemy>=2.0",
-    "numpy>=1.24",
-    "django>=4.0",
-    "rich>=13.0.0",
+    "websockets>=12.0",
 ]
 
 # RFC-0028: pytest-velo plugin registration
@@ -39,7 +33,6 @@ packages = ["pytest_velo", "velo_zygote"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["tests/qa/forensic_benchmarks"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
@@ -79,10 +72,18 @@ markers = [
     "integration: Tier 2 integration-level tests",
     "regression: Phase 6.2 regression probes",
     "heavy: Resource-intensive tests",
-    "timeout: Tests with custom timeout requirements",
+    "shm: Shared memory or Linux-specific features (SPEC-0008)",
+    "stress: High-pressure stress tests (SPEC-0008)",
+    "sad_path: Negative test cases (error handling/failure modes)",
     "happy_path: Level 1 happy path journey tests",
+    "tier2: Specialized edge and scale tests (Phase 6+)",
+    "config: CLI and configuration related tests",
     "cli: CLI-specific integration tests",
+    "security: Security and isolation tests (SPEC-0008)",
+    "performance: Performance and timing verification",
+    "vtest: Hybrid Velo/Pytest coordinator tests",
     "benchmark: Performance benchmark tests",
+    "timeout: Tests with custom timeout requirements",
 ]
 
 [tool.mypy]
@@ -99,6 +100,8 @@ warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = false
 ignore_missing_imports = true
+exclude = 'benchmarks/|examples/|ai-serverless-demo/|python/velo/_vendor/|scripts/|bench\.py|benchmark_.*\.py|run_tests\.py|vibe_demo\.py|python/jupyterhub_velo/|python/bundle_builder\.py|python/detect_app\.py|python/velo_loader\.py|slow\.py|fd_report_mod\.py'
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -124,15 +127,20 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # function calls in defaults (FastAPI pattern)
+    "PERF401",  # loop to comprehension - optional suggestion, not enforced
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["velo_zygote"]
 
 [tool.ruff.lint.per-file-ignores]
-# E402: Bootstrap pattern requires imports after sys.path manipulation
-"velo_zygote/main.py" = ["E402"]
+# E402: Tests legitimately require sys.path manipulation before imports
+"tests/**/*.py" = ["E402"]
+"pytest_velo/**/*.py" = ["E402"]
 "velo_zygote/worker_launcher.py" = ["E402"]
+"velo_zygote/main.py" = ["E402"]
+# F401: conftest files import fixtures for other tests to use
+"**/conftest.py" = ["F401"]
 # F403/F405: Star imports from constants.py is SSOT pattern (constants are generated)
 "velo_zygote/settings.py" = ["F403", "F405"]
 "velo_zygote/paths.py" = ["F403", "F405"]
@@ -148,5 +156,11 @@ dev = [
     "ruff>=0.9.0",
     "jsonschema>=4.23.0",
     "pytest-xdist>=3.8.0",
+    "pytest-timeout>=2.3.1",
+    "pytest-shard>=0.1.2",  # For CI test sharding
 ]
 
+
+[tool.velo]
+native_libraries = [".venv/lib/python*/site-packages/msgpack/_cmsgpack*"]
+preload = ["json"]

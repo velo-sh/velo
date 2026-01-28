@@ -8,17 +8,18 @@ from pathlib import Path
 
 
 class VeloEnforcer:
-    def __init__(self):
+    def __init__(self) -> None:
         self.root = Path(__file__).parent.parent.parent
-        self.src = self.root / "src"
+        # Project uses crates/ for Rust code, not src/
+        self.src = self.root / "crates"
         self.config = self.root / "config"
-        self.errors = []
+        self.errors: list[str] = []
 
-    def log_error(self, message):
+    def log_error(self, message: str) -> None:
         print(f"❌ [ENFORCEMENT FAILURE]: {message}")
         self.errors.append(message)
 
-    def check_zhc(self):
+    def check_zhc(self) -> None:
         """[SOP-004] Zero-Hardcode Enforcement."""
         toxic_patterns = [
             (r'"/Users/[^"]+"', "Hardcoded Developer Home"),
@@ -42,7 +43,7 @@ class VeloEnforcer:
                 if re.search(pattern, content):
                     self.log_error(f"config/constants.toml: {reason}")
 
-    def check_taxonomy(self):
+    def check_taxonomy(self) -> None:
         """[SPEC-0006] Naming Taxonomy Enforcement."""
         mandatory_prefixes = ["core_", "bridge_", "v_", "util_", "compat_"]
         prefix_regex = r"\b(" + "|".join(mandatory_prefixes) + r")[a-zA-Z0-9_]+"
@@ -55,10 +56,10 @@ class VeloEnforcer:
 
         if not found_any:
             self.log_error(
-                "No mandatory taxonomy prefixes (core_, bridge_, etc.) found in src/. Naming convention violation."
+                "No mandatory taxonomy prefixes (core_, bridge_, etc.) found in crates/. Naming convention violation."
             )
 
-    def run(self):
+    def run(self) -> None:
         print("🚀 Starting Velo Governance Enforcement (SOP-005)...")
         self.check_zhc()
         self.check_taxonomy()

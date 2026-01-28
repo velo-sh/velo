@@ -9,10 +9,10 @@ Usage:
     python scripts/sync-constants.py --check  # Verify sync (for CI)
 """
 
-import json
-import sys
 import argparse
+import json
 import subprocess
+import sys
 from pathlib import Path
 
 try:
@@ -22,6 +22,7 @@ except ImportError:
 
 try:
     import jsonschema
+
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
@@ -37,7 +38,7 @@ def get_git_hash() -> str:
             check=True,
         )
         hash_val = result.stdout.strip()
-        
+
         # Check for dirty working tree
         dirty = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -56,13 +57,13 @@ def validate_config(config: dict, schema_path: Path) -> bool:
     if not HAS_JSONSCHEMA:
         print("⚠️  jsonschema not installed, skipping validation", file=sys.stderr)
         return True
-    
+
     if not schema_path.exists():
         print(f"⚠️  Schema not found: {schema_path}, skipping validation", file=sys.stderr)
         return True
-    
+
     schema = json.loads(schema_path.read_text())
-    
+
     try:
         jsonschema.validate(config, schema)
         print("✅ Schema validation passed")
@@ -75,12 +76,12 @@ def validate_config(config: dict, schema_path: Path) -> bool:
 
 def generate_constants_py(config: dict, git_hash: str) -> str:
     """Generate Python constants file content."""
-    
+
     py_env = config.get("python_environment", {})
-    
+
     # Format env_vars list
     env_vars_str = ", ".join(f'"{v}"' for v in py_env.get("env_vars", []))
-    
+
     return f'''# Generated from config/constants.toml by scripts/sync-constants.py
 # Run 'python scripts/sync-constants.py' after editing config/constants.toml
 # DO NOT EDIT MANUALLY
@@ -95,6 +96,8 @@ MAX_MESSAGE_SIZE = {config["max_message_size"]}
 SOCKET_STARTUP_TIMEOUT = {config["socket_startup_timeout"]}
 GRACEFUL_SHUTDOWN_TIMEOUT = {config["graceful_shutdown_timeout"]}
 DEFAULT_PORT = {config["default_port"]}
+SANDBOX_NETWORK_ISOLATION = {str(config["sandbox_network_isolation"])}
+SANDBOX_PRIVILEGE_ESCALATION_BLOCK = {str(config["sandbox_privilege_escalation_block"])}
 
 # Valid Environment Variables
 # VELO_ENV: dev, ci, prod
@@ -163,6 +166,15 @@ PYTHON_VENV_PATH = "{py_env.get("venv_path", ".venv")}"
 PYTHON_LIB_DIR_PATTERN = "{py_env.get("lib_dir_pattern", "lib/python{{version}}")}"
 PYTHON_LIB_DYNLOAD_SUBDIR = "{py_env.get("lib_dynload_subdir", "lib-dynload")}"
 PYTHON_ENV_VARS = [{env_vars_str}]
+
+# Native Preloading SSOT (Phase 6 Hardening)
+_np = {json.dumps(config.get("native_preload", {}))}
+NATIVE_PRELOAD_RUNTIME_PREFIX = _np.get("runtime_prefix", "_v_")
+NATIVE_PRELOAD_LOCK_ENV = _np.get("lock_env", "VELO_RUNTIME_PRELOAD_LOCK")
+NATIVE_PRELOAD_EXE_PATH_ENV = _np.get("exe_path_env", "VELO_RUNTIME_EXE_PATH")
+NATIVE_PRELOAD_STRICT_ENV = _np.get("strict_env", "VELO_RUNTIME_STRICT")
+NATIVE_PRELOAD_STAGE_PRE_INIT = _np.get("stage_pre_init", "PreInit")
+NATIVE_PRELOAD_STAGE_POST_INIT = _np.get("stage_post_init", "PostInit")
 '''
 
 
@@ -174,47 +186,47 @@ def main():
     # Find project root
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
-    
+
     toml_path = project_root / "config" / "constants.toml"
     schema_path = project_root / "config" / "constants.schema.json"
     py_path = project_root / "velo_zygote" / "constants.py"
-    
+
     if not toml_path.exists():
         print(f"ERROR: {toml_path} not found", file=sys.stderr)
         sys.exit(1)
-    
+
     # Read TOML
     with open(toml_path, "rb") as f:
         config = tomllib.load(f)
-    
+
     # Validate against schema
     if not validate_config(config, schema_path):
         sys.exit(1)
-    
+
     git_hash = get_git_hash()
     new_content = generate_constants_py(config, git_hash)
-    
+
     if args.check:
         # Check mode: compare with existing file
         if not py_path.exists():
             print(f"ERROR: {py_path} not found. Run 'python scripts/sync-constants.py' to generate.", file=sys.stderr)
             sys.exit(1)
-        
+
         existing = py_path.read_text()
-        
+
         # Compare without BUILD_SCM_HASH (git hash changes frequently)
         def strip_hash(content: str) -> str:
             lines = content.split("\n")
             return "\n".join(line for line in lines if not line.startswith("BUILD_SCM_HASH"))
-        
+
         if strip_hash(existing) != strip_hash(new_content):
             print("ERROR: constants.py is out of sync with config/constants.toml", file=sys.stderr)
             print("Run 'python scripts/sync-constants.py' to regenerate", file=sys.stderr)
             sys.exit(1)
-        
+
         print("✅ constants.py is in sync with config/constants.toml")
         sys.exit(0)
-    
+
     # Generate mode: write file
     py_path.write_text(new_content)
     print(f"✅ Generated {py_path}")

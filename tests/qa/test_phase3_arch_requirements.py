@@ -82,7 +82,7 @@ try:
         pages = int(f.read().split()[1])
         rss_kb = pages * 4  # Assume 4KB pages
         print(f"RSS_KB:{rss_kb}")
-except:
+except Exception:
     print("RSS_KB:unknown")
 """,
             )

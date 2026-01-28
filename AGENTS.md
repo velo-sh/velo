@@ -15,9 +15,19 @@
  > - ❌ **NO UNAUTHORIZED ROLE SWITCH**: The agent is strictly forbidden from switching to another role without explicit, human-approved modification of this section in `AGENTS.md`.
  > - ❌ **NO AUTO-TRANSITION**: Any attempt to automatically, implicitly, or through self-referential edits switch roles is a **CRITICAL GOVERNANCE VIOLATION**.
  > - ❌ **NO ROLE APPLICATION**: Agents are forbidden from applying for or requesting a role switch in the middle of a task unless the human user explicitly initiates the change.
- > - 📌 **MANDATORY TASK ANCHOR**: Every agent MUST copy this **ID-LOCK-GLOBAL** block into the top of their active `task.md` (or equivalent task tracker) immediately upon mission start. This ensures constant visibility of role boundaries.
+ > - ❌ **NO SYSTEM PYTHON**: Agents are strictly forbidden from using system Python or non-`uv` managed environments.
+ > - ❌ **NO PLATFORM DRIFT**: Agents must ensure binaries are compiled for and run on the correct platform. macOS binaries MUST NOT be run on Linux/Docker.
+ > - 📌 **MANDATORY TASK ANCHOR**: Every agent MUST copy the **ID-LOCK-GLOBAL** and **ID-LOCK-ENV** blocks into the top of their active `task.md` (or equivalent task tracker) immediately upon mission start.
  >
- > **This is the Iron Rule of Velo Governance. Agent identity and role boundaries are fixed and non-negotiable without explicit human override recorded in this file.**
+ > **This is the Iron Rule of Velo Governance. Agent identity, role boundaries, and environment purity are fixed and non-negotiable without explicit human override recorded in this file.**
+
+ ## 🛡️ Environment & Platform Governance (ID-LOCK-ENV)
+
+ > [!IMPORTANT]
+ > **ID-LOCK-ENV**: The following environment rules are MANDATORY for all agents:
+ > 1. **UV-ONLY**: Use ONLY `uv` for Python environment management. All commands must be run via `uv run` or within a `uv`-synced `.venv`.
+ > 2. **SENTINEL COMPLIANCE**: Never bypass the Velo Sentinel (`VELO_STRICT_SSOT=1`).
+ > 3. **PLATFORM PURITY**: Always verify `debug pre-flight` before running tests in Docker. Blocked by Binary Platform Sentinel.
 
 
 ## 🎯 Project Overview
@@ -231,6 +241,7 @@ I will review/implement with [ROLE]'s perspective.
 - ✅ **Zero Sensitive Information**: No absolute local paths, usernames, or secrets in code or docs
 - ✅ **Write ALL code and documentation in English only (no Chinese characters)**
 - ✅ **Ensure local checks match CI** (see `.github/workflows/ci.yml` for exact commands)
+- ✅ **USE UV SSOT**: Always use `uv python find` and `uv sync`. Ensure `.venv` is current and hermetic.
 
 > [!WARNING]
 > **CI Consistency**: Pre-commit hooks in `.githooks/` MUST use the same flags as CI.
@@ -241,18 +252,6 @@ I will review/implement with [ROLE]'s perspective.
 ## 🔗 Navigation
 
 > For governance rules and role transition policies, see [Universal Identity & Role Governance](#-universal-identity--role-governance) above.
-
-### ✅ Role Transitions & Governance Logs
-
--[ID-LOCK-002] Phase 5.x Implementation Handover complete. Role: 💻 Developer.
--Authorized by: gjwang (2026-01-03 13:30)
--[ID-LOCK-003] Phase 4 Stability Remediation. Role: 💻 Developer.
--Authorized by: gjwang (2026-01-03 14:15) via QA Leader directive.
--Objective: Fix H-4 (Marshal recursion bypass) and Zygote IPC sync (BUG-51-001).
-
-+[ID-LOCK-004] Phase XI: Kinetic Optimization. Role: 💻 Developer (Rust Core).
-+Authorized by: gjwang (2026-01-06 18:17)
-+Objective: Implement Kinetic Protocol (UDP/IPC Handshake & Silent Fallback) per RFC-0013 v1.1.
 
 
 ---

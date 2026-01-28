@@ -61,6 +61,7 @@ import signal
 import sys
 import threading
 import time
+from typing import Any
 
 import pytest
 
@@ -80,7 +81,7 @@ def test_AGGRESSIVE_direct_fork_thread_graveyard():
     behavior that our architecture is specifically designed to avoid.
     """
 
-    def run_parent():
+    def run_parent() -> int:
         """This simulates the Zygote parent process."""
         lock = threading.Lock()
         ready_event = threading.Event()
@@ -127,7 +128,7 @@ def test_AGGRESSIVE_direct_fork_thread_graveyard():
 
     # Run multiple times to catch the race condition
     results = []
-    for i in range(20):
+    for _i in range(20):
         # We need to use multiprocessing to isolate each test run
         # because fork() in the test runner is problematic
         ctx = multiprocessing.get_context("fork")
@@ -152,7 +153,7 @@ def test_AGGRESSIVE_direct_fork_thread_graveyard():
             try:
                 result = q.get_nowait()
                 results.append("DEADLOCK" if result == 1 else "OK")
-            except:
+            except Exception:
                 results.append("ERROR")
 
     deadlock_count = results.count("DEADLOCK") + results.count("TIMEOUT")
@@ -179,7 +180,7 @@ def test_AGGRESSIVE_logging_deadlock():
     """
     import logging
 
-    def run_with_logging():
+    def run_with_logging() -> int:
         # Setup logging with a handler that locks
         logger = logging.getLogger(f"test_{os.getpid()}")
         logger.setLevel(logging.DEBUG)
@@ -226,7 +227,7 @@ def test_AGGRESSIVE_logging_deadlock():
             return os.WEXITSTATUS(status)
 
     results = []
-    for i in range(10):
+    for _i in range(10):
         ctx = multiprocessing.get_context("fork")
         q = ctx.Queue()
 
@@ -254,7 +255,7 @@ def test_AGGRESSIVE_logging_deadlock():
                     results.append("DEADLOCK")
                 else:
                     results.append("ERROR")
-            except:
+            except Exception:
                 results.append("ERROR")
 
     deadlock_count = results.count("DEADLOCK") + results.count("TIMEOUT")
@@ -279,27 +280,27 @@ def test_AGGRESSIVE_simulated_vibe_preload():
     4. Forked workers try to use the modules -> DEADLOCK
     """
 
-    def simulate_preload_zygote():
+    def simulate_preload_zygote() -> list[str]:
         """Simulates the Zygote that has preloaded modules."""
 
         # Simulate a "heavy library" that starts threads on import
         class FakeHeavyLibrary:
-            def __init__(self):
+            def __init__(self) -> None:
                 self._lock = threading.Lock()
-                self._cache = {}
+                self._cache: dict[str, float] = {}
                 self._stop = threading.Event()
 
                 # Background "cache warmer" thread (common in ORMs, connection pools)
                 self._warmer = threading.Thread(target=self._warm_cache, daemon=True)
                 self._warmer.start()
 
-            def _warm_cache(self):
+            def _warm_cache(self) -> None:
                 while not self._stop.is_set():
                     with self._lock:
                         self._cache["warmed"] = time.time()
                     time.sleep(0.01)
 
-            def get_data(self):
+            def get_data(self) -> Any:
                 with self._lock:
                     return self._cache.get("warmed", None)
 
@@ -309,7 +310,7 @@ def test_AGGRESSIVE_simulated_vibe_preload():
 
         # Simulate 5 "file change" events (5 forks)
         results = []
-        for i in range(5):
+        for _i in range(5):
             pid = os.fork()
 
             if pid == 0:
@@ -325,7 +326,7 @@ def test_AGGRESSIVE_simulated_vibe_preload():
                     data = library.get_data()
                     signal.alarm(0)
                     os._exit(0 if data else 1)
-                except:
+                except Exception:
                     os._exit(1)
             else:
                 # PARENT: Wait for worker

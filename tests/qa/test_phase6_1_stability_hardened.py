@@ -3,6 +3,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import psutil
 import pytest
@@ -80,7 +81,7 @@ class TestPhase61StabilityHardened:
         time.sleep(2)
         assert not psutil.pid_exists(child_pid)
 
-    def _read_with_timeout(self, stream, timeout=5):
+    def _read_with_timeout(self, stream: Any, timeout: float = 5.0) -> str | None:
         import select
 
         start_time = time.time()
@@ -89,10 +90,10 @@ class TestPhase61StabilityHardened:
             if r:
                 line = stream.readline()
                 if line:
-                    return line
+                    return cast(str, line)
         return None
 
-    def _read_until(self, stream, pattern, timeout=15) -> str:
+    def _read_until(self, stream: Any, pattern: str, timeout: float = 15.0) -> str:
         import select
 
         output = ""
@@ -105,8 +106,8 @@ class TestPhase61StabilityHardened:
                     break
                 output += line
                 if pattern in line:
-                    return output
-        return output
+                    return cast(str, output)  # type: ignore[redundant-cast]
+        return cast(str, output)  # type: ignore[redundant-cast]
 
     def test_stab_rs_002_watcher_debounce(self, isolated_env):
         """
@@ -342,12 +343,22 @@ time.sleep(60)
             os.killpg(parent_pid, signal.SIGKILL)
             pytest.fail("Velo did not exit within 15s after SIGTERM")
 
-        time.sleep(2)
+        time.sleep(3)  # Give PID 1 a bit more time to reap in CI
         # Requirement: All child processes MUST be cleaned up
+        leaks = []
         for child_pid in child_pids:
-            assert not psutil.pid_exists(child_pid), (
-                f"Leak Detected: Child process {child_pid} survived graceful shutdown"
-            )
+            if psutil.pid_exists(child_pid):
+                try:
+                    p = psutil.Process(child_pid)
+                    status = p.status()
+                    cmdline = " ".join(p.cmdline())
+                    leaks.append(f"PID {child_pid} ({status}): {cmdline}")
+                except psutil.NoSuchProcess:
+                    pass
+
+        assert not leaks, f"Leak Detected: {len(leaks)} child process(es) survived graceful shutdown:\n" + "\n".join(
+            leaks
+        )
 
     @pytest.mark.xfail(
         os.environ.get("GITHUB_ACTIONS") == "true"
@@ -387,7 +398,7 @@ time.sleep(60)
         # Write 5MB file slowly (1MB chunks every 200ms)
         app_file = env.path / "main.py"
         with open(app_file, "w") as f:
-            for i in range(5):
+            for _i in range(5):
                 # Write 1MB comment block + a few prints to reach 5MB total
                 f.write(f"# {'x' * 1_000_000}\n")
                 f.write("print('LOADING')\n")

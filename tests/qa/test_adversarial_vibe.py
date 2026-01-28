@@ -9,7 +9,7 @@ from conftest_utils import VeloTestEnv
 
 @pytest.mark.tier2
 @pytest.mark.adversarial
-def test_ADVERSARIAL_G1_native_leak(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_G1_native_leak(isolated_env: VeloTestEnv) -> None:
     """
     Challenge G1: Capturing stdout.
     If code writes directly to FD 1 (libc level), does Vibe capture it?
@@ -25,7 +25,7 @@ os.write(1, b'Native output\\n')
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_leak():
+    async def check_leak() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Re-trigger save

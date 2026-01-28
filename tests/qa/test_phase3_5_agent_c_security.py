@@ -12,6 +12,7 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ import pytest
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -36,19 +37,19 @@ def get_velo_binary():
 class SecurityTestEnv:
     """Test environment for security tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_security_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "SecurityTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float | None = None) -> tuple[int, str, str]:
         if timeout is None:
             timeout = T_MEDIUM
         result = subprocess.run(
@@ -60,23 +61,23 @@ class SecurityTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "SecurityTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
 class TestNetworkSecurity:
     """SEC-NET-xxx: Network security tests."""
 
-    def test_sec_net_001_privileged_port_warning(self):
+    def test_sec_net_001_privileged_port_warning(self) -> None:
         """SEC-NET-001: Port < 1024 should warn or require privilege."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -92,7 +93,7 @@ class TestNetworkSecurity:
                 result.returncode != 0 or "permission" in result.stderr.lower() or "privilege" in result.stderr.lower()
             )
 
-    def test_sec_net_002_localhost_default(self):
+    def test_sec_net_002_localhost_default(self) -> None:
         """SEC-NET-002: Default host should be localhost, not 0.0.0.0."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve", "--help"], capture_output=True, text=True, timeout=T_SHORT)
@@ -108,7 +109,7 @@ class TestNetworkSecurity:
 class TestProcessSecurity:
     """SEC-PROC-xxx: Process security tests."""
 
-    def test_sec_proc_001_env_not_leaked(self):
+    def test_sec_proc_001_env_not_leaked(self) -> None:
         """SEC-PROC-001: Sensitive env vars should not leak to workers."""
         with SecurityTestEnv() as env:
             env.create_script(
@@ -134,7 +135,7 @@ for key in ['AWS_SECRET_ACCESS_KEY', 'DATABASE_URL', 'API_KEY']:
             finally:
                 del os.environ["TEST_SECRET_KEY"]
 
-    def test_sec_proc_002_no_core_dump_secrets(self):
+    def test_sec_proc_002_no_core_dump_secrets(self) -> None:
         """SEC-PROC-002: Check that core dumps are disabled or safe."""
         # This is a system-level check
         import resource
@@ -147,7 +148,7 @@ for key in ['AWS_SECRET_ACCESS_KEY', 'DATABASE_URL', 'API_KEY']:
 class TestInputValidation:
     """SEC-INP-xxx: Input validation security tests."""
 
-    def test_sec_inp_001_path_traversal_app(self):
+    def test_sec_inp_001_path_traversal_app(self) -> None:
         """SEC-INP-001: Path traversal in app spec should be blocked."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -160,7 +161,7 @@ class TestInputValidation:
         # Should not attempt to access system files
         assert "passwd" not in result.stdout
 
-    def test_sec_inp_002_null_byte_injection(self):
+    def test_sec_inp_002_null_byte_injection(self) -> None:
         """SEC-INP-002: Null byte injection should be handled.
 
         Note: Python subprocess.run() cannot pass null bytes in arguments.
@@ -182,7 +183,7 @@ class TestInputValidation:
             # OS rejects control chars - that's the protection working
             pass
 
-    def test_sec_inp_003_symlink_escape(self):
+    def test_sec_inp_003_symlink_escape(self) -> None:
         """SEC-INP-003: Symlink to outside project should be handled."""
         with SecurityTestEnv() as env:
             # Create symlink to /etc/passwd
@@ -197,7 +198,7 @@ class TestInputValidation:
             # Should error or be blocked
             assert code != 0 or "error" in stderr.lower()
 
-    def test_sec_inp_004_command_injection_in_module(self):
+    def test_sec_inp_004_command_injection_in_module(self) -> None:
         """SEC-INP-004: Command injection in module name should be safe."""
         velo = get_velo_binary()
         result = subprocess.run([velo, "serve", "`id`:app"], capture_output=True, text=True, timeout=T_SHORT)
@@ -205,7 +206,7 @@ class TestInputValidation:
         assert "uid=" not in result.stdout
         assert result.returncode != 0
 
-    def test_sec_inp_005_semicolon_injection(self):
+    def test_sec_inp_005_semicolon_injection(self) -> None:
         """SEC-INP-005: Semicolon injection should be safe."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -221,7 +222,7 @@ class TestInputValidation:
 class TestConfigSecurity:
     """SEC-CFG-xxx: Configuration security tests."""
 
-    def test_sec_cfg_001_config_file_permissions(self):
+    def test_sec_cfg_001_config_file_permissions(self) -> None:
         """SEC-CFG-001: Config files should have restricted permissions."""
         with SecurityTestEnv() as env:
             # Check pyproject.toml permissions when [tool.velo] is added
@@ -238,7 +239,7 @@ preload = ["os"]
             # Document: should ideally be 0o644 or stricter
             assert mode & stat.S_IROTH == 0 or True  # Document current behavior
 
-    def test_sec_cfg_002_env_override_explicit(self):
+    def test_sec_cfg_002_env_override_explicit(self) -> None:
         """SEC-CFG-002: Env var overrides should be explicit, not implicit."""
         # Document the env override behavior
         # VELO_PORT should not silently override config
@@ -255,7 +256,7 @@ preload = ["os"]
 class TestDataIsolation:
     """SEC-ISO-xxx: Data isolation tests."""
 
-    def test_sec_iso_001_temp_files_unique(self):
+    def test_sec_iso_001_temp_files_unique(self) -> None:
         """SEC-ISO-001: Temp files should have unique names."""
         with SecurityTestEnv() as env:
             env.create_script(
@@ -281,7 +282,7 @@ os.unlink(path)
             if outputs:
                 assert len(set(outputs)) == len(outputs)
 
-    def test_sec_iso_002_working_dir_isolated(self):
+    def test_sec_iso_002_working_dir_isolated(self) -> None:
         """SEC-ISO-002: Working directory should be isolated."""
         with SecurityTestEnv() as env:
             env.create_script(
@@ -301,7 +302,7 @@ print(f'CWD:{os.getcwd()}')
 class TestErrorMessageSecurity:
     """SEC-ERR-xxx: Error message security (no info leaks)."""
 
-    def test_sec_err_001_no_stack_trace_leak(self):
+    def test_sec_err_001_no_stack_trace_leak(self) -> None:
         """SEC-ERR-001: Internal stack traces should not leak in errors."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -314,7 +315,7 @@ class TestErrorMessageSecurity:
         assert "thread 'main' panicked" not in result.stderr
         assert "RUST_BACKTRACE" not in result.stderr
 
-    def test_sec_err_002_no_path_leak(self):
+    def test_sec_err_002_no_path_leak(self) -> None:
         """SEC-ERR-002: Internal paths should not leak in errors."""
         velo = get_velo_binary()
         result = subprocess.run(
@@ -337,7 +338,7 @@ class TestErrorMessageSecurity:
 class TestSecurityEdgeCases:
     """Cross-review by Agent A: Edge cases in security features."""
 
-    def test_xr_sec_edge_001_rapid_permission_checks(self):
+    def test_xr_sec_edge_001_rapid_permission_checks(self) -> None:
         """XR-SEC-EDGE-001: Rapid permission checks should not race."""
         with SecurityTestEnv() as env:
             env.create_script("perm_check.py", "print('ok')")
@@ -360,7 +361,7 @@ class TestSecurityEdgeCases:
             if results:
                 assert len(set(results)) <= 2  # Allow 0 and fallback code
 
-    def test_xr_sec_edge_002_symlink_loop(self):
+    def test_xr_sec_edge_002_symlink_loop(self) -> None:
         """XR-SEC-EDGE-002: Symlink loop should not hang or crash."""
         with SecurityTestEnv() as env:
             # Create symlink loop: a -> b, b -> a
@@ -374,7 +375,7 @@ class TestSecurityEdgeCases:
             # Should fail gracefully, not hang
             assert code != 0 or "error" in stderr.lower()
 
-    def test_xr_sec_edge_003_massive_env_vars(self):
+    def test_xr_sec_edge_003_massive_env_vars(self) -> None:
         """XR-SEC-EDGE-003: Massive env vars should not crash security checks."""
         with SecurityTestEnv() as env:
             env.create_script("env_size.py", "print('ok')")
@@ -394,7 +395,7 @@ class TestSecurityEdgeCases:
 class TestSecurityStability:
     """Cross-review by Agent B: Stability of security features."""
 
-    def test_xr_sec_stab_001_repeated_security_checks(self):
+    def test_xr_sec_stab_001_repeated_security_checks(self) -> None:
         """XR-SEC-STAB-001: Repeated security checks give consistent results."""
         with SecurityTestEnv() as env:
             env.create_script("secure.py", "print('secure_output')")
@@ -407,7 +408,7 @@ class TestSecurityStability:
             # All results should be identical
             assert len(set(results)) == 1
 
-    def test_xr_sec_stab_002_security_after_error(self):
+    def test_xr_sec_stab_002_security_after_error(self) -> None:
         """XR-SEC-STAB-002: Security checks work correctly after errors."""
         with SecurityTestEnv() as env:
             # First: trigger an error
@@ -421,7 +422,7 @@ class TestSecurityStability:
             # Should work normally
             assert "still_secure" in stdout or code == 0
 
-    def test_xr_sec_stab_003_path_validation_regression(self):
+    def test_xr_sec_stab_003_path_validation_regression(self) -> None:
         """XR-SEC-STAB-003: Path validation should not regress."""
         velo = get_velo_binary()
 

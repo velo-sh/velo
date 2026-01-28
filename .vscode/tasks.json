@@ -1,0 +1,127 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "velo-zygote-start",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "zygote",
+                "start",
+                "--daemon"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-zygote-stop",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "zygote",
+                "stop"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-zygote-status",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "zygote",
+                "status"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-zygote-ensure",
+            "type": "shell",
+            "command": "velo zygote status || velo zygote start --daemon",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-run",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "run",
+                "${file}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-run-zygote",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "run",
+                "--zygote",
+                "${file}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "dependsOn": "velo-zygote-ensure"
+        },
+        {
+            "label": "velo-test",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "test"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "velo-serve",
+            "type": "shell",
+            "command": "velo",
+            "args": [
+                "serve",
+                "${input:appModule}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "appModule",
+            "type": "promptString",
+            "description": "ASGI/WSGI application module (e.g., app:app)",
+            "default": "app:app"
+        }
+    ]
+}

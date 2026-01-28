@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jupyterhub-velo-spawner"
+version = "0.1.0"
+description = "High-density JupyterHub spawner using Velo Zygote"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "jupyterhub>=1.0.0",
+]
+
+[project.entry-points."jupyterhub.spawners"]
+velo = "jupyterhub_velo:VeloSpawner"

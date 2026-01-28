@@ -1,2 +1,0 @@
-[pytest11]
-velo = pytest_velo.plugin

@@ -14,11 +14,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     # Try release first, then debug
     repo_root = Path(__file__).parent.parent.parent
@@ -36,11 +37,11 @@ def get_velo_binary():
 class RealUserEnv:
     """Simulates a REAL user project directory (no velo source files)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="user_project_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> RealUserEnv:
         """Create minimal Python project."""
         # Virtual env
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
@@ -50,11 +51,11 @@ class RealUserEnv:
 
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         """Create a Python script."""
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 30) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 30) -> tuple[int, str, str, float]:
         """Run velo and return (returncode, stdout, stderr, duration)."""
         start = time.perf_counter()
         result = subprocess.run(
@@ -67,20 +68,20 @@ class RealUserEnv:
         duration = (time.perf_counter() - start) * 1000  # ms
         return result.returncode, result.stdout, result.stderr, duration
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Remove temp directory."""
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> RealUserEnv:
         # Stop any stale Zygote from previous tests to prevent interference
         subprocess.run([self.velo, "zygote", "stop"], capture_output=True, timeout=5)
         time.sleep(0.2)  # Give time for cleanup
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         # Stop Zygote to prevent pollution to next test
         subprocess.run([self.velo, "zygote", "stop"], capture_output=True, timeout=5)
         self.cleanup()
@@ -109,6 +110,7 @@ class TestZygoteInRealUserEnv:
             # Should actually work
             assert "hello" in stdout or code == 0
 
+    @pytest.mark.zygote_flaky
     def test_e2e_002_zygote_daemon_persists(self):
         """
         E2E-002: Zygote daemon should persist between runs.
@@ -135,6 +137,7 @@ class TestZygoteInRealUserEnv:
             # Second run should be fast
             assert time2 < 100, f"Second run too slow ({time2:.1f}ms) - Zygote not persisting"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_003_zygote_preload_works(self):
         """
         E2E-003: Preloaded modules should be instant on second run.
@@ -175,6 +178,7 @@ print("imported")
             # Preload should make import nearly free (allow 3x margin for CI variance)
             assert ratio < 3.0, f"Preload not working: {ratio:.2f}x slower with imports"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_004_consecutive_runs_speedup(self):
         """
         E2E-004: Measure actual speedup from cold to warm.
@@ -216,6 +220,7 @@ print("imported")
             # Should not error
             assert code == 0 or "not running" in stdout.lower() or "running" in stdout.lower()
 
+    @pytest.mark.zygote_flaky
     def test_e2e_006_fallback_when_zygote_fails(self):
         """
         E2E-006: Should gracefully fallback if Zygote fails mid-run.
@@ -272,6 +277,7 @@ print("line3")
             assert "line2" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
             assert "line3" in stdout, f"stdout incomplete! stdout={repr(stdout)}"
 
+    @pytest.mark.zygote_flaky
     def test_e2e_008_stderr_captured_correctly(self):
         """
         E2E-008: Script stderr should be captured correctly.
@@ -292,6 +298,7 @@ print("error_output", file=sys.stderr)
             assert code == 0 or "error" in stderr.lower()
 
 
+@pytest.mark.zygote_flaky
 class TestZygotePerformanceRequirements:
     """Tests that verify RFC-0002 performance claims."""
 

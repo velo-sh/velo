@@ -1,5 +1,4 @@
 import os
-import sys
 
 # Check if POLLUTED env var exists (it shouldn't)
 val = os.environ.get("POLLUTED_ENV")

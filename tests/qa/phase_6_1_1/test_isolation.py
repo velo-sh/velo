@@ -1,7 +1,11 @@
 import os
 import time
 
+import pytest
 import requests
+
+# Mark entire module as CI flaky - isolation tests depend on server startup
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
 
 
 class TestIsolation:
@@ -16,6 +20,10 @@ class TestIsolation:
 from fastapi import FastAPI
 import sys
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def read_root():
@@ -57,6 +65,10 @@ def read_root():
             """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def read_root():

@@ -10,10 +10,10 @@ Usage:
     python benchmark_projects.py --all
 """
 
-import subprocess
-import shutil
-import time
 import argparse
+import shutil
+import subprocess
+import time
 from pathlib import Path
 
 VELO_BIN = Path(__file__).parent / "target/release/velo"
@@ -83,7 +83,7 @@ import django
 from django.conf import settings
 if not settings.configured:
     settings.configure(
-        DEBUG=True, 
+        DEBUG=True,
         SECRET_KEY='benchmark-secret-key-12345',
         DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
         USE_TZ=True,
@@ -230,23 +230,23 @@ def setup_project(name: str, config: dict) -> Path:
             preload_list = ", ".join(f'"{dep}"' for dep in config["deps"])
             content += f"\n[tool.velo]\npreload = [{preload_list}]\n"
             pyproject_path.write_text(content)
-            print(f"  Added [tool.velo] preload config")
+            print("  Added [tool.velo] preload config")
 
     # Symlink velo_zygote for Zygote to work
     zygote_link = project_dir / "velo_zygote"
     velo_zygote_src = Path(__file__).parent / "velo_zygote"
     if velo_zygote_src.exists() and not zygote_link.exists():
         zygote_link.symlink_to(velo_zygote_src)
-        print(f"  Symlinked velo_zygote")
+        print("  Symlinked velo_zygote")
 
     return project_dir
 
 
 def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
     """Run benchmark comparing CPython vs Velo."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Benchmarking: {name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     script = project_dir / "bench.py"
     venv_python = project_dir / ".venv/bin/python"
@@ -262,7 +262,7 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
 
     # Benchmark CPython
     cpython_times = []
-    for i in range(iterations):
+    for _i in range(iterations):
         start = time.perf_counter()
         subprocess.run([venv_python, script], cwd=project_dir, capture_output=True)
         cpython_times.append((time.perf_counter() - start) * 1000)
@@ -271,7 +271,7 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
     velo_miss_times = []
     velo_hit_times = []
 
-    for i in range(iterations):
+    for _i in range(iterations):
         # Cache miss
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
@@ -290,27 +290,19 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
 
     # Zygote cold start (includes daemon startup)
     zygote_cold_times = []
-    for i in range(iterations):
-        subprocess.run(
-            [VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True
-        )
+    for _i in range(iterations):
+        subprocess.run([VELO_BIN, "zygote", "stop"], cwd=project_dir, capture_output=True)
         start = time.perf_counter()
-        subprocess.run(
-            [VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True
-        )
+        subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
         zygote_cold_times.append((time.perf_counter() - start) * 1000)
 
     # Zygote warm start (daemon already running)
     zygote_warm_times = []
     # Start zygote first
-    subprocess.run(
-        [VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True
-    )
-    for i in range(iterations):
+    subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
+    for _i in range(iterations):
         start = time.perf_counter()
-        subprocess.run(
-            [VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True
-        )
+        subprocess.run([VELO_BIN, "run", "--zygote", script], cwd=project_dir, capture_output=True)
         zygote_warm_times.append((time.perf_counter() - start) * 1000)
 
     # Stop zygote after benchmark
@@ -349,9 +341,7 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
 
     print(f"\n{BOLD}Results ({iterations} runs):{RESET}")
     print()
-    print(
-        f"  {GRAY}CPython{RESET}           {bar(cpython_avg, max_time)} {cpython_avg:>6.0f}ms"
-    )
+    print(f"  {GRAY}CPython{RESET}           {bar(cpython_avg, max_time)} {cpython_avg:>6.0f}ms")
     print(
         f"  {GRAY}Velo cache miss{RESET}   {bar(velo_miss_avg, max_time)} {velo_miss_avg:>6.0f}ms  {speedup_str(cpython_avg, velo_miss_avg)}"
     )
@@ -367,22 +357,14 @@ def benchmark_project(name: str, project_dir: Path, iterations: int = 5):
 
     if cpython_avg > 0:
         speedup_ratio = cpython_avg / zygote_warm_avg
-        print(
-            f"\n  {BOLD}🚀 Zygote is {GREEN}{speedup_ratio:.1f}x faster{RESET}{BOLD} than CPython{RESET}"
-        )
+        print(f"\n  {BOLD}🚀 Zygote is {GREEN}{speedup_ratio:.1f}x faster{RESET}{BOLD} than CPython{RESET}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark Velo against real projects")
-    parser.add_argument(
-        "--project", "-p", choices=list(PROJECTS.keys()), help="Project to benchmark"
-    )
-    parser.add_argument(
-        "--all", "-a", action="store_true", help="Benchmark all projects"
-    )
-    parser.add_argument(
-        "--iterations", "-n", type=int, default=5, help="Iterations per benchmark"
-    )
+    parser.add_argument("--project", "-p", choices=list(PROJECTS.keys()), help="Project to benchmark")
+    parser.add_argument("--all", "-a", action="store_true", help="Benchmark all projects")
+    parser.add_argument("--iterations", "-n", type=int, default=5, help="Iterations per benchmark")
     args = parser.parse_args()
 
     if not VELO_BIN.exists():
@@ -391,9 +373,7 @@ def main():
 
     BENCHMARK_DIR.mkdir(parents=True, exist_ok=True)
 
-    projects_to_run = (
-        list(PROJECTS.keys()) if args.all else [args.project] if args.project else []
-    )
+    projects_to_run = list(PROJECTS.keys()) if args.all else [args.project] if args.project else []
 
     if not projects_to_run:
         parser.print_help()

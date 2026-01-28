@@ -21,7 +21,7 @@ from conftest_utils import VeloTestEnv
 # SCENARIO 1: Thread Graveyard
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_thread_graveyard(isolated_env: VeloTestEnv):
+def test_APEX_thread_graveyard(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: fork() only clones the calling thread.
     Background threads in Zygote vanish in the child, potentially leaving
@@ -56,7 +56,7 @@ else:
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_thread():
+    async def check_thread() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -79,7 +79,7 @@ else:
 # SCENARIO 2: Signal Hijacking
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_signal_hijacking(isolated_env: VeloTestEnv):
+def test_APEX_signal_hijacking(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: User code registers custom SIGTERM handler.
     Vibe relies on SIGTERM to kill old workers. If hijacked, fallback to SIGKILL?
@@ -100,7 +100,7 @@ time.sleep(60)  # Hang forever
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_signal():
+    async def check_signal() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # First worker is hung
@@ -129,7 +129,7 @@ time.sleep(60)  # Hang forever
 # SCENARIO 3: Import Cycle Hell
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_import_cycle_hell(isolated_env: VeloTestEnv):
+def test_APEX_import_cycle_hell(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Circular imports causing partial initialization.
     """
@@ -147,7 +147,7 @@ def test_APEX_import_cycle_hell(isolated_env: VeloTestEnv):
     )
     time.sleep(2)
 
-    async def check_cycle():
+    async def check_cycle() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -170,7 +170,7 @@ def test_APEX_import_cycle_hell(isolated_env: VeloTestEnv):
 # SCENARIO 4: Unicode Bomb
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_unicode_bomb(isolated_env: VeloTestEnv):
+def test_APEX_unicode_bomb(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Pathological Unicode in output.
     Can the Gateway serialize and transmit without panicking?
@@ -187,7 +187,7 @@ print("UNICODE_OK")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_unicode():
+    async def check_unicode() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -208,7 +208,7 @@ print("UNICODE_OK")
 # SCENARIO 5: Symlink Maze
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_symlink_maze(isolated_env: VeloTestEnv):
+def test_APEX_symlink_maze(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Watching symlinked files vs actual files.
     Does Vibe detect changes to the target of a symlink?
@@ -233,7 +233,7 @@ print(f"VAL={linked_module.VAL}")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_symlink():
+    async def check_symlink() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             # Consume initial
@@ -266,7 +266,7 @@ print(f"VAL={linked_module.VAL}")
 # SCENARIO 6: Socket Inheritance
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_socket_inheritance(isolated_env: VeloTestEnv):
+def test_APEX_socket_inheritance(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Open TCP socket in Zygote, forked to child.
     Does the shared socket cause protocol corruption?
@@ -288,7 +288,7 @@ print("SOCKET_OK")
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_socket():
+    async def check_socket() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=5.0)
@@ -309,7 +309,7 @@ print("SOCKET_OK")
 # SCENARIO 7: Binary Module (Simulated)
 # =============================================================================
 @pytest.mark.tier4
-def test_APEX_binary_module_staleness(isolated_env: VeloTestEnv):
+def test_APEX_binary_module_staleness(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: C extension module reloading.
     Python cannot unload .so files. Does Vibe detect and warn?
@@ -326,7 +326,7 @@ def test_APEX_binary_module_staleness(isolated_env: VeloTestEnv):
     process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def check_binary():
+    async def check_binary() -> None:
         uri = f"ws://127.0.0.1:{port}"
         async with websockets.connect(uri) as websocket:
             msg = await asyncio.wait_for(websocket.recv(), timeout=2.0)
@@ -359,7 +359,7 @@ def test_APEX_binary_module_staleness(isolated_env: VeloTestEnv):
 # =============================================================================
 @pytest.mark.tier4
 @pytest.mark.skip(reason="Requires Docker. Run manually in containerized environment.")
-def test_APEX_cgroup_escape(isolated_env: VeloTestEnv):
+def test_APEX_cgroup_escape(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: OOM behavior in resource-limited containers.
     Does OOM Killer target only the Worker, or the entire container?

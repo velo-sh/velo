@@ -17,6 +17,9 @@ from pathlib import Path
 
 import pytest
 
+# Mark entire module as CI flaky - edge case tests are sensitive to timing
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 
 class TestL2EdgeCases:
     """L2: Edge case tests for Zygote Worker Integration (Agent A)."""
@@ -122,7 +125,7 @@ class TestL2EdgeCases:
         proc.wait_ready()
 
         # Check for filesystem socket
-        socket_dir = Path(f"/tmp/velo-{os.getuid()}")
+        Path(f"/tmp/velo-{os.getuid()}")
 
         # Either socket dir exists or server responds (implementation may vary)
         import requests

@@ -12,8 +12,9 @@ fn test_ipc_fd_passing_end_to_end() -> Result<()> {
     let socket_path = tmp_dir.path().join("velo-zygote-test.sock");
 
     // 2. Launch Zygote (we need a running Zygote)
-    // We can use the actual velo_zygote/main.py
-    let zygote_script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("velo_zygote/main.py");
+    // We can use the actual velo_zygote/zygote_main.py
+    let zygote_script =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("velo_zygote/zygote_main.py");
 
     let mut child = std::process::Command::new("python3")
         .arg(&zygote_script)
@@ -91,6 +92,7 @@ except Exception as e:
     // 6. Send Fork Command WITH FD
     let fork_cmd = ZygoteCommand::Fork {
         script_path: worker_script.clone(),
+        module: None,
         args: vec![],
         async_mode: false, // Wait for exit
         stdout_path: None,

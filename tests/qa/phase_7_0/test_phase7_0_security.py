@@ -51,8 +51,8 @@ class TestSecurityInvariants:
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_06_mprotect_bypass_after_sealing(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_06_mprotect_bypass_after_sealing(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-06: Verify sealed SHM cannot be made writable via mprotect.
 
@@ -92,23 +92,23 @@ PROT_WRITE = 0x2
 
 def main():
     print("Testing mprotect bypass after sealing...")
-    
+
     # Step 1: Create memfd with sealing capability
     memfd_create = libc.syscall
     memfd_create.restype = ctypes.c_int
-    
+
     # syscall number for memfd_create on x86_64
     SYS_memfd_create = 319
-    
+
     name = b"test_sealed_shm"
     fd = libc.syscall(SYS_memfd_create, name, MFD_CLOEXEC | MFD_ALLOW_SEALING)
-    
+
     if fd < 0:
         print(f"SKIP: memfd_create not available (errno={ctypes.get_errno()})")
         return 0  # Skip, not fail
-    
+
     print(f"Created memfd: fd={fd}")
-    
+
     # Step 2: Set size
     size = 4096
     try:
@@ -117,27 +117,27 @@ def main():
         print(f"FAIL: ftruncate failed: {e}")
         os.close(fd)
         return 1
-    
+
     # Step 3: Map as read-write first to populate
     mm = mmap.mmap(fd, size, access=mmap.ACCESS_WRITE)
     mm.write(b"\\x00" * size)
     mm.close()
-    
+
     import errno
     seals = F_ADD_SEALS | F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW
     # In Python, libc.fcntl with F_ADD_SEALS might be tricky depending on the wrapper
     # Using raw syscall for absolute certainty in whitebox test
     SYS_fcntl = 72 # x86_64
     result = libc.syscall(SYS_fcntl, fd, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW)
-    
+
     if result < 0:
         err = ctypes.get_errno()
         print(f"FAIL: F_ADD_SEALS failed with errno={err} ({os.strerror(err)})")
         os.close(fd)
         return 1
-    
+
     print("Seals applied successfully")
-    
+
     # Step 5: Try to map as writable after sealing
     try:
         mm_rw = mmap.mmap(fd, size, access=mmap.ACCESS_WRITE)
@@ -147,17 +147,17 @@ def main():
         return 1
     except OSError as e:
         print(f"PASS: mmap(WRITE) correctly blocked: {e}")
-    
+
     # Step 6: Map as read-only (should work)
     try:
         mm_ro = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
         print("Read-only mmap succeeded (as expected)")
-        
+
         # Step 7: Try mprotect on the read-only mapping
         # This would require ctypes to call mprotect, but Python's mmap
         # doesn't expose the raw address directly in a safe way.
         # We'll verify that any write attempt fails.
-        
+
         try:
             # This should raise an error on sealed memory
             mm_ro[0] = 0xFF
@@ -167,14 +167,14 @@ def main():
             return 1
         except TypeError:
             print("PASS: Write blocked (ACCESS_READ doesn't allow assignment)")
-        
+
         mm_ro.close()
-        
+
     except Exception as e:
         print(f"Unexpected error: {e}")
         os.close(fd)
         return 1
-    
+
     os.close(fd)
     print("PASS: All sealing tests passed")
     return 0
@@ -191,8 +191,8 @@ if __name__ == "__main__":
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_09_seal_ordering_verification(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_09_seal_ordering_verification(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-09: Verify exact 8-step seal sequence is followed (H-23).
 
@@ -241,7 +241,7 @@ def check_writable_vmas(fd):
         # Get the inode of our fd
         stat = os.fstat(fd)
         inode = stat.st_ino
-        
+
         with open("/proc/self/maps", "r") as f:
             for line in f:
                 # Look for our memfd (by inode) with write permission
@@ -258,42 +258,42 @@ def check_writable_vmas(fd):
 
 def main():
     print("Testing H-23: Seal Ordering Verification...")
-    
+
     # Step 1: memfd_create
     name = b"seal_order_test"
     fd = libc.syscall(SYS_memfd_create, name, MFD_CLOEXEC | MFD_ALLOW_SEALING)
-    
+
     if fd < 0:
         print(f"SKIP: memfd_create not available")
         return 0
-    
+
     size = 4096
     os.ftruncate(fd, size)
     print("Step 1: memfd_create() - OK")
-    
+
     # Step 2: mmap as RW
     mm_rw = mmap.mmap(fd, size, access=mmap.ACCESS_WRITE)
     print("Step 2: mmap(RW) - OK")
-    
+
     # Check for writable VMA (should exist now)
     has_writable, vma_line = check_writable_vmas(fd)
     if has_writable is None:
         print(f"Warning: Could not check VMAs: {vma_line}")
     elif has_writable:
         print("  (Writable VMA exists as expected)")
-    
+
     # Step 3: Populate
     mm_rw.write(b"\\x00" * size)
     print("Step 3: Populate weights - OK")
-    
+
     # Step 4: munmap the RW mapping (CRITICAL)
     mm_rw.close()
     print("Step 4: munmap(RW) - OK")
-    
+
     # Step 5: F_ADD_SEALS
     # We apply seals BEFORE the final RO mapping to avoid any EBUSY race conditions.
     seals = F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW
-    
+
     # Logic for syscall numbers (x86_64 vs aarch64)
     import platform
     arch = platform.machine()
@@ -304,7 +304,7 @@ def main():
     else:
         # Fallback to fcntl.fcntl if arch is unknown
         import fcntl
-        SYS_fcntl = None 
+        SYS_fcntl = None
 
     if SYS_fcntl:
         result = libc.syscall(SYS_fcntl, fd, F_ADD_SEALS, seals)
@@ -325,24 +325,24 @@ def main():
     # Step 6: mmap as RO (should work after sealing)
     mm_ro = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
     print("Step 6: mmap(RO) - OK")
-    
+
     # Step 8 would be FD passing (simulated)
     print("Step 8: (FD ready for passing) - OK")
-    
+
     # Step 7: Verify seals are set
     # Note: libc.fcntl(fd, F_GET_SEALS) is safe as it's a GET command
     current_seals = libc.fcntl(fd, F_GET_SEALS)
     print(f"Current seals: {bin(current_seals)}")
-    
+
     if current_seals & F_SEAL_WRITE:
         print("  F_SEAL_WRITE is set")
     else:
         print("FAIL: F_SEAL_WRITE not set!")
         return 1
-    
+
     mm_ro.close()
     os.close(fd)
-    
+
     print("PASS: All steps completed in correct order")
     return 0
 
@@ -358,8 +358,8 @@ if __name__ == "__main__":
     @pytest.mark.tier3
     @pytest.mark.security
     @pytest.mark.shm
-    @skip_on_macos_security
-    def test_L3_SHM_10_malicious_worker_simulation(self, shm_test_env: VeloTestEnv):
+    @skip_on_macos_security  # type: ignore[untyped-decorator]
+    def test_L3_SHM_10_malicious_worker_simulation(self, shm_test_env: VeloTestEnv) -> None:
         """
         L3-SHM-10: Malicious worker attack simulation (H-27).
 
@@ -423,40 +423,40 @@ PTRACE_POKEDATA = 5
 def main():
     print("Testing L3-SHM-10: Malicious Worker Simulation...")
     print(f"Architecture: {platform.machine()}, syscall_nr: {SYS_memfd_create}")
-    
+
     if SYS_memfd_create < 0:
         print(f"SKIP: Unsupported architecture: {platform.machine()}")
         return 0
-    
+
     # Create sealed memfd
     name = b"sealed_victim"
     fd = libc.syscall(SYS_memfd_create, name, MFD_CLOEXEC | MFD_ALLOW_SEALING)
-    
+
     if fd < 0:
         print("SKIP: memfd_create not available")
         return 0
-    
+
     size = 4096
     os.ftruncate(fd, size)
-    
+
     # Populate and seal
     mm = mmap.mmap(fd, size, access=mmap.ACCESS_WRITE)
     mm.write(b"PROTECTED_DATA_" * (size // 16))
     mm.close()
-    
+
     seals = F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW
     result = libc.fcntl(fd, F_ADD_SEALS, seals)
-    
+
     if result < 0:
         print(f"FAIL: Could not seal memfd")
         os.close(fd)
         return 1
-    
+
     print("Sealed memfd created, running attack tests...")
-    
+
     attacks_blocked = 0
     attacks_passed = 0
-    
+
     # Attack 1: Try to mmap as writable
     print("  Attack 1: mmap(PROT_WRITE)...")
     try:
@@ -467,7 +467,7 @@ def main():
     except OSError as e:
         print(f"    Blocked: {e}")
         attacks_blocked += 1
-    
+
     # Attack 2: Try to write() directly to fd
     print("  Attack 2: write(fd)...")
     try:
@@ -478,7 +478,7 @@ def main():
     except OSError as e:
         print(f"    Blocked: {e}")
         attacks_blocked += 1
-    
+
     # Attack 3: Try to ftruncate
     print("  Attack 3: ftruncate(fd, 0)...")
     try:
@@ -488,7 +488,7 @@ def main():
     except OSError as e:
         print(f"    Blocked: {e}")
         attacks_blocked += 1
-    
+
     # Attack 4: Try to dup and then write
     print("  Attack 4: dup(fd) + write...")
     try:
@@ -500,7 +500,7 @@ def main():
     except OSError as e:
         print(f"    Blocked: {e}")
         attacks_blocked += 1
-    
+
     # Attack 5: ptrace attack (Expert Recommendation #1)
     # Note: ptrace can attach to self, but kernel seals still protect the memory
     print("  Attack 5: ptrace self-attach attempt...")
@@ -508,13 +508,13 @@ def main():
         # PTRACE_TRACEME on self - this tests ptrace availability
         # Even if ptrace succeeds, the sealed memory should remain protected
         # because sealing is at the VFS level, not process level
-        
+
         # We can't actually ptrace ourselves effectively, but we verify
         # that sealed memory via mmap is still read-only regardless
-        
+
         # Open sealed fd as read-only
         mm_ro = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
-        
+
         # Attempt to get address and try POKEDATA-style write
         # Python ctypes doesn't directly support this, but we verify
         # the protection holds by trying to assign
@@ -525,32 +525,32 @@ def main():
         except TypeError:
             print("    Blocked: mmap ACCESS_READ prevents writes (ptrace irrelevant)")
             attacks_blocked += 1
-        
+
         mm_ro.close()
-        
+
     except Exception as e:
         print(f"    Blocked/Error: {e}")
         attacks_blocked += 1
-    
+
     total_attacks = 5
-    
+
     # Verify data integrity
     print("Verifying data integrity...")
     mm_check = mmap.mmap(fd, size, access=mmap.ACCESS_READ)
     data = mm_check.read(15)  # \"PROTECTED_DATA_\" is 15 bytes
     mm_check.close()
-    
+
     if data != b"PROTECTED_DATA_":
         print(f"FAIL: Data corrupted! Got: {data}")
         os.close(fd)
         return 1
-    
+
     print(f"Data integrity: OK")
-    
+
     os.close(fd)
-    
+
     print(f"\\nResults: {attacks_blocked}/{total_attacks} attacks blocked, {attacks_passed} passed through")
-    
+
     if attacks_passed == 0:
         print("PASS: All attacks blocked, integrity preserved")
         return 0

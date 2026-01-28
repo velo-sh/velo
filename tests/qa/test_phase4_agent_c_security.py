@@ -13,6 +13,7 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -36,7 +37,7 @@ def velo_analyze_available() -> bool:
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
-    except:
+    except Exception:
         return False
 
 
@@ -49,11 +50,11 @@ def check_analyze_available():
 class SecureProject:
     """Isolated project for security testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_sec_"))
         self.velo = get_velo_binary()
 
-    def set_pyproject(self, deps=None):
+    def set_pyproject(self, deps: list[str] | None = None) -> "SecureProject":
         content = f"""[project]
 name = "sec-test"
 version = "0.1.0"
@@ -62,15 +63,15 @@ dependencies = {json.dumps(deps or [])}
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_file(self, name: str, content: str):
+    def set_file(self, name: str, content: str) -> "SecureProject":
         (self.path / name).write_text(content)
         return self
 
-    def sync(self):
+    def sync(self) -> "SecureProject":
         subprocess.run(["uv", "sync", "--quiet"], cwd=self.path, capture_output=True)
         return self
 
-    def analyze(self, *args, timeout: float = 30) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 30) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
             cwd=self.path,
@@ -79,25 +80,30 @@ dependencies = {json.dumps(deps or [])}
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         # Restore permissions before cleanup
+        # CRITICAL: Skip symlinks to avoid modifying target files (like the system Python binary)
         for root, dirs, files in os.walk(self.path):
             for d in dirs:
-                try:
-                    os.chmod(os.path.join(root, d), 0o755)
-                except:
-                    pass
+                dir_path = os.path.join(root, d)
+                if not os.path.islink(dir_path):
+                    try:
+                        os.chmod(dir_path, 0o755)
+                    except Exception:
+                        pass
             for f in files:
-                try:
-                    os.chmod(os.path.join(root, f), 0o644)
-                except:
-                    pass
+                file_path = os.path.join(root, f)
+                if not os.path.islink(file_path):
+                    try:
+                        os.chmod(file_path, 0o644)
+                    except Exception:
+                        pass
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "SecureProject":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -153,7 +159,7 @@ class TestFileSystemSecurity:
             p.set_pyproject()
             p.set_file("main.py", "print(1)")
             p.sync()
-            result = p.analyze()
+            p.analyze()
 
         tmp_after = set(os.listdir("/tmp"))
         new_files = tmp_after - tmp_before
@@ -191,7 +197,7 @@ builtins.__import__ = evil_import
             )
             p.sync()
 
-            result = p.analyze("evil.py")
+            p.analyze("evil.py")
 
             # Check that the evil code didn't create the marker file
             assert not os.path.exists("/tmp/velo_pwned"), "Import hook escaped sandbox!"
@@ -218,7 +224,7 @@ os.system("touch {marker}")
             if os.path.exists(marker):
                 os.remove(marker)
 
-            result = p.analyze("danger.py")
+            p.analyze("danger.py")
             assert not os.path.exists(marker), "SECURITY: os.system() escaped sandbox!"
 
 
@@ -252,7 +258,7 @@ class TestInformationDisclosure:
             p.sync()
 
             output_file = p.path / "report.json"
-            result = p.analyze("--output", str(output_file))
+            p.analyze("--output", str(output_file))
 
             if output_file.exists():
                 mode = os.stat(output_file).st_mode
@@ -270,7 +276,7 @@ class TestInformationDisclosure:
                 p.sync()
 
                 output_file = p.path / "private.json"
-                result = p.analyze("--output", str(output_file))
+                p.analyze("--output", str(output_file))
 
                 if output_file.exists():
                     mode = os.stat(output_file).st_mode & 0o777
@@ -300,7 +306,7 @@ class TestInputValidation:
             except OSError:
                 pytest.skip("Cannot create file with shell chars")
 
-            result = p.analyze(evil_name)
+            p.analyze(evil_name)
 
             # Shell injection should not have worked
             assert not os.path.exists("/tmp/pwned.py")
@@ -314,10 +320,10 @@ class TestInputValidation:
 
             # Try command substitution
             evil_output = "$(whoami).json"
-            result = p.analyze("--output", evil_output)
+            p.analyze("--output", evil_output)
 
             # Should create literal file, not execute whoami
-            literal_file = p.path / evil_output
+            p.path / evil_output
             # The output should be treated as literal filename
             # Check that no file with user's name was created
             import getpass

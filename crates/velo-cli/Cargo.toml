@@ -1,0 +1,48 @@
+[package]
+name = "velo"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "velo"
+path = "src/main.rs"
+
+[dependencies]
+velo-core = { path = "../velo-core" }
+velo-serve = { path = "../velo-serve" }
+velo-test = { path = "../velo-test" }
+anyhow = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+strsim = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+indicatif = { workspace = true }
+uuid = { workspace = true }
+rkyv = { workspace = true }
+pyo3 = { version = "0.27", features = ["anyhow", "bytes", "generate-import-lib"] }
+blake3 = { workspace = true }
+hex = { workspace = true }
+rayon = { workspace = true }
+chrono = { workspace = true }
+rmp-serde = { workspace = true }
+tempfile = { workspace = true }
+which = "6.0"
+dirs = "5.0"
+ignore = "0.4"
+goblin = "0.9"
+hostname = "0.4"
+glob = "0.3"
+tokio = { workspace = true }
+tracing = "0.1"
+velo-protocol = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+nix = { version = "0.27", features = ["socket", "uio", "fs", "process"] }

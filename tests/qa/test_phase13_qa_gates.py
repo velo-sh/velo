@@ -17,6 +17,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from conftest_utils import T_MEDIUM, T_SHORT
+
 # ============================================================================
 # Gate A: Basic Functionality
 # ============================================================================
@@ -32,6 +34,7 @@ class TestGateA_BasicFunctionality:
             capture_output=True,
             text=True,
             cwd=Path(__file__).parents[2],
+            timeout=T_SHORT,
         )
         assert result.returncode == 0
         assert "Run tests with Zygote acceleration" in result.stdout
@@ -44,6 +47,7 @@ class TestGateA_BasicFunctionality:
             capture_output=True,
             text=True,
             cwd=Path(__file__).parents[2],
+            timeout=T_SHORT,
         )
         assert "RFC-0028" in result.stdout or "Zygote" in result.stdout
 
@@ -58,6 +62,7 @@ class TestGateA_BasicFunctionality:
             capture_output=True,
             text=True,
             cwd=Path(__file__).parents[2],
+            timeout=T_MEDIUM,
         )
         assert "passed" in result.stdout.lower() or result.returncode == 0
 
@@ -82,7 +87,7 @@ def test_with_threads():
     def worker():
         time.sleep(0.005)
         results.append(1)
-    
+
     threads = [threading.Thread(target=worker) for _ in range(3)]
     for t in threads: t.start()
     for t in threads: t.join()
@@ -97,7 +102,7 @@ def test_with_threads():
                 ["./target/release/velo", "test", temp_path],
                 capture_output=True,
                 text=True,
-                timeout=30,  # Should complete well before this
+                timeout=T_MEDIUM,  # Should complete well before this
                 cwd=Path(__file__).parents[2],
             )
             # Test should pass without deadlock
@@ -202,7 +207,8 @@ class TestGateD_Compatibility:
 
         class MockConfig:
             class Option:
-                pass
+                velo: bool = False
+                numprocesses: int = 0
 
             option = Option()
 
@@ -249,6 +255,7 @@ def test_intentional_fail():
                 capture_output=True,
                 text=True,
                 cwd=Path(__file__).parents[2],
+                timeout=T_MEDIUM,
             )
             assert result.returncode == 1, "Failed test should exit with code 1"
             assert "FAILED" in result.stdout or "failed" in result.stdout.lower()
@@ -272,6 +279,7 @@ def test_with_message():
                 capture_output=True,
                 text=True,
                 cwd=Path(__file__).parents[2],
+                timeout=T_MEDIUM,
             )
             assert "Expected 0 but got 42" in result.stdout
         finally:
@@ -293,6 +301,7 @@ def test_always_pass():
                 capture_output=True,
                 text=True,
                 cwd=Path(__file__).parents[2],
+                timeout=T_MEDIUM,
             )
             assert result.returncode == 0, "Passing test should exit with code 0"
         finally:

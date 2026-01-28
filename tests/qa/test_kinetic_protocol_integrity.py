@@ -4,6 +4,7 @@ import struct
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 import msgpack
 import pytest
@@ -39,7 +40,9 @@ def zygote_process():
     )
 
     # Wait for "Ready" signal in logs or socket to appear
-    timeout = 5
+    from conftest_utils import ci_timeout
+
+    timeout = ci_timeout(5)
     start = time.time()
     while time.time() - start < timeout:
         if os.path.exists(sock_path):
@@ -58,13 +61,13 @@ def zygote_process():
     proc.terminate()
     try:
         proc.wait(timeout=2)
-    except:
+    except Exception:
         proc.kill()
     if os.path.exists(sock_path):
         os.unlink(sock_path)
 
 
-def send_raw_hostile(sock_path, total_len, version, payload_bytes):
+def send_raw_hostile(sock_path: str, total_len: int, version: int, payload_bytes: bytes) -> None:
     """Low-level socket injector."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(2.0)
@@ -73,8 +76,8 @@ def send_raw_hostile(sock_path, total_len, version, payload_bytes):
         # 1. Consume Greeting (RFC-0011)
         header = s.recv(5)
         if len(header) == 5:
-            l = struct.unpack("<I", header[:4])[0]
-            s.recv(l - 1)
+            length = struct.unpack("<I", header[:4])[0]
+            s.recv(length - 1)
 
         # 2. Inject Hostile Packet
         header = struct.pack("<I", total_len)
@@ -84,7 +87,7 @@ def send_raw_hostile(sock_path, total_len, version, payload_bytes):
         # 3. Try to read (optional, usually Zygote closes connection)
         try:
             s.recv(1024)
-        except:
+        except Exception:
             pass
     finally:
         s.close()
@@ -176,8 +179,8 @@ def test_state_visibility_via_status(zygote_process):
 
         # Read Response
         resp_header = s.recv(5)
-        l = struct.unpack("<I", resp_header[:4])[0]
-        resp_payload = s.recv(l - 1)
+        length = struct.unpack("<I", resp_header[:4])[0]
+        resp_payload = s.recv(length - 1)
         resp = msgpack.unpackb(resp_payload)
 
         assert resp["type"] == "Status"
@@ -235,14 +238,14 @@ def test_state_lifecycle_progression():
         # Read Greeting
         s.recv(1024)
 
-        def get_state(sock):
+        def get_state(sock: socket.socket) -> Any:
             cmd = {"type": "Status"}
             p = msgpack.packb(cmd)
             h = struct.pack("<I", 1 + len(p))
             sock.sendall(h + bytes([PROTOCOL_VERSION]) + p)
             rh = sock.recv(5)
-            l = struct.unpack("<I", rh[:4])[0]
-            rp = sock.recv(l - 1)
+            length = struct.unpack("<I", rh[:4])[0]
+            rp = sock.recv(length - 1)
             return msgpack.unpackb(rp)["state"]
 
         # 2. Check for PRELOADING or IDLE/PRELOADING transition
@@ -267,15 +270,15 @@ def test_state_lifecycle_progression():
 
         # Read Ack
         rh = s.recv(5)
-        l = struct.unpack("<I", rh[:4])[0]
-        s.recv(l - 1)
+        length = struct.unpack("<I", rh[:4])[0]
+        s.recv(length - 1)
 
         # 5. Verify SHUTDOWN state if possible before exit
         # We try one last status, it might fail if process exits too fast
         try:
             final_state = get_state(s)
             assert final_state == "SHUTDOWN"
-        except:
+        except Exception:
             pass  # Process might have exited
 
     finally:

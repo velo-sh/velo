@@ -21,6 +21,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ import pytest
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
     if release.exists():
@@ -39,21 +40,21 @@ def get_velo_binary():
 class SecurityEnv:
     """Environment for security testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="security_"))
         self.velo = get_velo_binary()
-        self.socket_path = None
+        self.socket_path: Path | None = None
 
-    def setup(self):
+    def setup(self) -> "SecurityEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def start_zygote(self, timeout=None):
+    def start_zygote(self, timeout: float | None = None) -> str | None:
         """Start Zygote and return socket path."""
         if timeout is None:
             timeout = T_MEDIUM  # CI-aware timeout
-        result = subprocess.run(
+        subprocess.run(
             [self.velo, "zygote", "start"],
             cwd=self.path,
             capture_output=True,
@@ -78,7 +79,7 @@ class SecurityEnv:
 
         return None
 
-    def stop_zygote(self):
+    def stop_zygote(self) -> None:
         subprocess.run(
             [self.velo, "zygote", "stop"],
             cwd=self.path,
@@ -97,7 +98,7 @@ class SecurityEnv:
             s.connect(str(self.socket_path))
 
             # Read Ready message first
-            ready = s.recv(1024)
+            s.recv(1024)
 
             s.sendall(data)
             response = s.recv(4096)
@@ -106,30 +107,30 @@ class SecurityEnv:
         except Exception as e:
             return str(e).encode()
 
-    def send_command(self, cmd: dict) -> dict:
+    def send_command(self, cmd: dict[str, Any]) -> dict[str, Any]:
         """Send JSON command and get response."""
         data = (json.dumps(cmd) + "\n").encode()
         response = self.send_raw(data)
         try:
             lines = response.decode().strip().split("\n")
             return json.loads(lines[-1]) if lines else {}
-        except:
+        except Exception:
             return {"raw": response.decode()}
 
-    def create_script(self, name, content):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         subprocess.run(["pkill", "-f", "velo_zygote"], capture_output=True)
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "SecurityEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -316,7 +317,7 @@ class TestSymlinkAttacks:
                         legit_script.symlink_to("/etc/passwd")
                         race_won = True
                         break
-                    except:
+                    except Exception:
                         pass
                     time.sleep(0.001)
 
@@ -349,7 +350,7 @@ class TestMaliciousPayloads:
             env.start_zygote()
 
             # Create deeply nested JSON
-            bomb = {"a": None}
+            bomb: dict[str, Any] = {"a": None}
             current = bomb
             for _ in range(1000):
                 current["a"] = {"a": None}
@@ -494,13 +495,13 @@ class TestDoS:
 
             # Hold many connections open
             sockets = []
-            for i in range(20):
+            for _i in range(20):
                 try:
                     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     s.settimeout(1)
                     s.connect(str(env.socket_path))
                     sockets.append(s)
-                except:
+                except Exception:
                     break
 
             print(f"  Held {len(sockets)} connections open")
@@ -512,14 +513,14 @@ class TestDoS:
                 test.connect(str(env.socket_path))
                 print("  Still accepting connections: Yes")
                 test.close()
-            except:
+            except Exception:
                 print("  ⚠️ DoS: No new connections accepted!")
 
             # Cleanup
             for s in sockets:
                 try:
                     s.close()
-                except:
+                except Exception:
                     pass
 
     def test_sec_016_fork_bomb_via_ipc(self):
@@ -553,7 +554,7 @@ class TestDoS:
             for pid in pids:
                 try:
                     os.kill(pid, 9)
-                except:
+                except Exception:
                     pass
 
     def test_sec_017_slowloris_style(self):
@@ -584,7 +585,7 @@ class TestDoS:
                 s.sendall(b'k", "script": "x"}\n')
 
                 response = s.recv(1024)
-                print(f"  Slowloris response: {response[:50]}")
+                print(f"  Slowloris response: {response[:50]!r}")
                 s.close()
             except TimeoutError:
                 print("  Server timed out slow connection (good!)")

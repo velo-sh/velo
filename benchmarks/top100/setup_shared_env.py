@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import shutil
 import subprocess
 import sys
-import shutil
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent.parent.parent

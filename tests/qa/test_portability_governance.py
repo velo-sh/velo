@@ -59,7 +59,7 @@ def test_no_hardcoded_absolute_paths():
         pytest_fail(msg)
 
 
-def pytest_fail(msg):
+def pytest_fail(msg: str) -> None:
     import pytest
 
     pytest.fail(msg)

@@ -120,7 +120,7 @@ def client():
 
 class TestHealthEndpoints:
     """Health check endpoint tests"""
-    
+
     def test_root_endpoint(self, client):
         """Test the root endpoint returns hello message"""
         response = client.get("/")
@@ -128,7 +128,7 @@ class TestHealthEndpoints:
         data = response.json()
         assert "message" in data
         assert "Hello" in data["message"]
-    
+
     def test_health_check(self, client):
         """Test health endpoint returns healthy status"""
         response = client.get("/health")
@@ -140,7 +140,7 @@ class TestHealthEndpoints:
 
 class TestItemsCRUD:
     """Full CRUD operations on items"""
-    
+
     def test_create_item(self, client):
         """Test creating a new item"""
         item_data = {
@@ -154,48 +154,48 @@ class TestItemsCRUD:
         assert data["name"] == item_data["name"]
         assert data["price"] == item_data["price"]
         assert "id" in data
-    
+
     def test_read_item(self, client):
         """Test reading an item by ID"""
         # Create an item first
         item_data = {"name": "Read Test", "price": 10.0}
         create_resp = client.post("/items", json=item_data)
         item_id = create_resp.json()["id"]
-        
+
         # Read it back
         response = client.get(f"/items/{item_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == item_id
         assert data["name"] == "Read Test"
-    
+
     def test_list_items(self, client):
         """Test listing all items"""
         # Create a couple of items
         client.post("/items", json={"name": "Item A", "price": 5.0})
         client.post("/items", json={"name": "Item B", "price": 10.0})
-        
+
         response = client.get("/items")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 2
-    
+
     def test_delete_item(self, client):
         """Test deleting an item"""
         # Create an item
         create_resp = client.post("/items", json={"name": "To Delete", "price": 1.0})
         item_id = create_resp.json()["id"]
-        
+
         # Delete it
         response = client.delete(f"/items/{item_id}")
         assert response.status_code == 200
         assert response.json()["deleted"] == item_id
-        
+
         # Verify it's gone
         get_resp = client.get(f"/items/{item_id}")
         assert get_resp.status_code == 404
-    
+
     def test_item_not_found(self, client):
         """Test 404 error for non-existent item"""
         response = client.get("/items/999999")
@@ -205,7 +205,7 @@ class TestItemsCRUD:
 
 class TestComplexScenarios:
     """Complex scenarios covering edge cases"""
-    
+
     def test_full_lifecycle(self, client):
         """Test full item lifecycle: create -> read -> update -> delete"""
         # Create
@@ -213,25 +213,25 @@ class TestComplexScenarios:
         create_resp = client.post("/items", json=item_data)
         assert create_resp.status_code == 200
         item_id = create_resp.json()["id"]
-        
+
         # Read
         read_resp = client.get(f"/items/{item_id}")
         assert read_resp.status_code == 200
         assert read_resp.json()["name"] == "Lifecycle Item"
-        
+
         # List (should contain our item)
         list_resp = client.get("/items")
         item_ids = [item["id"] for item in list_resp.json()]
         assert item_id in item_ids
-        
+
         # Delete
         delete_resp = client.delete(f"/items/{item_id}")
         assert delete_resp.status_code == 200
-        
+
         # Verify deleted
         verify_resp = client.get(f"/items/{item_id}")
         assert verify_resp.status_code == 404
-    
+
     def test_multiple_items_creation(self, client):
         """Test creating multiple items in sequence"""
         items_created = []
@@ -242,7 +242,7 @@ class TestComplexScenarios:
             })
             assert resp.status_code == 200
             items_created.append(resp.json()["id"])
-        
+
         # Verify all items exist
         for item_id in items_created:
             resp = client.get(f"/items/{item_id}")
@@ -385,7 +385,7 @@ class TestE2EGoldenPath:
         # Create a failing test
         failing_test = """
 def test_intentional_failure():
-    assert False, "This test should fail"
+    pytest.fail("This test should fail"
 """
         failing_test_path = Path(project_dir) / "test_failing.py"
         failing_test_path.write_text(failing_test)

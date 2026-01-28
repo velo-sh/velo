@@ -12,6 +12,7 @@ Previous agents tested edge cases and security. Agent D tests:
 If Agent D finds bugs, the feature is NOT READY.
 """
 
+import os
 import shutil
 import signal
 import socket
@@ -19,6 +20,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
@@ -27,7 +29,7 @@ import requests
 from conftest_utils import T_MEDIUM, T_SHORT
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -52,7 +54,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -67,22 +69,35 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
 class DestroyerTestEnv:
     """Test environment for destroyer tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_destroy_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
+        self.venv_path = self.path / ".venv"
 
-    def setup(self):
+    def setup(self) -> "DestroyerTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def _get_env(self) -> dict[str, str]:
+        """Build environment with project venv activated."""
+        env = os.environ.copy()
+        venv_bin = self.venv_path / "bin"
+        env["VIRTUAL_ENV"] = str(self.venv_path)
+        env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+        # Preserve library paths for Rust binary (libpython)
+        for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        return env
+
+    def create_script(self, name: str, content: str) -> Path:
         script_path = self.path / name
         script_path.write_text(content)
         return script_path
 
-    def start_serve(self, app: str, port: int, **kwargs) -> subprocess.Popen:
+    def start_serve(self, app: str, port: int, **kwargs: Any) -> subprocess.Popen[str]:
         """Start serve and track the process."""
         cmd = [self.velo, "serve", app, "--port", str(port)]
         for k, v in kwargs.items():
@@ -94,26 +109,27 @@ class DestroyerTestEnv:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=self._get_env(),
         )
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 proc.kill()
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "DestroyerTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -149,7 +165,7 @@ def health():
             )
             # Install FastAPI
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -191,7 +207,7 @@ def root():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -229,7 +245,7 @@ def get_pid():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -252,7 +268,7 @@ def get_pid():
                     response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json().get("pid"))
-                except:
+                except Exception:
                     pass
 
             # With 4 workers, we should see multiple PIDs
@@ -304,7 +320,7 @@ raise RuntimeError("INTENTIONAL CRASH ON IMPORT")
                 proc.terminate()
                 pytest.fail("Process should have exited after import crash")
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention the crash, or uvicorn dependency
             assert (
                 "INTENTIONAL CRASH" in stderr
@@ -331,7 +347,7 @@ y = 2
             if proc.poll() is None:
                 proc.terminate()
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should mention that 'app' was not found
             assert "app" in stderr.lower() or "attribute" in stderr.lower() or "error" in stderr.lower()
 
@@ -404,7 +420,7 @@ def cleanup():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -444,7 +460,7 @@ def root():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -486,7 +502,7 @@ def timing():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -508,7 +524,7 @@ def timing():
 
             # Second start - should be faster if Zygote is working
             start2 = time.perf_counter()
-            proc2 = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
             warm_started = wait_for_port(port, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
 
@@ -540,7 +556,7 @@ def framework():
             # Add fastapi to requirements
             (env.path / "requirements.txt").write_text("fastapi\nuvicorn\n")
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )

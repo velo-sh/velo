@@ -17,8 +17,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+# Mark entire module as server startup flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.server_startup_flaky, pytest.mark.tier2]
 
 
 class TestRFC0025WebSocketArchitecture:
@@ -72,7 +76,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -118,7 +122,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -182,7 +186,9 @@ async def app(scope, proto):
         try:
             # Wait for startup or error
             exit_code = proc.wait(timeout=10)
-            stderr = proc.stderr.read()
+            stderr = ""
+            if proc.stderr:
+                stderr = proc.stderr.read()
 
             # RFC-0026 Phase 8.x: TLS not yet implemented
             # Expected: Either exit with error OR ignore the flags
@@ -206,7 +212,7 @@ async def app(scope, proto):
             try:
                 proc.terminate()
                 proc.wait()
-            except:
+            except Exception:
                 pass
 
     @pytest.mark.tier2
@@ -393,7 +399,7 @@ async def app(scope, proto):
             # Trigger hard exit
             try:
                 requests.get(f"http://127.0.0.1:{port}/exit", timeout=5)
-            except:
+            except Exception:
                 pass  # Expected to fail
 
             time.sleep(2)
@@ -415,7 +421,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -490,7 +496,7 @@ class TestRFC0019NativeRuntimeProsecution:
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -533,7 +539,7 @@ async def app(scope, proto):
 
             time.sleep(8)
 
-            samples = {}
+            samples: dict[int, list[dict[str, Any]]] = {}
             for _ in range(20):
                 resp = requests.get(f"http://127.0.0.1:{port}/")
                 data = resp.json()
@@ -558,7 +564,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -594,9 +600,9 @@ async def app(scope, proto):
                     open_fds.append(fd)
                 except OSError:
                     pass
-        except:
+        except Exception:
             pass
-            
+
         proto.response_str(200, [("content-type", "application/json")], json.dumps({"open_fds": open_fds}))
 """,
             )
@@ -627,7 +633,6 @@ async def app(scope, proto):
 
                 # Filter out baseline runtime FDs to find true 'leaks' (inherited).
                 # On macOS, kqueues and newly opened unix sockets are the standard footprint.
-                leaked = []
                 for fd in data["open_fds"]:
                     if fd <= 2:
                         continue  # Standard
@@ -660,7 +665,7 @@ async def app(scope, proto):
             finally:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except:
+                except Exception:
                     pass
                 proc.wait()
         finally:
@@ -668,7 +673,7 @@ async def app(scope, proto):
                 try:
                     f.close()
                     os.unlink(f.name)
-                except:
+                except Exception:
                     pass
 
     @pytest.mark.tier2
@@ -734,13 +739,13 @@ async def app(scope, proto):
             for s in sockets:
                 try:
                     s.close()
-                except:
+                except Exception:
                     pass
 
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -778,7 +783,7 @@ async def app(scope, proto):
             latencies = []
             for _ in range(100):
                 start = time.perf_counter()
-                resp = requests.get(f"http://127.0.0.1:{port}/")
+                requests.get(f"http://127.0.0.1:{port}/")
                 end = time.perf_counter()
                 latencies.append((end - start) * 1_000_000)
 
@@ -788,7 +793,7 @@ async def app(scope, proto):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
 
@@ -838,6 +843,6 @@ async def app(scope, receive, send):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()

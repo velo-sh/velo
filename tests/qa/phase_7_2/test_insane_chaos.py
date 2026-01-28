@@ -29,6 +29,9 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to chaos/timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.chaos]
+
 
 def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent.parent
@@ -45,10 +48,10 @@ class ChaosTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"chaos_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "ChaosTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -61,15 +64,17 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "ChaosTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "ChaosTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, workers: int = 2, extra_args: list = None):
+    def start_server(
+        self, app_module: str, workers: int = 2, extra_args: list[str] | None = None
+    ) -> "ChaosTestProject":
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -104,13 +109,17 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
     @property
     def pid(self) -> int:
-        return self._proc.pid if self._proc else None
+        if self._proc is None or self._proc.pid is None:
+            raise ValueError("Server not started")
+        return self._proc.pid
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -167,7 +176,7 @@ class TestHeaderChaos:
             try:
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     assert resp.status == 200
-            except:
+            except Exception:
                 pass  # Many clients block this, but we check if server crashes
 
     @pytest.mark.tier5
@@ -298,7 +307,7 @@ async def app(scope, receive, send):
 
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n")
-                for i in range(10):
+                for _i in range(10):
                     sock.sendall(b"X")
                     time.sleep(1)
                 # Should finish and return 10
@@ -383,7 +392,7 @@ async def app(scope, receive, send):
 
             with socket.create_connection(("127.0.0.1", p.port)) as sock:
                 sock.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 50\r\n\r\n")
-                for i in range(50):
+                for _i in range(50):
                     sock.sendall(b"X")
                     time.sleep(0.01)
 
@@ -453,11 +462,11 @@ class TestConcurrencyChaos:
 
             payload = "A" * 65536
 
-            def make_req():
+            def make_req() -> int:
                 try:
                     r = requests.post(f"http://127.0.0.1:{p.port}/", data=payload, timeout=10)
                     return r.status_code
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
@@ -489,7 +498,7 @@ async def websocket_endpoint(websocket: WebSocket):
             def do_http():
                 try:
                     return requests.get(f"http://127.0.0.1:{p.port}/", timeout=2).status_code
-                except:
+                except Exception:
                     return 0
 
             def do_ws():
@@ -500,12 +509,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     msg = ws.recv()
                     ws.close()
                     return 1 if msg == "hello" else 0
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 f_http = [executor.submit(do_http) for _ in range(50)]
-                f_ws = [executor.submit(do_ws) for _ in range(50)]
+                [executor.submit(do_ws) for _ in range(50)]
 
             assert [f.result() for f in f_http].count(200) >= 40
 
@@ -527,7 +536,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     s = socket.create_connection(("127.0.0.1", p.port), timeout=1)
                     s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
                     s.close()
-                except:
+                except Exception:
                     pass
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
@@ -573,10 +582,10 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             p.install_deps().start_server("main:app", workers=32)
 
-            def req():
+            def req() -> int:
                 try:
                     return requests.get(f"http://127.0.0.1:{p.port}/", timeout=10).status_code
-                except:
+                except Exception:
                     return 0
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:

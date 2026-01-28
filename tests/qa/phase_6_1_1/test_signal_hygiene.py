@@ -2,6 +2,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 
 def test_H12_signal_hygiene_direct_fork(velo_serve_fixture):
@@ -36,14 +37,14 @@ def check():
             sigterm = signal.getsignal(signal.SIGTERM)
             sigpipe = signal.getsignal(signal.SIGPIPE)
             debug_f.write(f\"Signals: {sigterm}, {sigpipe}\\n\")
-            
+
             try:
                 mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
                 mask_empty = (len(mask) == 0)
-            except:
+            except Exception:
                 mask_empty = True
             debug_f.write(f\"Mask empty: {mask_empty}\\n\")
-                
+
             with open(\"REPLACE_RESULTS_PATH\", \"w\") as f:
                 f.write(\"SIGTERM_DFL:\" + str(sigterm == signal.SIG_DFL) + \"\\n\")
                 f.write(\"SIGPIPE_DFL:\" + str(sigpipe == signal.SIG_DFL) + \"\\n\")
@@ -80,7 +81,7 @@ if __name__ == \"__main__\":
         raise
     from velo_zygote.constants import PROTOCOL_VERSION
 
-    async def run_hygiene_test():
+    async def run_hygiene_test() -> Any:
         async with ZygoteClient(str(socket_path)) as client:
             # 1. Handshake
             handshake = {

@@ -28,7 +28,17 @@ socket_startup_timeout = 30
 worker_handshake_timeout = 10
 graceful_shutdown_timeout = 60
 default_slow_threshold_ms = 100
+# SLO: Error Budget Policy
+slo_fork_latency_ms = 100 # P99 < 100ms
 strict_optimizations = true # H-Gov: Enabled in CI/Dev by default
+sandbox_network_isolation = true # RFC-0011: Enable network namespace isolation
+sandbox_privilege_escalation_block = true # RFC-0011: PR_SET_NO_NEW_PRIVS
+
+# Production Hardening Phase 2
+circuit_breaker_threshold = 3
+circuit_breaker_enabled = true
+metrics_enabled = true
+tracing_enabled = true
 
 # Network
 default_host = "127.0.0.1"
@@ -43,7 +53,10 @@ default_port = 8000
 
 # Level 0: Global Base
 security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Frameworks,/Library/Developer/CommandLineTools,${HOME}/.local/share/velo/ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV}"
-security_base_env_whitelist = "PATH,HOME,USER,LOGNAME,PWD,TMPDIR,PYTHONPATH,PYTHONHOME,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_ZYGOTE_AUTH,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VELO_WORKER_DEBUG_LOG,VIRTUAL_ENV,CI,GITHUB_ACTIONS,__CFBundleIdentifier,VELO_IS_ZYGOTE,VELO_WORKER_ID"
+security_base_env_whitelist = "PATH,HOME,USER,LOGNAME,PWD,TMPDIR,PYTHONUNBUFFERED,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_TEST_MODE,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_ZYGOTE_AUTH,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VELO_WORKER_DEBUG_LOG,VIRTUAL_ENV,CI,GITHUB_ACTIONS,__CFBundleIdentifier,VELO_IS_ZYGOTE,VELO_WORKER_ID,VELO_NATIVE_PRELOAD_STRICT,VELO_IMPORT_THRESHOLD_MS"
+
+# Blocked Paths (RFC-0012)
+default_blocked_paths = ["/usr", "/bin", "/sbin", "/etc", "/root", "/boot", "/home"]
 
 
 # Level 1: macOS Defaults
@@ -60,14 +73,14 @@ security_macos_dev_trusted_prefixes = "${OS_BASE},${HOME},${VIRTUAL_ENV},${CONDA
 security_macos_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX,PYTHONHOME,DYLD_LIBRARY_PATH,DYLD_FALLBACK_LIBRARY_PATH"
 
 security_linux_dev_trusted_prefixes = "${OS_BASE},${HOME},${VIRTUAL_ENV},${CONDA_PREFIX}"
-security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX"
+security_linux_dev_env_whitelist = "${OS_BASE},SHELL,VIRTUAL_ENV,CONDA_PREFIX,LD_LIBRARY_PATH"
 
 # CI (Automated)
 security_macos_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,${HOME},${VIRTUAL_ENV}"
 security_macos_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
 
 security_linux_ci_trusted_prefixes = "${OS_BASE},/opt/hostedtoolcache,/home/runner,${HOME},${VIRTUAL_ENV}"
-security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL"
+security_linux_ci_env_whitelist = "${OS_BASE},GITHUB_ACTIONS,GITHUB_WORKSPACE,VIRTUAL_ENV,CONDA_PREFIX,SHELL,LD_LIBRARY_PATH"
 
 # Prod (Hardened)
 security_macos_prod_trusted_prefixes = "${OS_BASE}"
@@ -89,8 +102,10 @@ path_socket_dir_name = "velo-${UID}"
 path_log_dir_relative = ".local/state/velo"
 path_cache_dir_name = ".velo/cache"
 
-# Level 1: macOS Base Paths
-path_macos_base_socket_parent = "${TMPDIR}"
+# DEF-SOCKET-STABLE: Use stable ~/.local/state/velo/sockets instead of TMPDIR
+# macOS temp directories can be cleaned up unexpectedly, causing socket issues
+path_macos_base_socket_parent = "${HOME}/.local/state/velo/sockets"
+
 path_macos_base_log_parent = "${HOME}"
 path_macos_base_xdg_fallback = "${TMPDIR}"
 
@@ -141,3 +156,20 @@ env_vars = [
     "VIRTUAL_ENV",          # Virtual environment root
     "VELO_PYTHON_EXECUTABLE", # Python executable path
 ]
+
+# =============================================================================
+# Native Preloading SSOT (Phase 6 Hardening)
+# =============================================================================
+[native_preload]
+runtime_prefix = "_v_"
+lock_env = "VELO_RUNTIME_PRELOAD_LOCK"
+exe_path_env = "VELO_RUNTIME_EXE_PATH"
+strict_env = "VELO_RUNTIME_STRICT"
+stage_pre_init = "PreInit"
+stage_post_init = "PostInit"
+# Path integrity check mode: "enforce" | "warn" | "off"
+# - enforce: Block libraries outside trusted boundaries (strict security)
+# - warn: Log warning but allow loading (default, backwards-compatible)
+# - off: Disable path integrity checks entirely
+path_integrity = "warn"
+

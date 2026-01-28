@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -71,11 +72,13 @@ def pytest_collection_modifyitems(config, items):
 class VeloServeProcess:
     """Wrapper for velo serve process with worker management."""
 
-    def __init__(self, proc: subprocess.Popen, port: int, socket_path: str = None, forensic_secret: str = None):
+    def __init__(
+        self, proc: subprocess.Popen[str], port: int, socket_path: str | None = None, forensic_secret: str | None = None
+    ):
         self.proc = proc
         self.port = port
         self.pid = proc.pid
-        self.zygote_pid = None
+        self.zygote_pid: int | None = None
         self.socket_path = socket_path
         self.forensic_secret = forensic_secret
         self._worker_pids: list[int] = []
@@ -84,7 +87,7 @@ class VeloServeProcess:
         """Check if the main process is still running."""
         return self.proc.poll() is None
 
-    def wait_ready(self, timeout: float = None) -> None:
+    def wait_ready(self, timeout: float | None = None) -> None:
         """Wait for server to be ready to accept requests."""
         if timeout is None:
             timeout = T_MEDIUM + T_SHORT  # ~15s base -> ~90s scaled in CI
@@ -123,7 +126,7 @@ class VeloServeProcess:
         self.proc.terminate()
         raise TimeoutError(f"Server not ready after {timeout}s")
 
-    def wait_worker_ready(self, timeout: float = None) -> None:
+    def wait_worker_ready(self, timeout: float | None = None) -> None:
         """Wait for a worker to be ready after restart."""
         if timeout is None:
             timeout = T_SHORT
@@ -154,11 +157,11 @@ class VeloServeProcess:
                         # If we have a specific socket path, match it
                         if self.socket_path:
                             if any(self.socket_path in arg for arg in cmdline):
-                                self.zygote_pid = child.pid
+                                self.zygote_pid = int(child.pid)
                                 return
                         else:
                             # Fallback to any Zygote child
-                            self.zygote_pid = child.pid
+                            self.zygote_pid = int(child.pid)
                             return
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
@@ -217,7 +220,7 @@ class VeloServeProcess:
 
         return []
 
-    def get_metrics(self) -> dict:
+    def get_metrics(self) -> dict[str, Any]:
         """Get server metrics (placeholder for future implementation)."""
         return {"worker_requests": {}}
 
@@ -240,7 +243,7 @@ class VeloServeProcess:
                 pass
         return None
 
-    def stop(self, timeout: float = None) -> None:
+    def stop(self, timeout: float | None = None) -> None:
         """Stop the server gracefully."""
         if timeout is None:
             timeout = T_SHORT
@@ -256,7 +259,7 @@ class VeloServeProcess:
 class VeloServeFactory:
     """Factory for creating VeloServeProcess instances."""
 
-    def __init__(self, test_env, velo_binary: str):
+    def __init__(self, test_env: Any, velo_binary: str):
         self.test_env = test_env
         self.tmp_path = test_env.root  # Compatibility
         self.velo_binary = velo_binary
@@ -270,6 +273,7 @@ class VeloServeFactory:
         port: int | None = None,
         rsgi: bool = False,
         extra_args: list[str] | None = None,
+        wait: bool = True,
     ) -> VeloServeProcess:
         """Start a velo serve process."""
         if port is None:
@@ -306,9 +310,13 @@ class VeloServeFactory:
         # RFC-0011/0012: Ensure socket path does NOT exceed 104 chars (macOS limit)
         # We prioritize a short, stable path in /tmp for tests to avoid deep nesting issues.
         import hashlib
+        import uuid
 
         h = hashlib.md5(str(self.tmp_path).encode()).hexdigest()[:8]
-        socket_dir = Path("/tmp") / f"velo-test-{h}"
+        # FIX: Append random suffix to prevent race conditions with lingering Zygotes from previous tests
+        # (See test_WB_009 failure analysis)
+        rand_suffix = str(uuid.uuid4())[:8]
+        socket_dir = Path("/tmp") / f"velo-test-{h}-{rand_suffix}"
         socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         socket_path = socket_dir / "z.s"
 
@@ -354,9 +362,14 @@ class VeloServeFactory:
             # Use None to inherit from parent, so -s shows it
             stdout=None,
             stderr=None,
+            text=True,
         )
         wrapper = VeloServeProcess(proc, port, str(socket_path), forensic_secret)
         self.processes.append(wrapper)
+
+        if wait:
+            wrapper.wait_ready()
+
         return wrapper
 
     def cleanup(self) -> None:
@@ -397,7 +410,7 @@ def velo_binary() -> str:
 
 
 @pytest.fixture
-def velo_serve_fixture(velo_test_env, velo_binary: str):
+def velo_serve_fixture(velo_test_env: Any, velo_binary: str) -> Any:
     """Fixture for starting velo serve processes."""
     # Create sample app in root
     app_file = velo_test_env.root / "main.py"
@@ -561,15 +574,15 @@ async def track_concurrent():
     _concurrent_counter += 1
     if _concurrent_counter > _max_concurrent:
         _max_concurrent = _concurrent_counter
-    
+
     current = _concurrent_counter
     max_seen = _max_concurrent
-    
+
     # Simulate some work
     await asyncio.sleep(0.1)
-    
+
     _concurrent_counter -= 1
-    
+
     return {
         "concurrent_at_entry": current,
         "max_concurrent_seen": max_seen,

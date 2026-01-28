@@ -5,7 +5,7 @@ RFC-0006 Phase 5.0.2: Build .veloc bundles from Python projects
 
 Usage:
     from bundle_builder import VeloBundleBuilder
-    
+
     builder = VeloBundleBuilder()
     builder.add_module("mymodule", code_bytes, hash_bytes)
     builder.build(Path("bundle.veloc"))
@@ -15,7 +15,6 @@ import marshal
 import struct
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 try:
     import blake3 as blake3_module
@@ -59,7 +58,7 @@ class VeloBundleBuilder:
     """
 
     def __init__(self):
-        self.modules: List[ModuleData] = []
+        self.modules: list[ModuleData] = []
 
     def add_pyc(self, name: str, pyc_path: Path, is_package: bool = False) -> None:
         """Add a .pyc file to the bundle"""
@@ -70,9 +69,7 @@ class VeloBundleBuilder:
 
         self.modules.append(ModuleData(name, code_data, is_package))
 
-    def add_source(
-        self, name: str, source_path: Path, is_package: bool = False, optimize: int = 0
-    ) -> None:
+    def add_source(self, name: str, source_path: Path, is_package: bool = False, optimize: int = 0) -> None:
         """Add a .py source file (compiles to bytecode)"""
         source = source_path.read_text(encoding="utf-8")
         code = compile(source, str(source_path), "exec", optimize=optimize)
@@ -119,9 +116,9 @@ class VeloBundleBuilder:
 
         # Try to find 'velo' binary and run it if possible
         # (For production this would be handled by the velo binary itself)
+        import os
         import subprocess
         import tempfile
-        import os
 
         velo_bin = os.environ.get("VELO_BIN", "velo")
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -149,11 +146,7 @@ class VeloBundleBuilder:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
 
-        index_offset = (
-            (graph_offset + len(graph_section))
-            if graph_section
-            else (HEADER_SIZE + len(data_section))
-        )
+        index_offset = (graph_offset + len(graph_section)) if graph_section else (HEADER_SIZE + len(data_section))
 
         # 4. Construct Header components for H-1 Global Hash
         # Prefix (0..20): MAGIC, VERSION, MODULE_COUNT, INDEX_OFFSET
@@ -209,9 +202,7 @@ class VeloBundleBuilder:
         print(f"   Size: {output_path.stat().st_size} bytes")
 
 
-def build_from_project(
-    project_dir: Path, output_path: Optional[Path] = None, optimize: int = 0
-) -> Path:
+def build_from_project(project_dir: Path, output_path: Path | None = None, optimize: int = 0) -> Path:
     """
     Build a bundle from a Python project directory
 
@@ -224,14 +215,12 @@ def build_from_project(
 
     # Find all .py files
     for py_file in project_dir.rglob("*.py"):
-        # Skip __pycache__ and hidden directories
-        if "__pycache__" in str(py_file) or any(
-            p.startswith(".") for p in py_file.parts
-        ):
+        # Skip __pycache__ and hidden directories/files within project
+        rel_path = py_file.relative_to(project_dir)
+        if "__pycache__" in str(rel_path) or any(p.startswith(".") for p in rel_path.parts):
             continue
 
         # Convert path to module name
-        rel_path = py_file.relative_to(project_dir)
         parts = list(rel_path.parts)
 
         if parts[-1] == "__init__.py":

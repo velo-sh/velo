@@ -23,12 +23,18 @@ class ZygoteGateway(execnet.gateway.Gateway):
     directly into an execnet listener.
     """
 
-    def __init__(self, spec: Any, socket_path: str = None, secret: str = None, project_root: str = None):
+    def __init__(
+        self,
+        spec: Any,
+        socket_path: str | None = None,
+        secret: str | None = None,
+        project_root: str | None = None,
+    ):
         self.project_root = project_root
         if socket_path is None:
             # First Principles: Try VeloPaths, but gracefully fallback if unavailable
             try:
-                if VeloPaths:
+                if VeloPaths is not None:
                     socket_path = str(VeloPaths.zygote_socket())
             except Exception:
                 pass
@@ -45,7 +51,7 @@ class ZygoteGateway(execnet.gateway.Gateway):
         try:
             sock.connect(socket_path)
         except Exception as e:
-            raise RuntimeError(f"Velo Gateway could not connect to Zygote at {socket_path}: {e}")
+            raise RuntimeError(f"Velo Gateway could not connect to Zygote at {socket_path}: {e}") from e
 
         # 2. Negotiate Handover
         transport = ZygoteTransport(sock)

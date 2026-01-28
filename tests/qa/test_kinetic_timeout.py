@@ -4,11 +4,12 @@ import struct
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def send_msgpack(conn, data):
+def send_msgpack(conn: Any, data: Any) -> None:
     import msgpack
 
     payload = msgpack.packb(data, use_bin_type=True)
@@ -18,7 +19,7 @@ def send_msgpack(conn, data):
     conn.sendall(header + version + payload)
 
 
-def start_fake_zygote(socket_path, delay=0.05):
+def start_fake_zygote(socket_path: Path, delay: float = 0.05) -> threading.Thread:
     """Starts a fake zygote that delays its 'Ready' greeting."""
 
     def run():
@@ -36,7 +37,7 @@ def start_fake_zygote(socket_path, delay=0.05):
                     time.sleep(delay)
                 send_msgpack(conn, {"type": "Ready"})
                 conn.close()
-        except:
+        except Exception:
             pass
         finally:
             server.close()

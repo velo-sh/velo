@@ -21,11 +21,12 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -42,19 +43,19 @@ def get_velo_binary():
 class BrutalTestEnv:
     """Hardened test environment for brutal tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_brutal_"))
         self.velo = get_velo_binary()
 
-    def setup(self):
+    def setup(self) -> "BrutalTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def create_script(self, name: str, content: str):
+    def create_script(self, name: str, content: str) -> None:
         (self.path / name).write_text(content)
 
-    def run_velo(self, args: list, timeout: float = 60, env: dict = None) -> tuple:
+    def run_velo(self, args: list[str], timeout: float = 60, env: dict[str, str] | None = None) -> tuple[int, str, str]:
         run_env = os.environ.copy()
         if env:
             run_env.update(env)
@@ -68,16 +69,16 @@ class BrutalTestEnv:
         )
         return result.returncode, result.stdout, result.stderr
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         try:
             shutil.rmtree(self.path)
         except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "BrutalTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -473,7 +474,7 @@ class TestHangAttempts:
         payload = "a" * 50 + "!"
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{payload}:app"],
                 capture_output=True,
                 text=True,
@@ -490,7 +491,7 @@ class TestHangAttempts:
         deep_path = "/".join(["a"] * 100)
 
         try:
-            result = subprocess.run(
+            subprocess.run(
                 [velo, "serve", f"{deep_path}:app"],
                 capture_output=True,
                 text=True,
@@ -514,7 +515,7 @@ class TestInformationLeak:
 
         # Determine project root from velo binary location
         # e.g., /path/to/velo/target/release/velo -> /path/to/velo
-        project_root = str(Path(velo).parent.parent.parent)
+        str(Path(velo).parent.parent.parent)
 
         result = subprocess.run(
             [velo, "serve", "nonexistent_module:app"],

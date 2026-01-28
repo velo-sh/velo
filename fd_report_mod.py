@@ -1,0 +1,3 @@
+import os
+
+print(f"FDS:{len(os.listdir('/dev/fd'))}")

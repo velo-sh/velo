@@ -142,6 +142,7 @@ mod spawn_tests {
         let worker = launcher
             .spawn_worker(
                 &script_path,
+                None,
                 &[],
                 false,
                 false,

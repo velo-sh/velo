@@ -3,18 +3,19 @@ Velo Fork Implementation
 """
 
 import os
+import socket
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Optional
 
 try:
-    from .lifecycle import WorkerRegistry, post_fork_reinit
     from .utils import LogUtils
+    from .worker_lifecycle import WorkerRegistry, post_fork_reinit
 except (ImportError, ValueError):
     from utils import LogUtils  # type: ignore[no-redef, import-not-found]
-
-    from lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
+    from worker_lifecycle import WorkerRegistry, post_fork_reinit  # type: ignore[no-redef, import-not-found]
 
 
 class InboundSharedMemory:
@@ -115,6 +116,28 @@ class ForkHandler:
             return pid
 
     @staticmethod
+    def _wait_for_ready(socket_path: str, timeout: float = 5.0) -> bool:
+        """
+        Wait for a UDS socket to become available and responding.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                # Try to connect to the socket
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                # handle abstract sockets
+                path = socket_path
+                if path.startswith("@"):
+                    path = "\0" + path[1:]
+                sock.connect(path)
+                sock.close()
+                return True
+            except (TimeoutError, ConnectionRefusedError, FileNotFoundError, OSError):
+                time.sleep(0.1)
+        return False
+
+    @staticmethod
     def _run_execnet_gateway(sock: Any, nodeid: str = "worker") -> None:
         """
         Bootstraps the execnet worker logic on the provided socket.
@@ -162,6 +185,7 @@ class ForkHandler:
                 # 3. Standard Child Execution
                 exit_code = ForkHandler._child_process(
                     script_path=cmd.get("script_path", ""),
+                    module_name=cmd.get("module"),
                     args=cmd.get("args", []),
                     env=cmd.get("env", {}),
                     stdout_path=cmd.get("stdout_path"),
@@ -196,7 +220,12 @@ class ForkHandler:
         warmed_config: Any = None,
     ) -> int:
         """Fork and execute script."""
+        # Memory Gravity (SHM Support)
+        shm = InboundSharedMemory.from_command(cmd)
+        shm_fd = shm.fd if shm else None
+
         script_path = cmd.get("script_path")
+        module_name = cmd.get("module")
         args = cmd.get("args", [])
         env = cmd.get("env", {})
         stdout_path = cmd.get("stdout_path")
@@ -204,11 +233,7 @@ class ForkHandler:
         exit_code_path = cmd.get("exit_code_path")
         worker_ttl = cmd.get("worker_ttl", 3600)
 
-        # Memory Gravity (SHM Support)
-        shm = InboundSharedMemory.from_command(cmd)
-        shm_fd = shm.fd if shm else None
-
-        LogUtils.log(f"Forking child process for {script_path}...")
+        LogUtils.log(f"Forking child process for {module_name or script_path}...")
         pid = os.fork()
 
         if pid == 0:  # Child process
@@ -242,6 +267,7 @@ class ForkHandler:
                 # 2. Execution
                 exit_code = ForkHandler._child_process(
                     script_path=str(script_path) if script_path else "",
+                    module_name=module_name,
                     args=args,
                     env=env,
                     stdout_path=stdout_path,
@@ -267,12 +293,32 @@ class ForkHandler:
         else:  # Parent process
             if shm:
                 shm.close()
+
+            # STB-SYNC-FORK: Wait for worker to be ready before returning
+            # This ensures the supervisor doesn't run health checks on a ghost socket
+            uds_path = None
+            for i, arg in enumerate(args):
+                if arg == "--uds" and i + 1 < len(args):
+                    uds_path = args[i + 1]
+                    break
+
+            if uds_path:
+                LogUtils.log(f"Waiting for worker {pid} to bind to {uds_path}...")
+                # Increase internal wait timeout scaled by VELO_TIMEOUT_MULTIPLIER (RFC-0012)
+                multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+                timeout = 10.0 * multiplier
+                if not ForkHandler._wait_for_ready(uds_path, timeout=timeout):
+                    LogUtils.log(f"Warning: Worker {pid} socket {uds_path} not ready after {timeout}s")
+                else:
+                    LogUtils.log(f"Worker {pid} is READY on {uds_path}")
+
             worker_registry.add(pid, metadata={"script": script_path})
             return pid
 
     @staticmethod
     def _child_process(
         script_path: str,
+        module_name: str | None,
         args: list[str],
         env: dict[str, str],
         stdout_path: str | None,
@@ -288,6 +334,9 @@ class ForkHandler:
         warmed_server: Any = None,
         warmed_config: Any = None,
     ) -> int:
+        # RFC-0030: Mark as Zygote-accelerated for process diagnostics
+        os.environ["VELO_IS_ZYGOTE"] = "1"
+
         # 0. TITANIUM RULE: Recursive No Orphans (Linux Only)
         #    Ensure THIS child dies if Zygote (Parent) dies.
         #    Ported from main branch commit e10380a.
@@ -315,6 +364,9 @@ class ForkHandler:
 
         # 2. Environment Setup
         os.environ.update(env)
+
+        # DEF-VTEST-GUARD: Mark as Zygote worker to prevent pytest-velo plugin re-initialization
+        os.environ["VELO_IS_ZYGOTE"] = "1"
 
         # 2.5 Security: Activate ImportShield (Trap 178.5)
         try:
@@ -357,10 +409,37 @@ class ForkHandler:
         # 5. Execution
         exit_code = 0
         try:
-            if not script_path and not fast_mode:
-                raise ValueError("Neither script_path nor fast_mode provided")
+            if not script_path and not fast_mode and not module_name:
+                raise ValueError("Neither script_path, module_name nor fast_mode provided")
 
-            if script_path:
+            if module_name:
+                # Module execution via runpy (Phase 9.x Alignment)
+                import runpy
+
+                sys.argv = [module_name] + args
+
+                # Injection of Zygote environment
+                child_globals = {
+                    "__VELO_WARM_SERVER__": warmed_server,
+                    "__VELO_WARM_CONFIG__": warmed_config,
+                }
+
+                # SHM Hand-off (Phase 7.3)
+                if shm_fd is not None:
+                    os.environ["VELO_SHM_FD"] = str(shm_fd)
+                    os.environ["VELO_SHM_SIZE"] = str(shm_size)
+                    try:
+                        from velo_zygote.memory import MEMORY_MANAGER
+
+                        shm_obj = MEMORY_MANAGER.attach(shm_fd, shm_size if shm_size else 0)
+                        if shm_obj is not None:
+                            child_globals["VELO_SHM"] = shm_obj
+                    except Exception:
+                        pass
+
+                runpy.run_module(module_name, init_globals=child_globals, run_name="__main__", alter_sys=True)
+
+            elif script_path:
                 # Standard script execution
                 sys.argv = [script_path] + args
                 p = Path(script_path)

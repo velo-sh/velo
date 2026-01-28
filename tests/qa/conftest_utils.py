@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +105,7 @@ def get_process_rss_kb(pid: int) -> int:
     return 0
 
 
-def get_cow_stats(pid: int) -> dict:
+def get_cow_stats(pid: int) -> dict[str, Any]:
     """Get COW (Copy-on-Write) memory stats for a process.
 
     On Linux: Uses PSS from /proc/[pid]/smaps
@@ -142,7 +143,7 @@ def get_cow_stats(pid: int) -> dict:
                         parts = line.split()
 
                         # Parse size values (e.g., "87.0M", "1456K")
-                        def parse_size(s):
+                        def parse_size(s: str) -> int:
                             s = s.strip()
                             if s.endswith("G"):
                                 return int(float(s[:-1]) * 1024 * 1024)
@@ -171,46 +172,143 @@ def get_cow_stats(pid: int) -> dict:
 # =============================================================================
 
 
+def _validate_binary_platform(binary_path: Path) -> tuple[bool, str]:
+    """Validate that a binary is compatible with the current platform.
+
+    Returns:
+        (is_valid, reason_if_invalid)
+    """
+    import platform
+
+    current_system = platform.system().lower()  # 'linux' or 'darwin'
+
+    # Use 'file' command to detect binary architecture on Linux/macOS
+    try:
+        result = subprocess.run(["file", str(binary_path)], capture_output=True, text=True, timeout=5)
+        file_output = result.stdout.lower()
+
+        if current_system == "linux":
+            # On Linux, we need ELF binaries
+            if "mach-o" in file_output or "macho" in file_output:
+                return False, "binary=macos, system=linux"
+            if "elf" not in file_output or "linux" not in file_output.replace("linux-gnu", "linux"):
+                # Could be a different format - let it try anyway
+                pass
+        elif current_system == "darwin":
+            # On macOS, we need Mach-O binaries
+            if "elf" in file_output:
+                return False, "binary=linux, system=macos"
+
+        return True, ""
+    except Exception:
+        # If 'file' command fails, assume it's OK (don't block tests)
+        return True, ""
+
+
 def get_velo_binary() -> str:
     """Find the primary Velo binary (source of truth).
 
     Priority order:
     1. VELO_BINARY environment variable (explicit override)
-    2. Release binary (preferred for production-like testing)
-    3. Debug binary (fallback for development)
+    2. Path sensing relative to this file
+    3. Path sensing relative to current working directory
     4. Auto-build (only outside CI)
+
+    All candidates are validated for platform compatibility before returning.
     """
-    root_dir = Path(__file__).parents[2]
+    import pytest
 
     # 1. Environment variable override (highest priority)
     env_binary = os.environ.get("VELO_BINARY")
     if env_binary and Path(env_binary).exists():
-        return str(Path(env_binary).resolve())
+        bin_path = Path(env_binary).resolve()
+        valid, reason = _validate_binary_platform(bin_path)
+        if not valid:
+            pytest.skip(f"Binary platform mismatch: {reason}. Rebuild with 'cargo build --release'")
+        return str(bin_path)
 
-    # 2. Local build detection - PREFER RELEASE over debug
-    release_bin = root_dir / "target" / "release" / "velo"
-    debug_bin = root_dir / "target" / "debug" / "velo"
+    # 2. Strategy: Try to find repo root
+    # A: Relative to this file (tests/qa/conftest_utils.py)
+    root_file = Path(__file__).resolve().parents[2]
+    # B: Relative to CWD
+    root_cwd = Path.cwd().resolve()
 
-    # Prefer release if it exists and is newer than debug
-    if release_bin.exists():
-        if debug_bin.exists():
-            # Warn if debug is newer (might indicate stale release)
-            if debug_bin.stat().st_mtime > release_bin.stat().st_mtime:
-                print("⚠️  Warning: debug binary is newer than release. Consider running 'cargo build --release'")
-        return str(release_bin.resolve())
+    # Check candidates for repo root (must contain a 'target' or 'src' as a sanity check)
+    candidates = [root_file, root_cwd]
 
-    if debug_bin.exists():
-        print("⚠️  Using debug binary. For accurate testing, use: VELO_BINARY=./target/release/velo")
-        return str(debug_bin.resolve())
+    # Also check if we are already in the repo root or a subdirectory
+    curr = root_cwd
+    for _ in range(5):
+        if (curr / "Cargo.toml").exists():
+            candidates.append(curr)
+            break
+        if curr.parent == curr:
+            break
+        curr = curr.parent
+
+    for root in candidates:
+        release_bin = root / "target" / "release" / "velo"
+        debug_bin = root / "target" / "debug" / "velo"
+
+        for bin_path in [release_bin, debug_bin]:
+            if bin_path.exists():
+                valid, reason = _validate_binary_platform(bin_path)
+                if not valid:
+                    # Skip this binary, try next candidate
+                    print(f"⚠️  Skipping {bin_path}: platform mismatch ({reason})")
+                    continue
+                if bin_path == debug_bin:
+                    print(f"⚠️  Using debug binary found at {debug_bin}")
+                return str(bin_path.resolve())
 
     # 3. Last resort: auto-build if not in CI
-    if os.environ.get("GITHUB_ACTIONS") != "true":
+    if os.environ.get("GITHUB_ACTIONS") != "true" and (root_cwd / "Cargo.toml").exists():
         print("🔨 Binary not found. Building release version...")
-        subprocess.run(["cargo", "build", "--release"], cwd=root_dir, check=True)
-        if release_bin.exists():
-            return str(release_bin.resolve())
+        try:
+            subprocess.run(["cargo", "build", "--release"], cwd=root_cwd, check=True)
+            release_bin = root_cwd / "target" / "release" / "velo"
+            if release_bin.exists():
+                valid, reason = _validate_binary_platform(release_bin)
+                if valid:
+                    return str(release_bin.resolve())
+        except Exception as e:
+            print(f"❌ Failed to auto-build: {e}")
 
-    raise RuntimeError("Velo binary not found. Run 'cargo build --release' first.")
+    raise RuntimeError(
+        "Velo binary not found or platform mismatch. Run 'cargo build --release' first or set VELO_BINARY."
+    )
+
+
+def get_repo_root() -> Path:
+    """Find the repository root consistently across host and container.
+
+    Priority:
+    1. Parent of VELO_BINARY if set
+    2. Path sensing relative to this file
+    3. Path sensing relative to current working directory (upward search)
+    """
+    env_binary = os.environ.get("VELO_BINARY")
+    if env_binary:
+        bin_path = Path(env_binary).resolve()
+        # bin is in root/target/[release|debug]/velo
+        return bin_path.parents[2]
+
+    # Try sensing relative to file
+    root_file = Path(__file__).resolve().parents[2]
+    if (root_file / "Cargo.toml").exists():
+        return root_file
+
+    # Try sensing relative to CWD (upward search)
+    curr = Path.cwd().resolve()
+    for _ in range(5):
+        if (curr / "Cargo.toml").exists():
+            return curr
+        if curr.parent == curr:
+            break
+        curr = curr.parent
+
+    # Default to CWD if all else fails (might be in container root)
+    return Path.cwd().resolve()
 
 
 # =============================================================================
@@ -219,6 +317,16 @@ def get_velo_binary() -> str:
 
 
 class VeloTestEnv:
+    root: Path
+    tmp: Path
+    home: Path
+    xdg: Path
+    venv: Path
+    bin_dir: Path
+    velo: str
+    env: dict[str, str]
+    path: Path
+
     def __init__(self, root: Path, source_binary: str):
         self.root = root
         self.tmp = root / "tmp"
@@ -249,8 +357,18 @@ class VeloTestEnv:
                 "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
                 "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
                 "PYTHONUNBUFFERED": "1",
+                # RFC-0033: Provide Zygote path for copied binaries running from isolated directories
+                "VELO_ZYGOTE_PATH": str(get_repo_root() / "velo_zygote" / "main.py"),
             }
         )
+
+        # RFC-0019: Critical library path preservation for native pyo3 workers
+        # The velo binary is linked against libpython and requires LD_LIBRARY_PATH
+        # to find the shared library at runtime. This is especially important in CI
+        # where pytest-xdist workers spawn in isolated environments.
+        for lib_path_var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            if lib_path_var in os.environ:
+                self.env[lib_path_var] = os.environ[lib_path_var]
 
         # RFC-0012: First Principles Isolation
         # We must NOT inherit PYTHONHOME from the host, as it overrides VIRTUAL_ENV
@@ -276,8 +394,17 @@ class VeloTestEnv:
         # Backward compatibility
         self.path = self.root
 
+    def __enter__(self) -> "VeloTestEnv":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Cleanup test environment if needed."""
+        # We could add automatic directory cleanup here, but for now we follow
+        # the existing pattern of leaving temp dirs for debugging unless explicitly removed.
+        pass
+
     @contextlib.contextmanager
-    def env_vars(self, vars: dict):
+    def env_vars(self, vars: dict[str, str]) -> Generator["VeloTestEnv", None, None]:
         """Temporarily update environment variables."""
         old_env = self.env.copy()
         self.env.update(vars)
@@ -286,7 +413,7 @@ class VeloTestEnv:
         finally:
             self.env = old_env
 
-    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+    def run_velo(self, *args: str, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
@@ -306,13 +433,22 @@ class VeloTestEnv:
             **kwargs,
         )
 
-    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen:
+    def spawn_velo(self, *args: Any, **kwargs: Any) -> subprocess.Popen[str]:
         env = self.env.copy()
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
         if "text" not in kwargs:
             kwargs["text"] = True
         return subprocess.Popen([self.velo, *args], env=env, cwd=kwargs.pop("cwd", self.root), **kwargs)
+
+    def install(self, *packages: str) -> subprocess.CompletedProcess[bytes]:
+        """Install packages into the isolated environment."""
+        # RFC-0012: Ensure we use the isolated venv's pip or just pip in the current env
+        # Since we set PATH to include current_venv/bin, 'pip' should be correct.
+        import subprocess
+
+        cmd = [sys.executable, "-m", "pip", "install"] + list(packages)
+        return subprocess.run(cmd, env=self.env, check=True, capture_output=True)
 
     def create_app(self, name: str, code: str) -> Path:
         p = self.root / name
@@ -325,4 +461,5 @@ class VeloTestEnv:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
-            return s.getsockname()[1]
+            port = s.getsockname()[1]
+            return int(port)

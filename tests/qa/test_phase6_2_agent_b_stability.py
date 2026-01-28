@@ -5,11 +5,12 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
-def send_msgpack(conn, data):
+def send_msgpack(conn: Any, data: Any) -> None:
     import msgpack
 
     payload = msgpack.packb(data, use_bin_type=True)
@@ -20,13 +21,13 @@ def send_msgpack(conn, data):
 
 
 class SlowZygote:
-    def __init__(self, socket_path, connect_delay=0, ready_delay=0):
+    def __init__(self, socket_path: Path, connect_delay: float = 0, ready_delay: float = 0) -> None:
         self.socket_path = socket_path
         self.connect_delay = connect_delay
         self.ready_delay = ready_delay
         self.stop_event = threading.Event()
 
-    def start(self):
+    def start(self) -> None:
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -52,12 +53,12 @@ class SlowZygote:
 
                 send_msgpack(conn, {"type": "Ready"})
                 conn.close()
-        except:
+        except Exception:
             pass
         finally:
             self.server.close()
 
-    def stop(self):
+    def stop(self) -> None:
         self.stop_event.set()
         self.thread.join()
 
@@ -87,7 +88,7 @@ def test_STAB_621_cumulative_timeout(isolated_env):
 
     start_time = time.time()
     proc = env.run_velo("serve", "main:app", "--workers", "1", env=cmd_env, timeout=10)
-    duration = time.time() - start_time
+    time.time() - start_time
 
     zygote.stop()
 

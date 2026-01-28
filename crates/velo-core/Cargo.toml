@@ -1,0 +1,69 @@
+[package]
+name = "velo-core"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+socket2 = { workspace = true }
+pyo3 = { version = "0.27", features = ["anyhow", "bytes", "generate-import-lib"] }
+velo_macros = { path = "../../velo_macros" }
+velo-graph = { path = "../velo-graph" }
+bytes = "1"
+blake3 = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+rkyv = { workspace = true }
+tempfile = { workspace = true }
+crc32fast = "1.4"
+thiserror = { workspace = true }
+chrono = { workspace = true }
+hostname = "0.4"
+rustpython-parser = "0.4"
+rustpython-ast = "0.4"
+ignore = "0.4"
+log = { workspace = true }
+env_logger = "0.11"
+tracing = "0.1"
+dirs = "5.0"
+which = "6.0"
+goblin = "0.9"
+rmp-serde = { workspace = true }
+once_cell = { workspace = true }
+uuid = { workspace = true }
+colored = { workspace = true }
+indicatif = { workspace = true }
+regex = { workspace = true }
+strsim = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+parking_lot = { workspace = true }
+notify = { workspace = true }
+rayon = { workspace = true }
+toml = { workspace = true }
+smallvec = { workspace = true }
+velo-protocol = { workspace = true }
+
+[build-dependencies]
+blake3 = "1.5"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+
+[features]
+default = ["embedded_uv", "granian_native", "metrics", "tracing_feat"]
+embedded_uv = []
+granian_native = []
+sandbox_disabled = []
+metrics = []
+tracing_feat = []
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+fs2 = "0.4"
+nix = { version = "0.27", features = ["socket", "uio", "fs", "process"] }

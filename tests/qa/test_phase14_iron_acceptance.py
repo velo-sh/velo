@@ -15,7 +15,7 @@ GOLD_DIR = Path("/tmp/gold_200_phase14")
 VELO_BIN = Path("./target/release/velo").absolute()
 
 
-def gold_200_env() -> dict:
+def gold_200_env() -> dict[str, str]:
     """Return env dict with PYTHONPATH set for gold_200 external project."""
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{GOLD_DIR}/src:{env.get('PYTHONPATH', '')}"
@@ -38,7 +38,9 @@ def clear_pycache(target_dir: Path) -> None:
             pass  # Ignore errors if directory is already gone
 
 
-def run_cmd(cmd, env=None, cwd=None):
+def run_cmd(
+    cmd: list[str], env: dict[str, str] | None = None, cwd: Path | str | None = None
+) -> tuple[subprocess.CompletedProcess[str], float]:
     start = time.perf_counter()
     res = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cwd)
     duration = time.perf_counter() - start
@@ -46,7 +48,7 @@ def run_cmd(cmd, env=None, cwd=None):
 
 
 @pytest.mark.tier5
-def test_phase14_iron_performance_acceptance():
+def test_phase14_iron_performance_acceptance() -> None:
     """
     P0 Performance Acceptance: Velo Miracle MUST beat xdist-only (fair parallel comparison).
 
@@ -83,8 +85,8 @@ def test_phase14_iron_performance_acceptance():
     import tempfile
 
     session_socket_dir = Path(tempfile.mkdtemp(prefix="velo-perf-"))
-    socket_path = session_socket_dir / "velo-zygote.sock"
-    auth_path = socket_path.with_suffix(".auth")
+    socket_path_obj: Path = session_socket_dir / "velo-zygote.sock"
+    auth_path = socket_path_obj.with_suffix(".auth")
 
     # 1. Warm Performance Test (Pre-started Zygote)
     # Surgical Cleanup: Kill both Rust wrapper and Python backend
@@ -103,7 +105,7 @@ def test_phase14_iron_performance_acceptance():
     # Wait for socket and auth file (Wait up to 10s)
     auth_secret = None
     for _ in range(100):
-        if auth_path.exists() and socket_path.exists():
+        if auth_path.exists() and socket_path_obj.exists():
             auth_secret = auth_path.read_text().strip()
             break
         time.sleep(0.1)
@@ -111,7 +113,7 @@ def test_phase14_iron_performance_acceptance():
     if not auth_secret:
         pytest.fail(f"Failed to start Zygote or discover secret at {auth_path}")
 
-    print(f"[Debug] VELO_ZYGOTE_SOCKET={socket_path}")
+    print(f"[Debug] VELO_ZYGOTE_SOCKET={socket_path_obj}")
     print(f"[Debug] VELO_ZYGOTE_AUTH_VAL={auth_secret}")
 
     # Target: Miracle (Warmup)
@@ -154,7 +156,7 @@ def test_phase14_iron_performance_acceptance():
 
 
 @pytest.mark.tier2
-def test_phase14_isolation_verification():
+def test_phase14_isolation_verification() -> None:
     """
     Verify that concurrent workers have isolated environments.
     """
@@ -169,17 +171,17 @@ def test_isolated_tmp():
     # P0: Isolated TMPDIR per worker
     tmp = os.environ.get("TMPDIR", "/tmp")
     assert "velo-worker-" in tmp
-    
+
     # Ensure the directory exists
     assert os.path.exists(tmp)
-    
+
     # Write a file and wait - if isolation fails, another worker might see it
     id_file = Path(tmp) / "isolation_id"
     worker_id = os.getpid()
     id_file.write_text(str(worker_id))
-    
+
     time.sleep(0.1)
-    
+
     assert id_file.read_text() == str(worker_id)
 """)
 
@@ -199,7 +201,7 @@ def test_isolated_tmp():
 
 
 @pytest.mark.tier3
-def test_phase14_iron_chaos_audit():
+def test_phase14_iron_chaos_audit() -> None:
     """
     Sad Path Resilience: Killing Zygote mid-run MUST NOT hang the suite.
 
@@ -244,7 +246,7 @@ def test_phase14_iron_chaos_audit():
 
 
 @pytest.mark.tier2
-def test_phase14_iron_environment_persistence():
+def test_phase14_iron_environment_persistence() -> None:
     """
     Forensic Audit: Verify project_root and PYTHONPATH are preserved in workers.
     """
@@ -258,7 +260,7 @@ def test_verify_env():
     # RFC Requirement 1: CWD must be project root (v_fork.py must call os.chdir(project_root))
     cwd = Path(os.getcwd())
     assert "gold_200_phase14" in str(cwd), f"CWD not set to project root: {cwd}"
-    
+
     # RFC Requirement 2: PYTHONPATH must be preserved
     # The 'velo_app' should be importable if PYTHONPATH was correctly propagated
     try:
@@ -268,7 +270,7 @@ def test_verify_env():
         print(f"DEBUG: sys.path = {sys.path}")
         print(f"DEBUG: PYTHONPATH = {os.environ.get('PYTHONPATH', 'NOT SET')}")
         print(f"DEBUG: CWD = {os.getcwd()}")
-        assert False, "CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
+        pytest.fail("CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
 """)
 
     try:
@@ -313,7 +315,7 @@ def test_phase14_orphan_storm_prevention():
                 pass
     time.sleep(1.0)
 
-    def count_zygote_processes():
+    def count_zygote_processes() -> int:
         # Match only the actual zygote module AND the current project directory
         cwd_name = Path.cwd().name
         result = subprocess.run(

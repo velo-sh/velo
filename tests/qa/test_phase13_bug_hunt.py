@@ -8,7 +8,7 @@ import os
 import tempfile
 import threading
 import time
-from unittest.mock import MagicMock
+from unittest.mock import Mock  # RFC-0012: Use Mock, not MagicMock
 
 import pytest
 
@@ -83,7 +83,7 @@ class TestBug003_SilentReinitFailure:
         register_fork_reinit(failing_callback)
 
         # This should raise or at least log, but it doesn't
-        velo_fork_reinit(MagicMock())
+        velo_fork_reinit(Mock())
 
         # Restore
         _fork_reinit_callbacks.clear()
@@ -137,9 +137,9 @@ class TestEdgeCase_ForkWithOpenFiles:
         """Forking with open files should not corrupt them"""
         from pytest_velo.plugin import run_in_zygote_fork
 
-        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            f.write("before fork\n")
-            temp_path = f.name
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
+            tf.write("before fork\n")
+            temp_path = tf.name
 
         class MockItem:
             def runtest(self):
@@ -169,7 +169,6 @@ class TestEdgeCase_ForkWithThreads:
         from pytest_velo.plugin import assert_single_threaded
 
         barrier = threading.Barrier(2)
-        error = []
 
         def worker():
             barrier.wait()

@@ -14,6 +14,7 @@ import os
 import struct
 import sys
 import tempfile
+from typing import Any
 
 import msgpack
 import pytest
@@ -44,7 +45,7 @@ class MockASGIApp:
 
         # Get request body
         request = await receive()
-        body = request.get("body", b"")
+        _body = request.get("body", b"")
 
         # Send response
         await send(
@@ -65,7 +66,7 @@ class MockASGIApp:
         )
 
 
-async def send_msg(writer, msg):
+async def send_msg(writer: Any, msg: Any) -> None:
     """Send a MessagePack message with length prefix."""
     payload = msgpack.packb(msg)
     writer.write(struct.pack(">I", len(payload)))
@@ -73,7 +74,7 @@ async def send_msg(writer, msg):
     await writer.drain()
 
 
-async def recv_msg(reader):
+async def recv_msg(reader: Any) -> Any:
     """Receive a MessagePack message with length prefix."""
     len_data = await reader.readexactly(4)
     length = struct.unpack(">I", len_data)[0]
@@ -199,7 +200,7 @@ async def test_rsgi_request_body_streaming():
 
         try:
             # Handshake
-            ready = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
+            await asyncio.wait_for(recv_msg(reader), timeout=2.0)
             await send_msg(writer, [TYPE_AUTH_OK, "session", 10485760])
 
             # Send request with body
@@ -210,7 +211,7 @@ async def test_rsgi_request_body_streaming():
 
             # Get response
             res_start = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
-            res_body = await asyncio.wait_for(recv_msg(reader), timeout=2.0)
+            await asyncio.wait_for(recv_msg(reader), timeout=2.0)
 
             assert res_start[2] == 200
             assert len(received_body) > 0, "No body received by app"

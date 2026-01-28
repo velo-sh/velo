@@ -1,0 +1,197 @@
+import os
+import random
+
+# TITANIUM Grade: L5 Performance Benchmarks
+# Based on QA-SOP §14 (Performance & Benchmark Standards)
+import signal
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+
+def measure_startup_phases(
+    velo_cmd: list[str], env_vars: dict[str, str], cwd: str | None = None
+) -> tuple[float | None, float]:
+    start = time.perf_counter()
+    proc = subprocess.Popen(
+        velo_cmd,
+        env=env_vars,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    arch_latency = None
+    total_latency = None
+
+    import select
+
+    try:
+        while True:
+            # Non-blocking read with timeout
+            r, _, _ = select.select([proc.stdout], [], [], 0.1)
+            if not r:
+                if proc.poll() is not None:
+                    break
+                if (time.perf_counter() - start) > 20.0:
+                    raise TimeoutError("Server failed to start (total timeout)")
+                continue
+
+            if pid_output := proc.stdout:
+                line = pid_output.readline()
+            else:
+                break
+            if not line:
+                break
+
+            # Phase 1: Architecture Ready (Rust overhead + IPC + Fork)
+            # Only present in Kinetic/Zygote mode
+            if "Worker 1 (PID:" in line and arch_latency is None:
+                arch_latency = (time.perf_counter() - start) * 1000
+
+            # Phase 2: Application Ready (Python Import + Uvicorn Start)
+            if "Server ready" in line:
+                total_latency = (time.perf_counter() - start) * 1000
+                return (arch_latency, total_latency)
+
+            if (time.perf_counter() - start) > 15.0:
+                raise TimeoutError(f"Server failed to start. Last log: {line.strip()}")
+    finally:
+        try:
+            os.kill(proc.pid, signal.SIGKILL)
+            proc.wait()
+        except Exception:
+            pass
+    return (None, 99999.0)
+
+
+@pytest.mark.tier5
+@pytest.mark.heavy
+def test_PERF_621_kinetic_speedup(isolated_env):
+    """Verify >2x speedup over Cold Start (Real Execution)."""
+    env = isolated_env
+    socket_path = Path("/tmp") / f"perf_zygote_speedup_{os.getpid()}.sock"
+    app_dir = env.path / "app"
+    app_dir.mkdir()
+    # Use only fastapi (installed dep) and json (stdlib) - pandas may not be available
+    (app_dir / "main.py").write_text("import fastapi; import json; import hashlib; app = fastapi.FastAPI()")
+    (app_dir / "pyproject.toml").write_text(
+        '[project]\nname = "perf-app"\nversion = "0.1.0"\ndependencies = ["fastapi"]'
+    )
+    (app_dir / "uv.lock").write_text("{}")
+
+    # 1. Measure Cold Start (Real Execution, pays import cost)
+    # Cold start doesn't have architecture phase log
+    port_cold = random.randint(30000, 39999)
+    _, cold_latency = measure_startup_phases(
+        [env.velo, "serve", "main:app", "--no-zygote", "--port", str(port_cold)],
+        os.environ.copy(),
+        cwd=str(app_dir),
+    )
+
+    # 2. Start Zygote and Measure Kinetic
+    if socket_path.exists():
+        os.unlink(socket_path)
+    cmd_env = os.environ.copy()
+    cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+
+    # Preload modules to skip import cost (use stdlib + installed deps)
+    proc = subprocess.Popen(
+        [env.velo, "zygote", "start", "--preload", "json,hashlib,fastapi"],
+        env=cmd_env,
+        cwd=app_dir,
+    )
+
+    # Wait for Zygote to be FULLY READY
+    # FIX: Socket file exists != Zygote accepting connections
+    import socket as sock_module
+
+    timeout = time.time() + 20
+    zygote_ready = False
+    while time.time() < timeout:
+        if not socket_path.exists():
+            time.sleep(0.2)
+            continue
+        try:
+            test_sock = sock_module.socket(sock_module.AF_UNIX, sock_module.SOCK_STREAM)
+            test_sock.settimeout(2.0)
+            test_sock.connect(str(socket_path))
+            test_sock.close()
+            zygote_ready = True
+            time.sleep(2.0)  # Wait for Zygote to finish initialization
+            break
+        except OSError:
+            pass
+        time.sleep(0.5)
+
+    assert zygote_ready, "Zygote failed to accept connections"
+
+    port_kinetic = random.randint(40000, 49999)
+    try:
+        arch_latency, kinetic_latency = measure_startup_phases(
+            [env.velo, "serve", "main:app", "--port", str(port_kinetic)],
+            cmd_env,
+            cwd=str(app_dir),
+        )
+
+        speedup = cold_latency / kinetic_latency
+        print(
+            f"Cold: {cold_latency:.2f}ms | Kinetic: {kinetic_latency:.2f}ms (Arch: {arch_latency:.2f}ms) | Speedup: {speedup:.2f}x"
+        )
+
+        # RFC-0013 Standard: Phase-Separated Asserts
+        # 1. Architecture Latency (Rust -> Zygote Fork): STRICT < 50ms
+        if arch_latency is not None:
+            assert arch_latency < 50, f"Architecture latency too high: {arch_latency:.2f}ms"
+
+        # 2. Total Latency (E2E): User Experience < 300ms (Loose due to Python overhead)
+        assert kinetic_latency < 300, f"Total startup too slow: {kinetic_latency:.2f}ms"
+
+        # 3. Speedup: > 2x
+        assert speedup > 2, f"Kinetic speedup insufficient: {speedup:.2f}x"
+
+    finally:
+        proc.terminate()
+
+
+@pytest.mark.tier5
+@pytest.mark.heavy
+def test_PERF_622_spawn_scalability(isolated_env):
+    """Measure latency degradation across many sequential spawns."""
+    env = isolated_env
+    socket_path = Path("/tmp") / f"perf_zygote_scale_{os.getpid()}.sock"
+
+    cmd_env = os.environ.copy()
+    cmd_env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
+    proc = subprocess.Popen([env.velo, "zygote", "start"], env=cmd_env)
+    # Wait for socket
+    timeout = time.time() + 5
+    while not socket_path.exists() and time.time() < timeout:
+        time.sleep(0.1)
+
+    latencies = []
+    app_dir = env.path / "app"
+    if not app_dir.exists():
+        app_dir.mkdir()
+    (app_dir / "main.py").write_text("import fastapi; app = fastapi.FastAPI()")
+    (app_dir / "pyproject.toml").write_text(
+        '[project]\nname = "scale-app"\nversion = "0.1.0"\ndependencies = ["fastapi"]'
+    )
+
+    try:
+        for _ in range(20):
+            _, lat = measure_startup_phases([env.velo, "serve", "main:app"], cmd_env, cwd=str(app_dir))
+            latencies.append(lat)
+
+        avg_lat = sum(latencies) / len(latencies)
+        max_lat = max(latencies)
+        print(f"Avg: {avg_lat:.2f}ms | Max: {max_lat:.2f}ms")
+
+        # Verify stability
+        assert max_lat < avg_lat * 2, "Spawning latency exhibits significant jitter/degradation"
+
+    finally:
+        proc.terminate()

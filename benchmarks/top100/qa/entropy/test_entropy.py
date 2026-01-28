@@ -1,5 +1,4 @@
 import uuid
-import sys
 
 # Generate UUID. In a forked environment without reseed, this might repeat.
 # However, Python's uuid module usually handles fork (using usage counters or urandom).

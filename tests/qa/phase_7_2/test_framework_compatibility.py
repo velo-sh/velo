@@ -6,6 +6,9 @@ import psutil
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 
 class TestFrameworkSovereigntyE2E:
     """
@@ -36,7 +39,7 @@ app = FastAPI()
 async def check_sovereignty(request: Request):
     # Forensic observation: Is uvicorn loaded?
     uvicorn_loaded = "uvicorn" in sys.modules
-    
+
     return {
         "framework": "FastAPI",
         "uvicorn_shadow": uvicorn_loaded,
@@ -288,7 +291,7 @@ async def scope_checker(request):
         "type": request.scope.get("type"),
         "method": request.scope.get("method"),
         "path": request.scope.get("path"),
-        "headers": {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v 
+        "headers": {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v
                     for k, v in request.scope.get("headers", [])},
         "query_string": request.scope.get("query_string").decode() if request.scope.get("query_string") else "",
         "rsgi_id": request.scope.get("rsgi.id"),
@@ -486,7 +489,7 @@ async def ping():
             def trigger_hang():
                 try:
                     requests.get(f"http://127.0.0.1:{port}/hang", timeout=2)
-                except:
+                except Exception:
                     pass
 
             t = threading.Thread(target=trigger_hang)

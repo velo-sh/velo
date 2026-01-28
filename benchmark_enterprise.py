@@ -4,12 +4,11 @@ Enterprise-Scale Benchmarks for Velo.
 Simulates real-world "Heavyweight" project structures for FastAPI, Flask, and Django.
 """
 
-import subprocess
-import shutil
-import time
 import argparse
 import os
-import json
+import shutil
+import subprocess
+import time
 from pathlib import Path
 
 VELO_BIN = Path(__file__).parent / "target/release/velo"
@@ -36,9 +35,7 @@ class EnterpriseGenerator:
                     f"class Model_{i}_{j}(BaseModel):\n    id: int\n    name: str\n    meta: Optional[dict] = None"
                 )
             (models_dir / f"m{i}.py").write_text("\n".join(code))
-        (models_dir / "__init__.py").write_text(
-            "".join([f"from .m{i} import *\n" for i in range(10)])
-        )
+        (models_dir / "__init__.py").write_text("".join([f"from .m{i} import *\n" for i in range(10)]))
 
         # 2. Routers Layer
         routers_dir = app_dir / "internal"
@@ -46,11 +43,9 @@ class EnterpriseGenerator:
         for i in range(20):
             code = [
                 f"from fastapi import APIRouter\nfrom ..models.m{i % 10} import Model_{i % 10}_0",
-                f"router = APIRouter()",
+                "router = APIRouter()",
             ]
-            code.append(
-                f"@router.get('/{i}')\ndef route_{i}(): return Model_{i % 10}_0(id={i}, name='test')"
-            )
+            code.append(f"@router.get('/{i}')\ndef route_{i}(): return Model_{i % 10}_0(id={i}, name='test')")
             (routers_dir / f"r{i}.py").write_text("\n".join(code))
 
         # 3. Main Entry
@@ -66,15 +61,12 @@ class EnterpriseGenerator:
         (app_dir / "__init__.py").write_text("")
 
         # 4. Root Wrapper (for velo run)
-        (path / "entry.py").write_text(
-            "from app.main import app\nprint('Enterprise FastAPI Start')"
-        )
+        (path / "entry.py").write_text("from app.main import app\nprint('Enterprise FastAPI Start')")
 
     @staticmethod
     def create_django(path: Path, apps=50):
         """Heavyweight Django: 50 apps, 200+ models, complex registry."""
         print(f"  Generating Django Monolith ({apps} apps)...")
-        project_name = "monolith"
 
         # 1. Create 50 Apps
         installed_apps = []
@@ -129,12 +121,10 @@ print('Enterprise Django Monolith Ready')
             ]
             # Add a vertical import (dependency between blueprints)
             if i > 0:
-                code.insert(0, f"from .module_{i-1} import bp_{i-1}")
+                code.insert(0, f"from .module_{i - 1} import bp_{i - 1}")
             (bp_dir / f"module_{i}.py").write_text("\n".join(code))
 
-        (bp_dir / "__init__.py").write_text(
-            "".join([f"from .module_{i} import bp_{i}\n" for i in range(blueprints)])
-        )
+        (bp_dir / "__init__.py").write_text("".join([f"from .module_{i} import bp_{i}\n" for i in range(blueprints)]))
 
         # 2. Main Entry
         main_code = [
@@ -149,16 +139,14 @@ print('Enterprise Django Monolith Ready')
         (app_dir / "__init__.py").write_text("")
 
         # 3. Entry point
-        (path / "entry.py").write_text(
-            "from app.main import app\nprint('Enterprise Flask Ready')"
-        )
+        (path / "entry.py").write_text("from app.main import app\nprint('Enterprise Flask Ready')")
 
 
 def run_bench(name: Path, iterations=5):
     """Run benchmark comparison."""
     print(f"\nBenchmark: {name.name}")
     script = name / "entry.py"
-    python = name / ".venv/bin/python"
+    name / ".venv/bin/python"
 
     # Measure Velo (with metrics)
     env = os.environ.copy()
@@ -175,9 +163,7 @@ def run_bench(name: Path, iterations=5):
     times = []
     for _ in range(iterations):
         start = time.perf_counter()
-        subprocess.run(
-            [VELO_BIN, "run", "--fast", script], cwd=name, capture_output=True, env=env
-        )
+        subprocess.run([VELO_BIN, "run", "--fast", script], cwd=name, capture_output=True, env=env)
         times.append((time.perf_counter() - start) * 1000)
 
     avg = sum(times) / len(times)
@@ -192,9 +178,7 @@ def setup_project(name: str, deps: list):
         shutil.rmtree(p)
     p.mkdir(parents=True)
     (p / ".python-version").write_text("3.11\n")
-    subprocess.run(
-        ["uv", "init", "--no-workspace", "--name", name], cwd=p, capture_output=True
-    )
+    subprocess.run(["uv", "init", "--no-workspace", "--name", name], cwd=p, capture_output=True)
     subprocess.run(["uv", "add"] + deps, cwd=p, capture_output=True)
     return p
 

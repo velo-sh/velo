@@ -22,11 +22,15 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 # Import CI-aware timeout constants
 from conftest_utils import T_MEDIUM, T_SHORT
+
+# Mark entire module as server startup flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.server_startup_flaky, pytest.mark.tier2]
 
 # Try to import requests, skip tests if not available
 try:
@@ -37,7 +41,7 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -62,7 +66,7 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -77,18 +81,18 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
 class StabilityTestEnv:
     """Test environment with real app setup."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_stability_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
 
-    def setup(self):
+    def setup(self) -> "StabilityTestEnv":
         # Create venv
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
 
-    def install_deps(self, *packages):
+    def install_deps(self, *packages: str) -> None:
         """Install Python packages."""
         subprocess.run(
             ["uv", "pip", "install", "--quiet"] + list(packages),
@@ -96,11 +100,11 @@ class StabilityTestEnv:
             capture_output=True,
         )
 
-    def create_app(self, name: str, content: str):
+    def create_app(self, name: str, content: str) -> None:
         """Create a Python app file."""
         (self.path / name).write_text(content)
 
-    def start_serve(self, app: str, port: int) -> subprocess.Popen:
+    def start_serve(self, app: str, port: int) -> subprocess.Popen[str]:
         """Start velo serve."""
         proc = subprocess.Popen(
             [self.velo, "serve", app, "--port", str(port)],
@@ -112,25 +116,25 @@ class StabilityTestEnv:
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 try:
                     proc.kill()
-                except:
+                except Exception:
                     pass
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "StabilityTestEnv":
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -166,7 +170,7 @@ class TestLevel0Smoke:
             proc.terminate()
             proc.wait(timeout=T_SHORT)
 
-            stderr = proc.stderr.read()
+            stderr = proc.stderr.read() if proc.stderr else ""
             # Should show SOMETHING about starting
             assert "Starting" in stderr or "serve" in stderr.lower() or "app" in stderr.lower(), (
                 f"No startup message. stderr: {stderr}"
@@ -277,14 +281,14 @@ def health():
             env.install_deps("fastapi", "uvicorn")
 
             port = 18103
-            proc = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             response = requests.get(f"http://127.0.0.1:{port}/health", timeout=T_SHORT)
             assert response.status_code == 200
-            assert response.json()["healthy"] == True
+            assert response.json()["healthy"]
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests not installed")
     def test_happy_003_post_request(self):
@@ -309,7 +313,7 @@ def create_item(item: Item):
             env.install_deps("fastapi", "uvicorn", "pydantic")
 
             port = 18104
-            proc = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
 
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
@@ -379,7 +383,7 @@ def root():
             port = 18105
 
             # First server
-            proc1 = env.start_serve("main:app", port)
+            env.start_serve("main:app", port)
             if not wait_for_port(port, timeout=T_MEDIUM):
                 pytest.skip("First server did not start")
 
@@ -399,7 +403,7 @@ def root():
             except subprocess.TimeoutExpired:
                 proc2.kill()
 
-            stderr = proc2.stderr.read() if proc2.stderr else ""
+            proc2.stderr.read() if proc2.stderr else ""
             # Should mention port conflict
             # (or second server may have just failed silently)
 

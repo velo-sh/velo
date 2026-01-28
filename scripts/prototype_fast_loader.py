@@ -13,18 +13,16 @@ Usage:
     python prototype_fast_loader.py benchmark            # Compare performance
 """
 
-import sys
-import os
-import mmap
-import marshal
-import struct
 import hashlib
 import importlib.abc
 import importlib.machinery
 import importlib.util
+import marshal
+import mmap
+import struct
+import sys
 import time
 from pathlib import Path
-from typing import Dict, Tuple, Optional
 
 # Bundle format constants
 MAGIC = b"VELO"
@@ -36,10 +34,8 @@ class VeloBundle:
 
     def __init__(self, path: Path):
         self.path = path
-        self.mm: Optional[mmap.mmap] = None
-        self.index: Dict[
-            str, Tuple[int, int, bytes]
-        ] = {}  # name -> (offset, size, hash)
+        self.mm: mmap.mmap | None = None
+        self.index: dict[str, tuple[int, int, bytes]] = {}  # name -> (offset, size, hash)
         self._fd = None
 
     def open(self):
@@ -84,7 +80,7 @@ class VeloBundle:
 
             self.index[name] = (offset, size, code_hash)
 
-    def get_code(self, name: str) -> Optional[bytes]:
+    def get_code(self, name: str) -> bytes | None:
         """Get marshalled code for a module"""
         if name not in self.index:
             return None
@@ -99,7 +95,7 @@ class VeloBundleBuilder:
     """Builds a Velo bundle from .pyc files"""
 
     def __init__(self):
-        self.modules: Dict[str, bytes] = {}  # name -> marshalled code
+        self.modules: dict[str, bytes] = {}  # name -> marshalled code
 
     def add_pyc(self, name: str, pyc_path: Path):
         """Add a .pyc file to the bundle"""
@@ -159,9 +155,7 @@ class VeloFinder(importlib.abc.MetaPathFinder):
 
     def find_spec(self, fullname, path, target=None):
         if fullname in self.bundle:
-            return importlib.machinery.ModuleSpec(
-                fullname, VeloLoader(self.bundle, fullname), is_package=False
-            )
+            return importlib.machinery.ModuleSpec(fullname, VeloLoader(self.bundle, fullname), is_package=False)
         return None
 
 

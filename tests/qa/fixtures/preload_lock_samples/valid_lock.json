@@ -1,0 +1,23 @@
+{
+    "version": "1.0",
+    "generator": "velo-test-fixture",
+    "fingerprints": [
+        {
+            "relative_path": ".venv/lib/python3.11/site-packages/example/lib.cpython-311-darwin.so",
+            "package": "example",
+            "soname": "",
+            "hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "header_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+            "mtime": 1700000000,
+            "platform": {
+                "os": "macos",
+                "arch": "aarch64",
+                "python_version": "3.11",
+                "libc_type": "bsd",
+                "libc_version": "unknown",
+                "soabi": "cpython-311-darwin"
+            },
+            "load_stage": "PreInit"
+        }
+    ]
+}

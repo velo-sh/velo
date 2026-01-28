@@ -120,26 +120,18 @@ With Velo's Zygote + fork model:
 
 ## Running the Demo
 
-### Prerequisites
-
-Install [uv](https://github.com/astral-sh/uv) package manager:
-
 ```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Default: Single cold start comparison
+./examples/serverless-instant/run_hio.sh
 
-# Or via Homebrew (macOS)
-brew install uv
-```
+# A/B comparison with multiple runs
+./examples/serverless-instant/run_hio.sh --compare --runs=5
 
-### Run the Benchmark
+# Burst scenario (N=10 concurrent)
+./examples/serverless-instant/run_hio.sh --compare --scenario=burst
 
-```bash
-# Quick start (uv handles dependencies automatically)
-./examples/serverless-instant/run_hio.sh --compare --runs=20
-
-# Or run directly with uv
-uv run python examples/serverless-instant/benchmark.py --runs=20
+# Memory comparison
+./examples/serverless-instant/run_hio.sh --compare --scenario=memory
 ```
 
 ---

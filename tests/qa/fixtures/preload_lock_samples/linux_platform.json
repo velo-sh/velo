@@ -1,0 +1,23 @@
+{
+    "version": "1.0",
+    "generator": "velo-linux",
+    "fingerprints": [
+        {
+            "relative_path": ".venv/lib/python3.11/site-packages/example/lib.cpython-311-x86_64-linux-gnu.so",
+            "package": "example",
+            "soname": "libexample.so.1",
+            "hash": "deadbeef",
+            "header_hash": "cafebabe",
+            "mtime": 1700000000,
+            "platform": {
+                "os": "linux",
+                "arch": "x86_64",
+                "python_version": "3.11",
+                "libc_type": "gnu",
+                "libc_version": "2.31",
+                "soabi": "cpython-311-x86_64-linux-gnu"
+            },
+            "load_stage": "PreInit"
+        }
+    ]
+}

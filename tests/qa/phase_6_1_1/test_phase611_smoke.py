@@ -101,15 +101,28 @@ class TestL0Smoke:
         2. Send HTTP GET request
         3. Verify 200 OK response with correct body
         """
+        import time
+
+        from urllib3.exceptions import ProtocolError
 
         proc = velo_serve_fixture.start("main:app", workers=2)
         proc.wait_ready()
 
-        response = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=T_SHORT)
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        assert response.json()["status"] == "ok"
+        # Retry logic for CI transient connection failures
+        last_error = None
+        for _attempt in range(3):
+            try:
+                response = requests.get(f"http://127.0.0.1:{proc.port}/", timeout=T_SHORT)
+                assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+                assert response.json()["status"] == "ok"
 
-        # Also test /ping endpoint
-        response = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
-        assert response.status_code == 200
-        assert response.json() == {"ping": "pong"}
+                # Also test /ping endpoint
+                response = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
+                assert response.status_code == 200
+                assert response.json() == {"ping": "pong"}
+                return  # Success
+            except (requests.ConnectionError, ProtocolError) as e:
+                last_error = e
+                time.sleep(0.5)
+
+        pytest.fail(f"HTTP request failed after 3 attempts: {last_error}")

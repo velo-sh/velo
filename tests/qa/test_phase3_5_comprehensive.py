@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -37,7 +38,7 @@ except ImportError:
     HAS_REQUESTS = False
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get path to velo binary."""
     repo_root = Path(__file__).parent.parent.parent
     release = repo_root / "target" / "release" / "velo"
@@ -58,11 +59,11 @@ def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
             s.settimeout(1)
             s.connect((host, port))
             return True
-    except:
+    except Exception:
         return False
 
 
-def wait_for_port(port: int, timeout: float = None) -> bool:
+def wait_for_port(port: int, timeout: float | None = None) -> bool:
     """Wait for port to open."""
     if timeout is None:
         timeout = T_MEDIUM
@@ -74,30 +75,60 @@ def wait_for_port(port: int, timeout: float = None) -> bool:
     return False
 
 
-def get_child_pids(parent_pid: int) -> list:
+def wait_for_server(port: int, path: str = "/health", timeout: float | None = None) -> bool:
+    """Wait for server to be ready to handle HTTP requests.
+
+    Unlike wait_for_port which only checks if the port is bound,
+    this function actually makes HTTP requests until the server responds.
+    This handles the case where the server is starting but not yet ready.
+    """
+    if timeout is None:
+        timeout = T_MEDIUM
+    start = time.time()
+    url = f"http://127.0.0.1:{port}{path}"
+
+    while time.time() - start < timeout:
+        try:
+            response = requests.get(url, timeout=2)
+            if response.status_code < 500:  # Any non-5xx means server is ready
+                return True
+        except requests.exceptions.ConnectionError:
+            pass  # Server not ready yet
+        except requests.exceptions.Timeout:
+            pass  # Server slow to respond
+        except Exception:
+            pass  # Other errors, keep trying
+        time.sleep(0.2)
+    return False
+
+
+def get_child_pids(parent_pid: int) -> list[int]:
     """Get all child process PIDs."""
     try:
         parent = psutil.Process(parent_pid)
         return [p.pid for p in parent.children(recursive=True)]
-    except:
+    except Exception:
         return []
 
 
 class ComprehensiveTestEnv:
     """Test environment for comprehensive tests."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_comp_"))
         self.velo = get_velo_binary()
-        self.procs = []
+        self.procs: list[subprocess.Popen[str]] = []
         self._port_counter = 19200
 
     def next_port(self) -> int:
-        """Get unique port for test."""
-        self._port_counter += 1
-        return self._port_counter
+        """Get unique port for test using socket binding."""
+        import socket
 
-    def setup(self, with_project=True):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            return s.getsockname()[1]
+
+    def setup(self, with_project: bool = True) -> "ComprehensiveTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         if with_project:
             (self.path / "pyproject.toml").write_text(
@@ -108,7 +139,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             )
         return self
 
-    def run_velo(self, *args, **kwargs) -> subprocess.CompletedProcess:
+    def run_velo(self, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         # Create env with isolated sockets
         env = os.environ.copy()
         env["VIRTUAL_ENV"] = str(self.path / ".venv")
@@ -150,7 +181,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             print(f"TIMEOUT in run_velo. Args: {args}\nStdout: {stdout}\nStderr: {stderr}")
             raise
 
-    def install(self, *packages):
+    def install(self, *packages: str) -> None:
         pkgs = list(packages)
         if "msgpack" not in pkgs:
             pkgs.append("msgpack")
@@ -163,10 +194,10 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             env=env,
         )
 
-    def create_app(self, name: str, code: str):
+    def create_app(self, name: str, code: str) -> None:
         (self.path / name).write_text(code)
 
-    def serve(self, app: str, port: int, capture: bool = False, **opts) -> subprocess.Popen:
+    def serve(self, app: str, port: int, capture: bool = False, **opts: Any) -> subprocess.Popen[str]:
         # Use 'uv run' to ensure the local venv is used for dependencies
         env = os.environ.copy()
         env["VIRTUAL_ENV"] = str(self.path / ".venv")
@@ -208,8 +239,8 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             self.stderr_log = self.path / "stderr.log"
             self.stdout_f = open(self.stdout_log, "w")
             self.stderr_f = open(self.stderr_log, "w")
-            stdout = self.stdout_f
-            stderr = self.stderr_f
+            stdout: Any = self.stdout_f
+            stderr: Any = self.stderr_f
         else:
             stdout = subprocess.DEVNULL
             stderr = subprocess.DEVNULL
@@ -225,15 +256,15 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
         self.procs.append(proc)
         return proc
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for proc in self.procs:
             try:
                 proc.terminate()
                 proc.wait(timeout=T_SHORT)
-            except:
+            except Exception:
                 try:
                     proc.kill()
-                except:
+                except Exception:
                     pass
 
         if hasattr(self, "stdout_f") and self.stdout_f:
@@ -243,15 +274,15 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
 
         try:
             shutil.rmtree(self.path)
-        except:
+        except Exception:
             pass
 
-    def __enter__(self):
+    def __enter__(self) -> "ComprehensiveTestEnv":
         # By default, setup with project metadata.
         # Individual tests like l0_003 can override if they call setup(False) manually.
         return self.setup()
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -307,6 +338,10 @@ class TestL0Smoke:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -315,9 +350,9 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
-            if wait_for_port(port, timeout=T_MEDIUM):
+            if wait_for_server(port, timeout=T_MEDIUM):
                 L0_PASSED = True
                 assert True
             else:
@@ -348,6 +383,10 @@ class TestL1HappyPath:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"message": "hello"}
@@ -356,15 +395,14 @@ def root():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START. Logs:\n{stderr}")
                 pytest.skip("Server did not start (L0 issue)")
 
-            # Settle time for workers to connect to proxy
-            time.sleep(1)
+            # wait_for_server already verified server is responding
 
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
@@ -380,6 +418,10 @@ def root():
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.post("/echo")
 def echo(data: dict):
     return {"received": data}
@@ -388,9 +430,9 @@ def echo(data: dict):
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             time.sleep(1)
@@ -407,6 +449,10 @@ def echo(data: dict):
                 """
 from fastapi import FastAPI
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 counter = 0
 
 @app.get("/count")
@@ -419,14 +465,14 @@ def count():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, capture=True)
+            env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             time.sleep(1)
 
-            for i in range(100):
+            for _i in range(100):
                 response = requests.get(f"http://127.0.0.1:{port}/count", timeout=T_SHORT)
                 assert response.status_code == 200
 
@@ -441,6 +487,10 @@ from fastapi import FastAPI
 import atexit
 
 app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"healthy": True}
 
 @app.get("/")
 def root():
@@ -457,12 +507,16 @@ def on_exit():
             port = env.next_port()
             proc = env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
+                pytest.skip("Server did not start")
+
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             # Make a request to ensure it's working (with retries for slow worker start)
-            start_req = time.time()
-            for i in range(10):
+            time.sleep(2)  # Allow worker to fully initialize
+            time.time()
+            for _i in range(10):
                 try:
                     response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                     if response.status_code == 200:
@@ -477,7 +531,7 @@ def on_exit():
 
             # Send SIGTERM
             proc.terminate()
-            exit_code = proc.wait(timeout=T_MEDIUM)
+            proc.wait(timeout=T_MEDIUM)
 
             # Check graceful shutdown
             shutdown_file = env.path / "shutdown.txt"
@@ -514,31 +568,28 @@ class TestL2SadPath:
         """Clear error when app has syntax error."""
         with ComprehensiveTestEnv() as env:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
-            env.install("uvicorn")  # Install uvicorn so we test syntax check
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "broken:app")
-            assert result.returncode != 0
-            # Should mention syntax, error, or uvicorn missing
-            assert (
-                "syntax" in result.stderr.lower()
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "broken:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention syntax error
+            assert "syntax" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected syntax error message, got: {result.stderr}"
             )
 
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
-            env.install("uvicorn")  # Install uvicorn so we test crash handling
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "crasher:app")
-            assert result.returncode != 0
-            # Should show the actual error or dependency message
-            assert (
-                "CRASH" in result.stderr
-                or "RuntimeError" in result.stderr
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "crasher:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention the error
+            assert "crash" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected error message, got: {result.stderr}"
             )
 
     def test_l2_005_invalid_app_format(self):
@@ -575,6 +626,10 @@ class TestL3Config:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"port": "custom"}
@@ -582,17 +637,18 @@ def root():
             )
             env.install("fastapi", "uvicorn")
 
-            # Use specific port
-            port = 19500
-            proc = env.serve("main:app", port, capture=True)
+            # Use specific port (allocated dynamically to avoid collision)
+            port = env.next_port()
+            env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START port_option_works. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
 
             # Verify it's on the right port (with retries for slow worker start)
-            for i in range(10):
+            time.sleep(2)  # Allow worker to fully initialize
+            for _i in range(10):
                 try:
                     response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
                     if response.status_code == 200:
@@ -606,7 +662,7 @@ def root():
                 pytest.fail("Port option request failed")
 
             # Verify it's NOT on some other port we don't expect
-            assert not is_port_open(19501)
+            assert not is_port_open(port + 1)
 
     @pytest.mark.skipif(not HAS_REQUESTS, reason="requests needed")
     def test_l3_002_workers_spawn_multiple(self):
@@ -619,6 +675,10 @@ import os
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/pid")
 def get_pid():
     return {"pid": os.getpid()}
@@ -627,9 +687,9 @@ def get_pid():
             env.install("fastapi", "uvicorn")
 
             port = env.next_port()
-            proc = env.serve("main:app", port, workers=4, capture=True)
+            env.serve("main:app", port, workers=4, capture=True)
 
-            if not wait_for_port(port, timeout=30):
+            if not wait_for_server(port, timeout=30):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START workers_spawn_multiple. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
@@ -641,7 +701,7 @@ def get_pid():
                     response = requests.get(f"http://127.0.0.1:{port}/pid", timeout=T_SHORT)
                     if response.status_code == 200:
                         pids.add(response.json()["pid"])
-                except:
+                except Exception:
                     pass
 
             # With 4 workers, should see multiple PIDs
@@ -667,6 +727,10 @@ class TestL4Lifecycle:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -677,13 +741,13 @@ def root():
             port = env.next_port()
             proc = env.serve("main:app", port)
 
-            if not wait_for_port(port, timeout=T_MEDIUM):
+            if not wait_for_server(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             proc.send_signal(signal.SIGINT)
 
             try:
-                exit_code = proc.wait(timeout=T_MEDIUM)
+                proc.wait(timeout=T_MEDIUM)
                 # SIGINT should cause clean exit
             except subprocess.TimeoutExpired:
                 proc.kill()
@@ -698,6 +762,10 @@ def root():
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -709,7 +777,7 @@ def root():
             proc = env.serve("main:app", port)
             main_pid = proc.pid
 
-            if not wait_for_port(port, timeout=T_MEDIUM):
+            if not wait_for_server(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             # Get child PIDs before shutdown
@@ -750,6 +818,10 @@ class TestL5Integration:
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"framework": "fastapi"}
@@ -788,6 +860,10 @@ def root():
 from fastapi import FastAPI
 app = FastAPI()
 
+@app.get("/health")
+def health():
+    return {"healthy": True}
+
 @app.get("/")
 def root():
     return {"ok": True}
@@ -801,7 +877,7 @@ def root():
             # Cold start
             start1 = time.perf_counter()
             proc1 = env.serve("main:app", port1)
-            cold_started = wait_for_port(port1, timeout=T_MEDIUM)
+            cold_started = wait_for_server(port1, timeout=T_MEDIUM)
             cold_time = time.perf_counter() - start1
 
             if not cold_started:
@@ -813,8 +889,8 @@ def root():
 
             # Warm start
             start2 = time.perf_counter()
-            proc2 = env.serve("main:app", port2)
-            warm_started = wait_for_port(port2, timeout=T_MEDIUM)
+            env.serve("main:app", port2)
+            warm_started = wait_for_server(port2, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
 
             print(f"Cold: {cold_time:.2f}s, Warm: {warm_time:.2f}s")

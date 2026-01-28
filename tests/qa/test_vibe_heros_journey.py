@@ -9,7 +9,7 @@ from conftest_utils import VeloTestEnv
 
 @pytest.mark.tier2
 @pytest.mark.e2e
-def test_VIBE_HEROS_JOURNEY_MASTER_E2E(isolated_env: VeloTestEnv):
+def test_VIBE_HEROS_JOURNEY_MASTER_E2E(isolated_env: VeloTestEnv) -> None:
     """
     QA FIRST PRINCIPLES: The Hero's Journey.
     This test covers the longest path and most features in a single session.
@@ -24,14 +24,14 @@ def test_VIBE_HEROS_JOURNEY_MASTER_E2E(isolated_env: VeloTestEnv):
     7. Large Output -> Verify Framing.
     """
     # 1. SETUP: Multi-file project
-    utils_py = isolated_env.create_app("utils.py", "def get_version(): return '1.0.0'")
+    _utils_py = isolated_env.create_app("utils.py", "def get_version(): return '1.0.0'")
     main_py = isolated_env.create_app("main.py", "import utils\nprint(f'Vibe {utils.get_version()}')")
 
     port = isolated_env.next_port()
     process = isolated_env.spawn_velo("vibe", str(main_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
-    async def the_journey():
+    async def the_journey() -> None:
         uri = f"ws://127.0.0.1:{port}"
 
         # --- PHASE 1: INITIAL COLD START ---

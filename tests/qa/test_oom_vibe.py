@@ -8,7 +8,7 @@ from conftest_utils import VeloTestEnv
 
 
 @pytest.mark.tier2
-def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv):
+def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv) -> None:
     """
     Challenge: Master Memory Protection.
     If worker produces 200MB of output, Master should not potentially OOM.
@@ -21,16 +21,16 @@ def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv):
 
     app_py = isolated_env.create_app("app.py", code)
     port = isolated_env.next_port()
-    process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
+    process = isolated_env.spawn_velo("run", "--vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
     master_proc = psutil.Process(process.pid)
     rss_before = master_proc.memory_info().rss / (1024 * 1024)
     print(f"Master RSS before: {rss_before:.2f} MB")
 
-    async def check_bomb():
+    async def check_bomb() -> None:
         uri = f"ws://127.0.0.1:{port}"
-        async with websockets.connect(uri) as websocket:
+        async with websockets.connect(uri, max_size=None):
             isolated_env.create_app("app.py", code)
             # Wait for execution to finish and Master to process it
             start = time.time()
@@ -49,6 +49,12 @@ def test_ADVERSARIAL_OOM_BOMB(isolated_env: VeloTestEnv):
 
     try:
         asyncio.run(check_bomb())
+        # Check for zombies
+        time.sleep(1)  # Give reaper some time
+        children = master_proc.children(recursive=True)
+        zombies = [p for p in children if p.status() == psutil.STATUS_ZOMBIE]
+        print(f"Detected zombies: {len(zombies)}")
+        assert len(zombies) == 0, f"Zombie processes detected: {zombies}"
     finally:
         process.terminate()
         process.wait()

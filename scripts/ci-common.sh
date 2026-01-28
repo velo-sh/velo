@@ -16,7 +16,7 @@ set -euo pipefail
 
 # RFC-0010: Ensure shared libraries are found for uv-managed Python (Linux)
 if [[ "${OSTYPE}" == "linux-gnu"* ]] && command -v uv &>/dev/null; then
-    PY_EXEC=$(uv python find 3.11 2>/dev/null | head -n 1 || true)
+    PY_EXEC=$(uv python find 2>/dev/null | head -n 1 || true)
     if [[ -n "$PY_EXEC" ]]; then
         # uv find returns the executable path. We need the lib directory.
         # Usually: .../bin/python -> .../lib/
@@ -68,11 +68,13 @@ log_fatal() {
     exit 1
 }
 
+log_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
 # =============================================================================
 # Phase 0: Environment Checks (FAIL FAST)
 # =============================================================================
-# These checks run BEFORE any build to catch misconfigurations early
-
 check_env_fast() {
     echo ""
     echo "==================== Phase 0: Environment Checks (FAIL FAST) ===================="
@@ -116,7 +118,7 @@ check_env_fast() {
         log_success "Project structure OK"
     fi
     
-    # Check 4: Python venv (if exists, must be uv-managed)
+    # Check 4: Python venv
     log_step "Checking Python environment..."
     if [[ -d ".venv" ]]; then
         if [[ -f ".venv/pyvenv.cfg" ]]; then
@@ -208,11 +210,42 @@ run_pre_flight() {
 }
 
 # =============================================================================
-# Phase 3: Test
+# Phase 3: Test Support
 # =============================================================================
+
+# Resolve Tier markers or keywords to actual pytest paths
+# SSOT: This MUST stay in sync with test-suites.conf
+parse_tier_to_paths() {
+    local tier="${1:-full}"
+    
+    # Reload suites config to be sure
+    source "$_CI_COMMON_DIR/test-suites.conf"
+    
+    case "$tier" in
+        0) echo "${TIER0_TESTS[*]}" ;;
+        1) echo "${TIER1_TESTS[*]}" ;;
+        2) echo "${TIER2_TESTS[*]}" ;;
+        3) echo "${TIER3_TESTS[*]}" ;;
+        quick) echo "$TEST_PATHS_QUICK" ;;
+        full) echo "$TEST_PATHS_FULL" ;;
+        docker) echo "$TEST_PATHS_DOCKER" ;;
+        *) echo "$tier" ;; # Assume it's a direct path
+    esac
+}
+
 run_rust_tests() {
     log_step "Running Rust tests..."
-    cargo test --lib
+    
+    # SSOT: Use cargo-nextest if available (matches GitHub CI)
+    # Fallback to cargo test for minimal environments
+    if command -v cargo-nextest &>/dev/null || cargo nextest --version &>/dev/null 2>&1; then
+        log_step "Using cargo-nextest (GitHub CI compatible)"
+        cargo nextest run --lib ${EXTRA_RUST_ARGS:-}
+    else
+        log_step "Falling back to cargo test (nextest not installed)"
+        cargo test --lib ${EXTRA_RUST_ARGS:-}
+    fi
+    
     log_success "Rust tests passed"
 }
 
@@ -223,19 +256,20 @@ run_python_tests() {
     log_step "Running Python tests (parallel mode)..."
     
     # Activate and run
-    source "$venv_path/bin/activate"
+    if [[ -d "$venv_path" ]]; then
+        source "$venv_path/bin/activate"
+    fi
     
     # Determine parallelism
-    # Use loadscope to group tests by module (prevents resource conflicts)
     local parallel_args=""
-    if python -c "import xdist" 2>/dev/null; then
+    if [[ "${NO_XDIST:-false}" == "false" ]] && python -c "import xdist" 2>/dev/null; then
         parallel_args="-n auto --dist loadscope"
         log_step "Using pytest-xdist: $parallel_args"
     fi
     
     set +e # Allow test failure to capture artifacts
-    pytest $test_paths $parallel_args -v
-    EXIT_CODE=$?
+    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short ${EXTRA_PY_ARGS:-}
+    local EXIT_CODE=$?
     set -e
 
     # Check for failure bundles
@@ -248,7 +282,7 @@ run_python_tests() {
     fi
     
     if [[ $EXIT_CODE -ne 0 ]]; then
-        log_error "Python tests failed"
+        log_error "Python tests failed with exit code $EXIT_CODE"
         exit $EXIT_CODE
     fi
     
@@ -259,9 +293,17 @@ run_python_tests() {
 # Phase 4: Lint
 # =============================================================================
 run_clippy() {
-    log_step "Running Clippy..."
-    cargo clippy -- -D warnings
+    log_step "Running Clippy (all crates)..."
+    cargo clippy --all-targets --all-features -- -D warnings
     log_success "Clippy passed"
+}
+
+# SSOT: Per-crate clippy (for GitHub Actions matrix jobs)
+run_clippy_crate() {
+    local crate="$1"
+    log_step "Running Clippy on crate: $crate..."
+    cargo clippy -p "$crate" --all-targets --all-features -- -D warnings
+    log_success "Clippy passed for $crate"
 }
 
 run_fmt_check() {
@@ -271,20 +313,118 @@ run_fmt_check() {
 }
 
 # =============================================================================
+# SSOT: Per-crate Rust Tests (for GitHub Actions matrix jobs)
+# =============================================================================
+run_rust_tests_crate() {
+    local crate="$1"
+    log_step "Running Rust tests for crate: $crate..."
+    
+    # SSOT: Always use cargo-nextest for consistency with GitHub CI
+    if command -v cargo-nextest &>/dev/null || cargo nextest --version &>/dev/null 2>&1; then
+        cargo nextest run -p "$crate"
+    else
+        log_warn "cargo-nextest not found, falling back to cargo test"
+        cargo test -p "$crate"
+    fi
+    
+    log_success "Rust tests passed for $crate"
+}
+
+# =============================================================================
+# SSOT: Coverage with cargo-llvm-cov
+# =============================================================================
+run_coverage() {
+    log_step "Running code coverage..."
+    
+    # Pre-flight MUST run separately (not as a test)
+    log_step "Running pre-flight diagnostic before coverage..."
+    run_pre_flight
+    
+    # Run coverage
+    if command -v cargo-llvm-cov &>/dev/null; then
+        cargo llvm-cov nextest --lcov --output-path lcov.info
+        log_success "Coverage generated: lcov.info"
+        
+        # Check threshold (70% minimum, warning only)
+        if cargo llvm-cov report --fail-under-lines 70 2>/dev/null; then
+            log_success "Coverage threshold (70%) met"
+        else
+            log_warn "Coverage below 70% threshold (warning only)"
+        fi
+    else
+        log_fatal "cargo-llvm-cov not installed. Run: cargo install cargo-llvm-cov"
+    fi
+}
+
+# =============================================================================
+# SSOT: Security Audit
+# =============================================================================
+run_security_audit() {
+    log_step "Running security audit..."
+    
+    # cargo-audit
+    if command -v cargo-audit &>/dev/null; then
+        cargo audit
+        log_success "cargo-audit passed"
+    else
+        log_warn "cargo-audit not installed, skipping"
+    fi
+    
+    # cargo-deny
+    if command -v cargo-deny &>/dev/null; then
+        cargo deny check
+        log_success "cargo-deny passed"
+    else
+        log_warn "cargo-deny not installed, skipping"
+    fi
+}
+
+# =============================================================================
+# SSOT: Python Lint (Ruff)
+# =============================================================================
+run_ruff_check() {
+    log_step "Running Ruff Python lint..."
+    
+    # SSOT: These are the directories to check (excluding vendor code)
+    local PYTHON_DIRS="tests/ velo_zygote/ scripts/"
+    
+    # Lint check (exclude vendored code)
+    uv run ruff check $PYTHON_DIRS --exclude "*/_vendor/*"
+    log_success "Ruff lint passed"
+    
+    # Format check (exclude vendored and auto-generated code)
+    # constants.py is auto-generated by sync-constants.py
+    uv run ruff format --check $PYTHON_DIRS --exclude "*/_vendor/*" --exclude "*/constants.py"
+    log_success "Ruff format passed"
+}
+
+# =============================================================================
 # Full CI Pipeline
 # =============================================================================
 run_full_ci() {
-    local venv_path="${1:-.venv}"
-    # Use SSOT test paths from test-suites.conf
-    local test_paths="${2:-$TEST_PATHS_DOCKER}"
+    local tier="${1:-full}"
+    local skip_build="${SKIP_BUILD:-false}"
+    local venv_path=".venv"
+    
+    # Step 0: Detect paths from Tier
+    local test_paths=$(parse_tier_to_paths "$tier")
     
     echo ""
     echo "==================== Phase 1: Setup ===================="
+    check_env_fast
     setup_python_env "$venv_path"
+    
+    # SSOT: Force ABI Alignment
+    export PYO3_PYTHON=$(uv python find)
+    log_info "ABI Alignment: PYO3_PYTHON=$PYO3_PYTHON"
     
     echo ""
     echo "==================== Phase 2: Build ===================="
-    build_rust release
+    if [[ "$skip_build" == "true" ]] && [[ -f "target/release/velo" ]]; then
+        log_success "Reusing existing binary (SKIP_BUILD=true)"
+    else
+        build_rust release
+    fi
     
     echo ""
     echo "==================== Phase Pre-Flight: Diagnostics ===================="
@@ -302,6 +442,6 @@ run_full_ci() {
     
     echo ""
     echo "=========================================="
-    log_success "ALL CI CHECKS PASSED!"
+    log_success "ALL CI CHECKS PASSED (Tier: $tier)!"
     echo "=========================================="
 }

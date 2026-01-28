@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -36,7 +37,7 @@ def velo_analyze_available() -> bool:
         velo = get_velo_binary()
         result = subprocess.run([velo, "--help"], capture_output=True, text=True, timeout=5)
         return "analyze" in result.stdout.lower()
-    except:
+    except Exception:
         return False
 
 
@@ -49,11 +50,11 @@ def check_analyze_available():
 class EdgeProject:
     """Isolated project for edge case testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_edge_"))
         self.velo = get_velo_binary()
 
-    def set_pyproject(self, deps=None):
+    def set_pyproject(self, deps: list[str] | None = None) -> "EdgeProject":
         content = f"""[project]
 name = "edge-test"
 version = "0.1.0"
@@ -62,11 +63,11 @@ dependencies = {json.dumps(deps or [])}
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_file(self, name: str, content: str):
+    def set_file(self, name: str, content: str) -> "EdgeProject":
         (self.path / name).write_text(content)
         return self
 
-    def analyze(self, *args, timeout: float = 30) -> subprocess.CompletedProcess:
+    def analyze(self, *args: str, timeout: float = 30) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [self.velo, "analyze"] + list(args),
             cwd=self.path,
@@ -75,13 +76,13 @@ dependencies = {json.dumps(deps or [])}
             timeout=timeout,
         )
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> "EdgeProject":
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: Any) -> None:
         self.cleanup()
 
 
@@ -161,7 +162,7 @@ class TestMalformedInput:
             p.set_file("huge.py", imports)
 
             try:
-                result = p.analyze("huge.py", timeout=30)
+                p.analyze("huge.py", timeout=30)
                 # Should complete or timeout, not crash
                 assert True
             except subprocess.TimeoutExpired:
@@ -177,7 +178,7 @@ class TestMalformedInput:
             p.set_file("c.py", "import a")
 
             try:
-                result = p.analyze("a.py", timeout=10)
+                p.analyze("a.py", timeout=10)
                 # Should complete, not hang
                 assert True
             except subprocess.TimeoutExpired:
@@ -197,7 +198,7 @@ class TestMalformedInput:
         with EdgeProject() as p:
             p.set_pyproject()
             p.set_file("main.py", "print(1)")
-            result = p.analyze("--slow-threshold-ms=999999999999999999")
+            p.analyze("--slow-threshold-ms=999999999999999999")
             # Should handle gracefully
             # Either error or use max value
             assert True  # No crash
@@ -233,14 +234,14 @@ class TestRaceConditions:
                 time.sleep(0.05)
                 try:
                     (p.path / "ephemeral.py").unlink()
-                except:
+                except Exception:
                     pass
 
             thread = threading.Thread(target=delete_after_delay)
             thread.start()
 
             try:
-                result = p.analyze("ephemeral.py", timeout=10)
+                p.analyze("ephemeral.py", timeout=10)
                 # May succeed or fail, but should not crash
                 assert True
             except subprocess.TimeoutExpired:
@@ -258,14 +259,14 @@ class TestRaceConditions:
                 time.sleep(0.05)
                 try:
                     (p.path / "pyproject.toml").write_text("[project]\nname='changed'")
-                except:
+                except Exception:
                     pass
 
             thread = threading.Thread(target=modify_after_delay)
             thread.start()
 
             try:
-                result = p.analyze(timeout=10)
+                p.analyze(timeout=10)
                 assert True  # No crash
             except subprocess.TimeoutExpired:
                 pass

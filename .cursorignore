@@ -1,0 +1,49 @@
+# Rust build artifacts (large token sink)
+target/
+**/*.rlib
+**/*.rmeta
+debug/
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+
+# Python environments (third-party sources)
+.venv/
+.venv_docker/
+venv/
+__pycache__/
+*.pyc
+
+# Large lock files
+Cargo.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Other large or noisy files
+.git/
+.DS_Store
+*.log
+*.csv
+*.jsonl
+*.tar.gz
+*.zip
+build/
+bin/
+artifacts/
+tests/qa/forensic_benchmarks/
+collection.txt
+quick_ci_run.log
+docker_ci_run.log
+.cargo/config.toml
+.velo_cache/
+.velo/
+velo_zygote/velo_zygote
+test_large_bundle/
+*.veloc
+assets/uv.*
+test_deploy_tmp/
+benchmarks/top100/top100_v2_results.json
+failure-bundle-*.tar.gz
+failure-test-*.tar.gz
+failure-test_*.tar.gz

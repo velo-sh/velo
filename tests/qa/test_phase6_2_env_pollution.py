@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 
-def get_velo_binary():
+def get_velo_binary() -> str:
     """Get the velo binary from the current project."""
     repo_root = Path(__file__).parent.parent.parent
     for path in [
@@ -186,7 +186,7 @@ class TestEnvironmentPollutionRegression:
             text=True,
             timeout=5,
         )
-        venv_executable = result.stdout.strip()
+        result.stdout.strip()
 
         # Run velo to detect Python (using a command that reports Python info)
         result = subprocess.run(

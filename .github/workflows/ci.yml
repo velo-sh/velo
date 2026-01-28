@@ -96,28 +96,28 @@ jobs:
         with:
           filters: |
             rust:
-              - 'src/**/*.rs'
+              - 'crates/**/*.rs'
               - 'tests/**/*.rs'
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
-              - 'build.rs'
               - 'config/**'
+              - 'velo_macros/**/*.rs'
             loader:
-              - 'src/loader/**/*.rs'
+              - 'crates/velo-cli/src/cmd/loader.rs'
               - 'python/velo_loader.py'
               - 'tests/qa/test_phase5_loader.py'
               - 'tests/qa/phase5/**'
               - 'tests/qa/phase5_1/**'
               - 'tests/qa/phase5_2/**'
             zygote:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
               - 'tests/qa/test_preflight.py'
             serve:
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
               - 'tests/qa/phase_6_1_1/**'
               - 'tests/qa/phase6_1/**'
@@ -126,13 +126,13 @@ jobs:
               - 'tests/qa/test_e2e_serve.py'
               - 'scripts/qa-fast.sh'
             analyze:
-              - 'src/cmd/analyze.rs'
-              - 'src/cmd/agent.rs'
+              - 'crates/velo-cli/src/cmd/analyze.rs'
+              - 'crates/velo-cli/src/cmd/agent.rs'
               - 'tests/qa/test_phase4_*.py'
             kinetic:
-              - 'src/zygote/**/*.rs'
+              - 'crates/velo-core/src/zygote/**/*.rs'
               - 'velo_zygote/**'
-              - 'src/serve/**/*.rs'
+              - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase6_2_*.py'
             workflow:
               - '.github/workflows/ci.yml'
@@ -158,6 +158,7 @@ jobs:
       needs.changes.outputs.qa_infra == 'true' ||
       needs.changes.outputs.kinetic == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -169,7 +170,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-build-v2"
           cache-on-failure: true
 
       - name: Install uv
@@ -182,6 +183,9 @@ jobs:
 
       - name: Sync Python deps
         run: uv sync --python 3.11
+
+      - name: Set PYO3_PYTHON for Rust build
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Build Release
         run: cargo build --release --all-features
@@ -204,34 +208,65 @@ jobs:
           echo "Binary size:"
           ls -lh target/release/velo
 
-  # Rust tests run in parallel with other QA jobs
-  rust-tests:
-    name: Rust Tests
+  # Parallel Rust Test Matrix - RFC-0033: Leverage workspace independence
+  rust-tests-matrix:
+    name: "Rust Tests: ${{ matrix.crate }}"
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-graph
+          - velo-core
+          - velo-serve
+          - velo
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-test-${{ matrix.crate }}"
+          cache-on-failure: true
+      - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Run Rust tests
-        run: cargo test
+      - name: Sync Python deps
+        run: uv sync --python 3.11
+      - name: Set PYO3_PYTHON for Rust build
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
+      - name: "Test: ${{ matrix.crate }}"
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh test-crate ${{ matrix.crate }}
 
   # NOTE: macOS build removed - developers run locally on Mac, CI focuses on Linux only
   # See: First-Principles SSOT Python Version Fix walkthrough
 
-  clippy:
-    name: Clippy
+  # Parallel Clippy Matrix - RFC-0033: Leverage workspace independence
+  clippy-matrix:
+    name: "Clippy: ${{ matrix.crate }}"
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - velo-protocol
+          - velo-graph
+          - velo-core
+          - velo-serve
+          - velo
+          - velo-test
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -239,33 +274,88 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "velo-build"
+          shared-key: "velo-clippy-${{ matrix.crate }}"
+          cache-on-failure: true
       - uses: astral-sh/setup-uv@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: uv sync --python 3.11
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Set PYO3_PYTHON for Rust build
+        run: echo "PYO3_PYTHON=$(pwd)/.venv/bin/python" >> "$GITHUB_ENV"
+      - name: "Clippy: ${{ matrix.crate }}"
+        # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+        run: ./scripts/ci-runner.sh clippy-crate ${{ matrix.crate }}
+
+  python-tests:
+    name: Python Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run Pytest
+        run: PYTHONPATH=. uv run pytest tests/unit
+
+  bench-check:
+    name: Zygote Startup Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+      - name: Build Velo
+        run: cargo build -p velo
+      - name: Run Startup Benchmark
+        run: |
+          ./target/debug/velo zygote start &
+          # Simple check for startup speed (should be < 2s in CI)
+          timeout 2s sh -c 'until ./target/debug/velo zygote status; do sleep 0.1; done'
+          ./target/debug/velo zygote stop
 
   fmt:
     name: Format
     needs: changes
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      # SSOT: Use ci-runner.sh for consistent behavior
       - name: Check Format
-        run: cargo fmt --check
+        run: ./scripts/ci-runner.sh fmt-check
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "velo-audit"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      # SSOT: Use ci-runner.sh for consistent behavior
+      - name: Run Security Audit
+        run: ./scripts/ci-runner.sh audit
 
   mypy:
     name: Mypy (Python Type Check)
     needs: changes
     if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.workflow == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Setup Velo
@@ -279,9 +369,27 @@ jobs:
       - name: Run Mypy via Pre-Commit (SSOT)
         run: uv run pre-commit run mypy --all-files
 
+  ruff:
+    name: Ruff (Python Lint)
+    needs: changes
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.qa_infra == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+      - name: Run Ruff (lint + format check)
+        run: ./scripts/ci-runner.sh ruff-check
+
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Install actionlint
@@ -299,6 +407,7 @@ jobs:
   qa-phase-7-0:
     name: "QA 7.0: Memory Gravity (RFC-0015)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -314,6 +423,7 @@ jobs:
   qa-phase-7-1:
     name: "QA 7.1: Custody & Forensics"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
@@ -327,52 +437,70 @@ jobs:
           command: uv run pytest tests/qa/phase_7_1 -n auto --dist loadscope -v --tb=short
 
   qa-phase-7-2:
-    name: "QA 7.2: ASGI Bridge Compatibility"
+    name: "QA 7.2: ASGI Bridge Compatibility (${{ matrix.shard }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
 
 
-  qa-zygote-suite:
-    name: "QA: Zygote Full Suite"
+  qa-zygote-matrix:
+    name: "QA: Zygote ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build, changes]
     if: |
       needs.changes.outputs.zygote == 'true' || 
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "E2E Real Env", path: "tests/qa/test_phase3_e2e_real_env.py" }
+          - { name: "Security", path: "tests/qa/test_phase3_security.py" }
+          - { name: "Deployment", path: "tests/qa/test_phase3_deployment.py" }
+          - { name: "Weird Env", path: "tests/qa/test_phase3_weird_env.py" }
+          - { name: "Brutal Attacks", path: "tests/qa/test_phase3_brutal_attacks.py" }
+        include:
+          - suite: { name: "E2E Real Env" }
+            suite_name: "E2E Real Env"
+          - suite: { name: "Security" }
+            suite_name: "Security"
+          - suite: { name: "Deployment" }
+            suite_name: "Deployment"
+          - suite: { name: "Weird Env" }
+            suite_name: "Weird Env"
+          - suite: { name: "Brutal Attacks" }
+            suite_name: "Brutal Attacks"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Use parallel pytest for the whole suite
-          command: |
-            uv run pytest \
-              tests/qa/test_phase3_e2e_real_env.py \
-              tests/qa/test_phase3_security.py \
-              tests/qa/test_phase3_deployment.py \
-              tests/qa/test_phase3_weird_env.py \
-              tests/qa/test_phase3_brutal_attacks.py \
-              -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
 
   # ============================================
   # Phase 3.5: Tiered QA Testing (velo serve)
   # ============================================
 
-  qa-serve-suite:
-    name: "QA 3.5: Serve Full Suite (Tiers 0-2)"
+  qa-serve-matrix:
+    name: "QA 3.5: Serve Tier ${{ matrix.tier }}"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -380,22 +508,22 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [0, 1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Run tiers in sequence within one setup to save overhead
-          command: |
-            ./scripts/qa-fast.sh 0
-            ./scripts/qa-fast.sh 1
-            ./scripts/qa-fast.sh 2
+          command: ./scripts/qa-fast.sh ${{ matrix.tier }}
 
 
   qa-serve-heavy:
     name: "QA 3.5: Heavy (Tier 3)"
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     needs: [build, changes]  # Changed from qa-serve-smoke to build
     # Only run on main branch - heavy tests are optional
     if: |
@@ -417,8 +545,8 @@ jobs:
   # Phase 5.0: Fast Loader QA (velo run --fast)
   # ============================================
 
-  qa-fast-loader-suite:
-    name: "QA 5.0: Fast Loader Full Suite"
+  qa-fast-loader-matrix:
+    name: "QA 5.0: Fast Loader ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
     needs: [build, changes]
     if: |
@@ -426,23 +554,29 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Smoke & Happy", path: "tests/qa/phase5/test_l0_smoke.py tests/qa/test_phase5_loader.py tests/qa/phase5/test_l1_happy_path.py" }
+          - { name: "Sad & Config", path: "tests/qa/phase5/test_l2_sad_path.py tests/qa/phase5/test_l3_config.py" }
+          - { name: "Security & Chaos", path: "tests/qa/phase5/test_l4_security.py tests/qa/phase5/test_l5_chaos.py" }
+          - { name: "CLI & Utils", path: "tests/qa/phase5/test_cli_bundle.py tests/qa/phase5/test_python_loader.py" }
+        include:
+          - suite: { name: "Smoke & Happy" }
+            suite_name: "Smoke & Happy"
+          - suite: { name: "Sad & Config" }
+            suite_name: "Sad & Config"
+          - suite: { name: "Security & Chaos" }
+            suite_name: "Security & Chaos"
+          - suite: { name: "CLI & Utils" }
+            suite_name: "CLI & Utils"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase5/test_l0_smoke.py \
-               tests/qa/test_phase5_loader.py \
-               tests/qa/phase5/test_l1_happy_path.py \
-               tests/qa/phase5/test_l2_sad_path.py \
-               tests/qa/phase5/test_l3_config.py \
-               tests/qa/phase5/test_python_loader.py \
-               tests/qa/phase5/test_cli_bundle.py \
-               tests/qa/phase5/test_l4_security.py \
-               tests/qa/phase5/test_l5_chaos.py \
-               -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -453,6 +587,7 @@ jobs:
   qa-phase61-security-hardened:
     name: "QA 6.1: Security Hardened (RFC-0010)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -470,6 +605,29 @@ jobs:
   qa-phase61-stability-hardened:
     name: "QA 6.1: Stability Hardened (RAII, Signals)"
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
+
+  qa-phase61-dx:
+    name: "QA 6.1: DX (RFC-0010)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -482,78 +640,12 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/test_phase6_1_stability_hardened.py -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
 
-  qa-phase61-dx-performance:
-    name: "QA 6.1: DX & Performance"
+  qa-phase61-performance:
+    name: "QA 6.1: Performance"
     runs-on: ubuntu-latest
-    needs: [build, changes]
-    if: |
-      needs.changes.outputs.serve == 'true' || 
-      needs.changes.outputs.zygote == 'true' ||
-      needs.changes.outputs.rust == 'true' || 
-      needs.changes.outputs.workflow == 'true' || 
-      needs.changes.outputs.qa_infra == 'true'
-    continue-on-error: true  # Performance tests may be flaky
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/run-tests
-        with:
-          uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest tests/qa/test_phase6_1_dx_hardened.py -v --tb=short
-             uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
-
-  qa-phase62-prosecutor:
-    name: "QA 6.2: Prosecutor Suite (RFC-0012)"
-    runs-on: ubuntu-latest
-    needs: [build, changes]
-    if: |
-      needs.changes.outputs.serve == 'true' || 
-      needs.changes.outputs.zygote == 'true' ||
-      needs.changes.outputs.rust == 'true' || 
-      needs.changes.outputs.workflow == 'true' || 
-      needs.changes.outputs.qa_infra == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/run-tests
-        with:
-          uv-version: ${{ env.UV_VERSION }}
-          # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
-          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
-
-  qa-phase611-suite:
-    name: "QA 6.1.1: Full Integration Suite"
-    runs-on: ubuntu-latest
-    needs: [build, changes]
-    if: |
-      needs.changes.outputs.serve == 'true' || 
-      needs.changes.outputs.zygote == 'true' ||
-      needs.changes.outputs.rust == 'true' || 
-      needs.changes.outputs.workflow == 'true' || 
-      needs.changes.outputs.qa_infra == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/run-tests
-        with:
-          uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase_6_1_1/test_phase611_smoke.py \
-               tests/qa/phase_6_1_1/test_phase611_golden_path.py \
-               tests/qa/phase_6_1_1/test_phase611_features.py \
-               tests/qa/phase_6_1_1/test_phase611_integration.py \
-               tests/qa/phase_6_1_1/test_isolation.py \
-               tests/qa/phase_6_1_1/test_phase611_agent_*.py \
-               tests/qa/phase_6_1_1/test_phase611_expert_concerns.py \
-               tests/qa/phase_6_1_1/test_phase611_release_blockers.py \
-               tests/qa/phase_6_1_1/test_phase611_whitebox.py \
-               tests/qa/phase_6_1_1/test_security_hardened.py \
-               -n auto --dist loadscope -v --tb=short
-
-  qa-phase611-perf:
-    name: "QA 6.1.1: Performance Baselines"
-    runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -567,11 +659,115 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
-               tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
-               -v --tb=short
+          command: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
+
+  qa-prosecutor-matrix:
+    name: "QA 6.2: Prosecutor (${{ matrix.shard }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
+
+  qa-phase611-matrix:
+    name: "QA 6.1.1: ${{ matrix.suite_name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Smoke", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py" }
+          - { name: "Golden Path", path: "tests/qa/phase_6_1_1/test_phase611_golden_path.py tests/qa/phase_6_1_1/test_phase611_golden_path_2.py" }
+          - { name: "Features", path: "tests/qa/phase_6_1_1/test_phase611_features.py" }
+          - { name: "Integration", path: "tests/qa/phase_6_1_1/test_phase611_integration.py" }
+          - { name: "Isolation", path: "tests/qa/phase_6_1_1/test_isolation.py" }
+          - { name: "Agents A-B", path: "tests/qa/phase_6_1_1/test_phase611_agent_a_edge.py tests/qa/phase_6_1_1/test_phase611_agent_b_stability.py" }
+          - { name: "Agents C-D", path: "tests/qa/phase_6_1_1/test_phase611_agent_c_security.py tests/qa/phase_6_1_1/test_phase611_agent_d_chaos.py tests/qa/phase_6_1_1/test_phase611_agent_d_desync.py" }
+          - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
+          - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
+          - { name: "Release Blockers", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py" }
+          - { name: "Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
+        include:
+          - suite: { name: "Smoke" }
+            suite_name: "Smoke"
+          - suite: { name: "Golden Path" }
+            suite_name: "Golden Path"
+          - suite: { name: "Features" }
+            suite_name: "Features"
+          - suite: { name: "Integration" }
+            suite_name: "Integration"
+          - suite: { name: "Isolation" }
+            suite_name: "Isolation"
+          - suite: { name: "Agents A-B" }
+            suite_name: "Agents A-B"
+          - suite: { name: "Agents C-D" }
+            suite_name: "Agents C-D"
+          - suite: { name: "Security Hardened" }
+            suite_name: "Security Hardened"
+          - suite: { name: "Expert Concerns" }
+            suite_name: "Expert Concerns"
+          - suite: { name: "Release Blockers" }
+            suite_name: "Release Blockers"
+          - suite: { name: "Whitebox" }
+            suite_name: "Whitebox"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
+
+  qa-phase611-perf-matrix:
+    name: "QA 6.1.1: Performance (${{ matrix.suite_name }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' ||
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Perf Regressions", path: "tests/qa/phase_6_1_1/test_phase611_perf_regressions.py" }
+          - { name: "Shadow Preload", path: "tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py" }
+        include:
+          - suite: { name: "Perf Regressions" }
+            suite_name: "Perf Regressions"
+          - suite: { name: "Shadow Preload" }
+            suite_name: "Shadow Preload"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest ${{ matrix.suite.path }} -v --tb=short
 
 
 
@@ -584,6 +780,7 @@ jobs:
       needs.changes.outputs.workflow == 'true' ||
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.qa_infra == 'true'
+    timeout-minutes: 20
     # NOTE: macOS removed - developers run locally, CI focuses on Linux
     steps:
       - uses: actions/checkout@v4
@@ -657,10 +854,39 @@ jobs:
 
   qa-analyze-integration:
     name: "QA 4.0: Integration (SLOW)"
+    runs-on: ubuntu-latest # Restored missing property
+    timeout-minutes: 30
+    needs: [build, changes] # Restored missing property
+    if: | # Restored missing property
+      needs.changes.outputs.analyze == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: |
+             chmod +x .venv/bin/python3
+             uv run pytest tests/qa/test_phase4_integration.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
+
+  # ============================================
+  # P0 Production Hardening & Security Regression
+  # RFC-0033: New critical test suites
+  # ============================================
+
+  qa-p0-production-hardening:
+    name: "QA: P0 Production Hardening"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
-      needs.changes.outputs.analyze == 'true' || 
+      needs.changes.outputs.zygote == 'true' || 
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
@@ -669,9 +895,41 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             chmod +x .venv/bin/python3
-             uv run pytest tests/qa/test_phase4_integration.py -v --tb=short
+          command: uv run pytest tests/qa/test_p0_production_hardening.py -v --tb=short
+
+  qa-security-shield:
+    name: "QA: Security Shield (RFC-0012)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.serve == 'true' || 
+      needs.changes.outputs.zygote == 'true' || 
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/security/test_sec_shield.py -v --tb=short
+
+  qa-regression-ci-fixes:
+    name: "QA: CI Regression Fixes"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, changes]
+    if: |
+      needs.changes.outputs.rust == 'true' || 
+      needs.changes.outputs.workflow == 'true' || 
+      needs.changes.outputs.qa_infra == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/run-tests
+        with:
+          uv-version: ${{ env.UV_VERSION }}
+          command: uv run pytest tests/qa/test_regression_ci_fixes.py -v --tb=short
 
   qa-benchmark:
     name: "QA: Benchmark"
@@ -695,6 +953,7 @@ jobs:
     name: Code Coverage
     needs: [changes]
     if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflow == 'true'
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -714,15 +973,10 @@ jobs:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
-      - name: Pre-Flight Diagnostic
-        run: cargo llvm-cov nextest -- debug pre-flight
-
+      # SSOT: Use ci-runner.sh for consistent behavior
+      # Note: run_coverage() includes pre-flight and threshold check
       - name: Run tests with coverage
-        run: cargo llvm-cov nextest --lcov --output-path lcov.info
-      
-      - name: Check coverage threshold (70%)
-        run: cargo llvm-cov report --fail-under-lines 70
-        continue-on-error: true  # Warning only for now
+        run: ./scripts/ci-runner.sh coverage
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

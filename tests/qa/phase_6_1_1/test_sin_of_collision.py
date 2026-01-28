@@ -27,12 +27,34 @@ if not os.path.exists(VELO_BIN):
         VELO_BIN = os.path.abspath("target/debug/velo")
 
 
+def _get_workspace_env(ws_path):
+    """Build environment with workspace venv activated."""
+    env = os.environ.copy()
+    venv_path = ws_path / ".venv"
+    venv_bin = venv_path / "bin"
+    env["VIRTUAL_ENV"] = str(venv_path)
+    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+    # Preserve library paths for Rust binary (libpython)
+    for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
+
+
 @pytest.fixture
 def workspace_a(tmp_path):
     ws = tmp_path / "workspace_a"
     ws.mkdir()
     (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'A'}"
+        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'A'}"
+    )
+    # Create venv and install fastapi
+    subprocess.run(["uv", "venv", "--quiet"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
+        cwd=ws,
+        check=True,
+        capture_output=True,
     )
     return ws
 
@@ -42,12 +64,21 @@ def workspace_b(tmp_path):
     ws = tmp_path / "workspace_b"
     ws.mkdir()
     (ws / "main.py").write_text(
-        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/')\ndef root(): return {'ws': 'B'}"
+        "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'B'}"
+    )
+    # Create venv and install fastapi
+    subprocess.run(["uv", "venv", "--quiet"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
+        cwd=ws,
+        check=True,
+        capture_output=True,
     )
     return ws
 
 
 @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Build velo first")
+@pytest.mark.timeout(30)  # Ensure test doesn't hang forever
 def test_workspace_collision_hijacking(workspace_a, workspace_b):
     """
     FATAL DEFECT TEST: Demonstrates that Workspace B can hijack Workspace A's Zygote server
@@ -62,17 +93,29 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
         cwd=workspace_a,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=_get_workspace_env(workspace_a),
     )
 
     try:
         # Wait for A to be ready
-        time.sleep(3)
-        try:
-            resp_a = requests.get("http://127.0.0.1:8001/")
-        except Exception as e:
+        # Robust wait loop (replaces flaky sleep)
+        start = time.time()
+        while time.time() - start < 20:
             if proc_a.poll() is not None:
+                assert proc_a.stderr is not None
+                raise RuntimeError(f"Proc A failed: {proc_a.stderr.read().decode()}")
+            try:
+                requests.get("http://127.0.0.1:8001/").json()
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            if proc_a.poll() is not None:
+                assert proc_a.stderr is not None
                 print(f"Proc A failed: {proc_a.stderr.read().decode()}")
-            raise e
+            raise TimeoutError("Server A did not start in time")
+
+        resp_a = requests.get("http://127.0.0.1:8001/")
         assert resp_a.json() == {"ws": "A"}
 
         # 2. Start Workspace B's server (port 8002)
@@ -82,9 +125,25 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             cwd=workspace_b,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=_get_workspace_env(workspace_b),
         )
 
-        time.sleep(3)
+        # Robust wait loop for B
+        start = time.time()
+        while time.time() - start < 20:
+            if proc_b.poll() is not None:
+                assert proc_b.stderr is not None
+                raise RuntimeError(f"Proc B failed: {proc_b.stderr.read().decode()}")
+            try:
+                requests.get("http://127.0.0.1:8002/").json()
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            if proc_b.poll() is not None:
+                assert proc_b.stderr is not None
+                print(f"Proc B failed: {proc_b.stderr.read().decode()}")
+            raise TimeoutError("Server B did not start in time")
 
         # 3. VERIFY HIJACKING
         # Now Workspace B should return its own content, which is fine.
@@ -108,18 +167,21 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             proc_a.terminate()
             try:
                 proc_a.wait(timeout=5)
-            except:
+            except Exception:
                 proc_a.kill()
         if "proc_b" in locals() and proc_b:
             proc_b.terminate()
             try:
                 proc_b.wait(timeout=5)
-            except:
+            except Exception:
                 proc_b.kill()
 
         # Debug: List socket dirs
         print("\n[DEBUG] Socket Dirs found:")
-        os.system(f"ls -d {os.environ.get('TMPDIR', '/tmp')}velo-secure-* || echo 'None'")
+        tmpdir = os.environ.get("TMPDIR", "/tmp")
+        if not tmpdir.endswith("/"):
+            tmpdir += "/"
+        os.system(f"ls -d {tmpdir}velo-secure-* || echo 'None'")
 
 
 def test_socket_path_determinism():
@@ -127,7 +189,7 @@ def test_socket_path_determinism():
     Exposes deterministic socket path which leads to collision.
     """
     # Run velo in current dir
-    env_a = os.environ.copy()
+    os.environ.copy()
     # No hash in path expected in broken state
 
     # We expect this to FAIL once we implement the proper fix (hashing)

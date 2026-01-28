@@ -30,7 +30,7 @@ def test_SEC_621_cross_uid_hijack(isolated_env):
     # 1. Start velo serve
     # Note: On macOS, SO_PEERCRED is getpeereid().
     # We'll see if the implementation even attempts it.
-    proc = env.run_velo("serve", "main:app", "--workers", "1", env=cmd_env, timeout=10)
+    env.run_velo("serve", "main:app", "--workers", "1", env=cmd_env, timeout=10)
 
     # If the Whitebox Audit is correct, it won't even mention PEERCRED failures
     # because the implementation is missing.
@@ -129,7 +129,7 @@ def list_fds():
     try:
         # Linux /proc/self/fd
         fds = os.listdir('/proc/self/fd')
-    except:
+    except Exception:
         # macOS/BSD fallback
         fds = []
     return {"fds": fds, "count": len(fds)}

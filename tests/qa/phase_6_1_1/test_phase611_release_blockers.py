@@ -56,7 +56,6 @@ class TestReleaseBlockers:
         assert len(workers_before) >= 2, "Need at least 2 workers for this test"
 
         # Send SIGTERM to supervisor
-        supervisor_pid = proc.pid
         proc.proc.send_signal(signal.SIGTERM)
 
         # Wait for graceful shutdown
@@ -142,7 +141,7 @@ class TestReleaseBlockers:
         response = requests.get(f"http://127.0.0.1:{proc.port}/nonexistent-endpoint-for-test")
 
         # Check response headers for request ID
-        request_id = response.headers.get("x-request-id")
+        response.headers.get("x-request-id")
 
         # If no request ID header, check logs
         # For now, just verify the server handles the request consistently
@@ -213,7 +212,7 @@ class TestReleaseBlockers:
             assert len(unix_content) > 0
         else:
             # macOS: check filesystem socket path
-            socket_dir = Path(f"/tmp/velo-{os.getuid()}")
+            Path(f"/tmp/velo-{os.getuid()}")
             # Path may or may not exist depending on implementation
             # Just verify server responds
 
@@ -223,7 +222,7 @@ class TestReleaseBlockers:
         # Make concurrent requests
         import concurrent.futures
 
-        def make_request():
+        def make_request() -> int:
             r = requests.get(f"http://127.0.0.1:{proc.port}/ping", timeout=T_SHORT)
             return r.status_code
 

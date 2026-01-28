@@ -1,0 +1,63 @@
+# cargo-deny configuration for Velo (v2 format)
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = []
+all-features = true
+
+[advisories]
+version = 2
+db-path = "~/.cargo/advisory-db"
+# Ignore unmaintained advisories for transitive dependencies we cannot control
+ignore = [
+    "RUSTSEC-2024-0436",  # paste - unmaintained (via rustpython-ast)
+    "RUSTSEC-2025-0119",  # number_prefix - unmaintained (via indicatif)
+    "RUSTSEC-2025-0134",  # rustls-pemfile - unmaintained (via tls-listener fork)
+    "RUSTSEC-2025-0081",  # unic-char-property - unmaintained (via rustpython-parser)
+    "RUSTSEC-2025-0075",  # unic-common - unmaintained (via rustpython-parser)
+    "RUSTSEC-2025-0080",  # unic-char-range - unmaintained (via rustpython-parser)
+    "RUSTSEC-2025-0090",  # unic-emoji-char - unmaintained (via rustpython-parser)
+    "RUSTSEC-2025-0098",  # unic-ucd-ident - unmaintained (via rustpython-parser)
+    "RUSTSEC-2025-0100",  # unic-ucd-version - unmaintained (via rustpython-parser)
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "BSL-1.0",
+    "MPL-2.0",  # Mozilla - weak copyleft, acceptable
+    "LGPL-3.0-only",  # malachite math library
+]
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allow specific git sources for forked dependencies
+allow-git = [
+    "https://github.com/gi0baro/pyo3-log.git",
+    "https://github.com/gi0baro/tls-listener.git",
+]

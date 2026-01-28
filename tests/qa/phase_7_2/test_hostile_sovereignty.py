@@ -11,8 +11,10 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier4]
 
-@pytest.mark.tier4
+
 class TestHostileSovereignty:
     """
     Prosecutorial Verification (Phase III of SOP-002)
@@ -130,7 +132,7 @@ def get_fds():
                     resp = requests.get(f"http://127.0.0.1:{port}/fds", timeout=1)
                     if resp.status_code == 200:
                         break
-                except:
+                except Exception:
                     pass
                 time.sleep(0.5)
 

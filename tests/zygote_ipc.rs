@@ -13,7 +13,13 @@ mod ipc_tests {
     fn test_socket_path_generation() {
         // Socket should be in temp directory with unique name
         let socket_path = velo::zygote::core_ipc::default_socket_path();
-        assert!(socket_path.to_string_lossy().contains("velo-zygote"));
+        let path_str = socket_path.to_string_lossy();
+        // Match either abstract socket or filesystem socket
+        assert!(
+            path_str.contains("zygote"),
+            "Socket path {:?} should contain 'zygote'",
+            path_str
+        );
     }
 
     /// Test basic socket creation and cleanup
@@ -40,6 +46,7 @@ mod ipc_tests {
         // Test FORK command with MessagePack
         let fork_cmd = ZygoteCommand::Fork {
             script_path: PathBuf::from("/tmp/test.py"),
+            module: None,
             args: vec!["--arg1".to_string()],
             stdout_path: None,
             stderr_path: None,
@@ -160,6 +167,7 @@ mod ipc_tests {
             &socket_path,
             ZygoteCommand::Fork {
                 script_path: PathBuf::from("/tmp/test.py"),
+                module: None,
                 args: vec![],
                 stdout_path: None,
                 stderr_path: None,

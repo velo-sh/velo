@@ -37,7 +37,7 @@ class TestMsgpackSecurity(unittest.TestCase):
         valid_packed = umsgpack.packb({"type": "Fork", "script_path": "/test.py"})
         truncated = valid_packed[: len(valid_packed) // 2]
 
-        with self.assertRaises(Exception, msg="Truncated payload must raise error"):
+        with self.assertRaises((Exception, ValueError, RuntimeError), msg="Truncated payload must raise error"):
             umsgpack.unpackb(truncated)
 
         # Random bytes (invalid msgpack) - umsgpack may not raise on all random bytes
@@ -51,7 +51,7 @@ class TestMsgpackSecurity(unittest.TestCase):
             pass  # Exception is also acceptable
 
         # Empty bytes must raise
-        with self.assertRaises(Exception, msg="Empty bytes must raise error"):
+        with self.assertRaises((Exception, ValueError, RuntimeError), msg="Empty bytes must raise error"):
             umsgpack.unpackb(b"")
 
     def test_sec_opt_002_version_byte_tampering(self):

@@ -30,7 +30,6 @@ from typing import Any
 
 try:
     from velo_zygote.constants import PROTOCOL_VERSION
-    from velo_zygote.lifecycle import IdlePool, WorkerRegistry, ZygoteState
     from velo_zygote.paths import VeloPaths
     from velo_zygote.routing import CommandRouter
     from velo_zygote.settings import velo_config
@@ -38,10 +37,10 @@ try:
     from velo_zygote.utils import ForkRateLimiter, LogUtils, request_context
     from velo_zygote.v_fork import ForkHandler
     from velo_zygote.v_shield import PathValidator
+    from velo_zygote.worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
 except (ImportError, ValueError):
     try:
         from .constants import PROTOCOL_VERSION
-        from .lifecycle import IdlePool, WorkerRegistry, ZygoteState
         from .paths import VeloPaths  # noqa: F401
         from .routing import CommandRouter
         from .settings import velo_config
@@ -49,6 +48,7 @@ except (ImportError, ValueError):
         from .utils import ForkRateLimiter, LogUtils, request_context
         from .v_fork import ForkHandler
         from .v_shield import PathValidator
+        from .worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState
     except (ImportError, ValueError):
         from constants import PROTOCOL_VERSION  # type: ignore[no-redef, import-not-found]
         from routing import CommandRouter  # type: ignore[no-redef, import-not-found]
@@ -57,8 +57,7 @@ except (ImportError, ValueError):
         from utils import ForkRateLimiter, LogUtils, request_context  # type: ignore[no-redef, import-not-found]
         from v_fork import ForkHandler  # type: ignore[no-redef, import-not-found]
         from v_shield import PathValidator  # type: ignore[no-redef, import-not-found]
-
-        from lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
+        from worker_lifecycle import IdlePool, WorkerRegistry, ZygoteState  # type: ignore[no-redef, import-not-found]
 
 # Shared Memory Management (Phase 7.2)
 try:
@@ -67,6 +66,73 @@ try:
     MEMORY_MANAGER = getattr(_memory, "MEMORY_MANAGER", None) if _memory else None
 except (ImportError, ValueError):
     MEMORY_MANAGER = None
+
+
+class UDSProxyTrustedMiddleware:
+    """
+    RFC-0011: Force trust of X-Forwarded-For headers when running on UDS.
+
+    Uvicorn's ProxyHeadersMiddleware typically requires a trusted client IP.
+    On UDS (Unix Domain Socket), the client is 'unix' or None, causing standard middleware
+    to reject headers even with forwarded_allow_ips='*'.
+
+    This middleware blindly trusts headers because the Zygote is PHYSICALLY ISOLATED
+    and only reachable via the trusted Rust Guardian.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] in ("http", "websocket"):
+            headers = dict(scope.get("headers", []))
+
+            # RFC-0011 C.3: Parse X-Forwarded-For
+            xff = headers.get(b"x-forwarded-for")
+            if xff:
+                # Trust the first IP (client) or last? Rust Proxy appends.
+                # Usually we want the *original* client IP.
+                # If Rust Guardian is the ONLY proxy, it might be the only IP.
+                # If upstream proxies exist, they are first.
+                # We assume Rust Proxy appends correctly.
+                # We take the LAST entries if we trust the chain?
+                # Actually, standard is: client, proxy1, proxy2...
+                # Rust Proxy appends to the END.
+                # So the LAST IP in the list is the one connected to Rust Proxy?
+                # No, XFF is: client, proxy1, proxy2.
+                # Rust added the immediate peer.
+                # If we want the CLIENT IP, we might want the first one?
+                # But we blindly trust the header content because Guardian stripped bad ones?
+                # Guardian DOES NOT strip XFF! It appends.
+                # So if client spoofed XFF, it's the first IP.
+                # We should perhaps trust the *last valid* one?
+                # For `scope['client']`, we usually want the *immediate* client or the *original*?
+                # ASGI spec says `client` is the network address of the client (peer).
+                # But here we are proxied.
+                # Let's take the LAST one added by Guardian?
+                # Wait, if Guardian is a proxy, `client` should appear as the *original* client.
+                # We trust the list.
+                # Let's parse the string.
+                client_ip_str = xff.decode("latin1").split(",")[0].strip()
+
+                # Check for Port
+                port = 0
+                xfp = headers.get(b"x-forwarded-port")
+                if xfp:
+                    try:
+                        port = int(xfp.decode("latin1"))
+                    except ValueError:
+                        pass
+
+                scope["client"] = (client_ip_str, port)
+
+            # RFC-0011 B.3: X-Forwarded-Proto
+            xfproto = headers.get(b"x-forwarded-proto")
+            if xfproto:
+                scope["scheme"] = xfproto.decode("latin1")
+
+        await self.app(scope, receive, send)
+
 
 # Global router for Command Dispatch
 router = CommandRouter()
@@ -146,6 +212,9 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
                 "message": "Preload timeout: modules still loading after 30s",
             }
 
+    if server.state == ZygoteState.ERROR:
+        return {"type": "Error", "message": "Zygote is in ERROR state due to previous preload failure."}
+
     if not server.fork_rate_limiter.acquire():
         return {
             "type": "Error",
@@ -153,7 +222,9 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
         }
 
     script_path = cmd.get("script_path", "")
-    if script_path:
+    module_name = cmd.get("module")
+
+    if script_path and not module_name:
         p = Path(script_path)
         if not p.exists():
             return {
@@ -167,8 +238,11 @@ async def handle_fork(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, 
                 "message": f"Security Intent Violation: Target '{script_path}' failed shield validation: {err}",
             }
 
-    if not server.app_name and script_path:
-        server.app_name = Path(script_path).name
+    if not server.app_name:
+        if module_name:
+            server.app_name = module_name
+        elif script_path:
+            server.app_name = Path(script_path).name
 
     try:
         # RFC-0028 Phase 14: Use Fork Queue (Connection Pooling)
@@ -242,6 +316,8 @@ async def handle_wait_worker(server: "ZygoteServer", cmd: dict[str, Any]) -> dic
 async def handle_signal(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[str, Any]:
     pid, sig = int(cmd.get("worker_pid", 0)), int(cmd.get("signal", 0))
     try:
+        if sig == signal.SIGTERM and os.environ.get("VELO_TEST_MODE") == "1":
+            print("CHILD_RECEIVED_SIGTERM", flush=True)
         os.kill(pid, sig)
         return {"type": "Ack"}
     except Exception:
@@ -265,7 +341,7 @@ async def handle_shutdown(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[s
     LogUtils.log("Graceful Shutdown Initiated.")
     server._set_state(ZygoteState.SHUTDOWN)
     # RFC-0012 C.6: Kill all workers before Zygote exits to prevent orphans
-    server.worker_registry.kill_all()
+    server._cleanup()
     # RFC-0012 C.6: Schedule exit for next tick to allow sending Ack
     asyncio.get_event_loop().call_later(0.01, lambda: os._exit(0))
     return {"type": "Ack"}
@@ -278,6 +354,7 @@ async def handle_zy_status(server: "ZygoteServer", cmd: dict[str, Any]) -> dict[
         "pid": os.getpid(),
         "state": server.state.name,
         "preload": server._preloaded_modules,
+        "preload_done": server.preload_complete.is_set(),
         # Phase 15 P2: Reporting pool metrics to the Rust Guardian
         "pool_count": server.idle_pool.get_count(),
         "target_pool_size": server.idle_pool._target_size,
@@ -363,7 +440,10 @@ class ZygoteServer:
         self.fork_rate_limiter = ForkRateLimiter(60, 1)  # 1 fork per sec avg, burst 60
         self.preload_complete = asyncio.Event()
         self.fork_queue: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[Any]]] = asyncio.Queue()
-        self.idle_pool = IdlePool(size=min(multiprocessing.cpu_count(), 10))
+        idle_pool_size = min(multiprocessing.cpu_count(), 10)
+        if os.environ.get("VELO_TEST_MODE") == "1":
+            idle_pool_size = 0
+        self.idle_pool = IdlePool(size=idle_pool_size)
 
         self.pending_forks: dict[int, asyncio.Future[Any]] = {}
         self._last_activity = time.time()
@@ -397,11 +477,27 @@ class ZygoteServer:
         LogUtils.log(f"Zygote initializing (PID: {os.getpid()})")
 
         # 1. Open Socket
+        # DEF-SOCKET-COLLISION: Check if socket is already in use by another Zygote
         if not self.is_abstract and os.path.exists(self.socket_path):
+            # Check if the socket is live before unlinking
             try:
-                os.unlink(self.socket_path)
-            except OSError as e:
-                LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
+                test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                test_sock.settimeout(0.5)
+                test_sock.connect(self.socket_path)
+                test_sock.close()
+                # Another Zygote is already running on this socket!
+                LogUtils.log(
+                    f"Socket Collision Detected: Another Zygote is already running at '{self.socket_path}'. "
+                    "This process will exit to avoid conflict."
+                )
+                sys.exit(0)  # Exit gracefully - the other Zygote is handling requests
+            except (ConnectionRefusedError, FileNotFoundError, OSError):
+                # Socket exists but no listener - stale socket, safe to remove
+                try:
+                    os.unlink(self.socket_path)
+                    LogUtils.log(f"Cleaned stale socket at '{self.socket_path}'")
+                except OSError as e:
+                    LogUtils.log(f"Zygote Cleanup Error: Failed to unlink stale socket at '{self.socket_path}': {e}")
 
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -417,7 +513,8 @@ class ZygoteServer:
                 os.chmod(self.socket_path, 0o600)
             except OSError as e:
                 LogUtils.log(f"Zygote Security Warning: Failed to set permissions on {self.socket_path}: {e}")
-        server_sock.listen(128)
+        # RFC-0012: Increased backlog for TITANIUM resilience against burst connections
+        server_sock.listen(512)
         server_sock.setblocking(False)
 
         # 2. Start Guardian
@@ -655,6 +752,12 @@ class ZygoteServer:
             # 2. Start Fork Queue immediately
             asyncio.create_task(self._process_fork_queue())
 
+            # P0: Prewarm connection pool at startup
+            # Ensures first request doesn't block on pool fill
+            if self.idle_pool._target_size > 0:
+                asyncio.create_task(self._fill_pool_now())
+                LogUtils.log(f"Pool prewarming initiated (target: {self.idle_pool._target_size})")
+
             # 3. Second Pass: App and Deep Warming (Background)
             # We want this to finish before we set preload_complete
             await loop.run_in_executor(None, self._preload_app_and_warming_safe)
@@ -665,15 +768,26 @@ class ZygoteServer:
         self.preload_complete.set()
         LogUtils.log("Zygote Fully Preloaded and Ready for Warm Forks.")
 
+        # Tier 1 Security Hardening: Scrub runtime from sys.path
+        try:
+            from velo_zygote.v_shield import ImportShield
+
+            ImportShield.scrub_runtime_path()
+        except Exception:
+            pass
+
     def _preload_app_and_warming_safe(self) -> None:
         try:
             self._preload_app_and_warming()
             LogUtils.log("Zygote Background Warming Complete.")
         except Exception as e:
             LogUtils.log(f"Background Warming Failed: {e}")
+            self._set_state(ZygoteState.ERROR)
 
     def _preload_core_modules(self) -> None:
         import importlib
+
+        from velo_zygote import bootstrap
 
         # 1. Preload specified modules (Standard libraries, frameworks)
         for module_name in self.preload:
@@ -682,6 +796,14 @@ class ZygoteServer:
                 self._preloaded_modules.append(module_name)
             except Exception as e:
                 LogUtils.log(f"Preload failed for {module_name}: {e}")
+
+        # 2. Stage-Gated Preloading: Stage 2 (PostInit)
+        # RFC-0035/SPEC-0007: Load extension modules after Python core is ready.
+        try:
+            bootstrap._v_native_preload("PostInit")
+            bootstrap._log_memory_metrics("After PostInit")
+        except Exception as e:
+            LogUtils.log(f"PostInit native preload failed: {e}")
 
     def _preload_app_and_warming(self) -> None:
         import importlib
@@ -695,6 +817,7 @@ class ZygoteServer:
                 self._preloaded_modules.append(app_module)
             except Exception as e:
                 LogUtils.log(f"Pre-loading application failed: {e}")
+                raise  # Re-raise to trigger ERROR state
 
         # 3. Deep warming: Pre-create uvicorn Server for immediate fork (Target: 10x)
         if self.app_name and "uvicorn" in sys.modules:
@@ -708,9 +831,23 @@ class ZygoteServer:
                     http="auto",
                     lifespan="on",
                     log_config=None,
+                    proxy_headers=True,  # RFC-0011: Still keep regular middleware just in case
+                    # forwarded_allow_ips="*",  # Disabled: UDSProxyTrustedMiddleware handles this better
                 )
                 self._warmed_server = uvicorn.Server(self._warmed_config)  # type: ignore[assignment, arg-type]
-                # Force config load and module inspection in Zygote (Saves 44ms in worker)
+
+                # RFC-0011: Wrap app with UDS Trusted Proxy Middleware
+                # This ensures we extract X-Forwarded-* headers even on UDS
+                if self._warmed_config:
+                    try:
+                        self._warmed_config.load()
+                        if self._warmed_config.loaded_app:
+                            # Wrap the loaded application instance
+                            self._warmed_config.loaded_app = UDSProxyTrustedMiddleware(self._warmed_config.loaded_app)
+                            LogUtils.log("Wrapped App with UDSProxyTrustedMiddleware")
+                    except Exception as e:
+                        LogUtils.log(f"Failed to wrap app with UDS middleware: {e}")
+
                 # TITANIUM-PERF: Wrap in broad try-except to prevent baseline hang
                 try:
                     LogUtils.log("Uvicorn Server Deep-Warmed and Ready.")
@@ -734,6 +871,26 @@ class ZygoteServer:
                         payload = json.dumps(cmd).encode()
                         await loop.run_in_executor(None, os.write, w_pipe, payload)
                         await loop.run_in_executor(None, os.close, w_pipe)
+
+                        # STB-SYNC-FORK: Wait for activated worker to be ready
+                        uds_path = None
+                        args = cmd.get("args", [])
+                        for i, arg in enumerate(args):
+                            if arg == "--uds" and i + 1 < len(args):
+                                uds_path = args[i + 1]
+                                break
+
+                        if uds_path:
+                            LogUtils.log(f"Waiting for activated worker {pid} on {uds_path}...")
+                            multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+                            timeout = 10.0 * multiplier
+                            if not await loop.run_in_executor(None, ForkHandler._wait_for_ready, uds_path, timeout):
+                                LogUtils.log(
+                                    f"Warning: Activated worker {pid} socket {uds_path} not ready after {timeout}s"
+                                )
+                            else:
+                                LogUtils.log(f"Activated worker {pid} is READY on {uds_path}")
+
                         future.set_result(pid)
                         continue
                     except Exception as e:
@@ -792,13 +949,36 @@ class ZygoteServer:
 
             await asyncio.sleep(1.0)  # Slower check, ReplenishPool command triggers immediate fill
 
+    def _cleanup(self) -> None:
+        """Cleanup resources on exit (socket, workers)."""
+        self.worker_registry.kill_all()
+        if not self.is_abstract and os.path.exists(self.socket_path):
+            try:
+                os.unlink(self.socket_path)
+                LogUtils.log(f"Cleaned up socket at {self.socket_path}")
+            except OSError as e:
+                LogUtils.log(f"Failed to cleanup socket: {e}")
+
     def _setup_signals(self) -> None:
         def handle_termination(sig: int, frame: Any) -> None:
-            # SEC-P0-006: Immediate cleanup on signal, bypassing event loop
-            sys.stderr.write(f"\nZygote received signal {sig}. Cleaning up workers...\n")
-            sys.stderr.flush()
-            self.worker_registry.kill_all()
-            # Use os._exit to ensure immediate death and no orphans
+            # P0 Production: Graceful shutdown chain
+            # SIGTERM → drain_workers(timeout) → SIGKILL remaining → exit(0)
+            drain_timeout = float(os.environ.get("VELO_DRAIN_TIMEOUT", "30"))
+            LogUtils.log(f"Zygote received signal {sig}. Starting graceful shutdown (drain: {drain_timeout}s)...")
+            self._set_state(ZygoteState.SHUTDOWN)
+
+            # Phase 1: Graceful drain with timeout
+            remaining = self.worker_registry.drain_all(drain_timeout)
+
+            # Phase 2: Force kill any workers that didn't exit gracefully
+            if remaining:
+                LogUtils.log(f"Force killing {len(remaining)} unresponsive workers...")
+                self.worker_registry.force_kill(remaining)
+
+            # Phase 3: Cleanup resources (Socket, Registry) and Exit
+            # SEC-P0-006: Ensure socket is deleted even if we use os._exit
+            LogUtils.log("Graceful shutdown complete. Cleaning up...")
+            self._cleanup()
             os._exit(0)
 
         # Use standard signal.signal for reliable termination even if loop is hung

@@ -51,28 +51,3 @@ The script will display the **"Schema Locking"** process in real-time, demonstra
 ### Core Advantage
 In AI engineering, schema validation is CPU-intensive. Velo pre-computes valid schemas in the Zygote, so every worker starts with a **ready-to-use** validation graph and **shared memory** via Copy-On-Write.
 
----
-
-## Running the Demo
-
-### Prerequisites
-
-Install [uv](https://github.com/astral-sh/uv) package manager:
-
-```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or via Homebrew (macOS)
-brew install uv
-```
-
-### Run the Benchmark
-
-```bash
-# Quick start (uv handles dependencies automatically)
-./examples/langchain-fast/run_hio.sh --compare --runs=20
-
-# Or run directly with uv
-uv run --with pydantic python examples/langchain-fast/langchain_race.py --runs=20
-```

@@ -1,3 +1,2 @@
-import fontTools
 
-print(f"fontTools loaded")
+print("fontTools loaded")

@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Velo Universal CI Driver
+# =============================================================================
+# Unified entry point for all Velo CI tasks (Local, Docker, GitHub Actions)
+#
+# Usage:
+#   ./scripts/v-ci [OPTIONS]
+#
+# Options:
+#   --local           Run locally (macOS/Linux host)
+#   --docker          Run in Docker (Ubuntu simulation)
+#   --tier [0-3]      Run specific test tier (default: full)
+#   --quick           Run quick check (Build + Tier 0)
+#   --setup           Full development environment setup
+#   --build           Build Docker images only
+#   --shell           Interactive Docker shell
+#   --clean           Clean Docker volumes and caches
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Default state
+MODE="local"
+ACTION="run"
+TIER="full"
+DOCKER_IMAGE="velo-ci"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_error() { echo -e "${RED}❌${NC} $1" >&2; }
+log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
+
+print_usage() {
+    echo "Velo Universal CI Driver"
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Execution Modes:"
+    echo "  --local           Run on current host (default)"
+    echo "  --docker          Run in Docker container"
+    echo ""
+    echo "Tasks:"
+    echo "  --tier [0-3]      Run specific test tier"
+    echo "  --quick           Quick check (L1 build + Tier 0)"
+    echo "  --setup           Full setup (hooks, deps, venv)"
+    echo "  --build           Rebuild Docker images"
+    echo "  --shell           Interactive shell (Docker only)"
+    echo "  --clean           Wipe Docker volumes & caches"
+    echo ""
+    echo "Examples:"
+    echo "  $0 --tier 1       # Run Tier 1 locally"
+    echo "  $0 --docker --tier 0 # Run Tier 0 in Ubuntu container"
+}
+
+# Parse Arguments
+EXTRA_RUST_ARGS=()
+EXTRA_PY_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local)  MODE="local"; shift ;;
+        --docker) MODE="docker"; shift ;;
+        --tier)   TIER="$2"; shift 2 ;;
+        --quick)  TIER="quick"; shift ;;
+        --setup)  ACTION="setup"; shift ;;
+        --build)  ACTION="build"; shift ;;
+        --shell)  ACTION="shell"; shift ;;
+        --clean)  ACTION="clean"; shift ;;
+        --rust-args) 
+            shift
+            while [[ $# -gt 0 ]] && [[ "$1" != "--" ]] && [[ "$1" != "--py-args" ]]; do
+                EXTRA_RUST_ARGS+=("$1")
+                shift
+            done
+            ;;
+        --py-args)
+            shift
+            while [[ $# -gt 0 ]] && [[ "$1" != "--" ]] && [[ "$1" != "--rust-args" ]]; do
+                EXTRA_PY_ARGS+=("$1")
+                shift
+            done
+            ;;
+        --help|-h) print_usage; exit 0 ;;
+        --)       shift; EXTRA_PY_ARGS+=("$@"); break ;;
+        *) log_error "Unknown option: $1"; print_usage; exit 1 ;;
+    esac
+done
+
+# =============================================================================
+# Docker Runner (Container Orchestration)
+# =============================================================================
+run_in_docker() {
+    # 1. Build images if needed/requested
+    if [[ "$ACTION" == "build" ]] || ! docker image inspect "$DOCKER_IMAGE" &>/dev/null; then
+        log_info "Building CI images..."
+        docker build -t velo-ci-base -f Dockerfile.base .
+        docker build -t velo-ci -f Dockerfile.ci .
+        if [[ "$ACTION" == "build" ]]; then return; fi
+    fi
+
+    # 2. Run Shell
+    if [[ "$ACTION" == "shell" ]]; then
+        log_info "Entering interactive Docker shell..."
+        docker run --rm -it \
+            -v "$PROJECT_ROOT:/workspace:delegated" \
+            -v /workspace/target \
+            -v /workspace/.venv \
+            -e GITHUB_ACTIONS=true \
+            "$DOCKER_IMAGE" bash
+        return
+    fi
+
+    # 3. Clean
+    if [[ "$ACTION" == "clean" ]]; then
+        log_info "Cleaning Velo CI Docker volumes..."
+        docker volume rm velo-ci-target velo-ci-venv 2>/dev/null || true
+        docker volume prune -f
+        log_info "Docker volumes cleaned"
+        return
+    fi
+
+    # 4. RUN (The Universal Driver Hook)
+    # CORE LOGIC: We run THIS SAME SCRIPT inside the container but with --local
+    # 
+    # CRITICAL: We use named volumes for target/ and .venv/ to:
+    # 1. Preserve Docker-built artifacts across runs (speedup)
+    # 2. Avoid masking container's pre-built binaries with empty anonymous volumes
+    log_info "Orchestrating Velo CI in Docker..."
+    docker run --rm \
+        -v "$PROJECT_ROOT:/workspace:delegated" \
+        -v velo-ci-target:/workspace/target \
+        -v velo-ci-venv:/workspace/.venv \
+        -e GITHUB_ACTIONS=true \
+        -e CI=true \
+        -e VELO_ENV=ci \
+        -e NO_XDIST="${NO_XDIST:-false}" \
+        -e VELO_FORCE_HEAVY="${VELO_FORCE_HEAVY:-0}" \
+        -e VELO_TIMEOUT_MULTIPLIER="${VELO_TIMEOUT_MULTIPLIER:-1.0}" \
+        "$DOCKER_IMAGE" \
+        /workspace/scripts/v-ci --local --tier "$TIER" \
+        --rust-args ${EXTRA_RUST_ARGS[@]+"${EXTRA_RUST_ARGS[@]}"} \
+        --py-args ${EXTRA_PY_ARGS[@]+"${EXTRA_PY_ARGS[@]}"}
+}
+
+# =============================================================================
+# Local Runner (Actual Execution)
+# =============================================================================
+run_locally() {
+    source "$SCRIPT_DIR/ci-common.sh"
+    
+    case "$ACTION" in
+        setup)
+            # Extracted from local-ci.sh
+            log_step "Initializing Development Environment..."
+            uv sync
+            git config core.hooksPath .githooks
+            uv run pre-commit install || true
+            log_success "Setup complete!"
+            ;;
+        *)
+            # The heart of the Universal Driver
+            export EXTRA_RUST_ARGS="${EXTRA_RUST_ARGS[*]:-}"
+            export EXTRA_PY_ARGS="${EXTRA_PY_ARGS[*]:-}"
+            run_full_ci "$TIER"
+            ;;
+    esac
+}
+
+# Dispatch
+if [[ "$MODE" == "docker" ]]; then
+    run_in_docker
+else
+    run_locally
+fi

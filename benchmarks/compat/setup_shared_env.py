@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+import shutil
 import subprocess
 import sys
-import shutil
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent.parent.parent
@@ -71,7 +71,5 @@ if __name__ == "__main__":
 # [FIX] Uninstall argparse as it breaks Python 3.11+
 print("   🧹 Ensuring no 'argparse' package shadows stdlib...")
 subprocess.run(
-    ["uv", "pip", "uninstall", "argparse", "--python", str(SHARED_VENV_DIR)],
-    check=False,
-    capture_output=True
+    ["uv", "pip", "uninstall", "argparse", "--python", str(SHARED_VENV_DIR)], check=False, capture_output=True
 )

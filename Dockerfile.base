@@ -52,12 +52,23 @@ ENV LD_LIBRARY_PATH="/root/.local/share/uv/python/cpython-3.11.14-linux-x86_64-g
 WORKDIR /workspace
 
 # Pre-fetch common Rust dependencies (speeds up first build)
-# These are the most commonly used crates in the project
+# Copy workspace structure for cargo fetch to work
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
+COPY crates/*/Cargo.toml ./crates-tmp/
+COPY velo_macros/Cargo.toml ./velo_macros/
+
+# Create stub crates for cargo fetch
+RUN for dir in crates-tmp/*; do \
+        crate=$(basename "$dir" .toml); \
+        mkdir -p "crates/$crate/src"; \
+        mv "$dir" "crates/$crate/Cargo.toml" 2>/dev/null || true; \
+        echo "" > "crates/$crate/src/lib.rs"; \
+    done && \
+    rm -rf crates-tmp && \
+    mkdir -p velo_macros/src && echo "" > velo_macros/src/lib.rs && \
     cargo fetch && \
-    rm -rf src
+    rm -rf crates velo_macros/src
 
 # Default command: show usage
 CMD ["bash", "-c", "echo 'Velo CI Environment Ready' && echo 'Python:' && python --version && echo 'Rust:' && rustc --version && echo '' && echo 'Run CI with: cargo build --release && pytest tests/'"]

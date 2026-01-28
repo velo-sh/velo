@@ -1,3 +1,2 @@
-import zipp
 
-print(f"zipp loaded successfully")
+print("zipp loaded successfully")

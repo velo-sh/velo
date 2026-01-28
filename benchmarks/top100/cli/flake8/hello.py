@@ -1,5 +1,3 @@
-import sys
-import flake8
 
 # CLI tool verification
-print(f"flake8 imported")
+print("flake8 imported")

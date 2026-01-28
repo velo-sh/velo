@@ -50,29 +50,3 @@ To be technically precise, Velo shifts the initialization cost to the Zygote par
   ├── Zygote Init (One-time): 0.602s (Approx. equivalent to CPython)
   └── Worker Fork (Per-req):  < 0.001s (Zero Marginal Cost)
 ```
-
----
-
-## Running the Demo
-
-### Prerequisites
-
-Install [uv](https://github.com/astral-sh/uv) package manager:
-
-```bash
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or via Homebrew (macOS)
-brew install uv
-```
-
-### Run the Benchmark
-
-```bash
-# Quick start (uv handles dependencies automatically)
-./examples/django-heavy/run_hio.sh --compare --runs=20
-
-# Or run directly with uv
-uv run --with django python examples/django-heavy/startup_race.py --runs=20
-```

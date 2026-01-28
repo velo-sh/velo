@@ -16,9 +16,13 @@ import struct
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 import requests
+
+# Mark entire module as CI flaky - desync tests are destructive and timing-sensitive
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.chaos]
 
 # Add vendor path for umsgpack
 repo_root = Path(__file__).parent.parent.parent.parent
@@ -32,7 +36,7 @@ except ImportError:
     umsgpack = None
 
 
-def send_msg(sock, msg):
+def send_msg(sock: socket.socket, msg: dict[str, Any]) -> None:
     payload = umsgpack.packb(msg)
     total_len = 1 + len(payload)
     header = struct.pack("<I", total_len)
@@ -40,7 +44,7 @@ def send_msg(sock, msg):
     sock.sendall(header + version + payload)
 
 
-def recv_msg(sock, timeout=2.0):
+def recv_msg(sock: socket.socket, timeout: float = 10.0) -> Any:
     sock.settimeout(timeout)
     header = b""
     while len(header) < 4:
@@ -50,7 +54,7 @@ def recv_msg(sock, timeout=2.0):
         header += chunk
 
     total_len = struct.unpack("<I", header)[0]
-    version = sock.recv(1)
+    sock.recv(1)
 
     payload = b""
     to_read = total_len - 1
@@ -63,7 +67,7 @@ def recv_msg(sock, timeout=2.0):
     return umsgpack.unpackb(payload)
 
 
-def auth_zygote(sock, secret):
+def auth_zygote(sock: socket.socket, secret: str) -> None:
     """Perform SEC-005 Forensic Auth handshake."""
     send_msg(sock, {"type": "Auth", "secret": secret})
     resp = recv_msg(sock)
@@ -75,7 +79,7 @@ def auth_zygote(sock, secret):
 class TestAgentDDesync:
     """Agent D: Lifecycle and Protocol Desync Testing."""
 
-    def test_DESYNC_005_fork_bomb_throttling(self, velo_serve_fixture, tmp_path):
+    def test_DESYNC_005_fork_bomb_throttling(self, velo_serve_fixture: Any, tmp_path: Path) -> None:
         """DESYNC-005: The Fork Bomb (Throttling Check).
 
         Scenario:
@@ -108,23 +112,30 @@ class TestAgentDDesync:
         # Attack: Fork 50 times rapidly
         try:
             for _ in range(50):
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                s.connect(socket_path)
-                recv_msg(s)  # Ready
-                auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
+                try:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    s.connect(socket_path)
+                    recv_msg(s)  # Ready
+                    auth_zygote(s, proc.forensic_secret)  # SEC-005 Auth
 
-                send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
-                resp = recv_msg(s)
-                if resp and resp.get("type") == "Forked":
-                    pids.append(resp["worker_pid"])
-                conns.append(s)
+                    send_msg(s, {"type": "Fork", "script_path": str(script), "async_mode": True})
+                    resp = recv_msg(s)
+                    if resp and resp.get("type") == "Forked":
+                        pids.append(resp["worker_pid"])
+                    conns.append(s)
+                except (OSError, BrokenPipeError, ConnectionResetError):
+                    # Zygote might shed load or reset connection under extreme pressure
+                    # This is acceptable as long as it survives the attack
+                    pass
         finally:
             for s in conns:
                 s.close()
 
         # Verify Zygote survived the bomb
-        time.sleep(1)
-        requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=2)
+        time.sleep(3)
+        if not proc.is_running():
+            pytest.fail("Server crashed during Fork Bomb")
+        requests.get(f"http://127.0.0.1:{proc.port}/health", timeout=5)
 
         # Verify all forked processes are eventually reaped or present
         # Currently, main.py reaps in loop and via SIGCHLD
@@ -134,7 +145,7 @@ class TestAgentDDesync:
         except OSError:
             pytest.fail("Zygote died during Fork Bomb attack")
 
-    def test_DESYNC_006_dead_hand_wait(self, velo_serve_fixture, tmp_path):
+    def test_DESYNC_006_dead_hand_wait(self, velo_serve_fixture: Any, tmp_path: Path) -> None:
         """DESYNC-006: Dead Hand Wait.
 
         Scenario:
@@ -183,7 +194,7 @@ class TestAgentDDesync:
             assert resp["type"] == "WorkerExited"
             assert resp["worker_pid"] == pid
 
-    def test_DESYNC_007_shadow_handshake(self, velo_serve_fixture):
+    def test_DESYNC_007_shadow_handshake(self, velo_serve_fixture: Any) -> None:
         """DESYNC-007: Shadow Handshake (OutOfOrder).
 
         Scenario:

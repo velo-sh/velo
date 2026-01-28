@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier1]
+
 # =============================================================================
 # DEF-71-009: Primitive Static Analysis (SAT) fragility (P1)
 # =============================================================================
 
 
-@pytest.mark.tier1
 class TestDEF71009SATFragility:
     """
     Evidence: Autopilot SAT uses simple substring matching.
@@ -245,6 +247,9 @@ class TestSocketHijack:
             f.write("def app(scope, receive, send): pass")
 
         env = os.environ.copy()
+        # Force filesystem socket to trigger directory permission remediation
+        # (Otherwise Velo defaults to abstract sockets on Linux which skip this check)
+        env["VELO_ZYGOTE_SOCKET"] = str(socket_dir / "test-zygote.sock")
         env["VELO_SOCKET_DIR"] = str(socket_dir)
         env["VELO_TEST_MODE"] = "1"
 

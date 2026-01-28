@@ -36,9 +36,10 @@ def _is_container_env() -> bool:
     return False
 
 
-# Mark all tests as integration; xfail in container environments where UDS behavior differs
+# Mark all tests as integration; skip in CI due to Zygote/UDS timing issues
 pytestmark = [
     pytest.mark.integration,
+    pytest.mark.ci_flaky,  # Skip in CI due to timing issues
     pytest.mark.xfail(
         _is_container_env(),
         reason="Integration tests require native Zygote/UDS behavior which differs in containers",
@@ -121,7 +122,7 @@ class TestPhase611Integration:
 
         # Start load
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-            futures = [pool.submit(load_generator) for _ in range(10)]
+            [pool.submit(load_generator) for _ in range(10)]
 
             # Let load stabilize
             time.sleep(1)

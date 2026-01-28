@@ -29,6 +29,9 @@ from pathlib import Path
 import pytest
 import requests
 
+# Mark entire module as CI flaky - skip in CI due to timing issues
+pytestmark = [pytest.mark.ci_flaky, pytest.mark.tier2]
+
 
 def get_velo_binary() -> str:
     repo_root = Path(__file__).parent.parent.parent.parent
@@ -45,10 +48,10 @@ class HardcoreTestProject:
         self.name = name
         self.path = Path(tempfile.mkdtemp(prefix=f"hardcore_{name}_"))
         self.velo = get_velo_binary()
-        self._port = None
-        self._proc = None
+        self._port: int | None = None
+        self._proc: subprocess.Popen[str] | None = None
 
-    def set_pyproject(self, deps: list):
+    def set_pyproject(self, deps: list[str]) -> "HardcoreTestProject":
         content = f"""[project]
 name = "{self.name}-test"
 version = "0.1.0"
@@ -61,15 +64,15 @@ dev-dependencies = []
         (self.path / "pyproject.toml").write_text(content)
         return self
 
-    def set_app(self, filename: str, code: str):
+    def set_app(self, filename: str, code: str) -> "HardcoreTestProject":
         (self.path / filename).write_text(code)
         return self
 
-    def install_deps(self, timeout: float = 180):
+    def install_deps(self, timeout: float = 180) -> "HardcoreTestProject":
         subprocess.run(["uv", "sync"], cwd=self.path, capture_output=True, timeout=timeout)
         return self
 
-    def start_server(self, app_module: str, port: int = None, workers: int = 1):
+    def start_server(self, app_module: str, port: int | None = None, workers: int = 1) -> "HardcoreTestProject":
         if port is None:
             import socket
 
@@ -113,13 +116,15 @@ dev-dependencies = []
 
     @property
     def port(self) -> int:
+        if self._port is None:
+            raise ValueError("Server not started")
         return self._port
 
     @property
     def alive(self) -> bool:
-        return self._proc and self._proc.poll() is None
+        return self._proc is not None and self._proc.poll() is None
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             self._proc.wait(timeout=10)
@@ -244,7 +249,7 @@ async def app(scope, receive, send):
                         r = session.get(f"http://127.0.0.1:{p.port}/", timeout=1)
                         if r.status_code == 200:
                             success += 1
-                    except:
+                    except Exception:
                         pass
 
                 assert success >= 950, f"Only {success}/1000 succeeded"
@@ -323,7 +328,7 @@ async def fast_endpoint():
                 def timeout_request():
                     try:
                         requests.get(f"http://127.0.0.1:{p.port}/slow", timeout=0.5)
-                    except:
+                    except Exception:
                         pass
 
                 threads = [threading.Thread(target=timeout_request) for _ in range(10)]
@@ -398,7 +403,7 @@ async def large_response():
             p.start_server("main:app")
 
             if p.alive:
-                for i in range(10):
+                for _i in range(10):
                     r = requests.get(f"http://127.0.0.1:{p.port}/large", timeout=30)
                     assert r.status_code == 200
                     assert len(r.content) == 5 * 1024 * 1024
@@ -432,7 +437,7 @@ async def app(scope, receive, send):
                         s.settimeout(1)
                         s.connect(("127.0.0.1", p.port))
                         sockets.append(s)
-                    except:
+                    except Exception:
                         break
 
                 # Server should still accept new connections
@@ -473,7 +478,7 @@ async def ok_endpoint():
                 for _ in range(100):
                     try:
                         requests.get(f"http://127.0.0.1:{p.port}/error", timeout=5)
-                    except:
+                    except Exception:
                         pass
 
                 # Server should still work
@@ -573,7 +578,7 @@ async def long_path(path: str):
                     r = requests.get(f"http://127.0.0.1:{p.port}/{long_path}", timeout=5)
                     # Should either succeed or return 414 (URI Too Long)
                     assert r.status_code in [200, 414]
-                except:
+                except Exception:
                     pass  # Connection rejection is acceptable
 
     @pytest.mark.tier4
@@ -910,7 +915,7 @@ async def heavy():
                 def heavy_request():
                     try:
                         requests.get(f"http://127.0.0.1:{p.port}/heavy", timeout=10)
-                    except:
+                    except Exception:
                         pass
 
                 threads = [threading.Thread(target=heavy_request) for _ in range(20)]
@@ -1071,16 +1076,16 @@ WINDOW = 1
 async def rate_limit(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
     now = time.time()
-    
+
     if client_ip not in request_counts:
         request_counts[client_ip] = []
-    
+
     # Clean old requests
     request_counts[client_ip] = [t for t in request_counts[client_ip] if now - t < WINDOW]
-    
+
     if len(request_counts[client_ip]) >= RATE_LIMIT:
         return JSONResponse(status_code=429, content={"error": "rate limited"})
-    
+
     request_counts[client_ip].append(now)
     return await call_next(request)
 

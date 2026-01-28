@@ -9,14 +9,14 @@ Usage:
 
 Output formats:
     simple: module:app (e.g., "main:app")
-    json:   {"module": "main", "app": "app", "type": "FastAPI", "factory": false}
+    json:   {"module": "main", "app": "app", "type": "CallName", "factory": false}
 """
 
 import ast
 import json
 import sys
 from pathlib import Path
-from typing import Optional, NamedTuple, List
+from typing import NamedTuple
 
 
 class AppInfo(NamedTuple):
@@ -29,17 +29,8 @@ class AppInfo(NamedTuple):
     path: Path  # Absolute path to the file
 
 
-# Framework patterns: (call_name, framework_type)
-FRAMEWORK_PATTERNS = [
-    ("FastAPI", "FastAPI"),
-    ("Flask", "Flask"),
-    ("Starlette", "Starlette"),
-    ("Django", "Django"),
-    ("Sanic", "Sanic"),
-    ("Quart", "Quart"),
-    ("get_wsgi_application", "Django"),
-    ("get_asgi_application", "Django"),
-]
+# App variable names commonly used in ASGI/WSGI projects.
+APP_VAR_NAMES = {"app", "application"}
 
 # Factory function patterns
 FACTORY_PATTERNS = [
@@ -61,31 +52,24 @@ class AppDetector(ast.NodeVisitor):
         self._current_function = None  # type: Optional[str]
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        """Detect: app = FastAPI() or application = Flask(__name__)"""
+        """Detect: app = SomeFramework() or application = factory()"""
         if not isinstance(node.value, ast.Call):
             self.generic_visit(node)
             return
 
         # Get the call name
         call_name = self._get_call_name(node.value)
-        if not call_name:
-            self.generic_visit(node)
-            return
-
-        # Check if it's a known framework
-        framework = self._match_framework(call_name)
-        if not framework:
-            self.generic_visit(node)
-            return
 
         # Get assigned variable name
         for target in node.targets:
             if isinstance(target, ast.Name):
+                if target.id not in APP_VAR_NAMES:
+                    continue
                 self.apps.append(
                     AppInfo(
                         module=self._get_module_path(),
                         app=target.id,
-                        framework=framework,
+                        framework=call_name or "Unknown",
                         factory=False,
                         path=self.source_path,
                     )
@@ -104,9 +88,9 @@ class AppDetector(ast.NodeVisitor):
         framework = None
         if node.returns:
             if isinstance(node.returns, ast.Name):
-                framework = self._match_framework(node.returns.id)
+                framework = node.returns.id
             elif isinstance(node.returns, ast.Constant):
-                framework = self._match_framework(str(node.returns.value))
+                framework = str(node.returns.value)
 
         # Check for return statement with framework call
         if not framework:
@@ -114,9 +98,8 @@ class AppDetector(ast.NodeVisitor):
                 if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Call):
                     call_name = self._get_call_name(stmt.value)
                     if call_name:
-                        framework = self._match_framework(call_name)
-                        if framework:
-                            break
+                        framework = call_name
+                        break
 
         if framework:
             self.factories.append(
@@ -128,25 +111,28 @@ class AppDetector(ast.NodeVisitor):
                     path=self.source_path,
                 )
             )
+        else:
+            self.factories.append(
+                AppInfo(
+                    module=self._get_module_path(),
+                    app=f"{node.name}()",
+                    framework="Unknown",
+                    factory=True,
+                    path=self.source_path,
+                )
+            )
 
         self.generic_visit(node)
 
     # Also catch async factory functions
     visit_AsyncFunctionDef = visit_FunctionDef
 
-    def _get_call_name(self, node: ast.Call) -> Optional[str]:
+    def _get_call_name(self, node: ast.Call) -> str | None:
         """Extract the name of a function call."""
         if isinstance(node.func, ast.Name):
             return node.func.id
         elif isinstance(node.func, ast.Attribute):
             return node.func.attr
-        return None
-
-    def _match_framework(self, name: str) -> Optional[str]:
-        """Match a name to a known framework."""
-        for pattern, framework in FRAMEWORK_PATTERNS:
-            if name == pattern:
-                return framework
         return None
 
     def _get_module_path(self) -> str:
@@ -161,7 +147,7 @@ class AppDetector(ast.NodeVisitor):
             return self.source_path.stem
 
 
-def detect_app_in_file(file_path: Path) -> List[AppInfo]:
+def detect_app_in_file(file_path: Path) -> list[AppInfo]:
     """Detect ASGI/WSGI apps in a single Python file."""
     try:
         source = file_path.read_text(encoding="utf-8")
@@ -176,7 +162,7 @@ def detect_app_in_file(file_path: Path) -> List[AppInfo]:
     return detector.apps if detector.apps else detector.factories
 
 
-def detect_all_apps_in_directory(directory: Path) -> List[AppInfo]:
+def detect_all_apps_in_directory(directory: Path) -> list[AppInfo]:
     """
     Detect all potential ASGI/WSGI apps in a directory.
     """
@@ -194,9 +180,7 @@ def detect_all_apps_in_directory(directory: Path) -> List[AppInfo]:
             all_apps.extend(apps)
 
     # Sort so priority files come first
-    all_apps.sort(
-        key=lambda x: (0 if x.path.name in priority_files else 1, x.path.name)
-    )
+    all_apps.sort(key=lambda x: (0 if x.path.name in priority_files else 1, x.path.name))
 
     return all_apps
 

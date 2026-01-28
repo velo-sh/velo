@@ -38,6 +38,7 @@ class VeloConfig:
 
     # Security
     shield_active: bool = field(default=False)
+    shield_mode: str = field(default="enforce")  # enforce, dry_run, disabled
     trusted_proxy: bool = field(default=False)
     forwarded_allow_ips: str = field(default="")
     trusted_prefixes: list[str] = field(default_factory=list)
@@ -58,6 +59,13 @@ class VeloConfig:
     graceful_shutdown_timeout: int = field(default=GRACEFUL_SHUTDOWN_TIMEOUT)
     host: str = field(default="127.0.0.1")
     port: int = field(default=DEFAULT_PORT)
+
+    # Hardening (Phase 2)
+    circuit_breaker_threshold: int = field(default=3)
+    circuit_breaker_enabled: bool = field(default=True)
+    metrics_enabled: bool = field(default=True)
+    tracing_enabled: bool = field(default=True)
+    slo_fork_latency_ms: int = field(default=100)
 
     # Features
     preload_modules: list[str] = field(default_factory=list)
@@ -102,6 +110,7 @@ class VeloConfig:
         instance = cls(
             env=env_mode,
             shield_active=os.environ.get("VELO_ZYGOTE_SHIELD_ACTIVE") == "1",
+            shield_mode=os.environ.get("VELO_SHIELD_MODE", "enforce"),
             trusted_proxy=os.environ.get("VELO_TRUSTED_PROXY") == "1",
             forwarded_allow_ips=os.environ.get("VELO_FORWARDED_ALLOW_IPS", ""),
             timeout_multiplier=ENV_PROFILE.timeout_multiplier,
@@ -113,6 +122,11 @@ class VeloConfig:
             port=get_int("VELO_PORT", DEFAULT_PORT),
             preload_modules=get_list("VELO_PRELOAD"),
             hpc_threads=get_int("VELO_SECURITY_HPC_THREADS", 1),
+            circuit_breaker_threshold=get_int("VELO_CIRCUIT_BREAKER_THRESHOLD", 3),
+            circuit_breaker_enabled=os.environ.get("VELO_CIRCUIT_BREAKER_ENABLED") == "1",
+            metrics_enabled=os.environ.get("VELO_METRICS_ENABLED") == "1",
+            tracing_enabled=os.environ.get("VELO_TRACING_ENABLED") == "1",
+            slo_fork_latency_ms=get_int("VELO_SLO_FORK_LATENCY_MS", 100),
         )
 
         # Resolve Security Matrix (Self-contained logic)

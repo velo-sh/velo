@@ -1,12 +1,14 @@
-from fastapi import FastAPI
-import time
 import os
 
+from fastapi import FastAPI
+
 app = FastAPI()
+
 
 @app.get("/")
 def read_root():
     return {"status": "HIO-003 Active", "pid": os.getpid()}
+
 
 @app.post("/dirty")
 def dirty_state():

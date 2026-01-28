@@ -4,6 +4,7 @@
 import os
 import subprocess
 import time
+from pathlib import Path
 
 import requests
 
@@ -51,7 +52,7 @@ class TestSandboxShield:
         ws2.mkdir()
 
         # Helper to start velo in a workspace
-        def start_velo_in(ws):
+        def start_velo_in(ws: Path) -> subprocess.Popen[str]:
             (ws / "main.py").write_text(
                 'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/id")\ndef get_id(): return {"ws": "'
                 + ws.name
@@ -81,7 +82,7 @@ class TestSandboxShield:
             # Cleanup
             p1.terminate()
             p2.terminate()
-        except:
+        except Exception:
             pass
 
         # MANDATE: Each project root MUST have a unique Zygote socket path.

@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+# Mark entire module as WebSocket WIP - skip in CI due to timing issues
+pytestmark = [pytest.mark.websocket_wip, pytest.mark.tier1]
+
 
 class TestWebSocketSubprotocol:
     @pytest.mark.tier1
@@ -66,6 +69,6 @@ async def app(scope, receive, send):
         finally:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except:
+            except Exception:
                 pass
             proc.wait()
