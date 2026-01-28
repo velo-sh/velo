@@ -10,7 +10,9 @@ except ImportError:
     torch: ModuleType | None = None  # type: ignore[no-redef]
 
 # H-17: Immutability Defense (Monkey-patching)
-_ORIG_DATA_PTR = torch.Tensor.data_ptr if torch else None  # type: ignore
+_ORIG_DATA_PTR = None
+if torch and hasattr(torch, "Tensor"):
+    _ORIG_DATA_PTR = getattr(torch.Tensor, "data_ptr", None)
 
 
 def _safe_data_ptr(self: Any) -> int | None:
