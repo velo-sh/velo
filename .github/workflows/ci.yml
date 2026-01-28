@@ -662,8 +662,9 @@ jobs:
           command: uv run pytest tests/qa/test_phase6_1_performance_hardened.py -v --tb=short
 
   qa-phase62-prosecutor:
-    name: "QA 6.2: Prosecutor Suite (RFC-0012)"
+    name: "QA 6.2: Prosecutor Suite (RFC-0012) (${{ matrix.shard }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -671,17 +672,22 @@ jobs:
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          # Note: Prosecutor Suite includes ArchGuard to auto-adapt to runner arch
-          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short
+          # Use sharding to parallelize the prosecutor suite
+          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
   qa-phase611-matrix:
     name: "QA 6.1.1: ${{ matrix.suite_name }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -693,15 +699,18 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - { name: "Smoke & Gold", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
+          - { name: "Smoke & Gold (1)", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
+          - { name: "Smoke & Gold (2)", path: "tests/qa/phase_6_1_1/test_phase611_golden_path_2.py" }
           - { name: "Features & Integration", path: "tests/qa/phase_6_1_1/test_phase611_features.py tests/qa/phase_6_1_1/test_phase611_integration.py" }
           - { name: "Isolation & Agents", path: "tests/qa/phase_6_1_1/test_isolation.py tests/qa/phase_6_1_1/test_phase611_agent_*.py" }
           - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
           - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
           - { name: "Release Blockers & Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
         include:
-          - suite: { name: "Smoke & Gold" }
-            suite_name: "Smoke & Gold"
+          - suite: { name: "Smoke & Gold (1)" }
+            suite_name: "Smoke & Gold (1)"
+          - suite: { name: "Smoke & Gold (2)" }
+            suite_name: "Smoke & Gold (2)"
           - suite: { name: "Features & Integration" }
             suite_name: "Features & Integration"
           - suite: { name: "Isolation & Agents" }

@@ -480,6 +480,7 @@ mod tests {
                 .to_string(),
             1,
         );
+        node.mark_healthy();
         assert_eq!(node.active_connections(), 0);
 
         node.increment();
@@ -504,6 +505,7 @@ mod tests {
                 .to_string(),
             1,
         ));
+        node.mark_healthy();
         assert_eq!(node.active_connections(), 0);
 
         {
@@ -537,6 +539,9 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
         ]);
+        for w in &lb.workers {
+            w.mark_healthy();
+        }
 
         // First selection should pick any (all have 0 connections)
         let guard1 = lb.select_worker().unwrap();
@@ -572,6 +577,9 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
+        for w in &lb.workers {
+            w.mark_healthy();
+        }
 
         lb.mark_unhealthy(&w1);
 
@@ -615,6 +623,12 @@ mod tests {
                 .to_string(),
             1,
         );
+        lb.mark_healthy(
+            std::env::temp_dir()
+                .join("w1.sock")
+                .to_string_lossy()
+                .as_ref(),
+        );
         assert_eq!(lb.worker_count(), 1);
 
         lb.add_worker(
@@ -623,6 +637,12 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
             2,
+        );
+        lb.mark_healthy(
+            std::env::temp_dir()
+                .join("w2.sock")
+                .to_string_lossy()
+                .as_ref(),
         );
         assert_eq!(lb.worker_count(), 2);
 
@@ -642,6 +662,9 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let mut lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
+        for w in &lb.workers {
+            w.mark_healthy();
+        }
         assert_eq!(lb.worker_count(), 2);
 
         lb.remove_worker(&w1);
@@ -668,6 +691,7 @@ mod tests {
         ]);
 
         // Acquire a connection
+        lb.mark_healthy(&lb.workers[0].socket_path().to_string());
         let guard = lb.select_worker().unwrap();
         assert_eq!(lb.workers[0].active_connections(), 1);
 
@@ -699,6 +723,7 @@ mod tests {
         ]);
 
         // Acquire a connection but don't drop it
+        lb.mark_healthy(&lb.workers[0].socket_path().to_string());
         let _guard = lb.select_worker().unwrap();
 
         // Shutdown with very short timeout should fail
@@ -713,6 +738,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let lb = LoadBalancer::new(vec![w1]);
+        lb.mark_healthy(&lb.workers[0].socket_path().to_string());
         let worker = &lb.workers[0];
 
         // 1-4 failures: still healthy
@@ -744,6 +770,9 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let lb = LoadBalancer::new(vec![w1.clone(), w2.clone()]);
+        for w in &lb.workers {
+            w.mark_healthy();
+        }
 
         // Both have 0 connections. RR should alternate.
         let g1 = lb.select_worker().unwrap();
