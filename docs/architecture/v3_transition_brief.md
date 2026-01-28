@@ -153,19 +153,25 @@ You correctly identified a fundamental operational shift:
     *   **Path Injection**: The Supervisor tells Tier 1: "Mutate yourself into *this* specific path: `/opt/app-a/.venv`".
     *   **Implication**: In this mode, `velo` is purely a **Runtime Supervisor**, completely decoupling from the "Build Phase".
 
-### 6.2 The Stackable Venv Architecture (Overlay Pattern)
-To support "Industry Standard Base" (e.g., Data Science), V3 implements a **Three-Layer Stack** via `sys.path` injection (logical OverlayFS).
+### 6.2 The Zygote Forest Strategy (Dynamic Dependency DAG)
+To achieve **theoretical maximum sharing** without sacrificing compatibility, V3 replaces static layering with a **Dynamic Dependency DAG (Directed Acyclic Graph)**.
 
-**The Stack**:
-1.  **Tier 0 (Root Zygote)**: Pure Python + Stdlib.
-2.  **Tier 1 (Industry Zygote)**: Managed by Velo (via `uv`). Contains heavy common libs (numpy, pandas, torch).
-3.  **Tier 2 (User Project)**: Managed by User. Contains app logic + niche deps.
+**The Concept: Longest Common Prefix (LCP)**
+We do not define fixed "Industry Zygotes". Instead, Velo identifies the **Deepest Compatible Ancestor** for every project.
+*   **Goal**: Find a running Zygote that matches the longest subset of the User's dependencies.
 
-**The Smart Resolution Strategy (Conflict Avoidance)**:
-The core risk is **Version Conflict** (e.g., Tier 1 has `numpy 2.0`, User wants `numpy 1.x`).
-*   **Mechanism**: Velo Supervisor analyzes `pyproject.toml` / `uv.lock` before routing.
-*   **Case A (Hit)**: User deps are compatible with Tier 1. -> **Route to Industry Zygote** (Max Sharing).
-*   **Case B (Miss)**: User deps conflict with Tier 1. -> **Fallback to Root Zygote** (Max Correctness).
-    *   In Fallback mode, the User Venv is loaded directly on top of Tier 0. The Industry layer is skipped entirely.
+**The Algorithm**:
+1.  **Analyze**: Velo parses `uv.lock` to extract a "Dependency Signature" (e.g., `[numpy==1.24, pydantic==2.8]`).
+2.  **Tree Search**: Velo scans the live Zygote Forest.
+    *   *Zygote A*: `[numpy==1.24]`
+    *   *Zygote B*: `[numpy==1.24, pydantic==2.8]`
+3.  **Fork Strategy**:
+    *   User needs: `[numpy==1.24, pydantic==2.8, torch==2.1]`.
+    *   **Action**: Fork from **Zygote B** (The Hit).
+    *   **Load**: Import `torch`.
+    *   **Result**: 100% Compatibility + Max Shared Memory (inherited A & B).
+4.  **Fallback**: If no match found, Fork from Root (Tier 0).
 
-**Result**: "Default to Speed (Sharing), Fallback to Correctness (Isolation)."
+**Dynamic Re-Zygoting (Emergence)**:
+*   If a specific "Intermediate State" (e.g., Node B) is forked frequently (Hot Path), Velo promotes it to a **Long-Lived Zygote**.
+*   **Result**: The "Industry Base" is not manually configured; it **emerges** from actual workload usage patterns.
