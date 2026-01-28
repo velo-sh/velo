@@ -251,10 +251,16 @@ We do not build a "Dev Server". We build a **Production Serverless Engine** that
 
 To answer the fundamental question: "How many venvs are there and who manages them?"
 
+**The Initialization Principle: Reactive & Empty**
+*   **Zero Assumption**: Velo starts with **Nothing**. No pre-defined environments are required.
+*   **User Driven**: The entire environment creation process is triggered by **Reading the User's `uv.lock`**.
+*   **UV Linkage**: All environments are essentially "Combinations of Hardlinks" from the central `uv` cache. `uv` creates multiple isolated environments that physically share the same underlying files.
+
 ### Type 0: The Empty Venv (Root)
 *   **Content**: Python Interpreter + Standard Library (`os`, `sys`...).
-*   **Location**: The Velo Runtime binary itself (or system python).
-*   **Manager**: **Immutable**. Owned by the Velo Release.
+*   **Origin**: Created **On-Demand** by Velo (calling `uv venv`) if missing.
+*   **Role**: The "Clean Slate" to spin up the first Zygote.
+*   **Manager**: **Velo**. It ensures a clean python is available to fork from.
 
 ### Type 1: The Infrastructure Venv (Base/Hub)
 *   **Content**: High-leverage, heavy libraries (e.g., `numpy`, `torch`, `fastapi`).
