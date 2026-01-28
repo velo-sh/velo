@@ -150,17 +150,17 @@ def main():
         sys.exit(1)
 
     # Calculate statistics
-    cpython_mean = statistics.mean(result.cpython_times)
-    velo_mean = statistics.mean(result.velo_times)
-    speedup = cpython_mean / max(velo_mean, 0.0001)
+    cpython_median = statistics.median(result.cpython_times)
+    velo_median = statistics.median(result.velo_times)
+    speedup = cpython_median / max(velo_median, 0.0001)
     mem_reduction = (result.cpython_rss - result.velo_rss) / max(result.cpython_rss, 1)
     
     print()
     
     # Print comparison table
     print_race_result(
-        cpython_mean, velo_mean,
-        mode="Serverless Cold Start",
+        cpython_median, velo_median,
+        mode=f"Serverless Cold Start (Median of {args.runs} runs)",
         memory_data=(result.cpython_rss, result.velo_rss)
     )
     
@@ -183,7 +183,15 @@ def main():
         )
 
     # Save summary for demo
-    save_summary_metric("Serverless Instant", f"~{speedup:.0f}x faster cold start")
+    save_summary_metric(
+        "Serverless Computing (Cold Start)", 
+        f"{speedup:.1f}x faster cold start", 
+        mem_save=mem_reduction,
+        cpython_time=cpython_median,
+        velo_time=velo_median,
+        cpython_rss=result.cpython_rss,
+        velo_rss=result.velo_rss
+    )
 
 
 if __name__ == "__main__":

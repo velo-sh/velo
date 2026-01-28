@@ -1,5 +1,5 @@
 #!/bin/bash
-# HIO-005 CLI Accelerator Runner
+# CLI Accelerator Runner
 # Demonstrates Velo's TTFL (Time To First Logic) optimization
 
 set -e
@@ -45,9 +45,8 @@ if [ "$COMPARE" = true ]; then
 
     # A/B Comparison Mode (using uv run with dependencies)
     uv run --with pydantic --with rich --with click python "$EXAMPLE_DIR/bench_race.py" --runs="$RUNS"
-    echo -e "\n${GREEN}[DONE] HIO-005 CLI Accelerator Complete.${RESET}"
 else
-    echo -e "${CYAN}Velo HIO: CLI Accelerator${RESET}"
+    echo -e "${CYAN}Velo: CLI Accelerator${RESET}"
     echo "--------------------------"
     echo "Run benchmark:"
     echo "  $0 --compare"

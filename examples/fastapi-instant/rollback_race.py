@@ -226,15 +226,17 @@ def main():
             velo_time, velo_rss, velo_times = measure_velo_forks(n, workspace, progress, ve_task, is_rich)
         
         # Calculate results
-        speedup = trad_time / max(velo_time, 0.0001)
+        c_median = statistics.median(trad_times)
+        v_median = statistics.median(velo_times)
+        speedup = c_median / max(v_median, 0.0001)
         mem_reduction = (trad_rss - velo_rss) / max(trad_rss, 1)
         
         print()
         
         # Print comparison table
         print_race_result(
-            trad_time, velo_time,
-            mode=f"{n}x Environment Resets",
+            c_median, v_median,
+            mode=f"Environment Reset (Median of {n} runs)",
             memory_data=(trad_rss, velo_rss)
         )
         
@@ -257,7 +259,15 @@ def main():
             )
         
         # Save summary for demo
-        save_summary_metric("FastAPI Instant", f"~{speedup:.0f}x faster reset")
+        save_summary_metric(
+            "Web APIs & Services (FastAPI)", 
+            f"{speedup:.1f}x faster reset", 
+            mem_save=mem_reduction,
+            cpython_time=c_median,
+            velo_time=v_median,
+            cpython_rss=trad_rss,
+            velo_rss=velo_rss
+        )
     finally:
         # Council Recommendation: Safe cleanup in finally block
         try:

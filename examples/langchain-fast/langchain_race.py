@@ -228,7 +228,7 @@ def main():
     mem_reduction = (c_rss - v_rss) / max(c_rss, 1)
     
     print()
-    print_race_result(c_time, v_time, mode="Pydantic Schema Generation (500 Models)", memory_data=(c_rss, v_rss))
+    print_race_result(c_time, v_time, mode=f"Pydantic Schema Generation (Median of {args.runs} runs)", memory_data=(c_rss, v_rss))
     print()
     print_verdict(speedup, mem_reduction)
     print_reproduce_hint(f"./examples/langchain-fast/run_hio.sh --compare --runs={args.runs}")
@@ -237,7 +237,15 @@ def main():
         export_results_json(args.export_json, cpython_times, velo_times)
 
     # Save summary for demo
-    save_summary_metric("LangChain/Pydantic", f"~{speedup:.0f}x faster schema gen")
+    save_summary_metric(
+        "AI & Data Processing (LangChain)", 
+        f"{speedup:.1f}x faster schema gen", 
+        mem_save=mem_reduction,
+        cpython_time=c_time,
+        velo_time=v_time,
+        cpython_rss=c_rss,
+        velo_rss=v_rss
+    )
 
 
 if __name__ == "__main__":

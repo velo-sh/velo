@@ -1,5 +1,5 @@
 #!/bin/bash
-# HIO-004 (Serverless Instant) Demo Script
+# Serverless Cold Start Runner
 # Demonstrates Velo's cold start optimization for serverless workloads
 #
 # Usage:
@@ -26,7 +26,7 @@ for arg in "$@"; do
             RUNS="${arg#*=}"
             ;;
         --help|-h)
-            echo "HIO-004 (Serverless Instant) - Cold Start Benchmark"
+            echo "Serverless Computing - Cold Start Benchmark"
             echo ""
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -57,16 +57,15 @@ command -v uv >/dev/null 2>&1 || { echo >&2 "[ERROR] uv is not installed. Please
 # Function to print banner
 print_banner() {
     echo "=================================================="
-    echo " HIO-004: Serverless Instant"
+    echo " Serverless Instant"
     echo " Cold Start → Near Zero"
     echo "=================================================="
 }
 
 # Main execution
-print_banner
 echo ""
 
-echo -e "\033[38;5;33m[Velo HIO] Initializing Serverless Instant Demo...\033[0m"
+echo -e "\033[38;5;33m[Velo] Initializing Serverless Cold Start Demo...\033[0m"
 echo -e "\033[90m  Runs: $RUNS\033[0m"
 
 if [ "$COMPARE_MODE" = true ]; then
@@ -81,8 +80,4 @@ else
     
     echo -e "\n\033[1;32m=== Phase 2: Velo Zygote + Fork ===\033[0m"
     uv run python velo_runner.py
-fi
-
-if [ "$ran_benchmark" = true ]; then
-    echo -e "\n\033[1;32m[DONE] HIO-004 Serverless Instant Demo Complete.\033[0m"
 fi

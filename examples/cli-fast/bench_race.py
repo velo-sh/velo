@@ -155,9 +155,9 @@ def main():
 
     # Calculate results
     import statistics
-    avg_cpython = statistics.mean(cpython_times)
-    avg_velo = statistics.mean(velo_times)
-    speedup = avg_cpython / max(avg_velo, 0.001)
+    median_cpython = statistics.median(cpython_times)
+    median_velo = statistics.median(velo_times)
+    speedup = median_cpython / max(median_velo, 0.001)
     
     # Memory estimation (based on typical CLI tool footprint)
     mem_cpython = 48.4  # MB - typical heavy CLI with rich/click/pydantic
@@ -168,8 +168,8 @@ def main():
     
     # Print comparison table
     print_race_result(
-        avg_cpython, avg_velo, 
-        mode="TTFL (Time To First Logic)",
+        median_cpython, median_velo, 
+        mode=f"TTFL (Median of {args.runs} runs)",
         memory_data=(mem_cpython, mem_velo)
     )
     
@@ -192,7 +192,15 @@ def main():
         )
 
     # Save summary for demo
-    save_summary_metric("CLI Accelerator", f"~{speedup:.0f}x faster TTFL")
+    save_summary_metric(
+        "CLI Applications (Path Caching)", 
+        f"{speedup:.1f}x faster TTFL", 
+        mem_save=mem_reduction, 
+        cpython_time=median_cpython,
+        velo_time=median_velo,
+        cpython_rss=mem_cpython,
+        velo_rss=mem_velo
+    )
 
 
 if __name__ == "__main__":

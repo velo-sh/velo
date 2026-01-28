@@ -224,7 +224,7 @@ def main():
     mem_reduction = (c_rss - v_rss) / max(c_rss, 1) # Note: CoW sharing makes this even better in multi-worker
     
     print()
-    print_race_result(c_time, v_time, mode="Django App Registry Init", memory_data=(c_rss, v_rss))
+    print_race_result(c_time, v_time, mode=f"Django App Registry Init (Median of {args.runs} runs)", memory_data=(c_rss, v_rss))
     print()
     print_verdict(speedup, mem_reduction)
     print_reproduce_hint(f"./examples/django-heavy/run_hio.sh --compare --runs={args.runs}")
@@ -233,7 +233,15 @@ def main():
         export_results_json(args.export_json, cpython_times, velo_times)
 
     # Save summary for demo
-    save_summary_metric("Django Heavyweight", f"~{speedup:.0f}x faster startup")
+    save_summary_metric(
+        "Heavyweight Frameworks (Django)", 
+        f"{speedup:.1f}x faster startup", 
+        mem_save=mem_reduction,
+        cpython_time=c_time,
+        velo_time=v_time,
+        cpython_rss=c_rss,
+        velo_rss=v_rss
+    )
 
 
 if __name__ == "__main__":

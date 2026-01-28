@@ -166,12 +166,18 @@ def create_progress_context():
         progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=30),
+            BarColumn(
+                bar_width=50, 
+                style="grey23", 
+                complete_style="bold bright_cyan", 
+                finished_style="bold bright_green",
+                pulse_style="bold cyan"
+            ),
             TaskProgressColumn(),
             TimeElapsedColumn(),
             console=console,
-            transient=False, # Keep in terminal history for better benchmark context
-            refresh_per_second=10 # Reduced frequency to minimize overhead
+            transient=False, 
+            refresh_per_second=20 # Higher refresh for smoother YouTube motion
         )
         return progress, True
 
@@ -272,8 +278,8 @@ def print_race_result(cpython_time: float, velo_time: float, mode: str = "Warm C
         v_bar = "█" * v_width + "░" * (30 - v_width)
         
         # Time Rows
-        table.add_row("Startup Time", "CPython", f"[red]{c_bar}[/]", format_time(cpython_time))
-        table.add_row("", "Velo", f"[green]{v_bar}[/]", f"{format_time(velo_time)} ⚡")
+        table.add_row("Startup Time", "CPython", f"[bold red]{c_bar}[/]", f"[bold red]{format_time(cpython_time)}[/]")
+        table.add_row("", "Velo", f"[bold bright_cyan]{v_bar}[/]", f"[bold bright_cyan]{format_time(velo_time)} ⚡[/]")
         
         # Memory Rows
         if memory_data:
@@ -430,21 +436,90 @@ def export_results_json(
     return results
 
 
-def save_summary_metric(name: str, result: str):
+def save_summary_metric(
+    name: str, 
+    result: str, 
+    mem_save: Optional[float] = None, 
+    speedup: Optional[float] = None,
+    cpython_time: Optional[float] = None,
+    velo_time: Optional[float] = None,
+    cpython_rss: Optional[float] = None,
+    velo_rss: Optional[float] = None
+):
     """
     Append a metric to the global summary file for the demo.
-    Format: '   • {name}: {result}'
+    Format: '• {name}: {result} [MEM:{mem_save}%]'
+    Also updates the JSON rich report if raw values are provided.
     """
     summary_file = os.getenv("HIO_SUMMARY_FILE", ".velo_summary.txt")
     
-    # Pad name for alignment (max length ~22 based on longest name "LangChain/Pydantic")
-    formatted_line = f"   • {name:<22} {result}"
+    # Use standard colon separator for parsed display
+    # Add memory saving if provided
+    mem_suffix = f"|{mem_save*100:.0f}" if mem_save is not None and mem_save > 0 else ""
+    formatted_line = f"• {name}: {result}{mem_suffix}"
     
     try:
         with open(summary_file, "a") as f:
-            f.write(f"'{formatted_line}' ") # Write as quoted string for gum style arg
+            f.write(f"{formatted_line}\n")
     except Exception:
         pass  # Fail silently to not disrupt benchmark
+
+    # Automatically update rich report if raw data is provided
+    if cpython_time is not None and velo_time is not None:
+        save_rich_report(
+            name, 
+            cpython_time, 
+            velo_time,
+            cpython_rss or 0.0,
+            velo_rss or 0.0
+        )
+
+def save_rich_report(
+    name: str, 
+    cpython_time: float, 
+    velo_time: float,
+    cpython_rss: float = 0.0,
+    velo_rss: float = 0.0
+):
+    """
+    Save or update a structured JSON report for all benchmarks.
+    Stores raw CPython vs Velo comparison data for Web Dashboard.
+    """
+    report_file = os.getenv("HIO_REPORT_JSON", ".velo_report.json")
+    
+    data = {"timestamp": "", "benchmarks": []}
+    if os.path.exists(report_file):
+        try:
+            with open(report_file, "r") as f:
+                data = json.load(f)
+        except Exception:
+            pass
+            
+    # Update or add the benchmark
+    found = False
+    for b in data["benchmarks"]:
+        if b["name"] == name:
+            b["cpython_time"] = round(cpython_time * 1000, 2)  # ms
+            b["velo_time"] = round(velo_time * 1000, 2)  # ms
+            b["cpython_rss"] = round(cpython_rss, 1)  # MB
+            b["velo_rss"] = round(velo_rss, 1)  # MB
+            found = True
+            break
+            
+    if not found:
+        data["benchmarks"].append({
+            "name": name,
+            "cpython_time": round(cpython_time * 1000, 2),
+            "velo_time": round(velo_time * 1000, 2),
+            "cpython_rss": round(cpython_rss, 1),
+            "velo_rss": round(velo_rss, 1)
+        })
+        
+    try:
+        with open(report_file, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception:
+        pass
 
 
 def spinner_context(message: str):
