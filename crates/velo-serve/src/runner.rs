@@ -822,10 +822,11 @@ pub fn run_server(
     }
 
     // Step 3: Early validation - Module check (FAIL-FAST-001)
-    // Three-phase check:
+    // Two-phase check:
     // 1. find_spec: check module exists (fast, no side effects)
     // 2. ast.parse: check syntax (fast, no side effects)
-    // 3. import: catch runtime import errors (runs in isolated subprocess)
+    // Note: We don't do actual import here because it would trigger
+    // dependency resolution (fastapi, etc) which may fail in subprocess.
     {
         use std::process::Command;
         let check_script = format!(
@@ -850,15 +851,6 @@ if spec.origin and spec.origin.endswith('.py'):
     except SyntaxError as e:
         print(f'SYNTAX_ERROR: {{e}}', file=sys.stderr)
         sys.exit(1)
-
-# Phase 3: Actually import to catch runtime errors
-# This runs in this subprocess which exits immediately after,
-# so any side effects are isolated and don't affect uvicorn
-try:
-    __import__(module_name)
-except Exception as e:
-    print(f'IMPORT_ERROR: {{type(e).__name__}}: {{e}}', file=sys.stderr)
-    sys.exit(1)
 "#,
             module
         );
@@ -881,12 +873,6 @@ except Exception as e:
                 } else if stderr.contains("SYNTAX_ERROR") {
                     return Err(anyhow::anyhow!(
                         "Syntax error in module '{}'.\n\n{}",
-                        module,
-                        stderr.trim()
-                    ));
-                } else if stderr.contains("IMPORT_ERROR") {
-                    return Err(anyhow::anyhow!(
-                        "Failed to import module '{}'.\n\n{}",
                         module,
                         stderr.trim()
                     ));
