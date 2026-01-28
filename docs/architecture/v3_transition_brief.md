@@ -117,3 +117,30 @@ The Supervisor Model fits both Single-Machine and Serverless patterns, acting as
     *   **Benefit 1 (Cost)**: 50 concurrent requests share 90% of memory. You can handle 10x traffic on the *same* memory tier.
     *   **Benefit 2 (Latency)**: Forking a pre-warmed Zygote is milliseconds. Initializing a fresh container is seconds. Velo converts "Cold Starts" into "Warm Forks".
 *   **Conclusion**: Velo transforms Serverless from "Stateless Functions" into "Elastic Micro-Monoliths". Architecture serves the purpose of **Cost & Latency Reduction**.
+
+---
+
+## 6. Advanced Optimization: Tiered Zygote Strategy (The Grand Zygote)
+
+To support **Heterogeneous Workloads** (App A vs App B) while maximizing shared memory, V3 introduces a **Three-Tier Process Tree**. This solves the "dependency conflict" problem while retaining "base runtime sharing".
+
+### Tier 0: The Grand Zygote (The Root)
+*   **State**: "Naked" Python.
+*   **Loaded**: Python VM + Standard Library (`os`, `sys`, `json`, `socket`, `asyncio`) + Velo Bootstrap Shim.
+*   **Memory**: Shared across **ALL** Apps on the node (Cross-Tenant Sharing).
+*   **Role**: The universal immutable template.
+
+### Tier 1: The Project Zygote (The Branch)
+*   **Creation**: Forked from Grand Zygote.
+*   **Mutation**: Inject `PYTHONPATH`, run `site.addsitedir(User_Venv)`.
+*   **Loaded**: User-specific dependencies (e.g., `django` vs `fastapi`).
+*   **Memory**: Shares Tier 0 pages. Private pages hold App-specific deps.
+*   **Role**: The per-project, pre-warmed template.
+
+### Tier 2: The Worker (The Leaf)
+*   **Creation**: Forked from Project Zygote.
+*   **Action**: Handle Requests (ASGI/WSGI).
+*   **Memory**: Shares Tier 0 + Tier 1 pages.
+
+**Architectural Value**:
+Even in fully heterogeneous environments (100 different apps), the heavy CPython runtime and stdlib (~15-20MB) are loaded **once** in the Grand Zygote. This saves GBs of RAM in high-density multi-tenant nodes and reduces the cold-start time (Tier 1 creation) to sub-millisecond range.
