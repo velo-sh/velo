@@ -16,7 +16,7 @@ def test_ADVERSARIAL_H5_orphan_race(isolated_env: VeloTestEnv) -> None:
     """
     app_py = isolated_env.create_app("app.py", "import time\ntime.sleep(60)")
     port = isolated_env.next_port()
-    process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
+    process = isolated_env.spawn_velo("run", "--vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
     master_pid = process.pid

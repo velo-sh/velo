@@ -117,9 +117,9 @@ class TestSecurityShieldIntegration:
         Verify that Zygote uses either Abstract Namespace (Linux) or Atomic Temp Dirs (macOS).
         """
         # 1. Start a Zygote server in the background
-        # We use a dummy project root to ensure hashing/naming works
+        # Use 'velo zygote start' which properly initializes the Zygote process
         proc = subprocess.Popen(
-            [VELO_BIN, "serve", "--zygote"],
+            [VELO_BIN, "zygote", "start"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=tmp_path,
@@ -145,6 +145,8 @@ class TestSecurityShieldIntegration:
                 assert len(matches) > 0, f"SECURITY FAILURE: Zygote socket not found. Checked: {stable_path}"
 
         finally:
+            # Use 'velo zygote stop' for clean shutdown
+            subprocess.run([VELO_BIN, "zygote", "stop"], cwd=tmp_path, capture_output=True)
             proc.terminate()
             proc.wait(timeout=5)
 
