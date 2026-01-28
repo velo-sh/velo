@@ -27,8 +27,9 @@ def test_env(tmp_path):
 def test_json_logging_format(test_env):
     """ADR-0010-D5: Verify JSON logging output."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
+        s.bind(("", 0))
         port = s.getsockname()[1]
 
     velo = get_velo_binary()

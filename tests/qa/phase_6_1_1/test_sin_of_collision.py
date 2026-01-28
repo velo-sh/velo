@@ -178,9 +178,9 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
 
         # Debug: List socket dirs
         print("\n[DEBUG] Socket Dirs found:")
-        tmpdir = os.environ.get('TMPDIR', '/tmp')
-        if not tmpdir.endswith('/'):
-            tmpdir += '/'
+        tmpdir = os.environ.get("TMPDIR", "/tmp")
+        if not tmpdir.endswith("/"):
+            tmpdir += "/"
         os.system(f"ls -d {tmpdir}velo-secure-* || echo 'None'")
 
 
