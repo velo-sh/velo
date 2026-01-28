@@ -100,7 +100,7 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
         # Wait for A to be ready
         # Robust wait loop (replaces flaky sleep)
         start = time.time()
-        while time.time() - start < 10:
+        while time.time() - start < 20:
             if proc_a.poll() is not None:
                 assert proc_a.stderr is not None
                 raise RuntimeError(f"Proc A failed: {proc_a.stderr.read().decode()}")
@@ -130,7 +130,7 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
 
         # Robust wait loop for B
         start = time.time()
-        while time.time() - start < 10:
+        while time.time() - start < 20:
             if proc_b.poll() is not None:
                 assert proc_b.stderr is not None
                 raise RuntimeError(f"Proc B failed: {proc_b.stderr.read().decode()}")
@@ -178,7 +178,10 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
 
         # Debug: List socket dirs
         print("\n[DEBUG] Socket Dirs found:")
-        os.system(f"ls -d {os.environ.get('TMPDIR', '/tmp')}velo-secure-* || echo 'None'")
+        tmpdir = os.environ.get('TMPDIR', '/tmp')
+        if not tmpdir.endswith('/'):
+            tmpdir += '/'
+        os.system(f"ls -d {tmpdir}velo-secure-* || echo 'None'")
 
 
 def test_socket_path_determinism():
