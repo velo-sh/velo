@@ -437,20 +437,24 @@ jobs:
           command: uv run pytest tests/qa/phase_7_1 -n auto --dist loadscope -v --tb=short
 
   qa-phase-7-2:
-    name: "QA 7.2: ASGI Bridge Compatibility"
+    name: "QA 7.2: ASGI Bridge Compatibility (${{ matrix.shard }})"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
 
 
   qa-zygote-matrix:
@@ -692,7 +696,8 @@ jobs:
           - { name: "Smoke & Gold", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
           - { name: "Features & Integration", path: "tests/qa/phase_6_1_1/test_phase611_features.py tests/qa/phase_6_1_1/test_phase611_integration.py" }
           - { name: "Isolation & Agents", path: "tests/qa/phase_6_1_1/test_isolation.py tests/qa/phase_6_1_1/test_phase611_agent_*.py" }
-          - { name: "Security & Expert", path: "tests/qa/phase_6_1_1/test_security_hardened.py tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
+          - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
+          - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
           - { name: "Release Blockers & Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
         include:
           - suite: { name: "Smoke & Gold" }
@@ -701,8 +706,10 @@ jobs:
             suite_name: "Features & Integration"
           - suite: { name: "Isolation & Agents" }
             suite_name: "Isolation & Agents"
-          - suite: { name: "Security & Expert" }
-            suite_name: "Security & Expert"
+          - suite: { name: "Security Hardened" }
+            suite_name: "Security Hardened"
+          - suite: { name: "Expert Concerns" }
+            suite_name: "Expert Concerns"
           - suite: { name: "Release Blockers & Whitebox" }
             suite_name: "Release Blockers & Whitebox"
     steps:
@@ -712,9 +719,10 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
           command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
-  qa-phase611-perf:
-    name: "QA 6.1.1: Performance Baselines"
+  qa-phase611-perf-matrix:
+    name: "QA 6.1.1: Performance (${{ matrix.suite_name }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -723,16 +731,23 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Perf Regressions", path: "tests/qa/phase_6_1_1/test_phase611_perf_regressions.py" }
+          - { name: "Shadow Preload", path: "tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py" }
+        include:
+          - suite: { name: "Perf Regressions" }
+            suite_name: "Perf Regressions"
+          - suite: { name: "Shadow Preload" }
+            suite_name: "Shadow Preload"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
-               tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
-               -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -v --tb=short
 
 
 
