@@ -153,27 +153,27 @@ You correctly identified a fundamental operational shift:
     *   **Path Injection**: The Supervisor tells Tier 1: "Mutate yourself into *this* specific path: `/opt/app-a/.venv`".
     *   **Implication**: In this mode, `velo` is purely a **Runtime Supervisor**, completely decoupling from the "Build Phase".
 
-### 6.2 The Adaptive Hub Strategy (Hub & Spoke)
-To avoid "Deep Chain Fragility" while maintaining high sharing, V3 adopts a **Flattended Hub & Spoke Architecture**.
+### 6.2 The Dynamic Chain Synthesis Strategy (Memory Layering)
+To achieve "Composable Memory Blocks" (Layering) while respecting Python's single-inheritance physics, V3 implements **Dynamic Chain Synthesis**.
 
-**The Topology**:
-*   **Role 1: The Hub (Synthetic Base)**
-    *   **Nature**: Public Infrastructure.
-    *   **Content**: High-value combinations of heavy libs (e.g., `Hub_Data=[numpy, pandas]`, `Hub_Web=[fastapi, pydantic]`).
-    *   **Source**: Automatically clustered from global usage patterns (or statically defined).
-    *   **Constraint**: Hubs are **Roots**. They do not depend on specific User Apps.
-*   **Role 2: The Spoke (User Leaf)**
-    *   **Nature**: Specific Tenant App.
-    *   **Constraint**: **Leaf Node Only**. User Zygotes are NEVER forked by others.
-    *   **Mechanism**: **Delta Loading**. Fork a Hub -> Load specific user deps (`sys.path` injection).
+**The Concept: Zygote as a Linear Polymer**
+*   **Atom**: A specific library version (e.g., `Atom_N1 = numpy@1.24`).
+*   **Molecule (Zygote)**: A linear chain of atoms (e.g., `Zygote_A = [Base, Atom_N1, Atom_P2]`).
+*   **Combustion**: Forking a molecule to append new atoms.
 
-**The Workflow (Free Combination)**:
-1.  **Match**: User needs `[numpy, pandas, my_lib]`.
-2.  **Best Fit**: System finds `Hub_Data` (`[numpy, pandas]`) is the best base.
-3.  **Fork**: Create process from `Hub_Data` (Shared Memory Hit: 90%).
-4.  **Delta Load**: Import `my_lib` (Private Memory).
+**The Synthesis Algorithm (Greedy Prefix Matching)**:
+When App X requests `[numpy@1.24, pandas@2.0, my_lib]`:
+1.  **Scan**: Velo scans all active Zygotes in the "Memory Forest".
+2.  **Match**: Find the Zygote with the **Longest Matching Prefix**.
+    *   *Candidate A*: `[numpy@1.24]` -> (Match Length 1)
+    *   *Candidate B*: `[numpy@1.24, pandas@2.0]` -> (Match Length 2) **<-- Winner**
+3.  **Synthesis (Fork)**:
+    *   Fork *Candidate B*.
+    *   **Delta Load**: Import `my_lib`.
+    *   **Result**: App X runs with `[numpy@1.24, pandas@2.0] + [my_lib]`.
+4.  **Cost**: Shared Memory = Base + Numpy + Pandas. Private Memory = my_lib.
 
-**Result**:
-*   **Stability**: No long chains. If App A breaks, App B is unaffected.
-*   **Flexibility**: Users can "freely combine" their delta deps on top of optimal Bases.
-*   **Simplicity**: Topology depth is strictly limited (Depth <= 2).
+**Emergent Optimization (Crystallization)**:
+If Velo observes that the transition `Candidate B -> Delta Load` happens frequently (Hot Path), it **Crystallizes** the result into a new Base Zygote (`Candidate C`).
+*   **Result**: Future Apps fork directly from *Candidate C*.
+*   **Vision**: The "Infrastructure Base" is not static; it **evolves** based on usage patterns, automatically finding the optimal set of "Common Memory Blocks".
