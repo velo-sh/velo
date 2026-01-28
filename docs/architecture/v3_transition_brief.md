@@ -93,3 +93,29 @@ Rewrite `ZygoteLauncher::start`:
 ---
 
 **Architect's Note**: do not try to "fix" the old Zygote. Replace it. The new Zygote is a User Process that we happen to control via a minimal tether (the Shim).
+
+---
+
+## 5. Deployment Strategy (Extended Discussion)
+
+The Supervisor Model fits both Single-Machine and Serverless patterns, acting as a **Smart Adapter**.
+
+### 5.1 Single Machine (VPS / Dev / Bare Metal)
+**Mode**: **High-Density Supervisor**
+*   **Mechanism**: Velo runs as a persistent daemon.
+*   **Benefit**: Multi-tenant or Multi-worker management.
+*   **Physics**: Uses **COW (Copy-On-Write)** to share memory between workers.
+*   **Result**: 100 workers consume only incrementally more RAM than 1 worker. Ideal for high-concurrency monoliths.
+
+### 5.2 Serverless (Knative / Cloud Run / Lambda)
+**Mode**: **High-Performance I/O Adapter**
+*   **Mechanism**: Velo runs as the Container Entrypoint (`ENTRYPOINT ["velo", "serve"]`).
+*   **Configuration**: Set `VELO_WORKERS=1` (or match concurrency limit).
+*   **Physics**:
+    1.  **Rust Frontend**: Velo (Rust) accepts the HTTP/Lambda event. It handles SSL, Header Parsing, and Keep-Alive extremely fast.
+    2.  **Python Backend**: Velo holds a pre-warmed Zygote via UDS (Unix Domain Socket).
+    3.  **Dispatch**: Velo shoots the parsed request to Python via memory/socket.
+*   **Benefit**:
+    *   **Cold Start**: Rust binaries start effectively instantly. The bottleneck is only Python import time (which Velo optimizes via `bootstap.py`).
+    *   **I/O Offload**: The heavy lifting of network handling is removed from the Python GIL.
+    *   **Universal Interface**: The User writes standard ASGI. Velo adapts it to the specific Serverless runtime (Lambda Runtime API vs HTTP).
