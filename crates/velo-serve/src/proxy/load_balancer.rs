@@ -47,7 +47,9 @@ impl WorkerNode {
             worker_pid: std::sync::atomic::AtomicU32::new(pid),
             active_connections: AtomicUsize::new(0),
             consecutive_failures: AtomicUsize::new(0),
-            healthy: std::sync::atomic::AtomicBool::new(true),
+            // STB-SOCKET-RACE: Start workers as unhealthy until socket is verified
+            // This prevents the race condition where health check runs before socket creation
+            healthy: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -403,6 +405,32 @@ impl LoadBalancer {
 
             tokio::time::sleep(poll_interval).await;
         }
+    }
+
+    /// Wait for at least one worker to become healthy (socket created).
+    ///
+    /// STB-SOCKET-RACE: Called before accepting requests to ensure workers
+    /// have finished creating their sockets.
+    pub async fn wait_for_healthy(&self, timeout: Duration) -> bool {
+        use std::time::Instant;
+
+        let deadline = Instant::now() + timeout;
+        let poll_interval = Duration::from_millis(50);
+
+        while Instant::now() < deadline {
+            for worker in &self.workers {
+                let current_path = worker.socket_path();
+                if UnixStream::connect(&current_path).await.is_ok() {
+                    eprintln!("[LB] Worker {} ready", current_path);
+                    worker.mark_healthy();
+                    return true;
+                }
+            }
+            tokio::time::sleep(poll_interval).await;
+        }
+
+        eprintln!("[LB] Timeout waiting for healthy workers");
+        false
     }
 
     /// Spawn a background task to actively probe worker health (RFC-0011 C.3).

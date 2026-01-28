@@ -1497,6 +1497,7 @@ except Exception as e:
                 let listener = tokio::net::TcpListener::bind(bind_addr)
                     .await
                     .expect("Failed to bind proxy");
+                lb_for_proxy.wait_for_healthy(Duration::from_secs(10)).await;
                 lb_for_proxy
                     .clone()
                     .spawn_health_checks(Duration::from_secs(5));
