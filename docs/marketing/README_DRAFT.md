@@ -119,6 +119,15 @@ velo run --vibe app.py
 
 ---
 
+## 🤝 Special Thanks & Integrations
+
+Velo stands on the shoulders of giants. We take pride in our deep integrations with the best tools in the Python ecosystem:
+
+*   **[uv](https://github.com/astral-sh/uv)**: Velo's first-class dependency engine. We leverage `uv` for lightning-fast environment synchronization and reliable lockfile detection.
+*   **[Granian](https://github.com/emmett-framework/granian)**: Our high-performance HTTP server backend. Velo integrates `Granian` to provide the raw power behind `velo serve`.
+
+---
+
 ## License
 
 Apache-2.0
