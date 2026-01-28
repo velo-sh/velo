@@ -183,6 +183,11 @@ If Velo observes that the transition `Candidate B -> Delta Load` happens frequen
 You asked: "Why so troublesome? Base > App should be valid."
 Correct. Since COW memory is shared, inheriting "unused extra libs" is almost free. The only hard constraint is **Version Conflict**.
 
+**The Prime Directive: Strict Fidelity**
+*   **Source of Truth**: The `uv.lock` is the Absolute Law.
+*   **Logical Equivalence**: The environment Velo provides (via System Python + Injection) MUST be **functionally indistinguishable** from running the user's `.venv/bin/python` directly.
+*   **Conflict Resolution**: If the "Best Compatible Base" deviates from `uv.lock` (e.g., loaded a conflicting version), Velo **MUST** reject it and fallback to the Root Zygote. **Correctness > Optimization.**
+
 **The New Algorithm: Best Compatible Base (Superset Allowed)**
 
 **Step 1: Signature Extraction**
