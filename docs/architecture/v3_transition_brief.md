@@ -261,3 +261,24 @@ To answer the fundamental question: "How many venvs are there and who manages th
 *   Velo **Stacks** these venvs via `sys.path`: `[User Venv] -> [Infra Venv] -> [Root]`.
 *   **Isolation**: User Venv is private to the process.
 *   **Sharing**: Infra Venv is shared across processes (COW).
+
+### 8.1 The Relationship Rules (Physics of Stacking)
+How do these layers interact? Is it just file overlay?
+**NO.** The relationship is governed by the **Process Memory State**.
+
+**Rule 1: Memory Lock (The Hard Constraint)**
+*   If **Type 1 (Infra)** has *already imported* `numpy==1.25` into RAM.
+*   Then **Type 2 (User)** is **LOCKED** to that version of `numpy`.
+*   Velo **MUST NOT** route a user requesting `numpy==1.24` to this Base. It must find another Base or Fallback.
+*   **Relationship**: **Parent dictates Memory.**
+
+**Rule 2: File Shadowing (The Soft Constraint)**
+*   If **Type 1 (Infra)** contains `utils.py` but *has NOT imported it*.
+*   And **Type 2 (User)** also provides `utils.py`.
+*   Then Python loads **User's `utils.py`** (because User Venv is first in `sys.path`).
+*   **Relationship**: **Child dictates Files.**
+
+**Rule 3: Build Decoupling**
+*   **Type 2** is built **independently** of Type 1.
+*   User runs `uv sync` without knowing about Velo's Hubs.
+*   **Reconciliation**: Velo's "Compatibility Engine" checks if the Independent Type 2 *can physically run* on top of the Active Type 1.
