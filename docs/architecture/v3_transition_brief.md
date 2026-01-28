@@ -41,6 +41,7 @@ We shift to the **Supervisor Model** (similar to Android's `system_server` manag
 *   **Responsibility**: Locate User Python -> Scrub Environment -> Inject Shim.
 *   **Process Physics**:
     *   **Toxin Origin**: When Supervisor spawns a child, it defaults to inheriting the Supervisor's environment (`VELO_CONFIG`, etc). This is why the **Airlock** is mandatory.
+    *   **Velo Physics**: Velo is a **standalone Rust binary** (like `uv`). It does **NOT** require a virtualenv to run itself. It has **Zero** Python dependencies for its own process.
     *   **Python Source**: The supervisor MUST use the **User Project's Virtualenv Python** (`.venv/bin/python`). It MUST NEVER use the System Python (`/usr/bin/python`). If `.venv` is missing, Supervisor calls `integrated_uv_bin` to create it.
     *   **UV Physics**: `uv` is a standalone Rust binary. It does **NOT** require a virtualenv to run. It does **NOT** need to maintain a "Velo Internal Venv". It operates directly on the User's Venv.
 
