@@ -111,8 +111,8 @@ _CI_FLAKY_MARKERS = frozenset(
 
 def pytest_collection_modifyitems(config, items):
     """Auto-skip tests with CI flaky markers when running in GitHub Actions."""
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        return  # Only apply in CI
+    if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("VELO_FORCE_HEAVY") == "1":
+        return  # Only apply in CI unless forced
 
     skip_ci_flaky = pytest.mark.skip(reason="CI flaky: skipped in CI environment")
 

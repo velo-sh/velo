@@ -543,6 +543,11 @@ mod tests {
             w.mark_healthy();
         }
 
+        // Initial state: Workers are unhealthy. Mark them healthy for least-connections test.
+        for worker in &lb.workers {
+            worker.mark_healthy();
+        }
+
         // First selection should pick any (all have 0 connections)
         let guard1 = lb.select_worker().unwrap();
         let first_path = guard1.socket_path().to_string();
@@ -646,7 +651,8 @@ mod tests {
         );
         assert_eq!(lb.worker_count(), 2);
 
-        // New worker should be selectable
+        // New worker should be selectable (mark healthy first)
+        lb.workers.last().unwrap().mark_healthy();
         let guard = lb.select_worker();
         assert!(guard.is_some());
     }
@@ -670,6 +676,9 @@ mod tests {
         lb.remove_worker(&w1);
         assert_eq!(lb.worker_count(), 1);
 
+        // Mark remaining w2 healthy
+        lb.mark_healthy(&w2);
+
         // Only w2 should remain
         let guard = lb.select_worker().unwrap();
         assert_eq!(guard.socket_path(), w2);
@@ -689,6 +698,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
         ]);
+        lb.workers[0].mark_healthy();
 
         // Acquire a connection
         lb.mark_healthy(&lb.workers[0].socket_path().to_string());
@@ -721,6 +731,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
         ]);
+        lb.workers[0].mark_healthy();
 
         // Acquire a connection but don't drop it
         lb.mark_healthy(&lb.workers[0].socket_path().to_string());
@@ -740,6 +751,7 @@ mod tests {
         let lb = LoadBalancer::new(vec![w1]);
         lb.mark_healthy(&lb.workers[0].socket_path().to_string());
         let worker = &lb.workers[0];
+        worker.mark_healthy();
 
         // 1-4 failures: still healthy
         for _ in 1..5 {

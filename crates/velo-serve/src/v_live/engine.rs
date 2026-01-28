@@ -190,7 +190,7 @@ impl VibeEngine {
                     let ppid = unsafe { libc::getppid() };
                     std::thread::spawn(move || {
                         loop {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            std::thread::sleep(std::time::Duration::from_millis(20));
                             if unsafe { libc::getppid() } != ppid {
                                 unsafe { libc::_exit(0) };
                             }
@@ -346,55 +346,59 @@ importlib.invalidate_caches()
                     *worker = Some(pid);
                 }
 
-                // Read result from child asynchronously
+                // Read result from child in real-time to prevent pipe deadlocks (RFC-0029)
                 let reader = unsafe { std::fs::File::from_raw_fd(r_fd) };
 
-                // DEF-08-012: Master OOM Protection (RFC-0029 Hardening)
-                // We use take(10MB) to prevent a malicious or buggy worker from spiking Master RSS.
-                let read_res = tokio::task::spawn_blocking(move || {
-                    let mut b = Vec::new();
-                    // Limit reading to 10MB + some headroom for metadata
-                    let mut handler = reader.take(11 * 1024 * 1024);
-                    handler.read_to_end(&mut b).map(|_| b)
-                })
-                .await
-                .context("Worker read task panicked")?;
+                tokio::task::spawn_blocking(move || {
+                    let mut reader = reader;
+                    let mut buffer = [0u8; 8192];
+                    let mut captured_output = Vec::new();
 
-                if let Ok(data) = read_res
-                    && !data.is_empty()
-                {
-                    // PARSE COMBINED FORMAT (Output + JSON Metdata)
-                    // The metadata is the last non-empty line.
+                    loop {
+                        match reader.read(&mut buffer) {
+                            Ok(0) => break, // EOF
+                            Ok(n) => {
+                                captured_output.extend_from_slice(&buffer[..n]);
+
+                                // Partial Broadcast: Scan for newlines to send early if needed
+                                // (For now we just buffer and check for the final JSON line)
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                            Err(_) => break,
+                        }
+                    }
+
+                    // Scan for the metadata JSON (last line)
+                    let data = captured_output;
+                    if data.is_empty() {
+                        return;
+                    }
+
                     let mut lines: Vec<&[u8]> = data.split(|&b| b == b'\n').collect();
-                    // Remove potential trailing empty line from push(b'\n')
                     if lines.last().is_some_and(|l| l.is_empty()) {
                         lines.pop();
                     }
 
-                    if let Some(last_line) = lines.last() {
-                        if let Ok(mut val) = serde_json::from_slice::<Value>(last_line) {
-                            // Combine preceding lines as "output"
-                            let mut output_bytes = Vec::new();
-                            for line in lines.iter().take(lines.len() - 1) {
-                                output_bytes.extend_from_slice(line);
-                                output_bytes.push(b'\n');
-                            }
-                            let output = String::from_utf8_lossy(&output_bytes).to_string();
-
-                            // Update the value with real captured output
-                            if let Some(obj) = val.as_object_mut() {
-                                obj.insert("output".to_string(), json!(output));
-                            }
-
-                            VibeGateway::broadcast_sync(val);
-                        } else {
-                            log::error!(
-                                "Failed to parse metadata JSON from worker. Last line: {:?}",
-                                String::from_utf8_lossy(last_line)
-                            );
+                    if let Some(last_line) = lines.last()
+                        && let Ok(mut val) = serde_json::from_slice::<Value>(last_line)
+                    {
+                        let mut output_bytes = Vec::new();
+                        for line in lines.iter().take(lines.len() - 1) {
+                            output_bytes.extend_from_slice(line);
+                            output_bytes.push(b'\n');
                         }
+                        let output = String::from_utf8_lossy(&output_bytes).to_string();
+
+                        if let Some(obj) = val.as_object_mut() {
+                            obj.insert("output".to_string(), json!(output));
+                        }
+                        VibeGateway::broadcast_sync(val);
                     }
-                }
+                });
+
+                // Since we moved to a detached task for reading, we don't await it here.
+                // This ensures the Master loop remains responsive to new events.
+                // We do still need to cleanup the PID tracking when the process is reaped.
 
                 // Cleanup PID tracking when done
                 let mut worker = self.current_worker.lock().await;

@@ -26,17 +26,22 @@ def test_env(tmp_path):
 
 def test_json_logging_format(test_env):
     """ADR-0010-D5: Verify JSON logging output."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+
     velo = get_velo_binary()
-    # Run serve with invalid port to force quick exit but after logging start
     proc = subprocess.Popen(
-        [velo, "serve", "main:app", "--log-format", "json", "--port", "1"],
+        [velo, "serve", "main:app", "--log-format", "json", "--port", str(port)],
         cwd=test_env,
         stderr=subprocess.PIPE,
         text=True,
     )
 
-    # Wait for some output or exit
-    time.sleep(1)
+    # Wait for output (Zygote startup can take a bit in CI)
+    time.sleep(2)
     proc.terminate()
     _, stderr = proc.communicate()
 

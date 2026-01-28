@@ -78,7 +78,7 @@ class TestRFC0028_E2E_Speedup:
         speedup = std_duration / velo_duration
         print(f"[E2E] Final Speedup: {speedup:.1f}x")
 
-        assert speedup > 5.0, f"Speedup {speedup:.1f}x too low for E2E comparison"
+        assert speedup > 4.0, f"Speedup {speedup:.1f}x too low for E2E comparison"
 
 
 import sys

@@ -142,6 +142,8 @@ run_in_docker() {
         -e CI=true \
         -e VELO_ENV=ci \
         -e NO_XDIST="${NO_XDIST:-false}" \
+        -e VELO_FORCE_HEAVY="${VELO_FORCE_HEAVY:-0}" \
+        -e VELO_TIMEOUT_MULTIPLIER="${VELO_TIMEOUT_MULTIPLIER:-1.0}" \
         "$DOCKER_IMAGE" \
         /workspace/scripts/v-ci --local --tier "$TIER" \
         --rust-args ${EXTRA_RUST_ARGS[@]+"${EXTRA_RUST_ARGS[@]}"} \

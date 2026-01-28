@@ -3,7 +3,9 @@ Velo Fork Implementation
 """
 
 import os
+import socket
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Optional
@@ -112,6 +114,28 @@ class ForkHandler:
             # PARENT: Register worker
             worker_registry.add(pid)
             return pid
+
+    @staticmethod
+    def _wait_for_ready(socket_path: str, timeout: float = 5.0) -> bool:
+        """
+        Wait for a UDS socket to become available and responding.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                # Try to connect to the socket
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                # handle abstract sockets
+                path = socket_path
+                if path.startswith("@"):
+                    path = "\0" + path[1:]
+                sock.connect(path)
+                sock.close()
+                return True
+            except (TimeoutError, ConnectionRefusedError, FileNotFoundError, OSError):
+                time.sleep(0.1)
+        return False
 
     @staticmethod
     def _run_execnet_gateway(sock: Any, nodeid: str = "worker") -> None:
@@ -269,6 +293,25 @@ class ForkHandler:
         else:  # Parent process
             if shm:
                 shm.close()
+
+            # STB-SYNC-FORK: Wait for worker to be ready before returning
+            # This ensures the supervisor doesn't run health checks on a ghost socket
+            uds_path = None
+            for i, arg in enumerate(args):
+                if arg == "--uds" and i + 1 < len(args):
+                    uds_path = args[i + 1]
+                    break
+
+            if uds_path:
+                LogUtils.log(f"Waiting for worker {pid} to bind to {uds_path}...")
+                # Increase internal wait timeout scaled by VELO_TIMEOUT_MULTIPLIER (RFC-0012)
+                multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+                timeout = 10.0 * multiplier
+                if not ForkHandler._wait_for_ready(uds_path, timeout=timeout):
+                    LogUtils.log(f"Warning: Worker {pid} socket {uds_path} not ready after {timeout}s")
+                else:
+                    LogUtils.log(f"Worker {pid} is READY on {uds_path}")
+
             worker_registry.add(pid, metadata={"script": script_path})
             return pid
 

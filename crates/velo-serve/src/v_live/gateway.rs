@@ -14,8 +14,8 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
-/// Hard limit for outgoing frames (5MB)
-const MAX_FRAME_SIZE: usize = 5 * 1024 * 1024;
+/// Hard limit for outgoing frames (10MB)
+const MAX_FRAME_SIZE: usize = 10 * 1024 * 1024;
 
 /// Global broadcast channel for Vibe messages
 static BROADCAST_CHANNEL: Lazy<(broadcast::Sender<Value>, broadcast::Receiver<Value>)> =

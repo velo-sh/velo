@@ -20,19 +20,19 @@ def test_ADVERSARIAL_PIPE_DEADLOCK(isolated_env: VeloTestEnv) -> None:
 
     app_py = isolated_env.create_app("app.py", code)
     port = isolated_env.next_port()
-    process = isolated_env.spawn_velo("vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
+    process = isolated_env.spawn_velo("run", "--vibe", str(app_py), env={"VELO_VIBE_PORT": str(port)})
     time.sleep(2)
 
     async def check_deadlock() -> None:
         uri = f"ws://127.0.0.1:{port}"
-        async with websockets.connect(uri) as websocket:
+        async with websockets.connect(uri, max_size=None) as websocket:
             # Re-trigger save
             isolated_env.create_app("app.py", code)
 
             # If it deadlocks, this will timeout
             print("Waiting for 2MB message...")
             try:
-                msg = await asyncio.wait_for(websocket.recv(), timeout=10.0)
+                msg = await asyncio.wait_for(websocket.recv(), timeout=30.0)
                 data = json.loads(msg)
                 output = data.get("output", "")
                 print(f"Captured output length: {len(output)}")

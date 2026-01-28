@@ -16,8 +16,8 @@ import pytest
 
 def pytest_collection_modifyitems(config, items):
     """Auto-skip heavy tests in CI environment - these are too resource-intensive."""
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        return  # Only apply in CI
+    if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("VELO_FORCE_HEAVY") == "1":
+        return  # Only apply in CI unless forced
 
     skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
 

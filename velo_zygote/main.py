@@ -871,6 +871,26 @@ class ZygoteServer:
                         payload = json.dumps(cmd).encode()
                         await loop.run_in_executor(None, os.write, w_pipe, payload)
                         await loop.run_in_executor(None, os.close, w_pipe)
+
+                        # STB-SYNC-FORK: Wait for activated worker to be ready
+                        uds_path = None
+                        args = cmd.get("args", [])
+                        for i, arg in enumerate(args):
+                            if arg == "--uds" and i + 1 < len(args):
+                                uds_path = args[i + 1]
+                                break
+
+                        if uds_path:
+                            LogUtils.log(f"Waiting for activated worker {pid} on {uds_path}...")
+                            multiplier = float(os.environ.get("VELO_TIMEOUT_MULTIPLIER", "1.0"))
+                            timeout = 10.0 * multiplier
+                            if not await loop.run_in_executor(None, ForkHandler._wait_for_ready, uds_path, timeout):
+                                LogUtils.log(
+                                    f"Warning: Activated worker {pid} socket {uds_path} not ready after {timeout}s"
+                                )
+                            else:
+                                LogUtils.log(f"Activated worker {pid} is READY on {uds_path}")
+
                         future.set_result(pid)
                         continue
                     except Exception as e:
