@@ -210,3 +210,54 @@ Velo scans all active Zygotes to find the best parent.
     *   **Compatibility**: 100% Safe.
 
 This approach (**Superset Compatibility**) is far simpler and more flexible than strict Prefix Matching. It allows generic "Heavy Bases" to serve lightweight Apps.
+
+**Step 5: Code Activation (Src Loading)**
+*   Finally, Velo targets the user's business logic.
+*   **Action**: `sys.path.insert(0, "/app/src")`.
+*   **Execute**: `importlib.import_module("main:app")`.
+*   **Result**: The process is now a fully functional Worker.
+
+---
+
+## 7. The Unified Serverless Theory
+
+**"Single Machine Mode is just a Special Case of Serverless Mode."**
+
+*   **Serverless Mode (The General Case)**:
+    *   **State**: Immutable Containers.
+    *   **Asset**: `.venv` is pre-baked (AOT Build).
+    *   **Role**: Velo acts as a **Runtime Linker** (maps existing assets).
+*   **Single Machine Mode (The Special Case)**:
+    *   **State**: Mutable Workspace.
+    *   **Asset**: `.venv` is missing or dirty.
+    *   **Role**: Velo acts as a **JIT Builder** (builds assets via `uv`), *then* acts as a Runtime Linker.
+
+**Conclusion**:
+The V3 Architecture unifies both worlds under a single **Dynamic Resource Matching Engine**. Whether on a Macbook or K8s, Velo's core loop is identical: **"Analyze Signature -> Match Zygote -> Link Assets -> Run"**.
+
+---
+
+## 8. Venv Taxonomy & Governance
+
+To answer the fundamental question: "How many venvs are there and who manages them?"
+
+### Type 0: The Empty Venv (Root)
+*   **Content**: Python Interpreter + Standard Library (`os`, `sys`...).
+*   **Location**: The Velo Runtime binary itself (or system python).
+*   **Manager**: **Immutable**. Owned by the Velo Release.
+
+### Type 1: The Infrastructure Venv (Base/Hub)
+*   **Content**: High-leverage, heavy libraries (e.g., `numpy`, `torch`, `fastapi`).
+*   **Role**: The "Shared Memory optimization layer".
+*   **Manager (Serverless)**: **DevOps**. Defined in `Dockerfile` (e.g., `COPY --from=builder /opt/venv /opt/venv`).
+*   **Manager (Single Machine)**: **Velo Daemon**. Automatically cached in `~/.velo/hubs/` based on usage frequency.
+
+### Type 2: The Tenant Venv (User)
+*   **Content**: Business logic specific dependencies (e.g., `my-internal-lib`).
+*   **Location**: `/app/.venv` (Serverless) or `./.venv` (Local).
+*   **Manager**: **The User**. Managed via standard tools (`uv`, `poetry`). Velo treats this as *Read-Only*.
+
+**The Governance Model**:
+*   Velo **Stacks** these venvs via `sys.path`: `[User Venv] -> [Infra Venv] -> [Root]`.
+*   **Isolation**: User Venv is private to the process.
+*   **Sharing**: Infra Venv is shared across processes (COW).
