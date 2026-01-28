@@ -1,0 +1,20 @@
+[tool.velo.native_preload]
+# Explicitly handle complex libraries to ensure compatibility
+# Velo classifies these into Stage 1 (Native) and Stage 2 (Extension)
+libraries = [
+    { package = "torch", path = "lib/libtorch.so", stage = "PostInit" },
+    { package = "numpy", path = "core/_multiarray_umath.cpython-311-darwin.so", stage = "PreInit" }
+]
+
+auto_detect = true
+verify_mode = "mtime+hash"
+rtld_mode = "local"
+
+[tool.velo.security]
+# GAP-001: Explicitly trust the project root and its venv.
+# This aligns with SPEC-0005 §3 Tiered Sovereignty.
+trusted_prefixes = [
+    "${CWD}",
+    "${VIRTUAL_ENV}",
+    "/Users/antigravity/rust_source/velo_arch" # Trust the repo root for velo_zygote discovery in dev
+]

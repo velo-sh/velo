@@ -54,7 +54,7 @@
 
 Velo pre-loads your model into a Zygote. Every request forks from that warm state in **<20ms**. Memory is shared via Copy-on-Write.
 
-**[→ Read the AI Inference Guide](docs/use-cases/ai-inference.md)**
+**[→ Read the AI Inference Guide](examples/ai-inference/README.md)**
 
 ---
 
