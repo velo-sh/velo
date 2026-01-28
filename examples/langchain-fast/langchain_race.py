@@ -5,35 +5,50 @@ Compare CPython native import vs. Velo schema-locked loading time.
 
 Enhanced: Uses 500+ complex nested models to fully demonstrate Zygote pre-warm advantage.
 """
-import os
-import sys
-import time
-import subprocess
-import statistics
+
 import argparse
+import os
+import statistics
+import subprocess
+import sys
 
 # Add scripts directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/../scripts")
 
 try:
-    from hio_visual import print_header, print_race_result, print_score, print_reproduce_hint, spinner_context
+    from hio_visual import print_header, print_race_result, print_reproduce_hint, print_score, spinner_context
+
     VISUAL_AVAILABLE = True
-except ImportError: # Emulate heavy ImportError:
+except ImportError:  # Emulate heavy ImportError:
     VISUAL_AVAILABLE = False
-    def print_header(*args): pass
-    def print_race_result(*args): print(f"CPython: {args[0]:.3f}s | Velo: {args[1]:.3f}s")
-    def print_score(*args): print(f"Score: {args[0]}")
-    def print_reproduce_hint(*args): pass
+
+    def print_header(*args):
+        pass
+
+    def print_race_result(*args):
+        print(f"CPython: {args[0]:.3f}s | Velo: {args[1]:.3f}s")
+
+    def print_score(*args):
+        print(f"Score: {args[0]}")
+
+    def print_reproduce_hint(*args):
+        pass
+
     class DummyCtx:
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-    def spinner_context(msg): return DummyCtx()
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    def spinner_context(msg):
+        return DummyCtx()
 
 
 def measure_import_speed(use_velo: bool = False) -> float:
     """Measure real Pydantic complex model import time"""
     # Real heavy load script: 500+ complex nested models
-    script = '''
+    script = """
 import time
 import os
 import sys
@@ -95,13 +110,13 @@ except ImportError:
 
 elapsed = time.perf_counter() - start
 print(f"{elapsed}|{rss_mb}")
-'''
-    
+"""
+
     env = os.environ.copy()
     if use_velo:
         # Velo Zygote Mode: Schema pre-generated and locked
         env["VELO_ZYGOTE"] = "1"
-        script = '''
+        script = """
 import time
 import os
 import sys
@@ -129,18 +144,13 @@ except ImportError:
 
 elapsed = time.perf_counter() - start
 print(f"{elapsed}|{rss_mb}")
-'''
-    
-    result = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        env=env
-    )
-    
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, env=env)
+
     if result.returncode == 0 and result.stdout.strip():
         try:
-            parts = result.stdout.strip().split('|')
+            parts = result.stdout.strip().split("|")
             elapsed = float(parts[0])
             rss = float(parts[1]) if len(parts) > 1 else 0.0
             return elapsed, rss
@@ -153,15 +163,15 @@ def run_race(runs: int = 1) -> tuple:
     """Execute A/B validation test"""
     cpython_results = []
     velo_results = []
-    
-    for i in range(runs):
+
+    for _i in range(runs):
         cpython_results.append(measure_import_speed(use_velo=False))
         velo_results.append(measure_import_speed(use_velo=True))
-    
+
     # Check for valid results (filter out zeros)
     cpython_results = [r for r in cpython_results if r[0] > 0]
     velo_results = [r for r in velo_results if r[0] > 0]
-    
+
     if not cpython_results or not velo_results:
         print("\n\033[1;31m[ERROR] Pydantic is not installed!\033[0m")
         print("\033[90mThis demo requires pydantic v2 to measure real schema generation times.\033[0m")
@@ -169,12 +179,12 @@ def run_race(runs: int = 1) -> tuple:
         print("  pip install 'pydantic>=2.0'")
         print("\nThen re-run this demo.")
         sys.exit(1)
-    
+
     c_time = statistics.median([r[0] for r in cpython_results])
     c_rss = statistics.median([r[1] for r in cpython_results])
     v_time = statistics.median([r[0] for r in velo_results])
     v_rss = statistics.median([r[1] for r in velo_results])
-    
+
     return (c_time, c_rss), (v_time, v_rss)
 
 
@@ -182,23 +192,23 @@ def main():
     parser = argparse.ArgumentParser(description="LangChain Import Race")
     parser.add_argument("--runs", type=int, default=3)
     args = parser.parse_args()
-    
+
     print_header("HIO-002 (LangChain)", "Import Once, Run Forever.")
-    
+
     with spinner_context(f"Generating 500 complex Pydantic models x {args.runs} runs..."):
         cpython_res, velo_res = run_race(runs=args.runs)
-    
+
     c_time, c_rss = cpython_res
     v_time, v_rss = velo_res
-    
+
     print_race_result(c_time, v_time, "Schema Generation", memory_data=(c_rss, v_rss))
-    
+
     # Calculate HIO Score: 10x corresponds to 98 points
     speedup = c_time / max(v_time, 0.001)
     mem_saving = max(0, (c_rss - v_rss) / max(c_rss, 1))
     score = min(100, 50 + speedup * 5.1)
     print_score(score, mem_saving)
-    
+
     print_reproduce_hint("./run_hio.sh --compare --runs=3")
 
 

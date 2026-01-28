@@ -1,6 +1,6 @@
+import importlib
 import sys
 import time
-import importlib
 
 # Ensure we measure a fresh import
 if "requests" in sys.modules:
@@ -16,4 +16,4 @@ if "requests" in sys.modules:
     print(f"Requests module object: {sys.modules['requests']}")
     print(f"Requests file: {getattr(sys.modules['requests'], '__file__', 'N/A')}")
 
-print(f"Import time: {(t1-t0)*1000:.2f}ms")
+print(f"Import time: {(t1 - t0) * 1000:.2f}ms")

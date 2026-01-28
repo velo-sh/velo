@@ -10,7 +10,8 @@ from pathlib import Path
 class VeloEnforcer:
     def __init__(self) -> None:
         self.root = Path(__file__).parent.parent.parent
-        self.src = self.root / "src"
+        # Project uses crates/ for Rust code, not src/
+        self.src = self.root / "crates"
         self.config = self.root / "config"
         self.errors: list[str] = []
 
@@ -55,7 +56,7 @@ class VeloEnforcer:
 
         if not found_any:
             self.log_error(
-                "No mandatory taxonomy prefixes (core_, bridge_, etc.) found in src/. Naming convention violation."
+                "No mandatory taxonomy prefixes (core_, bridge_, etc.) found in crates/. Naming convention violation."
             )
 
     def run(self) -> None:

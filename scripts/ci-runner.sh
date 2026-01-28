@@ -57,6 +57,10 @@ case "${1:-help}" in
         run_fmt_check
         ;;
     
+    ruff-check)
+        run_ruff_check
+        ;;
+    
     help|--help|-h)
         echo "Velo CI Runner (SSOT Entry Point)"
         echo ""
@@ -69,6 +73,7 @@ case "${1:-help}" in
         echo "  audit                 Run security audit"
         echo "  pre-flight            Run pre-flight diagnostics"
         echo "  fmt-check             Check code formatting"
+        echo "  ruff-check            Run Python lint (ruff)"
         ;;
     
     *)

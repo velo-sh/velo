@@ -1,9 +1,10 @@
 """
 Velo AI Serverless Demo - Embedding Service
 """
-import time
-from flask import Flask, jsonify, request
 
+import time
+
+from flask import Flask, jsonify, request
 from model import embed
 
 app = Flask(__name__)
@@ -14,10 +15,7 @@ STARTUP_TIME = time.time()
 
 @app.route("/")
 def index():
-    return jsonify({
-        "service": "Velo AI Serverless Demo",
-        "endpoints": ["/embed", "/health"]
-    })
+    return jsonify({"service": "Velo AI Serverless Demo", "endpoints": ["/embed", "/health"]})
 
 
 @app.route("/health")
@@ -32,10 +30,7 @@ def embed_endpoint():
     start = time.time()
     result = embed(texts)
     latency_ms = (time.time() - start) * 1000
-    return jsonify({
-        "embeddings": result,
-        "latency_ms": f"{latency_ms:.2f}"
-    })
+    return jsonify({"embeddings": result, "latency_ms": f"{latency_ms:.2f}"})
 
 
 if __name__ == "__main__":

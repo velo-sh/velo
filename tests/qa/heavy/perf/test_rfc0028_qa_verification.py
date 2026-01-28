@@ -263,11 +263,11 @@ import pytest
 
 @pytest.mark.skip(reason="intentional skip")
 def test_skipped():
-    assert False
+    pytest.fail("Test intentionally fails")
 
 @pytest.mark.xfail(reason="expected failure")
 def test_xfail():
-    assert False
+    pytest.fail("Test intentionally fails")
 
 def test_normal():
     assert True

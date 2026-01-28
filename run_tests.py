@@ -3,7 +3,6 @@ import sys
 import time
 from pathlib import Path
 
-
 VELO_BIN = "./target/release/velo"
 CORPUS_DIR = Path("./tests/corpus")
 
@@ -31,25 +30,19 @@ def run_case(script_path):
     print(f"🧪 Testing {script_path.name}...", end="", flush=True)
 
     start = time.time()
-    res_py = subprocess.run(
-        [sys.executable, script_path], capture_output=True, text=True
-    )
+    res_py = subprocess.run([sys.executable, script_path], capture_output=True, text=True)
     time_py = time.time() - start
 
     start = time.time()
-    res_velo = subprocess.run(
-        [VELO_BIN, "run", str(script_path)], capture_output=True, text=True
-    )
+    res_velo = subprocess.run([VELO_BIN, "run", str(script_path)], capture_output=True, text=True)
     time_velo = time.time() - start
 
     if res_py.returncode != res_velo.returncode:
-        print(
-            f" ❌ Return Code Mismatch! (Py={res_py.returncode}, Velo={res_velo.returncode})"
-        )
+        print(f" ❌ Return Code Mismatch! (Py={res_py.returncode}, Velo={res_velo.returncode})")
         return False
 
     if res_py.stdout.strip() != res_velo.stdout.strip():
-        print(f" ❌ Output Mismatch!")
+        print(" ❌ Output Mismatch!")
         print(f"Expect: {res_py.stdout.strip()}")
         print(f"Actual: {res_velo.stdout.strip()}")
         return False

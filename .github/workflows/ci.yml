@@ -328,8 +328,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      # SSOT: Use ci-runner.sh for consistent behavior
       - name: Check Format
-        run: cargo fmt --check
+        run: ./scripts/ci-runner.sh fmt-check
 
   security-audit:
     name: Security Audit
@@ -343,12 +344,11 @@ jobs:
           shared-key: "velo-audit"
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
-      - name: Run cargo-audit
-        run: cargo audit
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
-      - name: Run cargo-deny
-        run: cargo deny check
+      # SSOT: Use ci-runner.sh for consistent behavior
+      - name: Run Security Audit
+        run: ./scripts/ci-runner.sh audit
 
   mypy:
     name: Mypy (Python Type Check)
@@ -368,6 +368,23 @@ jobs:
         run: uv run python scripts/sync-constants.py --check
       - name: Run Mypy via Pre-Commit (SSOT)
         run: uv run pre-commit run mypy --all-files
+
+  ruff:
+    name: Ruff (Python Lint)
+    needs: changes
+    if: needs.changes.outputs.zygote == 'true' || needs.changes.outputs.qa_infra == 'true' || needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Velo
+        uses: ./.github/actions/setup-velo
+        with:
+          python-version: ${{ needs.changes.outputs.python_version }}
+          uv-version: ${{ env.UV_VERSION }}
+      # SSOT: Use ci-runner.sh for consistent behavior with local/Docker CI
+      - name: Run Ruff (lint + format check)
+        run: ./scripts/ci-runner.sh ruff-check
 
   actionlint:
     name: Actionlint
@@ -420,20 +437,24 @@ jobs:
           command: uv run pytest tests/qa/phase_7_1 -n auto --dist loadscope -v --tb=short
 
   qa-phase-7-2:
-    name: "QA 7.2: ASGI Bridge Compatibility"
+    name: "QA 7.2: ASGI Bridge Compatibility (${{ matrix.shard }})"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     needs: [build, changes]
     if: |
       needs.changes.outputs.rust == 'true' || 
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
 
 
   qa-zygote-matrix:
@@ -675,7 +696,8 @@ jobs:
           - { name: "Smoke & Gold", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py tests/qa/phase_6_1_1/test_phase611_golden_path.py" }
           - { name: "Features & Integration", path: "tests/qa/phase_6_1_1/test_phase611_features.py tests/qa/phase_6_1_1/test_phase611_integration.py" }
           - { name: "Isolation & Agents", path: "tests/qa/phase_6_1_1/test_isolation.py tests/qa/phase_6_1_1/test_phase611_agent_*.py" }
-          - { name: "Security & Expert", path: "tests/qa/phase_6_1_1/test_security_hardened.py tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
+          - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
+          - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
           - { name: "Release Blockers & Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
         include:
           - suite: { name: "Smoke & Gold" }
@@ -684,8 +706,10 @@ jobs:
             suite_name: "Features & Integration"
           - suite: { name: "Isolation & Agents" }
             suite_name: "Isolation & Agents"
-          - suite: { name: "Security & Expert" }
-            suite_name: "Security & Expert"
+          - suite: { name: "Security Hardened" }
+            suite_name: "Security Hardened"
+          - suite: { name: "Expert Concerns" }
+            suite_name: "Expert Concerns"
           - suite: { name: "Release Blockers & Whitebox" }
             suite_name: "Release Blockers & Whitebox"
     steps:
@@ -695,9 +719,10 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
           command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
 
-  qa-phase611-perf:
-    name: "QA 6.1.1: Performance Baselines"
+  qa-phase611-perf-matrix:
+    name: "QA 6.1.1: Performance (${{ matrix.suite_name }})"
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [build, changes]
     if: |
       needs.changes.outputs.serve == 'true' || 
@@ -706,16 +731,23 @@ jobs:
       needs.changes.outputs.workflow == 'true' || 
       needs.changes.outputs.qa_infra == 'true'
     continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - { name: "Perf Regressions", path: "tests/qa/phase_6_1_1/test_phase611_perf_regressions.py" }
+          - { name: "Shadow Preload", path: "tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py" }
+        include:
+          - suite: { name: "Perf Regressions" }
+            suite_name: "Perf Regressions"
+          - suite: { name: "Shadow Preload" }
+            suite_name: "Shadow Preload"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: |
-             uv run pytest \
-               tests/qa/phase_6_1_1/test_phase611_perf_regressions.py \
-               tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py \
-               -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -v --tb=short
 
 
 
@@ -921,16 +953,10 @@ jobs:
           python-version: ${{ needs.changes.outputs.python_version }}
           uv-version: ${{ env.UV_VERSION }}
 
-      # SSOT: Pre-flight must run separately (not as a test argument)
-      - name: Pre-Flight Diagnostic
-        run: ./scripts/ci-runner.sh pre-flight
-
+      # SSOT: Use ci-runner.sh for consistent behavior
+      # Note: run_coverage() includes pre-flight and threshold check
       - name: Run tests with coverage
-        run: cargo llvm-cov nextest --lcov --output-path lcov.info
-      
-      - name: Check coverage threshold (70%)
-        run: cargo llvm-cov report --fail-under-lines 70
-        continue-on-error: true  # Warning only for now
+        run: ./scripts/ci-runner.sh coverage
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

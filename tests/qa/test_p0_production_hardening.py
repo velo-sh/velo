@@ -355,7 +355,7 @@ class TestZygoteGracefulShutdownE2E:
             time.sleep(1)
 
             # Check status
-            status_result = subprocess.run(
+            subprocess.run(
                 [velo_binary, "zygote", "status"],
                 cwd=zygote_env,
                 capture_output=True,

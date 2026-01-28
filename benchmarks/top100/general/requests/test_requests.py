@@ -1,5 +1,5 @@
+
 import requests
-import sys
 
 # Just verify import and version to confirm environment health
 # without relying on external network (which might be flaky or blocked)

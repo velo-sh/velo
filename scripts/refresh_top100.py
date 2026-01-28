@@ -10,9 +10,7 @@ import sys
 from pathlib import Path
 
 # URL for the 30-day top packages JSON
-TOP_PACKAGES_URL = (
-    "https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.json"
-)
+TOP_PACKAGES_URL = "https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.json"
 OUTPUT_PATH = Path(__file__).parent.parent / "benchmarks" / "top100_list.json"
 
 
@@ -20,9 +18,7 @@ def fetch_top_100():
     print(f"🔍 Fetching top packages from {TOP_PACKAGES_URL}...")
     try:
         # Use curl to fetch the data
-        result = subprocess.run(
-            ["curl", "-s", TOP_PACKAGES_URL], capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(["curl", "-s", TOP_PACKAGES_URL], capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
 
         # Extract project names

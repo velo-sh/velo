@@ -821,37 +821,89 @@ pub fn run_server(
         }
     }
 
-    // Step 3: Early validation - Module existence check (FAIL-FAST-001)
-    // Quick Python check to verify the module can be found before starting infrastructure
+    // Step 3: Early validation - Module check (FAIL-FAST-001)
+    // Three-phase check with proper environment setup:
+    // 1. find_spec: check module exists (fast, no side effects)
+    // 2. ast.parse: check syntax (fast, no side effects)
+    // 3. import: catch runtime import errors (with proper venv activated)
     {
         use std::process::Command;
+        let check_script = format!(
+            r#"
+import importlib.util
+import ast
+import sys
+import os
+
+module_name = '{}'
+
+# Ensure current directory is in sys.path for local imports
+if os.getcwd() not in sys.path:
+    sys.path.insert(0, os.getcwd())
+
+# Phase 1: Check if module exists (no side effects)
+spec = importlib.util.find_spec(module_name)
+if spec is None:
+    print('MODULE_NOT_FOUND', file=sys.stderr)
+    sys.exit(1)
+
+# Phase 2: Check syntax (no side effects)
+if spec.origin and spec.origin.endswith('.py'):
+    try:
+        with open(spec.origin) as f:
+            ast.parse(f.read())
+    except SyntaxError as e:
+        print(f'SYNTAX_ERROR: {{e}}', file=sys.stderr)
+        sys.exit(1)
+
+# Phase 3: Actually import to catch runtime errors
+# The subprocess uses python_path from project venv, so dependencies are available
+try:
+    __import__(module_name)
+except Exception as e:
+    print(f'IMPORT_ERROR: {{type(e).__name__}}: {{e}}', file=sys.stderr)
+    sys.exit(1)
+"#,
+            module
+        );
+
         let check_result = Command::new(python_path)
-            .args([
-                "-c",
-                &format!(
-                    "import importlib.util; exit(0 if importlib.util.find_spec('{}') else 1)",
-                    module
-                ),
-            ])
+            .args(["-c", &check_script])
             .current_dir(project_dir)
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
+            .stderr(std::process::Stdio::piped())
+            .output();
 
         match check_result {
-            Ok(status) if !status.success() => {
-                return Err(anyhow::anyhow!(
-                    "Module '{}' not found. Ensure the module exists and is importable from the project directory.",
-                    module
-                ));
+            Ok(output) if !output.status.success() => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("MODULE_NOT_FOUND") {
+                    return Err(anyhow::anyhow!(
+                        "Module '{}' not found. Ensure the module exists and is importable.",
+                        module
+                    ));
+                } else if stderr.contains("SYNTAX_ERROR") {
+                    return Err(anyhow::anyhow!(
+                        "Syntax error in module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                } else if stderr.contains("IMPORT_ERROR") {
+                    return Err(anyhow::anyhow!(
+                        "Failed to import module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Failed to verify module '{}'.\n\n{}",
+                        module,
+                        stderr.trim()
+                    ));
+                }
             }
-            Err(e) => {
-                // Python execution failed - continue anyway, let uvicorn report the error
-                eprintln!("warning: could not verify module existence: {}", e);
-            }
-            Ok(_) => {
-                // Module found, continue
-            }
+            Err(e) => eprintln!("warning: could not verify module: {}", e),
+            Ok(_) => {}
         }
     }
 
@@ -1445,6 +1497,7 @@ pub fn run_server(
                 let listener = tokio::net::TcpListener::bind(bind_addr)
                     .await
                     .expect("Failed to bind proxy");
+                lb_for_proxy.wait_for_healthy(Duration::from_secs(10)).await;
                 lb_for_proxy
                     .clone()
                     .spawn_health_checks(Duration::from_secs(5));

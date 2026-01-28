@@ -274,7 +274,7 @@ def test_verify_env():
         print(f"DEBUG: sys.path = {sys.path}")
         print(f"DEBUG: PYTHONPATH = {os.environ.get('PYTHONPATH', 'NOT SET')}")
         print(f"DEBUG: CWD = {os.getcwd()}")
-        assert False, "CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
+        pytest.fail("CRITICAL: velo_app NOT importable. PYTHONPATH lost in transit!"
 """)
 
     try:

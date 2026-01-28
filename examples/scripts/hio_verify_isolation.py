@@ -1,6 +1,7 @@
-import sys
-import os
 import ctypes
+import os
+import sys
+
 
 def check_darwin_isolation():
     """
@@ -17,11 +18,12 @@ def check_darwin_isolation():
         # Heuristic check: verify if other processes can be unrestricted probed
         res = libsystem.sandbox_check(os.getpid(), None, 0)
         if res == 0:
-            return "S-" # macOS Sandbox Restricted Mode
-        return "B" # Standard macOS Process
+            return "S-"  # macOS Sandbox Restricted Mode
+        return "B"  # Standard macOS Process
     except:
         # If private API unavailable, check for special Mach Task port restricted state
         return "B"
+
 
 def check_linux_isolation():
     """
@@ -30,30 +32,32 @@ def check_linux_isolation():
     stats = {}
     try:
         # 1. PID Namespace Check
-        with open("/proc/self/ns/pid", "r") as f:
+        with open("/proc/self/ns/pid") as f:
             stats["ns"] = f.read()
-        
+
         # 2. Check for dirty page leak risk (heuristic)
-        with open("/proc/self/status", "r") as f:
+        with open("/proc/self/status") as f:
             for line in f:
                 if line.startswith("VmRSS:"):
                     stats["rss"] = line.split()[1]
-        
+
         return "S" if stats.get("ns") else "B"
     except:
         return "B"
 
+
 def check_isolation():
     print(f"[HIO] Probing Isolation Engine for {sys.platform}...")
-    
+
     grade = "B"
     if sys.platform == "darwin":
         grade = check_darwin_isolation()
     elif sys.platform == "linux":
         grade = check_linux_isolation()
-        
+
     print(f"[HIO] Final Isolation Grade: {grade}")
     return grade
+
 
 if __name__ == "__main__":
     grade = check_isolation()

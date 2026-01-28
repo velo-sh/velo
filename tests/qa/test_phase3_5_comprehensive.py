@@ -75,6 +75,33 @@ def wait_for_port(port: int, timeout: float | None = None) -> bool:
     return False
 
 
+def wait_for_server(port: int, path: str = "/health", timeout: float | None = None) -> bool:
+    """Wait for server to be ready to handle HTTP requests.
+
+    Unlike wait_for_port which only checks if the port is bound,
+    this function actually makes HTTP requests until the server responds.
+    This handles the case where the server is starting but not yet ready.
+    """
+    if timeout is None:
+        timeout = T_MEDIUM
+    start = time.time()
+    url = f"http://127.0.0.1:{port}{path}"
+
+    while time.time() - start < timeout:
+        try:
+            response = requests.get(url, timeout=2)
+            if response.status_code < 500:  # Any non-5xx means server is ready
+                return True
+        except requests.exceptions.ConnectionError:
+            pass  # Server not ready yet
+        except requests.exceptions.Timeout:
+            pass  # Server slow to respond
+        except Exception:
+            pass  # Other errors, keep trying
+        time.sleep(0.2)
+    return False
+
+
 def get_child_pids(parent_pid: int) -> list[int]:
     """Get all child process PIDs."""
     try:
@@ -325,7 +352,7 @@ def root():
             port = env.next_port()
             env.serve("main:app", port, capture=True)
 
-            if wait_for_port(port, timeout=T_MEDIUM):
+            if wait_for_server(port, timeout=T_MEDIUM):
                 L0_PASSED = True
                 assert True
             else:
@@ -370,13 +397,12 @@ def root():
             port = env.next_port()
             env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START. Logs:\n{stderr}")
                 pytest.skip("Server did not start (L0 issue)")
 
-            # Settle time for workers to connect to proxy
-            time.sleep(1)
+            # wait_for_server already verified server is responding
 
             response = requests.get(f"http://127.0.0.1:{port}/", timeout=T_SHORT)
             assert response.status_code == 200
@@ -406,7 +432,7 @@ def echo(data: dict):
             port = env.next_port()
             env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             time.sleep(1)
@@ -441,7 +467,7 @@ def count():
             port = env.next_port()
             env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             time.sleep(1)
@@ -481,10 +507,10 @@ def on_exit():
             port = env.next_port()
             proc = env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 pytest.skip("Server did not start")
 
             # Make a request to ensure it's working (with retries for slow worker start)
@@ -542,31 +568,28 @@ class TestL2SadPath:
         """Clear error when app has syntax error."""
         with ComprehensiveTestEnv() as env:
             env.create_app("broken.py", "def broken(\n")  # Syntax error
-            env.install("uvicorn")  # Install uvicorn so we test syntax check
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "broken:app")
-            assert result.returncode != 0
-            # Should mention syntax, error, or uvicorn missing
-            assert (
-                "syntax" in result.stderr.lower()
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "broken:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention syntax error
+            assert "syntax" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected syntax error message, got: {result.stderr}"
             )
 
     def test_l2_004_app_crashes_on_import(self):
         """Clear error when app crashes on import."""
         with ComprehensiveTestEnv() as env:
             env.create_app("crasher.py", 'raise RuntimeError("CRASH")')
-            env.install("uvicorn")  # Install uvicorn so we test crash handling
+            env.install("uvicorn")
 
-            result = env.run_velo("serve", "crasher:app")
-            assert result.returncode != 0
-            # Should show the actual error or dependency message
-            assert (
-                "CRASH" in result.stderr
-                or "RuntimeError" in result.stderr
-                or "error" in result.stderr.lower()
-                or "uvicorn" in result.stderr.lower()
+            # Use run_velo which properly captures stderr
+            result = env.run_velo("serve", "crasher:app", timeout=10)
+            assert result.returncode != 0, f"Expected non-zero exit, got {result.returncode}"
+            # Should mention the error
+            assert "crash" in result.stderr.lower() or "error" in result.stderr.lower(), (
+                f"Expected error message, got: {result.stderr}"
             )
 
     def test_l2_005_invalid_app_format(self):
@@ -618,7 +641,7 @@ def root():
             port = env.next_port()
             env.serve("main:app", port, capture=True)
 
-            if not wait_for_port(port):
+            if not wait_for_server(port):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START port_option_works. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
@@ -666,7 +689,7 @@ def get_pid():
             port = env.next_port()
             env.serve("main:app", port, workers=4, capture=True)
 
-            if not wait_for_port(port, timeout=30):
+            if not wait_for_server(port, timeout=30):
                 stderr = env.stderr_log.read_text() if hasattr(env, "stderr_log") and env.stderr_log.exists() else ""
                 print(f"FAILED TO START workers_spawn_multiple. Logs:\n{stderr}")
                 pytest.skip("Server did not start")
@@ -718,7 +741,7 @@ def root():
             port = env.next_port()
             proc = env.serve("main:app", port)
 
-            if not wait_for_port(port, timeout=T_MEDIUM):
+            if not wait_for_server(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             proc.send_signal(signal.SIGINT)
@@ -754,7 +777,7 @@ def root():
             proc = env.serve("main:app", port)
             main_pid = proc.pid
 
-            if not wait_for_port(port, timeout=T_MEDIUM):
+            if not wait_for_server(port, timeout=T_MEDIUM):
                 pytest.skip("Server did not start")
 
             # Get child PIDs before shutdown
@@ -854,7 +877,7 @@ def root():
             # Cold start
             start1 = time.perf_counter()
             proc1 = env.serve("main:app", port1)
-            cold_started = wait_for_port(port1, timeout=T_MEDIUM)
+            cold_started = wait_for_server(port1, timeout=T_MEDIUM)
             cold_time = time.perf_counter() - start1
 
             if not cold_started:
@@ -867,7 +890,7 @@ def root():
             # Warm start
             start2 = time.perf_counter()
             env.serve("main:app", port2)
-            warm_started = wait_for_port(port2, timeout=T_MEDIUM)
+            warm_started = wait_for_server(port2, timeout=T_MEDIUM)
             warm_time = time.perf_counter() - start2
 
             print(f"Cold: {cold_time:.2f}s, Warm: {warm_time:.2f}s")

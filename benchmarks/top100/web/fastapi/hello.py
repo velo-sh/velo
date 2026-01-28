@@ -1,5 +1,5 @@
+
 import fastapi
-import sys
 
 # Official usage: Instantiate app
 # We DO NOT run the server (uvicorn) to avoid blocking.

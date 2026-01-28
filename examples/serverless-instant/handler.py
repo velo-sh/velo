@@ -10,27 +10,27 @@ Dependencies represent real Python serverless workloads:
 - SQLAlchemy: Database ORM
 - NumPy: Numerical computing
 """
-import sys
+
 import os
+import sys
 
 # --- Heavy Imports (The "Import Tax") ---
 # These imports represent real-world serverless function dependencies.
 # In traditional serverless, this cost is paid on EVERY cold start.
 # With Velo Zygote, this cost is paid ONCE and shared via CoW.
-
 import fastapi
+import numpy as np
 import pydantic
 import sqlalchemy
-import numpy as np
 
 
 def handler(event: dict) -> dict:
     """
     Minimal serverless handler.
-    
+
     Args:
         event: Request payload (dict-like)
-    
+
     Returns:
         Response with status and metadata
     """
@@ -54,6 +54,7 @@ LOADED_MODULES = {
 if __name__ == "__main__":
     # Direct execution for testing
     import json
+
     result = handler({"test": "payload"})
     print(json.dumps(result, indent=2))
     print(f"\nLoaded modules: {LOADED_MODULES}")

@@ -5,15 +5,13 @@ Velo Top 100 Benchmark Runner (RFC-0013 v2)
 Executes benchmarks defined in benchmarks/top100/<category>/<package>/benchmark.toml
 """
 
-
 from __future__ import annotations
-import argparse
 
+import argparse
 import json
 import logging
-import platform
 import os
-import re
+import platform
 import shutil
 import statistics
 import subprocess
@@ -21,7 +19,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 # Try to import velo.zygote components
 # Assuming velo is in PYTHONPATH or installed
@@ -34,9 +31,7 @@ except ImportError:
     try:
         import tomli as toml
     except ImportError:
-        sys.exit(
-            "Error: 'tomllib' (Python 3.11+) or 'tomli' is required. Please install it."
-        )
+        sys.exit("Error: 'tomllib' (Python 3.11+) or 'tomli' is required. Please install it.")
 
 # Constants
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
@@ -65,9 +60,7 @@ class BenchmarkRunner:
     ):
         self.limit = limit
         self.keep_env = keep_env
-        self.target_pkg = (
-            [target_pkg] if isinstance(target_pkg, str) else (target_pkg or [])
-        )
+        self.target_pkg = [target_pkg] if isinstance(target_pkg, str) else (target_pkg or [])
         self.runs = runs
         self.drop_cache = drop_cache
         self.use_zygote = use_zygote
@@ -101,14 +94,8 @@ class BenchmarkRunner:
             self.env["VIRTUAL_ENV"] = str(SHARED_VENV_DIR.resolve())
             raw_python = (SHARED_VENV_DIR / "bin" / "python").resolve()
             self.env["VELO_PYTHON"] = str(raw_python)
-            self.env["PYTHONPATH"] = (
-                str(ROOT_DIR.resolve()) + ":" + self.env.get("PYTHONPATH", "")
-            )
-            self.env["PATH"] = (
-                str((SHARED_VENV_DIR / "bin").resolve())
-                + os.pathsep
-                + self.env.get("PATH", "")
-            )
+            self.env["PYTHONPATH"] = str(ROOT_DIR.resolve()) + ":" + self.env.get("PYTHONPATH", "")
+            self.env["PATH"] = str((SHARED_VENV_DIR / "bin").resolve()) + os.pathsep + self.env.get("PATH", "")
 
             # macOS Fork Safety & Compatibility (RFC-0014 Fix)
             # macOS Fork Safety & Compatibility (RFC-0014 Fix)
@@ -132,9 +119,7 @@ class BenchmarkRunner:
         if not self._wait_for_zygote_ready(timeout=60):
             if self.zygote_process.poll() is not None:
                 out, err = self.zygote_process.communicate()
-                logger.error(
-                    f"❌ Zygote exited early with code {self.zygote_process.returncode}"
-                )
+                logger.error(f"❌ Zygote exited early with code {self.zygote_process.returncode}")
                 logger.error(f"   Stdout: {out}")
                 logger.error(f"   Stderr: {err}")
             raise RuntimeError("Zygote failed to become ready within 60s")
@@ -154,14 +139,10 @@ class BenchmarkRunner:
                 )
                 if result.returncode == 0:
                     stdout = result.stdout.lower()
-                    if "running" in stdout and (
-                        "preload: ready" in stdout or "preload: none" in stdout
-                    ):
+                    if "running" in stdout and ("preload: ready" in stdout or "preload: none" in stdout):
                         return True
                     if time.time() - start > 10:  # Only log if it's taking too long
-                        logger.info(
-                            f"   ⌛ Waiting for Zygote... Current Status: {stdout.strip()}"
-                        )
+                        logger.info(f"   ⌛ Waiting for Zygote... Current Status: {stdout.strip()}")
                 else:
                     if time.time() - start > 5:
                         logger.warning(
@@ -190,11 +171,7 @@ class BenchmarkRunner:
                 except subprocess.TimeoutExpired:
                     self.zygote_process.kill()
 
-        if (
-            hasattr(self, "mpl_cache_dir")
-            and self.mpl_cache_dir
-            and os.path.exists(self.mpl_cache_dir)
-        ):
+        if hasattr(self, "mpl_cache_dir") and self.mpl_cache_dir and os.path.exists(self.mpl_cache_dir):
             shutil.rmtree(self.mpl_cache_dir, ignore_errors=True)
 
     def discover(self) -> list[Path]:
@@ -213,9 +190,7 @@ class BenchmarkRunner:
         self, cmd: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None
     ) -> subprocess.CompletedProcess:
         """Run a command with timeout."""
-        return subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env
-        )
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
 
     def measure(
         self,
@@ -233,16 +208,14 @@ class BenchmarkRunner:
         # Warmup (discard results)
         for _ in range(warmup_runs):
             try:
-                subprocess.run(
-                    cmd, cwd=cwd, capture_output=True, timeout=timeout, env=env
-                )
+                subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
                 pass
 
         # Measurement
         for i in range(runs):
             if drop_cache:
-                print(f"      ❄️  Dropping Cache (Run {i+1})...", end="\r")
+                print(f"      ❄️  Dropping Cache (Run {i + 1})...", end="\r")
                 subprocess.run(
                     [
                         sys.executable,
@@ -263,12 +236,10 @@ class BenchmarkRunner:
                 duration = (time.perf_counter() - start) * 1000
 
                 # 🔍 DEBUG: Log individual run times to diagnose cold starts
-                logger.info(f"      Run {i+1}/{runs}: {duration:.1f}ms")
+                logger.info(f"      Run {i + 1}/{runs}: {duration:.1f}ms")
 
                 if proc.returncode != 0:
-                    raise RuntimeError(
-                        f"Exit code {proc.returncode} | STDERR: {proc.stderr} | STDOUT: {proc.stdout}"
-                    )
+                    raise RuntimeError(f"Exit code {proc.returncode} | STDERR: {proc.stderr} | STDOUT: {proc.stdout}")
 
                 times.append(duration)
             except subprocess.TimeoutExpired:
@@ -278,16 +249,11 @@ class BenchmarkRunner:
 
     def ensure_builder_deps(self, pkg_dir: Path):
         """Ensure bundle builder dependencies (blake3) are installed."""
-        if (
-            self.run_command(["uv", "pip", "install", "blake3"], pkg_dir, 60).returncode
-            != 0
-        ):
+        if self.run_command(["uv", "pip", "install", "blake3"], pkg_dir, 60).returncode != 0:
             # In Shared Mode without write access, this might fail.
             # We assume Shared Venv has blake3.
             # Just warn if fail.
-            logger.warning(
-                "Failed to install builder deps (blake3). Assuming present in environment."
-            )
+            logger.warning("Failed to install builder deps (blake3). Assuming present in environment.")
 
     def build_bundle(self, pkg_dir: Path):
         """Build .veloc bundle for the project."""
@@ -311,7 +277,7 @@ class BenchmarkRunner:
         # Read existing content if file exists
         existing_content = ""
         if config_path.exists():
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 existing_content = f.read()
 
         # Check if [tool.velo] already exists
@@ -324,10 +290,7 @@ class BenchmarkRunner:
             new_content = re.sub(pattern, replacement, existing_content)
         else:
             # Append new [tool.velo] section
-            new_content = (
-                existing_content.rstrip()
-                + f"\n\n[tool.velo]\npreload = {json.dumps(modules)}\n"
-            )
+            new_content = existing_content.rstrip() + f"\n\n[tool.velo]\npreload = {json.dumps(modules)}\n"
 
         with open(config_path, "w") as f:
             f.write(new_content)
@@ -346,7 +309,7 @@ class BenchmarkRunner:
 
             test_cfg = config["test"]
             entry_point = test_cfg["entry_point"]
-            expected_regex = test_cfg["expected_output"]
+            test_cfg["expected_output"]
             preload_modules = test_cfg.get("preload_modules", [])
             timeout = test_cfg.get("timeout", 30)
 
@@ -540,7 +503,7 @@ class BenchmarkRunner:
                 logger.info(f"   ✅ PASS | L4 (Fleet): {l4:.1f}ms 🚀")
             else:
                 logger.info(
-                    f"   ✅ PASS | L1: {l1:.1f}ms | L2: {l2:.1f}ms (x{safe_div(l1,l2):.1f}) | L3: {l3:.1f}ms | L4: {l4:.1f}ms (x{safe_div(l1,l4):.1f} 🚀)"
+                    f"   ✅ PASS | L1: {l1:.1f}ms | L2: {l2:.1f}ms (x{safe_div(l1, l2):.1f}) | L3: {l3:.1f}ms | L4: {l4:.1f}ms (x{safe_div(l1, l4):.1f} 🚀)"
                 )
 
         except Exception as e:
@@ -598,19 +561,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, help="Limit number of benchmarks")
     parser.add_argument("--keep-env", action="store_true", help="Don't clean venvs")
-    parser.add_argument(
-        "--package", type=str, action="append", help="Run specific package"
-    )
+    parser.add_argument("--package", type=str, action="append", help="Run specific package")
     parser.add_argument("--runs", type=int, default=3, help="Number of runs per level")
-    parser.add_argument(
-        "--drop-cache", action="store_true", help="Drop OS page cache before L1 runs"
-    )
-    parser.add_argument(
-        "--use-zygote", action="store_true", help="Use Zygote for acceleration"
-    )
-    parser.add_argument(
-        "--fleet", action="store_true", help="Run in Fleet Mode (one Zygote for all)"
-    )
+    parser.add_argument("--drop-cache", action="store_true", help="Drop OS page cache before L1 runs")
+    parser.add_argument("--use-zygote", action="store_true", help="Use Zygote for acceleration")
+    parser.add_argument("--fleet", action="store_true", help="Run in Fleet Mode (one Zygote for all)")
     args = parser.parse_args()
 
     if not VELO_BIN.exists():
@@ -645,9 +600,7 @@ def main():
                 "aiohttp",
                 "numpy",
             ]
-        logger.info(
-            f"🚀 Starting Mega-Zygote Fleet (Preload: {len(mega_preload)} modules)..."
-        )
+        logger.info(f"🚀 Starting Mega-Zygote Fleet (Preload: {len(mega_preload)} modules)...")
         runner._clean_zygote()
         runner._start_zygote(mega_preload)
         logger.info("✅ Fleet Zygote Warm.")

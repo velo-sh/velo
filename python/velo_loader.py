@@ -10,31 +10,25 @@ This module provides:
 
 Usage:
     from velo_loader import VeloBundle, install_hook
-    
+
     bundle = VeloBundle(Path("bundle.veloc"))
     bundle.open()
     install_hook(bundle)
-    
+
     import my_module  # Served from bundle
 """
 
 import importlib.abc
-import sys
-from pathlib import Path
+import importlib.machinery
 import marshal
 import struct
-import importlib.abc
-import importlib.machinery
-import hashlib
-from typing import Dict, List, Optional, Tuple
+import sys
+from pathlib import Path
 
 try:
     import blake3 as blake3_module
 except ImportError:
-    raise ImportError(
-        "blake3 is required for Velo bundle verification. "
-        "Install with: pip install blake3"
-    )
+    raise ImportError("blake3 is required for Velo bundle verification. Install with: pip install blake3")
 
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"
@@ -96,13 +90,13 @@ class VeloBundle:
     - Atomic read before any parsing
     """
 
-    def __init__(self, path: Path, max_size: Optional[int] = None):
+    def __init__(self, path: Path, max_size: int | None = None):
         self.path = path
         self.max_size = max_size or DEFAULT_MAX_BUNDLE_SIZE
-        self.data: Optional[bytes] = None
-        self.view: Optional[memoryview] = None
-        self.index: Dict[str, ModuleEntry] = {}
-        self._content_hash: Optional[bytes] = None
+        self.data: bytes | None = None
+        self.view: memoryview | None = None
+        self.index: dict[str, ModuleEntry] = {}
+        self._content_hash: bytes | None = None
         self._index_offset: int = 0
 
     def open(self) -> None:
@@ -114,9 +108,7 @@ class VeloBundle:
         # Security: Size check before read
         file_size = self.path.stat().st_size
         if file_size > self.max_size:
-            raise ValueError(
-                f"Bundle too large: {file_size} bytes > {self.max_size} bytes"
-            )
+            raise ValueError(f"Bundle too large: {file_size} bytes > {self.max_size} bytes")
 
         # Atomic read entire file
         self.data = self.path.read_bytes()
@@ -145,9 +137,7 @@ class VeloBundle:
             raise ValueError(f"Invalid bundle magic: {magic!r}")
 
         # Read header fields
-        version, module_count, index_offset = struct.unpack(
-            "<IIQ", bytes(self.view[4:20])
-        )
+        version, module_count, index_offset = struct.unpack("<IIQ", bytes(self.view[4:20]))
 
         if version != VERSION:
             raise ValueError(f"Unsupported bundle version: {version}")
@@ -175,9 +165,7 @@ class VeloBundle:
             self.index[entry.name] = entry
             # Calculate next entry position
             name_len = struct.unpack("<H", bytes(self.view[pos : pos + 2]))[0]
-            pos += (
-                2 + name_len + 8 + 8 + 32 + 1
-            )  # name_len + name + offset + size + hash + is_pkg
+            pos += 2 + name_len + 8 + 8 + 32 + 1  # name_len + name + offset + size + hash + is_pkg
 
     def _read_index_entry(self, pos: int) -> ModuleEntry:
         """Read a single module entry from index"""
@@ -222,7 +210,7 @@ class VeloBundle:
                 f"Actual:   {actual.hex()}"
             )
 
-    def get_code(self, name: str) -> Optional[bytes]:
+    def get_code(self, name: str) -> bytes | None:
         """
         Get marshalled bytecode for a module
 
@@ -265,7 +253,7 @@ class VeloFinder(importlib.abc.MetaPathFinder):
     - Returns None for non-bundled (fallback to standard import)
     """
 
-    def __init__(self, bundle: VeloBundle, project_root: Optional[Path] = None):
+    def __init__(self, bundle: VeloBundle, project_root: Path | None = None):
         self.bundle = bundle
         self.project_root = project_root or Path.cwd()
         self.metrics = {"graph_hits": 0, "graph_misses": 0, "fallback_reasons": {}}
@@ -329,9 +317,7 @@ class VeloLoader(importlib.abc.Loader):
     - Handle __path__ for packages (disk plugin support)
     """
 
-    def __init__(
-        self, bundle: VeloBundle, name: str, project_root: Optional[Path] = None
-    ):
+    def __init__(self, bundle: VeloBundle, name: str, project_root: Path | None = None):
         self.bundle = bundle
         self.name = name
         self.project_root = project_root or Path.cwd()
@@ -376,11 +362,7 @@ class VeloLoader(importlib.abc.Loader):
 
         # Try common patterns
         for suffix in [".py", "/__init__.py"]:
-            candidate = (
-                self.project_root
-                / Path(*parts).with_suffix("").parent
-                / (parts[-1] + suffix)
-            )
+            candidate = self.project_root / Path(*parts).with_suffix("").parent / (parts[-1] + suffix)
             if candidate.exists():
                 return str(candidate)
 
@@ -404,7 +386,7 @@ class VeloLoader(importlib.abc.Loader):
             module.__path__.append(str(disk_path))
 
 
-def install_hook(bundle: VeloBundle, project_root: Optional[Path] = None) -> VeloFinder:
+def install_hook(bundle: VeloBundle, project_root: Path | None = None) -> VeloFinder:
     """
     Install Velo import hook at sys.meta_path[0]
 
@@ -424,8 +406,8 @@ def uninstall_hook(finder: VeloFinder) -> None:
 # Convenience function for velo run --fast
 def activate_fast_mode(
     bundle_path: Path,
-    project_root: Optional[Path] = None,
-    max_size: Optional[int] = None,
+    project_root: Path | None = None,
+    max_size: int | None = None,
 ) -> VeloBundle:
     """
     Activate fast loader mode
