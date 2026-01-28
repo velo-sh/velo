@@ -42,7 +42,9 @@ def zygote_process():
     )
 
     # Wait for "Ready" signal in logs or socket to appear
-    timeout = 5
+    from conftest_utils import ci_timeout
+
+    timeout = ci_timeout(5)
     start = time.time()
     while time.time() - start < timeout:
         if os.path.exists(sock_path):

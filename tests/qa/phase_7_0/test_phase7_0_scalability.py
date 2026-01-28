@@ -425,7 +425,8 @@ def main():
     p.start()
 
     # Wait for worker to attach
-    timeout = 5
+    from conftest_utils import ci_timeout
+    timeout = ci_timeout(5)
     start = time.time()
     while attached_flag.value == 0 and (time.time() - start) < timeout:
         time.sleep(0.1)
