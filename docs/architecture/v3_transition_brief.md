@@ -107,15 +107,13 @@ The Supervisor Model fits both Single-Machine and Serverless patterns, acting as
 *   **Physics**: Uses **COW (Copy-On-Write)** to share memory between workers.
 *   **Result**: 100 workers consume only incrementally more RAM than 1 worker. Ideal for high-concurrency monoliths.
 
-### 5.2 Serverless (Knative / Cloud Run / Lambda)
-**Mode**: **High-Performance I/O Adapter**
-*   **Mechanism**: Velo runs as the Container Entrypoint (`ENTRYPOINT ["velo", "serve"]`).
-*   **Configuration**: Set `VELO_WORKERS=1` (or match concurrency limit).
-*   **Physics**:
-    1.  **Rust Frontend**: Velo (Rust) accepts the HTTP/Lambda event. It handles SSL, Header Parsing, and Keep-Alive extremely fast.
-    2.  **Python Backend**: Velo holds a pre-warmed Zygote via UDS (Unix Domain Socket).
-    3.  **Dispatch**: Velo shoots the parsed request to Python via memory/socket.
-*   **Benefit**:
-    *   **Cold Start**: Rust binaries start effectively instantly. The bottleneck is only Python import time (which Velo optimizes via `bootstap.py`).
-    *   **I/O Offload**: The heavy lifting of network handling is removed from the Python GIL.
-    *   **Universal Interface**: The User writes standard ASGI. Velo adapts it to the specific Serverless runtime (Lambda Runtime API vs HTTP).
+### 5.2 Serverless (Cloud Run / Lambda / Knative)
+**Mode**: **Super-Dense Serverless**
+*   **The Misconception**: "Serverless = 1 Request/Process".
+*   **The Velo Reality**: Serverless billing is based on **Memory-Seconds**.
+*   **Mechanism**:
+    *   Velo boots ONE Zygote (Pre-warmed).
+    *   On concurrent requests (Cloud Run allows 80+), Velo **Forks (COW)** workers instantly.
+    *   **Benefit 1 (Cost)**: 50 concurrent requests share 90% of memory. You can handle 10x traffic on the *same* memory tier.
+    *   **Benefit 2 (Latency)**: Forking a pre-warmed Zygote is milliseconds. Initializing a fresh container is seconds. Velo converts "Cold Starts" into "Warm Forks".
+*   **Conclusion**: Velo transforms Serverless from "Stateless Functions" into "Elastic Micro-Monoliths". Architecture serves the purpose of **Cost & Latency Reduction**.
