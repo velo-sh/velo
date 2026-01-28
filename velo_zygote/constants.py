@@ -4,7 +4,7 @@
 
 import sys
 
-BUILD_SCM_HASH = "a7fd17ab-dirty"
+BUILD_SCM_HASH = "eabb7e57-dirty"
 PROTOCOL_VERSION = 1
 PYTHON_VERSION = "3.11"
 SOCKET_PATH_LIMIT = 104

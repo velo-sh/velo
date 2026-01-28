@@ -12,6 +12,7 @@ Previous agents tested edge cases and security. Agent D tests:
 If Agent D finds bugs, the feature is NOT READY.
 """
 
+import os
 import shutil
 import signal
 import socket
@@ -72,11 +73,24 @@ class DestroyerTestEnv:
         self.path = Path(tempfile.mkdtemp(prefix="velo_destroy_"))
         self.velo = get_velo_binary()
         self.procs: list[subprocess.Popen[str]] = []
+        self.venv_path = self.path / ".venv"
 
     def setup(self) -> "DestroyerTestEnv":
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         (self.path / "uv.lock").write_text("{}")
         return self
+
+    def _get_env(self) -> dict[str, str]:
+        """Build environment with project venv activated."""
+        env = os.environ.copy()
+        venv_bin = self.venv_path / "bin"
+        env["VIRTUAL_ENV"] = str(self.venv_path)
+        env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+        # Preserve library paths for Rust binary (libpython)
+        for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        return env
 
     def create_script(self, name: str, content: str) -> Path:
         script_path = self.path / name
@@ -95,6 +109,7 @@ class DestroyerTestEnv:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=self._get_env(),
         )
         self.procs.append(proc)
         return proc
@@ -150,7 +165,7 @@ def health():
             )
             # Install FastAPI
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -192,7 +207,7 @@ def root():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -230,7 +245,7 @@ def get_pid():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -405,7 +420,7 @@ def cleanup():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -445,7 +460,7 @@ def root():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -487,7 +502,7 @@ def timing():
 """,
             )
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )
@@ -541,7 +556,7 @@ def framework():
             # Add fastapi to requirements
             (env.path / "requirements.txt").write_text("fastapi\nuvicorn\n")
             subprocess.run(
-                ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+                ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
                 cwd=env.path,
                 capture_output=True,
             )

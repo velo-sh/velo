@@ -4,6 +4,7 @@ Velo QA: Phase 3.5 Serve Command Tests
 Tests for `velo serve` command with uvicorn integration.
 """
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -83,13 +84,26 @@ class FastAPITestEnv:
     def __init__(self) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_serve_test_"))
         self.velo = get_velo_binary()
+        self.venv_path = self.path / ".venv"
+
+    def _get_env(self) -> dict[str, str]:
+        """Build environment with project venv activated."""
+        env = os.environ.copy()
+        venv_bin = self.venv_path / "bin"
+        env["VIRTUAL_ENV"] = str(self.venv_path)
+        env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+        # Preserve library paths for Rust binary (libpython)
+        for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+            if key in os.environ:
+                env[key] = os.environ[key]
+        return env
 
     def setup(self) -> "FastAPITestEnv":
         # Create virtual environment
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True)
         # Install fastapi and uvicorn
         subprocess.run(
-            ["uv", "pip", "install", "fastapi", "uvicorn", "--quiet"],
+            ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
             cwd=self.path,
             check=True,
         )
@@ -124,6 +138,7 @@ def health():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=self._get_env(),
         )
         return proc
 

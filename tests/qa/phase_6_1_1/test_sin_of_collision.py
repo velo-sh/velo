@@ -27,12 +27,34 @@ if not os.path.exists(VELO_BIN):
         VELO_BIN = os.path.abspath("target/debug/velo")
 
 
+def _get_workspace_env(ws_path):
+    """Build environment with workspace venv activated."""
+    env = os.environ.copy()
+    venv_path = ws_path / ".venv"
+    venv_bin = venv_path / "bin"
+    env["VIRTUAL_ENV"] = str(venv_path)
+    env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
+    # Preserve library paths for Rust binary (libpython)
+    for key in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
+
+
 @pytest.fixture
 def workspace_a(tmp_path):
     ws = tmp_path / "workspace_a"
     ws.mkdir()
     (ws / "main.py").write_text(
         "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'A'}"
+    )
+    # Create venv and install fastapi
+    subprocess.run(["uv", "venv", "--quiet"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
+        cwd=ws,
+        check=True,
+        capture_output=True,
     )
     return ws
 
@@ -43,6 +65,14 @@ def workspace_b(tmp_path):
     ws.mkdir()
     (ws / "main.py").write_text(
         "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): return {'healthy': True}\n@app.get('/')\ndef root(): return {'ws': 'B'}"
+    )
+    # Create venv and install fastapi
+    subprocess.run(["uv", "venv", "--quiet"], cwd=ws, check=True, capture_output=True)
+    subprocess.run(
+        ["uv", "pip", "install", "--python", ".venv/bin/python", "fastapi", "uvicorn", "msgpack", "--quiet"],
+        cwd=ws,
+        check=True,
+        capture_output=True,
     )
     return ws
 
@@ -63,6 +93,7 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
         cwd=workspace_a,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=_get_workspace_env(workspace_a),
     )
 
     try:
@@ -94,6 +125,7 @@ def test_workspace_collision_hijacking(workspace_a, workspace_b):
             cwd=workspace_b,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=_get_workspace_env(workspace_b),
         )
 
         # Robust wait loop for B
