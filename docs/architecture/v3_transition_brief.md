@@ -47,8 +47,9 @@ We shift to the **Supervisor Model** (similar to Android's `system_server` manag
 
 ### 3.2 The Project Zygote (Python)
 *   **Role**: The Worker Factory.
-*   **Identity**: Runs **100%** in the User's Virtualenv (`.venv`).
-*   **Physics**: Does **NOT** have `velo` installed in `site-packages`.
+*   **Identity (Physical)**: Runs on **System/Root Python** (to enable COW sharing).
+*   **Identity (Logical)**: Masquerades as User Venv via `sys.prefix` and `sys.path` injection.
+*   **Physics**: Does **NOT** have `velo` installed in user's `site-packages`.
 *   **Capability**: Gained via **Runtime Injection** of a "Thin Shim".
 
 ### 3.3 The Isolation Protocol ("Airlock")
