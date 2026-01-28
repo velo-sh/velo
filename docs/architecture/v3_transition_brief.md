@@ -153,25 +153,27 @@ You correctly identified a fundamental operational shift:
     *   **Path Injection**: The Supervisor tells Tier 1: "Mutate yourself into *this* specific path: `/opt/app-a/.venv`".
     *   **Implication**: In this mode, `velo` is purely a **Runtime Supervisor**, completely decoupling from the "Build Phase".
 
-### 6.2 The Zygote Forest Strategy (Dynamic Dependency DAG)
-To achieve **theoretical maximum sharing** without sacrificing compatibility, V3 replaces static layering with a **Dynamic Dependency DAG (Directed Acyclic Graph)**.
+### 6.2 The Adaptive Hub Strategy (Hub & Spoke)
+To avoid "Deep Chain Fragility" while maintaining high sharing, V3 adopts a **Flattended Hub & Spoke Architecture**.
 
-**The Concept: Longest Common Prefix (LCP)**
-We do not define fixed "Industry Zygotes". Instead, Velo identifies the **Deepest Compatible Ancestor** for every project.
-*   **Goal**: Find a running Zygote that matches the longest subset of the User's dependencies.
+**The Topology**:
+*   **Role 1: The Hub (Synthetic Base)**
+    *   **Nature**: Public Infrastructure.
+    *   **Content**: High-value combinations of heavy libs (e.g., `Hub_Data=[numpy, pandas]`, `Hub_Web=[fastapi, pydantic]`).
+    *   **Source**: Automatically clustered from global usage patterns (or statically defined).
+    *   **Constraint**: Hubs are **Roots**. They do not depend on specific User Apps.
+*   **Role 2: The Spoke (User Leaf)**
+    *   **Nature**: Specific Tenant App.
+    *   **Constraint**: **Leaf Node Only**. User Zygotes are NEVER forked by others.
+    *   **Mechanism**: **Delta Loading**. Fork a Hub -> Load specific user deps (`sys.path` injection).
 
-**The Algorithm**:
-1.  **Analyze**: Velo parses `uv.lock` to extract a "Dependency Signature" (e.g., `[numpy==1.24, pydantic==2.8]`).
-2.  **Tree Search**: Velo scans the live Zygote Forest.
-    *   *Zygote A*: `[numpy==1.24]`
-    *   *Zygote B*: `[numpy==1.24, pydantic==2.8]`
-3.  **Fork Strategy**:
-    *   User needs: `[numpy==1.24, pydantic==2.8, torch==2.1]`.
-    *   **Action**: Fork from **Zygote B** (The Hit).
-    *   **Load**: Import `torch`.
-    *   **Result**: 100% Compatibility + Max Shared Memory (inherited A & B).
-4.  **Fallback**: If no match found, Fork from Root (Tier 0).
+**The Workflow (Free Combination)**:
+1.  **Match**: User needs `[numpy, pandas, my_lib]`.
+2.  **Best Fit**: System finds `Hub_Data` (`[numpy, pandas]`) is the best base.
+3.  **Fork**: Create process from `Hub_Data` (Shared Memory Hit: 90%).
+4.  **Delta Load**: Import `my_lib` (Private Memory).
 
-**Dynamic Re-Zygoting (Emergence)**:
-*   If a specific "Intermediate State" (e.g., Node B) is forked frequently (Hot Path), Velo promotes it to a **Long-Lived Zygote**.
-*   **Result**: The "Industry Base" is not manually configured; it **emerges** from actual workload usage patterns.
+**Result**:
+*   **Stability**: No long chains. If App A breaks, App B is unaffected.
+*   **Flexibility**: Users can "freely combine" their delta deps on top of optimal Bases.
+*   **Simplicity**: Topology depth is strictly limited (Depth <= 2).
