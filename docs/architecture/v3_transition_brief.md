@@ -221,19 +221,23 @@ This approach (**Superset Compatibility**) is far simpler and more flexible than
 
 ## 7. The Unified Serverless Theory
 
-**"Single Machine Mode is just a Special Case of Serverless Mode."**
+**"Single Machine Mode is NOT a different mode. It is a Private Serverless Cloud."**
 
-*   **Serverless Mode (The General Case)**:
-    *   **State**: Immutable Containers.
-    *   **Asset**: `.venv` is pre-baked (AOT Build).
-    *   **Role**: Velo acts as a **Runtime Linker** (maps existing assets).
-*   **Single Machine Mode (The Special Case)**:
-    *   **State**: Mutable Workspace.
-    *   **Asset**: `.venv` is missing or dirty.
-    *   **Role**: Velo acts as a **JIT Builder** (builds assets via `uv`), *then* acts as a Runtime Linker.
+You are not "developing locally"; you are **Hosting a Serverless Platform** on your laptop.
 
-**Conclusion**:
-The V3 Architecture unifies both worlds under a single **Dynamic Resource Matching Engine**. Whether on a Macbook or K8s, Velo's core loop is identical: **"Analyze Signature -> Match Zygote -> Link Assets -> Run"**.
+*   **Velo Binary**: The **Private Cloud Run** infrastructure.
+*   **User Code**: The **Function/Tenant** running on that infrastructure.
+
+**The Only Variance (Asset Origin)**:
+*   **Public Cloud (Kubernetes/AWS)**:
+    *   Assets (`.venv`) are **Pre-Baked** (Immutable).
+    *   Velo acts as **Reader/Linker**.
+*   **Private Cloud (Localhost)**:
+    *   Assets (`.venv`) are **Lazily Built** (Mutable).
+    *   Velo acts as **Builder** (via `uv`) -> **Then Linker**.
+
+**Architectural Consequence**:
+We do not build a "Dev Server". We build a **Production Serverless Engine** that happens to know how to build dependencies if they are missing. **The Runtime Physics (COW, Zygotes, Trees) are IDENTICAL.**
 
 ---
 
