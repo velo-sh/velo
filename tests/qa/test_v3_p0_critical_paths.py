@@ -18,10 +18,8 @@ import socket
 import struct
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
-from typing import NamedTuple
 
 import pytest
 
@@ -35,6 +33,7 @@ BOOTSTRAP_PY = VELO_ROOT / "crates" / "velo-core" / "src" / "zygote" / "bootstra
 
 def get_short_socket_path() -> Path:
     import uuid
+
     return Path("/tmp") / f"v3p0-{uuid.uuid4().hex[:8]}.sock"
 
 
@@ -121,12 +120,13 @@ class ZygoteTester:
 # GAP-001: 多 Worker 并发 + 状态隔离
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap001MultiWorkerIsolation:
     """
     GAP-001: 多个 Worker 并发执行时，状态必须隔离。
-    
+
     验证:
     - Worker A 修改全局变量，不影响 Worker B
     - Worker A 的 sys.modules 修改不影响 Worker B
@@ -169,16 +169,20 @@ with open("{result_b}", 'w') as f:
             tester.start()
 
             # 并发 fork 两个 worker
-            resp_a = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_a),
-                "args": [],
-            })
-            resp_b = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_b),
-                "args": [],
-            })
+            resp_a = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_a),
+                    "args": [],
+                }
+            )
+            resp_b = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_b),
+                    "args": [],
+                }
+            )
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
@@ -236,16 +240,20 @@ with open("{result_b}", 'w') as f:
         try:
             tester.start()
 
-            resp_a = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_a),
-                "args": [],
-            })
-            resp_b = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_b),
-                "args": [],
-            })
+            resp_a = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_a),
+                    "args": [],
+                }
+            )
+            resp_b = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_b),
+                    "args": [],
+                }
+            )
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
@@ -264,12 +272,13 @@ with open("{result_b}", 'w') as f:
 # GAP-002: Warm Pool 残留状态污染检测
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap002WarmPoolStatePollution:
     """
     GAP-002: Warm Pool 中复用的 Worker 不应携带上一次执行的状态。
-    
+
     验证:
     - 第一次执行设置全局状态
     - 第二次执行在同一个 warm worker 中不应看到第一次的状态
@@ -324,34 +333,42 @@ with open("{result_2}", 'w') as f:
             tester.start()
 
             # 请求 warm pool
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
             # 第一次执行 (使用 warm worker)
-            resp_1 = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_1),
-                "args": [],
-            })
+            resp_1 = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_1),
+                    "args": [],
+                }
+            )
             assert resp_1["type"] == "Forked"
             time.sleep(0.3)
 
             # 补充池 (为第二次执行准备)
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
             # 第二次执行 (应该使用新的 warm worker)
-            resp_2 = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_2),
-                "args": [],
-            })
+            resp_2 = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_2),
+                    "args": [],
+                }
+            )
             assert resp_2["type"] == "Forked"
             time.sleep(0.3)
 
@@ -370,12 +387,13 @@ with open("{result_2}", 'w') as f:
 # GAP-003: 真实框架测试 (Flask 简化版)
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap003FrameworkCompatibility:
     """
     GAP-003: 真实 Web 框架必须能正常启动和响应。
-    
+
     验证:
     - Flask/FastAPI 应用能成功导入和实例化
     - WSGI/ASGI 兼容性
@@ -391,7 +409,7 @@ class TestGap003FrameworkCompatibility:
         app_dir = tmp_path / "myapp"
         app_dir.mkdir()
         (app_dir / "__init__.py").write_text("")
-        
+
         # 简化的 Flask 风格应用 (不需要真正的 Flask)
         (app_dir / "app.py").write_text("""
 class FlaskStyleApp:
@@ -438,11 +456,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -466,7 +486,7 @@ with open("{result_file}", 'w') as f:
         pkg = tmp_path / "myproject"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("from .core import main_func")
-        
+
         core = pkg / "core"
         core.mkdir()
         (core / "__init__.py").write_text("from .engine import main_func")
@@ -476,7 +496,7 @@ from ..utils.helpers import helper_func
 def main_func():
     return f"ENGINE + {helper_func()}"
 """)
-        
+
         utils = pkg / "utils"
         utils.mkdir()
         (utils / "__init__.py").write_text("")
@@ -503,11 +523,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -524,12 +546,13 @@ with open("{result_file}", 'w') as f:
 # GAP-004: 信号处理 (Ctrl+C / SIGTERM)
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap004SignalHandling:
     """
     GAP-004: 用户 Ctrl+C 或 SIGTERM 时必须优雅退出。
-    
+
     验证:
     - SIGTERM 被正确传递给 worker
     - 用户脚本的 signal handler 被调用
@@ -580,11 +603,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
             worker_pid = resp.get("worker_pid")
 
@@ -614,12 +639,13 @@ with open("{result_file}", 'w') as f:
 # GAP-008: C 扩展加载
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap008CExtensionLoading:
     """
     GAP-008: C 扩展模块 (numpy, json) 必须能正常加载。
-    
+
     验证:
     - 标准库 C 扩展 (_json, _struct) 正常
     - 如果有 numpy，能正常导入
@@ -676,11 +702,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -749,17 +777,21 @@ with open("{result_file}", 'w') as f:
             tester.start()
 
             # 使用 warm pool
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)

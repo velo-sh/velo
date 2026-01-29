@@ -21,6 +21,69 @@ def _get_max_pool_size() -> int:
 
 MAX_POOL_SIZE = _get_max_pool_size()
 
+# BUG-010: Dangerous environment variables that could enable code injection
+# These are NEVER allowed to be set via Fork env overrides
+DANGEROUS_ENV_VARS = frozenset([
+    # Dynamic linker injection (Linux)
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
+    # Dynamic linker injection (macOS)
+    "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
+    # Python path hijacking
+    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+    # Command hijacking
+    "PATH",
+])
+
+# BUG-001: Default blocked path prefixes for script execution
+# Additional paths come from velo_config.blocked_paths if available
+DEFAULT_BLOCKED_PATHS = ["/usr", "/bin", "/sbin", "/etc", "/root", "/boot"]
+
+def filter_dangerous_env(env: dict) -> dict:
+    """BUG-010: Filter out dangerous environment variables that could enable injection."""
+    filtered = {}
+    blocked = []
+    for k, v in env.items():
+        if k in DANGEROUS_ENV_VARS:
+            blocked.append(k)
+        else:
+            filtered[k] = v
+    if blocked:
+        sys.stderr.write(f"🛡️ [Security] Blocked dangerous env vars: {blocked}\n")
+    return filtered
+
+def validate_script_path(script_path: str) -> tuple[bool, str]:
+    """
+    BUG-001: Validate script path for security.
+    - Blocks directory traversal (..)
+    - Blocks execution from system directories
+    - Resolves symlinks to prevent escape
+    """
+    try:
+        # 1. Check for directory traversal
+        path_parts = script_path.replace("\\", "/").split("/")
+        if ".." in path_parts:
+            return False, f"Security: Directory traversal detected in '{script_path}'"
+        
+        # 2. Resolve to real path (follows symlinks)
+        real_path = os.path.realpath(os.path.abspath(script_path))
+        
+        # 3. Check against blocked paths
+        blocked_paths = DEFAULT_BLOCKED_PATHS
+        # Try to get additional blocked paths from velo_config if available
+        try:
+            from velo_zygote.settings import velo_config
+            blocked_paths = velo_config.blocked_paths
+        except (ImportError, Exception):
+            pass
+        
+        for blocked in blocked_paths:
+            if real_path.startswith(blocked + "/") or real_path == blocked:
+                return False, f"Security: Script in protected system path '{blocked}'"
+        
+        return True, ""
+    except Exception as e:
+        return False, f"Security: Invalid script path: {e}"
+
 def setup_site():
     """P0: Inject User Virtual Environment into sys.path (Tier 1 Mutation)."""
     venv = os.environ.get("VIRTUAL_ENV")
@@ -131,12 +194,16 @@ class IdlePool:
 def execute_payload(msg):
     app_module = msg.get("module")
     script_path = msg.get("script_path")
+    
+    # BUG-010: Filter dangerous environment variables before applying
     env_overrides = msg.get("env", {})
     if env_overrides:
-        os.environ.update(env_overrides)
-        # Re-apply site packages if VIRTUAL_ENV changed (rare but possible in dynamic stacks)
-        if "VIRTUAL_ENV" in env_overrides:
-            setup_site()
+        safe_env = filter_dangerous_env(env_overrides)
+        if safe_env:
+            os.environ.update(safe_env)
+            # Re-apply site packages if VIRTUAL_ENV changed (rare but possible in dynamic stacks)
+            if "VIRTUAL_ENV" in safe_env:
+                setup_site()
 
     if app_module:
         if ":" in app_module:
@@ -149,6 +216,11 @@ def execute_payload(msg):
         # BUG-016: Validate script path exists before execution
         if not os.path.isfile(script_path):
             raise FileNotFoundError(f"Script not found: {script_path}")
+        
+        # BUG-001: Validate script path for security (traversal, blocked paths)
+        is_valid, error_msg = validate_script_path(script_path)
+        if not is_valid:
+            raise PermissionError(error_msg)
         
         # HO-004: Inject script directory into sys.path[0] for relative imports
         script_dir = os.path.dirname(os.path.abspath(script_path))
