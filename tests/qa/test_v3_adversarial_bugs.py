@@ -4,11 +4,11 @@ V3 Adversarial Bug Hunt Test Suite
 QA MISSION: Prove value by finding REAL bugs that dev missed.
 
 FIXED BUGS (Tests now verify correct behavior):
-✅ BUG-009: target_pool_size now enforces MAX_POOL_SIZE=100 limit - FIXED!
-✅ BUG-011: Negative pool size now rejected with Error - FIXED!
-✅ BUG-012: Truncated JSON now handled gracefully - FIXED!
-✅ BUG-015: Unknown commands now return Error - FIXED!
-✅ BUG-016: Non-existent script paths now validated - FIXED!
+[FIXED] BUG-009: target_pool_size now enforces MAX_POOL_SIZE=100 limit
+[FIXED] BUG-011: Negative pool size now rejected with Error
+[FIXED] BUG-012: Truncated JSON now handled gracefully
+[FIXED] BUG-015: Unknown commands now return Error
+[FIXED] BUG-016: Non-existent script paths now validated
 
 TESTED VULNERABILITIES (Tests PASS = attack was attempted):
 - BUG-001: Path traversal attempted (exec accepts any path)

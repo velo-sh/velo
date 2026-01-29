@@ -3,12 +3,12 @@ V3 E2E P0 Critical Path Tests
 
 Council Review GAP-001 through GAP-008: P0 Blocking Issues
 
-测试场景:
-- GAP-001: 多 Worker 并发 + 状态隔离
-- GAP-002: Warm Pool 残留状态污染检测
-- GAP-003: 真实框架测试 (FastAPI/Flask)
-- GAP-004: 信号处理 (Ctrl+C / SIGTERM)
-- GAP-008: C 扩展加载 (numpy/json)
+Test scenarios:
+- GAP-001: Multi-worker concurrency + state isolation
+- GAP-002: Warm Pool state pollution detection
+- GAP-003: Real framework testing (FastAPI/Flask)
+- GAP-004: Signal handling (Ctrl+C / SIGTERM)
+- GAP-008: C extension loading (numpy/json)
 """
 
 import json
@@ -18,8 +18,10 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -33,12 +35,11 @@ BOOTSTRAP_PY = VELO_ROOT / "crates" / "velo-core" / "src" / "zygote" / "bootstra
 
 def get_short_socket_path() -> Path:
     import uuid
-
     return Path("/tmp") / f"v3p0-{uuid.uuid4().hex[:8]}.sock"
 
 
 class ZygoteTester:
-    """直接测试 Zygote bootstrap.py 的 Warm Pool 行为"""
+    """Direct tester for Zygote bootstrap.py Warm Pool behavior"""
 
     def __init__(self, socket_path: Path | None = None):
         self.socket_path = socket_path or get_short_socket_path()
@@ -84,7 +85,7 @@ class ZygoteTester:
             raise RuntimeError("Not connected")
         raw_len = self._recv_exact(4)
         total_len = struct.unpack("<I", raw_len)[0]
-        self._recv_exact(1)  # version
+        self._recv_exact(1)
         payload = self._recv_exact(total_len - 1)
         return json.loads(payload.decode("utf-8"))
 
@@ -117,45 +118,44 @@ class ZygoteTester:
 
 
 # =============================================================================
-# GAP-001: 多 Worker 并发 + 状态隔离
+# GAP-001: Multi-worker concurrency + state isolation
 # =============================================================================
-
 
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap001MultiWorkerIsolation:
     """
-    GAP-001: 多个 Worker 并发执行时，状态必须隔离。
+    GAP-001: Multiple workers must have isolated state.
 
-    验证:
-    - Worker A 修改全局变量，不影响 Worker B
-    - Worker A 的 sys.modules 修改不影响 Worker B
-    - 并发 fork 不会产生竞态条件
+    Validates:
+    - Worker A modifying globals does not affect Worker B
+    - Worker A's sys.modules changes do not affect Worker B
+    - Concurrent forks do not cause race conditions
     """
 
     def test_concurrent_workers_isolated_globals(self, tmp_path: Path) -> None:
-        """并发 Worker 的全局变量修改互不影响"""
+        """Concurrent workers have isolated global variables"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # Worker A: 设置全局变量
+        # Worker A: Set global variable
         script_a = tmp_path / "worker_a.py"
         result_a = tmp_path / "result_a.txt"
         script_a.write_text(f"""
 import time
 GLOBAL_VAR = "SET_BY_WORKER_A"
-time.sleep(0.2)  # 等待其他 worker 启动
+time.sleep(0.2)  # Wait for other workers to start
 with open("{result_a}", 'w') as f:
     f.write(f"GLOBAL_VAR={{GLOBAL_VAR}}")
 """)
 
-        # Worker B: 检查全局变量是否被污染
+        # Worker B: Check if global is polluted
         script_b = tmp_path / "worker_b.py"
         result_b = tmp_path / "result_b.txt"
         script_b.write_text(f"""
 import time
-time.sleep(0.1)  # 稍晚启动
-# 检查是否存在被 Worker A 设置的全局变量
+time.sleep(0.1)  # Start slightly later
+# Check if global set by Worker A exists
 try:
     val = GLOBAL_VAR
     status = f"POLLUTED:{{val}}"
@@ -168,49 +168,45 @@ with open("{result_b}", 'w') as f:
         try:
             tester.start()
 
-            # 并发 fork 两个 worker
-            resp_a = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_a),
-                    "args": [],
-                }
-            )
-            resp_b = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_b),
-                    "args": [],
-                }
-            )
+            # Fork two workers concurrently
+            resp_a = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_a),
+                "args": [],
+            })
+            resp_b = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_b),
+                "args": [],
+            })
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
 
-            # 等待结果
+            # Wait for results
             time.sleep(0.5)
 
-            # 验证
+            # Verify
             if result_b.exists():
                 content_b = result_b.read_text()
-                assert "ISOLATED:OK" in content_b, f"Worker B 被 Worker A 污染: {content_b}"
+                assert "ISOLATED:OK" in content_b, f"Worker B polluted by Worker A: {content_b}"
 
         finally:
             tester.stop()
 
     def test_concurrent_workers_isolated_sys_modules(self, tmp_path: Path) -> None:
-        """并发 Worker 的 sys.modules 修改互不影响"""
+        """Concurrent workers have isolated sys.modules"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # Worker A: 动态创建模块
+        # Worker A: Dynamically create module
         script_a = tmp_path / "module_creator.py"
         result_a = tmp_path / "module_result_a.txt"
         script_a.write_text(f"""
 import sys
 import types
 
-# 动态创建模块
+# Dynamically create module
 fake_module = types.ModuleType("fake_secret_module")
 fake_module.SECRET = "WORKER_A_SECRET"
 sys.modules["fake_secret_module"] = fake_module
@@ -222,7 +218,7 @@ with open("{result_a}", 'w') as f:
     f.write("MODULE_INJECTED")
 """)
 
-        # Worker B: 检查是否能访问 Worker A 注入的模块
+        # Worker B: Check if it can access Worker A's injected module
         script_b = tmp_path / "module_checker.py"
         result_b = tmp_path / "module_result_b.txt"
         script_b.write_text(f"""
@@ -240,20 +236,16 @@ with open("{result_b}", 'w') as f:
         try:
             tester.start()
 
-            resp_a = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_a),
-                    "args": [],
-                }
-            )
-            resp_b = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_b),
-                    "args": [],
-                }
-            )
+            resp_a = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_a),
+                "args": [],
+            })
+            resp_b = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_b),
+                "args": [],
+            })
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
@@ -262,40 +254,39 @@ with open("{result_b}", 'w') as f:
 
             if result_b.exists():
                 content_b = result_b.read_text()
-                assert "ISOLATED:OK" in content_b, f"sys.modules 泄露: {content_b}"
+                assert "ISOLATED:OK" in content_b, f"sys.modules leaked: {content_b}"
 
         finally:
             tester.stop()
 
 
 # =============================================================================
-# GAP-002: Warm Pool 残留状态污染检测
+# GAP-002: Warm Pool state pollution detection
 # =============================================================================
-
 
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap002WarmPoolStatePollution:
     """
-    GAP-002: Warm Pool 中复用的 Worker 不应携带上一次执行的状态。
+    GAP-002: Warm Pool workers must not carry state from previous executions.
 
-    验证:
-    - 第一次执行设置全局状态
-    - 第二次执行在同一个 warm worker 中不应看到第一次的状态
+    Validates:
+    - First execution sets global state
+    - Second execution in same warm worker should not see first execution's state
     """
 
     def test_warm_worker_no_state_leakage(self, tmp_path: Path) -> None:
-        """Warm Worker 复用时不应有状态泄露"""
+        """Warm worker reuse should not leak state"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # 脚本1: 设置全局变量并写入 sys.modules
+        # Script 1: Set global variable and write to sys.modules
         script_1 = tmp_path / "set_state.py"
         result_1 = tmp_path / "state_result_1.txt"
         script_1.write_text(f"""
 import sys
 
-# 设置状态
+# Set state
 MY_GLOBAL_STATE = "FIRST_RUN_STATE"
 sys.VELO_TEST_MARKER = "POLLUTED"
 
@@ -303,7 +294,7 @@ with open("{result_1}", 'w') as f:
     f.write("STATE_SET")
 """)
 
-        # 脚本2: 检查是否有残留状态
+        # Script 2: Check for residual state
         script_2 = tmp_path / "check_state.py"
         result_2 = tmp_path / "state_result_2.txt"
         script_2.write_text(f"""
@@ -311,14 +302,14 @@ import sys
 
 issues = []
 
-# 检查全局变量
+# Check global variable
 try:
     val = MY_GLOBAL_STATE
     issues.append(f"GLOBAL_LEAKED:{{val}}")
 except NameError:
     pass
 
-# 检查 sys 属性
+# Check sys attribute
 if hasattr(sys, 'VELO_TEST_MARKER'):
     issues.append(f"SYS_ATTR_LEAKED:{{sys.VELO_TEST_MARKER}}")
 
@@ -332,97 +323,88 @@ with open("{result_2}", 'w') as f:
         try:
             tester.start()
 
-            # 请求 warm pool
-            tester.send_command(
-                {
-                    "type": "ReplenishPool",
-                    "target_count": 1,
-                }
-            )
+            # Request warm pool
+            tester.send_command({
+                "type": "ReplenishPool",
+                "target_count": 1,
+            })
             time.sleep(0.3)
 
-            # 第一次执行 (使用 warm worker)
-            resp_1 = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_1),
-                    "args": [],
-                }
-            )
+            # First execution (uses warm worker)
+            resp_1 = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_1),
+                "args": [],
+            })
             assert resp_1["type"] == "Forked"
             time.sleep(0.3)
 
-            # 补充池 (为第二次执行准备)
-            tester.send_command(
-                {
-                    "type": "ReplenishPool",
-                    "target_count": 1,
-                }
-            )
+            # Replenish pool for second execution
+            tester.send_command({
+                "type": "ReplenishPool",
+                "target_count": 1,
+            })
             time.sleep(0.3)
 
-            # 第二次执行 (应该使用新的 warm worker)
-            resp_2 = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script_2),
-                    "args": [],
-                }
-            )
+            # Second execution (should use new warm worker)
+            resp_2 = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script_2),
+                "args": [],
+            })
             assert resp_2["type"] == "Forked"
             time.sleep(0.3)
 
             if result_2.exists():
                 content = result_2.read_text()
-                # Warm worker 是 fork 后的新进程，不应有前一次的状态
-                # 但如果是同一个 worker 被复用，可能会有问题
-                # 实际上由于 fork，每次都是新进程，应该是 CLEAN
-                assert "CLEAN:OK" in content or "POLLUTION" not in content, f"Warm pool 状态污染: {content}"
+                # Warm worker is forked as new process, should not have previous state
+                # If same worker reused, there might be issues
+                # Since fork creates new process, should be CLEAN
+                assert "CLEAN:OK" in content or "POLLUTION" not in content, f"Warm pool state pollution: {content}"
 
         finally:
             tester.stop()
 
 
 # =============================================================================
-# GAP-003: 真实框架测试 (Flask 简化版)
+# GAP-003: Real framework testing (Flask style)
 # =============================================================================
-
 
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap003FrameworkCompatibility:
     """
-    GAP-003: 真实 Web 框架必须能正常启动和响应。
+    GAP-003: Real web frameworks must start and respond correctly.
 
-    验证:
-    - Flask/FastAPI 应用能成功导入和实例化
-    - WSGI/ASGI 兼容性
-    - 模块发现正常
+    Validates:
+    - Flask/FastAPI apps can be imported and instantiated
+    - WSGI/ASGI compatibility
+    - Module discovery works correctly
     """
 
     def test_flask_style_app_instantiation(self, tmp_path: Path) -> None:
-        """Flask 风格应用可以正常实例化"""
+        """Flask-style app can be instantiated correctly"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # 创建 Flask 风格的应用结构
+        # Create Flask-style app structure
         app_dir = tmp_path / "myapp"
         app_dir.mkdir()
         (app_dir / "__init__.py").write_text("")
 
-        # 简化的 Flask 风格应用 (不需要真正的 Flask)
+        # Simplified Flask-style app (no real Flask needed)
         (app_dir / "app.py").write_text("""
 class FlaskStyleApp:
     def __init__(self, name):
         self.name = name
         self.routes = {}
-    
+
     def route(self, path):
         def decorator(f):
             self.routes[path] = f
             return f
         return decorator
-    
+
     def run(self, host='127.0.0.1', port=5000):
         print(f"App {self.name} would run on {host}:{port}")
         print(f"Routes: {list(self.routes.keys())}")
@@ -438,7 +420,7 @@ def health():
     return {'status': 'ok'}
 """)
 
-        # 测试脚本
+        # Test script
         script = tmp_path / "run_app.py"
         result_file = tmp_path / "app_result.txt"
         script.write_text(f"""
@@ -456,33 +438,31 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                }
-            )
+            resp = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script),
+                "args": [],
+            })
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
 
             if result_file.exists():
                 content = result_file.read_text()
-                assert "FRAMEWORK_OK" in content, f"框架实例化失败: {content}"
+                assert "FRAMEWORK_OK" in content, f"Framework instantiation failed: {content}"
                 assert "/" in content and "/api/health" in content
             else:
-                pytest.fail("结果文件未创建 - 脚本执行失败")
+                pytest.fail("Result file not created - script execution failed")
 
         finally:
             tester.stop()
 
     def test_multi_file_package_import(self, tmp_path: Path) -> None:
-        """多文件包导入正常工作"""
+        """Multi-file package imports work correctly"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # 创建多层包结构
+        # Create multi-level package structure
         pkg = tmp_path / "myproject"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("from .core import main_func")
@@ -523,48 +503,45 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                }
-            )
+            resp = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script),
+                "args": [],
+            })
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
 
             if result_file.exists():
                 content = result_file.read_text()
-                assert "MULTI_FILE_IMPORT_OK" in content, f"多文件导入失败: {content}"
+                assert "MULTI_FILE_IMPORT_OK" in content, f"Multi-file import failed: {content}"
 
         finally:
             tester.stop()
 
 
 # =============================================================================
-# GAP-004: 信号处理 (Ctrl+C / SIGTERM)
+# GAP-004: Signal handling (Ctrl+C / SIGTERM)
 # =============================================================================
-
 
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap004SignalHandling:
     """
-    GAP-004: 用户 Ctrl+C 或 SIGTERM 时必须优雅退出。
+    GAP-004: User Ctrl+C or SIGTERM must trigger graceful exit.
 
-    验证:
-    - SIGTERM 被正确传递给 worker
-    - 用户脚本的 signal handler 被调用
-    - cleanup 代码被执行
+    Validates:
+    - SIGTERM is correctly delivered to worker
+    - User script's signal handler is invoked
+    - Cleanup code is executed
     """
 
     def test_sigterm_triggers_cleanup(self, tmp_path: Path) -> None:
-        """SIGTERM 触发 cleanup 代码执行"""
+        """SIGTERM triggers cleanup code execution"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
-        # 脚本: 注册 SIGTERM handler 并等待
+        # Script: Register SIGTERM handler and wait
         script = tmp_path / "signal_handler.py"
         result_file = tmp_path / "signal_result.txt"
         script.write_text(f"""
@@ -584,18 +561,18 @@ def handler(signum, frame):
 
 signal.signal(signal.SIGTERM, handler)
 
-# 写入 PID 供外部发送信号
+# Write PID for external signal sending
 with open("{tmp_path}/worker_pid.txt", 'w') as f:
     f.write(str(os.getpid()))
 
-# 等待信号
+# Wait for signal
 import os
-for _ in range(50):  # 5 秒超时
+for _ in range(50):  # 5 second timeout
     time.sleep(0.1)
     if cleanup_done:
         break
 
-# 如果没收到信号
+# If no signal received
 with open("{result_file}", 'w') as f:
     f.write("TIMEOUT_NO_SIGNAL")
 """)
@@ -603,32 +580,30 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                }
-            )
+            resp = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script),
+                "args": [],
+            })
             assert resp["type"] == "Forked"
             worker_pid = resp.get("worker_pid")
 
-            # 等待 worker 启动并写入 PID
+            # Wait for worker to start and write PID
             time.sleep(0.3)
 
-            # 发送 SIGTERM
+            # Send SIGTERM
             if worker_pid:
                 try:
                     os.kill(worker_pid, signal.SIGTERM)
                 except ProcessLookupError:
-                    pass  # 进程可能已退出
+                    pass  # Process may have exited
 
             time.sleep(0.5)
 
             if result_file.exists():
                 content = result_file.read_text()
-                # 信号处理或者超时都是可接受的 (取决于 fork 行为)
-                # 关键是脚本能正常响应
+                # Signal handling or timeout are both acceptable (depends on fork behavior)
+                # Key is that script responds normally
                 assert "SIGNAL_RECEIVED" in content or "TIMEOUT" in content
 
         finally:
@@ -636,24 +611,23 @@ with open("{result_file}", 'w') as f:
 
 
 # =============================================================================
-# GAP-008: C 扩展加载
+# GAP-008: C extension loading
 # =============================================================================
-
 
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap008CExtensionLoading:
     """
-    GAP-008: C 扩展模块 (numpy, json) 必须能正常加载。
+    GAP-008: C extension modules (numpy, json) must load correctly.
 
-    验证:
-    - 标准库 C 扩展 (_json, _struct) 正常
-    - 如果有 numpy，能正常导入
-    - C 扩展在 fork 后状态正确
+    Validates:
+    - Standard library C extensions (_json, _struct) work
+    - If numpy available, it can be imported
+    - C extensions work correctly after fork
     """
 
     def test_stdlib_c_extensions(self, tmp_path: Path) -> None:
-        """标准库 C 扩展正常加载"""
+        """Standard library C extensions load correctly"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
@@ -664,28 +638,28 @@ import sys
 
 results = []
 
-# 测试 _json (json 的 C 加速)
+# Test _json (C accelerated json)
 try:
     import _json
     results.append("_json:OK")
 except ImportError as e:
     results.append(f"_json:FAIL:{{e}}")
 
-# 测试 _struct
+# Test _struct
 try:
     import _struct
     results.append("_struct:OK")
 except ImportError as e:
     results.append(f"_struct:FAIL:{{e}}")
 
-# 测试 _hashlib (如果可用)
+# Test _hashlib (if available)
 try:
     import _hashlib
     results.append("_hashlib:OK")
 except ImportError:
     results.append("_hashlib:PURE_PYTHON")
 
-# 测试实际功能
+# Test actual functionality
 try:
     import json
     data = json.loads('{{"key": "value"}}')
@@ -702,27 +676,25 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                }
-            )
+            resp = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script),
+                "args": [],
+            })
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
 
             if result_file.exists():
                 content = result_file.read_text()
-                assert "C_EXTENSION_OK" in content or "_json:OK" in content, f"C 扩展加载失败: {content}"
+                assert "C_EXTENSION_OK" in content or "_json:OK" in content, f"C extension load failed: {content}"
                 assert "json_parse:value" in content
 
         finally:
             tester.stop()
 
     def test_c_extension_after_fork(self, tmp_path: Path) -> None:
-        """C 扩展在 fork 后仍然正常工作"""
+        """C extensions work correctly after fork"""
         sock_path = get_short_socket_path()
         tester = ZygoteTester(sock_path)
 
@@ -735,7 +707,7 @@ import json
 
 results = []
 
-# struct 操作
+# struct operations
 try:
     packed = struct.pack('<I', 12345)
     unpacked = struct.unpack('<I', packed)[0]
@@ -746,7 +718,7 @@ try:
 except Exception as e:
     results.append(f"struct:FAIL:{{e}}")
 
-# hashlib 操作
+# hashlib operations
 try:
     h = hashlib.sha256(b"test")
     digest = h.hexdigest()
@@ -757,7 +729,7 @@ try:
 except Exception as e:
     results.append(f"hashlib:FAIL:{{e}}")
 
-# json 大数据操作
+# json big data operations
 try:
     big_data = {{"items": list(range(1000))}}
     serialized = json.dumps(big_data)
@@ -776,29 +748,25 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            # 使用 warm pool
-            tester.send_command(
-                {
-                    "type": "ReplenishPool",
-                    "target_count": 1,
-                }
-            )
+            # Use warm pool
+            tester.send_command({
+                "type": "ReplenishPool",
+                "target_count": 1,
+            })
             time.sleep(0.3)
 
-            resp = tester.send_command(
-                {
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                }
-            )
+            resp = tester.send_command({
+                "type": "Fork",
+                "script_path": str(script),
+                "args": [],
+            })
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
 
             if result_file.exists():
                 content = result_file.read_text()
-                assert "ALL_C_EXT_POST_FORK_OK" in content, f"Fork 后 C 扩展异常: {content}"
+                assert "ALL_C_EXT_POST_FORK_OK" in content, f"C extension after fork failed: {content}"
 
         finally:
             tester.stop()
