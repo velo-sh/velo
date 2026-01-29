@@ -186,6 +186,7 @@ def _validate_binary_platform(binary_path: Path) -> tuple[bool, str]:
     try:
         result = subprocess.run(["file", str(binary_path)], capture_output=True, text=True, timeout=5)
         file_output = result.stdout.lower()
+        print(f"DEBUG: Checking {binary_path} -> {file_output.strip()}")
 
         if current_system == "linux":
             # On Linux, we need ELF binaries
@@ -216,7 +217,6 @@ def get_velo_binary() -> str:
 
     All candidates are validated for platform compatibility before returning.
     """
-    import pytest
 
     # 1. Environment variable override (highest priority)
     env_binary = os.environ.get("VELO_BINARY")
@@ -224,7 +224,9 @@ def get_velo_binary() -> str:
         bin_path = Path(env_binary).resolve()
         valid, reason = _validate_binary_platform(bin_path)
         if not valid:
-            pytest.skip(f"Binary platform mismatch: {reason}. Rebuild with 'cargo build --release'")
+            raise RuntimeError(
+                f"Binary platform mismatch at {bin_path}: {reason}. Rebuild with 'cargo build --release'"
+            )
         return str(bin_path)
 
     # 2. Strategy: Try to find repo root

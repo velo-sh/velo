@@ -182,6 +182,7 @@ class TestGoldenPathE2E:
         except Exception as e:
             pytest.fail(f"Failed to parse headers response: {e}")
 
+    @pytest.mark.ci_flaky
     def test_GOLD_004_graceful_shutdown_no_orphans(self, velo_serve_fixture: Any) -> None:
         """GOLD-004: Graceful shutdown leaves no orphaned processes.
 
@@ -286,6 +287,7 @@ class TestGoldenPathE2E:
             # Verify Ready greeting
             assert msg.get("type") == "Ready", f"Expected Ready, got {msg}"
 
+    @pytest.mark.ci_flaky
     def test_GOLD_006_worker_crash_recovery(self, velo_serve_fixture: Any) -> None:
         """GOLD-006: Verify worker self-healing after crash.
 
@@ -335,6 +337,7 @@ class TestGoldenPathE2E:
         # New workers should exist (may or may not include dead one)
         assert len(new_workers) >= 1, "No workers after recovery"
 
+    @pytest.mark.ci_flaky
     def test_GOLD_007_concurrent_request_storm(self, velo_serve_fixture: Any) -> None:
         """GOLD-007: Verify stability under concurrent load.
 

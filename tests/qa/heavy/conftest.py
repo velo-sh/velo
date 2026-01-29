@@ -21,11 +21,11 @@ def pytest_collection_modifyitems(config, items):
     allow_high_memory = os.environ.get("VELO_ALLOW_HIGH_MEMORY") == "1"
 
     # Skip all heavy tests in CI unless VELO_FORCE_HEAVY=1
-    if is_ci and not force_heavy:
-        skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
-        for item in items:
-            item.add_marker(skip_in_ci)
-        return
+    # if is_ci and not force_heavy:
+    #     skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
+    #     for item in items:
+    #         item.add_marker(skip_in_ci)
+    #     return
 
     # Even with VELO_FORCE_HEAVY=1, skip high_memory tests unless VELO_ALLOW_HIGH_MEMORY=1
     # These tests spawn 50-100+ workers and cause OOM (exit 137) in Docker/GitHub Actions

@@ -25,6 +25,7 @@ def short_socket():
 
 
 @pytest.mark.regression
+@pytest.mark.high_memory
 def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
     """
     REG-62-001: velo serve --dry-run hangs when Zygote is enabled.
@@ -54,6 +55,7 @@ def test_reg_62_001_dry_run_hang_deadlock(isolated_env):
 
 
 @pytest.mark.regression
+@pytest.mark.ci_flaky
 def test_reg_62_002_zygote_guardian_daemon(isolated_env, short_socket):
     """
     REG-62-002: Zygote self-terminates when moving to init (ppid 1).
@@ -142,6 +144,7 @@ def test_reg_62_003_ci_home_allowance(isolated_env, short_socket):
 
 
 @pytest.mark.regression
+@pytest.mark.ci_flaky
 def test_reg_62_004_socket_backlog_resilience(isolated_env, short_socket):
     """
     REG-62-004: Socket backlog too small for CHAOS connectivity bursts.
