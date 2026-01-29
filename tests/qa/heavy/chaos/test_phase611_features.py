@@ -11,6 +11,7 @@ Following QA SOP v2.2.
 """
 
 
+@pytest.mark.high_memory
 class TestL1Features:
     """L1: Feature tests for Zygote Worker Integration."""
 
