@@ -856,7 +856,7 @@ with open("{result_file}", 'w') as f:
 @pytest.mark.tier1
 class TestLockfileFidelity:
     """V3-FIDELITY-*: Strict Lockfile Version Enforcement Tests.
-
+    
     Handoff Target HO-001: Verify sys.modules versions match uv.lock exactly.
     Reference: handoff_packet.md Section 3 - Fidelity Test
     """
@@ -916,7 +916,7 @@ with open("{result_file}", 'w') as f:
 
     def test_system_site_packages_excluded(self, tmp_path: Path) -> None:
         """V3-FIDELITY-002: System site-packages not in worker sys.path.
-
+        
         Verifies PYTHONNOUSERSITE=1 enforcement per Environment Shield Protocol.
         """
         venv = create_test_venv(tmp_path)
@@ -973,19 +973,19 @@ with open("{result_file}", 'w') as f:
 @pytest.mark.tier1
 class TestSourceLoading:
     """V3-SRC-*: User Source Directory Priority Tests.
-
+    
     Handoff Target HO-004: Verify sys.path[0] points to user source directory.
     Reference: handoff_packet.md Section 3 - Source Loading
     """
 
     @pytest.mark.xfail(
         reason="HO-004 Gap: bootstrap.py execute_payload() does not inject script_dir into sys.path[0]. "
-        "Fix required in crates/velo-core/src/zygote/bootstrap.py line ~138: "
-        "Add sys.path.insert(0, os.path.dirname(script_path)) before exec()."
+               "Fix required in crates/velo-core/src/zygote/bootstrap.py line ~138: "
+               "Add sys.path.insert(0, os.path.dirname(script_path)) before exec()."
     )
     def test_sys_path_zero_is_script_dir(self, tmp_path: Path) -> None:
         """V3-SRC-001: sys.path[0] is the directory containing the script.
-
+        
         FINDING: Current implementation sets sys.path[0] to bootstrap shim directory.
         Handoff HO-004 requires sys.path[0] = user source directory.
         Developer remediation: Update execute_payload() in bootstrap.py.
