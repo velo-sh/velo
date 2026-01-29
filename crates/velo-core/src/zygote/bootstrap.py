@@ -250,6 +250,10 @@ def bootstrap():
         sys.exit(1)
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    # Linux abstract sockets: convert @ prefix to null byte (\0)
+    # Rust uses @ as internal convention, Python needs actual null byte
+    if socket_path.startswith("@"):
+        socket_path = "\0" + socket_path[1:]
     sock.connect(socket_path)
     
     # RFC-0012 Phase 3: Perfect Signal Orchestration
