@@ -14,11 +14,23 @@ from pathlib import Path
 
 import pytest
 
-# Directories to check (ALL source code)
+# Directories to check (ALL source code - Python and Rust)
 CHECK_DIRS = [
+    # Rust source
     "crates",
+    # Python source
     "velo_zygote",
+    "python",
+    "pytest_velo",
+    "scripts",
+    # Tests
     "tests",
+    # Benchmarks
+    "benchmarks",
+    # Examples
+    "examples",
+    # Fuzz tests
+    "fuzz",
 ]
 
 
