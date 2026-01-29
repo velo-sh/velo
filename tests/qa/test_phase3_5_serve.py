@@ -114,6 +114,7 @@ class FastAPITestEnv:
             """
 [project]
 name = "test-app"
+version = "0.1.0"
 dependencies = ["fastapi", "uvicorn"]
 """
         )
@@ -173,6 +174,7 @@ class TestServeStartup:
                     _, stderr = proc.communicate()
                     if "uvicorn" in stderr.lower():
                         pytest.skip("uvicorn not installed in test env")
+                    print(f"Server stderr: {stderr}")
                     pytest.fail(f"Server exited early: {stderr}")
 
                 # Try to connect
@@ -186,7 +188,7 @@ class TestServeStartup:
                     pytest.skip(f"Could not connect to server: {e}")
             finally:
                 proc.terminate()
-                proc.wait(timeout=5)
+                proc.wait(timeout=10)
 
     def test_serve_shows_startup_info(self):
         """Verify velo serve shows framework and binding info."""
