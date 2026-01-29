@@ -63,6 +63,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     let tracing_enabled = get_bool("tracing_enabled", true);
     let auto_sync = get_bool("auto_sync_enabled", true);
     let zygote_pool_size = get_u64("zygote_pool_size", 0) as usize;
+    let sandbox_iso = get_bool("sandbox_network_isolation", true);
     let blocked_paths = config
         .get("default_blocked_paths")
         .and_then(|v| v.as_array())
@@ -135,6 +136,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
             pub tracing_enabled: bool,
             pub auto_sync_enabled: bool,
             pub zygote_pool_size: usize,
+            pub sandbox_network_isolation: bool,
             pub forensic_secret: Option<String>,
             pub default_blocked_paths: Vec<String>,
         }
@@ -189,6 +191,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
                     tracing_enabled: #tracing_enabled,
                     auto_sync_enabled: #auto_sync,
                     zygote_pool_size: #zygote_pool_size,
+                    sandbox_network_isolation: #sandbox_iso,
                     forensic_secret: None,
                     default_blocked_paths: blocked_paths_raw.into_iter().map(|s| s.to_string()).collect(),
                 }

@@ -38,6 +38,16 @@ class IdlePool:
             except: pass
         return None, None
 
+    def shutdown(self):
+        """Kill all workers in the pool."""
+        while self.pool:
+            pid, write_fd = self.pool.pop(0)
+            try:
+                os.kill(pid, signal.SIGTERM)
+                os.close(write_fd)
+            except:
+                pass
+
     def replenish(self, main_sock=None):
         current = self.get_count()
         while current < self.target_size:
@@ -97,6 +107,11 @@ def execute_payload(msg):
 
 IDLE_POOL = IdlePool()
 
+def handle_shutdown(signum, frame):
+    """Graceful shutdown handler for Zygote process."""
+    IDLE_POOL.shutdown()
+    sys.exit(0)
+
 def bootstrap():
     socket_path = os.environ.get("VELO_ZYGOTE_SOCK")
     if not socket_path:
@@ -104,6 +119,11 @@ def bootstrap():
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(socket_path)
+    
+    # RFC-0012 Phase 3: Perfect Signal Orchestration
+    # Intercept termination to cleanup pooled workers
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
     
     # Send Ready
     payload = json.dumps({"type": "Ready"}).encode('utf-8')
@@ -164,6 +184,11 @@ def bootstrap():
             sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
         except Exception as e:
             break
+    
+    # Explicit cleanup on loop exit
+    IDLE_POOL.shutdown()
+    try: sock.close()
+    except: pass
 
 if __name__ == "__main__":
     bootstrap()

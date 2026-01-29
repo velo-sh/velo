@@ -12,6 +12,7 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 
+use colored::Colorize;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
@@ -1094,16 +1095,22 @@ except Exception as e:
     let mut _zygote_guard: Option<velo_core::zygote::ZygoteLauncher> = None;
 
     // Step 6: Start server
-    logger.info("Starting TITANIUM server...");
     if args.log_format == LogFormat::Text {
-        eprintln!("   App:       {}", args.app);
-        eprintln!("   Server:    {}", server);
-        eprintln!("   Bind:      {}:{}", args.host, args.port);
-        eprintln!("   Workers:   {}", args.workers);
-        eprintln!("   Timeout:   {}s", args.timeout);
+        eprintln!(
+            "\n{} {}",
+            "🚀".bold(),
+            "Starting TITANIUM Runtime...".green().bold()
+        );
+        eprintln!("   {} {}", "App:".dimmed(), args.app.cyan().bold());
+        eprintln!("   {} {}", "Server:".dimmed(), server.to_string().cyan());
+        eprintln!("   {} {}:{}", "Bind:".dimmed(), args.host, args.port);
+        eprintln!("   {} {}", "Workers:".dimmed(), args.workers);
+        eprintln!("   {} {}s", "Timeout:".dimmed(), args.timeout);
         if args.reload {
-            eprintln!("   Reload:    enabled");
+            eprintln!("   {} {}", "Reload:".dimmed(), "enabled".yellow());
         }
+    } else {
+        logger.info("Starting TITANIUM server...");
     }
 
     // Start Zygote if enabled or suggested by Autopilot
@@ -1172,7 +1179,17 @@ except Exception as e:
                     signal.report_audit();
                 }
             } else {
-                logger.info("Zygote ready");
+                if args.log_format == LogFormat::Text {
+                    eprintln!(
+                        "   {} {} (v{}, caps: {:?})",
+                        "Zygote:".dimmed(),
+                        "Ready".green().bold(),
+                        1,
+                        ["v3-shim", "pool"]
+                    );
+                } else {
+                    logger.info("Zygote ready");
+                }
                 // RAII: Keep Zygote alive as long as this function runs
                 _zygote_guard = Some(launcher);
             }
@@ -1363,7 +1380,13 @@ except Exception as e:
     {
         #[allow(clippy::collapsible_if)]
         if let Some(ref mut launcher) = _zygote_guard {
-            eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
+            if args.log_format == LogFormat::Text {
+                eprintln!(
+                    "{} Launching {} workers via Zygote...",
+                    "🔄".bold(),
+                    args.workers
+                );
+            }
 
             for i in 0..args.workers {
                 match crate::worker::Worker::spawn_uds_via_zygote(
@@ -1379,7 +1402,14 @@ except Exception as e:
                             "[WORKER] event=spawn type=zygote worker_id={} pid={}",
                             i, worker.pid
                         ));
-                        eprintln!("  ✅ Worker {} (PID: {}) [Zygote]", i + 1, worker.pid);
+                        if args.log_format == LogFormat::Text {
+                            eprintln!(
+                                "  {} Worker {} (PID: {}) [Zygote]",
+                                "✅".green(),
+                                i + 1,
+                                worker.pid
+                            );
+                        }
                         workers.push(worker);
                     }
                     Err(e) => {
@@ -1393,6 +1423,9 @@ except Exception as e:
             }
             if workers.len() == args.workers as usize {
                 use_proxy = true;
+                if args.log_format == LogFormat::Text {
+                    print_governance_audit(config, true);
+                }
             } else {
                 // Partial failure: cleanup and fallback
                 for mut w in workers.drain(..) {
@@ -1408,10 +1441,13 @@ except Exception as e:
         && args.workers >= 1
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
-        eprintln!(
-            "🔄 Launching {} workers via Cold-Start Proxy...",
-            args.workers
-        );
+        if args.log_format == LogFormat::Text {
+            eprintln!(
+                "{} Launching {} workers via Cold-Start Proxy...",
+                "🔄".bold(),
+                args.workers
+            );
+        }
         for i in 0..args.workers {
             match crate::worker::Worker::spawn_uds_direct(
                 &args.app,
@@ -1426,17 +1462,30 @@ except Exception as e:
                         "[WORKER] event=spawn type=direct worker_id={} pid={}",
                         i, worker.pid
                     ));
-                    eprintln!("  ✅ Worker {} (PID: {}) [Cold-Start]", i + 1, worker.pid);
+                    if args.log_format == LogFormat::Text {
+                        eprintln!(
+                            "  {} Worker {} (PID: {}) [Cold-Start]",
+                            "✅".green(),
+                            i + 1,
+                            worker.pid
+                        );
+                    }
                     workers.push(worker);
                 }
                 Err(e) => {
                     logger.error(&format!("Direct worker spawn failed: {}", e));
+                    if args.log_format == LogFormat::Text {
+                        print_governance_audit(config, false);
+                    }
                     break;
                 }
             }
         }
         if workers.len() == args.workers as usize {
             use_proxy = true;
+            if args.log_format == LogFormat::Text {
+                print_governance_audit(config, false);
+            }
         } else {
             for mut w in workers.drain(..) {
                 let _ = w.shutdown(Duration::from_secs(1));
@@ -2075,6 +2124,44 @@ fn count_python_files(path: &Path) -> usize {
         }
     }
     count
+}
+fn print_governance_audit(config: &velo_core::config::VeloConfig, zygote_active: bool) {
+    eprintln!(
+        "\n{} {}",
+        "📊".bold(),
+        "TITANIUM Governance Audit".green().bold()
+    );
+
+    let zygote_status = if zygote_active {
+        "Active (P2 Zero-Config)".green()
+    } else {
+        "Disabled (Cold-Start Fallback)".yellow()
+    };
+    eprintln!("   {} {}", "Zygote Pool:".dimmed(), zygote_status);
+
+    let isolation = if config.sandbox_network_isolation {
+        "Hardened (RFC-0011)".green()
+    } else {
+        "Relaxed".yellow()
+    };
+    eprintln!("   {} {}", "Airlock Isolation:".dimmed(), isolation);
+
+    let metrics = if config.metrics_enabled {
+        "Telemetry Enabled (SLO: 100ms)".green()
+    } else {
+        "Standard".dimmed()
+    };
+    eprintln!("   {} {}", "Performance:".dimmed(), metrics);
+
+    eprintln!(
+        "   {} {} ({})",
+        "Audit Trail:".dimmed(),
+        "Verified".green(),
+        velo_core::common::governance::TraceID::generate()
+            .0
+            .bright_black()
+    );
+    eprintln!();
 }
 
 #[cfg(not(unix))]

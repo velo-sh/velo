@@ -700,7 +700,9 @@ impl ZygoteLauncher {
         }
 
         // Try to send shutdown command
-        if self.socket_path.exists() {
+        if let Some(ref mut stream) = self.zygote_stream {
+            let _ = stream.send_command(&core_ipc::ZygoteCommand::Shutdown, None);
+        } else if self.socket_path.exists() {
             let _ =
                 core_ipc::send_command(&self.socket_path, core_ipc::ZygoteCommand::Shutdown, None);
         }
