@@ -15,6 +15,8 @@ WARNING: These tests are Linux-only. macOS has no kernel-level sealing.
 import ctypes
 
 import pytest
+
+# Import from local conftest which has VeloTestEnv and skip_on_macos_* defined
 from conftest import (
     IS_LINUX,
     VeloTestEnv,

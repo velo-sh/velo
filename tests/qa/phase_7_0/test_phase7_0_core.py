@@ -10,7 +10,7 @@ Test Coverage:
 """
 
 import pytest
-from conftest import (
+from conftest_utils import (
     VeloTestEnv,
 )
 

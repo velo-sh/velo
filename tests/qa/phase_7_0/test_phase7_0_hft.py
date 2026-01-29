@@ -12,6 +12,8 @@ These tests verify HFT-grade performance guarantees.
 """
 
 import pytest
+
+# Import from local conftest which has VeloTestEnv and skip_on_macos_* defined
 from conftest import (
     VeloTestEnv,
     skip_on_macos_numa,
