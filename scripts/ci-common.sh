@@ -260,10 +260,13 @@ run_python_tests() {
         source "$venv_path/bin/activate"
     fi
     
-    # Determine parallelism
+    # Determine parallelism - limit workers to prevent OOM in Docker
     local parallel_args=""
     if [[ "${NO_XDIST:-false}" == "false" ]] && python -c "import xdist" 2>/dev/null; then
-        parallel_args="-n auto --dist loadscope"
+        # Default to 1 worker to prevent Docker OOM (2 still causes OOM at ~23%)
+        # Allow override via PYTEST_XDIST_WORKERS env var
+        local num_workers="${PYTEST_XDIST_WORKERS:-1}"
+        parallel_args="-n $num_workers --dist loadscope"
         log_step "Using pytest-xdist: $parallel_args"
     fi
     
