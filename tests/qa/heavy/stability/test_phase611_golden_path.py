@@ -550,6 +550,7 @@ class TestGoldenPathE2E:
             pytest.fail(f"FALLBACK MODE DETECTED! Failed checks: {failed_checks}")
 
 
+@pytest.mark.high_memory
 class TestGoldenPathDemonCatching:
     """E2E tests designed to catch hidden bugs ("demons") in the request path."""
 
