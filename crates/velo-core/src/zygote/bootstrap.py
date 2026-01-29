@@ -7,8 +7,29 @@ import json
 import importlib
 import signal
 import traceback
+import site
 
 PROTOCOL_VERSION = 1
+
+def setup_site():
+    """P0: Inject User Virtual Environment into sys.path (Tier 1 Mutation)."""
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        # 1. Add site-packages
+        # Standard locations: lib/pythonX.Y/site-packages
+        # We allow site.addsitedir to do the heavy lifting of .pth files
+        lib_dir = os.path.join(venv, "lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
+        if os.path.exists(lib_dir):
+            site.addsitedir(lib_dir)
+        
+        # 2. Also try 'lib64' for some Linux distros
+        lib64_dir = os.path.join(venv, "lib64", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
+        if os.path.exists(lib64_dir):
+            site.addsitedir(lib64_dir)
+
+        # 3. Update sys.prefix to allow tools to detect they are "in" the venv
+        sys.prefix = venv
+        sys.exec_prefix = venv
 
 class IdlePool:
     def __init__(self, target_size=0):
@@ -49,8 +70,18 @@ class IdlePool:
                 pass
 
     def replenish(self, main_sock=None):
+        """
+        Refilled the pool to target_size.
+        Refactored for P1: This is now called *after* the IPC response is sent,
+        so we don't block the Supervisor from receiving the Ack.
+        """
         current = self.get_count()
-        while current < self.target_size:
+        # Limit replenishment batch size to avoid freezing the loop for too long
+        # if the target size is huge (e.g. 100).
+        batch_limit = 5 
+        spawned = 0
+        
+        while current < self.target_size and spawned < batch_limit:
             r_fd, w_fd = os.pipe()
             pid = os.fork()
             if pid == 0:
@@ -68,6 +99,7 @@ class IdlePool:
                 os.close(r_fd)
                 self.add(pid, w_fd)
                 current += 1
+                spawned += 1
 
     def _worker_loop(self, pipe_read_fd):
         try:
@@ -92,6 +124,9 @@ def execute_payload(msg):
     env_overrides = msg.get("env", {})
     if env_overrides:
         os.environ.update(env_overrides)
+        # Re-apply site packages if VIRTUAL_ENV changed (rare but possible in dynamic stacks)
+        if "VIRTUAL_ENV" in env_overrides:
+            setup_site()
 
     if app_module:
         if ":" in app_module:
@@ -101,9 +136,13 @@ def execute_payload(msg):
         else:
             importlib.import_module(app_module)
     elif script_path:
+        # P0: Inject sys.argv so argparse works in the script
+        # argv[0] should be the script path
+        sys.argv = [script_path] + msg.get("args", [])
+        
         with open(script_path, "rb") as f:
             code = compile(f.read(), script_path, "exec")
-            exec(code, {"__name__": "__main__"})
+            exec(code, {"__name__": "__main__", "__file__": script_path})
 
 IDLE_POOL = IdlePool()
 
@@ -113,6 +152,8 @@ def handle_shutdown(signum, frame):
     sys.exit(0)
 
 def bootstrap():
+    setup_site() # P0: Inject venv immediately
+
     socket_path = os.environ.get("VELO_ZYGOTE_SOCK")
     if not socket_path:
         sys.exit(1)
@@ -141,11 +182,14 @@ def bootstrap():
             msg = json.loads(payload)
             
             cmd = msg.get("type")
+            should_replenish = False
+            
             if cmd == "Auth":
                 resp = {"type": "Ack"}
             elif cmd == "Handshake":
                 resp = {"type": "Handshake", "version": PROTOCOL_VERSION, "capabilities": ["v3-shim", "pool"]}
             elif cmd == "Status":
+                # Check pool count but don't replenish here to keep Status fast
                 resp = {
                     "type": "Status",
                     "pid": os.getpid(),
@@ -155,9 +199,12 @@ def bootstrap():
                     "pool_count": IDLE_POOL.get_count(),
                     "target_pool_size": IDLE_POOL.target_size
                 }
+                # If we are critically low, maybe we should replenish? 
+                # Let's rely on explicit ReplenishPool command or post-Fork replenishment.
             elif cmd == "ReplenishPool":
                 IDLE_POOL.target_size = msg.get("target_count", 0)
-                IDLE_POOL.replenish(main_sock=sock)
+                # Mark for replenishment AFTER response
+                should_replenish = True 
                 resp = {"type": "Ack"}
             elif cmd == "Fork":
                 pid, pipe_fd = IDLE_POOL.pop()
@@ -167,7 +214,7 @@ def bootstrap():
                     os.close(pipe_fd)
                     resp = {"type": "Forked", "worker_pid": pid, "is_warm": True}
                     # Replenish after assignment
-                    IDLE_POOL.replenish(main_sock=sock)
+                    should_replenish = True
                 else:
                     pid = os.fork()
                     if pid == 0:
@@ -182,7 +229,13 @@ def bootstrap():
             
             p = json.dumps(resp).encode('utf-8')
             sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
+
+            # P1: Perform replenishment *after* sending response to unblock Supervisor
+            if should_replenish:
+                IDLE_POOL.replenish(main_sock=sock)
+
         except Exception as e:
+            traceback.print_exc()
             break
     
     # Explicit cleanup on loop exit

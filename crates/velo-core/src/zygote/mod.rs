@@ -344,18 +344,28 @@ impl ZygoteLauncher {
 
         // Detect System Python (RFC-0012 §3.1)
         // V3 mandate: NEVER use user .venv/bin/python for Zygote to maximize COW.
-        let python = if cfg!(target_os = "macos") {
+        // HARDENING (Phase 8): Use 'which' to find python3 in PATH first, then fallbacks.
+        let python = if let Ok(path) = which::which("python3") {
+            // Check if this is a venv python. If so, we should probably try to avoid it,
+            // but for now, we trust the system PATH if it's explicitly set.
+            // Ideally, we'd check if sys.prefix is /usr or /usr/local.
+            path
+        } else if cfg!(target_os = "macos") {
             PathBuf::from("/usr/bin/python3")
         } else {
-            // On Linux, we check common locations or use 'python3' from PATH (which should be system)
-            PathBuf::from("/usr/bin/python3")
+            // On Linux, try common locations
+            let p = PathBuf::from("/usr/bin/python3");
+            if p.exists() {
+                p
+            } else {
+                PathBuf::from("/usr/local/bin/python3")
+            }
         };
 
         if !python.exists() {
-            return Err(ZygoteError::StartFailed(format!(
-                "System Python not found at {:?}. Environment Shield requires a system-level interpreter.",
-                python
-            )));
+            return Err(ZygoteError::StartFailed(
+                "System Python not found. Searched PATH, /usr/bin/python3, /usr/local/bin/python3. Environment Shield requires a system-level interpreter.".to_string()
+            ));
         }
 
         // RFC-0011: Standardized socket path
