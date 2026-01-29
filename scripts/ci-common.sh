@@ -267,8 +267,12 @@ run_python_tests() {
         log_step "Using pytest-xdist: $parallel_args"
     fi
     
+    # Generate JSON report for result validation
+    local json_report="/tmp/pytest_results_$$.json"
+    
     set +e # Allow test failure to capture artifacts
-    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short ${EXTRA_PY_ARGS:-}
+    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short \
+        --json-report --json-report-file="$json_report" ${EXTRA_PY_ARGS:-}
     local EXIT_CODE=$?
     set -e
 
@@ -284,6 +288,30 @@ run_python_tests() {
     if [[ $EXIT_CODE -ne 0 ]]; then
         log_error "Python tests failed with exit code $EXIT_CODE"
         exit $EXIT_CODE
+    fi
+    
+    # ==========================================================================
+    # CRITICAL: Detect false positive (all tests skipped = no real verification)
+    # ==========================================================================
+    if [[ -f "$json_report" ]]; then
+        local passed=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('passed',0))" 2>/dev/null || echo "0")
+        local failed=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('failed',0))" 2>/dev/null || echo "0")
+        local skipped=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('skipped',0))" 2>/dev/null || echo "0")
+        local total=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('total',0))" 2>/dev/null || echo "0")
+        
+        log_info "Test Summary: passed=$passed, failed=$failed, skipped=$skipped, total=$total"
+        
+        # FAIL if all tests were skipped (false positive protection)
+        if [[ "$total" -gt 0 ]] && [[ "$passed" -eq 0 ]] && [[ "$failed" -eq 0 ]]; then
+            log_fatal "FALSE POSITIVE DETECTED: All $skipped tests were SKIPPED, no actual tests ran!"
+            echo ""
+            log_error "This is NOT a valid CI pass. Ensure VELO_FORCE_HEAVY=1 is set for full regression."
+            exit 1
+        fi
+        
+        rm -f "$json_report"
+    else
+        log_warn "No JSON report found, cannot validate test execution"
     fi
     
     log_success "Python tests passed"
