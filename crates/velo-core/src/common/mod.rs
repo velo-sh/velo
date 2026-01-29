@@ -1,4 +1,5 @@
 pub mod diagnostics;
+pub mod env_governance;
 pub mod governance;
 pub mod memory;
 pub mod paths;

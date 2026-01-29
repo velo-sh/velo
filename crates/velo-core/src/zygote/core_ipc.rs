@@ -198,17 +198,12 @@ pub fn cleanup_socket(socket_path: &Path) {
 // Protocol version (ADV-1 + DEF-61-004) - Now using SSOT from config/constants.toml
 
 /// Write a MessagePack message with length prefix and version byte
-fn write_message<T: Serialize + std::fmt::Debug>(
+pub fn write_message<T: Serialize + std::fmt::Debug>(
     stream: &mut UnixStream,
     msg: &T,
     fd: Option<RawFd>,
 ) -> Result<()> {
-    let mut buf = Vec::new();
-    let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
-    msg.serialize(&mut ser)
-        .map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
-
-    let payload = buf;
+    let payload = serde_json::to_vec(msg).map_err(|e| ZygoteError::ProtocolError(e.to_string()))?;
 
     // Security: Check message size
     if payload.len() > MAX_MESSAGE_SIZE {
@@ -266,7 +261,7 @@ fn write_message<T: Serialize + std::fmt::Debug>(
 
 /// Read a MessagePack message with length prefix and version byte
 /// Read a MessagePack message with length prefix and version byte
-fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
+pub fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     stream: &mut UnixStream,
 ) -> Result<(T, Option<RawFd>)> {
     // Helper to ensure FD is closed on error
@@ -361,7 +356,7 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
     }
 
     // Deserialize
-    let msg: T = rmp_serde::from_slice(&buf).map_err(|e| {
+    let msg: T = serde_json::from_slice(&buf).map_err(|e| {
         cleanup_fd(&mut received_fd);
         ZygoteError::ProtocolError(e.to_string())
     })?;
@@ -375,10 +370,15 @@ fn read_message<T: for<'de> Deserialize<'de> + std::fmt::Debug>(
 
 /// High-level wrapper for Zygote IPC connection
 pub struct ZygoteStream {
-    stream: UnixStream,
+    pub stream: UnixStream,
 }
 
 impl ZygoteStream {
+    /// Create a ZygoteStream from an existing UnixStream
+    pub fn from_stream(stream: UnixStream) -> Self {
+        Self { stream }
+    }
+
     /// Connect to Zygote and verify the initial "Ready" greeting
     pub fn connect(socket_path: &Path) -> Result<Self> {
         let mut stream = {
@@ -526,10 +526,10 @@ mod tests {
             target_pool_size: 10,
         };
 
-        // Test MessagePack roundtrip
-        let bytes = rmp_serde::to_vec(&resp).expect("Serialization failed");
+        // Test JSON roundtrip
+        let bytes = serde_json::to_vec(&resp).expect("Serialization failed");
         let decoded: ZygoteResponse =
-            rmp_serde::from_slice(&bytes).expect("Deserialization failed");
+            serde_json::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteResponse::Status {
             pid,
@@ -565,8 +565,9 @@ mod tests {
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
-        let bytes = rmp_serde::to_vec(&cmd).expect("Serialization failed");
-        let decoded: ZygoteCommand = rmp_serde::from_slice(&bytes).expect("Deserialization failed");
+        let bytes = serde_json::to_vec(&cmd).expect("Serialization failed");
+        let decoded: ZygoteCommand =
+            serde_json::from_slice(&bytes).expect("Deserialization failed");
 
         if let ZygoteCommand::Fork {
             script_path,
@@ -582,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn test_message_size_smaller_than_json() {
+    fn test_message_size() {
         let cmd = ZygoteCommand::Fork {
             script_path: std::env::temp_dir().join("test.py"),
             module: Some("test_module".to_string()),
@@ -600,16 +601,8 @@ mod tests {
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
 
-        let msgpack_bytes = rmp_serde::to_vec(&cmd).expect("MessagePack serialization failed");
         let json_bytes = serde_json::to_vec(&cmd).expect("JSON serialization failed");
-
-        // MessagePack should be smaller
-        assert!(
-            msgpack_bytes.len() < json_bytes.len(),
-            "MessagePack {} bytes should be smaller than JSON {} bytes",
-            msgpack_bytes.len(),
-            json_bytes.len()
-        );
+        assert!(json_bytes.len() < MAX_MESSAGE_SIZE);
     }
 
     #[test]

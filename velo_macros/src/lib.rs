@@ -61,6 +61,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
     let cb_enabled = get_bool("circuit_breaker_enabled", true);
     let metrics_enabled = get_bool("metrics_enabled", true);
     let tracing_enabled = get_bool("tracing_enabled", true);
+    let auto_sync = get_bool("auto_sync_enabled", true);
     let blocked_paths = config
         .get("default_blocked_paths")
         .and_then(|v| v.as_array())
@@ -131,6 +132,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
             pub circuit_breaker_enabled: bool,
             pub metrics_enabled: bool,
             pub tracing_enabled: bool,
+            pub auto_sync_enabled: bool,
             pub forensic_secret: Option<String>,
             pub default_blocked_paths: Vec<String>,
         }
@@ -183,6 +185,7 @@ pub fn generate_config(_input: TokenStream) -> TokenStream {
                     circuit_breaker_enabled: #cb_enabled,
                     metrics_enabled: #metrics_enabled,
                     tracing_enabled: #tracing_enabled,
+                    auto_sync_enabled: #auto_sync,
                     forensic_secret: None,
                     default_blocked_paths: blocked_paths_raw.into_iter().map(|s| s.to_string()).collect(),
                 }

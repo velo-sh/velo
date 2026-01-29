@@ -1,0 +1,10 @@
+[project]
+name = "hello-v3"
+version = "0.1.0"
+dependencies = [
+    "uvicorn",
+    "granian",
+]
+
+[tool.uv]
+managed = true

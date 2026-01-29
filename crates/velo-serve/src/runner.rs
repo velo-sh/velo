@@ -1359,44 +1359,45 @@ except Exception as e:
         && workers.is_empty() // FIX: Avoid dual spawning if native workers are already up
         && args.workers >= 1
         && use_zygote
-        && _zygote_guard.is_some()
         && matches!(server, Server::Uvicorn | Server::RSGI)
     {
-        eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
-        let socket_path = velo_core::zygote::core_ipc::socket_path_for_app(project_dir, &args.app);
+        #[allow(clippy::collapsible_if)]
+        if let Some(ref mut launcher) = _zygote_guard {
+            eprintln!("🔄 Launching {} workers via Zygote...", args.workers);
 
-        for i in 0..args.workers {
-            match crate::worker::Worker::spawn_uds_via_zygote(
-                &socket_path,
-                &args.app,
-                i as u64,
-                None,
-                config,
-                rsgi_enabled,
-            ) {
-                Ok(worker) => {
-                    logger.info(&format!(
-                        "[WORKER] event=spawn type=zygote worker_id={} pid={}",
-                        i, worker.pid
-                    ));
-                    eprintln!("  ✅ Worker {} (PID: {}) [Zygote]", i + 1, worker.pid);
-                    workers.push(worker);
-                }
-                Err(e) => {
-                    logger.warn(&format!(
-                        "Zygote worker spawn failed: {}. Falling back to cold start.",
-                        e
-                    ));
-                    break;
+            for i in 0..args.workers {
+                match crate::worker::Worker::spawn_uds_via_zygote(
+                    launcher,
+                    &args.app,
+                    i as u64,
+                    None,
+                    config,
+                    rsgi_enabled,
+                ) {
+                    Ok(worker) => {
+                        logger.info(&format!(
+                            "[WORKER] event=spawn type=zygote worker_id={} pid={}",
+                            i, worker.pid
+                        ));
+                        eprintln!("  ✅ Worker {} (PID: {}) [Zygote]", i + 1, worker.pid);
+                        workers.push(worker);
+                    }
+                    Err(e) => {
+                        logger.warn(&format!(
+                            "Zygote worker spawn failed: {}. Falling back to cold start.",
+                            e
+                        ));
+                        break;
+                    }
                 }
             }
-        }
-        if workers.len() == args.workers as usize {
-            use_proxy = true;
-        } else {
-            // Partial failure: cleanup and fallback
-            for mut w in workers.drain(..) {
-                let _ = w.shutdown(Duration::from_secs(1));
+            if workers.len() == args.workers as usize {
+                use_proxy = true;
+            } else {
+                // Partial failure: cleanup and fallback
+                for mut w in workers.drain(..) {
+                    let _ = w.shutdown(Duration::from_secs(1));
+                }
             }
         }
     }
@@ -1645,9 +1646,10 @@ except Exception as e:
                         ));
 
                         #[cfg(unix)]
-                        let socket_fd = _native_listener.as_ref().map(|l| l.as_raw_fd());
+                        let _socket_fd = _native_listener.as_ref().map(|l| l.as_raw_fd());
 
                         match worker.respawn(
+                            _zygote_guard.as_mut(),
                             &args.app,
                             i as u64,
                             python_path,
@@ -1655,7 +1657,7 @@ except Exception as e:
                             config,
                             rsgi_enabled,
                             #[cfg(unix)]
-                            socket_fd,
+                            None,
                         ) {
                             Ok(new_worker) => {
                                 // STB-RS-005: Atomic LB Update
@@ -1700,12 +1702,13 @@ except Exception as e:
                                             Ok(_) => {
                                                 logger.info("[RESPAWN] Zygote successfully restarted. Retrying worker respawn...");
                                                 #[cfg(unix)]
-                                                let socket_fd = _native_listener
+                                                let _socket_fd = _native_listener
                                                     .as_ref()
                                                     .map(|l| l.as_raw_fd());
 
                                                 // Retry once after restart
                                                 if let Ok(retry_worker) = worker.respawn(
+                                                    _zygote_guard.as_mut(),
                                                     &args.app,
                                                     i as u64,
                                                     python_path,
@@ -1713,7 +1716,7 @@ except Exception as e:
                                                     config,
                                                     rsgi_enabled,
                                                     #[cfg(unix)]
-                                                    socket_fd,
+                                                    None,
                                                 ) {
                                                     if let Some(ref new_path) =
                                                         retry_worker.socket_path
