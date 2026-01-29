@@ -56,6 +56,19 @@ def pytest_collection_modifyitems(config, items):
     causing integration tests to fail. Mark them as xfail to allow
     CI to pass while documenting the known limitation.
     """
+    is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
+    allow_high_memory = os.environ.get("VELO_ALLOW_HIGH_MEMORY") == "1"
+
+    # Skip high_memory tests in CI unless VELO_ALLOW_HIGH_MEMORY=1
+    # These tests spawn 50-100+ workers and cause OOM (exit 137) in Docker/GitHub Actions
+    if is_ci and not allow_high_memory:
+        skip_high_memory = pytest.mark.skip(
+            reason="High memory test: skipped in CI (causes OOM). Set VELO_ALLOW_HIGH_MEMORY=1 to enable."
+        )
+        for item in items:
+            if item.get_closest_marker("high_memory"):
+                item.add_marker(skip_high_memory)
+
     if not IS_CONTAINER:
         return
 

@@ -154,6 +154,7 @@ class TestL2EdgeCases:
                 raise Exception("Process exited as expected")
 
     @pytest.mark.slow
+    @pytest.mark.high_memory  # Spawns 100 workers - causes OOM in Docker/GitHub Actions
     def test_EDGE_605_hundred_workers(self, velo_serve_fixture):
         """EDGE-605: 100 workers resource management.
 
