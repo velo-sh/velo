@@ -427,7 +427,12 @@ def main():
     p.start()
 
     # Wait for worker to attach
-    from conftest_utils import ci_timeout
+    # Inline ci_timeout since conftest_utils is not available in subprocess
+    def ci_timeout(base):
+        import os
+        if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
+            return base * 6.0
+        return base * 1.0
     timeout = ci_timeout(5)
     start = time.time()
     while attached_flag.value == 0 and (time.time() - start) < timeout:
