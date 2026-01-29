@@ -39,6 +39,7 @@ circuit_breaker_enabled = true
 metrics_enabled = true
 tracing_enabled = true
 zygote_pool_size = 5 # Default number of warm workers
+zygote_max_pool_size = 100 # Maximum allowed pool size (security limit)
 
 # Network
 default_host = "127.0.0.1"

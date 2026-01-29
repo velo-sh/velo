@@ -10,7 +10,16 @@ import traceback
 import site
 
 PROTOCOL_VERSION = 1
-MAX_POOL_SIZE = 100  # BUG-009: Upper limit for pool size
+
+# Configurable via VELO_ZYGOTE_MAX_POOL_SIZE env var (default: 100)
+# Can be set in pyproject.toml [tool.velo] zygote_max_pool_size = N
+def _get_max_pool_size() -> int:
+    try:
+        return int(os.environ.get("VELO_ZYGOTE_MAX_POOL_SIZE", "100"))
+    except ValueError:
+        return 100
+
+MAX_POOL_SIZE = _get_max_pool_size()
 
 def setup_site():
     """P0: Inject User Virtual Environment into sys.path (Tier 1 Mutation)."""

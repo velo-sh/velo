@@ -142,6 +142,12 @@ impl VeloConfig {
         {
             self.zygote_pool_size = n;
         }
+        if let Some(n) = std::env::var("VELO_ZYGOTE_MAX_POOL_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            self.zygote_max_pool_size = n;
+        }
     }
 
     /// Read from specific path and apply environment overrides
@@ -270,6 +276,11 @@ impl VeloConfig {
                     "zygote_pool_size" => {
                         if let Ok(n) = value.parse::<usize>() {
                             config.zygote_pool_size = n;
+                        }
+                    }
+                    "zygote_max_pool_size" => {
+                        if let Ok(n) = value.parse::<usize>() {
+                            config.zygote_max_pool_size = n;
                         }
                     }
                     _ => {}

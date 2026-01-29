@@ -414,6 +414,10 @@ impl ZygoteLauncher {
             "VELO_SECURITY_HPC_THREADS",
             config.security_hpc_threads.to_string(),
         );
+        cmd.env(
+            "VELO_ZYGOTE_MAX_POOL_SIZE",
+            config.zygote_max_pool_size.to_string(),
+        );
 
         // Pass preload modules for speculative pre-loading
         if !config.preload.is_empty() {
