@@ -134,13 +134,11 @@ def find_cjk_in_comments(filepath: Path) -> list[tuple[int, str, str]]:
 def is_excluded(filepath: Path, exclude_patterns: list[str]) -> bool:
     """Check if file matches any exclude pattern."""
     filepath_str = str(filepath)
+    # Check each pattern (currently simple substring matching)
     for pattern in exclude_patterns:
-        # Simple glob matching
-        if "fixtures" in filepath_str.lower():
-            return True
-        if "test_data" in filepath_str.lower():
-            return True
-        if "__pycache__" in filepath_str:
+        # Extract the key part of the pattern (e.g., "fixtures" from "**/fixtures/**")
+        key = pattern.replace("**/", "").replace("/**", "").replace("*", "")
+        if key and key in filepath_str.lower():
             return True
     return False
 
