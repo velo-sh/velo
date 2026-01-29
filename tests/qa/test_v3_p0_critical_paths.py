@@ -18,10 +18,8 @@ import socket
 import struct
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
-from typing import NamedTuple
 
 import pytest
 
@@ -35,6 +33,7 @@ BOOTSTRAP_PY = VELO_ROOT / "crates" / "velo-core" / "src" / "zygote" / "bootstra
 
 def get_short_socket_path() -> Path:
     import uuid
+
     return Path("/tmp") / f"v3p0-{uuid.uuid4().hex[:8]}.sock"
 
 
@@ -121,6 +120,7 @@ class ZygoteTester:
 # GAP-001: Multi-worker concurrency + state isolation
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestGap001MultiWorkerIsolation:
@@ -169,16 +169,20 @@ with open("{result_b}", 'w') as f:
             tester.start()
 
             # Fork two workers concurrently
-            resp_a = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_a),
-                "args": [],
-            })
-            resp_b = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_b),
-                "args": [],
-            })
+            resp_a = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_a),
+                    "args": [],
+                }
+            )
+            resp_b = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_b),
+                    "args": [],
+                }
+            )
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
@@ -236,16 +240,20 @@ with open("{result_b}", 'w') as f:
         try:
             tester.start()
 
-            resp_a = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_a),
-                "args": [],
-            })
-            resp_b = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_b),
-                "args": [],
-            })
+            resp_a = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_a),
+                    "args": [],
+                }
+            )
+            resp_b = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_b),
+                    "args": [],
+                }
+            )
 
             assert resp_a["type"] == "Forked"
             assert resp_b["type"] == "Forked"
@@ -263,6 +271,7 @@ with open("{result_b}", 'w') as f:
 # =============================================================================
 # GAP-002: Warm Pool state pollution detection
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier0
@@ -324,34 +333,42 @@ with open("{result_2}", 'w') as f:
             tester.start()
 
             # Request warm pool
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
             # First execution (uses warm worker)
-            resp_1 = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_1),
-                "args": [],
-            })
+            resp_1 = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_1),
+                    "args": [],
+                }
+            )
             assert resp_1["type"] == "Forked"
             time.sleep(0.3)
 
             # Replenish pool for second execution
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
             # Second execution (should use new warm worker)
-            resp_2 = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script_2),
-                "args": [],
-            })
+            resp_2 = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script_2),
+                    "args": [],
+                }
+            )
             assert resp_2["type"] == "Forked"
             time.sleep(0.3)
 
@@ -369,6 +386,7 @@ with open("{result_2}", 'w') as f:
 # =============================================================================
 # GAP-003: Real framework testing (Flask style)
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier0
@@ -438,11 +456,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -503,11 +523,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -523,6 +545,7 @@ with open("{result_file}", 'w') as f:
 # =============================================================================
 # GAP-004: Signal handling (Ctrl+C / SIGTERM)
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier0
@@ -580,11 +603,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
             worker_pid = resp.get("worker_pid")
 
@@ -613,6 +638,7 @@ with open("{result_file}", 'w') as f:
 # =============================================================================
 # GAP-008: C extension loading
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier0
@@ -676,11 +702,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -749,17 +777,21 @@ with open("{result_file}", 'w') as f:
             tester.start()
 
             # Use warm pool
-            tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             time.sleep(0.3)
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)

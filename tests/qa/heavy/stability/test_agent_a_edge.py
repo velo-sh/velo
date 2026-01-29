@@ -1,5 +1,5 @@
 # Agent A (Edge Case Hunter) - Phase 6.1 Serve & Analyze
-# 激进派 QA: "Break it before users do."
+# Aggressive QA: "Break it before users do."
 
 
 import pytest

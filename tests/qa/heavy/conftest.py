@@ -10,7 +10,7 @@ import psutil
 import pytest
 
 # =============================================================================
-# CI FLAKY AUTO-SKIP FOR HEAVY TESTS (方案A: Skip heavy tests in CI)
+# CI FLAKY AUTO-SKIP FOR HEAVY TESTS (Option A: Skip heavy tests in CI)
 # =============================================================================
 
 

@@ -1,14 +1,19 @@
 """
-ASCII-only code lint check.
+CJK-in-comments lint check.
 
-This test ensures no non-ASCII characters (like Chinese, emoji, etc.)
-appear in Python source files. All comments and strings should be in English.
+This test ensures no CJK (Chinese/Japanese/Korean) characters appear in
+Python COMMENTS. CJK in string literals is allowed for Unicode testing.
+Emojis are allowed everywhere (they're for UX output).
 
-Add to CI pipeline to prevent non-ASCII characters from being committed.
+Policy:
+- Emojis: ALLOWED (they're for user-facing output)
+- CJK in strings: ALLOWED (they're for Unicode testing)
+- CJK in comments: FORBIDDEN (comments should be in English)
+
+Add to CI pipeline to enforce English-only comments.
 """
 
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -41,24 +46,83 @@ EXCLUDE_PATTERNS = [
     "**/__pycache__/**",
 ]
 
+# CJK Unicode ranges (Chinese, Japanese, Korean characters)
+# These should not appear in comments
+CJK_PATTERN = re.compile(
+    r"[\u4e00-\u9fff"  # CJK Unified Ideographs
+    r"\u3400-\u4dbf"  # CJK Unified Ideographs Extension A
+    r"\u3000-\u303f"  # CJK Symbols and Punctuation
+    r"\uac00-\ud7af"  # Hangul Syllables (Korean)
+    r"\u3040-\u309f"  # Hiragana (Japanese)
+    r"\u30a0-\u30ff]"  # Katakana (Japanese)
+)
 
-def find_non_ascii_in_file(filepath: Path) -> list[tuple[int, str, str]]:
+
+def extract_comments(line: str) -> str:
     """
-    Find non-ASCII characters in a file.
+    Extract comment portion from a Python line.
+
+    Returns the comment text (after #) or empty string if no comment.
+    Handles # inside strings correctly.
+    """
+    in_string = False
+    string_char = None
+    i = 0
+    while i < len(line):
+        char = line[i]
+
+        # Handle string literals
+        if char in ('"', "'") and not in_string:
+            # Check for triple quotes
+            if line[i : i + 3] in ('"""', "'''"):
+                in_string = True
+                string_char = line[i : i + 3]
+                i += 3
+                continue
+            else:
+                in_string = True
+                string_char = char
+                i += 1
+                continue
+        elif in_string:
+            if len(string_char) == 3 and line[i : i + 3] == string_char:
+                in_string = False
+                string_char = None
+                i += 3
+                continue
+            elif len(string_char) == 1 and char == string_char and (i == 0 or line[i - 1] != "\\"):
+                in_string = False
+                string_char = None
+                i += 1
+                continue
+
+        # Found a comment marker outside of strings
+        if char == "#" and not in_string:
+            return line[i + 1 :]
+
+        i += 1
+
+    return ""
+
+
+def find_cjk_in_comments(filepath: Path) -> list[tuple[int, str, str]]:
+    """
+    Find CJK characters in comments only.
 
     Returns list of (line_number, char, line_content) tuples.
     """
     issues = []
     try:
-        content = filepath.read_text(encoding='utf-8')
+        content = filepath.read_text(encoding="utf-8")
         for lineno, line in enumerate(content.splitlines(), 1):
-            # Find non-ASCII characters
-            for i, char in enumerate(line):
-                if ord(char) > 127:
-                    # Skip if inside a string literal that's for testing UTF-8
-                    # (e.g., test cases that deliberately test Unicode handling)
-                    issues.append((lineno, char, line.strip()[:80]))
-                    break  # One issue per line is enough
+            # Extract comment portion only
+            comment = extract_comments(line)
+
+            # Check for CJK in comment
+            match = CJK_PATTERN.search(comment)
+            if match:
+                char = match.group()
+                issues.append((lineno, char, line.strip()[:80]))
     except UnicodeDecodeError:
         issues.append((0, "?", f"File is not valid UTF-8: {filepath}"))
     except Exception as e:
@@ -81,11 +145,11 @@ def is_excluded(filepath: Path, exclude_patterns: list[str]) -> bool:
     return False
 
 
-class TestAsciiOnlyCode:
-    """Ensure all source code contains only ASCII characters."""
+class TestCJKInComments:
+    """Ensure no CJK characters in comments (English comments only)."""
 
-    def test_no_non_ascii_in_source(self) -> None:
-        """All Python source files should contain only ASCII characters."""
+    def test_no_cjk_in_comments(self) -> None:
+        """Python comments should be in English only (no CJK characters)."""
         root = Path(__file__).parent.parent.parent
 
         all_issues: list[tuple[Path, int, str, str]] = []
@@ -100,16 +164,14 @@ class TestAsciiOnlyCode:
                 if is_excluded(py_file, EXCLUDE_PATTERNS):
                     continue
 
-                issues = find_non_ascii_in_file(py_file)
+                issues = find_cjk_in_comments(py_file)
                 for lineno, char, line in issues:
                     rel_path = py_file.relative_to(root)
                     all_issues.append((rel_path, lineno, char, line))
 
-
-
         if all_issues:
             msg_lines = [
-                "Non-ASCII characters found in source code:",
+                "CJK characters found in comments (should be English):",
                 "=" * 60,
             ]
             for filepath, lineno, char, line in all_issues[:20]:  # Limit output
@@ -123,13 +185,12 @@ class TestAsciiOnlyCode:
             pytest.fail("\n".join(msg_lines))
 
 
-
 def run_check() -> int:
     """Run the check as a standalone script."""
     root = Path(__file__).parent.parent.parent
     exit_code = 0
 
-    print("Checking for non-ASCII characters in Python source files...")
+    print("Checking for CJK characters in Python comments...")
     print("=" * 60)
 
     total_issues = 0
@@ -143,20 +204,20 @@ def run_check() -> int:
             if is_excluded(py_file, EXCLUDE_PATTERNS):
                 continue
 
-            issues = find_non_ascii_in_file(py_file)
+            issues = find_cjk_in_comments(py_file)
             if issues:
                 rel_path = py_file.relative_to(root)
                 for lineno, char, line in issues:
-                    print(f"{rel_path}:{lineno}: Non-ASCII '{char}' (U+{ord(char):04X})")
+                    print(f"{rel_path}:{lineno}: CJK in comment '{char}' (U+{ord(char):04X})")
                     print(f"  {line}")
                     total_issues += 1
                     exit_code = 1
 
     print("=" * 60)
     if total_issues == 0:
-        print("OK: All source files contain ASCII-only characters.")
+        print("OK: No CJK characters in comments.")
     else:
-        print(f"FAIL: Found {total_issues} non-ASCII character issues.")
+        print(f"FAIL: Found {total_issues} CJK characters in comments.")
         print("Please use English-only comments.")
 
     return exit_code

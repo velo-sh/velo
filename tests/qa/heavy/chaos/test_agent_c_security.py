@@ -1,5 +1,5 @@
 # Agent C (Security Specialist) - Phase 6.1 Serve & Analyze
-# 安全专家 QA: "Trust nothing. Verify everything."
+# Security Expert QA: "Trust nothing. Verify everything."
 
 import os
 from pathlib import Path

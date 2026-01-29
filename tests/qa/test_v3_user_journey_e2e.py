@@ -30,6 +30,7 @@ import pytest
 
 class VeloResult(NamedTuple):
     """Velo command execution result"""
+
     returncode: int
     stdout: str
     stderr: str
@@ -316,11 +317,7 @@ class TestUserJourneyE2E:
         User: "Environment variables I set should be passed to script"
         Expected: Environment variables correctly inherited
         """
-        result = run_velo(
-            e2e_project,
-            "src/check_env.py",
-            env={"E2E_TEST_VAR": "hello_from_shell"}
-        )
+        result = run_velo(e2e_project, "src/check_env.py", env={"E2E_TEST_VAR": "hello_from_shell"})
 
         assert result.returncode == 0
         assert "E2E_TEST_VAR=hello_from_shell" in result.stdout

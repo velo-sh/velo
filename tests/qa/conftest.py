@@ -75,7 +75,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
     config.addinivalue_line("markers", "chaos: Extreme scenarios and process destruction")
     config.addinivalue_line("markers", "flood: High-concurrency / IPC flooding tests")
-    # CI Flaky test markers (方案A: Skip flaky tests in CI)
+    # CI Flaky test markers (Option A: Skip flaky tests in CI)
     config.addinivalue_line("markers", "ci_flaky: Tests that are flaky in CI environment")
     config.addinivalue_line("markers", "zygote_flaky: Zygote tests that fail in CI due to timing/resources")
     config.addinivalue_line("markers", "websocket_wip: WebSocket tests for features not yet implemented")
@@ -95,7 +95,7 @@ def pytest_configure(config):
 
 
 # =============================================================================
-# CI FLAKY TEST AUTO-SKIP (方案A: Skip flaky tests in CI)
+# CI FLAKY TEST AUTO-SKIP (Option A: Skip flaky tests in CI)
 # =============================================================================
 
 # Markers that indicate a test is flaky in CI

@@ -37,6 +37,7 @@ BOOTSTRAP_PY = VELO_ROOT / "crates" / "velo-core" / "src" / "zygote" / "bootstra
 
 def get_short_socket_path() -> Path:
     import uuid
+
     return Path("/tmp") / f"v3usr-{uuid.uuid4().hex[:8]}.sock"
 
 
@@ -123,6 +124,7 @@ class ZygoteTester:
 # USR-003: Working directory (cwd) correctness [P0]
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier0
 class TestUsr003WorkingDirectory:
@@ -155,11 +157,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -211,11 +215,13 @@ with open("{result_file}", 'w') as f:
         try:
             tester.start()
 
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                }
+            )
             assert resp["type"] == "Forked"
 
             time.sleep(0.5)
@@ -232,6 +238,7 @@ with open("{result_file}", 'w') as f:
 # =============================================================================
 # USR-001: stdin pipe input
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier1
@@ -291,6 +298,7 @@ else:
 # USR-004 & USR-005: stdout/stderr separation
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier1
 class TestUsr004005StdoutStderr:
@@ -342,6 +350,7 @@ sys.exit(1)
 # =============================================================================
 # USR-007: Syntax error line numbers
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier1
@@ -398,6 +407,7 @@ def foo():
 # USR-009: UTF-8 encoding
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier1
 class TestUsr009Utf8Encoding:
@@ -409,14 +419,17 @@ class TestUsr009Utf8Encoding:
         """Script content can contain UTF-8 characters"""
         script = tmp_path / "utf8_script.py"
         result_file = tmp_path / "utf8_result.txt"
-        script.write_text(f"""
+        script.write_text(
+            f"""
 # -*- coding: utf-8 -*-
 message = "Hello World 123"
 print(message)
 with open("{result_file}", 'w', encoding='utf-8') as f:
     f.write(message)
     f.write("\\nUTF8_CONTENT_OK")
-""", encoding='utf-8')
+""",
+            encoding="utf-8",
+        )
 
         result = subprocess.run(
             [sys.executable, str(script)],
@@ -427,7 +440,7 @@ with open("{result_file}", 'w', encoding='utf-8') as f:
 
         assert result.returncode == 0
         if result_file.exists():
-            content = result_file.read_text(encoding='utf-8')
+            content = result_file.read_text(encoding="utf-8")
             assert "Hello World" in content
             assert "UTF8_CONTENT_OK" in content
 
@@ -436,14 +449,17 @@ with open("{result_file}", 'w', encoding='utf-8') as f:
         # Use Unicode filename
         script = tmp_path / "test_script_unicode.py"
         result_file = tmp_path / "filename_result.txt"
-        script.write_text(f"""
+        script.write_text(
+            f"""
 import os
 filename = os.path.basename(__file__)
 with open("{result_file}", 'w', encoding='utf-8') as f:
     f.write(f"FILENAME:{{filename}}\\n")
     if "test" in filename:
         f.write("UTF8_FILENAME_OK")
-""", encoding='utf-8')
+""",
+            encoding="utf-8",
+        )
 
         result = subprocess.run(
             [sys.executable, str(script)],
@@ -454,13 +470,14 @@ with open("{result_file}", 'w', encoding='utf-8') as f:
 
         assert result.returncode == 0
         if result_file.exists():
-            content = result_file.read_text(encoding='utf-8')
+            content = result_file.read_text(encoding="utf-8")
             assert "UTF8_FILENAME_OK" in content
 
 
 # =============================================================================
 # USR-006: Friendly error messages
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier1
@@ -509,6 +526,7 @@ with open("/nonexistent/path/to/file.txt") as f:
 # USR-008: Timeout control
 # =============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.tier1
 class TestUsr008Timeout:
@@ -544,6 +562,7 @@ while True:
 # =============================================================================
 # USR-010: Permission error handling
 # =============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.tier1
