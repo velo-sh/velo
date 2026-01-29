@@ -35,11 +35,10 @@ strict_optimizations = true # H-Gov: Enabled in CI/Dev by default
 sandbox_network_isolation = true # RFC-0011: Enable network namespace isolation
 sandbox_privilege_escalation_block = true # RFC-0011: PR_SET_NO_NEW_PRIVS
 
-# Production Hardening Phase 2
-circuit_breaker_threshold = 3
 circuit_breaker_enabled = true
 metrics_enabled = true
 tracing_enabled = true
+zygote_pool_size = 5 # Default number of warm workers
 
 # Network
 default_host = "127.0.0.1"

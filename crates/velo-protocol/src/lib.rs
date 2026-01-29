@@ -146,6 +146,9 @@ pub enum ZygoteResponse {
         /// Exit code (available in sync mode)
         #[serde(default)]
         exit_code: Option<i32>,
+        /// Whether the worker was spawned from the warm pool (P2)
+        #[serde(default)]
+        is_warm: bool,
     },
     /// Worker exited with code
     WorkerExited { worker_pid: u32, exit_code: i32 },

@@ -405,6 +405,11 @@ impl ZygoteLauncher {
             config.security_hpc_threads.to_string(),
         );
 
+        // Pass preload modules for speculative pre-loading
+        if !config.preload.is_empty() {
+            cmd.env("VELO_PRELOAD", config.preload.join(","));
+        }
+
         // Inject current executable path for native preload helper
         if let Ok(exe_path) = std::env::current_exe() {
             cmd.env("VELO_RUNTIME_EXE_PATH", exe_path);
@@ -575,6 +580,11 @@ impl ZygoteLauncher {
                 capabilities
             );
             self.zygote_stream = Some(zygote_stream);
+
+            // RFC-0028 P2: Initialize the warm pool
+            if let Err(e) = self.sync_pool_size(config) {
+                log::warn!("[ZygoteLauncher] Initial pool sync failed: {}", e);
+            }
         } else {
             return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
         }
@@ -811,6 +821,30 @@ impl ZygoteLauncher {
         }
     }
 
+    /// Sync the target pool size to the Zygote shim (RFC-0028 P2)
+    pub fn sync_pool_size(&mut self, config: &VeloConfig) -> Result<()> {
+        if let Some(ref mut stream) = self.zygote_stream {
+            log::debug!(
+                "[ZygoteLauncher] Syncing pool size: {}",
+                config.zygote_pool_size
+            );
+            let cmd = core_ipc::ZygoteCommand::ReplenishPool {
+                target_count: config.zygote_pool_size,
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            };
+            match stream.send_command(&cmd, None) {
+                Ok(core_ipc::ZygoteResponse::Ack) => Ok(()),
+                Ok(other) => Err(ZygoteError::ProtocolError(format!(
+                    "Unexpected response to ReplenishPool: {:?}",
+                    other
+                ))),
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(())
+        }
+    }
+
     /// Fork a new worker from the Zygote
     /// Delegates to v_fork::spawn_worker (RFC-0028 §10.3.5)
     #[allow(clippy::too_many_arguments)]
@@ -833,6 +867,7 @@ impl ZygoteLauncher {
             self.zygote_stream.is_some()
         );
         if let Some(ref mut zygote_stream) = self.zygote_stream {
+            // After spawning, the shim has already triggered a background replenishment if using pool.
             v_fork::spawn_worker_via_stream(
                 zygote_stream,
                 script,

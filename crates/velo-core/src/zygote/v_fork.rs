@@ -298,16 +298,27 @@ pub fn spawn_worker(
     let elapsed_ms = elapsed.as_millis() as u64;
 
     // We only check SLO if fork succeeded (otherwise it's an error, handled elsewhere)
-    if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
+    if let core_ipc::ZygoteResponse::Forked {
+        worker_pid,
+        is_warm,
+        ..
+    } = &response
+    {
         if config.metrics_enabled && elapsed_ms >= config.slo_fork_latency_ms {
             log::warn!(
-                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
+                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {}, warm: {})",
                 elapsed_ms,
                 config.slo_fork_latency_ms,
-                worker_pid
+                worker_pid,
+                is_warm
             );
         } else if config.metrics_enabled {
-            log::debug!("✅ Fork latency {}ms (PID: {})", elapsed_ms, worker_pid);
+            log::debug!(
+                "✅ Fork latency {}ms (PID: {}, warm: {})",
+                elapsed_ms,
+                worker_pid,
+                is_warm
+            );
         }
     }
 
@@ -315,6 +326,7 @@ pub fn spawn_worker(
         core_ipc::ZygoteResponse::Forked {
             worker_pid,
             exit_code,
+            ..
         } => {
             // If we have an exit code already (sync mode), we can write it to the temp file
             // to reuse the existing WorkerHandle::wait() logic or just handle it here.
@@ -506,14 +518,20 @@ pub fn spawn_worker_via_stream(
 
     // SLO checking logic...
     let elapsed_ms = start_time.elapsed().as_millis() as u64;
-    if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
+    if let core_ipc::ZygoteResponse::Forked {
+        worker_pid,
+        is_warm,
+        ..
+    } = &response
+    {
         #[allow(clippy::collapsible_if)]
         if config.metrics_enabled && elapsed_ms >= config.slo_fork_latency_ms {
             log::warn!(
-                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
+                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {}, warm: {})",
                 elapsed_ms,
                 config.slo_fork_latency_ms,
-                worker_pid
+                worker_pid,
+                is_warm
             );
         }
     }
@@ -522,6 +540,7 @@ pub fn spawn_worker_via_stream(
         core_ipc::ZygoteResponse::Forked {
             worker_pid,
             exit_code,
+            ..
         } => {
             if let Some(code) = exit_code {
                 let _ = std::fs::write(&exit_code_path, code.to_string());
