@@ -469,9 +469,21 @@ run_full_ci() {
     check_env_fast
     setup_python_env "$venv_path"
     
-    # SSOT: Force ABI Alignment
-    export PYO3_PYTHON=$(uv python find)
-    log_info "ABI Alignment: PYO3_PYTHON=$PYO3_PYTHON"
+    # SSOT: Force ABI Alignment - Resolve symlinks to find actual library
+    RAW_PYTHON=$(uv python find)
+    export PYO3_PYTHON=$(readlink -f "$RAW_PYTHON")
+    log_info "ABI Alignment: PYO3_PYTHON=$PYO3_PYTHON (resolved from $RAW_PYTHON)"
+
+    # RFC-0010: Refresh LD_LIBRARY_PATH for the new python (Linux only)
+    if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+        PY_LIB_PATH="$(dirname "$(dirname "$PYO3_PYTHON")")/lib"
+        if [[ -d "$PY_LIB_PATH" ]]; then
+            export LD_LIBRARY_PATH="${PY_LIB_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+            log_info "Updated LD_LIBRARY_PATH for Velo Runtime: $PY_LIB_PATH"
+        else
+            log_warn "Could not look up Python lib dir at $PY_LIB_PATH"
+        fi
+    fi
     
     echo ""
     echo "==================== Phase 2: Build ===================="

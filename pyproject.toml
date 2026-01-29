@@ -2,7 +2,7 @@
 name = "velo"
 version = "0.1.0"
 description = "Velo project Python tooling"
-requires-python = ">=3.11"
+requires-python = "~=3.11.0"
 license = "Apache-2.0"
 readme = "README.md"
 dependencies = [

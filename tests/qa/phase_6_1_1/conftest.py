@@ -361,7 +361,7 @@ class VeloServeFactory:
         else:
             # Fallback for local Docker or dev, but don't hardcode if not needed
             trusted_paths.append("/workspace")  # Keep as optional fallback for Docker
-        ]
+
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
 
         # STB-SOCKET-002: Isolate worker sockets to test-specific directory
