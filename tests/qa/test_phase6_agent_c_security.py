@@ -83,10 +83,6 @@ class TestAgentCSecurity:
         # In this audit, we verify the ERROR when depth exceeds 100 (per RFC)
         pass
 
-    def test_SEC_603_h10_arch_pinning_check(self, isolated_env):
-        # ... existing ...
-        pass
-
     def test_L1_2_endianness_mismatch_fallback(self, isolated_env):
         """L1-2: Verify fallback when endianness doesn't match."""
         env = isolated_env
@@ -102,6 +98,8 @@ class TestAgentCSecurity:
         result = env.run_velo("run", "--fast", "main.py")
         # Should fallback to standard import
         assert "ENDIAN_OK" in result.stdout
+
+    def test_SEC_603_h10_arch_pinning_check(self, isolated_env):
         """SEC-603: Verify H-10 arch pinning detects architecture mismatch."""
         env = isolated_env
         env.create_app("main.py", "print('OK')")
@@ -116,7 +114,6 @@ class TestAgentCSecurity:
             f.seek(16)  # Assume header arch_id offset
             f.write(b"\xff")  # Invalid/Different Arch ID
 
-        # 3. Run - Expected: LoaderError::ArchMismatch
         # 3. Run - Expected: LoaderError::ArchMismatch OR Fallback
         result = env.run_velo("run", "--fast", "main.py")
         is_aborted = result.returncode != 0
