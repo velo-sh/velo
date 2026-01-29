@@ -352,8 +352,15 @@ class VeloServeFactory:
             "/opt/hostedtoolcache",
             "${HOME}",  # Expands to /home/runner on CI, /Users/xxx on macOS
             "${CWD}",
-            "/workspace",
             "${VIRTUAL_ENV}",
+        ]
+        # Dynamically trust workspace if known
+        workspace = os.environ.get("GITHUB_WORKSPACE")
+        if workspace:
+            trusted_paths.append(workspace)
+        else:
+            # Fallback for local Docker or dev, but don't hardcode if not needed
+            trusted_paths.append("/workspace")  # Keep as optional fallback for Docker
         ]
         env["VELO_SECURITY_TRUSTED_PREFIXES"] = ",".join(trusted_paths)
 

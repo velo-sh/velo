@@ -1,20 +1,20 @@
 import os
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
+from conftest_utils import get_velo_binary
 
 
-def get_zygote_status() -> str:
+def get_zygote_status(velo_bin: str) -> str:
     """Helper to get zygote status via 'velo zygote status'."""
-    res = subprocess.run(["./target/debug/velo", "zygote", "status"], capture_output=True, text=True)
+    res = subprocess.run([velo_bin, "zygote", "status"], capture_output=True, text=True)
     return res.stdout
 
 
-def get_zygote_pid() -> int | None:
+def get_zygote_pid(velo_bin: str) -> int | None:
     """Extract PID from status output."""
-    status = get_zygote_status()
+    status = get_zygote_status(velo_bin)
     for line in status.splitlines():
         if "PID:" in line:
             return int(line.split("PID:")[1].split(")")[0].strip())
@@ -24,10 +24,11 @@ def get_zygote_pid() -> int | None:
 @pytest.fixture(autouse=True)
 def cleanup_zygote():
     """Ensure Zygote is stopped before and after each test."""
-    subprocess.run(["./target/debug/velo", "zygote", "stop"], capture_output=True)
+    velo_bin = get_velo_binary()
+    subprocess.run([velo_bin, "zygote", "stop"], capture_output=True)
     time.sleep(0.5)
     yield
-    subprocess.run(["./target/debug/velo", "zygote", "stop"], capture_output=True)
+    subprocess.run([velo_bin, "zygote", "stop"], capture_output=True)
 
 
 @pytest.mark.tier1
@@ -36,13 +37,13 @@ def test_guardian_auto_restart():
     Forensic Test: Verify Rust Guardian detects Zygote death and restarts it.
     This is an advanced P1.5 feature that requires further timing refinement.
     """
+    velo_bin = get_velo_binary()
+
     # Start Zygote (will start Guardian)
-    subprocess.Popen(
-        ["./target/debug/velo", "zygote", "start", "--daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+    subprocess.Popen([velo_bin, "zygote", "start", "--daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(3)  # Give time for startup
 
-    initial_pid = get_zygote_pid()
+    initial_pid = get_zygote_pid(velo_bin)
     assert initial_pid is not None, "Zygote should be running"
 
     # Kill the Zygote process
@@ -55,7 +56,7 @@ def test_guardian_auto_restart():
     restarted_pid = None
     while (time.time() - start_wait) < 20:
         time.sleep(1)
-        restarted_pid = get_zygote_pid()
+        restarted_pid = get_zygote_pid(velo_bin)
         if restarted_pid and restarted_pid != initial_pid:
             break
 
@@ -69,8 +70,7 @@ def test_guardian_basic_health_check():
     """
     Verify the Guardian starts successfully and Zygote reports health metrics.
     """
-    # Prefer release build for faster startup, fallback to debug
-    velo_bin = "./target/release/velo" if Path("./target/release/velo").exists() else "./target/debug/velo"
+    velo_bin = get_velo_binary()
 
     # Start Zygote and wait for it to be ready
     result = subprocess.run(
@@ -83,8 +83,8 @@ def test_guardian_basic_health_check():
         print(f"Zygote start failed: {result.stderr}")
     time.sleep(4)  # Extra time for Guardian to initialize
 
-    status = get_zygote_status()
+    status = get_zygote_status(velo_bin)
     assert "Running ✅" in status, f"Zygote should be running. Got: {status}"
 
-    pid = get_zygote_pid()
+    pid = get_zygote_pid(velo_bin)
     assert pid is not None, "Should be able to extract PID from status"

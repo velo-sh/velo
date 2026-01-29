@@ -305,13 +305,14 @@ def pytest_runtest_makereport(item, call):
         sys.stderr.write(f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n")
 
         try:
-            # Locate binary
-            root_dir = Path(__file__).parents[2]
-            velo_bin = root_dir / "target/debug/velo"
-            if not velo_bin.exists():
-                velo_bin = root_dir / "target/release/velo"
+            # Locate binary using SSOT
+            try:
+                velo_bin_path = get_velo_binary()
+                velo_bin = Path(velo_bin_path)
+            except Exception:
+                velo_bin = None
 
-            if velo_bin.exists():
+            if velo_bin and velo_bin.exists():
                 log_dir = None
 
                 # Priority 1: Use session-scoped log directory (P1 fix)
