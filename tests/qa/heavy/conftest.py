@@ -17,7 +17,7 @@ import pytest
 def pytest_collection_modifyitems(config, items):
     """Auto-skip heavy tests in CI environment - these are too resource-intensive."""
     is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
-    force_heavy = os.environ.get("VELO_FORCE_HEAVY") == "1"
+
     allow_high_memory = os.environ.get("VELO_ALLOW_HIGH_MEMORY") == "1"
 
     # Skip all heavy tests in CI unless VELO_FORCE_HEAVY=1
