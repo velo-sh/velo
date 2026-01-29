@@ -22,7 +22,6 @@ ADDITIONAL ATTACK VECTORS:
 
 import json
 import os
-import signal
 import socket
 import struct
 import subprocess
@@ -40,6 +39,7 @@ BOOTSTRAP_PY = VELO_ROOT / "crates" / "velo-core" / "src" / "zygote" / "bootstra
 
 def get_short_socket_path() -> Path:
     import uuid
+
     return Path("/tmp") / f"v3adv-{uuid.uuid4().hex[:8]}.sock"
 
 
@@ -131,6 +131,7 @@ class AdversarialShimTester:
 # BUG-001: PATH TRAVERSAL (CRITICAL SECURITY)
 # =============================================================================
 
+
 @pytest.mark.tier0
 class TestBug001PathTraversal:
     """BUG-001: script_path not sanitized - allows arbitrary file read/exec."""
@@ -142,19 +143,21 @@ class TestBug001PathTraversal:
 
         try:
             tester.start()
-            
+
             # Try path traversal - attempt to access file outside project
             traversal_path = "/tmp/../../../etc/passwd"
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": traversal_path,
-                "args": [],
-            })
-            
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": traversal_path,
+                    "args": [],
+                }
+            )
+
             # The shim should NOT execute arbitrary paths
             # BUG: Currently no validation - this WILL attempt to exec /etc/passwd
             assert resp["type"] == "Forked", "Fork accepted malicious path!"
-            
+
             # If we get here, the bug is confirmed - no path validation
             time.sleep(0.3)
 
@@ -169,7 +172,7 @@ class TestBug001PathTraversal:
         # Create symlink pointing outside tmp
         evil_link = tmp_path / "innocent.py"
         target = Path("/etc/passwd")
-        
+
         try:
             evil_link.symlink_to(target)
         except (OSError, FileExistsError):
@@ -177,11 +180,13 @@ class TestBug001PathTraversal:
 
         try:
             tester.start()
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(evil_link),
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(evil_link),
+                    "args": [],
+                }
+            )
             # BUG: No symlink resolution check
             assert resp["type"] == "Forked"
         finally:
@@ -200,15 +205,17 @@ class TestBug001PathTraversal:
 
         try:
             tester.start()
-            
+
             # Null byte injection - try to truncate path
             # This could bypass path validation in some scenarios
             malicious_path = f"{legit}\x00/etc/passwd"
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": malicious_path,
-                "args": [],
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": malicious_path,
+                    "args": [],
+                }
+            )
             # BUG: No null byte sanitization
             assert resp["type"] == "Forked"
         finally:
@@ -218,6 +225,7 @@ class TestBug001PathTraversal:
 # =============================================================================
 # BUG-002: DENIAL OF SERVICE VIA HUGE PAYLOADS
 # =============================================================================
+
 
 @pytest.mark.tier1
 class TestBug002DoS:
@@ -231,17 +239,17 @@ class TestBug002DoS:
 
         try:
             tester.start()
-            
+
             # Send a length header claiming 2GB of data
             huge_length = 2 * 1024 * 1024 * 1024  # 2GB
             malicious_header = struct.pack("<I", huge_length) + struct.pack("B", 1)
-            
+
             # This should timeout or be rejected, not allocate 2GB
             tester.send_raw(malicious_header)
-            
+
             # Wait to see if process crashes or hangs
             time.sleep(1)
-            
+
             # Check if process is still alive
             if tester.process:
                 poll = tester.process.poll()
@@ -257,7 +265,8 @@ class TestBug002DoS:
 # BUG-004: ZOMBIE PROCESS ACCUMULATION
 # =============================================================================
 
-@pytest.mark.tier1  
+
+@pytest.mark.tier1
 class TestBug004Zombies:
     """BUG-004: No waitpid() after fork - zombies accumulate."""
 
@@ -271,33 +280,35 @@ class TestBug004Zombies:
 
         try:
             tester.start()
-            
+
             # Fork 10 workers that exit immediately
             pids = []
             for _ in range(10):
-                resp = tester.send_command({
-                    "type": "Fork",
-                    "script_path": str(script),
-                    "args": [],
-                })
+                resp = tester.send_command(
+                    {
+                        "type": "Fork",
+                        "script_path": str(script),
+                        "args": [],
+                    }
+                )
                 if resp["type"] == "Forked":
                     pids.append(resp.get("worker_pid"))
-            
+
             time.sleep(0.5)  # Let workers exit
-            
+
             # Check for zombie processes
             zombie_count = 0
             for pid in pids:
                 if pid:
                     try:
                         # On Unix, zombie shows as 'Z' state
-                        with open(f"/proc/{pid}/stat", "r") as f:
+                        with open(f"/proc/{pid}/stat") as f:
                             stat = f.read()
                             if " Z " in stat:
                                 zombie_count += 1
                     except (FileNotFoundError, PermissionError):
                         pass  # Process already reaped or not on Linux
-            
+
             # BUG: zombies should be 0, but likely >0 because no waitpid()
             # Note: macOS doesn't have /proc, so skip assertion there
             if sys.platform == "linux":
@@ -312,6 +323,7 @@ class TestBug004Zombies:
 # BUG-008: WORKER PIPE READ DEADLOCK
 # =============================================================================
 
+
 @pytest.mark.tier1
 class TestBug008Deadlock:
     """BUG-008: No timeout on worker pipe read - can deadlock forever."""
@@ -324,20 +336,22 @@ class TestBug008Deadlock:
 
         try:
             tester.start()
-            
+
             # Replenish pool - creates worker waiting on pipe
-            resp = tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 1,
-            })
+            resp = tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 1,
+                }
+            )
             assert resp["type"] == "Ack"
-            
+
             time.sleep(0.3)
-            
+
             # Check pool has worker
             status = tester.send_command({"type": "Status"})
             assert status["pool_count"] >= 1
-            
+
             # Now shutdown WITHOUT sending work to pooled worker
             # BUG: Worker is stuck in blocking os.read() on pipe
             # This test passes if shutdown completes, fails on timeout
@@ -350,6 +364,7 @@ class TestBug008Deadlock:
 # BUG-009: RESOURCE EXHAUSTION VIA UNLIMITED POOL
 # =============================================================================
 
+
 @pytest.mark.tier1
 class TestBug009ResourceExhaustion:
     """BUG-009: No limit on target_pool_size - can exhaust system resources."""
@@ -361,19 +376,21 @@ class TestBug009ResourceExhaustion:
 
         try:
             tester.start()
-            
+
             # Request pool of 10000 workers
             # BUG: No validation - will try to fork 10000 processes
-            resp = tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": 10000,  # Absurd value
-            })
+            resp = tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": 10000,  # Absurd value
+                }
+            )
             assert resp["type"] == "Ack"
-            
+
             # Due to batch_limit=5, it won't fork all at once
             # But target_size is now 10000 - bad state
             status = tester.send_command({"type": "Status"})
-            
+
             # BUG: target_pool_size should be capped, but it's 10000
             if status["target_pool_size"] > 100:
                 pytest.fail(f"Pool target_size={status['target_pool_size']} is dangerously high!")
@@ -385,6 +402,7 @@ class TestBug009ResourceExhaustion:
 # =============================================================================
 # BUG-010: UNTRUSTED JSON DESERIALIZATION
 # =============================================================================
+
 
 @pytest.mark.tier1
 class TestBug010JsonInjection:
@@ -406,21 +424,23 @@ with open("{result_file}", 'w') as f:
 
         try:
             tester.start()
-            
+
             # Attempt to inject dangerous env vars
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": [],
-                "env": {
-                    "LD_PRELOAD": "/tmp/evil.so",  # Should be blocked!
-                    "PYTHONPATH": "/tmp/evil",      # Should be blocked!
-                },
-            })
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": [],
+                    "env": {
+                        "LD_PRELOAD": "/tmp/evil.so",  # Should be blocked!
+                        "PYTHONPATH": "/tmp/evil",  # Should be blocked!
+                    },
+                }
+            )
             assert resp["type"] == "Forked"
-            
+
             time.sleep(0.5)
-            
+
             if result_file.exists():
                 content = result_file.read_text()
                 # BUG: Dangerous env vars were NOT blocked
@@ -437,6 +457,7 @@ with open("{result_file}", 'w') as f:
 # BUG-011: NEGATIVE POOL SIZE HANDLING
 # =============================================================================
 
+
 @pytest.mark.tier1
 class TestBug011NegativePoolSize:
     """BUG-011: Negative pool size not validated."""
@@ -448,16 +469,18 @@ class TestBug011NegativePoolSize:
 
         try:
             tester.start()
-            
+
             # Send negative pool size
-            resp = tester.send_command({
-                "type": "ReplenishPool",
-                "target_count": -1,  # Invalid!
-            })
+            resp = tester.send_command(
+                {
+                    "type": "ReplenishPool",
+                    "target_count": -1,  # Invalid!
+                }
+            )
             assert resp["type"] == "Ack"
-            
+
             status = tester.send_command({"type": "Status"})
-            
+
             # BUG: target_pool_size should reject negative, but accepts it
             if status["target_pool_size"] < 0:
                 pytest.fail(f"CRITICAL: Negative pool size accepted: {status['target_pool_size']}")
@@ -469,6 +492,7 @@ class TestBug011NegativePoolSize:
 # =============================================================================
 # BUG-012: MALFORMED JSON CRASH TEST
 # =============================================================================
+
 
 @pytest.mark.tier1
 class TestBug012MalformedJson:
@@ -482,15 +506,15 @@ class TestBug012MalformedJson:
 
         try:
             tester.start()
-            
+
             # Claim we're sending 100 bytes but only send 10
             truncated = b'{"type":'  # 8 bytes, incomplete JSON
             header = struct.pack("<I", 1 + 100) + struct.pack("B", 1)  # Claim 100 bytes
             tester.send_raw(header + truncated)
-            
+
             # Give time for crash
             time.sleep(1)
-            
+
             if tester.process:
                 poll = tester.process.poll()
                 if poll is not None:
@@ -507,13 +531,13 @@ class TestBug012MalformedJson:
 
         try:
             tester.start()
-            
+
             # Create deeply nested JSON - can hit recursion limit
             depth = 100
             nested = {"type": "Status"}
             for _ in range(depth):
                 nested = {"nested": nested}
-            
+
             try:
                 resp = tester.send_command(nested)
                 # If we get here, shim handled it
@@ -531,6 +555,7 @@ class TestBug012MalformedJson:
 # =============================================================================
 # BUG-013: SHELL INJECTION VIA ARGS
 # =============================================================================
+
 
 @pytest.mark.tier1
 class TestBug013ShellInjection:
@@ -552,7 +577,7 @@ with open("{result_file}", 'w') as f:
 
         try:
             tester.start()
-            
+
             # Inject shell metacharacters
             malicious_args = [
                 "$(whoami)",
@@ -561,16 +586,18 @@ with open("{result_file}", 'w') as f:
                 "`id`",
                 "--help; rm -rf /",
             ]
-            
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": str(script),
-                "args": malicious_args,
-            })
+
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": str(script),
+                    "args": malicious_args,
+                }
+            )
             assert resp["type"] == "Forked"
-            
+
             time.sleep(0.5)
-            
+
             if result_file.exists():
                 content = result_file.read_text()
                 # These should be treated as literal strings, not executed
@@ -587,6 +614,7 @@ with open("{result_file}", 'w') as f:
 # BUG-015: MISSING ERROR RESPONSE ON INVALID COMMAND
 # =============================================================================
 
+
 @pytest.mark.tier1
 class TestBug015InvalidCommand:
     """BUG-015: Unknown commands silently acked instead of rejected."""
@@ -598,13 +626,15 @@ class TestBug015InvalidCommand:
 
         try:
             tester.start()
-            
+
             # Send a completely bogus command
-            resp = tester.send_command({
-                "type": "DropDatabase",  # Obviously invalid
-                "confirm": True,
-            })
-            
+            resp = tester.send_command(
+                {
+                    "type": "DropDatabase",  # Obviously invalid
+                    "confirm": True,
+                }
+            )
+
             # BUG: Should return Error, not Ack
             if resp["type"] == "Ack":
                 pytest.fail("Unknown command 'DropDatabase' was silently acknowledged!")
@@ -617,6 +647,7 @@ class TestBug015InvalidCommand:
 # BUG-016: MISSING SCRIPT_PATH EXISTENCE CHECK
 # =============================================================================
 
+
 @pytest.mark.tier1
 class TestBug016NonexistentScript:
     """BUG-016: Non-existent script_path not validated."""
@@ -628,14 +659,16 @@ class TestBug016NonexistentScript:
 
         try:
             tester.start()
-            
+
             # Fork with bogus path
-            resp = tester.send_command({
-                "type": "Fork",
-                "script_path": "/nonexistent/path/to/script.py",
-                "args": [],
-            })
-            
+            resp = tester.send_command(
+                {
+                    "type": "Fork",
+                    "script_path": "/nonexistent/path/to/script.py",
+                    "args": [],
+                }
+            )
+
             # BUG: Should validate path exists BEFORE forking
             # Instead it forks and then crashes the worker
             if resp["type"] == "Forked":

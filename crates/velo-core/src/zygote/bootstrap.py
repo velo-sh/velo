@@ -10,6 +10,7 @@ import traceback
 import site
 
 PROTOCOL_VERSION = 1
+MAX_POOL_SIZE = 100  # BUG-009: Upper limit for pool size
 
 def setup_site():
     """P0: Inject User Virtual Environment into sys.path (Tier 1 Mutation)."""
@@ -136,6 +137,10 @@ def execute_payload(msg):
         else:
             importlib.import_module(app_module)
     elif script_path:
+        # BUG-016: Validate script path exists before execution
+        if not os.path.isfile(script_path):
+            raise FileNotFoundError(f"Script not found: {script_path}")
+        
         # P0: Inject sys.argv so argparse works in the script
         # argv[0] should be the script path
         sys.argv = [script_path] + msg.get("args", [])
@@ -178,8 +183,25 @@ def bootstrap():
             total_len = struct.unpack("<I", raw_len)[0]
             v_buf = sock.recv(1)
             if not v_buf: break
-            payload = sock.recv(total_len - 1).decode('utf-8')
-            msg = json.loads(payload)
+            
+            # BUG-012: Handle partial recv properly for truncated messages
+            payload_len = total_len - 1
+            payload_bytes = b""
+            while len(payload_bytes) < payload_len:
+                chunk = sock.recv(payload_len - len(payload_bytes))
+                if not chunk:
+                    raise ConnectionError("Connection closed during message receive")
+                payload_bytes += chunk
+            
+            try:
+                payload = payload_bytes.decode('utf-8')
+                msg = json.loads(payload)
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                # BUG-012: Send error response for malformed JSON instead of crashing
+                resp = {"type": "Error", "message": f"Invalid JSON payload: {e}"}
+                p = json.dumps(resp).encode('utf-8')
+                sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
+                continue
             
             cmd = msg.get("type")
             should_replenish = False
@@ -202,10 +224,17 @@ def bootstrap():
                 # If we are critically low, maybe we should replenish? 
                 # Let's rely on explicit ReplenishPool command or post-Fork replenishment.
             elif cmd == "ReplenishPool":
-                IDLE_POOL.target_size = msg.get("target_count", 0)
-                # Mark for replenishment AFTER response
-                should_replenish = True 
-                resp = {"type": "Ack"}
+                # BUG-009/011: Validate pool size bounds
+                target_count = msg.get("target_count", 0)
+                if not isinstance(target_count, int) or target_count < 0:
+                    resp = {"type": "Error", "message": f"Invalid target_count: {target_count}. Must be non-negative integer."}
+                elif target_count > MAX_POOL_SIZE:
+                    resp = {"type": "Error", "message": f"target_count {target_count} exceeds maximum allowed ({MAX_POOL_SIZE})"}
+                else:
+                    IDLE_POOL.target_size = target_count
+                    # Mark for replenishment AFTER response
+                    should_replenish = True 
+                    resp = {"type": "Ack"}
             elif cmd == "Fork":
                 pid, pipe_fd = IDLE_POOL.pop()
                 if pid:
@@ -225,7 +254,8 @@ def bootstrap():
             elif cmd == "Exit" or cmd == "Shutdown":
                 break
             else:
-                resp = {"type": "Ack"}
+                # BUG-015: Return error for unknown commands instead of silent Ack
+                resp = {"type": "Error", "message": f"Unknown command type: {cmd}"}
             
             p = json.dumps(resp).encode('utf-8')
             sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
