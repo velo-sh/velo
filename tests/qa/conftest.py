@@ -116,11 +116,29 @@ def pytest_collection_modifyitems(config, items):
 
     skip_ci_flaky = pytest.mark.skip(reason="CI flaky: skipped in CI environment")
 
+    # Bucket tests for reordering
+    fast_tests = []
+    slow_tests = []  # Tier 3 (Stress/Leakage)
+    heavy_tests = []  # Chaos, Flood, High Memory (Resource Hungry)
+
     for item in items:
         # Check if test has any of the flaky markers
         item_markers = {m.name for m in item.iter_markers()}
+
+        # 1. Apply CI Flaky Skips
         if item_markers & _CI_FLAKY_MARKERS:
             item.add_marker(skip_ci_flaky)
+
+        # 2. Sort into buckets
+        if item_markers & {"high_memory", "chaos", "flood", "tier4"}:
+            heavy_tests.append(item)
+        elif "tier3" in item_markers:
+            slow_tests.append(item)
+        else:
+            fast_tests.append(item)
+
+    # Reassemble: Fast -> Slow -> Heavy (Last)
+    items[:] = fast_tests + slow_tests + heavy_tests
 
 
 # =============================================================================
