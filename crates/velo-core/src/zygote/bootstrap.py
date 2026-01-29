@@ -141,6 +141,11 @@ def execute_payload(msg):
         if not os.path.isfile(script_path):
             raise FileNotFoundError(f"Script not found: {script_path}")
         
+        # HO-004: Inject script directory into sys.path[0] for relative imports
+        script_dir = os.path.dirname(os.path.abspath(script_path))
+        if sys.path and sys.path[0] != script_dir:
+            sys.path.insert(0, script_dir)
+        
         # P0: Inject sys.argv so argparse works in the script
         # argv[0] should be the script path
         sys.argv = [script_path] + msg.get("args", [])

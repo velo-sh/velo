@@ -568,7 +568,8 @@ class TestBug012MalformedJson:
 
             try:
                 resp = tester.send_command(nested)
-                # If we get here, shim handled it
+                # Verify shim handled it (unknown command returns Error)
+                assert resp["type"] in ("Error", "Status"), f"Unexpected response: {resp}"
             except Exception:
                 # Connection error means shim may have died
                 if tester.process:

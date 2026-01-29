@@ -742,9 +742,8 @@ class TestSystemPythonDetection:
 
     def test_venv_python_not_for_zygote(self, velo_test_env: VeloTestEnv, tmp_path: Path) -> None:
         """V3-PYDET-003: Zygote does NOT use .venv/bin/python for its own process."""
-        # Create a venv
-        venv = create_test_venv(tmp_path)
-        venv_python = venv / "bin" / "python"
+        # Create a venv (we verify the Zygote doesn't use it)
+        create_test_venv(tmp_path)
 
         # The Zygote should use system python, not venv python
         # This is verified structurally by checking the code path
@@ -978,17 +977,11 @@ class TestSourceLoading:
     Reference: handoff_packet.md Section 3 - Source Loading
     """
 
-    @pytest.mark.xfail(
-        reason="HO-004 Gap: bootstrap.py execute_payload() does not inject script_dir into sys.path[0]. "
-        "Fix required in crates/velo-core/src/zygote/bootstrap.py line ~138: "
-        "Add sys.path.insert(0, os.path.dirname(script_path)) before exec()."
-    )
     def test_sys_path_zero_is_script_dir(self, tmp_path: Path) -> None:
         """V3-SRC-001: sys.path[0] is the directory containing the script.
 
-        FINDING: Current implementation sets sys.path[0] to bootstrap shim directory.
-        Handoff HO-004 requires sys.path[0] = user source directory.
-        Developer remediation: Update execute_payload() in bootstrap.py.
+        FIXED: HO-004 implemented - bootstrap.py execute_payload() now injects
+        script_dir into sys.path[0] before exec().
         """
         # Create a source directory structure
         src_dir = tmp_path / "src" / "myapp"
