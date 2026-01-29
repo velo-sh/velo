@@ -41,6 +41,12 @@ tracing_enabled = true
 zygote_pool_size = 5 # Default number of warm workers
 zygote_max_pool_size = 100 # Maximum allowed pool size (security limit)
 
+# CI/Docker Test Configuration (SSOT)
+# xdist workers in constrained environments (CI, Docker)
+# Use fewer workers to avoid OOM (exit 137) on GitHub Actions runners
+ci_xdist_workers = 2  # -n 2 for CI/Docker, prevents memory pressure
+ci_subprocess_timeout = 120  # 2 minutes max per subprocess in tests
+
 # Network
 default_host = "127.0.0.1"
 default_port = 8000
