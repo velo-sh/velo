@@ -101,7 +101,31 @@ check_env_fast() {
         ((errors++))
     else
         local uv_version=$(uv --version 2>/dev/null || echo "unknown")
-        log_success "uv: $uv_version"
+        # Extract version number (e.g. "uv 0.5.11" -> "0.5.11")
+        local uv_ver_num=$(echo "$uv_version" | awk '{print $2}')
+        # Simple version comparison: strict requirement for >= 0.5.0
+        # This prevents the pyproject.toml [project] table errors
+        if [[ "$(printf '%s\n' "0.5.0" "$uv_ver_num" | sort -V | head -n1)" != "0.5.0" ]]; then
+            log_error "uv outdated: $uv_ver_num (requires >= 0.5.0)"
+            log_error "  Fix: uv self update"
+            ((errors++))
+        else
+            log_success "uv: $uv_version (>= 0.5.0)"
+        fi
+    fi
+
+    # Check 2.1: Memory (OOM Prevention)
+    log_step "Checking Memory..."
+    # Get total memory in GB (approx)
+    if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+        local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+        if [[ "$mem_gb" -lt 6 ]]; then
+            log_warn "Low memory detected: ${mem_gb}GB (Recommended: 12GB+)"
+            log_warn "  Risk: Full regression tier may OOM at ~23%"
+            log_warn "  Fix: Increase Docker/VM memory or use --tier 0"
+        else
+            log_success "Memory: ${mem_gb}GB (OK)"
+        fi
     fi
     
     # Check 3: Project files exist
