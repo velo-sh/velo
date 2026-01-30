@@ -7,9 +7,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 import requests
 
 
+@pytest.mark.high_memory
 class TestSandboxShield:
     """Security tests focused on SandboxShield (Full Armor) integrity."""
 

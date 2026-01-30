@@ -73,7 +73,7 @@ def health():
         # 3. Explicitly construct the CLI command to run THIS file
         # We use a custom factory logic here or re-use VeloServeFactory if possible via fixture
         # But we need to instantiate it specifically for this test case
-        from tests.qa.phase_6_1_1.conftest import VeloServeFactory
+        from tests.qa.heavy.conftest import VeloServeFactory
 
         factory = VeloServeFactory(velo_test_env, velo_binary)
 
@@ -163,7 +163,7 @@ def health():
 
         (velo_test_env.root / "pyproject.toml").write_text('[project]\ndependencies = ["fastapi"]')
 
-        from tests.qa.phase_6_1_1.conftest import VeloServeFactory
+        from tests.qa.heavy.conftest import VeloServeFactory
 
         factory = VeloServeFactory(velo_test_env, velo_binary)
 
@@ -213,7 +213,7 @@ def health():
         app_file = velo_test_env.root / "path_check.py"
         app_file.write_text(user_code)
 
-        from tests.qa.phase_6_1_1.conftest import VeloServeFactory
+        from tests.qa.heavy.conftest import VeloServeFactory
 
         factory = VeloServeFactory(velo_test_env, velo_binary)
 

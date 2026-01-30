@@ -172,5 +172,10 @@ def run_benchmark() -> None:
             Path(socket_path).unlink()
 
 
+def test_shadow_preload_e2e():
+    """Pytest entry point for the Shadow Preloading benchmark."""
+    run_benchmark()
+
+
 if __name__ == "__main__":
     run_benchmark()
