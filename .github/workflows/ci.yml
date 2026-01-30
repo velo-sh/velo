@@ -418,7 +418,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_0 -n auto --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/phase_7_0 -n 2 --dist loadscope -v --tb=short
 
   qa-phase-7-1:
     name: "QA 7.1: Custody & Forensics"
@@ -434,7 +434,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_1 -n auto --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/phase_7_1 -n 2 --dist loadscope -v --tb=short
 
   qa-phase-7-2:
     name: "QA 7.2: ASGI Bridge Compatibility (${{ matrix.shard }})"
@@ -454,7 +454,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_2 -n auto --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
+          command: uv run pytest tests/qa/phase_7_2 -n 2 --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
 
 
   qa-zygote-matrix:
@@ -492,7 +492,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -576,7 +576,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -737,7 +737,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n auto --dist loadscope -v --tb=short
+          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
 
   qa-phase611-perf-matrix:
     name: "QA 6.1.1: Performance (${{ matrix.suite_name }})"

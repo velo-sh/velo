@@ -86,6 +86,7 @@ class RealUserEnv:
         self.cleanup()
 
 
+@pytest.mark.ci_flaky
 class TestZygoteInRealUserEnv:
     """E2E tests in simulated user environment (OUTSIDE velo repo)."""
 

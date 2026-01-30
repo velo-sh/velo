@@ -29,6 +29,7 @@ from conftest_utils import T_LONG, T_MEDIUM, T_SHORT
 pytestmark = [pytest.mark.tier2, pytest.mark.zygote_required]
 
 
+@pytest.mark.high_memory
 class TestGoldenPathE2E:
     """E2E tests covering the complete Zygote critical path."""
 
@@ -549,6 +550,7 @@ class TestGoldenPathE2E:
             pytest.fail(f"FALLBACK MODE DETECTED! Failed checks: {failed_checks}")
 
 
+@pytest.mark.high_memory
 class TestGoldenPathDemonCatching:
     """E2E tests designed to catch hidden bugs ("demons") in the request path."""
 

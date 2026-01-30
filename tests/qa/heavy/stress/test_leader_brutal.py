@@ -1,5 +1,5 @@
 # QA Leader - Brutal Tests for Phase 6.1 Serve & Analyze
-# 终极测试: "If the system survives these, it's production-ready."
+# Ultimate Test: "If the system survives these, it's production-ready."
 
 import os
 

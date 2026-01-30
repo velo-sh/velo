@@ -517,7 +517,7 @@ class TestQualityGates:
 
 
 # =============================================================================
-# L6: BUG REGRESSION TESTS (从QA发现的11个BUG直接推导)
+# L6: BUG REGRESSION TESTS (Derived from 11 bugs found during QA)
 # =============================================================================
 
 
@@ -658,7 +658,7 @@ class TestBugRegressions:
 
 
 # =============================================================================
-# L7: USER PERSPECTIVE BUGS (从AI Agent用户角度发现)
+# L7: USER PERSPECTIVE BUGS (Discovered from AI Agent user perspective)
 # =============================================================================
 
 

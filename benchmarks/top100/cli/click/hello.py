@@ -9,6 +9,6 @@ def cli():
 if __name__ == "__main__":
     try:
         cli(standalone_mode=False)
-    except:
+    except Exception:
         pass
 print(f"Click version: {click.__version__}")

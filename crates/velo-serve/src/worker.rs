@@ -58,13 +58,14 @@ impl Worker {
     }
     /// Spawn worker via Zygote IPC (UDS mode)
     pub fn spawn_uds_via_zygote(
-        zygote_socket: &Path,
+        launcher: &mut velo_core::zygote::ZygoteLauncher,
         app: &str,
         worker_id: u64,
         shm_file: Option<&std::fs::File>, // Optional SHM file to map
         config: &velo_core::config::VeloConfig,
         rsgi: bool,
     ) -> Result<Self> {
+        let zygote_socket = launcher.socket_path().to_path_buf();
         Self::validate_app_path(app)?;
 
         // Architect Recommendation: Use standardized launcher instead of dynamic scripts
@@ -86,7 +87,7 @@ impl Worker {
             args.push("--rsgi".to_string());
         }
 
-        let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+        let (_fd_to_pass, _shm_size) = if let Some(file) = shm_file {
             use std::os::unix::prelude::AsRawFd;
             // Get size for the command
             let meta = file.metadata()?;
@@ -95,40 +96,29 @@ impl Worker {
             (None, None)
         };
 
-        let response = ipc::send_command(
-            zygote_socket,
-            ipc::ZygoteCommand::Fork {
-                script_path: launcher_path,
-                module: None,
-                args,
-                async_mode: true,
-                stdout_path: None,
-                stderr_path: None,
-                exit_code_path: None,
-                fast_mode: false,
-                bundle_path: None,
-                project_root: None,
-                max_bundle_size: None,
-                env: build_worker_env(config),
-                shm_size,
-                request_id: Some(Uuid::now_v7().to_string()),
-            },
-            fd_to_pass,
+        let handle = launcher.spawn_worker(
+            &launcher_path,
+            None,
+            &args.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            true,  // async_mode
+            false, // fast_mode
+            None,  // bundle_path
+            None,  // project_root
+            None,  // max_bundle_size
+            shm_file,
+            None, // env_overrides
+            config,
         )?;
 
-        if let ipc::ZygoteResponse::Forked { worker_pid, .. } = response {
-            Ok(Self {
-                pid: worker_pid,
-                port: 0,
-                started_at: Instant::now(),
-                zygote_socket: Some(zygote_socket.to_path_buf()),
-                script_path: None,
-                socket_path: Some(socket_path),
-                child: None,
-            })
-        } else {
-            anyhow::bail!("Zygote failed to fork worker: {:?}", response);
-        }
+        Ok(Self {
+            pid: handle.pid(),
+            port: 0,
+            started_at: Instant::now(),
+            zygote_socket: Some(zygote_socket),
+            script_path: None,
+            socket_path: Some(socket_path),
+            child: None,
+        })
     }
 
     /// Spawn a worker via Zygote IPC (Legacy TCP mode)
@@ -446,6 +436,7 @@ impl Worker {
     #[allow(clippy::too_many_arguments)]
     pub fn respawn(
         &self,
+        launcher: Option<&mut velo_core::zygote::ZygoteLauncher>,
         app: &str,
         worker_id: u64,
         python_path: &Path,
@@ -454,8 +445,8 @@ impl Worker {
         rsgi: bool,
         #[cfg(unix)] socket_fd: Option<std::os::unix::io::RawFd>,
     ) -> Result<Self> {
-        if let Some(ref zygote) = self.zygote_socket {
-            Self::spawn_uds_via_zygote(zygote, app, worker_id, None, config, rsgi)
+        if let Some(l) = launcher {
+            Self::spawn_uds_via_zygote(l, app, worker_id, None, config, rsgi)
         } else if rsgi {
             #[cfg(unix)]
             {

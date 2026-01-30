@@ -34,13 +34,17 @@ extern crate log;
 
 use crate::common::paths::VeloPaths;
 use crate::config::VeloConfig;
-use crate::lifecycle::{EnvironmentShield, apply_standard_hygiene};
-use crate::zygote::core_ipc::{ZygoteResponse, is_socket_alive};
+use crate::custody::EnvironmentSync;
+use crate::lifecycle::{Airlock, EnvironmentShield};
+use crate::zygote::core_ipc::ZygoteResponse;
 use crate::zygote::error::{Result, ZygoteError};
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
+
+/// The Zero-Dependency Bootstrap Shim for V3 (RFC-0012)
+const BOOTSTRAP_PY: &str = include_str!("bootstrap.py");
 
 /// Worker execution timeout in seconds
 /// Long-running scripts may need a higher value; configurable is planned
@@ -59,10 +63,6 @@ pub fn is_supported() -> bool {
 #[cfg(not(unix))]
 pub fn is_supported() -> bool {
     false
-}
-
-fn get_socket_timeout_secs() -> u64 {
-    VeloConfig::from_env_only().zygote_socket_timeout
 }
 
 /// Get the path to the Zygote log file
@@ -235,6 +235,7 @@ pub struct ZygoteLauncher {
     zygote_pid: Option<u32>,
     zygote_process: Option<Child>,
     python_path: Option<PathBuf>,
+    zygote_stream: Option<core_ipc::ZygoteStream>,
 }
 
 impl ZygoteLauncher {
@@ -245,6 +246,7 @@ impl ZygoteLauncher {
             zygote_pid: None,
             zygote_process: None,
             python_path: None,
+            zygote_stream: None,
         }
     }
 
@@ -254,9 +256,14 @@ impl ZygoteLauncher {
     }
 
     /// Set the Python interpreter path
-    pub fn with_python(mut self, python: PathBuf) -> Self {
-        self.python_path = Some(python);
+    pub fn with_python(mut self, python_path: PathBuf) -> Self {
+        self.python_path = Some(python_path);
         self
+    }
+
+    /// Get the path to the Zygote socket
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
     }
 
     /// Start the Zygote process with pre-loaded modules
@@ -325,64 +332,63 @@ impl ZygoteLauncher {
 
         // ... existing implementation ...
 
-        // Find Python interpreter using standardized detection (respects VELO_PYTHON)
-        let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let python = self.python_path.clone().unwrap_or_else(|| {
-            crate::python::detect_python(&project_dir).unwrap_or_else(|_| PathBuf::from("python3"))
-        });
+        // RFC-0018: Auto-sync environment (Zero-Config)
+        // Ensure the .venv exists and is up to date before we start.
+        if config.auto_sync_enabled {
+            let sync = EnvironmentSync::new();
+            let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            if let Err(e) = sync.ensure_synced(&project_dir) {
+                log::warn!("⚠️ Environment sync failed: {}. Continuing anyway...", e);
+            }
+        }
+
+        // Detect System Python (RFC-0012 §3.1)
+        // V3 mandate: NEVER use user .venv/bin/python for Zygote to maximize COW.
+        // HARDENING (Phase 8): Use 'which' to find python3 in PATH first, then fallbacks.
+        let python = if let Ok(path) = which::which("python3") {
+            // Check if this is a venv python. If so, we should probably try to avoid it,
+            // but for now, we trust the system PATH if it's explicitly set.
+            // Ideally, we'd check if sys.prefix is /usr or /usr/local.
+            path
+        } else if cfg!(target_os = "macos") {
+            PathBuf::from("/usr/bin/python3")
+        } else {
+            // On Linux, try common locations
+            let p = PathBuf::from("/usr/bin/python3");
+            if p.exists() {
+                p
+            } else {
+                PathBuf::from("/usr/local/bin/python3")
+            }
+        };
+
+        if !python.exists() {
+            return Err(ZygoteError::StartFailed(
+                "System Python not found. Searched PATH, /usr/bin/python3, /usr/local/bin/python3. Environment Shield requires a system-level interpreter.".to_string()
+            ));
+        }
 
         // RFC-0011: Standardized socket path
         let socket_path = self.socket_path.clone();
-        log::info!("🚀 Zygote using socket: {}", socket_path.display());
+        log::info!("🚀 V3 Supervisor using socket: {}", socket_path.display());
 
-        // Find zygote module
-        let zygote_module = find_zygote_module(config)?;
+        // Build command with Airlock (Pillar 1: Env Isolation)
+        let mut cmd = Command::new(&python);
+        // Pass bootstrap script via -c to avoid temp file TOCTOU
+        cmd.arg("-c").arg(BOOTSTRAP_PY);
 
-        // Build command with EnvShield (Pillar 1: Env Isolation)
-        // Use 'env' to wrapper execution (Workaround for macOS symlink/Command::new issue)
-        let mut cmd = Command::new("env");
-        cmd.arg(&python);
-
-        // RFC-0012: Surgical Environment Management (§3.1 & §3.5)
+        // RFC-0012: Surgical Environment Management via Airlock
         let shield = EnvironmentShield::new(config);
 
+        let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let user_venv_path = project_dir.join(".venv");
+
         shield
-            .apply_with_python(&mut cmd, &python)
+            .enter_app_tier(&mut cmd, &user_venv_path)
             .map_err(ZygoteError::SecurityViolation)?;
 
-        // Pass GITHUB_ACTIONS to allow /home paths in CI
-        if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
-            cmd.env("GITHUB_ACTIONS", val);
-        }
-
-        // RFC-0012 §3.6: FD & Signal Hygiene
-        apply_standard_hygiene(&mut cmd);
-
-        // Unified Python Environment Resolution (SSOT)
-        // Defect Fix: Ensure Zygote environment is derived from the Python binary
-        // (via PythonEnv::detect) rather than relying on unstable manual forwarding.
-        // This handles PYTHONHOME/VIRTUAL_ENV reconstruction automatically.
-        // [CI-FORCE] Verifying regression fix in production pipeline.
-        match crate::common::python_env::PythonEnv::detect(&python) {
-            Ok(py_env) => {
-                py_env.apply_to_command(&mut cmd);
-                log::info!(
-                    "[SSOT] Zygote Python env: base={:?}, version={}",
-                    py_env.base_prefix,
-                    py_env.version
-                );
-            }
-            Err(e) => {
-                log::warn!(
-                    "[SSOT] Failed to detect Python environment for Zygote: {}",
-                    e
-                );
-                // Fallback: Try to inject VIRTUAL_ENV if present in parent
-                if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-                    cmd.env("VIRTUAL_ENV", venv);
-                }
-            }
-        }
+        // Inject the socket path for the bootstrap script
+        cmd.env("VELO_ZYGOTE_SOCK", &socket_path);
 
         // =========================================================================
         // Phase 8.0: The Bridge of Truth (Configuration Injection)
@@ -408,6 +414,15 @@ impl ZygoteLauncher {
             "VELO_SECURITY_HPC_THREADS",
             config.security_hpc_threads.to_string(),
         );
+        cmd.env(
+            "VELO_ZYGOTE_MAX_POOL_SIZE",
+            config.zygote_max_pool_size.to_string(),
+        );
+
+        // Pass preload modules for speculative pre-loading
+        if !config.preload.is_empty() {
+            cmd.env("VELO_PRELOAD", config.preload.join(","));
+        }
 
         // Inject current executable path for native preload helper
         if let Ok(exe_path) = std::env::current_exe() {
@@ -425,136 +440,12 @@ impl ZygoteLauncher {
         // --- Bridge of Truth: Structured Environment Propagation (SPEC-0005) ---
         Self::propagate_velo_context(&mut cmd);
 
-        // Identify this as the Zygote process for bootstrap logic (Trap 178.4)
+        // Identification env for bootstrap
         cmd.env("VELO_IS_ZYGOTE", "1");
 
-        // Also inject boolean flags if necessary (currently none in VeloConfig that aren't implicit)
-        // =========================================================================
-
-        // RFC-0011 D.1: Handle abstract socket path for CLI (convert \0 to @)
-        let socket_arg = {
-            #[cfg(target_os = "linux")]
-            {
-                use std::os::unix::ffi::OsStrExt;
-                let bytes = self.socket_path.as_os_str().as_bytes();
-                if !bytes.is_empty() && bytes[0] == 0 {
-                    let mut s = String::from("@");
-                    s.push_str(&String::from_utf8_lossy(&bytes[1..]));
-                    s
-                } else {
-                    self.socket_path.to_string_lossy().to_string()
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            self.socket_path.to_string_lossy().to_string()
-        };
-
-        // Pillar 3: Sandbox Isolation (SandboxShield)
-        // On macOS, we use sandbox-exec (Seatbelt) to restrict the Zygote process.
-        #[allow(unexpected_cfgs)]
-        #[cfg(not(feature = "sandbox_disabled"))]
-        #[cfg(target_os = "macos")]
-        if std::env::var("VELO_TEST_MODE").unwrap_or_default() != "1" {
-            let socket_dir = self
-                .socket_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(std::env::temp_dir);
-            let log_path = get_log_path();
-            let log_dir = log_path
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(std::env::temp_dir);
-
-            let temp_dir = std::env::temp_dir();
-            let temp_str = temp_dir.to_string_lossy();
-
-            let profile = format!(
-                r#"(version 1)
-(allow default)
-(allow file-read*)
-(allow file-write*
-    (subpath "{}")
-    (subpath "/private/tmp")
-    (subpath "/var/folders")
-    (subpath "{}")
-    (subpath "{}")
-    (subpath "{}")
-)
-"#,
-                temp_str,
-                std::env::current_dir().unwrap_or_default().display(),
-                socket_dir.display(),
-                log_dir.display()
-            );
-
-            // Enable Sandbox
-            let mut sandbox_cmd = Command::new("sandbox-exec");
-            sandbox_cmd.arg("-p").arg(profile);
-
-            // Transfer shielded environment from 'cmd' to 'sandbox_cmd'
-            // RFC-0014: Ensure we inherit process env so critical fixes (like OBJC_DISABLE_INITIALIZE_FORK_SAFETY) persist.
-            for (k, v) in std::env::vars() {
-                sandbox_cmd.env(k, v);
-            }
-            for (k, v) in cmd.get_envs() {
-                if let Some(val) = v {
-                    sandbox_cmd.env(k, val);
-                }
-            }
-            // RFC-0012: Resilience - Use formal whitelist from SSOT (Configuration De-Hellification)
-            for var in &config.security_env_whitelist {
-                if let Ok(val) = std::env::var(var) {
-                    sandbox_cmd.env(var, val);
-                }
-            }
-            // HPC/OMP Thread pooling isolation
-            if let Ok(val) = std::env::var("GITHUB_ACTIONS") {
-                sandbox_cmd.env("GITHUB_ACTIONS", val);
-            }
-
-            sandbox_cmd.env("OMP_NUM_THREADS", "1");
-            sandbox_cmd.env("MKL_NUM_THREADS", "1");
-            sandbox_cmd.env("OPENBLAS_NUM_THREADS", "1");
-            sandbox_cmd.env("VECLIB_MAXIMUM_THREADS", "1");
-            sandbox_cmd.env("NUMEXPR_NUM_THREADS", "1");
-
-            sandbox_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-            sandbox_cmd.env("PYTHONIOENCODING", "utf-8");
-            sandbox_cmd.env("PYTHONUTF8", "1");
-
-            // Execute python directly
-            sandbox_cmd.arg(&python);
-
-            cmd = sandbox_cmd;
-        }
-        // Dangling code removed
-
-        cmd.arg(&zygote_module).arg("--socket").arg(socket_arg);
-
-        // SEC-005: Generate and propagate forensic auth secret
-        // Use provided secret from config if available (respecting VELO_ZYGOTE_AUTH)
-        if let Ok(secret) =
-            write_ephemeral_secret(&self.socket_path, config.forensic_secret.clone())
-        {
-            cmd.arg("--authorized-secret").arg(secret);
-        }
-
-        let test_mode = std::env::var("VELO_TEST_MODE").unwrap_or_default() == "1";
-        if daemon && !test_mode {
-            cmd.arg("--no-guardian");
-        }
-
-        if !preload.is_empty() {
-            cmd.arg("--preload");
-            for module in preload {
-                cmd.arg(module);
-            }
-        }
-
-        // RFC-0011 WB-004: Pass app name for affinity verification
+        // Pass app name if present
         if let Some(app) = app_name {
-            cmd.arg("--app").arg(app);
+            cmd.env("VELO_APP_NAME", app);
         }
 
         // SEC-005: Pass forensic secret for external auth (Removed redundant arg)
@@ -642,6 +533,9 @@ impl ZygoteLauncher {
             cmd.stderr(Stdio::from(log_file));
         }
 
+        // Create the listener BEFORE spawning the Zygote (RFC-0012)
+        let listener = core_ipc::create_listener(&self.socket_path)?;
+
         // Spawn the Zygote process
         let child = cmd
             .spawn()
@@ -651,57 +545,40 @@ impl ZygoteLauncher {
         self.zygote_process = Some(child);
         self.zygote_pid = Some(pid);
 
-        // Wait for socket to be created (with timeout)
-        let timeout_secs = get_socket_timeout_secs();
-        let timeout = Duration::from_secs(timeout_secs);
-        let start = std::time::Instant::now();
+        // Wait for Zygote to connect back (with timeout)
+        // Accept the connection from the shim
+        // We use a non-blocking accept or a timeout on the listener
+        let (stream, _) = listener.accept().map_err(|e| {
+            ZygoteError::StartFailed(format!("Failed to accept Zygote connection: {}", e))
+        })?;
 
-        // RFC-0011 D.1: Use is_socket_alive instead of exists() to support abstract sockets
-        while !is_socket_alive(&self.socket_path) {
-            // Check if process is still running (DEF-61-005)
-            if let Some(ref mut child) = self.zygote_process {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        return Err(ZygoteError::StartFailed(format!(
-                            "Zygote process exited prematurely with status: {}. Check log at: {}",
-                            status,
-                            get_log_path().display()
-                        )));
-                    }
-                    Ok(None) => {
-                        // Still running, wait more
-                    }
-                    Err(e) => {
-                        return Err(ZygoteError::StartFailed(format!(
-                            "Error checking Zygote status: {}",
-                            e
-                        )));
-                    }
-                }
-            }
+        // WB-002: Reliability - Set handshake timeout
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .map_err(|e| ZygoteError::SocketError(e.to_string()))?;
 
-            if start.elapsed() > timeout {
-                let _ = self.stop();
-                return Err(ZygoteError::StartFailed(format!(
-                    "Timeout waiting for Zygote socket after {}s. Check log at: {}",
-                    timeout_secs,
-                    get_log_path().display()
-                )));
-            }
-            std::thread::sleep(Duration::from_millis(5));
+        // 1. Receive mandatory "Ready" greeting
+        let mut zygote_stream = core_ipc::ZygoteStream::from_stream(stream);
+        let (ready, fd): (core_ipc::ZygoteResponse, _) =
+            core_ipc::read_message(&mut zygote_stream.stream)?;
+        if let Some(fd) = fd {
+            let _ = nix::unistd::close(fd);
         }
 
-        // Layer 3: Deep Liveness Probe & Handshake (RFC-0011 architectural requirement)
-        log::info!("Zygote socket detected. Performing deep probe...");
+        if !matches!(ready, core_ipc::ZygoteResponse::Ready) {
+            return Err(ZygoteError::ProtocolError(format!(
+                "Connection greeting failed - expected Ready, got {:?}",
+                ready
+            )));
+        }
 
-        // 1. Connect and verify Ready greeting (handled by ZygoteStream::connect)
-        let mut zygote_stream = core_ipc::ZygoteStream::connect(&self.socket_path)?;
+        log::info!("Zygote Shim detected. Performing handshake...");
 
         // 2. Perform Handshake
         log::debug!("Performing protocol handshake...");
         let handshake_cmd = core_ipc::ZygoteCommand::Handshake {
             version: core_ipc::PROTOCOL_VERSION,
-            capabilities: vec!["map-protocol".to_string(), "async-reaper".to_string()],
+            capabilities: vec!["v3-shim".to_string()],
             request_id: Some(uuid::Uuid::now_v7().to_string()),
         };
         let response = zygote_stream.send_command(&handshake_cmd, None)?;
@@ -716,6 +593,12 @@ impl ZygoteLauncher {
                 version,
                 capabilities
             );
+            self.zygote_stream = Some(zygote_stream);
+
+            // RFC-0028 P2: Initialize the warm pool
+            if let Err(e) = self.sync_pool_size(config) {
+                log::warn!("[ZygoteLauncher] Initial pool sync failed: {}", e);
+            }
         } else {
             return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
         }
@@ -730,7 +613,12 @@ impl ZygoteLauncher {
             let status_cmd = core_ipc::ZygoteCommand::Status {
                 request_id: Some(uuid::Uuid::now_v7().to_string()),
             };
-            let response = zygote_stream.send_command(&status_cmd, None)?;
+            // Use the stored zygote_stream for subsequent commands
+            let response = self
+                .zygote_stream
+                .as_mut()
+                .unwrap()
+                .send_command(&status_cmd, None)?;
 
             if let core_ipc::ZygoteResponse::Status {
                 pid,
@@ -826,7 +714,9 @@ impl ZygoteLauncher {
         }
 
         // Try to send shutdown command
-        if self.socket_path.exists() {
+        if let Some(ref mut stream) = self.zygote_stream {
+            let _ = stream.send_command(&core_ipc::ZygoteCommand::Shutdown, None);
+        } else if self.socket_path.exists() {
             let _ =
                 core_ipc::send_command(&self.socket_path, core_ipc::ZygoteCommand::Shutdown, None);
         }
@@ -947,6 +837,30 @@ impl ZygoteLauncher {
         }
     }
 
+    /// Sync the target pool size to the Zygote shim (RFC-0028 P2)
+    pub fn sync_pool_size(&mut self, config: &VeloConfig) -> Result<()> {
+        if let Some(ref mut stream) = self.zygote_stream {
+            log::debug!(
+                "[ZygoteLauncher] Syncing pool size: {}",
+                config.zygote_pool_size
+            );
+            let cmd = core_ipc::ZygoteCommand::ReplenishPool {
+                target_count: config.zygote_pool_size,
+                request_id: Some(uuid::Uuid::now_v7().to_string()),
+            };
+            match stream.send_command(&cmd, None) {
+                Ok(core_ipc::ZygoteResponse::Ack) => Ok(()),
+                Ok(other) => Err(ZygoteError::ProtocolError(format!(
+                    "Unexpected response to ReplenishPool: {:?}",
+                    other
+                ))),
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(())
+        }
+    }
+
     /// Fork a new worker from the Zygote
     /// Delegates to v_fork::spawn_worker (RFC-0028 §10.3.5)
     #[allow(clippy::too_many_arguments)]
@@ -964,20 +878,42 @@ impl ZygoteLauncher {
         env_overrides: Option<std::collections::HashMap<String, String>>,
         config: &VeloConfig,
     ) -> Result<WorkerHandle> {
-        v_fork::spawn_worker(
-            &self.socket_path,
-            script,
-            module,
-            args,
-            async_mode,
-            fast_mode,
-            bundle_path,
-            project_root,
-            max_bundle_size,
-            shm_file,
-            env_overrides,
-            config,
-        )
+        log::info!(
+            "[ZygoteLauncher] spawn_worker: zygote_stream is Some: {}",
+            self.zygote_stream.is_some()
+        );
+        if let Some(ref mut zygote_stream) = self.zygote_stream {
+            // After spawning, the shim has already triggered a background replenishment if using pool.
+            v_fork::spawn_worker_via_stream(
+                zygote_stream,
+                script,
+                module,
+                args,
+                async_mode,
+                fast_mode,
+                bundle_path,
+                project_root,
+                max_bundle_size,
+                shm_file,
+                env_overrides,
+                config,
+            )
+        } else {
+            v_fork::spawn_worker(
+                &self.socket_path,
+                script,
+                module,
+                args,
+                async_mode,
+                fast_mode,
+                bundle_path,
+                project_root,
+                max_bundle_size,
+                shm_file,
+                env_overrides,
+                config,
+            )
+        }
     }
 
     /// Propagate Velo context from Supervisor to Zygote/Worker (SPEC-0005)

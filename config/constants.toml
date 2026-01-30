@@ -30,15 +30,22 @@ graceful_shutdown_timeout = 60
 default_slow_threshold_ms = 100
 # SLO: Error Budget Policy
 slo_fork_latency_ms = 100 # P99 < 100ms
+auto_sync_enabled = true # RFC-0018: Implicit 'uv sync' logic
 strict_optimizations = true # H-Gov: Enabled in CI/Dev by default
 sandbox_network_isolation = true # RFC-0011: Enable network namespace isolation
 sandbox_privilege_escalation_block = true # RFC-0011: PR_SET_NO_NEW_PRIVS
 
-# Production Hardening Phase 2
-circuit_breaker_threshold = 3
 circuit_breaker_enabled = true
 metrics_enabled = true
 tracing_enabled = true
+zygote_pool_size = 5 # Default number of warm workers
+zygote_max_pool_size = 100 # Maximum allowed pool size (security limit)
+
+# CI/Docker Test Configuration (SSOT)
+# xdist workers in constrained environments (CI, Docker)
+# Use fewer workers to avoid OOM (exit 137) on GitHub Actions runners
+ci_xdist_workers = 2  # -n 2 for CI/Docker, prevents memory pressure
+ci_subprocess_timeout = 120  # 2 minutes max per subprocess in tests
 
 # Network
 default_host = "127.0.0.1"

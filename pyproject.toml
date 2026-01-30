@@ -2,7 +2,7 @@
 name = "velo"
 version = "0.1.0"
 description = "Velo project Python tooling"
-requires-python = ">=3.11"
+requires-python = "~=3.11.0"
 license = "Apache-2.0"
 readme = "README.md"
 dependencies = [
@@ -158,6 +158,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pytest-timeout>=2.3.1",
     "pytest-shard>=0.1.2",  # For CI test sharding
+    "pytest-json-report>=1.5.0",  # For CI false-positive detection
 ]
 
 

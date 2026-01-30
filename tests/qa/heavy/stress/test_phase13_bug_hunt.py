@@ -19,6 +19,11 @@ class TestBug001_WorkerBaseNotUsed:
         """Verify isolation directories are actually created during fork"""
         from pytest_velo.plugin import run_in_zygote_fork
 
+        if threading.active_count() > 1:
+            pytest.skip(
+                f"Skipping Zygote fork test: {threading.active_count()} threads active (unsafe for internal fork)"
+            )
+
         # Create a mock test item that checks isolation
         class MockItem:
             def runtest(self):
@@ -140,7 +145,14 @@ class TestEdgeCase_ForkWithOpenFiles:
 
     def test_fork_with_open_file(self):
         """Forking with open files should not corrupt them"""
+        import threading
+
         from pytest_velo.plugin import run_in_zygote_fork
+
+        if threading.active_count() > 1:
+            pytest.skip(
+                f"Skipping Zygote fork test: {threading.active_count()} threads active (unsafe for internal fork)"
+            )
 
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
             tf.write("before fork\n")

@@ -101,7 +101,31 @@ check_env_fast() {
         ((errors++))
     else
         local uv_version=$(uv --version 2>/dev/null || echo "unknown")
-        log_success "uv: $uv_version"
+        # Extract version number (e.g. "uv 0.5.11" -> "0.5.11")
+        local uv_ver_num=$(echo "$uv_version" | awk '{print $2}')
+        # Simple version comparison: strict requirement for >= 0.5.0
+        # This prevents the pyproject.toml [project] table errors
+        if [[ "$(printf '%s\n' "0.5.0" "$uv_ver_num" | sort -V | head -n1)" != "0.5.0" ]]; then
+            log_error "uv outdated: $uv_ver_num (requires >= 0.5.0)"
+            log_error "  Fix: uv self update"
+            ((errors++))
+        else
+            log_success "uv: $uv_version (>= 0.5.0)"
+        fi
+    fi
+
+    # Check 2.1: Memory (OOM Prevention)
+    log_step "Checking Memory..."
+    # Get total memory in GB (approx)
+    if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+        local mem_gb=$(free -g | awk '/^Mem:/{print $2}')
+        if [[ "$mem_gb" -lt 6 ]]; then
+            log_warn "Low memory detected: ${mem_gb}GB (Recommended: 12GB+)"
+            log_warn "  Risk: Full regression tier may OOM at ~23%"
+            log_warn "  Fix: Increase Docker/VM memory or use --tier 0"
+        else
+            log_success "Memory: ${mem_gb}GB (OK)"
+        fi
     fi
     
     # Check 3: Project files exist
@@ -260,15 +284,22 @@ run_python_tests() {
         source "$venv_path/bin/activate"
     fi
     
-    # Determine parallelism
+    # Determine parallelism - limit workers to prevent OOM in Docker
     local parallel_args=""
     if [[ "${NO_XDIST:-false}" == "false" ]] && python -c "import xdist" 2>/dev/null; then
-        parallel_args="-n auto --dist loadscope"
+        # Default to 1 worker to prevent Docker OOM (2 still causes OOM at ~23%)
+        # Allow override via PYTEST_XDIST_WORKERS env var
+        local num_workers="${PYTEST_XDIST_WORKERS:-1}"
+        parallel_args="-n $num_workers --dist loadscope"
         log_step "Using pytest-xdist: $parallel_args"
     fi
     
+    # Generate JSON report for result validation
+    local json_report="/tmp/pytest_results_$$.json"
+    
     set +e # Allow test failure to capture artifacts
-    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short ${EXTRA_PY_ARGS:-}
+    uv run --active python -m pytest $test_paths $parallel_args -v --tb=short \
+        --json-report --json-report-file="$json_report" ${EXTRA_PY_ARGS:-}
     local EXIT_CODE=$?
     set -e
 
@@ -284,6 +315,30 @@ run_python_tests() {
     if [[ $EXIT_CODE -ne 0 ]]; then
         log_error "Python tests failed with exit code $EXIT_CODE"
         exit $EXIT_CODE
+    fi
+    
+    # ==========================================================================
+    # CRITICAL: Detect false positive (all tests skipped = no real verification)
+    # ==========================================================================
+    if [[ -f "$json_report" ]]; then
+        local passed=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('passed',0))" 2>/dev/null || echo "0")
+        local failed=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('failed',0))" 2>/dev/null || echo "0")
+        local skipped=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('skipped',0))" 2>/dev/null || echo "0")
+        local total=$(python3 -c "import json; d=json.load(open('$json_report')); print(d.get('summary',{}).get('total',0))" 2>/dev/null || echo "0")
+        
+        log_info "Test Summary: passed=$passed, failed=$failed, skipped=$skipped, total=$total"
+        
+        # FAIL if all tests were skipped (false positive protection)
+        if [[ "$total" -gt 0 ]] && [[ "$passed" -eq 0 ]] && [[ "$failed" -eq 0 ]]; then
+            log_fatal "FALSE POSITIVE DETECTED: All $skipped tests were SKIPPED, no actual tests ran!"
+            echo ""
+            log_error "This is NOT a valid CI pass. Ensure VELO_FORCE_HEAVY=1 is set for full regression."
+            exit 1
+        fi
+        
+        rm -f "$json_report"
+    else
+        log_warn "No JSON report found, cannot validate test execution"
     fi
     
     log_success "Python tests passed"
@@ -414,9 +469,21 @@ run_full_ci() {
     check_env_fast
     setup_python_env "$venv_path"
     
-    # SSOT: Force ABI Alignment
-    export PYO3_PYTHON=$(uv python find)
-    log_info "ABI Alignment: PYO3_PYTHON=$PYO3_PYTHON"
+    # SSOT: Force ABI Alignment - Resolve symlinks to find actual library
+    RAW_PYTHON=$(uv python find)
+    export PYO3_PYTHON=$(readlink -f "$RAW_PYTHON")
+    log_info "ABI Alignment: PYO3_PYTHON=$PYO3_PYTHON (resolved from $RAW_PYTHON)"
+
+    # RFC-0010: Refresh LD_LIBRARY_PATH for the new python (Linux only)
+    if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+        PY_LIB_PATH="$(dirname "$(dirname "$PYO3_PYTHON")")/lib"
+        if [[ -d "$PY_LIB_PATH" ]]; then
+            export LD_LIBRARY_PATH="${PY_LIB_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+            log_info "Updated LD_LIBRARY_PATH for Velo Runtime: $PY_LIB_PATH"
+        else
+            log_warn "Could not look up Python lib dir at $PY_LIB_PATH"
+        fi
+    fi
     
     echo ""
     echo "==================== Phase 2: Build ===================="

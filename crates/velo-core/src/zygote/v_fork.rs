@@ -298,16 +298,27 @@ pub fn spawn_worker(
     let elapsed_ms = elapsed.as_millis() as u64;
 
     // We only check SLO if fork succeeded (otherwise it's an error, handled elsewhere)
-    if let core_ipc::ZygoteResponse::Forked { worker_pid, .. } = &response {
+    if let core_ipc::ZygoteResponse::Forked {
+        worker_pid,
+        is_warm,
+        ..
+    } = &response
+    {
         if config.metrics_enabled && elapsed_ms >= config.slo_fork_latency_ms {
             log::warn!(
-                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {})",
+                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {}, warm: {})",
                 elapsed_ms,
                 config.slo_fork_latency_ms,
-                worker_pid
+                worker_pid,
+                is_warm
             );
         } else if config.metrics_enabled {
-            log::debug!("✅ Fork latency {}ms (PID: {})", elapsed_ms, worker_pid);
+            log::debug!(
+                "✅ Fork latency {}ms (PID: {}, warm: {})",
+                elapsed_ms,
+                worker_pid,
+                is_warm
+            );
         }
     }
 
@@ -315,6 +326,7 @@ pub fn spawn_worker(
         core_ipc::ZygoteResponse::Forked {
             worker_pid,
             exit_code,
+            ..
         } => {
             // If we have an exit code already (sync mode), we can write it to the temp file
             // to reuse the existing WorkerHandle::wait() logic or just handle it here.
@@ -409,6 +421,143 @@ fn spawn_direct(
         Some(stderr_path),
         Some(exit_code_path),
     ))
+}
+
+/// Fork a new worker via an existing Zygote stream
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_worker_via_stream(
+    zygote_stream: &mut crate::zygote::core_ipc::ZygoteStream,
+    script: &Path,
+    module: Option<String>,
+    args: &[&str],
+    async_mode: bool,
+    fast_mode: bool,
+    bundle_path: Option<PathBuf>,
+    project_root: Option<PathBuf>,
+    max_bundle_size: Option<u64>,
+    shm_file: Option<&std::fs::File>,
+    env_overrides: Option<HashMap<String, String>>,
+    config: &VeloConfig,
+) -> Result<WorkerHandle> {
+    // Canonicalize script path
+    let script_path = if script.is_absolute() {
+        script.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(script))
+            .unwrap_or_else(|_| script.to_path_buf())
+    };
+
+    // Create tempfiles for I/O capture
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+
+    let stdout_path = std::env::temp_dir().join(format!("velo-out-{}-{}.tmp", pid, timestamp));
+    let stderr_path = std::env::temp_dir().join(format!("velo-err-{}-{}.tmp", pid, timestamp));
+    let exit_code_path = std::env::temp_dir().join(format!("velo-exit-{}-{}.tmp", pid, timestamp));
+
+    let (fd_to_pass, shm_size) = if let Some(file) = shm_file {
+        use std::os::unix::io::AsRawFd;
+        let meta = file
+            .metadata()
+            .map_err(|e| ZygoteError::IOError(e.to_string()))?;
+        (Some(file.as_raw_fd()), Some(meta.len() as usize))
+    } else {
+        (None, None)
+    };
+
+    let start_time = std::time::Instant::now();
+
+    let request = core_ipc::ZygoteCommand::Fork {
+        script_path: script_path.clone(),
+        module: module.clone(),
+        args: args.iter().map(|s| s.to_string()).collect(),
+        async_mode,
+        stdout_path: Some(stdout_path.clone()),
+        stderr_path: Some(stderr_path.clone()),
+        exit_code_path: Some(exit_code_path.clone()),
+        fast_mode,
+        bundle_path,
+        project_root: project_root.clone(),
+        max_bundle_size,
+        env: {
+            let mut base_env = crate::lifecycle::EnvironmentShield::new(config).compile_env();
+            if let Some(overrides) = env_overrides.clone() {
+                for (k, v) in overrides {
+                    base_env.insert(k, v);
+                }
+            }
+            // Transition: Ensure VIRTUAL_ENV is passed for auto-discovery
+            if let Some(ref pr) = project_root {
+                base_env.insert(
+                    "VIRTUAL_ENV".to_string(),
+                    pr.join(".venv").to_string_lossy().to_string(),
+                );
+            }
+            Box::new(base_env)
+        },
+        shm_size,
+        request_id: Some(uuid::Uuid::now_v7().to_string()),
+    };
+
+    let response = match zygote_stream.send_command(&request, fd_to_pass) {
+        Ok(resp) => {
+            ZygoteCircuitBreaker::record_success();
+            resp
+        }
+        Err(e) => {
+            log::error!("❌ Zygote Stream IPC failure: {}", e);
+            ZygoteCircuitBreaker::record_failure(config);
+            return Err(e);
+        }
+    };
+
+    // SLO checking logic...
+    let elapsed_ms = start_time.elapsed().as_millis() as u64;
+    if let core_ipc::ZygoteResponse::Forked {
+        worker_pid,
+        is_warm,
+        ..
+    } = &response
+    {
+        #[allow(clippy::collapsible_if)]
+        if config.metrics_enabled && elapsed_ms >= config.slo_fork_latency_ms {
+            log::warn!(
+                "⚠️ SLO Violation: Fork latency {}ms > {}ms (PID: {}, warm: {})",
+                elapsed_ms,
+                config.slo_fork_latency_ms,
+                worker_pid,
+                is_warm
+            );
+        }
+    }
+
+    match response {
+        core_ipc::ZygoteResponse::Forked {
+            worker_pid,
+            exit_code,
+            ..
+        } => {
+            if let Some(code) = exit_code {
+                let _ = std::fs::write(&exit_code_path, code.to_string());
+            }
+
+            Ok(WorkerHandle::new(
+                worker_pid,
+                Some(stdout_path),
+                Some(stderr_path),
+                Some(exit_code_path),
+            ))
+        }
+        core_ipc::ZygoteResponse::Error { message } => Err(ZygoteError::ForkFailed(message)),
+        _ => Err(ZygoteError::ProtocolError(
+            "Unexpected response to Fork command".to_string(),
+        )),
+    }
 }
 
 #[cfg(not(unix))]

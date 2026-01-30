@@ -4,8 +4,9 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest_utils import get_velo_binary
 
-VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../target/debug/velo"))
+VELO_BIN = get_velo_binary()
 
 
 @pytest.mark.skipif(not os.path.exists(VELO_BIN), reason="Binary missing")

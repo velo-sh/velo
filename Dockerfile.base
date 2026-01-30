@@ -55,20 +55,24 @@ WORKDIR /workspace
 # Copy workspace structure for cargo fetch to work
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
-COPY crates/*/Cargo.toml ./crates-tmp/
 COPY velo_macros/Cargo.toml ./velo_macros/
 
-# Create stub crates for cargo fetch
-RUN for dir in crates-tmp/*; do \
-        crate=$(basename "$dir" .toml); \
+# Copy each crate's Cargo.toml with directory structure preserved
+COPY crates/velo-cli/Cargo.toml ./crates/velo-cli/
+COPY crates/velo-core/Cargo.toml ./crates/velo-core/
+COPY crates/velo-graph/Cargo.toml ./crates/velo-graph/
+COPY crates/velo-protocol/Cargo.toml ./crates/velo-protocol/
+COPY crates/velo-serve/Cargo.toml ./crates/velo-serve/
+COPY crates/velo-test/Cargo.toml ./crates/velo-test/
+
+# Create stub lib.rs files for cargo fetch to work
+RUN for crate in velo-cli velo-core velo-graph velo-protocol velo-serve velo-test; do \
         mkdir -p "crates/$crate/src"; \
-        mv "$dir" "crates/$crate/Cargo.toml" 2>/dev/null || true; \
         echo "" > "crates/$crate/src/lib.rs"; \
     done && \
-    rm -rf crates-tmp && \
     mkdir -p velo_macros/src && echo "" > velo_macros/src/lib.rs && \
     cargo fetch && \
-    rm -rf crates velo_macros/src
+    rm -rf crates/*/src velo_macros/src
 
 # Default command: show usage
 CMD ["bash", "-c", "echo 'Velo CI Environment Ready' && echo 'Python:' && python --version && echo 'Rust:' && rustc --version && echo '' && echo 'Run CI with: cargo build --release && pytest tests/'"]

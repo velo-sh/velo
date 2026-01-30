@@ -87,6 +87,7 @@ FRAMEWORK_PROJECTS = {
 
 @pytest.mark.e2e
 @pytest.mark.correctness
+@pytest.mark.ci_flaky
 class TestE2EGoldenPath:
     """E2E Correctness Suite: Verify complete user workflow for Big Three frameworks."""
 

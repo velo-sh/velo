@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::fs;
 
+use crate::common::env_governance;
+
 /// Clean up a stale socket file if it exists.
 ///
 /// RFC-0011 B.2.4: Socket Hygiene
@@ -208,6 +210,14 @@ pub fn supports_abstract_sockets() -> bool {
 /// Result type for security operations
 pub type SecurityResult<T> = std::result::Result<T, String>;
 
+/// RFC-0012 §3.1: The Airlock Trait
+/// Defines the behavior for isolating the User App process from the Supervisor.
+pub trait Airlock {
+    /// Enters the "App Tier" by purging the environment and rebuilding it
+    /// with strict whitelisting for the specific user venv.
+    fn enter_app_tier(&self, cmd: &mut Command, user_venv_path: &Path) -> SecurityResult<()>;
+}
+
 /// RFC-0012: Environment Shield (Surgical Sanitization)
 ///
 /// Prevents "Environment Starvation" while blocking "Dangerous Toxins".
@@ -221,6 +231,29 @@ impl Default for EnvironmentShield {
     fn default() -> Self {
         use crate::config::VeloConfig;
         Self::new(&VeloConfig::default())
+    }
+}
+
+impl Airlock for EnvironmentShield {
+    fn enter_app_tier(&self, cmd: &mut Command, user_venv_path: &Path) -> SecurityResult<()> {
+        // SEC-001: Clear & Rebuild (Allow-List only)
+        cmd.env_clear();
+
+        // 1. Compile base security environment
+        let mut env = self.compile_env();
+
+        // 2. Inject VIRTUAL_ENV and ensure it's trusting
+        env.insert(
+            "VIRTUAL_ENV".to_string(),
+            user_venv_path.to_string_lossy().to_string(),
+        );
+
+        // 3. Inject into Command
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+
+        Ok(())
     }
 }
 
@@ -352,66 +385,59 @@ impl EnvironmentShield {
 
     /// Compile a surgical whitelist of environment variables for forked workers.
     /// RFC-0012: Prevents environment starvation and токсин injection.
+    #[allow(clippy::collapsible_if)]
     pub fn compile_env(&self) -> std::collections::HashMap<String, String> {
         let mut env = std::collections::HashMap::new();
 
-        // 1. Apply Whitelist
-        for var in &self.env_whitelist {
-            // DEF-72-S02: Block untrusted VELO_* variables even if whitelisted
-            if var.starts_with("VELO_") && var.contains("UNTRUSTED") {
-                continue;
-            }
+        // 1. Apply System Whitelist (SAFE_SYSTEM_VARS)
+        for var in env_governance::SAFE_SYSTEM_VARS {
             if let Ok(val) = std::env::var(var) {
                 // Special handling for PATH (Provenance Guard §3.5)
-                if var == "PATH"
-                    && let Ok(cleaned) = self.validate_path_variable(&val)
-                {
-                    env.insert(var.clone(), cleaned);
+                if *var == "PATH" {
+                    if let Ok(cleaned) = self.validate_path_variable(&val) {
+                        env.insert(var.to_string(), cleaned);
+                    }
                 } else {
-                    env.insert(var.clone(), val);
+                    env.insert(var.to_string(), val);
                 }
             }
         }
 
-        // 2. Surgical PYTHONPATH (RFC §4.0)
-        if let Ok(val) = std::env::var("PYTHONPATH")
-            && let Ok(cleaned) = self.validate_path_variable(&val)
-        {
-            if !cleaned.is_empty() {
-                env.insert("PYTHONPATH".to_string(), cleaned);
-            } else {
-                // SEC-002: Ensure we REMOVE/OVERWRITE any uncleaned version from the whitelist loop
-                env.remove("PYTHONPATH");
+        // 2. Apply Custom Whitelist from Config
+        for var in &self.env_whitelist {
+            // Block untrusted VELO_* variables even if whitelisted
+            if var.starts_with("VELO_") && var.contains("UNTRUSTED") {
+                continue;
+            }
+            if let Ok(val) = std::env::var(var) {
+                env.insert(var.clone(), val);
             }
         }
 
-        // 3. High-Performance Isolation (RFC-0011 HPC-001)
-        let thread_val = self.hpc_threads.to_string();
-        env.insert("OMP_NUM_THREADS".to_string(), thread_val.clone());
-        env.insert("MKL_NUM_THREADS".to_string(), thread_val.clone());
-        env.insert("OPENBLAS_NUM_THREADS".to_string(), thread_val.clone());
-        env.insert("VECLIB_MAXIMUM_THREADS".to_string(), thread_val.clone());
-        env.insert("NUMEXPR_NUM_THREADS".to_string(), thread_val);
-
-        // 4. Python Specific Isolation
-        // RFC-0012: Ensure worker processes are isolated from user site-packages
-        env.insert("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string());
-        env.insert("PYTHONUNBUFFERED".to_string(), "1".to_string());
-        env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
-        env.insert("PYTHONUTF8".to_string(), "1".to_string());
-        env.insert("PYTHONNOUSERSITE".to_string(), "1".to_string());
-        env.insert("PYTHONUSERBASE".to_string(), "/dev/null".to_string()); // Block user-site installation
-
-        // 5. Velo Internal Protocol (Forensic Logging / Test Infrastructure)
-        // Ensure CI/Test log locations are propagated to children
-        if let Ok(log_dir) = std::env::var("VELO_SESSION_LOG_DIR") {
-            env.insert("VELO_SESSION_LOG_DIR".to_string(), log_dir);
+        // 3. Surgical PYTHONPATH (RFC §4.0)
+        if let Ok(val) = std::env::var("PYTHONPATH") {
+            if let Ok(cleaned) = self.validate_path_variable(&val) {
+                if !cleaned.is_empty() {
+                    env.insert("PYTHONPATH".to_string(), cleaned);
+                }
+            }
         }
 
-        // RFC-0012: Block any potentially toxic environment variables not explicitly whitelisted
-        for var in &["PYTHONUSERBASE", "PYTHONEXECUTABLE"] {
-            if !self.env_whitelist.contains(&(*var).to_string()) {
-                env.remove(*var);
+        // 4. High-Performance Isolation (HPC_VARS)
+        let thread_val = self.hpc_threads.to_string();
+        for var in env_governance::HPC_VARS {
+            env.insert(var.to_string(), thread_val.clone());
+        }
+
+        // 5. Python Specific Isolation (PYTHON_ISOLATION_VARS)
+        for (var, val) in env_governance::PYTHON_ISOLATION_VARS {
+            env.insert(var.to_string(), val.to_string());
+        }
+
+        // 6. Velo Internal Protocol (VELO_INTERNAL_VARS)
+        for var in env_governance::VELO_INTERNAL_VARS {
+            if let Ok(val) = std::env::var(var) {
+                env.insert(var.to_string(), val);
             }
         }
 

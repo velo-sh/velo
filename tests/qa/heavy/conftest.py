@@ -10,20 +10,32 @@ import psutil
 import pytest
 
 # =============================================================================
-# CI FLAKY AUTO-SKIP FOR HEAVY TESTS (方案A: Skip heavy tests in CI)
+# CI FLAKY AUTO-SKIP FOR HEAVY TESTS (Option A: Skip heavy tests in CI)
 # =============================================================================
 
 
 def pytest_collection_modifyitems(config, items):
     """Auto-skip heavy tests in CI environment - these are too resource-intensive."""
-    if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("VELO_FORCE_HEAVY") == "1":
-        return  # Only apply in CI unless forced
+    is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
 
-    skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
+    allow_high_memory = os.environ.get("VELO_ALLOW_HIGH_MEMORY") == "1"
 
-    for item in items:
-        # All tests in this directory get the skip marker in CI
-        item.add_marker(skip_in_ci)
+    # Skip all heavy tests in CI unless VELO_FORCE_HEAVY=1
+    # if is_ci and not force_heavy:
+    #     skip_in_ci = pytest.mark.skip(reason="Heavy tests: skipped in CI (resource constraints)")
+    #     for item in items:
+    #         item.add_marker(skip_in_ci)
+    #     return
+
+    # Even with VELO_FORCE_HEAVY=1, skip high_memory tests unless VELO_ALLOW_HIGH_MEMORY=1
+    # These tests spawn 50-100+ workers and cause OOM (exit 137) in Docker/GitHub Actions
+    if is_ci and not allow_high_memory:
+        skip_high_memory = pytest.mark.skip(
+            reason="High memory test: skipped in CI (causes OOM). Set VELO_ALLOW_HIGH_MEMORY=1 to enable."
+        )
+        for item in items:
+            if item.get_closest_marker("high_memory"):
+                item.add_marker(skip_high_memory)
 
 
 # Add project root and python directory to sys.path

@@ -5,13 +5,12 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::Path;
-use std::time::Duration;
 
 use crate::cmd::cmd_debug_pre_flight;
 use velo_core::common::paths::VeloPaths;
 use velo_core::config::VeloConfig;
 
-use velo_core::zygote::{ZygoteLauncher, core_ipc as ipc};
+use velo_core::zygote::ZygoteLauncher;
 
 #[derive(Parser, Debug)]
 #[command(name = "debug", about = "Access internal debugging tools")]
@@ -81,61 +80,20 @@ fn cmd_debug_zygote(verbose: bool, json: bool) -> Result<()> {
     }
 
     // Start Zygote (foreground=false, but we will stop it manually)
-    // We pass empty preload list
+    // launcher.start() internally:
+    // 1. Creates the listener socket
+    // 2. Spawns Python bootstrap
+    // 3. Accepts connection from Python
+    // 4. Performs handshake
+    // 5. Verifies Status
+    // If start() returns Ok, the Zygote is fully ready.
     launcher
         .start(&[], None, false, &config)
         .context("Failed to start Zygote process")?;
 
-    // Wait for socket with timeout
-    let start = std::time::Instant::now();
-    let timeout = Duration::from_secs(5);
-    let mut socket_ready = false;
-
-    while start.elapsed() < timeout {
-        if socket_path.exists() {
-            socket_ready = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-
-    if !socket_ready {
-        // Try to read stderr from child if possible?
-        // Launcher::start detaches or keeps child. In current impl, it might detach.
-        bail!("Timed out waiting for Zygote socket creation (>5s)");
-    }
-
     if !json {
         println!("      • Socket created: ✅");
-    }
-
-    // Perform Handshake
-    let handshake_cmd = ipc::ZygoteCommand::Handshake {
-        version: ipc::PROTOCOL_VERSION,
-        capabilities: vec!["debug".to_string()],
-        request_id: Some(uuid::Uuid::now_v7().to_string()),
-    };
-
-    match ipc::send_command(&socket_path, handshake_cmd, None) {
-        Ok(ipc::ZygoteResponse::Handshake {
-            version,
-            capabilities,
-        }) => {
-            if !json {
-                println!(
-                    "      • Handshake: ✅ (v{}, capabilities: {:?})",
-                    version, capabilities
-                );
-            }
-        }
-        Ok(resp) => {
-            let _ = launcher.stop();
-            bail!("Unexpected handshake response: {:?}", resp);
-        }
-        Err(e) => {
-            let _ = launcher.stop();
-            bail!("Handshake failed: {}", e);
-        }
+        println!("      • Handshake: ✅ (performed by launcher.start())");
     }
 
     // Stop Zygote

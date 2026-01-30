@@ -322,11 +322,6 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
             }
             Err(e) => return Err(e),
         }
-    } else {
-        // PERF-FIX: Do not run suggest_app on every startup!
-        // It spawns a python process (~100ms overhead) just to check for typos.
-        // This defeats the purpose of Kinetic Protocol.
-        // Future improvement: Move this to error handling path if server fails.
     }
 
     // Convert to ServeArgs
@@ -335,6 +330,9 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     // Load config (Phase 6 security)
     let config =
         velo_core::config::VeloConfig::load_with_overrides(&VeloPaths::pyproject(&project_dir));
+
+    // TITANIUM RULE: Audit Reporting (P3-001)
+    print_governance_table(&serve_args, &config, &project_dir);
 
     // Run the server with reload loop (RFC-0010)
     while let crate::runner::ServerExit::Reload =
@@ -352,6 +350,62 @@ pub fn cmd_serve(args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_governance_table(
+    args: &ServeArgs,
+    config: &velo_core::config::VeloConfig,
+    project_dir: &Path,
+) {
+    use colored::Colorize;
+
+    println!("\n{}", "TITANIUM GOVERNANCE AUDIT".white().bold().on_blue());
+    println!("{:<25} Value", "Parameter".bold());
+    println!("{}", "─".repeat(60));
+
+    // Runtime Isolation
+    println!(
+        "{:<25} {}",
+        "Runtime Mode",
+        if args.use_zygote {
+            "Zygote (Zero-Config)"
+        } else {
+            "Legacy (Subprocess)"
+        }
+    );
+    println!(
+        "{:<25} {}",
+        "Auto-Sync",
+        if config.auto_sync_enabled {
+            "Enabled".green()
+        } else {
+            "Disabled".yellow()
+        }
+    );
+    println!(
+        "{:<25} {}",
+        "Circuit Breaker",
+        if config.circuit_breaker_enabled {
+            "Active".green()
+        } else {
+            "Disabled".red()
+        }
+    );
+
+    // Security
+    let isolation = if cfg!(target_os = "linux") && config.strict_optimizations {
+        "Namespaced".green()
+    } else {
+        "Standard".yellow()
+    };
+    println!("{:<25} {}", "Isolation Level", isolation);
+    println!("{:<25} {}", "Airlock Threads", config.security_hpc_threads);
+
+    // Project
+    println!("{:<25} {:?} (Secure)", "Project Root", project_dir);
+
+    println!("{}", "─".repeat(60));
+    println!();
 }
 
 #[cfg(test)]

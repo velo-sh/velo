@@ -58,7 +58,7 @@ def compile_lib(source_name: str, output_name: str, workspace: Path) -> Path:
     return out
 
 
-def run_velo_in_ws(*args: str, workspace: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_velo_in_ws(*args: str, workspace: Path, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Run velo command within the test workspace."""
     env = os.environ.copy()
     # Ensure VIRTUAL_ENV is NOT set to avoid path containment issues if running from outside

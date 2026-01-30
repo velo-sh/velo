@@ -1,18 +1,34 @@
 import os
 import subprocess
 import time
+
+# Read SSOT from constants.toml
+import tomllib
 from pathlib import Path
+
+_constants_path = Path(__file__).parent.parent.parent.parent.parent / "config" / "constants.toml"
+with open(_constants_path, "rb") as f:
+    _constants = tomllib.load(f)
+
+# In Docker/CI, use SSOT-defined workers to avoid memory pressure
+_is_constrained_env = os.environ.get("CI") == "true" or os.path.exists("/.dockerenv")
+_xdist_workers = str(_constants.get("ci_xdist_workers", 2)) if _is_constrained_env else "4"
+_subprocess_timeout = _constants.get("ci_subprocess_timeout", 120)
 
 
 def test_xdist_with_zygote_acceleration():
     """
-    Verify that velo test -n 4 --zygote works and provides acceleration.
+    Verify that velo test -n N --zygote works and provides acceleration.
+    In Docker/CI, uses -n 1 to avoid memory issues.
     """
     # Create a small project with many tests
     test_dir = Path("tests/qa/xdist_perf")
     test_dir.mkdir(parents=True, exist_ok=True)
 
-    for i in range(100):
+    # Fewer tests in constrained env to speed up
+    num_tests = 20 if _is_constrained_env else 100
+
+    for i in range(num_tests):
         with open(test_dir / f"test_group_{i}.py", "w") as f:
             f.write(f"""
 import time
@@ -29,16 +45,22 @@ def test_b_{i}():
         # 1. Run with xdist but NO zygote (baseline)
         start = time.perf_counter()
         result_vanilla = subprocess.run(
-            ["uv", "run", "pytest", str(test_dir), "-n", "4"], capture_output=True, text=True
+            ["uv", "run", "pytest", str(test_dir), "-n", _xdist_workers],
+            capture_output=True,
+            text=True,
+            timeout=_subprocess_timeout,
         )
         duration_vanilla = time.perf_counter() - start
-        assert result_vanilla.returncode == 0
+        assert result_vanilla.returncode == 0, f"Vanilla pytest failed: {result_vanilla.stderr}"
 
         # 2. Run with xdist + zygote
         # We use 'velo test' which sets up everything
         start = time.perf_counter()
         result_velo = subprocess.run(
-            ["./target/release/velo", "test", str(test_dir), "-n", "4", "--zygote"], capture_output=True, text=True
+            ["./target/release/velo", "test", str(test_dir), "-n", _xdist_workers, "--zygote"],
+            capture_output=True,
+            text=True,
+            timeout=_subprocess_timeout,
         )
         duration_velo = time.perf_counter() - start
 
@@ -46,8 +68,9 @@ def test_b_{i}():
             print(result_velo.stdout)
             print(result_velo.stderr)
 
-        assert result_velo.returncode == 0
-        assert "Passed:  200" in result_velo.stdout or "200 passed" in result_velo.stdout
+        expected_passed = num_tests * 2
+        assert result_velo.returncode == 0, f"Velo test failed: {result_velo.stderr}"
+        assert f"Passed:  {expected_passed}" in result_velo.stdout or f"{expected_passed} passed" in result_velo.stdout
 
         # In a small test suite, overhead might dominate, but let's check it doesn't crash
         # and it should ideally be faster or comparable
@@ -65,8 +88,8 @@ def test_shared_zygote_lifecycle():
     Verify that Zygote is started only once and shared by all workers.
     """
     # Start Zygote manually
-    subprocess.run(["./target/release/velo", "zygote", "stop"], capture_output=True)
-    subprocess.run(["./target/release/velo", "zygote", "start", "--daemon"], capture_output=True)
+    subprocess.run(["./target/release/velo", "zygote", "stop"], capture_output=True, timeout=30)
+    subprocess.run(["./target/release/velo", "zygote", "start", "--daemon"], capture_output=True, timeout=30)
 
     try:
         # Run tests that check for Shared Zygote PID
@@ -95,9 +118,12 @@ def test_verify_zygote_presence():
     assert True, "Test executed in Zygote-forked worker successfully"
 """)
 
-        # Use velo test binary directly instead of --velo flag
+        # Use velo test binary directly with SSOT workers
         result = subprocess.run(
-            ["./target/release/velo", "test", test_file, "-n", "2", "--zygote", "-v"], capture_output=True, text=True
+            ["./target/release/velo", "test", test_file, "-n", _xdist_workers, "--zygote", "-v"],
+            capture_output=True,
+            text=True,
+            timeout=_subprocess_timeout,
         )
         if result.returncode != 0:
             print(result.stdout)

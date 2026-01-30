@@ -13,6 +13,7 @@ from conftest_utils import T_MEDIUM, T_SHORT
 # Based on QA-SOP §4.4 (Agent D responsibilities)
 
 
+@pytest.mark.high_memory
 @pytest.mark.tier4
 @pytest.mark.xfail(
     reason="DEF-72-FLOOD: Zygote _read_exactly lacks timeout protection. "
@@ -87,6 +88,7 @@ def test_CHAOS_621_protocol_flood(isolated_env):
         subprocess.run([env.velo, "zygote", "stop"], env=cmd_env, capture_output=True, timeout=T_SHORT)
 
 
+@pytest.mark.high_memory
 @pytest.mark.tier4
 def test_CHAOS_622_signal_during_fork(isolated_env):
     """Send SIGINT to Zygote during a Fork operation."""
@@ -155,6 +157,7 @@ def test_CHAOS_622_signal_during_fork(isolated_env):
             proc.kill()
 
 
+@pytest.mark.high_memory
 @pytest.mark.tier4
 @pytest.mark.heavy
 @pytest.mark.timeout(300)

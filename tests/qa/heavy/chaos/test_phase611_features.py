@@ -10,7 +10,14 @@ Run after L0 passes.
 Following QA SOP v2.2.
 """
 
+import os
+import sys
+from pathlib import Path
 
+import pytest
+
+
+@pytest.mark.high_memory
 class TestL1Features:
     """L1: Feature tests for Zygote Worker Integration."""
 
@@ -79,10 +86,6 @@ class TestL1Features:
         2. Check for socket files or abstract namespace
         3. Verify sockets are accessible
         """
-        import os
-        import sys
-        from pathlib import Path
-
         proc = velo_serve_fixture.start("main:app", workers=2)
         proc.wait_ready()
 

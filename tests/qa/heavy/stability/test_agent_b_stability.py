@@ -1,5 +1,5 @@
 # Agent B (Stability Guardian) - Phase 6.1 Serve & Analyze
-# 保守派 QA: "Golden path must never break."
+# Conservative QA: "Golden path must never break."
 
 import sys
 

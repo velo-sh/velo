@@ -114,11 +114,12 @@ def get_child_pids(parent_pid: int) -> list[int]:
 class ComprehensiveTestEnv:
     """Test environment for comprehensive tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, with_project: bool = True) -> None:
         self.path = Path(tempfile.mkdtemp(prefix="velo_comp_"))
         self.velo = get_velo_binary()
         self.procs: list[subprocess.Popen[str]] = []
         self._port_counter = 19200
+        self.with_project = with_project
 
     def next_port(self) -> int:
         """Get unique port for test using socket binding."""
@@ -126,9 +127,12 @@ class ComprehensiveTestEnv:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
-            return s.getsockname()[1]
+            return int(s.getsockname()[1])
 
-    def setup(self, with_project: bool = True) -> "ComprehensiveTestEnv":
+    def setup(self, with_project: bool | None = None) -> "ComprehensiveTestEnv":
+        if with_project is None:
+            with_project = self.with_project
+
         subprocess.run(["uv", "venv", "--quiet"], cwd=self.path, check=True, capture_output=True)
         if with_project:
             (self.path / "pyproject.toml").write_text(
@@ -137,6 +141,8 @@ name = "test-app"
 version = "0.1.0"
 dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             )
+            # Pre-install dependencies to prevent 'velo serve' from hanging on 'uv sync'
+            self.install("fastapi", "uvicorn", "msgpack")
         return self
 
     def run_velo(self, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -278,8 +284,7 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
             pass
 
     def __enter__(self) -> "ComprehensiveTestEnv":
-        # By default, setup with project metadata.
-        # Individual tests like l0_003 can override if they call setup(False) manually.
+        # By default, setup with project metadata defined in __init__
         return self.setup()
 
     def __exit__(self, *args: Any) -> None:
@@ -313,9 +318,8 @@ class TestL0Smoke:
 
     def test_l0_003_uvicorn_dependency_message(self):
         """Without uvicorn, show clear dependency error."""
-        with ComprehensiveTestEnv() as env:
+        with ComprehensiveTestEnv(with_project=False) as env:
             # Explicitly setup WITHOUT project metadata to test dependency error
-            env.setup(with_project=False)
             env.create_app("main.py", "app = None")
             # Do NOT install uvicorn - test the error message
             proc = env.serve("main:app", env.next_port(), capture=True)

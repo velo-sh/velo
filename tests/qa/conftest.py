@@ -71,11 +71,12 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "tier2: Standard tests (<10min) - full functional integration")
     config.addinivalue_line("markers", "tier3: Heavy tests (>10min) - stress, resource leakage")
     config.addinivalue_line("markers", "tier4: Chaos/Flood tests - extreme scenarios")
+    config.addinivalue_line("markers", "high_memory: High memory tests (>4GB) - skip in Docker")
     config.addinivalue_line("markers", "slow: Tests that install real packages (slow)")
     config.addinivalue_line("markers", "perf: Performance benchmark tests")
     config.addinivalue_line("markers", "chaos: Extreme scenarios and process destruction")
     config.addinivalue_line("markers", "flood: High-concurrency / IPC flooding tests")
-    # CI Flaky test markers (方案A: Skip flaky tests in CI)
+    # CI Flaky test markers (Option A: Skip flaky tests in CI)
     config.addinivalue_line("markers", "ci_flaky: Tests that are flaky in CI environment")
     config.addinivalue_line("markers", "zygote_flaky: Zygote tests that fail in CI due to timing/resources")
     config.addinivalue_line("markers", "websocket_wip: WebSocket tests for features not yet implemented")
@@ -95,7 +96,7 @@ def pytest_configure(config):
 
 
 # =============================================================================
-# CI FLAKY TEST AUTO-SKIP (方案A: Skip flaky tests in CI)
+# CI FLAKY TEST AUTO-SKIP (Option A: Skip flaky tests in CI)
 # =============================================================================
 
 # Markers that indicate a test is flaky in CI
@@ -115,12 +116,36 @@ def pytest_collection_modifyitems(config, items):
         return  # Only apply in CI unless forced
 
     skip_ci_flaky = pytest.mark.skip(reason="CI flaky: skipped in CI environment")
+    skip_high_mem = pytest.mark.skip(reason="High memory (>4GB): skipped in CI to prevent OOM")
+
+    # Bucket tests for reordering
+    fast_tests = []
+    slow_tests = []  # Tier 3 (Stress/Leakage)
+    heavy_tests = []  # Chaos, Flood, High Memory (Resource Hungry)
 
     for item in items:
         # Check if test has any of the flaky markers
         item_markers = {m.name for m in item.iter_markers()}
+
+        # 1. Apply CI Flaky Skips
         if item_markers & _CI_FLAKY_MARKERS:
+            # print(f"DEBUG: Skipping {item.name} due to markers: {item_markers & _CI_FLAKY_MARKERS}")
             item.add_marker(skip_ci_flaky)
+
+        # 1.5 Skip High Memory
+        if "high_memory" in item_markers:
+            item.add_marker(skip_high_mem)
+
+        # 2. Sort into buckets
+        if item_markers & {"high_memory", "chaos", "flood", "tier4"}:
+            heavy_tests.append(item)
+        elif "tier3" in item_markers:
+            slow_tests.append(item)
+        else:
+            fast_tests.append(item)
+
+    # Reassemble: Fast -> Slow -> Heavy (Last)
+    items[:] = fast_tests + slow_tests + heavy_tests
 
 
 # =============================================================================
@@ -260,10 +285,15 @@ def velo_binary():
 
     # Check for platform mismatch
     if binary_platform != "unknown" and binary_platform != current_platform:
-        pytest.skip(
+        print(
+            f"DEBUG: Skipping due to platform mismatch! binary={binary_platform} system={current_platform} path={binary_path}"
+        )
+        raise RuntimeError(
             f"Binary platform mismatch: binary={binary_platform}, system={current_platform}. "
             f"Rebuild with 'cargo build --release'"
         )
+    # else:
+    #     print(f"DEBUG: Binary OK: {binary_path} ({binary_platform} on {current_platform})")
 
     return binary_path
 
@@ -305,13 +335,14 @@ def pytest_runtest_makereport(item, call):
         sys.stderr.write(f"\n[Artifacts] Failure detected in {item.name}. Bundling logs...\n")
 
         try:
-            # Locate binary
-            root_dir = Path(__file__).parents[2]
-            velo_bin = root_dir / "target/debug/velo"
-            if not velo_bin.exists():
-                velo_bin = root_dir / "target/release/velo"
+            # Locate binary using SSOT
+            try:
+                velo_bin_path = get_velo_binary()
+                velo_bin = Path(velo_bin_path)
+            except Exception:
+                velo_bin = None
 
-            if velo_bin.exists():
+            if velo_bin and velo_bin.exists():
                 log_dir = None
 
                 # Priority 1: Use session-scoped log directory (P1 fix)

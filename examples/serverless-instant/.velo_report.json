@@ -1,0 +1,12 @@
+{
+    "timestamp": "",
+    "benchmarks": [
+        {
+            "name": "Serverless Computing",
+            "cpython_time": 318.61,
+            "velo_time": 1.45,
+            "cpython_rss": 63.0,
+            "velo_rss": 64.8
+        }
+    ]
+}

@@ -22,6 +22,7 @@ COLLISION_TARGETS = [
 
 
 @pytest.mark.heavy
+@pytest.mark.high_memory
 class TestSinOfCollision:
     """
     CHAOS-005: The "Sin of Collision" Suite.

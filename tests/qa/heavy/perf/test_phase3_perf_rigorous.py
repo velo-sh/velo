@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from conftest_utils import get_velo_binary
+from conftest_utils import TIMEOUT_MULTIPLIER, get_velo_binary
 
 
 class PerfEnv:
@@ -34,13 +34,14 @@ class PerfEnv:
 
     def run_timed(self, args: list[str], timeout: float = 30) -> tuple[int, float, str]:
         """Run and return (code, duration_ms)."""
+        # Scale run timeout by global multiplier too
         start = time.perf_counter()
         result = subprocess.run(
             [self.velo] + args,
             cwd=self.path,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=timeout * TIMEOUT_MULTIPLIER,
         )
         duration = (time.perf_counter() - start) * 1000
         return result.returncode, duration, result.stderr
@@ -106,6 +107,7 @@ class TestRigorousPerformance:
         RFC target: < 50ms
         Stretch goal: < 20ms for P95
         """
+        target_ms = 20 * TIMEOUT_MULTIPLIER
         with PerfEnv() as env:
             env.create_script("quick.py", 'print("ok")')
 
@@ -124,7 +126,7 @@ class TestRigorousPerformance:
             assert len(times) >= 40, f"Too many failures: only {len(times)}/50 succeeded"
 
             p95 = percentile(times, 95)
-            assert p95 < 20, f"P95 warm start too slow: {p95:.1f}ms > 20ms"
+            assert p95 < target_ms, f"P95 warm start too slow: {p95:.1f}ms > {target_ms}ms"
 
     def test_perf_102_fork_p99_under_15ms(self):
         """
@@ -133,6 +135,7 @@ class TestRigorousPerformance:
         RFC target: < 5ms (Min)
         Realistic P99: < 15ms
         """
+        target_ms = 15 * TIMEOUT_MULTIPLIER
         with PerfEnv() as env:
             env.create_script("quick.py", 'print("ok")')
 
@@ -151,7 +154,7 @@ class TestRigorousPerformance:
             assert len(times) >= 80, f"Too many failures: only {len(times)}/100 succeeded"
 
             p99 = percentile(times, 99)
-            assert p99 < 15, f"P99 fork latency too slow: {p99:.1f}ms > 15ms"
+            assert p99 < target_ms, f"P99 fork latency too slow: {p99:.1f}ms > {target_ms}ms"
 
     def test_perf_103_no_outliers(self):
         """

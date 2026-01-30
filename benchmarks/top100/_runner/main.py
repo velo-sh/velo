@@ -243,7 +243,7 @@ class BenchmarkRunner:
 
                 times.append(duration)
             except subprocess.TimeoutExpired:
-                raise TimeoutError(f"Timeout after {timeout}s")
+                raise TimeoutError(f"Timeout after {timeout}s") from None
 
         return times
 
