@@ -1,12 +1,13 @@
 import time
 
+from pydantic import BaseModel
+
 # Generate heavy Import
 print("[HIO] Loading heavy library imports...")
 start = time.perf_counter()
 
 
 # Generate Pydantic v2 model metadata mass production
-from pydantic import BaseModel
 
 
 class HeavyMetadata(BaseModel):

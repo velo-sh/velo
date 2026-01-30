@@ -506,7 +506,7 @@ if __name__ == "__main__":
                 finally:
                     try:
                         os.unlink(json_report.name)
-                    except:
+                    except Exception:
                         pass
             else:
                 logger.warning(f"   ⚠️  JSON report not found: {json_report.name}")

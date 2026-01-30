@@ -85,12 +85,12 @@ def extract_comments(line: str) -> str:
                 i += 1
                 continue
         elif in_string:
-            if len(string_char) == 3 and line[i : i + 3] == string_char:
+            if string_char and len(string_char) == 3 and line[i : i + 3] == string_char:
                 in_string = False
                 string_char = None
                 i += 3
                 continue
-            elif len(string_char) == 1 and char == string_char and (i == 0 or line[i - 1] != "\\"):
+            elif string_char and len(string_char) == 1 and char == string_char and (i == 0 or line[i - 1] != "\\"):
                 in_string = False
                 string_char = None
                 i += 1

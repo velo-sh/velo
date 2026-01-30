@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def run_velo(*args: str, cwd: Path | None = None, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_velo(*args: str, cwd: Path | None = None, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Run velo command and return result."""
     cmd = [str(VELO), *args]
     return subprocess.run(
@@ -311,7 +311,7 @@ class TestL1GateE:
         # Spawn 10 processes
         procs = []
         for _ in range(10):
-            p = subprocess.Popen([str(VELO), "run", str(script)], capture_output=True)
+            p = subprocess.Popen([str(VELO), "run", str(script)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             procs.append(p)
 
         time.sleep(2)  # Wait for libs to load

@@ -23,7 +23,8 @@ if not IS_QUIET and (IS_TTY or FORCE_VISUAL) and (not IS_CI or FORCE_VISUAL):
     try:
         from rich.console import Console
         from rich.panel import Panel
-        from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+        # from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
         from rich.table import Table
 
         RICH_AVAILABLE = True

@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -44,7 +45,7 @@ class ZygoteTester:
         self.socket_path = socket_path or get_short_socket_path()
         self.server_sock: socket.socket | None = None
         self.client_sock: socket.socket | None = None
-        self.process: subprocess.Popen | None = None
+        self.process: subprocess.Popen[bytes] | None = None
 
     def start(self, env: dict[str, str] | None = None) -> None:
         if self.socket_path.exists():
@@ -71,7 +72,7 @@ class ZygoteTester:
         self.client_sock.settimeout(5)
         self._recv_message()  # Ready
 
-    def send_command(self, cmd: dict) -> dict:
+    def send_command(self, cmd: dict[str, Any]) -> dict[str, Any]:
         if not self.client_sock:
             raise RuntimeError("Not connected")
         payload = json.dumps(cmd).encode("utf-8")
@@ -79,17 +80,19 @@ class ZygoteTester:
         self.client_sock.sendall(header + payload)
         return self._recv_message()
 
-    def _recv_message(self) -> dict:
+    def _recv_message(self) -> dict[str, Any]:
         if not self.client_sock:
             raise RuntimeError("Not connected")
         raw_len = self._recv_exact(4)
         total_len = struct.unpack("<I", raw_len)[0]
         self._recv_exact(1)
         payload = self._recv_exact(total_len - 1)
-        return json.loads(payload.decode("utf-8"))
+        return json.loads(payload.decode("utf-8"))  # type: ignore[no-any-return]
 
     def _recv_exact(self, n: int) -> bytes:
         data = b""
+        if not self.client_sock:
+            raise RuntimeError("Not connected")
         while len(data) < n:
             chunk = self.client_sock.recv(n - len(data))
             if not chunk:

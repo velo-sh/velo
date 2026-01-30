@@ -85,7 +85,7 @@ def get_process_rss(pid: int) -> float:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         return float(line.split()[1]) / 1024  # KB to MB
-    except:
+    except Exception:
         pass
     return 0.0
 

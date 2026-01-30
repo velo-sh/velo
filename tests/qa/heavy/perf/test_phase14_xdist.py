@@ -1,13 +1,10 @@
 import os
 import subprocess
 import time
-from pathlib import Path
 
 # Read SSOT from constants.toml
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
+import tomllib
+from pathlib import Path
 
 _constants_path = Path(__file__).parent.parent.parent.parent.parent / "config" / "constants.toml"
 with open(_constants_path, "rb") as f:

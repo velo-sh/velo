@@ -77,7 +77,7 @@ class TestHPCConcerns:
         try:
             import torch
 
-            if not torch.cuda.is_available():
+            if not torch.cuda.is_available():  # type: ignore
                 pytest.skip("CUDA not available")
         except ImportError:
             pytest.skip("PyTorch not installed")

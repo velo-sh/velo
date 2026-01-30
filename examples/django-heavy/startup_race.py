@@ -51,7 +51,7 @@ def check_purge_available() -> bool:
     try:
         result = subprocess.run(["which", "purge"], capture_output=True)
         return result.returncode == 0
-    except:
+    except Exception:
         return False
 
 

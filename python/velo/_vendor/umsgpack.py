@@ -494,7 +494,7 @@ def _pack2(obj, fp, **options):
         except AttributeError:
             raise NotImplementedError(
                 f"Ext serializable class {repr(obj.__class__):s} is missing implementation of packb()"
-            )
+            ) from None
     elif isinstance(obj, bool):
         _pack_boolean(obj, fp, options)
     elif isinstance(obj, (int, long)):  # noqa: F821
@@ -531,7 +531,7 @@ def _pack2(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()")
+                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()") from None
         else:
             raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:
@@ -581,7 +581,7 @@ def _pack3(obj, fp, **options):
         except AttributeError:
             raise NotImplementedError(
                 f"Ext serializable class {repr(obj.__class__):s} is missing implementation of packb()"
-            )
+            ) from None
     elif isinstance(obj, bool):
         _pack_boolean(obj, fp, options)
     elif isinstance(obj, int):
@@ -618,7 +618,7 @@ def _pack3(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()")
+                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()") from None
         else:
             raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:
@@ -787,7 +787,7 @@ def _unpack_string(code, fp, options):
     except UnicodeDecodeError:
         if options.get("allow_invalid_utf8"):
             return InvalidString(data)
-        raise InvalidStringException("unpacked string is invalid utf-8")
+        raise InvalidStringException("unpacked string is invalid utf-8") from None
 
 
 def _unpack_binary(code, fp, options):
@@ -838,7 +838,7 @@ def _unpack_ext(code, fp, options):
         except AttributeError:
             raise NotImplementedError(
                 f"Ext serializable class {repr(_ext_type_to_class[ext_type]):s} is missing implementation of unpackb()"
-            )
+            ) from None
 
     # Timestamp extension
     if ext_type == -1:
@@ -919,7 +919,7 @@ def _unpack_map(code, fp, options):
         try:
             d[k] = v
         except TypeError:
-            raise UnhashableKeyException(f'encountered unhashable key: "{str(k):s}"')
+            raise UnhashableKeyException(f'encountered unhashable key: "{str(k):s}"') from None
     return d
 
 

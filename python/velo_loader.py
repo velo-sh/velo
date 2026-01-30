@@ -28,7 +28,7 @@ from pathlib import Path
 try:
     import blake3 as blake3_module
 except ImportError:
-    raise ImportError("blake3 is required for Velo bundle verification. Install with: pip install blake3")
+    raise ImportError("blake3 is required for Velo bundle verification. Install with: pip install blake3") from None
 
 # Bundle format constants (must match Rust implementation)
 MAGIC = b"VELO"

@@ -20,7 +20,7 @@ def check_darwin_isolation():
         if res == 0:
             return "S-"  # macOS Sandbox Restricted Mode
         return "B"  # Standard macOS Process
-    except:
+    except Exception:
         # If private API unavailable, check for special Mach Task port restricted state
         return "B"
 
@@ -42,7 +42,7 @@ def check_linux_isolation():
                     stats["rss"] = line.split()[1]
 
         return "S" if stats.get("ns") else "B"
-    except:
+    except Exception:
         return "B"
 
 

@@ -11,11 +11,11 @@ import torch
 
 # AI-First Logic: Heavy Initialization
 device = "cpu"
-model = torch.nn.Linear(1024, 1024).to(device)
-input_tensor = torch.randn(1, 1024).to(device)
+model = torch.nn.Linear(1024, 1024).to(device)  # type: ignore
+input_tensor = torch.randn(1, 1024).to(device)  # type: ignore
 
 # Perform Inference
-with torch.no_grad():
+with torch.no_grad():  # type: ignore
     output = model(input_tensor)
 
 tti_elapsed = (time.perf_counter() - tti_start) * 1000

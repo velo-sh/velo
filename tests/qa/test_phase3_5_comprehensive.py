@@ -127,7 +127,7 @@ class ComprehensiveTestEnv:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
-            return s.getsockname()[1]
+            return int(s.getsockname()[1])
 
     def setup(self, with_project: bool | None = None) -> "ComprehensiveTestEnv":
         if with_project is None:

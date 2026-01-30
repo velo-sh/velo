@@ -399,7 +399,7 @@ class VeloTestEnv:
     def __enter__(self) -> "VeloTestEnv":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Cleanup test environment if needed."""
         # We could add automatic directory cleanup here, but for now we follow
         # the existing pattern of leaving temp dirs for debugging unless explicitly removed.

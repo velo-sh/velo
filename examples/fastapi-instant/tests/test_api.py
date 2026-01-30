@@ -1,11 +1,10 @@
+import os
 import warnings
+
+import requests
 
 # Completely suppress SSL compatibility noise (common on macOS)
 warnings.filterwarnings("ignore", message=".*NotOpenSSLWarning.*")
-
-import os
-
-import requests
 
 BASE_URL = "http://127.0.0.1:8000"
 

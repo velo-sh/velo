@@ -12,7 +12,7 @@ WORKSPACE = PROJECT_ROOT / "tests" / "qa" / "ai_dropin_workspace"
 SITE_PACKAGES = PROJECT_ROOT / ".venv" / "lib" / "python3.11" / "site-packages"
 
 
-def run_bench():
+def run_bench() -> None:
     print("🚀 VELO AI-FIRST BENCHMARK ORCHESTRATOR")
     print("=" * 60)
 
