@@ -43,22 +43,7 @@ class UDSProxyMiddleware:
 """
 
 # =============================================================================
-# SUBPROCESS TIMEOUT AUTO-SCALING (Temporary Workaround)
-# =============================================================================
-
-_original_subprocess_run = subprocess.run
-
-
-def _scaled_subprocess_run(*args, **kwargs):
-    """Auto-scale subprocess timeout for CI environments."""
-    if "timeout" in kwargs and kwargs["timeout"] is not None:
-        kwargs["timeout"] = kwargs["timeout"] * TIMEOUT_MULTIPLIER
-    return _original_subprocess_run(*args, **kwargs)
-
-
-subprocess.run = _scaled_subprocess_run
-
-
+# TIER MARKERS (per tiered-testing-guide.md)
 # =============================================================================
 # TIER MARKERS (per tiered-testing-guide.md)
 # =============================================================================

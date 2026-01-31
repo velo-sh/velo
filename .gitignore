@@ -63,3 +63,5 @@ ci_run_*.txt
 .test_projects/
 tests/qa/ai_bench_workspace/
 tests/qa/ai_dropin_workspace/
+examples/dashboard/
+velo_demo.tape

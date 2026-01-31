@@ -165,8 +165,13 @@ dependencies = ["fastapi", "uvicorn", "msgpack"]"""
         env["VELO_ZYGOTE_SOCKET"] = str(socket_path)
         env["VELO_ZYGOTE_AUTH"] = str(uuid.uuid4())
 
-        # SAD Path optimization: disable backoff for tests
+        # RFC-0012: Ensure binary directory is in PATH so 'velo' can find its peers
+        bin_dir = Path(self.velo).parent
+        env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+
+        # SAD Path optimization: disable backoff and reduce health check wait for tests
         env["VELO_BACKOFF_SECS"] = "0"
+        env["VELO_HEALTH_CHECK_TIMEOUT"] = "10"  # Fail fast in tests
 
         if "env" in kwargs:
             env.update(kwargs.pop("env"))
@@ -565,7 +570,8 @@ class TestL2SadPath:
         """Clear error when app attribute doesn't exist."""
         with ComprehensiveTestEnv() as env:
             env.create_app("noapp.py", "x = 1")  # No 'app'
-            result = env.run_velo("serve", "noapp:app")
+            # RFC-0012: Use a strict short timeout for Sad Path tests to avoid CI hangs
+            result = env.run_velo("serve", "noapp:app", timeout=20)
             assert result.returncode != 0
 
     def test_l2_003_syntax_error(self):

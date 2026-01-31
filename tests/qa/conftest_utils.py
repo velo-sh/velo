@@ -356,7 +356,7 @@ class VeloTestEnv:
                 "HOME": str(self.home),
                 "XDG_RUNTIME_DIR": str(self.xdg),
                 "VIRTUAL_ENV": current_venv,
-                "PATH": f"{current_venv}/bin:{os.environ.get('PATH', '')}",
+                "PATH": f"{self.bin_dir}:{current_venv}/bin:{os.environ.get('PATH', '')}",
                 "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
                 "PYTHONUNBUFFERED": "1",
                 # RFC-0033: Provide Zygote path for copied binaries running from isolated directories

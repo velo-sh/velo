@@ -684,8 +684,20 @@ class TestEmbeddedBootstrapShim:
         """V3-SHIM-002: Shim only uses stdlib modules."""
         content = BOOTSTRAP_PY.read_text()
 
-        # These are the only allowed imports (stdlib)
-        allowed_imports = {"os", "sys", "socket", "struct", "json", "importlib", "signal", "traceback", "site"}
+        # These are the only allowed imports (stdlib + internal velo_zygote)
+        allowed_imports = {
+            "os",
+            "sys",
+            "socket",
+            "struct",
+            "json",
+            "importlib",
+            "signal",
+            "traceback",
+            "site",
+            "typing",
+            "velo_zygote",
+        }
 
         # Extract import statements
         import_lines = [

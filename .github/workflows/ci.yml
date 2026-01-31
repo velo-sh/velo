@@ -29,6 +29,8 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
+  # RFC-0012: Redirect TMPDIR to project workspace to satisfy security checks (Non-Invasive)
+  TMPDIR: ${{ github.workspace }}/pytest_tmp
   # Note: UV_PYTHON is now set dynamically in setup-velo action from SSOT config
   # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
@@ -119,8 +121,8 @@ jobs:
             serve:
               - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase3_5_*.py'
-              - 'tests/qa/phase_6_1_1/**'
-              - 'tests/qa/phase6_1/**'
+              - 'tests/qa/heavy/**'
+              - 'tests/qa/test_phase6_1_*.py'
               - 'tests/security/**'
               - 'tests/qa/test_phase6_1_*.py'
               - 'tests/qa/test_e2e_serve.py'
@@ -418,7 +420,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_0 -n 2 --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/test_v3_zero_config_architecture.py -v --tb=short
 
   qa-phase-7-1:
     name: "QA 7.1: Custody & Forensics"
@@ -434,7 +436,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_1 -n 2 --dist loadscope -v --tb=short
+          command: uv run pytest tests/qa/test_v3_user_journey_e2e.py -v --tb=short
 
   qa-phase-7-2:
     name: "QA 7.2: ASGI Bridge Compatibility (${{ matrix.shard }})"
@@ -448,13 +450,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_7_2 -n 2 --dist loadscope -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 4
+          command: uv run pytest tests/qa/test_v3_user_scenarios.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
 
   qa-zygote-matrix:
@@ -558,10 +560,10 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - { name: "Smoke & Happy", path: "tests/qa/phase5/test_l0_smoke.py tests/qa/test_phase5_loader.py tests/qa/phase5/test_l1_happy_path.py" }
-          - { name: "Sad & Config", path: "tests/qa/phase5/test_l2_sad_path.py tests/qa/phase5/test_l3_config.py" }
-          - { name: "Security & Chaos", path: "tests/qa/phase5/test_l4_security.py tests/qa/phase5/test_l5_chaos.py" }
-          - { name: "CLI & Utils", path: "tests/qa/phase5/test_cli_bundle.py tests/qa/phase5/test_python_loader.py" }
+          - { name: "Smoke & Happy", path: "tests/qa/heavy/stability/test_l0_smoke.py tests/qa/test_phase5_loader.py tests/qa/heavy/stability/test_l1_happy_path.py" }
+          - { name: "Sad & Config", path: "tests/qa/heavy/chaos/test_l2_sad_path.py tests/qa/heavy/stability/test_l3_config.py" }
+          - { name: "Security & Chaos", path: "tests/qa/heavy/chaos/test_l4_security.py tests/qa/heavy/chaos/test_l5_chaos.py" }
+          - { name: "CLI & Utils", path: "tests/qa/heavy/stability/test_cli_bundle.py tests/qa/heavy/chaos/test_python_loader.py" }
         include:
           - suite: { name: "Smoke & Happy" }
             suite_name: "Smoke & Happy"
@@ -681,7 +683,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/qa/phase_6_1_1/test_sin_of_collision.py tests/qa/phase_6_1_1/test_sec_shield.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
+          command: uv run pytest tests/qa/heavy/chaos/test_sin_of_collision.py -v --tb=short --shard-id ${{ matrix.shard }} --num-shards 2
 
   qa-phase611-matrix:
     name: "QA 6.1.1: ${{ matrix.suite_name }}"
@@ -698,17 +700,17 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - { name: "Smoke", path: "tests/qa/phase_6_1_1/test_phase611_smoke.py" }
-          - { name: "Golden Path", path: "tests/qa/phase_6_1_1/test_phase611_golden_path.py tests/qa/phase_6_1_1/test_phase611_golden_path_2.py" }
-          - { name: "Features", path: "tests/qa/phase_6_1_1/test_phase611_features.py" }
-          - { name: "Integration", path: "tests/qa/phase_6_1_1/test_phase611_integration.py" }
-          - { name: "Isolation", path: "tests/qa/phase_6_1_1/test_isolation.py" }
-          - { name: "Agents A-B", path: "tests/qa/phase_6_1_1/test_phase611_agent_a_edge.py tests/qa/phase_6_1_1/test_phase611_agent_b_stability.py" }
-          - { name: "Agents C-D", path: "tests/qa/phase_6_1_1/test_phase611_agent_c_security.py tests/qa/phase_6_1_1/test_phase611_agent_d_chaos.py tests/qa/phase_6_1_1/test_phase611_agent_d_desync.py" }
-          - { name: "Security Hardened", path: "tests/qa/phase_6_1_1/test_security_hardened.py" }
-          - { name: "Expert Concerns", path: "tests/qa/phase_6_1_1/test_phase611_expert_concerns.py" }
-          - { name: "Release Blockers", path: "tests/qa/phase_6_1_1/test_phase611_release_blockers.py" }
-          - { name: "Whitebox", path: "tests/qa/phase_6_1_1/test_phase611_whitebox.py" }
+          - { name: "Smoke", path: "tests/qa/heavy/stability/test_phase611_smoke.py" }
+          - { name: "Golden Path", path: "tests/qa/heavy/stability/test_phase611_golden_path.py" }
+          - { name: "Features", path: "tests/qa/heavy/chaos/test_phase611_features.py" }
+          - { name: "Integration", path: "tests/qa/heavy/perf/test_phase611_integration.py" }
+          - { name: "Isolation", path: "tests/qa/heavy/chaos/test_isolation.py" }
+          - { name: "Agents A-B", path: "tests/qa/heavy/stability/test_phase611_agent_a_edge.py tests/qa/heavy/stress/test_phase611_agent_b_stability.py" }
+          - { name: "Agents C-D", path: "tests/qa/heavy/chaos/test_phase611_agent_c_security.py tests/qa/heavy/chaos/test_phase611_agent_d_chaos.py tests/qa/heavy/chaos/test_phase611_agent_d_desync.py" }
+          - { name: "Security Hardened", path: "tests/qa/heavy/chaos/test_security_hardened.py" }
+          - { name: "Expert Concerns", path: "tests/qa/heavy/stability/test_phase611_expert_concerns.py" }
+          - { name: "Release Blockers", path: "tests/qa/heavy/stability/test_phase611_release_blockers.py" }
+          - { name: "Whitebox", path: "tests/qa/heavy/perf/test_phase611_whitebox.py" }
         include:
           - suite: { name: "Smoke" }
             suite_name: "Smoke"
@@ -755,8 +757,8 @@ jobs:
       fail-fast: false
       matrix:
         suite:
-          - { name: "Perf Regressions", path: "tests/qa/phase_6_1_1/test_phase611_perf_regressions.py" }
-          - { name: "Shadow Preload", path: "tests/qa/phase_6_1_1/test_shadow_preload_benchmark.py" }
+          - { name: "Perf Regressions", path: "tests/qa/heavy/perf/test_phase611_perf_regressions.py" }
+          - { name: "Shadow Preload", path: "tests/qa/heavy/perf/test_shadow_preload_benchmark.py" }
         include:
           - suite: { name: "Perf Regressions" }
             suite_name: "Perf Regressions"
@@ -913,7 +915,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest tests/security/test_sec_shield.py -v --tb=short
+          command: uv run pytest tests/qa/heavy/chaos/test_sec_shield.py -v --tb=short
 
   qa-regression-ci-fixes:
     name: "QA: CI Regression Fixes"

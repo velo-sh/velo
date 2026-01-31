@@ -7,8 +7,8 @@ USE_REAL_LIBS = os.environ.get("VELO_REAL_AI", "0") == "1"
 if USE_REAL_LIBS:
     try:
         print("[model.py] Loading real AI libraries (torch, numpy)...")
-        # import numpy as np
-        # import torch
+        import torch
+        import numpy as np
         model_ready = True
     except ImportError:
         print("[model.py] Real libraries not found, falling back to simulation.")
@@ -32,6 +32,6 @@ def embed(texts: list[str]) -> list[list[float]]:
         # For simplicity, we just use numpy to show it's loaded
         import numpy as np
         return [[float(x) for x in np.random.rand(3)] for _ in texts]
-
+    
     # Fallback to dummy vectors
     return [[0.1 * len(t), 0.2, 0.3] for t in texts]

@@ -423,9 +423,9 @@ time.sleep(60)
         # If it triggers too early, it might fail to import or show partial code errors
         assert "SyntaxError" not in output, "Race Detected: Watcher triggered on partially written file"
 
-    @pytest.mark.xfail(
+    @pytest.mark.skipif(
         os.environ.get("GITHUB_ACTIONS") == "true",
-        reason="File watcher on CI uses poll mode without inotify support; starvation behavior differs",
+        reason="File watcher on CI uses poll mode without inotify support; starvation behavior differs and causes OOM (137)",
     )
     def test_stab_rs_002_starvation_hard_cap(self, isolated_env):
         """
