@@ -22,6 +22,17 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Configure CI Environment
+      shell: bash
+      run: |
+        # RFC-0012: Redirect all temporary files to the workspace to satisfy secure location checks
+        # This is strictly required because Velo core rejects /tmp for security.
+        WORKSPACE_TMP="${{ github.workspace }}/pytest_tmp"
+        mkdir -p "$WORKSPACE_TMP"
+        echo "TMPDIR=$WORKSPACE_TMP" >> $GITHUB_ENV
+        # Force pytest to use this as the base for all tmp_path fixtures
+        echo "PYTEST_ADDOPTS=--basetemp=$WORKSPACE_TMP" >> $GITHUB_ENV
+        echo "Created and configured Workspace TMPDIR: $WORKSPACE_TMP"
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
@@ -80,7 +91,10 @@ runs:
         name: ${{ steps.artifact.outputs.name }}
         path: target/release/
 
-    - name: Set permissions
+    - name: Set permissions and PATH
       if: inputs.download-binary == 'true'
       shell: bash
-      run: chmod +x target/release/velo
+      run: |
+        chmod +x target/release/velo
+        # Add to GITHUB_PATH so 'velo' can be invoked directly in scripts/tests
+        echo "$(pwd)/target/release" >> $GITHUB_PATH

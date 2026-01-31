@@ -33,11 +33,16 @@ def velo_binary():
 
 
 @pytest.fixture
-def test_bundle(tmp_path):
+def test_bundle(tmp_path, velo_binary):
     """Create a test bundle using bundle_builder."""
     import marshal
+    import os
 
     from bundle_builder import VeloBundleBuilder
+
+    # Inject binary path for internal calls
+    os.environ["VELO_BIN"] = velo_binary
+    os.environ["VELO_RUNTIME_EXE_PATH"] = velo_binary
 
     builder = VeloBundleBuilder()
 
@@ -55,8 +60,14 @@ def test_bundle(tmp_path):
 
 
 @pytest.fixture
-def test_project(tmp_path):
+def test_project(tmp_path, velo_binary):
     """Create a test project with bundle."""
+    import os
+
+    # Inject binary path for internal calls
+    os.environ["VELO_BIN"] = velo_binary
+    os.environ["VELO_RUNTIME_EXE_PATH"] = velo_binary
+
     # Create project structure
     (tmp_path / "main.py").write_text('print("Hello from bundle!")')
     (tmp_path / "mymodule.py").write_text("VALUE = 42")
