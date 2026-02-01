@@ -103,7 +103,7 @@ jobs:
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
               - 'config/**'
-              - 'velo_macros/**/*.rs'
+              - 'crates/velo_macros/**/*.rs'
             loader:
               - 'crates/velo-cli/src/cmd/loader.rs'
               - 'python/velo_loader.py'
@@ -113,7 +113,7 @@ jobs:
               - 'tests/qa/phase5_2/**'
             zygote:
               - 'crates/velo-core/src/zygote/**/*.rs'
-              - 'velo_zygote/**'
+              - 'python/velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
@@ -133,7 +133,7 @@ jobs:
               - 'tests/qa/test_phase4_*.py'
             kinetic:
               - 'crates/velo-core/src/zygote/**/*.rs'
-              - 'velo_zygote/**'
+              - 'python/velo_zygote/**'
               - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase6_2_*.py'
             workflow:
@@ -145,7 +145,7 @@ jobs:
               - 'tests/qa/conftest.py'
               - 'tests/qa/utils/**'
               - 'tests/qa/conftest_markers.py'
-              - 'run_tests.py'
+              - 'scripts/dev/run_tests.py'
 
   build:
     name: Build
@@ -205,7 +205,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run Python tests
-        run: uv run run_tests.py
+        run: uv run scripts/dev/run_tests.py
 
       - name: Check binary size
         run: |

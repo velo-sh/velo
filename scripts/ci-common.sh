@@ -441,7 +441,7 @@ run_ruff_check() {
     log_step "Running Ruff Python lint..."
     
     # SSOT: These are the directories to check (excluding vendor code)
-    local PYTHON_DIRS="tests/ velo_zygote/ scripts/"
+    local PYTHON_DIRS="tests/ python/velo_zygote/ scripts/"
     
     # Lint check (exclude vendored code)
     uv run ruff check $PYTHON_DIRS --exclude "*/_vendor/*"
