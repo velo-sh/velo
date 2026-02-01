@@ -1,9 +1,11 @@
 import json
-import requests
 from pathlib import Path
+
+import requests
 
 DEFAULT_CREDENTIALS_PATH = Path.home() / ".config" / "moltbook" / "credentials.json"
 BASE_URL = "https://www.moltbook.com/api/v1"
+
 
 def load_credentials(path=DEFAULT_CREDENTIALS_PATH):
     if not path.exists():
@@ -11,22 +13,24 @@ def load_credentials(path=DEFAULT_CREDENTIALS_PATH):
     with open(path) as f:
         return json.load(f)
 
+
 class MoltbookClient:
     def __init__(self, api_key):
         self.api_key = api_key
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
 
     def _request(self, method, url, **kwargs):
         import time
+
         max_retries = 3
         backoff = 2
-        
+
         # Ensure we always have headers
-        headers = kwargs.pop('headers', self.headers)
+        headers = kwargs.pop("headers", self.headers)
 
         for i in range(max_retries):
             try:
@@ -45,10 +49,10 @@ class MoltbookClient:
                         try:
                             data = resp.json()
                             wait = data.get("retry_after_seconds") or (data.get("retry_after_minutes", 0) * 60)
-                        except Exception: # This bare except is being fixed
+                        except Exception:  # This bare except is being fixed
                             wait = backoff * (2**i)
 
-                    print(f"Rate limited (429). Waiting {wait}s before retry {i+1}/{max_retries}...")
+                    print(f"Rate limited (429). Waiting {wait}s before retry {i + 1}/{max_retries}...")
                     time.sleep(wait)
                     continue
 
@@ -59,7 +63,7 @@ class MoltbookClient:
                     if any(p in content for p in fake_patterns):
                         wait = backoff * (2**i)
                         print(
-                            f"Detected potential backend overload (Fake 401: {content}). Waiting {wait}s before retry {i+1}/{max_retries}..."
+                            f"Detected potential backend overload (Fake 401: {content}). Waiting {wait}s before retry {i + 1}/{max_retries}..."
                         )
                         time.sleep(wait)
                         continue
@@ -77,7 +81,7 @@ class MoltbookClient:
                 if i == max_retries - 1:
                     print(f"Request failed after {max_retries} attempts: {e}")
                     raise
-                print(f"Connection issue detected: {e}. Retrying in {wait}s ({i+1}/{max_retries})...")
+                print(f"Connection issue detected: {e}. Retrying in {wait}s ({i + 1}/{max_retries})...")
                 time.sleep(wait)
 
         raise Exception("Max retries exceeded for Moltbook API (Unhandled State)")
@@ -99,6 +103,7 @@ class MoltbookClient:
     def get_notifications(self):
         url = f"{BASE_URL}/agents/status"
         return self._request("GET", url)
+
     def get_hotspots(self, min_score=0, unprocessed_only=True):
         """Helper for AI to read discovered technical hotspots from monitor.py"""
         path = Path(__file__).parent / "hotspots.json"
@@ -106,15 +111,16 @@ class MoltbookClient:
             return []
         try:
             import fcntl
+
             with open(path) as f:
                 fcntl.flock(f, fcntl.LOCK_SH)
                 data = json.load(f)
                 fcntl.flock(f, fcntl.LOCK_UN)
 
             if unprocessed_only:
-                data = [h for h in data if not h.get('processed')]
+                data = [h for h in data if not h.get("processed")]
 
-            return [h for h in data if h.get('final_score', 0) >= min_score]
+            return [h for h in data if h.get("final_score", 0) >= min_score]
         except Exception:
             return []
 
@@ -128,11 +134,11 @@ class MoltbookClient:
         file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"Avatar file not found: {file_path}")
-        
+
         # We need to remove Content-Type from headers for multipart uploads
         headers = self.headers.copy()
         headers.pop("Content-Type", None)
-        
-        with open(file_path, 'rb') as f:
-            files = {'file': f}
+
+        with open(file_path, "rb") as f:
+            files = {"file": f}
             return self._request("POST", url, headers=headers, files=files)

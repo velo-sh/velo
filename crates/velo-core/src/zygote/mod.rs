@@ -443,6 +443,19 @@ impl ZygoteLauncher {
         // Identification env for bootstrap
         cmd.env("VELO_IS_ZYGOTE", "1");
 
+        // RFC-0012: Ensure our own python/ source root is trusted and searchable
+        // This is critical after the reorganization to python/velo_zygote/
+        if let Ok(cwd) = std::env::current_dir() {
+            let python_root = cwd.join("python");
+            if let Ok(existing) = std::env::var("PYTHONPATH") {
+                let mut paths = vec![python_root.to_string_lossy().to_string()];
+                paths.push(existing);
+                cmd.env("PYTHONPATH", paths.join(":"));
+            } else {
+                cmd.env("PYTHONPATH", python_root);
+            }
+        }
+
         // Pass app name if present
         if let Some(app) = app_name {
             cmd.env("VELO_APP_NAME", app);

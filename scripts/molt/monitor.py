@@ -1,13 +1,26 @@
-import json
 import fcntl
+import json
 from datetime import datetime
 from pathlib import Path
+
 from utils import MoltbookClient, load_credentials
 
 HOTSPOTS_PATH = Path(__file__).parent / "hotspots.json"
 
 # AI-focused Keywords for filtering relevant technical content
-KEYWORDS = ["python", "startup", "performance", "cold start", "zygote", "rust", "low latency", "optimization", "runtime", "latency"]
+KEYWORDS = [
+    "python",
+    "startup",
+    "performance",
+    "cold start",
+    "zygote",
+    "rust",
+    "low latency",
+    "optimization",
+    "runtime",
+    "latency",
+]
+
 
 def calculate_score(upvotes, comments_count, created_at_iso):
     """
@@ -29,6 +42,7 @@ def calculate_score(upvotes, comments_count, created_at_iso):
         # print("Scoring error")
         return 0, 1.0, 0
 
+
 def is_question(title, content):
     """Heuristic to detect if the post is a question or request for help."""
     text = (title + " " + content).lower()
@@ -36,6 +50,7 @@ def is_question(title, content):
     question_words = ["how", "why", "what", "is there", "any way", "explain"]
     has_word = any(word in text for word in question_words)
     return question_marks or has_word
+
 
 def load_hotspots():
     if not HOTSPOTS_PATH.exists():
@@ -49,14 +64,16 @@ def load_hotspots():
     except Exception:
         return []
 
+
 def save_hotspots(hotspots):
     try:
-        with open(HOTSPOTS_PATH, 'w') as f:
+        with open(HOTSPOTS_PATH, "w") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             json.dump(hotspots, f, indent=2)
             fcntl.flock(f, fcntl.LOCK_UN)
     except Exception as e:
         print(f"Failed to save hotspots: {e}")
+
 
 def main():
     print("Moltbook Listener (v3.0) starting...")
@@ -75,7 +92,7 @@ def main():
     valid_hotspots = []
     for h in hotspots:
         try:
-            discovered_at = datetime.fromisoformat(h.get('discovered_at'))
+            discovered_at = datetime.fromisoformat(h.get("discovered_at"))
             if (now_utc - discovered_at).total_seconds() < 86400:  # 24h
                 valid_hotspots.append(h)
         except Exception:
@@ -94,7 +111,7 @@ def main():
         return
 
     new_found = 0
-    existing_ids = {h['post_id'] for h in valid_hotspots}
+    existing_ids = {h["post_id"] for h in valid_hotspots}
 
     for post in posts:
         post_id = post.get("id")
@@ -125,28 +142,31 @@ def main():
         if q_status:
             final_score += 10  # Question bonus
         # 5. Add to queue
-        valid_hotspots.append({
-            "post_id": post_id,
-            "title": title,
-            "author": post.get("author", {}).get("name"),
-            "content_snippet": content[:200] + ("..." if len(content) > 200 else ""),
-            "upvotes": upvotes,
-            "comments": comments_count,
-            "raw_score": raw_score,
-            "decay_factor": round(decay, 2),
-            "final_score": round(final_score, 2),
-            "is_question": q_status,
-            "discovered_at": now_utc.isoformat(),
-            "processed": False
-        })
+        valid_hotspots.append(
+            {
+                "post_id": post_id,
+                "title": title,
+                "author": post.get("author", {}).get("name"),
+                "content_snippet": content[:200] + ("..." if len(content) > 200 else ""),
+                "upvotes": upvotes,
+                "comments": comments_count,
+                "raw_score": raw_score,
+                "decay_factor": round(decay, 2),
+                "final_score": round(final_score, 2),
+                "is_question": q_status,
+                "discovered_at": now_utc.isoformat(),
+                "processed": False,
+            }
+        )
         new_found += 1
 
     # 6. Final sort by priority score
-    valid_hotspots.sort(key=lambda x: x['final_score'], reverse=True)
+    valid_hotspots.sort(key=lambda x: x["final_score"], reverse=True)
 
     # 7. Persistence
     save_hotspots(valid_hotspots)
     print(f"Scan complete. New: {new_found}, Total Active: {len(valid_hotspots)}")
+
 
 if __name__ == "__main__":
     main()

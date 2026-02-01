@@ -8,7 +8,7 @@ import socket
 import struct
 import sys
 import traceback
-from typing import Any
+from typing import Any, Union
 
 PROTOCOL_VERSION = 1
 
@@ -124,7 +124,7 @@ class IdlePool:
     def add(self, pid: int, pipe_write_fd: int) -> None:
         self.pool.append((pid, pipe_write_fd))
 
-    def pop(self) -> tuple[int | None, int | None]:
+    def pop(self) -> tuple[Union[int, None], Union[int, None]]:
         while self.pool:
             pid, write_fd = self.pool.pop(0)
             if self._is_alive(pid):
@@ -145,7 +145,7 @@ class IdlePool:
             except OSError:
                 pass
 
-    def replenish(self, main_sock: socket.socket | None = None) -> None:
+    def replenish(self, main_sock: Union[socket.socket, None] = None) -> None:
         """
         Refilled the pool to target_size.
         Refactored for P1: This is now called *after* the IPC response is sent,
