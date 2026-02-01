@@ -1,7 +1,6 @@
 import json
 import fcntl
-import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from utils import MoltbookClient, load_credentials
 
@@ -20,14 +19,14 @@ def calculate_score(upvotes, comments_count, created_at_iso):
         created_at = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
         now = datetime.utcnow().replace(tzinfo=created_at.tzinfo)
         hours_since = (now - created_at).total_seconds() / 3600
-        
+
         # Decay factor: halve the score every 3 hours roughly
         decay_factor = 1 / (1 + hours_since / 3)
-        
+
         raw_score = (upvotes * 2) + comments_count
         return raw_score, decay_factor, raw_score * decay_factor
-    except Exception as e:
-        # print(f"Scoring error: {e}")
+    except Exception:
+        # print("Scoring error")
         return 0, 1.0, 0
 
 def is_question(title, content):
@@ -42,12 +41,12 @@ def load_hotspots():
     if not HOTSPOTS_PATH.exists():
         return []
     try:
-        with open(HOTSPOTS_PATH, 'r') as f:
+        with open(HOTSPOTS_PATH) as f:
             fcntl.flock(f, fcntl.LOCK_SH)
             data = json.load(f)
             fcntl.flock(f, fcntl.LOCK_UN)
             return data
-    except:
+    except Exception:
         return []
 
 def save_hotspots(hotspots):
@@ -72,20 +71,19 @@ def main():
     hotspots = load_hotspots()
     now_utc = datetime.utcnow()
     initial_count = len(hotspots)
-    
     # Filter out TTL expired or malformed
     valid_hotspots = []
     for h in hotspots:
         try:
             discovered_at = datetime.fromisoformat(h.get('discovered_at'))
-            if (now_utc - discovered_at).total_seconds() < 86400: # 24h
+            if (now_utc - discovered_at).total_seconds() < 86400:  # 24h
                 valid_hotspots.append(h)
-        except:
+        except Exception:
             continue
-    
+
     if len(valid_hotspots) < initial_count:
         print(f"Purged {initial_count - len(valid_hotspots)} stale entries.")
-    
+
     # 2. Fetch latest feed
     print("Scanning global feed...")
     try:
@@ -102,30 +100,30 @@ def main():
         post_id = post.get("id")
         if post_id in existing_ids:
             continue
-            
+
         title = post.get("title") or ""
         content = post.get("content") or ""
         if not content and not title:
             continue
-        
+
         # 3. Keyword filter
         combined_text = (title + " " + content).lower()
         if not any(kw in combined_text for kw in KEYWORDS):
             continue
-            
         # 4. Scoring logic
         upvotes = post.get("upvotes", 0)
         # Moltbook API usually returns comment count in the 'comments' field for feed posts
         # Sometimes it's a list, check type
         raw_comments = post.get("comments", 0)
         comments_count = len(raw_comments) if isinstance(raw_comments, list) else int(raw_comments)
-        
-        raw_score, decay, final_score = calculate_score(upvotes, comments_count, post.get("created_at", datetime.utcnow().isoformat()))
-        
+
+        raw_score, decay, final_score = calculate_score(
+            upvotes, comments_count, post.get("created_at", datetime.utcnow().isoformat())
+        )
+
         q_status = is_question(title, content)
         if q_status:
-            final_score += 10 # Question bonus
-            
+            final_score += 10  # Question bonus
         # 5. Add to queue
         valid_hotspots.append({
             "post_id": post_id,

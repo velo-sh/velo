@@ -1,5 +1,4 @@
 import json
-import os
 import requests
 from pathlib import Path
 
@@ -9,7 +8,7 @@ BASE_URL = "https://www.moltbook.com/api/v1"
 def load_credentials(path=DEFAULT_CREDENTIALS_PATH):
     if not path.exists():
         raise FileNotFoundError(f"Credentials not found at {path}")
-    with open(path, 'r') as f:
+    with open(path) as f:
         return json.load(f)
 
 class MoltbookClient:
@@ -32,7 +31,7 @@ class MoltbookClient:
         for i in range(max_retries):
             try:
                 resp = requests.request(method, url, headers=headers, **kwargs)
-                
+
                 if resp.status_code == 429:
                     # Try to get retry time from header or body
                     retry_after = resp.headers.get("Retry-After")
@@ -40,41 +39,47 @@ class MoltbookClient:
                         wait = int(retry_after) if retry_after else None
                     except ValueError:
                         wait = None
-                    
+
                     if not wait:
                         # Fallback to body parsing for Moltbook specific format
                         try:
                             data = resp.json()
                             wait = data.get("retry_after_seconds") or (data.get("retry_after_minutes", 0) * 60)
-                        except:
-                            wait = backoff * (2 ** i)
-                    
+                        except Exception: # This bare except is being fixed
+                            wait = backoff * (2**i)
+
                     print(f"Rate limited (429). Waiting {wait}s before retry {i+1}/{max_retries}...")
                     time.sleep(wait)
                     continue
-                
+
                 if resp.status_code == 401:
                     content = resp.text.lower()
                     # Expanded patterns for "Fake 401" caused by backend instability
                     fake_patterns = ["upstream", "reset", "disconnect", "authentication required"]
                     if any(p in content for p in fake_patterns):
-                        wait = backoff * (2 ** i)
-                        print(f"Detected potential backend overload (Fake 401: {content}). Waiting {wait}s before retry {i+1}/{max_retries}...")
+                        wait = backoff * (2**i)
+                        print(
+                            f"Detected potential backend overload (Fake 401: {content}). Waiting {wait}s before retry {i+1}/{max_retries}..."
+                        )
                         time.sleep(wait)
                         continue
                     else:
                         print(f"Authentic Authentication Error (401) on {url}: {resp.text}")
-                
+
                 resp.raise_for_status()
                 return resp.json()
-            except (requests.exceptions.RequestException, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                wait = backoff * (2 ** i)
+            except (
+                requests.exceptions.RequestException,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as e:
+                wait = backoff * (2**i)
                 if i == max_retries - 1:
                     print(f"Request failed after {max_retries} attempts: {e}")
                     raise
                 print(f"Connection issue detected: {e}. Retrying in {wait}s ({i+1}/{max_retries})...")
                 time.sleep(wait)
-        
+
         raise Exception("Max retries exceeded for Moltbook API (Unhandled State)")
 
     def post(self, title, content, submolt="general"):
@@ -101,16 +106,16 @@ class MoltbookClient:
             return []
         try:
             import fcntl
-            with open(path, 'r') as f:
+            with open(path) as f:
                 fcntl.flock(f, fcntl.LOCK_SH)
                 data = json.load(f)
                 fcntl.flock(f, fcntl.LOCK_UN)
-            
+
             if unprocessed_only:
                 data = [h for h in data if not h.get('processed')]
-            
+
             return [h for h in data if h.get('final_score', 0) >= min_score]
-        except:
+        except Exception:
             return []
 
     def get_post_comments(self, post_id):

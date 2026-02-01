@@ -1,2 +1,0 @@
-pytest_velo
-velo_zygote

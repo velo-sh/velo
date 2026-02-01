@@ -163,6 +163,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -231,6 +233,8 @@ jobs:
           - velo-test
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
@@ -271,6 +275,8 @@ jobs:
           - velo-test
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -294,6 +300,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Set up Python
