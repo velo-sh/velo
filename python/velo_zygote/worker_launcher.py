@@ -314,14 +314,20 @@ def main() -> None:
                 else:
                     _prof_log("[PROF] warmed_server is None, falling back to uvicorn.run()")
                     # RFC-0011 GOLD-013: Wrap app for UDS fallback
-                    if args.uds:
-                        config_kwargs["app"] = _wrap_app_with_middleware(args.app)
+                    try:
+                        if args.uds:
+                            config_kwargs["app"] = _wrap_app_with_middleware(args.app)
+                    except (ImportError, AttributeError, ValueError) as e:
+                        # FATAL: App cannot be loaded. Do not retry uvicorn.run() as it will just hang or fail again.
+                        sys.stderr.write(f"FATAL: Application load failed: {e}\n")
+                        sys.exit(1)
+
                     uvicorn.run(**config_kwargs)
+            except (SystemExit, KeyboardInterrupt):
+                raise
             except Exception as e:
                 _prof_log(f"[PROF] Execution Error: {e}")
-                # RFC-0011 GOLD-013: Wrap app for UDS fallback (exception path)
-                if args.uds:
-                    config_kwargs["app"] = _wrap_app_with_middleware(args.app)
+                # If we've already failed to load the app once, another attempt is futile if it's an import error
                 uvicorn.run(**config_kwargs)
             finally:
                 profiler.disable()

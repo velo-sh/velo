@@ -179,6 +179,11 @@ check_env_fast() {
         log_fatal "Environment check failed with $errors error(s)"
     fi
     log_success "All environment checks passed!"
+
+    # RFC-0010: Apply resource limits to prevent OOM on memory-constrained CI runners
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+    export UV_CONCURRENT_INSTALLS="${UV_CONCURRENT_INSTALLS:-1}"
+    log_info "Resource limits: CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS, UV_CONCURRENT_INSTALLS=$UV_CONCURRENT_INSTALLS"
     echo ""
 }
 
