@@ -22,7 +22,7 @@ from pathlib import Path
 
 # Try to import velo.zygote components
 # Assuming velo is in PYTHONPATH or installed
-sys.path.append(str(Path(__file__).parent.parent.parent.parent / "velo_zygote"))
+sys.path.append(str(Path(__file__).parent.parent.parent.parent / "python" / "velo_zygote"))
 
 # Try to import tomllib (Python 3.11+) or tomli
 try:
@@ -35,7 +35,7 @@ except ImportError:
 
 # Constants
 ROOT_DIR = Path(__file__).parent.parent.parent.parent
-BENCHMARKS_DIR = ROOT_DIR / "benchmarks" / "top100"
+BENCHMARKS_DIR = ROOT_DIR / "tests" / "benchmarks" / "top100"
 SHARED_VENV_DIR = (BENCHMARKS_DIR / ".shared_venv").resolve()
 RESULTS_FILE = BENCHMARKS_DIR / "top100_v2_results.json"
 VELO_BIN_ENV = os.environ.get("VELO_BIN")
@@ -219,7 +219,7 @@ class BenchmarkRunner:
                 subprocess.run(
                     [
                         sys.executable,
-                        str(ROOT_DIR / "benchmarks/top100/_runner/drop_cache.py"),
+                        str(ROOT_DIR / "tests/benchmarks/top100/_runner/drop_cache.py"),
                     ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

@@ -240,7 +240,9 @@ fn generate_python_constants(_config: &Constants, _git_hash: &str) {
 
     match status {
         Ok(s) if s.success() => {
-            println!("cargo:warning=✅ Generated velo_zygote/constants.py via sync-constants.py");
+            println!(
+                "cargo:warning=✅ Generated python/velo_zygote/constants.py via sync-constants.py"
+            );
         }
         Ok(s) => {
             panic!(

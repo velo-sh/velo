@@ -1,5 +1,5 @@
 # Velo Shared Constants (RFC-0012 SSOT)
-# Auto-generated into src/common/constants.rs and velo_zygote/constants.py
+# Auto-generated into src/common/constants.rs and python/velo_zygote/constants.py
 
 protocol_version = 1
 python_version = "3.11"
@@ -138,7 +138,7 @@ path_linux_ci_socket_parent = "${XDG_RUNTIME_DIR}"
 # This is the SINGLE SOURCE OF TRUTH for Python environment configuration.
 # build.rs reads this to generate:
 #   1. Rust constants in src/common/constants.rs
-#   2. Python constants in velo_zygote/constants.py
+#   2. Python constants in python/velo_zygote/constants.py
 #
 # At runtime, common::python_env::PythonEnv uses these as validation baselines.
 

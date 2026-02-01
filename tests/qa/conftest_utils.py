@@ -360,7 +360,7 @@ class VeloTestEnv:
                 "VELO_TEST_MODE": "1",  # Rust config.rs checks this to disable strict_optimizations
                 "PYTHONUNBUFFERED": "1",
                 # RFC-0033: Provide Zygote path for copied binaries running from isolated directories
-                "VELO_ZYGOTE_PATH": str(get_repo_root() / "velo_zygote" / "main.py"),
+                "VELO_ZYGOTE_PATH": str(get_repo_root() / "python" / "velo_zygote" / "main.py"),
             }
         )
 

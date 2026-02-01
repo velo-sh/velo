@@ -2,8 +2,8 @@ import json
 import statistics
 from pathlib import Path
 
-RESULTS_FILE = Path("benchmarks/top100/top100_v2_results.json")
-REPORT_FILE = Path("benchmarks/top100/REPORT.md")
+RESULTS_FILE = Path("tests/benchmarks/top100/top100_v2_results.json")
+REPORT_FILE = Path("tests/benchmarks/top100/REPORT.md")
 
 
 def generate():

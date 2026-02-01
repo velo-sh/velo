@@ -129,7 +129,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
 /// 6. Current working directory (fallback)
 #[allow(clippy::collapsible_if)]
 pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
-    const ZYGOTE_MAIN: &str = "velo_zygote/main.py";
+    const ZYGOTE_MAIN: &str = "python/velo_zygote/main.py";
 
     // 1. Check VELO_ZYGOTE_PATH environment variable (explicit override)
     if let Ok(env_path) = std::env::var("VELO_ZYGOTE_PATH") {
@@ -730,7 +730,7 @@ impl ZygoteLauncher {
         {
             let needle = self.socket_path.to_string_lossy();
             for line in text.lines() {
-                if !line.contains("velo_zygote/main.py") || !line.contains(needle.as_ref()) {
+                if !line.contains("python/velo_zygote/main.py") || !line.contains(needle.as_ref()) {
                     continue;
                 }
                 let mut parts = line.split_whitespace();
