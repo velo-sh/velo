@@ -65,3 +65,11 @@ tests/qa/ai_bench_workspace/
 tests/qa/ai_dropin_workspace/
 examples/dashboard/
 velo_demo.tape
+# Molthub & AI Skills
+.clawdhub/
+# Skills directory is allowed by default, adding explicit comment for clarity
+# /skills/
+
+# Moltbook operational data
+scripts/molt/*.json
+/scripts/molt/daemon.log
