@@ -1,4 +1,3 @@
-
 import pytest
 
 # Invoke pytest internals to trigger import cascade

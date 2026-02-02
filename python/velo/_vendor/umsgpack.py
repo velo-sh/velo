@@ -531,7 +531,9 @@ def _pack2(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()") from None
+                raise NotImplementedError(
+                    f"Ext serializable class {repr(t):s} is missing implementation of packb()"
+                ) from None
         else:
             raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:
@@ -618,7 +620,9 @@ def _pack3(obj, fp, **options):
             try:
                 _pack_ext(Ext(_ext_class_to_type[t], obj.packb()), fp, options)
             except AttributeError:
-                raise NotImplementedError(f"Ext serializable class {repr(t):s} is missing implementation of packb()") from None
+                raise NotImplementedError(
+                    f"Ext serializable class {repr(t):s} is missing implementation of packb()"
+                ) from None
         else:
             raise UnsupportedTypeException(f"unsupported type: {str(type(obj)):s}")
     else:

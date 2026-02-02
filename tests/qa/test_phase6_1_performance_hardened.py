@@ -96,7 +96,9 @@ class TestPhase61PerformanceHardened:
             # Local: ~30-50ms vs ~800-1200ms baseline (20x faster)
             # CI: ~1500ms vs ~3000ms baseline (2x faster)
             # We fail if Velo takes more than the total cold-boot time of the environment.
-            assert p50_latency < max(1500, baseline_duration_ms), f"Restart too slow: {p50_latency:.2f}ms (Baseline: {baseline_duration_ms:.2f}ms)"
+            assert p50_latency < max(1500, baseline_duration_ms), (
+                f"Restart too slow: {p50_latency:.2f}ms (Baseline: {baseline_duration_ms:.2f}ms)"
+            )
 
         finally:
             proc.kill()

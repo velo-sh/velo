@@ -1,4 +1,3 @@
-
 import requests
 
 # Just verify import and version to confirm environment health

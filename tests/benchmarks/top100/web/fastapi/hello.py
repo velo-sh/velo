@@ -1,4 +1,3 @@
-
 import fastapi
 
 # Official usage: Instantiate app

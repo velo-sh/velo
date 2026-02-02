@@ -26,33 +26,54 @@ sys.path.append(str(SCRIPTS_DIR))
 try:
     from hio_visual import (
         print_lab_environment,
-        print_race_result, 
+        print_race_result,
         print_verdict,
         print_reproduce_hint,
         create_progress_context,
         create_progress_context,
         export_results_json,
         save_summary_metric,
-        IS_QUIET
+        IS_QUIET,
     )
 except ImportError:
     # Fallback for standalone execution
-    def print_lab_environment(): print("=== VELO PERFORMANCE LABS ===")
+    def print_lab_environment():
+        print("=== VELO PERFORMANCE LABS ===")
+
     def print_race_result(c, v, mode="", memory_data=None):
-        print(f"CPython: {c:.3f}s | Velo: {v:.3f}s | Speedup: {c/max(v,0.001):.1f}x")
+        print(f"CPython: {c:.3f}s | Velo: {v:.3f}s | Speedup: {c / max(v, 0.001):.1f}x")
+
     def print_verdict(speedup, mem_red=0):
         print(f"SUMMARY: Velo is {speedup:.1f}x faster")
-    def print_reproduce_hint(cmd): pass
-    def create_progress_context(): 
+
+    def print_reproduce_hint(cmd):
+        pass
+
+    def create_progress_context():
         class D:
-            def __enter__(self): return self
-            def __exit__(self, *a): pass
-            def add_task(self, *a, **k): return 0
-            def advance(self, *a): pass
-            def remove_task(self, *a): pass
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def add_task(self, *a, **k):
+                return 0
+
+            def advance(self, *a):
+                pass
+
+            def remove_task(self, *a):
+                pass
+
         return D(), False
-    def export_results_json(*a, **k): pass
-    def save_summary_metric(*a, **k): pass
+
+    def export_results_json(*a, **k):
+        pass
+
+    def save_summary_metric(*a, **k):
+        pass
+
     IS_QUIET = False
 
 
@@ -68,17 +89,47 @@ def run_task_unit(mode="CPython"):
     """Execute a single benchmark unit."""
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
-    
+
     if mode == "CPython":
         # Simulate cold start: clear cached modules (but preserve hio_visual and its dependencies)
-        preserved_modules = {"hio_visual", "rich", "rich.console", "rich.panel", "rich.table", "rich.text", "rich.style", "rich.markup", "rich.segment", "rich.cells", "rich._null_file", "rich.color", "rich.terminal_theme", "rich.default_styles", "rich.palette", "rich.repr", "rich.pretty", "rich.highlighter", "rich.traceback", "rich.abc", "rich.theme", "rich.measure", "rich.emoji", "rich.align", "rich.padding", "rich.box", "rich.columns", "rich.containers", "markdown_it"}
+        preserved_modules = {
+            "hio_visual",
+            "rich",
+            "rich.console",
+            "rich.panel",
+            "rich.table",
+            "rich.text",
+            "rich.style",
+            "rich.markup",
+            "rich.segment",
+            "rich.cells",
+            "rich._null_file",
+            "rich.color",
+            "rich.terminal_theme",
+            "rich.default_styles",
+            "rich.palette",
+            "rich.repr",
+            "rich.pretty",
+            "rich.highlighter",
+            "rich.traceback",
+            "rich.abc",
+            "rich.theme",
+            "rich.measure",
+            "rich.emoji",
+            "rich.align",
+            "rich.padding",
+            "rich.box",
+            "rich.columns",
+            "rich.containers",
+            "markdown_it",
+        }
         for mod in ["click", "pydantic", "app"]:
-            if mod in sys.modules: 
+            if mod in sys.modules:
                 del sys.modules[mod]
         for key in list(sys.modules.keys()):
             if key.startswith(("click.", "pydantic.")):
                 del sys.modules[key]
-        
+
         # Simulate path scanning overhead
         original_path = sys.path[:]
         try:
@@ -92,6 +143,7 @@ def run_task_unit(mode="CPython"):
     else:
         # Velo mode: modules already warm
         import app
+
         app.run_heavy_logic()
 
 
@@ -155,29 +207,28 @@ def main():
 
     # Calculate results
     import statistics
+
     median_cpython = statistics.median(cpython_times)
     median_velo = statistics.median(velo_times)
     speedup = median_cpython / max(median_velo, 0.001)
-    
+
     # Memory estimation (based on typical CLI tool footprint)
     mem_cpython = 48.4  # MB - typical heavy CLI with rich/click/pydantic
-    mem_velo = 5.2      # MB - CoW shared memory
+    mem_velo = 5.2  # MB - CoW shared memory
     mem_reduction = (mem_cpython - mem_velo) / mem_cpython
 
     print()
-    
+
     # Print comparison table
     print_race_result(
-        median_cpython, median_velo, 
-        mode=f"TTFL (Median of {args.runs} runs)",
-        memory_data=(mem_cpython, mem_velo)
+        median_cpython, median_velo, mode=f"TTFL (Median of {args.runs} runs)", memory_data=(mem_cpython, mem_velo)
     )
-    
+
     print()
-    
+
     # Print verdict
     print_verdict(speedup, mem_reduction)
-    
+
     # Reproduction hint
     print_reproduce_hint(f"./examples/cli-fast/run_hio.sh --compare --runs={args.runs}")
 
@@ -188,18 +239,18 @@ def main():
             cpython_times,
             velo_times,
             cpython_label="CPython (CLI Cold Start)",
-            velo_label="Velo (Zygote Fork)"
+            velo_label="Velo (Zygote Fork)",
         )
 
     # Save summary for demo
     save_summary_metric(
-        "CLI Applications (Path Caching)", 
-        f"{speedup:.1f}x faster TTFL", 
-        mem_save=mem_reduction, 
+        "CLI Applications (Path Caching)",
+        f"{speedup:.1f}x faster TTFL",
+        mem_save=mem_reduction,
         cpython_time=median_cpython,
         velo_time=median_velo,
         cpython_rss=mem_cpython,
-        velo_rss=mem_velo
+        velo_rss=mem_velo,
     )
 
 

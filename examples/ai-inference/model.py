@@ -9,6 +9,7 @@ if USE_REAL_LIBS:
         print("[model.py] Loading real AI libraries (torch, numpy)...")
         import torch
         import numpy as np
+
         model_ready = True
     except ImportError:
         print("[model.py] Real libraries not found, falling back to simulation.")
@@ -31,7 +32,8 @@ def embed(texts: list[str]) -> list[list[float]]:
         # In a real demo, we'd use a small model like 'all-MiniLM-L6-v2'
         # For simplicity, we just use numpy to show it's loaded
         import numpy as np
+
         return [[float(x) for x in np.random.rand(3)] for _ in texts]
-    
+
     # Fallback to dummy vectors
     return [[0.1 * len(t), 0.2, 0.3] for t in texts]
