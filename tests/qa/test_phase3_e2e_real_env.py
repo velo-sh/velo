@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest_utils import get_velo_binary, get_timeout_multiplier
+from conftest_utils import get_timeout_multiplier, get_velo_binary
 
 
 class RealUserEnv:

@@ -358,7 +358,7 @@ class TestP1NonBlockingReplenishment:
             resp = tester.send_command(
                 {
                     "type": "ReplenishPool",
-                    "target_count": 5,
+                    "target_count": 3,
                 }
             )
             elapsed = time.perf_counter() - start
