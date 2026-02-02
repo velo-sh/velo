@@ -620,7 +620,10 @@ impl ZygoteLauncher {
         log::debug!("Sending deep liveness probe (Status)...");
         let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
         let base_boot_timeout = if test_mode { 5.0 } else { 30.0 };
-        let boot_timeout = std::time::Duration::from_secs_f64(base_boot_timeout * config.zygote_socket_timeout as f64 / 30.0);
+        let boot_timeout = std::time::Duration::from_secs_f64(
+            base_boot_timeout * config.zygote_socket_timeout as f64 / 30.0,
+        );
+        let boot_start = std::time::Instant::now();
         let final_pid: u32;
 
         loop {
