@@ -1559,10 +1559,11 @@ except Exception as e:
                 let check_interval = Duration::from_secs_f64(5.0 * timeout_multiplier);
 
                 if !lb_for_proxy.wait_for_healthy(wait_timeout).await {
-                    return Err::<(), anyhow::Error>(anyhow::anyhow!(
-                        "Fatal: Workers failed to become healthy within {:?}. Check worker logs for errors.",
+                    eprintln!(
+                        "Fatal: Workers failed to become healthy within {:?}. Force exiting to prevent hang.",
                         wait_timeout
-                    ));
+                    );
+                    std::process::exit(1);
                 }
 
                 lb_for_proxy
