@@ -610,7 +610,7 @@ impl ZygoteLauncher {
 
             // RFC-0028 P2: Initialize the warm pool
             if let Err(e) = self.sync_pool_size(config) {
-                log::warn!("[ZygoteLauncher] Initial pool sync failed: {}", e);
+                log::error!("[ZygoteLauncher] Initial pool sync failed: {}", e);
             }
         } else {
             return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
@@ -618,8 +618,9 @@ impl ZygoteLauncher {
 
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
-        let boot_start = std::time::Instant::now();
-        let boot_timeout = std::time::Duration::from_secs(30); // Standard BOOT_TIMEOUT_SECS
+        let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
+        let base_boot_timeout = if test_mode { 5.0 } else { 30.0 };
+        let boot_timeout = std::time::Duration::from_secs_f64(base_boot_timeout * config.zygote_socket_timeout as f64 / 30.0);
         let final_pid: u32;
 
         loop {

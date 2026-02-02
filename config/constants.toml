@@ -38,7 +38,7 @@ sandbox_privilege_escalation_block = true # RFC-0011: PR_SET_NO_NEW_PRIVS
 circuit_breaker_enabled = true
 metrics_enabled = true
 tracing_enabled = true
-zygote_pool_size = 5 # Default number of warm workers
+zygote_pool_size = 2 # Default number of warm workers
 zygote_max_pool_size = 100 # Maximum allowed pool size (security limit)
 
 # CI/Docker Test Configuration (SSOT)
