@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest_utils import get_velo_binary
+from conftest_utils import get_velo_binary, get_timeout_multiplier
 
 
 class RealUserEnv:
@@ -51,6 +51,8 @@ class RealUserEnv:
 
     def run_velo(self, args: list[str], timeout: float = 30) -> tuple[int, str, str, float]:
         """Run velo and return (returncode, stdout, stderr, duration)."""
+        # Scale timeout for CI
+        timeout = timeout * get_timeout_multiplier()
         start = time.perf_counter()
 
         # Merge isolated env vars
