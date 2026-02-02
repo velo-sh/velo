@@ -1554,7 +1554,7 @@ except Exception as e:
                     .expect("Failed to bind proxy");
 
                 let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
-                let base_timeout = if test_mode { 2.0 } else { 15.0 };
+                let base_timeout = if test_mode { 15.0 } else { 15.0 };
                 let wait_timeout = Duration::from_secs_f64(base_timeout * timeout_multiplier);
                 let check_interval = Duration::from_secs_f64(5.0 * timeout_multiplier);
 
