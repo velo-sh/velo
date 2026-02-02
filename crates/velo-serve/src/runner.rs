@@ -1559,7 +1559,10 @@ except Exception as e:
                 let check_interval = Duration::from_secs_f64(5.0 * timeout_multiplier);
 
                 if !lb_for_proxy.wait_for_healthy(wait_timeout).await {
-                    eprintln!("[LB] CRITICAL: Workers failed to become healthy within {:?}. Starting anyway...", wait_timeout);
+                    return Err(anyhow::anyhow!(
+                        "Fatal: Workers failed to become healthy within {:?}. Check worker logs for errors.",
+                        wait_timeout
+                    ));
                 }
 
                 lb_for_proxy

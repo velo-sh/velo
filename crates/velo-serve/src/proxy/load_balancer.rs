@@ -421,14 +421,14 @@ impl LoadBalancer {
             let mut all_dead = true;
             for worker in &self.workers {
                 let current_path = worker.socket_path();
-                
+
                 // 1. Check if socket is open
                 if UnixStream::connect(&current_path).await.is_ok() {
                     eprintln!("[LB] Worker {} ready", current_path);
                     worker.mark_healthy();
                     return true;
                 }
-                
+
                 // 2. Check if process is still alive (Fail-Fast)
                 let pid = worker.pid();
                 if pid != 0 {
@@ -446,12 +446,14 @@ impl LoadBalancer {
                     all_dead = false; // PID not yet registered
                 }
             }
-            
+
             if all_dead && !self.workers.is_empty() {
-                eprintln!("[LB] CRITICAL: All worker processes died during startup. Aborting wait.");
+                eprintln!(
+                    "[LB] CRITICAL: All worker processes died during startup. Aborting wait."
+                );
                 return false;
             }
-            
+
             tokio::time::sleep(poll_interval).await;
         }
 

@@ -28,7 +28,8 @@ def find_socket_path() -> str:
     uid = os.getuid()
     cwd_hash = hashlib.md5(str(PROJECT_ROOT).encode()).hexdigest()[:8]
     # Protocol version 0x01
-    return f"/tmp/velo-zygote-{uid}-{cwd_hash}-v01.sock"
+    tmpdir = os.environ.get("TMPDIR", "/tmp")
+    return os.path.join(tmpdir, f"velo-zygote-{uid}-{cwd_hash}-v01.sock")
 
 
 def wait_for_socket(socket_path: str, timeout: float = 10.0) -> float:

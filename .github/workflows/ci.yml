@@ -26,8 +26,9 @@ env:
   UV_CONCURRENT_INSTALLS: 1
   PYTEST_XDIST_WORKERS: 1
   PYTHONPATH: python
-  VELO_ZYGOTE_MAX_POOL_SIZE: 8
+  VELO_ZYGOTE_MAX_POOL_SIZE: 4
   VELO_TEST_MODE: "1"
+  VELO_NO_PREWARM: "1"
   UV_VERSION: "0.9" # Centralized uv version
   VELO_ENV: ci # RFC-0012: CI environment profile (disables strict_optimizations)
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
