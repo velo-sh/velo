@@ -1,2 +1,0 @@
-
-print("anyio loaded successfully")

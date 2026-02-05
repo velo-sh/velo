@@ -6,6 +6,9 @@
 
 set -e
 
+# Source paths SSOT
+source "$(dirname "${BASH_SOURCE[0]}")/lib/paths.sh"
+
 echo "=============================================="
 echo "Phase 4.0 Final Verification"
 echo "=============================================="
@@ -84,7 +87,7 @@ fix_perms
 # Fix benchmark project venvs specifically
 find ../velo-benchmarks -name "python*" -type f -exec chmod +x {} \; 2>/dev/null || true
 find ../velo-benchmarks -name "python*" -type l -exec chmod +x {} \; 2>/dev/null || true
-if uv run python benchmark_projects.py --all; then
+if uv run python "$BENCHMARKS_SCRIPTS/benchmark_projects.py" --all; then
     echo -e "$PASS"
 else
     echo -e "$FAIL"

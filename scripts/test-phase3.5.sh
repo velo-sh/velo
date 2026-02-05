@@ -7,11 +7,8 @@ echo "  Phase 3.5 QA Test Suite - velo serve"
 echo "============================================================"
 echo ""
 
-# Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Source paths SSOT
+source "$(dirname "${BASH_SOURCE[0]}")/lib/paths.sh"
 
 PASS=0
 FAIL=0
@@ -29,7 +26,7 @@ fail() {
 # --- Prerequisites ---
 echo "📦 Building release binary..."
 cargo build --release --quiet 2>&1
-VELO="./target/release/velo"
+VELO="$VELO_BIN_RELEASE"
 
 # --- Test 1: Unit Tests ---
 echo ""

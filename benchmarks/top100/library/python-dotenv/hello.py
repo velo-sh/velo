@@ -1,2 +1,0 @@
-
-print("dotenv loaded")

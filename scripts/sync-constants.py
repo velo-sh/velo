@@ -2,7 +2,7 @@
 """
 Velo Constants Sync Script
 
-Generates velo_zygote/constants.py from config/constants.toml (SSOT).
+Generates python/velo_zygote/constants.py from config/constants.toml (SSOT).
 
 Usage:
     python scripts/sync-constants.py          # Generate constants.py
@@ -189,7 +189,7 @@ def main():
 
     toml_path = project_root / "config" / "constants.toml"
     schema_path = project_root / "config" / "constants.schema.json"
-    py_path = project_root / "velo_zygote" / "constants.py"
+    py_path = project_root / "python" / "velo_zygote" / "constants.py"
 
     if not toml_path.exists():
         print(f"ERROR: {toml_path} not found", file=sys.stderr)

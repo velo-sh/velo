@@ -1,2 +1,0 @@
-
-print("google.rpc loaded")

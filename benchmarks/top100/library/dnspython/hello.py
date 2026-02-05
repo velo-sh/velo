@@ -1,2 +1,0 @@
-
-print("dnspython loaded")

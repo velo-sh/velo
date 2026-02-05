@@ -7,7 +7,7 @@ members = [
     "crates/velo-test",
     "crates/velo-cli",
     "crates/velo-protocol",
-    "velo_macros",
+    "crates/velo_macros",
     "vendor/granian",
 ]
 default-members = ["crates/velo-cli"]

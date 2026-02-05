@@ -1,5 +1,5 @@
 # Velo Shared Constants (RFC-0012 SSOT)
-# Auto-generated into src/common/constants.rs and velo_zygote/constants.py
+# Auto-generated into src/common/constants.rs and python/velo_zygote/constants.py
 
 protocol_version = 1
 python_version = "3.11"
@@ -59,7 +59,7 @@ default_port = 8000
 # Placeholders: ${CWD}, ${HOME}, ${EXE_DIR}, ${VIRTUAL_ENV}, ${CONDA_PREFIX}, ${BASE}, ${OS_BASE}
 
 # Level 0: Global Base
-security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Frameworks,/Library/Developer/CommandLineTools,${HOME}/.local/share/velo/ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV}"
+security_base_trusted_prefixes = "/usr,/bin,/sbin,/lib,/Library/Frameworks,/Library/Developer/CommandLineTools,${HOME}/.local/share/velo/ci,${HOME}/Library/Python,${HOME}/.local/lib,${HOME}/.local/bin,${HOME}/.local/share/uv/python,${VIRTUAL_ENV},${CWD}"
 security_base_env_whitelist = "PATH,HOME,USER,LOGNAME,PWD,TMPDIR,PYTHONUNBUFFERED,LANG,LC_ALL,LC_CTYPE,TZ,TERM,MallocNanoZone,VELO_ENV,VELO_TEST_MODE,VELO_ZYGOTE_SOCKET,VELO_ZYGOTE_SOCKET_TIMEOUT,VELO_ZYGOTE_AUTH,VELO_TIMEOUT_MULTIPLIER,VELO_STRICT_NUMA,VELO_ZYGOTE_SHIELD_ACTIVE,VELO_WORKER_DEBUG_LOG,VIRTUAL_ENV,CI,GITHUB_ACTIONS,__CFBundleIdentifier,VELO_IS_ZYGOTE,VELO_WORKER_ID,VELO_NATIVE_PRELOAD_STRICT,VELO_IMPORT_THRESHOLD_MS"
 
 # Blocked Paths (RFC-0012)
@@ -138,7 +138,7 @@ path_linux_ci_socket_parent = "${XDG_RUNTIME_DIR}"
 # This is the SINGLE SOURCE OF TRUTH for Python environment configuration.
 # build.rs reads this to generate:
 #   1. Rust constants in src/common/constants.rs
-#   2. Python constants in velo_zygote/constants.py
+#   2. Python constants in python/velo_zygote/constants.py
 #
 # At runtime, common::python_env::PythonEnv uses these as validation baselines.
 

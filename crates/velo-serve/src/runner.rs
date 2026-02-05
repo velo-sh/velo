@@ -1553,11 +1553,17 @@ except Exception as e:
                     .await
                     .expect("Failed to bind proxy");
 
-                let wait_timeout = Duration::from_secs_f64(15.0 * timeout_multiplier);
+                let test_mode = std::env::var("VELO_TEST_MODE").ok().as_deref() == Some("1");
+                let base_timeout = if test_mode { 15.0 } else { 15.0 };
+                let wait_timeout = Duration::from_secs_f64(base_timeout * timeout_multiplier);
                 let check_interval = Duration::from_secs_f64(5.0 * timeout_multiplier);
 
                 if !lb_for_proxy.wait_for_healthy(wait_timeout).await {
-                    eprintln!("[LB] CRITICAL: Workers failed to become healthy within {:?}. Starting anyway...", wait_timeout);
+                    eprintln!(
+                        "Fatal: Workers failed to become healthy within {:?}. Force exiting to prevent hang.",
+                        wait_timeout
+                    );
+                    std::process::exit(1);
                 }
 
                 lb_for_proxy

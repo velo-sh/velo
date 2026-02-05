@@ -179,6 +179,11 @@ check_env_fast() {
         log_fatal "Environment check failed with $errors error(s)"
     fi
     log_success "All environment checks passed!"
+
+    # RFC-0010: Apply resource limits to prevent OOM on memory-constrained CI runners
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+    export UV_CONCURRENT_INSTALLS="${UV_CONCURRENT_INSTALLS:-1}"
+    log_info "Resource limits: CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS, UV_CONCURRENT_INSTALLS=$UV_CONCURRENT_INSTALLS"
     echo ""
 }
 
@@ -441,7 +446,7 @@ run_ruff_check() {
     log_step "Running Ruff Python lint..."
     
     # SSOT: These are the directories to check (excluding vendor code)
-    local PYTHON_DIRS="tests/ velo_zygote/ scripts/"
+    local PYTHON_DIRS="tests/ python/ scripts/"
     
     # Lint check (exclude vendored code)
     uv run ruff check $PYTHON_DIRS --exclude "*/_vendor/*"

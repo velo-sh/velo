@@ -129,7 +129,7 @@ pub fn get_status() -> Result<ZygoteResponse> {
 /// 6. Current working directory (fallback)
 #[allow(clippy::collapsible_if)]
 pub fn find_zygote_module(_config: &VeloConfig) -> Result<PathBuf> {
-    const ZYGOTE_MAIN: &str = "velo_zygote/main.py";
+    const ZYGOTE_MAIN: &str = "python/velo_zygote/main.py";
 
     // 1. Check VELO_ZYGOTE_PATH environment variable (explicit override)
     if let Ok(env_path) = std::env::var("VELO_ZYGOTE_PATH") {
@@ -443,6 +443,19 @@ impl ZygoteLauncher {
         // Identification env for bootstrap
         cmd.env("VELO_IS_ZYGOTE", "1");
 
+        // RFC-0012: Ensure our own python/ source root is trusted and searchable
+        // This is critical after the reorganization to python/velo_zygote/
+        if let Ok(cwd) = std::env::current_dir() {
+            let python_root = cwd.join("python");
+            if let Ok(existing) = std::env::var("PYTHONPATH") {
+                let mut paths = vec![python_root.to_string_lossy().to_string()];
+                paths.push(existing);
+                cmd.env("PYTHONPATH", paths.join(":"));
+            } else {
+                cmd.env("PYTHONPATH", python_root);
+            }
+        }
+
         // Pass app name if present
         if let Some(app) = app_name {
             cmd.env("VELO_APP_NAME", app);
@@ -597,7 +610,7 @@ impl ZygoteLauncher {
 
             // RFC-0028 P2: Initialize the warm pool
             if let Err(e) = self.sync_pool_size(config) {
-                log::warn!("[ZygoteLauncher] Initial pool sync failed: {}", e);
+                log::error!("[ZygoteLauncher] Initial pool sync failed: {}", e);
             }
         } else {
             return Err(ZygoteError::ProtocolError("Handshake failed".to_string()));
@@ -605,8 +618,11 @@ impl ZygoteLauncher {
 
         // 3. Deep Probe: Status check
         log::debug!("Sending deep liveness probe (Status)...");
+        let base_boot_timeout = 30.0;
+        let boot_timeout = std::time::Duration::from_secs_f64(
+            base_boot_timeout * config.zygote_socket_timeout as f64 / 30.0,
+        );
         let boot_start = std::time::Instant::now();
-        let boot_timeout = std::time::Duration::from_secs(30); // Standard BOOT_TIMEOUT_SECS
         let final_pid: u32;
 
         loop {
@@ -730,7 +746,7 @@ impl ZygoteLauncher {
         {
             let needle = self.socket_path.to_string_lossy();
             for line in text.lines() {
-                if !line.contains("velo_zygote/main.py") || !line.contains(needle.as_ref()) {
+                if !line.contains("python/velo_zygote/main.py") || !line.contains(needle.as_ref()) {
                     continue;
                 }
                 let mut parts = line.split_whitespace();

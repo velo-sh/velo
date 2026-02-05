@@ -114,6 +114,12 @@ fn run_python_preflight(
 ) -> Result<()> {
     let mut cmd = std::process::Command::new(python_path);
     cmd.arg("-m").arg("velo_zygote.preflight");
+    // RFC-0012: Ensure python/ directory is in PYTHONPATH for internal modules
+    if let Ok(cwd) = std::env::current_dir() {
+        cmd.env("PYTHONPATH", cwd.join("python"));
+    } else {
+        cmd.env("PYTHONPATH", "python");
+    }
 
     if verbose {
         cmd.arg("--verbose");

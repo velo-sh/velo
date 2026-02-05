@@ -28,7 +28,8 @@ velo = "pytest_velo.plugin"
 python-preference = "only-managed"
 
 [tool.setuptools]
-packages = ["pytest_velo", "velo_zygote"]
+package-dir = {"" = "python"}
+packages = ["pytest_velo", "velo", "velo_zygote"]
 
 
 [tool.pytest.ini_options]
@@ -100,7 +101,7 @@ warn_redundant_casts = true
 warn_return_any = true
 warn_unused_ignores = false
 ignore_missing_imports = true
-exclude = 'benchmarks/|examples/|ai-serverless-demo/|python/velo/_vendor/|scripts/|bench\.py|benchmark_.*\.py|run_tests\.py|vibe_demo\.py|python/jupyterhub_velo/|python/bundle_builder\.py|python/detect_app\.py|python/velo_loader\.py|slow\.py|fd_report_mod\.py'
+exclude = 'tests/benchmarks/|examples/|ai-serverless-demo/|python/velo/_vendor/|scripts/|slow\.py|fd_report_mod\.py|pytest_velo/'
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -111,7 +112,7 @@ disallow_untyped_defs = false
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-exclude = ["velo_zygote/constants.py"]  # Generated file
+exclude = ["python/velo_zygote/constants.py"]  # Generated file
 
 [tool.ruff.lint]
 select = [
@@ -136,14 +137,14 @@ known-first-party = ["velo_zygote"]
 [tool.ruff.lint.per-file-ignores]
 # E402: Tests legitimately require sys.path manipulation before imports
 "tests/**/*.py" = ["E402"]
-"pytest_velo/**/*.py" = ["E402"]
-"velo_zygote/worker_launcher.py" = ["E402"]
-"velo_zygote/main.py" = ["E402"]
+"python/pytest_velo/**/*.py" = ["E402"]
+"python/velo_zygote/worker_launcher.py" = ["E402"]
+"python/velo_zygote/main.py" = ["E402"]
 # F401: conftest files import fixtures for other tests to use
 "**/conftest.py" = ["F401"]
 # F403/F405: Star imports from constants.py is SSOT pattern (constants are generated)
-"velo_zygote/settings.py" = ["F403", "F405"]
-"velo_zygote/paths.py" = ["F403", "F405"]
+"python/velo_zygote/settings.py" = ["F403", "F405"]
+"python/velo_zygote/paths.py" = ["F403", "F405"]
 
 [dependency-groups]
 dev = [

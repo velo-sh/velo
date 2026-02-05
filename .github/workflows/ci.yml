@@ -21,6 +21,15 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: 2
+  UV_CONCURRENT_INSTALLS: 1
+  PYTEST_XDIST_WORKERS: 1
+  PYTHONPATH: python
+  VELO_ZYGOTE_MAX_POOL_SIZE: 4
+  VELO_ZYGOTE_POOL_SIZE: 2
+  VELO_TEST_MODE: "1"
+  VELO_NO_PREWARM: "1"
   UV_VERSION: "0.9" # Centralized uv version
   VELO_ENV: ci # RFC-0012: CI environment profile (disables strict_optimizations)
   # RFC-0012: Resilience Overrides for CI (TIERED CONFIG)
@@ -29,8 +38,6 @@ env:
   VELO_MAX_BUNDLE_SIZE: 50
   # Test timeout multiplier (CI is slower than local)
   VELO_TIMEOUT_MULTIPLIER: 6
-  # RFC-0012: Redirect TMPDIR to project workspace to satisfy security checks (Non-Invasive)
-  TMPDIR: ${{ github.workspace }}/pytest_tmp
   # Note: UV_PYTHON is now set dynamically in setup-velo action from SSOT config
   # Worker respawn: fail_fast_limit is auto-scaled by TIMEOUT_MULTIPLIER (5*6=30 in CI)
 jobs:
@@ -103,7 +110,7 @@ jobs:
               - 'tests/qa/**/*.py'
               - 'Cargo.*'
               - 'config/**'
-              - 'velo_macros/**/*.rs'
+              - 'crates/velo_macros/**/*.rs'
             loader:
               - 'crates/velo-cli/src/cmd/loader.rs'
               - 'python/velo_loader.py'
@@ -113,7 +120,7 @@ jobs:
               - 'tests/qa/phase5_2/**'
             zygote:
               - 'crates/velo-core/src/zygote/**/*.rs'
-              - 'velo_zygote/**'
+              - 'python/velo_zygote/**'
               - 'tests/qa/test_phase3_*.py'
               - 'tests/qa/test_phase3_zygote_lifecycle.py'
               - 'tests/qa/test_phase3_harness.py'
@@ -133,7 +140,7 @@ jobs:
               - 'tests/qa/test_phase4_*.py'
             kinetic:
               - 'crates/velo-core/src/zygote/**/*.rs'
-              - 'velo_zygote/**'
+              - 'python/velo_zygote/**'
               - 'crates/velo-serve/src/**/*.rs'
               - 'tests/qa/test_phase6_2_*.py'
             workflow:
@@ -145,7 +152,7 @@ jobs:
               - 'tests/qa/conftest.py'
               - 'tests/qa/utils/**'
               - 'tests/qa/conftest_markers.py'
-              - 'run_tests.py'
+              - 'scripts/dev/run_tests.py'
 
   build:
     name: Build
@@ -163,6 +170,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -203,7 +212,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run Python tests
-        run: uv run run_tests.py
+        run: uv run scripts/dev/run_tests.py
 
       - name: Check binary size
         run: |
@@ -231,6 +240,8 @@ jobs:
           - velo-test
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
@@ -271,6 +282,8 @@ jobs:
           - velo-test
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -294,6 +307,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Create Workspace TMPDIR
+        run: mkdir -p pytest_tmp
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Set up Python
@@ -301,7 +316,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
       - name: Run Pytest
-        run: PYTHONPATH=. uv run pytest tests/unit
+        run: PYTHONPATH=python uv run pytest tests/unit
 
   bench-check:
     name: Zygote Startup Benchmark
@@ -494,7 +509,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
+          command: PYTHONPATH=python uv run pytest ${{ matrix.suite.path }} -n ${PYTEST_XDIST_WORKERS:-1} --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -578,7 +593,7 @@ jobs:
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
+          command: PYTHONPATH=python uv run pytest ${{ matrix.suite.path }} -n ${PYTEST_XDIST_WORKERS:-1} --dist loadscope -v --tb=short
 
 
   # ============================================
@@ -734,12 +749,17 @@ jobs:
             suite_name: "Release Blockers"
           - suite: { name: "Whitebox" }
             suite_name: "Whitebox"
+    env:
+      VELO_TIMEOUT_MULTIPLIER: 6
+      VELO_ZYGOTE_MAX_POOL_SIZE: 2   # Strict limit for heavy tests (OOM prevention)
+      VELO_NO_PREWARM: "1"           # Lazy warming for stability
+      PYTEST_XDIST_WORKERS: 1
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/run-tests
         with:
           uv-version: ${{ env.UV_VERSION }}
-          command: uv run pytest ${{ matrix.suite.path }} -n 2 --dist loadscope -v --tb=short
+          command: PYTHONPATH=python uv run pytest ${{ matrix.suite.path }} -n ${PYTEST_XDIST_WORKERS:-1} --dist loadscope -v --tb=short
 
   qa-phase611-perf-matrix:
     name: "QA 6.1.1: Performance (${{ matrix.suite_name }})"
@@ -949,7 +969,7 @@ jobs:
           uv-version: ${{ env.UV_VERSION }}
           command: |
              chmod +x .venv/bin/python3
-             uv run python benchmark_projects.py --all
+             uv run python scripts/benchmarks/benchmark_projects.py --all
 
   coverage:
     name: Code Coverage

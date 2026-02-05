@@ -8,9 +8,10 @@ import socket
 import struct
 import sys
 import traceback
-from typing import Any
+from typing import Any, Union
 
 PROTOCOL_VERSION = 1
+
 
 # Configurable via VELO_ZYGOTE_MAX_POOL_SIZE env var (default: 100)
 # Can be set in pyproject.toml [tool.velo] zygote_max_pool_size = N
@@ -20,24 +21,34 @@ def _get_max_pool_size() -> int:
     except ValueError:
         return 100
 
+
 MAX_POOL_SIZE = _get_max_pool_size()
 
 # BUG-010: Dangerous environment variables that could enable code injection
 # These are NEVER allowed to be set via Fork env overrides
-DANGEROUS_ENV_VARS = frozenset([
-    # Dynamic linker injection (Linux)
-    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
-    # Dynamic linker injection (macOS)
-    "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
-    # Python path hijacking
-    "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
-    # Command hijacking
-    "PATH",
-])
+DANGEROUS_ENV_VARS = frozenset(
+    [
+        # Dynamic linker injection (Linux)
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "LD_AUDIT",
+        # Dynamic linker injection (macOS)
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FRAMEWORK_PATH",
+        # Python path hijacking
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "PYTHONSTARTUP",
+        # Command hijacking
+        "PATH",
+    ]
+)
 
 # BUG-001: Default blocked path prefixes for script execution
 # Additional paths come from velo_config.blocked_paths if available
 DEFAULT_BLOCKED_PATHS = ["/usr", "/bin", "/sbin", "/etc", "/root", "/boot"]
+
 
 def filter_dangerous_env(env: dict[str, str]) -> dict[str, str]:
     """BUG-010: Filter out dangerous environment variables that could enable injection."""
@@ -51,6 +62,7 @@ def filter_dangerous_env(env: dict[str, str]) -> dict[str, str]:
     if blocked:
         sys.stderr.write(f"🛡️ [Security] Blocked dangerous env vars: {blocked}\n")
     return filtered
+
 
 def validate_script_path(script_path: str) -> tuple[bool, str]:
     """
@@ -73,6 +85,7 @@ def validate_script_path(script_path: str) -> tuple[bool, str]:
         # Try to get additional blocked paths from velo_config if available
         try:
             from velo_zygote.settings import velo_config
+
             blocked_paths = velo_config.blocked_paths
         except (ImportError, Exception):
             pass
@@ -84,6 +97,7 @@ def validate_script_path(script_path: str) -> tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, f"Security: Invalid script path: {e}"
+
 
 def setup_site() -> None:
     """P0: Inject User Virtual Environment into sys.path (Tier 1 Mutation)."""
@@ -97,7 +111,9 @@ def setup_site() -> None:
             site.addsitedir(lib_dir)
 
         # 2. Also try 'lib64' for some Linux distros
-        lib64_dir = os.path.join(venv, "lib64", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages")
+        lib64_dir = os.path.join(
+            venv, "lib64", f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages"
+        )
         if os.path.exists(lib64_dir):
             site.addsitedir(lib64_dir)
 
@@ -105,10 +121,11 @@ def setup_site() -> None:
         sys.prefix = venv
         sys.exec_prefix = venv
 
+
 class IdlePool:
     def __init__(self, target_size: int = 0) -> None:
         self.target_size = target_size
-        self.pool: list[tuple[int, int]] = [] # List of (pid, pipe_write_fd)
+        self.pool: list[tuple[int, int]] = []  # List of (pid, pipe_write_fd)
 
     def get_count(self) -> int:
         self.pool = [p for p in self.pool if self._is_alive(p[0])]
@@ -124,7 +141,7 @@ class IdlePool:
     def add(self, pid: int, pipe_write_fd: int) -> None:
         self.pool.append((pid, pipe_write_fd))
 
-    def pop(self) -> tuple[int | None, int | None]:
+    def pop(self) -> tuple[Union[int, None], Union[int, None]]:
         while self.pool:
             pid, write_fd = self.pool.pop(0)
             if self._is_alive(pid):
@@ -145,7 +162,7 @@ class IdlePool:
             except OSError:
                 pass
 
-    def replenish(self, main_sock: socket.socket | None = None) -> None:
+    def replenish(self, main_sock: Union[socket.socket, None] = None) -> None:
         """
         Refilled the pool to target_size.
         Refactored for P1: This is now called *after* the IPC response is sent,
@@ -191,12 +208,13 @@ class IdlePool:
                 if not chunk:
                     break
                 payload += chunk
-            msg = json.loads(payload.decode('utf-8'))
+            msg = json.loads(payload.decode("utf-8"))
             execute_payload(msg)
         except Exception:
             traceback.print_exc()
         finally:
             os.close(pipe_read_fd)
+
 
 def execute_payload(msg: dict[str, Any]) -> None:
     app_module = msg.get("module")
@@ -242,15 +260,18 @@ def execute_payload(msg: dict[str, Any]) -> None:
             code = compile(f.read(), script_path, "exec")
             exec(code, {"__name__": "__main__", "__file__": script_path})
 
+
 IDLE_POOL = IdlePool()
+
 
 def handle_shutdown(signum: int, frame: Any) -> None:
     """Graceful shutdown handler for Zygote process."""
     IDLE_POOL.shutdown()
     sys.exit(0)
 
+
 def bootstrap() -> None:
-    setup_site() # P0: Inject venv immediately
+    setup_site()  # P0: Inject venv immediately
 
     socket_path = os.environ.get("VELO_ZYGOTE_SOCK")
     if not socket_path:
@@ -269,7 +290,7 @@ def bootstrap() -> None:
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     # Send Ready
-    payload = json.dumps({"type": "Ready"}).encode('utf-8')
+    payload = json.dumps({"type": "Ready"}).encode("utf-8")
     total_len = 1 + len(payload)
     sock.sendall(struct.pack("<I", total_len) + struct.pack("B", PROTOCOL_VERSION) + payload)
 
@@ -294,12 +315,12 @@ def bootstrap() -> None:
                 payload_bytes += chunk
 
             try:
-                payload_str = payload_bytes.decode('utf-8')
+                payload_str = payload_bytes.decode("utf-8")
                 msg = json.loads(payload_str)
             except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 # BUG-012: Send error response for malformed JSON instead of crashing
                 resp = {"type": "Error", "message": f"Invalid JSON payload: {e}"}
-                p = json.dumps(resp).encode('utf-8')
+                p = json.dumps(resp).encode("utf-8")
                 sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
                 continue
 
@@ -320,7 +341,7 @@ def bootstrap() -> None:
                     "state": "READY",
                     "preload_done": True,
                     "pool_count": IDLE_POOL.get_count(),
-                    "target_pool_size": IDLE_POOL.target_size
+                    "target_pool_size": IDLE_POOL.target_size,
                 }
                 # If we are critically low, maybe we should replenish?
                 # Let's rely on explicit ReplenishPool command or post-Fork replenishment.
@@ -328,9 +349,15 @@ def bootstrap() -> None:
                 # BUG-009/011: Validate pool size bounds
                 target_count = msg.get("target_count", 0)
                 if not isinstance(target_count, int) or target_count < 0:
-                    resp = {"type": "Error", "message": f"Invalid target_count: {target_count}. Must be non-negative integer."}
+                    resp = {
+                        "type": "Error",
+                        "message": f"Invalid target_count: {target_count}. Must be non-negative integer.",
+                    }
                 elif target_count > MAX_POOL_SIZE:
-                    resp = {"type": "Error", "message": f"target_count {target_count} exceeds maximum allowed ({MAX_POOL_SIZE})"}
+                    resp = {
+                        "type": "Error",
+                        "message": f"target_count {target_count} exceeds maximum allowed ({MAX_POOL_SIZE})",
+                    }
                 else:
                     IDLE_POOL.target_size = target_count
                     # Mark for replenishment AFTER response
@@ -339,7 +366,7 @@ def bootstrap() -> None:
             elif cmd == "Fork":
                 pid, pipe_fd = IDLE_POOL.pop()
                 if pid is not None and pipe_fd is not None:
-                    p = json.dumps(msg).encode('utf-8')
+                    p = json.dumps(msg).encode("utf-8")
                     os.write(pipe_fd, struct.pack("<I", len(p)) + p)
                     os.close(pipe_fd)
                     resp = {"type": "Forked", "worker_pid": pid, "is_warm": True}
@@ -358,7 +385,7 @@ def bootstrap() -> None:
                 # BUG-015: Return error for unknown commands instead of silent Ack
                 resp = {"type": "Error", "message": f"Unknown command type: {cmd}"}
 
-            p = json.dumps(resp).encode('utf-8')
+            p = json.dumps(resp).encode("utf-8")
             sock.sendall(struct.pack("<I", 1 + len(p)) + struct.pack("B", PROTOCOL_VERSION) + p)
 
             # P1: Perform replenishment *after* sending response to unblock Supervisor
@@ -375,6 +402,7 @@ def bootstrap() -> None:
         sock.close()
     except OSError:
         pass
+
 
 if __name__ == "__main__":
     bootstrap()
